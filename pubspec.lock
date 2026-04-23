@@ -156,7 +156,7 @@ packages:
   nocterm:
     dependency: "direct main"
     description:
-      path: "../nocterm"
+      path: nocterm
       relative: true
     source: path
     version: "0.6.0"
@@ -251,7 +251,7 @@ packages:
   textmate_highlight:
     dependency: transitive
     description:
-      path: "../textmate_highlight"
+      path: textmate_highlight
       relative: true
     source: path
     version: "0.1.0"

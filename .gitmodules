@@ -1,0 +1,6 @@
+[submodule "nocterm"]
+	path = nocterm
+	url = git@github.com:marsup-space/nocterm.git
+[submodule "textmate_highlight"]
+	path = textmate_highlight
+	url = git@github.com:marsup-space/textmate_highlight.git

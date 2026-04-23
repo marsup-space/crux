@@ -8,7 +8,7 @@ environment:
 
 dependencies:
   nocterm:
-    path: ../nocterm
+    path: nocterm
 
 dev_dependencies:
   lints: ^6.0.0
