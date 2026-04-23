@@ -1,3 +1,5 @@
+# https://dart.dev/guides/libraries/private-files
+# Created by `dart pub`
 .dart_tool/
 .packages
 .pub-cache/
@@ -12,3 +14,6 @@ pubspec.lock
 
 .fvm/
 .env
+
+# Research references (external repos)
+.research/

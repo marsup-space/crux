@@ -1,0 +1,14 @@
+name: crux
+description: A terminal-based AI coding agent with agentic orchestration.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  nocterm:
+    path: ../nocterm
+
+dev_dependencies:
+  lints: ^6.0.0
