@@ -48,6 +48,14 @@ class _ChatPanelState extends State<ChatPanel> {
   Timer? _responseTimer;
   int _mockResponseIndex = 0;
 
+  // Context window progress state
+  int _contextTargetTokens = 50000;
+  double _contextDisplayTokens = 50000.0;
+  static const int _contextMaxTokens = 262144;
+  Timer? _contextAnimTimer;
+  DateTime? _lastContextTick;
+  static const double _contextLerpSpeed = 6.0;
+
   static const List<String> _mockResponses = [
     "I've analyzed your request. Here's my approach...",
     "That's an interesting question. Let me break it down for you.",
@@ -86,6 +94,7 @@ class _ChatPanelState extends State<ChatPanel> {
   void dispose() {
     textController.removeListener(_onTextChanged);
     _responseTimer?.cancel();
+    _contextAnimTimer?.cancel();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
@@ -435,6 +444,8 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {
       messages.add(Message(role: 'user', content: text));
       _isResponding = true;
+      _contextTargetTokens += Random().nextInt(12000) + 3000;
+      _startContextAnimation();
     });
 
     // Mock AI response after random 3-10 seconds
@@ -448,6 +459,8 @@ class _ChatPanelState extends State<ChatPanel> {
           content: _mockResponses[_mockResponseIndex % _mockResponses.length],
         ));
         _mockResponseIndex++;
+        _contextTargetTokens += Random().nextInt(12000) + 3000;
+        _startContextAnimation();
       });
     });
   }
@@ -481,6 +494,33 @@ class _ChatPanelState extends State<ChatPanel> {
         _toastMessage = 'Unknown command: $commandName';
       });
     }
+  }
+
+  void _startContextAnimation() {
+    if (_contextAnimTimer != null) return; // already running
+    _lastContextTick = DateTime.now();
+    _contextAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      final now = DateTime.now();
+      final deltaTime = now.difference(_lastContextTick!).inMilliseconds / 1000.0;
+      _lastContextTick = now;
+
+      final diff = _contextTargetTokens - _contextDisplayTokens;
+      if (diff.abs() < 0.5) {
+        _contextDisplayTokens = _contextTargetTokens.toDouble();
+        _stopContextAnimation();
+        setState(() {});
+        return;
+      }
+
+      _contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
+      setState(() {});
+    });
+  }
+
+  void _stopContextAnimation() {
+    _contextAnimTimer?.cancel();
+    _contextAnimTimer = null;
+    _lastContextTick = null;
   }
 
   void _dismissToast() {
@@ -627,8 +667,38 @@ class _ChatPanelState extends State<ChatPanel> {
       child: Row(
         children: [
           modelButton,
+          Expanded(child: SizedBox()),
+          _buildContextBar(),
         ],
       ),
+    );
+  }
+
+  Component _buildContextBar() {
+    const barWidth = 8;
+    final fillRatio = _contextDisplayTokens / _contextMaxTokens;
+    final filledCount = (fillRatio * barWidth).floor().clamp(0, barWidth);
+    final displayInt = _contextDisplayTokens.round();
+
+    final barCells = <Component>[];
+    for (int i = 0; i < barWidth; i++) {
+      if (i < filledCount) {
+        barCells.add(Text('█', style: TextStyle(color: Color.fromRGB(120, 80, 200))));
+      } else {
+        barCells.add(Text('░', style: TextStyle(color: Color.fromRGB(50, 50, 70))));
+      }
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(children: barCells),
+        SizedBox(width: 1),
+        Text(
+          '$displayInt/${_contextMaxTokens}',
+          style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+        ),
+      ],
     );
   }
 
