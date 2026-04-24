@@ -6,6 +6,7 @@ import '../models/slash_command.dart';
 import '../commands/registry.dart';
 import 'button.dart';
 import 'toast.dart';
+import 'bg_progress_bar.dart';
 
 enum _OverlayMode { off, command, parameter }
 
@@ -678,15 +679,12 @@ class _ChatPanelState extends State<ChatPanel> {
     final fillRatio = (_contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final displayInt = _contextDisplayTokens.round();
 
-    return SizedBox(
+    return BgProgressBar(
+      value: fillRatio,
       width: 20,
-      child: ProgressBar(
-        value: fillRatio,
-        label: '$displayInt / $_contextMaxTokens',
-        valueColor: Color.fromRGB(120, 80, 200),
-        backgroundColor: Color.fromRGB(50, 50, 70),
-        borderStyle: ProgressBarBorderStyle.bold,
-      ),
+      label: '$displayInt / $_contextMaxTokens',
+      fillColor: Color.fromRGB(120, 80, 200),
+      emptyColor: Color.fromRGB(30, 25, 50),
     );
   }
 
