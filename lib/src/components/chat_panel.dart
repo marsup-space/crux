@@ -1008,7 +1008,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
   double _fadeIntensity = 1.0;
 
   static const double _bandWidth = 8.0;
-  static const int _fadeTicks = 8; // ~480ms at 60ms per tick
+  static const int _fadeTicks = 20; // ~1.2s at 60ms per tick
 
   static const Color _baseBg = Color.fromRGB(25, 20, 45);
   static const Color _peakBg = Color.fromRGB(120, 80, 200);
