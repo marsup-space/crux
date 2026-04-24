@@ -1055,7 +1055,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
       _phase += 1.5; // faster sweep
-      final sweepEnd = component.label.length + _bandWidth;
+      final sweepEnd = component.label.length + 2 + _bandWidth; // +2 for padding cells
       if (_phase > sweepEnd) {
         _phase = -_bandWidth;
       }
@@ -1113,12 +1113,17 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
     }
 
     // Animated/fading mode: flowing gradient sweep + periodic text flash
-    // Pulse: brief periodic flash using sin² — peaks every 0.33s (2π/5.5ticks ≈ 1.142)
+    // Render every cell (left padding, label chars, right padding) with
+    // individual sweep-based background color so gradient covers the whole area.
+    // Pulse: brief periodic flash using sin² — peaks every 0.33s
     final pulseValue = pow(max(0.0, sin(_tickCount * 1.142)), 2.0).toDouble();
 
-    final chars = <Component>[];
-    for (int i = 0; i < btn.label.length; i++) {
-      final distance = (i - _phase).abs();
+    final labelLength = btn.label.length;
+    final cells = <Component>[];
+
+    // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1, right pad = labelLength
+    for (int sweepPos = -1; sweepPos <= labelLength; sweepPos++) {
+      final distance = (sweepPos - _phase).abs();
       double sweepEase;
       if (distance < _bandWidth) {
         final t = 1.0 - distance / _bandWidth;
@@ -1127,24 +1132,30 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
         sweepEase = 0.0;
       }
 
-      // Background: only sweep (localized flowing gradient)
-      // Foreground: sweep + periodic pulse flash on top
       final bgBrightness = sweepEase * _fadeIntensity;
-      final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
-
       final bg = Color.lerp(_baseBg, _peakBg, bgBrightness)!;
-      final fg = Color.lerp(_baseFg, _flashFg, fgBrightness)!;
 
-      chars.add(
-        Text(
-          btn.label[i],
-          style: TextStyle(
-            color: fg,
-            backgroundColor: bg,
-            fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
+      if (sweepPos >= 0 && sweepPos < labelLength) {
+        // Label character — also has foreground with pulse flash
+        final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
+        final fg = Color.lerp(_baseFg, _flashFg, fgBrightness)!;
+
+        cells.add(
+          Text(
+            btn.label[sweepPos],
+            style: TextStyle(
+              color: fg,
+              backgroundColor: bg,
+              fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        // Padding cell — space with sweep-based background only
+        cells.add(
+          Text(' ', style: TextStyle(backgroundColor: bg)),
+        );
+      }
     }
 
     return MouseRegion(
@@ -1154,11 +1165,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
       child: GestureDetector(
         onTap: btn.onPressed,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          color: _baseBg,
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: Row(children: chars),
-        ),
+        child: Row(children: cells),
       ),
     );
   }
