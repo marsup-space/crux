@@ -58,6 +58,15 @@ class _ChatPanelState extends State<ChatPanel> {
   static const double _contextLerpSpeed = 6.0;
   bool _contextBarHovered = false;
 
+  static const Set<String> _imageModels = {
+    'openai/gpt-4o',
+    'openai/gpt-4',
+    'anthropic/claude-3.5',
+    'anthropic/claude-3',
+    'google/gemini-pro',
+    'google/gemini-flash',
+  };
+
   static const List<String> _mockResponses = [
     "I've analyzed your request. Here's my approach...",
     "That's an interesting question. Let me break it down for you.",
@@ -669,6 +678,8 @@ class _ChatPanelState extends State<ChatPanel> {
       child: Row(
         children: [
           modelButton,
+          if (_imageModels.contains(_currentModel))
+            Text(' 🖼', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
           SizedBox(width: 1),
           _buildContextBar(),
         ],
