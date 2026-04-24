@@ -309,6 +309,59 @@ class _ChatPanelState extends State<ChatPanel> {
     return false;
   }
 
+  void _onHoverCommand(int index) {
+    setState(() {
+      _selectedCommandIndex = index;
+      _commandScrollOffset = _computeScrollOffset(
+        index,
+        _commandScrollOffset,
+        _maxVisibleItems,
+      );
+    });
+  }
+
+  void _onTapCommand(int index) {
+    final selected = _filteredCommands[index];
+    textController.text = selected.name + ' ';
+    textController.selection =
+        TextSelection.collapsed(offset: textController.text.length);
+  }
+
+  void _onHoverSuggestion(int index) {
+    setState(() {
+      _selectedSuggestionIndex = index;
+      _suggestionScrollOffset = _computeScrollOffset(
+        index,
+        _suggestionScrollOffset,
+        _maxVisibleItems,
+      );
+    });
+  }
+
+  void _onTapSuggestion(int index) {
+    final selected = _filteredSuggestions[index];
+    final trimmed =
+        textController.text.replaceFirst(RegExp(r'^\s+'), '');
+    final commandAndSpace = _activeCommand!.name + ' ';
+    final restOfText =
+        trimmed.substring(_activeCommand!.name.length + 1);
+
+    String prefix;
+    if (restOfText.isEmpty || restOfText.endsWith(' ')) {
+      prefix = trimmed;
+    } else {
+      final lastSpace = restOfText.lastIndexOf(' ');
+      prefix = lastSpace >= 0
+          ? commandAndSpace + restOfText.substring(0, lastSpace + 1)
+          : commandAndSpace;
+    }
+
+    final newText = prefix + selected.value + ' ';
+    textController.text = newText;
+    textController.selection =
+        TextSelection.collapsed(offset: newText.length);
+  }
+
   void _sendMessage() {
     final text = textController.text.trim();
     if (text.isEmpty) return;
@@ -364,6 +417,8 @@ class _ChatPanelState extends State<ChatPanel> {
           selectedIndex: _selectedCommandIndex,
           scrollOffset: _commandScrollOffset,
           maxVisible: _maxVisibleItems,
+          onHover: _onHoverCommand,
+          onTap: _onTapCommand,
         ),
       );
     } else if (_overlayMode == _OverlayMode.parameter &&
@@ -378,6 +433,8 @@ class _ChatPanelState extends State<ChatPanel> {
           scrollOffset: _suggestionScrollOffset,
           maxVisible: _maxVisibleItems,
           headerLabel: paramLabel,
+          onHover: _onHoverSuggestion,
+          onTap: _onTapSuggestion,
         ),
       );
     }
@@ -432,7 +489,6 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onModelButtonPressed() {
-    final current = textController.text;
     final newText = '/model ';
     textController.text = newText;
     textController.selection =
@@ -476,12 +532,16 @@ class _CommandOverlay extends StatelessComponent {
   final int selectedIndex;
   final int scrollOffset;
   final int maxVisible;
+  final void Function(int)? onHover;
+  final void Function(int)? onTap;
 
   const _CommandOverlay({
     required this.commands,
     required this.selectedIndex,
     required this.scrollOffset,
     required this.maxVisible,
+    this.onHover,
+    this.onTap,
   });
 
   @override
@@ -521,7 +581,17 @@ class _CommandOverlay extends StatelessComponent {
       final actualIndex = scrollOffset + i;
       final isSelected = actualIndex == selectedIndex;
 
-      rows.add(_buildCommandRow(cmd, isSelected));
+      rows.add(
+        MouseRegion(
+          onEnter: (_) => onHover?.call(actualIndex),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => onTap?.call(actualIndex),
+            behavior: HitTestBehavior.opaque,
+            child: _buildCommandRow(cmd, isSelected),
+          ),
+        ),
+      );
     }
 
     return Container(
@@ -584,6 +654,8 @@ class _SuggestionOverlay extends StatelessComponent {
   final int scrollOffset;
   final int maxVisible;
   final String headerLabel;
+  final void Function(int)? onHover;
+  final void Function(int)? onTap;
 
   const _SuggestionOverlay({
     required this.suggestions,
@@ -591,6 +663,8 @@ class _SuggestionOverlay extends StatelessComponent {
     required this.scrollOffset,
     required this.maxVisible,
     required this.headerLabel,
+    this.onHover,
+    this.onTap,
   });
 
   @override
@@ -629,7 +703,17 @@ class _SuggestionOverlay extends StatelessComponent {
       final actualIndex = scrollOffset + i;
       final isSelected = actualIndex == selectedIndex;
 
-      rows.add(_buildSuggestionRow(suggestion, isSelected));
+      rows.add(
+        MouseRegion(
+          onEnter: (_) => onHover?.call(actualIndex),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => onTap?.call(actualIndex),
+            behavior: HitTestBehavior.opaque,
+            child: _buildSuggestionRow(suggestion, isSelected),
+          ),
+        ),
+      );
     }
 
     return Container(
