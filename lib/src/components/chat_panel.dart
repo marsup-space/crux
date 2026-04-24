@@ -678,15 +678,24 @@ class _ChatPanelState extends State<ChatPanel> {
     final fillRatio = (_contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final displayInt = _contextDisplayTokens.round();
 
-    return SizedBox(
-      width: 20,
-      child: ProgressBar(
-        value: fillRatio,
-        label: '$displayInt / $_contextMaxTokens',
-        valueColor: Color.fromRGB(120, 80, 200),
-        backgroundColor: Color.fromRGB(50, 50, 70),
-        borderStyle: ProgressBarBorderStyle.bold,
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 10,
+          child: ProgressBar(
+            value: fillRatio,
+            valueColor: Color.fromRGB(120, 80, 200),
+            backgroundColor: Color.fromRGB(50, 50, 70),
+            borderStyle: ProgressBarBorderStyle.bold,
+          ),
+        ),
+        SizedBox(width: 1),
+        Text(
+          '$displayInt / $_contextMaxTokens',
+          style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+        ),
+      ],
     );
   }
 
