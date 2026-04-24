@@ -3,6 +3,8 @@ import '../models/message.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
 
+enum _OverlayMode { off, command, parameter }
+
 class ChatPanel extends StatefulComponent {
   const ChatPanel({super.key});
 
@@ -15,15 +17,24 @@ class _ChatPanelState extends State<ChatPanel> {
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  // Command overlay state
-  bool _commandOverlayVisible = false;
+  // Overlay mode
+  _OverlayMode _overlayMode = _OverlayMode.off;
+
+  // Command mode state
+  List<SlashCommand> _filteredCommands = [];
   int _selectedCommandIndex = 0;
   int _commandScrollOffset = 0;
-  List<SlashCommand> _filteredCommands = [];
+
+  // Parameter mode state
+  SlashCommand? _activeCommand;
+  int _currentParamIndex = 0;
+  List<CommandSuggestion> _filteredSuggestions = [];
+  int _selectedSuggestionIndex = 0;
+  int _suggestionScrollOffset = 0;
 
   static const int _infoPanelMinWidth = 100;
   static const double _infoPanelWidth = 28;
-  static const int _maxVisibleCommands = 6;
+  static const int _maxVisibleItems = 6;
 
   @override
   void initState() {
@@ -55,88 +66,242 @@ class _ChatPanelState extends State<ChatPanel> {
     super.dispose();
   }
 
-  /// Listen to text changes to detect slash command input.
-  /// Shows the overlay when `/` is the first non-space character,
-  /// and the command portion has no space (still typing the command name).
+  void _setOverlayOff() {
+    _overlayMode = _OverlayMode.off;
+    _filteredCommands = [];
+    _selectedCommandIndex = 0;
+    _commandScrollOffset = 0;
+    _filteredSuggestions = [];
+    _activeCommand = null;
+    _currentParamIndex = 0;
+    _selectedSuggestionIndex = 0;
+    _suggestionScrollOffset = 0;
+  }
+
+  /// Parse input text to determine overlay mode and update state.
   void _onTextChanged() {
     final text = textController.text;
-    final trimmedLeading = text.replaceFirst(RegExp(r'^\s+'), '');
+    final trimmed = text.replaceFirst(RegExp(r'^\s+'), '');
 
-    if (trimmedLeading.startsWith('/') &&
-        !trimmedLeading.substring(1).contains(' ')) {
-      final prefix = trimmedLeading;
-      _filteredCommands = filterCommands(prefix);
-      _commandOverlayVisible = _filteredCommands.isNotEmpty;
-      // Reset selection and scroll when the filter changes
-      _selectedCommandIndex = 0;
-      _commandScrollOffset = 0;
-    } else {
-      _commandOverlayVisible = false;
-      _filteredCommands = [];
-      _selectedCommandIndex = 0;
-      _commandScrollOffset = 0;
+    if (!trimmed.startsWith('/')) {
+      _setOverlayOff();
+      setState(() {});
+      return;
     }
+
+    final spaceIndex = trimmed.indexOf(' ');
+
+    // No space after / → command mode
+    if (spaceIndex == -1) {
+      _filteredCommands = filterCommands(trimmed);
+      if (_filteredCommands.isEmpty) {
+        _setOverlayOff();
+      } else {
+        _overlayMode = _OverlayMode.command;
+        _selectedCommandIndex = 0;
+        _commandScrollOffset = 0;
+      }
+      setState(() {});
+      return;
+    }
+
+    // Has a space → check for parameter mode
+    final commandName = trimmed.substring(0, spaceIndex);
+    final command = findCommand(commandName);
+
+    if (command == null || !command.hasSuggestionsForParam(0)) {
+      _setOverlayOff();
+      setState(() {});
+      return;
+    }
+
+    // Parse which param we're completing and what's been typed
+    final afterCommand = trimmed.substring(spaceIndex + 1);
+    int paramIndex;
+    String currentInput;
+
+    if (afterCommand.isEmpty) {
+      // Just typed "/command ", starting first param
+      paramIndex = 0;
+      currentInput = '';
+    } else if (afterCommand.endsWith(' ')) {
+      // Completed a param, starting the next one
+      final completedParts = afterCommand
+          .trimRight()
+          .split(' ')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      paramIndex = completedParts.length;
+      currentInput = '';
+    } else {
+      // Currently typing a param value
+      final parts = afterCommand.split(' ');
+      currentInput = parts.last;
+      paramIndex = parts.length - 1;
+    }
+
+    if (!command.hasSuggestionsForParam(paramIndex)) {
+      _setOverlayOff();
+      setState(() {});
+      return;
+    }
+
+    final suggestions = command.suggestionsPerParam[paramIndex];
+    _filteredSuggestions = filterSuggestions(suggestions, currentInput);
+
+    if (_filteredSuggestions.isEmpty) {
+      _setOverlayOff();
+      setState(() {});
+      return;
+    }
+
+    _overlayMode = _OverlayMode.parameter;
+    _activeCommand = command;
+    _currentParamIndex = paramIndex;
+    _selectedSuggestionIndex = 0;
+    _suggestionScrollOffset = 0;
     setState(() {});
   }
 
-  /// Adjust scroll offset so the selected command is always visible.
-  void _ensureSelectedVisible() {
-    if (_selectedCommandIndex < _commandScrollOffset) {
-      _commandScrollOffset = _selectedCommandIndex;
-    } else if (_selectedCommandIndex >= _commandScrollOffset + _maxVisibleCommands) {
-      _commandScrollOffset = _selectedCommandIndex - _maxVisibleCommands + 1;
+  /// Compute scroll offset so the selected item is always visible.
+  int _computeScrollOffset(int selectedIndex, int currentOffset, int maxVisible) {
+    if (selectedIndex < currentOffset) return selectedIndex;
+    if (selectedIndex >= currentOffset + maxVisible) {
+      return selectedIndex - maxVisible + 1;
     }
+    return currentOffset;
   }
 
-  /// Intercept key events when the command overlay is visible.
-  /// Handles arrow navigation, Enter to select, and Escape to dismiss.
+  /// Intercept key events when the overlay is visible.
+  /// Handles arrow navigation, Enter to select, and Escape to dismiss
+  /// in both command and parameter modes.
   bool _handleInputKeyEvent(KeyboardEvent event) {
-    if (!_commandOverlayVisible || _filteredCommands.isEmpty) return false;
+    if (_overlayMode == _OverlayMode.off) return false;
 
-    if (event.logicalKey == LogicalKey.arrowUp) {
-      setState(() {
-        if (_selectedCommandIndex > 0) {
-          _selectedCommandIndex--;
+    // ── Command mode ──
+    if (_overlayMode == _OverlayMode.command) {
+      if (_filteredCommands.isEmpty) return false;
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        setState(() {
+          _selectedCommandIndex = _selectedCommandIndex > 0
+              ? _selectedCommandIndex - 1
+              : _filteredCommands.length - 1;
+          _commandScrollOffset = _computeScrollOffset(
+            _selectedCommandIndex,
+            _commandScrollOffset,
+            _maxVisibleItems,
+          );
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        setState(() {
+          _selectedCommandIndex =
+              _selectedCommandIndex < _filteredCommands.length - 1
+                  ? _selectedCommandIndex + 1
+                  : 0;
+          _commandScrollOffset = _computeScrollOffset(
+            _selectedCommandIndex,
+            _commandScrollOffset,
+            _maxVisibleItems,
+          );
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.enter) {
+        final selected = _filteredCommands[_selectedCommandIndex];
+        textController.text = selected.name + ' ';
+        textController.selection =
+            TextSelection.collapsed(offset: textController.text.length);
+        // _onTextChanged fires and transitions to parameter mode if applicable
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.escape) {
+        textController.clear();
+        _setOverlayOff();
+        setState(() {});
+        return true;
+      }
+
+      return false;
+    }
+
+    // ── Parameter mode ──
+    if (_overlayMode == _OverlayMode.parameter) {
+      if (_filteredSuggestions.isEmpty) return false;
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        setState(() {
+          _selectedSuggestionIndex = _selectedSuggestionIndex > 0
+              ? _selectedSuggestionIndex - 1
+              : _filteredSuggestions.length - 1;
+          _suggestionScrollOffset = _computeScrollOffset(
+            _selectedSuggestionIndex,
+            _suggestionScrollOffset,
+            _maxVisibleItems,
+          );
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        setState(() {
+          _selectedSuggestionIndex =
+              _selectedSuggestionIndex < _filteredSuggestions.length - 1
+                  ? _selectedSuggestionIndex + 1
+                  : 0;
+          _suggestionScrollOffset = _computeScrollOffset(
+            _selectedSuggestionIndex,
+            _suggestionScrollOffset,
+            _maxVisibleItems,
+          );
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.enter) {
+        final selected = _filteredSuggestions[_selectedSuggestionIndex];
+        final trimmed =
+            textController.text.replaceFirst(RegExp(r'^\s+'), '');
+        final commandAndSpace = _activeCommand!.name + ' ';
+        final restOfText =
+            trimmed.substring(_activeCommand!.name.length + 1);
+
+        // Compute the prefix: everything before the currently-typed param value
+        String prefix;
+        if (restOfText.isEmpty || restOfText.endsWith(' ')) {
+          // At the start of a new param (empty or just completed one)
+          prefix = trimmed;
         } else {
-          _selectedCommandIndex = _filteredCommands.length - 1;
+          // Currently typing a param — replace just the incomplete portion
+          final lastSpace = restOfText.lastIndexOf(' ');
+          prefix = lastSpace >= 0
+              ? commandAndSpace + restOfText.substring(0, lastSpace + 1)
+              : commandAndSpace;
         }
-        _ensureSelectedVisible();
-      });
-      return true;
+
+        final newText = prefix + selected.value + ' ';
+        textController.text = newText;
+        textController.selection =
+            TextSelection.collapsed(offset: newText.length);
+        // _onTextChanged fires and transitions to next param or off
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.escape) {
+        // Dismiss overlay but keep the command text in the input
+        _setOverlayOff();
+        setState(() {});
+        return true;
+      }
+
+      return false;
     }
 
-    if (event.logicalKey == LogicalKey.arrowDown) {
-      setState(() {
-        if (_selectedCommandIndex < _filteredCommands.length - 1) {
-          _selectedCommandIndex++;
-        } else {
-          _selectedCommandIndex = 0;
-        }
-        _ensureSelectedVisible();
-      });
-      return true;
-    }
-
-    if (event.logicalKey == LogicalKey.enter) {
-      final selected = _filteredCommands[_selectedCommandIndex];
-      textController.text = selected.name + ' ';
-      textController.selection =
-          TextSelection.collapsed(offset: textController.text.length);
-      // _onTextChanged fires and hides overlay since text now has a space
-      return true;
-    }
-
-    if (event.logicalKey == LogicalKey.escape) {
-      textController.clear();
-      _commandOverlayVisible = false;
-      _filteredCommands = [];
-      _selectedCommandIndex = 0;
-      _commandScrollOffset = 0;
-      setState(() {});
-      return true;
-    }
-
-    // Let character input, backspace, etc. pass through to TextField
     return false;
   }
 
@@ -187,13 +352,28 @@ class _ChatPanelState extends State<ChatPanel> {
 
     children.add(Expanded(child: _buildMessageList()));
 
-    if (_commandOverlayVisible && _filteredCommands.isNotEmpty) {
+    if (_overlayMode == _OverlayMode.command &&
+        _filteredCommands.isNotEmpty) {
       children.add(
         _CommandOverlay(
           commands: _filteredCommands,
           selectedIndex: _selectedCommandIndex,
           scrollOffset: _commandScrollOffset,
-          maxVisible: _maxVisibleCommands,
+          maxVisible: _maxVisibleItems,
+        ),
+      );
+    } else if (_overlayMode == _OverlayMode.parameter &&
+        _filteredSuggestions.isNotEmpty) {
+      final paramLabel = _currentParamIndex < _activeCommand!.params.length
+          ? _activeCommand!.params[_currentParamIndex]
+          : 'value';
+      children.add(
+        _SuggestionOverlay(
+          suggestions: _filteredSuggestions,
+          selectedIndex: _selectedSuggestionIndex,
+          scrollOffset: _suggestionScrollOffset,
+          maxVisible: _maxVisibleItems,
+          headerLabel: paramLabel,
         ),
       );
     }
@@ -279,6 +459,7 @@ class _CommandOverlay extends StatelessComponent {
 
     final rows = <Component>[];
 
+
     // Header row
     rows.add(
       Container(
@@ -351,6 +532,114 @@ class _CommandOverlay extends StatelessComponent {
           Expanded(
             child: Text(
               cmd.description,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.gray,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overlay panel showing parameter autocomplete suggestions.
+/// Appears inline above the input row when the user types a param value
+/// after selecting a command that has suggestions.
+class _SuggestionOverlay extends StatelessComponent {
+  final List<CommandSuggestion> suggestions;
+  final int selectedIndex;
+  final int scrollOffset;
+  final int maxVisible;
+  final String headerLabel;
+
+  const _SuggestionOverlay({
+    required this.suggestions,
+    required this.selectedIndex,
+    required this.scrollOffset,
+    required this.maxVisible,
+    required this.headerLabel,
+  });
+
+  @override
+  Component build(BuildContext context) {
+    final visibleSuggestions =
+        suggestions.skip(scrollOffset).take(maxVisible).toList();
+
+    final rows = <Component>[];
+
+    // Header row with param label
+    rows.add(
+      Container(
+        decoration: BoxDecoration(
+          border: BoxBorder(
+            bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
+          ),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 1),
+        child: Row(
+          children: [
+            Text(
+              headerLabel,
+              style: TextStyle(
+                color: Colors.brightMagenta,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Suggestion rows
+    for (int i = 0; i < visibleSuggestions.length; i++) {
+      final suggestion = visibleSuggestions[i];
+      final actualIndex = scrollOffset + i;
+      final isSelected = actualIndex == selectedIndex;
+
+      rows.add(_buildSuggestionRow(suggestion, isSelected));
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Color.fromRGB(20, 15, 40),
+        border: BoxBorder(
+          top: BorderSide(color: Color.fromRGB(80, 60, 120)),
+          bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+
+  Component _buildSuggestionRow(CommandSuggestion suggestion, bool isSelected) {
+    return Container(
+      decoration: isSelected
+          ? BoxDecoration(color: Color.fromRGB(40, 30, 80))
+          : null,
+      padding: EdgeInsets.symmetric(horizontal: 1),
+      child: Row(
+        children: [
+          Text(
+            isSelected ? '> ' : '  ',
+            style: TextStyle(
+              color: isSelected ? Colors.brightYellow : Colors.gray,
+            ),
+          ),
+          Text(
+            suggestion.value,
+            style: TextStyle(
+              color: isSelected ? Colors.brightCyan : Colors.white,
+              fontWeight: isSelected ? FontWeight.bold : null,
+            ),
+          ),
+          SizedBox(width: 1),
+          Expanded(
+            child: Text(
+              suggestion.description ?? '',
               style: TextStyle(
                 color: isSelected ? Colors.white : Colors.gray,
               ),
