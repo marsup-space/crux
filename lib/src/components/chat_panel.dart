@@ -433,8 +433,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _onModelButtonPressed() {
     final current = textController.text;
-    // If input is empty, start the command; otherwise append with a space separator
-    final newText = current.isEmpty ? '/model' : '/model';
+    final newText = '/model ';
     textController.text = newText;
     textController.selection =
         TextSelection.collapsed(offset: newText.length);
