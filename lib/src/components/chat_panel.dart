@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/slash_command.dart';
@@ -1001,14 +1002,18 @@ class _GlossyModelButton extends StatefulComponent {
 class _GlossyModelButtonState extends State<_GlossyModelButton> {
   Timer? _animTimer;
   double _phase = -_bandWidth;
+  int _tickCount = 0;
   bool _hovered = false;
+  bool _isFadingOut = false;
+  double _fadeIntensity = 1.0;
 
   static const double _bandWidth = 8.0;
+  static const int _fadeTicks = 8; // ~480ms at 60ms per tick
 
   static const Color _baseBg = Color.fromRGB(25, 20, 45);
   static const Color _peakBg = Color.fromRGB(120, 80, 200);
   static const Color _baseFg = Color.fromRGB(120, 100, 160);
-  static const Color _peakFg = Color.fromRGB(200, 230, 255);
+  static const Color _flashFg = Color.fromRGB(255, 255, 255);
 
   @override
   void initState() {
@@ -1022,27 +1027,50 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
   void didUpdateComponent(_GlossyModelButton old) {
     super.didUpdateComponent(old);
     if (component.isAnimating && !old.isAnimating) {
+      _isFadingOut = false;
+      _fadeIntensity = 1.0;
       _startAnimation();
     } else if (!component.isAnimating && old.isAnimating) {
-      _stopAnimation();
+      // Start fade-out instead of immediately stopping
+      _isFadingOut = true;
+      _fadeIntensity = 1.0;
+      // Animation timer keeps running during fade
+      if (_animTimer == null) {
+        _startAnimation();
+      }
     }
   }
 
   @override
   void dispose() {
-    _stopAnimation();
+    _animTimer?.cancel();
+    _animTimer = null;
     super.dispose();
   }
 
   void _startAnimation() {
     _phase = -_bandWidth;
+    _tickCount = 0;
     _animTimer?.cancel();
-    _animTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      _phase += 1.0;
+    _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      _phase += 1.5; // faster sweep
       final sweepEnd = component.label.length + _bandWidth;
       if (_phase > sweepEnd) {
         _phase = -_bandWidth;
       }
+      _tickCount++;
+
+      if (_isFadingOut) {
+        _fadeIntensity -= 1.0 / _fadeTicks;
+        if (_fadeIntensity <= 0) {
+          _fadeIntensity = 0;
+          _isFadingOut = false;
+          _stopAnimation();
+          setState(() {});
+          return;
+        }
+      }
+
       setState(() {});
     });
   }
@@ -1056,7 +1084,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
   Component build(BuildContext context) {
     final btn = component;
 
-    if (!btn.isAnimating) {
+    if (!btn.isAnimating && !_isFadingOut) {
       // Static mode with hover support
       final bgColor = _hovered ? Color.fromRGB(40, 30, 80) : _baseBg;
       final fg = _hovered ? Colors.brightCyan : _baseFg;
@@ -1083,20 +1111,26 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
       );
     }
 
-    // Animated mode: flowing gradient sweep
+    // Animated/fading mode: flowing gradient sweep + periodic text flash
+    // Pulse: brief periodic flash using sin² — peaks every ~1 second
+    final pulseValue = pow(max(0.0, sin(_tickCount * 0.35)), 2.0).toDouble();
+
     final chars = <Component>[];
     for (int i = 0; i < btn.label.length; i++) {
       final distance = (i - _phase).abs();
-      double ease;
+      double sweepEase;
       if (distance < _bandWidth) {
         final t = 1.0 - distance / _bandWidth;
-        ease = t * t * (3 - 2 * t); // smoothstep
+        sweepEase = t * t * (3 - 2 * t); // smoothstep
       } else {
-        ease = 0.0;
+        sweepEase = 0.0;
       }
 
-      final bg = Color.lerp(_baseBg, _peakBg, ease)!;
-      final fg = Color.lerp(_baseFg, _peakFg, ease)!;
+      // Combined brightness: sweep + pulse, modulated by fade intensity
+      final brightness = max(sweepEase, pulseValue) * _fadeIntensity;
+
+      final bg = Color.lerp(_baseBg, _peakBg, brightness)!;
+      final fg = Color.lerp(_baseFg, _flashFg, brightness)!;
 
       chars.add(
         Text(
@@ -1104,7 +1138,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
           style: TextStyle(
             color: fg,
             backgroundColor: bg,
-            fontWeight: ease > 0.3 ? FontWeight.bold : null,
+            fontWeight: brightness > 0.3 ? FontWeight.bold : null,
           ),
         ),
       );
