@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
+import 'button.dart';
 
 enum _OverlayMode { off, command, parameter }
 
@@ -16,6 +17,9 @@ class _ChatPanelState extends State<ChatPanel> {
   final List<Message> messages = [];
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
+
+  // Current model displayed in toolbar
+  String _currentModel = 'openai/gpt-4o';
 
   // Overlay mode
   _OverlayMode _overlayMode = _OverlayMode.off;
@@ -378,6 +382,7 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
+    children.add(_buildToolbar());
     children.add(_buildInputRow());
 
     return Column(children: children);
@@ -405,6 +410,41 @@ class _ChatPanelState extends State<ChatPanel> {
         },
       ),
     );
+  }
+
+  Component _buildToolbar() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      decoration: BoxDecoration(
+        border: BoxBorder(
+          bottom: BorderSide(color: Color.fromRGB(50, 50, 70)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Button(
+            label: _currentModel,
+            onPressed: _onModelButtonPressed,
+            color: Color.fromRGB(120, 100, 160),
+            hoverColor: Colors.brightCyan,
+            bgColor: Color.fromRGB(25, 20, 45),
+            hoverBgColor: Color.fromRGB(40, 30, 80),
+            borderColor: Color.fromRGB(50, 50, 70),
+            hoverBorderColor: Color.fromRGB(100, 80, 160),
+            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onModelButtonPressed() {
+    final current = textController.text;
+    // If input is empty, start the command; otherwise append with a space separator
+    final newText = current.isEmpty ? '/model' : '/model';
+    textController.text = newText;
+    textController.selection =
+        TextSelection.collapsed(offset: newText.length);
   }
 
   Component _buildInputRow() {
