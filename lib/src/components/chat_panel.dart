@@ -332,6 +332,22 @@ class _ChatPanelState extends State<ChatPanel> {
         TextSelection.collapsed(offset: textController.text.length);
   }
 
+  void _onScrollCommand(MouseEvent event) {
+    final maxOffset = _filteredCommands.length > _maxVisibleItems
+        ? _filteredCommands.length - _maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp && _commandScrollOffset > 0) {
+      setState(() {
+        _commandScrollOffset--;
+      });
+    } else if (event.button == MouseButton.wheelDown &&
+        _commandScrollOffset < maxOffset) {
+      setState(() {
+        _commandScrollOffset++;
+      });
+    }
+  }
+
   void _onHoverSuggestion(int index) {
     setState(() {
       _selectedSuggestionIndex = index;
@@ -365,6 +381,23 @@ class _ChatPanelState extends State<ChatPanel> {
     textController.text = newText;
     textController.selection =
         TextSelection.collapsed(offset: newText.length);
+  }
+
+  void _onScrollSuggestion(MouseEvent event) {
+    final maxOffset = _filteredSuggestions.length > _maxVisibleItems
+        ? _filteredSuggestions.length - _maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp &&
+        _suggestionScrollOffset > 0) {
+      setState(() {
+        _suggestionScrollOffset--;
+      });
+    } else if (event.button == MouseButton.wheelDown &&
+        _suggestionScrollOffset < maxOffset) {
+      setState(() {
+        _suggestionScrollOffset++;
+      });
+    }
   }
 
   void _sendMessage() {
@@ -462,13 +495,17 @@ class _ChatPanelState extends State<ChatPanel> {
     if (_overlayMode == _OverlayMode.command &&
         _filteredCommands.isNotEmpty) {
       children.add(
-        _CommandOverlay(
-          commands: _filteredCommands,
-          selectedIndex: _selectedCommandIndex,
-          scrollOffset: _commandScrollOffset,
-          maxVisible: _maxVisibleItems,
-          onHover: _onHoverCommand,
-          onTap: _onTapCommand,
+        MouseRegion(
+          onHover: _onScrollCommand,
+          opaque: false,
+          child: _CommandOverlay(
+            commands: _filteredCommands,
+            selectedIndex: _selectedCommandIndex,
+            scrollOffset: _commandScrollOffset,
+            maxVisible: _maxVisibleItems,
+            onHover: _onHoverCommand,
+            onTap: _onTapCommand,
+          ),
         ),
       );
     } else if (_overlayMode == _OverlayMode.parameter &&
@@ -477,14 +514,18 @@ class _ChatPanelState extends State<ChatPanel> {
           ? _activeCommand!.params[_currentParamIndex]
           : 'value';
       children.add(
-        _SuggestionOverlay(
-          suggestions: _filteredSuggestions,
-          selectedIndex: _selectedSuggestionIndex,
-          scrollOffset: _suggestionScrollOffset,
-          maxVisible: _maxVisibleItems,
-          headerLabel: paramLabel,
-          onHover: _onHoverSuggestion,
-          onTap: _onTapSuggestion,
+        MouseRegion(
+          onHover: _onScrollSuggestion,
+          opaque: false,
+          child: _SuggestionOverlay(
+            suggestions: _filteredSuggestions,
+            selectedIndex: _selectedSuggestionIndex,
+            scrollOffset: _suggestionScrollOffset,
+            maxVisible: _maxVisibleItems,
+            headerLabel: paramLabel,
+            onHover: _onHoverSuggestion,
+            onTap: _onTapSuggestion,
+          ),
         ),
       );
     }
