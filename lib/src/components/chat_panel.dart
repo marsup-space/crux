@@ -1126,11 +1126,13 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
         sweepEase = 0.0;
       }
 
-      // Combined brightness: sweep + pulse, modulated by fade intensity
-      final brightness = max(sweepEase, pulseValue) * _fadeIntensity;
+      // Background: only sweep (localized flowing gradient)
+      // Foreground: sweep + periodic pulse flash on top
+      final bgBrightness = sweepEase * _fadeIntensity;
+      final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
 
-      final bg = Color.lerp(_baseBg, _peakBg, brightness)!;
-      final fg = Color.lerp(_baseFg, _flashFg, brightness)!;
+      final bg = Color.lerp(_baseBg, _peakBg, bgBrightness)!;
+      final fg = Color.lerp(_baseFg, _flashFg, fgBrightness)!;
 
       chars.add(
         Text(
@@ -1138,7 +1140,7 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
           style: TextStyle(
             color: fg,
             backgroundColor: bg,
-            fontWeight: brightness > 0.3 ? FontWeight.bold : null,
+            fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
           ),
         ),
       );
