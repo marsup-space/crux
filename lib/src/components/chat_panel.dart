@@ -659,11 +659,6 @@ class _CommandOverlay extends StatelessComponent {
     // Header row
     rows.add(
       Container(
-        decoration: BoxDecoration(
-          border: BoxBorder(
-            bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
-          ),
-        ),
         padding: EdgeInsets.symmetric(horizontal: 1),
         child: Row(
           children: [
@@ -781,11 +776,6 @@ class _SuggestionOverlay extends StatelessComponent {
     // Header row with param label
     rows.add(
       Container(
-        decoration: BoxDecoration(
-          border: BoxBorder(
-            bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
-          ),
-        ),
         padding: EdgeInsets.symmetric(horizontal: 1),
         child: Row(
           children: [
