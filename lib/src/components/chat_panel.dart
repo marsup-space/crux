@@ -544,6 +544,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     children.add(_buildToolbar());
+    children.add(Divider(color: Color.fromRGB(50, 50, 70), height: 1));
     children.add(_buildInputRow());
 
     return Column(children: children);
@@ -602,11 +603,6 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildInputRow() {
     return Container(
       padding: EdgeInsets.all(1),
-      decoration: BoxDecoration(
-        border: BoxBorder(
-          top: BorderSide(color: Color.fromRGB(50, 50, 70)),
-        ),
-      ),
       child: Row(
         children: [
           Text(
@@ -659,11 +655,6 @@ class _CommandOverlay extends StatelessComponent {
     // Header row
     rows.add(
       Container(
-        decoration: BoxDecoration(
-          border: BoxBorder(
-            bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
-          ),
-        ),
         padding: EdgeInsets.symmetric(horizontal: 1),
         child: Row(
           children: [
@@ -678,6 +669,7 @@ class _CommandOverlay extends StatelessComponent {
         ),
       ),
     );
+    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
 
     // Command rows
     for (int i = 0; i < visibleCommands.length; i++) {
@@ -686,26 +678,25 @@ class _CommandOverlay extends StatelessComponent {
       final isSelected = actualIndex == selectedIndex;
 
       rows.add(
-        MouseRegion(
-          onEnter: (_) => onHover?.call(actualIndex),
-          opaque: false,
-          child: GestureDetector(
-            onTap: () => onTap?.call(actualIndex),
-            behavior: HitTestBehavior.opaque,
-            child: _buildCommandRow(cmd, isSelected),
+          MouseRegion(
+            onEnter: (_) => onHover?.call(actualIndex),
+            opaque: false,
+            child: GestureDetector(
+              onTap: () => onTap?.call(actualIndex),
+              behavior: HitTestBehavior.opaque,
+              child: _buildCommandRow(cmd, isSelected),
+            ),
           ),
-        ),
-      );
-    }
+        );
+      }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Color.fromRGB(20, 15, 40),
-        border: BoxBorder(
-          bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
+      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+
+      return Container(
+        decoration: BoxDecoration(
+          color: Color.fromRGB(20, 15, 40),
         ),
-      ),
-      child: Column(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
       ),
@@ -780,11 +771,6 @@ class _SuggestionOverlay extends StatelessComponent {
     // Header row with param label
     rows.add(
       Container(
-        decoration: BoxDecoration(
-          border: BoxBorder(
-            bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
-          ),
-        ),
         padding: EdgeInsets.symmetric(horizontal: 1),
         child: Row(
           children: [
@@ -799,6 +785,7 @@ class _SuggestionOverlay extends StatelessComponent {
         ),
       ),
     );
+    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
 
     // Suggestion rows
     for (int i = 0; i < visibleSuggestions.length; i++) {
@@ -807,26 +794,26 @@ class _SuggestionOverlay extends StatelessComponent {
       final isSelected = actualIndex == selectedIndex;
 
       rows.add(
-        MouseRegion(
-          onEnter: (_) => onHover?.call(actualIndex),
-          opaque: false,
-          child: GestureDetector(
-            onTap: () => onTap?.call(actualIndex),
-            behavior: HitTestBehavior.opaque,
-            child: _buildSuggestionRow(suggestion, isSelected),
+          MouseRegion(
+            onEnter: (_) => onHover?.call(actualIndex),
+            opaque: false,
+            child: GestureDetector(
+              onTap: () => onTap?.call(actualIndex),
+              behavior: HitTestBehavior.opaque,
+              child: _buildSuggestionRow(suggestion, isSelected),
+            ),
           ),
-        ),
-      );
-    }
+        );
+      }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Color.fromRGB(20, 15, 40),
-        border: BoxBorder(
-          bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
+      rows.insert(0, Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+
+      return Container(
+        decoration: BoxDecoration(
+          color: Color.fromRGB(20, 15, 40),
         ),
-      ),
-      child: Column(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
       ),
@@ -924,31 +911,31 @@ class _MessageBubble extends StatelessComponent {
   Component build(BuildContext context) {
     final isUser = message.role == 'user';
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      decoration: BoxDecoration(
-        border: BoxBorder(
-          bottom: BorderSide(color: Color.fromRGB(40, 40, 60)),
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isUser ? ' You: ' : ' Crux: ',
+                style: TextStyle(
+                  color: isUser ? Colors.brightCyan : Colors.brightMagenta,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  message.content,
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isUser ? ' You: ' : ' Crux: ',
-            style: TextStyle(
-              color: isUser ? Colors.brightCyan : Colors.brightMagenta,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              message.content,
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
+        Divider(color: Color.fromRGB(40, 40, 60), height: 1),
+      ],
     );
   }
 }

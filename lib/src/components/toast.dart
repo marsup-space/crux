@@ -137,25 +137,26 @@ class _ToastState extends State<Toast> {
       onExit: (_) => _onHoverExit(),
       opaque: false,
       child: Container(
-        decoration: BoxDecoration(
-          color: toast.bgColor,
-          border: BoxBorder(
-            top: BorderSide(color: toast.borderColor),
-            bottom: BorderSide(color: toast.borderColor),
-          ),
-        ),
+        color: toast.bgColor,
         padding: toast.padding,
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(' ⚡ ', style: TextStyle(color: Colors.brightYellow)),
-            Expanded(
-              child: Text(toast.message, style: effectiveStyle),
+            Divider(color: toast.borderColor, height: 1),
+            Row(
+              children: [
+                Text(' ⚡ ', style: TextStyle(color: Colors.brightYellow)),
+                Expanded(
+                  child: Text(toast.message, style: effectiveStyle),
+                ),
+                if (_hovered)
+                  Text(
+                    ' (paused)',
+                    style: TextStyle(color: Colors.gray),
+                  ),
+              ],
             ),
-            if (_hovered)
-              Text(
-                ' (paused)',
-                style: TextStyle(color: Colors.gray),
-              ),
+            Divider(color: toast.borderColor, height: 1),
           ],
         ),
       ),
