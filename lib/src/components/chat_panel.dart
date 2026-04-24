@@ -679,7 +679,7 @@ class _ChatPanelState extends State<ChatPanel> {
         children: [
           modelButton,
           if (_imageModels.contains(_currentModel))
-            Text(' 🖼', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
+            Text(' \u{F06E}', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
           SizedBox(width: 1),
           _buildContextBar(),
         ],
