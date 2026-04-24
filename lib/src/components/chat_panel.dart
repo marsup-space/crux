@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/slash_command.dart';
@@ -41,6 +42,19 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _toastVisible = false;
   String _toastMessage = '';
 
+  // Mock chat response state
+  bool _isResponding = false;
+  Timer? _responseTimer;
+  int _mockResponseIndex = 0;
+
+  static const List<String> _mockResponses = [
+    "I've analyzed your request. Here's my approach...",
+    "That's an interesting question. Let me break it down for you.",
+    "I can help with that. Let me outline a solution.",
+    "Good thinking! Here's what I'd suggest...",
+    "Let me consider the options and recommend the best path forward.",
+  ];
+
   static const int _infoPanelMinWidth = 100;
   static const double _infoPanelWidth = 28;
   static const int _maxVisibleItems = 6;
@@ -70,6 +84,7 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void dispose() {
     textController.removeListener(_onTextChanged);
+    _responseTimer?.cancel();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
@@ -418,6 +433,20 @@ class _ChatPanelState extends State<ChatPanel> {
 
     setState(() {
       messages.add(Message(role: 'user', content: text));
+      _isResponding = true;
+    });
+
+    // Mock AI response after 5 seconds
+    _responseTimer?.cancel();
+    _responseTimer = Timer(const Duration(seconds: 5), () {
+      setState(() {
+        _isResponding = false;
+        messages.add(Message(
+          role: 'ai',
+          content: _mockResponses[_mockResponseIndex % _mockResponses.length],
+        ));
+        _mockResponseIndex++;
+      });
     });
   }
 
@@ -575,11 +604,13 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildToolbar() {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          Button(
+    final modelButton = _isResponding
+        ? _GlossyModelButton(
+            label: _currentModel,
+            isAnimating: true,
+            onPressed: _onModelButtonPressed,
+          )
+        : Button(
             label: _currentModel,
             onPressed: _onModelButtonPressed,
             color: Color.fromRGB(120, 100, 160),
@@ -587,7 +618,13 @@ class _ChatPanelState extends State<ChatPanel> {
             bgColor: Color.fromRGB(25, 20, 45),
             hoverBgColor: Color.fromRGB(40, 30, 80),
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          ),
+          );
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [
+          modelButton,
         ],
       ),
     );
@@ -938,6 +975,154 @@ class _MessageBubble extends StatelessComponent {
         ),
         Divider(color: Color.fromRGB(40, 40, 60), height: 1),
       ],
+    );
+  }
+}
+
+/// Animated model button with flowing gradient gloss effect.
+/// When animating, a bright band sweeps across the label background
+/// from left to right continuously, creating a "gloss" effect.
+/// When not animating, renders like a regular Button with hover support.
+class _GlossyModelButton extends StatefulComponent {
+  final String label;
+  final bool isAnimating;
+  final VoidCallback? onPressed;
+
+  const _GlossyModelButton({
+    required this.label,
+    required this.isAnimating,
+    this.onPressed,
+  });
+
+  @override
+  State<_GlossyModelButton> createState() => _GlossyModelButtonState();
+}
+
+class _GlossyModelButtonState extends State<_GlossyModelButton> {
+  Timer? _animTimer;
+  double _phase = -_bandWidth;
+  bool _hovered = false;
+
+  static const double _bandWidth = 8.0;
+
+  static const Color _baseBg = Color.fromRGB(25, 20, 45);
+  static const Color _peakBg = Color.fromRGB(120, 80, 200);
+  static const Color _baseFg = Color.fromRGB(120, 100, 160);
+  static const Color _peakFg = Color.fromRGB(200, 230, 255);
+
+  @override
+  void initState() {
+    super.initState();
+    if (component.isAnimating) {
+      _startAnimation();
+    }
+  }
+
+  @override
+  void didUpdateComponent(_GlossyModelButton old) {
+    super.didUpdateComponent(old);
+    if (component.isAnimating && !old.isAnimating) {
+      _startAnimation();
+    } else if (!component.isAnimating && old.isAnimating) {
+      _stopAnimation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopAnimation();
+    super.dispose();
+  }
+
+  void _startAnimation() {
+    _phase = -_bandWidth;
+    _animTimer?.cancel();
+    _animTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      _phase += 1.0;
+      final sweepEnd = component.label.length + _bandWidth;
+      if (_phase > sweepEnd) {
+        _phase = -_bandWidth;
+      }
+      setState(() {});
+    });
+  }
+
+  void _stopAnimation() {
+    _animTimer?.cancel();
+    _animTimer = null;
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final btn = component;
+
+    if (!btn.isAnimating) {
+      // Static mode with hover support
+      final bgColor = _hovered ? Color.fromRGB(40, 30, 80) : _baseBg;
+      final fg = _hovered ? Colors.brightCyan : _baseFg;
+
+      return MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        opaque: false,
+        child: GestureDetector(
+          onTap: btn.onPressed,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            color: bgColor,
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Text(
+              btn.label,
+              style: TextStyle(
+                color: fg,
+                fontWeight: _hovered ? FontWeight.bold : null,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Animated mode: flowing gradient sweep
+    final chars = <Component>[];
+    for (int i = 0; i < btn.label.length; i++) {
+      final distance = (i - _phase).abs();
+      double ease;
+      if (distance < _bandWidth) {
+        final t = 1.0 - distance / _bandWidth;
+        ease = t * t * (3 - 2 * t); // smoothstep
+      } else {
+        ease = 0.0;
+      }
+
+      final bg = Color.lerp(_baseBg, _peakBg, ease)!;
+      final fg = Color.lerp(_baseFg, _peakFg, ease)!;
+
+      chars.add(
+        Text(
+          btn.label[i],
+          style: TextStyle(
+            color: fg,
+            backgroundColor: bg,
+            fontWeight: ease > 0.3 ? FontWeight.bold : null,
+          ),
+        ),
+      );
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      opaque: false,
+      child: GestureDetector(
+        onTap: btn.onPressed,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: _baseBg,
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Row(children: chars),
+        ),
+      ),
     );
   }
 }
