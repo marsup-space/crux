@@ -1112,8 +1112,8 @@ class _GlossyModelButtonState extends State<_GlossyModelButton> {
     }
 
     // Animated/fading mode: flowing gradient sweep + periodic text flash
-    // Pulse: brief periodic flash using sin² — peaks every ~1 second
-    final pulseValue = pow(max(0.0, sin(_tickCount * 0.35)), 2.0).toDouble();
+    // Pulse: brief periodic flash using sin² — peaks every 0.33s (2π/5.5ticks ≈ 1.142)
+    final pulseValue = pow(max(0.0, sin(_tickCount * 1.142)), 2.0).toDouble();
 
     final chars = <Component>[];
     for (int i = 0; i < btn.label.length; i++) {
