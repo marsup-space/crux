@@ -38,6 +38,10 @@ const List<SlashCommand> slashCommands = [
     description: 'Clear the chat log',
   ),
   SlashCommand(
+    name: '/compact',
+    description: 'Compact the context window',
+  ),
+  SlashCommand(
     name: '/help',
     description: 'Show help information',
     params: ['topic'],

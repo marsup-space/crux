@@ -56,6 +56,7 @@ class _ChatPanelState extends State<ChatPanel> {
   Timer? _contextAnimTimer;
   DateTime? _lastContextTick;
   static const double _contextLerpSpeed = 6.0;
+  bool _contextBarHovered = false;
 
   static const List<String> _mockResponses = [
     "I've analyzed your request. Here's my approach...",
@@ -678,14 +679,41 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildContextBar() {
     final fillRatio = (_contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final displayInt = _contextDisplayTokens.round();
+    final labelText = _contextBarHovered ? 'Compact' : '$displayInt / $_contextMaxTokens';
 
-    return BgProgressBar(
+    final bar = BgProgressBar(
       value: fillRatio,
       width: 20,
-      label: '$displayInt / $_contextMaxTokens',
-      fillColor: Color.fromRGB(120, 80, 200),
+      label: labelText,
+      fillColor: _contextBarHovered
+          ? Color.fromRGB(100, 180, 255)
+          : Color.fromRGB(120, 80, 200),
       emptyColor: Color.fromRGB(30, 25, 50),
+      labelFillFg: _contextBarHovered
+          ? Color.fromRGB(20, 15, 40)
+          : Color.fromRGB(25, 20, 45),
+      labelEmptyFg: _contextBarHovered
+          ? Color.fromRGB(220, 240, 255)
+          : Color.fromRGB(200, 180, 255),
     );
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _contextBarHovered = true),
+      onExit: (_) => setState(() => _contextBarHovered = false),
+      opaque: false,
+      child: GestureDetector(
+        onTap: _onCompactButtonPressed,
+        behavior: HitTestBehavior.opaque,
+        child: bar,
+      ),
+    );
+  }
+
+  void _onCompactButtonPressed() {
+    final newText = '/compact ';
+    textController.text = newText;
+    textController.selection =
+        TextSelection.collapsed(offset: newText.length);
   }
 
   void _onModelButtonPressed() {
