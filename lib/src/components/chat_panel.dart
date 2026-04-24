@@ -652,6 +652,8 @@ class _CommandOverlay extends StatelessComponent {
     final rows = <Component>[];
 
 
+    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+
     // Header row
     rows.add(
       Container(
