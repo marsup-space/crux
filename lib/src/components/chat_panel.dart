@@ -3,6 +3,7 @@ import '../models/message.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
 import 'button.dart';
+import 'toast.dart';
 
 enum _OverlayMode { off, command, parameter }
 
@@ -35,6 +36,10 @@ class _ChatPanelState extends State<ChatPanel> {
   List<CommandSuggestion> _filteredSuggestions = [];
   int _selectedSuggestionIndex = 0;
   int _suggestionScrollOffset = 0;
+
+  // Toast state
+  bool _toastVisible = false;
+  String _toastMessage = '';
 
   static const int _infoPanelMinWidth = 100;
   static const double _infoPanelWidth = 28;
@@ -366,10 +371,55 @@ class _ChatPanelState extends State<ChatPanel> {
     final text = textController.text.trim();
     if (text.isEmpty) return;
 
+    textController.clear();
+
+    // Slash commands are not added to chat log
+    if (text.startsWith('/')) {
+      _executeCommand(text);
+      return;
+    }
+
     setState(() {
       messages.add(Message(role: 'user', content: text));
     });
-    textController.clear();
+  }
+
+  void _executeCommand(String text) {
+    final parts = text.split(' ');
+    final commandName = parts[0];
+    final command = findCommand(commandName);
+
+    if (commandName == '/model') {
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        setState(() {
+          _currentModel = parts[1];
+          _toastVisible = true;
+          _toastMessage = 'Model switched to ${parts[1]}';
+        });
+      } else {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = 'Usage: /model <name>';
+        });
+      }
+    } else if (command != null) {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = '$commandName — not yet implemented';
+      });
+    } else {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = 'Unknown command: $commandName';
+      });
+    }
+  }
+
+  void _dismissToast() {
+    setState(() {
+      _toastVisible = false;
+      _toastMessage = '';
+    });
   }
 
   @override
@@ -435,6 +485,15 @@ class _ChatPanelState extends State<ChatPanel> {
           headerLabel: paramLabel,
           onHover: _onHoverSuggestion,
           onTap: _onTapSuggestion,
+        ),
+      );
+    }
+
+    if (_toastVisible) {
+      children.add(
+        Toast(
+          message: _toastMessage,
+          onDismissed: _dismissToast,
         ),
       );
     }
