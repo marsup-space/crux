@@ -415,11 +415,6 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildToolbar() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      decoration: BoxDecoration(
-        border: BoxBorder(
-          bottom: BorderSide(color: Color.fromRGB(50, 50, 70)),
-        ),
-      ),
       child: Row(
         children: [
           Button(
@@ -429,8 +424,6 @@ class _ChatPanelState extends State<ChatPanel> {
             hoverColor: Colors.brightCyan,
             bgColor: Color.fromRGB(25, 20, 45),
             hoverBgColor: Color.fromRGB(40, 30, 80),
-            borderColor: Color.fromRGB(50, 50, 70),
-            hoverBorderColor: Color.fromRGB(100, 80, 160),
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           ),
         ],

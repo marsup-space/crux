@@ -31,12 +31,6 @@ class Button extends StatefulComponent {
   /// Background color when hovered.
   final Color hoverBgColor;
 
-  /// Border color in the normal state.
-  final Color borderColor;
-
-  /// Border color when hovered.
-  final Color hoverBorderColor;
-
   /// Padding inside the button.
   final EdgeInsets padding;
 
@@ -51,8 +45,6 @@ class Button extends StatefulComponent {
     this.hoverColor = Colors.brightCyan,
     this.bgColor = const Color.fromRGB(25, 20, 45),
     this.hoverBgColor = const Color.fromRGB(40, 30, 80),
-    this.borderColor = const Color.fromRGB(50, 50, 70),
-    this.hoverBorderColor = const Color.fromRGB(100, 80, 160),
     this.padding = const EdgeInsets.symmetric(horizontal: 1),
     this.style,
   });
@@ -69,8 +61,6 @@ class _ButtonState extends State<Button> {
     final btn = component;
     final activeColor = _hovered ? btn.hoverColor : btn.color;
     final activeBgColor = _hovered ? btn.hoverBgColor : btn.bgColor;
-    final activeBorderColor =
-        _hovered ? btn.hoverBorderColor : btn.borderColor;
 
     final effectiveStyle = TextStyle(
       color: activeColor,
@@ -87,12 +77,6 @@ class _ButtonState extends State<Button> {
         child: Container(
           decoration: BoxDecoration(
             color: activeBgColor,
-            border: BoxBorder(
-              top: BorderSide(color: activeBorderColor),
-              bottom: BorderSide(color: activeBorderColor),
-              left: BorderSide(color: activeBorderColor),
-              right: BorderSide(color: activeBorderColor),
-            ),
           ),
           padding: btn.padding,
           child: Text(btn.label, style: effectiveStyle),
