@@ -437,9 +437,10 @@ class _ChatPanelState extends State<ChatPanel> {
       _isResponding = true;
     });
 
-    // Mock AI response after 5 seconds
+    // Mock AI response after random 3-10 seconds
     _responseTimer?.cancel();
-    _responseTimer = Timer(const Duration(seconds: 5), () {
+    final delaySeconds = Random().nextInt(8) + 3;
+    _responseTimer = Timer(Duration(seconds: delaySeconds), () {
       setState(() {
         _isResponding = false;
         messages.add(Message(
