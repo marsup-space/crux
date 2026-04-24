@@ -338,12 +338,14 @@ class _ChatPanelState extends State<ChatPanel> {
         : 0;
     if (event.button == MouseButton.wheelUp && _commandScrollOffset > 0) {
       setState(() {
-        _commandScrollOffset--;
+        _commandScrollOffset =
+            (_commandScrollOffset - _maxVisibleItems).clamp(0, maxOffset);
       });
     } else if (event.button == MouseButton.wheelDown &&
         _commandScrollOffset < maxOffset) {
       setState(() {
-        _commandScrollOffset++;
+        _commandScrollOffset =
+            (_commandScrollOffset + _maxVisibleItems).clamp(0, maxOffset);
       });
     }
   }
@@ -390,12 +392,14 @@ class _ChatPanelState extends State<ChatPanel> {
     if (event.button == MouseButton.wheelUp &&
         _suggestionScrollOffset > 0) {
       setState(() {
-        _suggestionScrollOffset--;
+        _suggestionScrollOffset =
+            (_suggestionScrollOffset - _maxVisibleItems).clamp(0, maxOffset);
       });
     } else if (event.button == MouseButton.wheelDown &&
         _suggestionScrollOffset < maxOffset) {
       setState(() {
-        _suggestionScrollOffset++;
+        _suggestionScrollOffset =
+            (_suggestionScrollOffset + _maxVisibleItems).clamp(0, maxOffset);
       });
     }
   }
