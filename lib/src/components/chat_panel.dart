@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
+import '../models/session.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
 import 'ui/button.dart';
@@ -23,7 +24,11 @@ class ChatPanel extends StatefulComponent {
 }
 
 class _ChatPanelState extends State<ChatPanel> {
-  final List<Message> messages = [];
+  // Session management
+  final List<Session> _sessions = [];
+  int _currentSessionId = 1;
+  int _nextSessionId = 1;
+
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
@@ -53,19 +58,7 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _toastVisible = false;
   String _toastMessage = '';
 
-  // Mock chat response state
-  bool _isResponding = false;
-  Timer? _responseTimer;
-  int _mockResponseIndex = 0;
-
-  // Mock response metrics
-  double _tokPerSec = 0.0;
-  double _ttftMs = 0.0;
-  DateTime? _responseStartTime;
-  double _tokCount = 0.0;
-  Timer? _metricsTimer;
-  double _mockTtftTargetMs = 0.0;
-  double _mockTokRate = 0.0;
+  // (Per-session response state now lives on the Session model)
 
   // Context window progress state
   int _contextTargetTokens = 50000;
@@ -85,12 +78,20 @@ class _ChatPanelState extends State<ChatPanel> {
     'google/gemini-flash',
   };
 
-  static const List<String> _mockResponses = [
+  static const List<String> _mockAiResponses = [
     "I've analyzed your request. Here's my approach...",
     "That's an interesting question. Let me break it down for you.",
     "I can help with that. Let me outline a solution.",
     "Good thinking! Here's what I'd suggest...",
     "Let me consider the options and recommend the best path forward.",
+  ];
+
+  static const List<String> _mockSessionTitles = [
+    'Build a TUI chat app',
+    'Debug rendering pipeline',
+    'Add markdown support',
+    'Refactor command registry',
+    'Implement session switching',
   ];
 
   static const int _infoPanelMinWidth = 100;
@@ -101,33 +102,105 @@ class _ChatPanelState extends State<ChatPanel> {
   void initState() {
     super.initState();
     textController.addListener(_onTextChanged);
-    messages.addAll([
-      Message(
-        role: 'ai',
-        content:
-            "Hello! I'm Crux, your coding assistant. What would you like to work on today?",
-      ),
-      Message(
-        role: 'user',
-        content: 'Can you help me build a TUI application with a chat interface?',
-      ),
-      Message(
-        role: 'ai',
-        content:
-            'Absolutely! I can help you build a TUI chat application using Nocterm. What specific features are you looking for?',
-      ),
-    ]);
+    _createMockSessions();
+  }
+
+  void _createMockSessions() {
+    // Session 1 — idle, already completed conversation
+    final s1 = Session(
+      id: 1,
+      title: _mockSessionTitles[0],
+      status: SessionStatus.idle,
+      messages: [
+        Message(role: 'ai', content: "Hello! I'm Crux, your coding assistant. What would you like to work on today?"),
+        Message(role: 'user', content: 'Can you help me build a TUI application with a chat interface?'),
+        Message(role: 'ai', content: 'Absolutely! I can help you build a TUI chat application using Nocterm. What specific features are you looking for?'),
+      ],
+    );
+    _sessions.add(s1);
+
+    // Session 2 — done (response complete but unread)
+    final s2 = Session(
+      id: 2,
+      title: _mockSessionTitles[1],
+      status: SessionStatus.done,
+      messages: [
+        Message(role: 'user', content: 'The rendering pipeline has a flickering issue on resize.'),
+        Message(role: 'ai', content: "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it."),
+      ],
+    );
+    _sessions.add(s2);
+
+    // Session 3 — needUserAction
+    final s3 = Session(
+      id: 3,
+      title: _mockSessionTitles[2],
+      status: SessionStatus.needUserAction,
+      messages: [
+        Message(role: 'user', content: 'Add markdown support to the chat bubbles.'),
+        Message(role: 'ai', content: "I can add markdown rendering. Should I use a lightweight inline parser or a full CommonMark implementation?"),
+      ],
+    );
+    _sessions.add(s3);
+
+    // Session 4 — idle
+    final s4 = Session(
+      id: 4,
+      title: _mockSessionTitles[3],
+      status: SessionStatus.idle,
+      messages: [
+        Message(role: 'user', content: 'Refactor the command registry to support dynamic suggestions.'),
+      ],
+    );
+    _sessions.add(s4);
+
+    _nextSessionId = 5;
+    _currentSessionId = 1;
   }
 
   @override
   void dispose() {
     textController.removeListener(_onTextChanged);
-    _responseTimer?.cancel();
-    _metricsTimer?.cancel();
+    for (final session in _sessions) {
+      session.responseTimer?.cancel();
+      session.metricsTimer?.cancel();
+    }
     _contextAnimTimer?.cancel();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
+  }
+
+  /// The currently active session.
+  Session get _currentSession =>
+      _sessions.firstWhere((s) => s.id == _currentSessionId);
+
+  /// Find a session by its id, or null if not found.
+  Session? _findSession(int id) {
+    for (final s in _sessions) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  /// Switch to a different session by id.
+  void _switchSession(int id) {
+    final session = _findSession(id);
+    if (session == null) {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = 'Session #$id not found';
+      });
+      return;
+    }
+
+    // Mark "done" session as "idle" when user views it
+    if (session.status == SessionStatus.done) {
+      session.status = SessionStatus.idle;
+    }
+
+    _currentSessionId = id;
+    setState(() {});
   }
 
   void _setOverlayOff() {
@@ -210,7 +283,18 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    final suggestions = command.suggestionsPerParam[paramIndex];
+    // Dynamic suggestions for /session command: list all existing sessions
+    final List<CommandSuggestion> suggestions;
+    if (commandName == '/session' && paramIndex == 0) {
+      suggestions = _sessions
+          .map((s) => CommandSuggestion(
+                value: s.displayId,
+                description: s.title,
+              ))
+          .toList();
+    } else {
+      suggestions = command.suggestionsPerParam[paramIndex];
+    }
     _filteredSuggestions = filterSuggestions(suggestions, currentInput);
 
     if (_filteredSuggestions.isEmpty) {
@@ -471,68 +555,72 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    // Initialize mock metrics
-    _responseStartTime = DateTime.now();
-    _mockTtftTargetMs = (Random().nextInt(2800) + 200).toDouble(); // 200–3000ms
-    _mockTokRate = Random().nextInt(40) + 30.0; // 30–70 tok/s
-    _tokPerSec = 0.0;
-    _ttftMs = 0.0;
-    _tokCount = 0;
+    final session = _currentSession;
+
+    // Initialize per-session mock metrics
+    session.responseStartTime = DateTime.now();
+    session.mockTtftTargetMs = (Random().nextInt(2800) + 200).toDouble(); // 200–3000ms
+    session.mockTokRate = Random().nextInt(40) + 30.0; // 30–70 tok/s
+    session.tokPerSec = 0.0;
+    session.ttftMs = 0.0;
+    session.tokCount = 0.0;
 
     setState(() {
-      messages.add(Message(role: 'user', content: text));
-      _isResponding = true;
+      session.messages.add(Message(role: 'user', content: text));
+      session.isResponding = true;
+      session.status = SessionStatus.running;
       _contextTargetTokens += Random().nextInt(12000) + 3000;
       _startContextAnimation();
     });
 
-    // Start metrics timer to simulate tok/s ramping
-    _metricsTimer?.cancel();
-    _metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      _updateMetrics();
+    // Start per-session metrics timer to simulate tok/s ramping
+    session.metricsTimer?.cancel();
+    session.metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      _updateMetrics(session);
     });
 
-    // Mock AI response after random 3-10 seconds
-    _responseTimer?.cancel();
-    final delaySeconds = Random().nextInt(8) + 3;
-    _responseTimer = Timer(Duration(seconds: delaySeconds), () {
-      _metricsTimer?.cancel();
+    // Mock AI response after random 10-30 seconds (cranked up for multi-session testing)
+    session.responseTimer?.cancel();
+    final delaySeconds = Random().nextInt(21) + 10;
+    session.responseTimer = Timer(Duration(seconds: delaySeconds), () {
+      session.metricsTimer?.cancel();
       setState(() {
-        _isResponding = false;
-        _tokPerSec = _mockTokRate;
-        messages.add(Message(
+        session.isResponding = false;
+        session.tokPerSec = session.mockTokRate;
+        session.messages.add(Message(
           role: 'ai',
-          content: _mockResponses[_mockResponseIndex % _mockResponses.length],
+          content: _mockAiResponses[session.mockResponseIndex % _mockAiResponses.length],
         ));
-        _mockResponseIndex++;
+        session.mockResponseIndex++;
+        session.status = SessionStatus.done;
         _contextTargetTokens += Random().nextInt(12000) + 3000;
         _startContextAnimation();
       });
     });
   }
 
-  void _updateMetrics() {
-    if (_responseStartTime == null) return;
-    final elapsed = DateTime.now().difference(_responseStartTime!).inMicroseconds / 1000.0;
+  void _updateMetrics(Session session) {
+    if (session.responseStartTime == null) return;
+    final elapsed = DateTime.now().difference(session.responseStartTime!).inMicroseconds / 1000.0;
 
-    if (elapsed < _mockTtftTargetMs) {
+    if (elapsed < session.mockTtftTargetMs) {
       // TTFT phase: live counter ticking up at 60fps
-      _ttftMs = elapsed;
+      session.ttftMs = elapsed;
       setState(() {});
       return;
     }
 
     // First token arrived: freeze TTFT at target value
-    _ttftMs = _mockTtftTargetMs;
+    session.ttftMs = session.mockTtftTargetMs;
 
     // Simulate token generation at mock rate (~16ms interval)
-    final elapsedAfterTtft = elapsed - _ttftMs;
-    _tokCount += _mockTokRate * 0.016;
+    final elapsedAfterTtft = elapsed - session.ttftMs;
+    session.tokCount += session.mockTokRate * 0.016;
 
     // Compute live tok/s from actual elapsed time after TTFT
     final elapsedSec = elapsedAfterTtft / 1000.0;
     if (elapsedSec > 0) {
-      _tokPerSec = _tokCount / elapsedSec;
+      session.tokPerSec = session.tokCount / elapsedSec;
     }
 
     setState(() {});
@@ -562,6 +650,24 @@ class _ChatPanelState extends State<ChatPanel> {
         setState(() {
           _toastVisible = true;
           _toastMessage = 'Usage: /model <name>';
+        });
+      }
+    } else if (commandName == '/session') {
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        final idStr = parts[1].replaceFirst('#', '');
+        final id = int.tryParse(idStr);
+        if (id != null) {
+          _switchSession(id);
+        } else {
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Usage: /session #<id>';
+          });
+        }
+      } else {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = 'Usage: /session #<id>';
         });
       }
     } else if (command != null) {
@@ -631,7 +737,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 ),
                 SizedBox(
                   width: _infoPanelWidth,
-                  child: ExtraInfoPanel(messages: messages),
+                  child: ExtraInfoPanel(sessions: _sessions, currentSessionId: _currentSessionId, onSwitchSession: _switchSession),
                 ),
               ],
             );
@@ -703,7 +809,7 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildMessageList() {
-    if (messages.isEmpty) {
+    if (_currentSession.messages.isEmpty) {
       return Center(
         child: Text(
           'No messages yet.',
@@ -718,16 +824,17 @@ class _ChatPanelState extends State<ChatPanel> {
       child: ListView.builder(
         controller: scrollController,
         padding: EdgeInsets.all(1),
-        itemCount: messages.length,
+        itemCount: _currentSession.messages.length,
         itemBuilder: (context, index) {
-          return MessageBubble(message: messages[index]);
+          return MessageBubble(message: _currentSession.messages[index]);
         },
       ),
     );
   }
 
   Component _buildToolbar() {
-    final modelButton = _isResponding
+    final session = _currentSession;
+    final modelButton = session.isResponding
         ? GlossyModelButton(
             label: _currentModel,
             isAnimating: true,
@@ -754,26 +861,26 @@ class _ChatPanelState extends State<ChatPanel> {
           _buildContextBar(),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           Text(
-            _isResponding
-                ? '${_tokPerSec.toStringAsFixed(1)} tok/s'
-                : _tokPerSec > 0
-                    ? '${_tokPerSec.toStringAsFixed(1)} tok/s'
+            session.isResponding
+                ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
+                : session.tokPerSec > 0
+                    ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
                     : '— tok/s',
             style: TextStyle(
-              color: _isResponding
+              color: session.isResponding
                   ? Color.fromRGB(180, 220, 255)
                   : Color.fromRGB(80, 80, 100),
             ),
           ),
           Text(' ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           Text(
-            _isResponding
-                ? _formatTtft(_ttftMs)
-                : _ttftMs > 0
-                    ? _formatTtft(_ttftMs)
+            session.isResponding
+                ? _formatTtft(session.ttftMs)
+                : session.ttftMs > 0
+                    ? _formatTtft(session.ttftMs)
                     : '—',
             style: TextStyle(
-              color: _isResponding
+              color: session.isResponding
                   ? Color.fromRGB(180, 220, 255)
                   : Color.fromRGB(80, 80, 100),
             ),

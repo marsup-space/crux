@@ -22,14 +22,14 @@ const List<SlashCommand> slashCommands = [
   ),
   SlashCommand(
     name: '/session',
-    description: 'Manage sessions',
-    params: ['action'],
+    description: 'Switch to a session',
+    params: ['id'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'new', description: 'Start a new session'),
-        CommandSuggestion(value: 'list', description: 'List all sessions'),
-        CommandSuggestion(value: 'resume', description: 'Resume a previous session'),
-        CommandSuggestion(value: 'delete', description: 'Delete a session'),
+        CommandSuggestion(value: '#1', description: 'Build a TUI chat app'),
+        CommandSuggestion(value: '#2', description: 'Debug rendering pipeline'),
+        CommandSuggestion(value: '#3', description: 'Add markdown support'),
+        CommandSuggestion(value: '#4', description: 'Refactor command registry'),
       ],
     ],
   ),

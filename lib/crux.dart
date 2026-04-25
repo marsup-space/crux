@@ -1,3 +1,4 @@
+export 'src/models/session.dart';
 export 'src/components/ui/bg_progress_bar.dart';
 export 'src/components/ui/button.dart';
 export 'src/components/ui/glossy_model_button.dart';
