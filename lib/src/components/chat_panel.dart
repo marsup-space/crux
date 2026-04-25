@@ -4,9 +4,14 @@ import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
-import 'button.dart';
-import 'toast.dart';
-import 'bg_progress_bar.dart';
+import 'ui/button.dart';
+import 'ui/toast.dart';
+import 'ui/bg_progress_bar.dart';
+import 'ui/glossy_model_button.dart';
+import 'command_overlay.dart';
+import 'suggestion_overlay.dart';
+import 'extra_info_panel.dart';
+import 'message_bubble.dart';
 
 enum _OverlayMode { off, command, parameter }
 
@@ -52,6 +57,15 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _isResponding = false;
   Timer? _responseTimer;
   int _mockResponseIndex = 0;
+
+  // Mock response metrics
+  double _tokPerSec = 0.0;
+  double _ttftMs = 0.0;
+  DateTime? _responseStartTime;
+  double _tokCount = 0.0;
+  Timer? _metricsTimer;
+  double _mockTtftTargetMs = 0.0;
+  double _mockTokRate = 0.0;
 
   // Context window progress state
   int _contextTargetTokens = 50000;
@@ -109,6 +123,7 @@ class _ChatPanelState extends State<ChatPanel> {
   void dispose() {
     textController.removeListener(_onTextChanged);
     _responseTimer?.cancel();
+    _metricsTimer?.cancel();
     _contextAnimTimer?.cancel();
     scrollController.dispose();
     textController.dispose();
@@ -456,6 +471,14 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
+    // Initialize mock metrics
+    _responseStartTime = DateTime.now();
+    _mockTtftTargetMs = (Random().nextInt(2800) + 200).toDouble(); // 200–3000ms
+    _mockTokRate = Random().nextInt(40) + 30.0; // 30–70 tok/s
+    _tokPerSec = 0.0;
+    _ttftMs = 0.0;
+    _tokCount = 0;
+
     setState(() {
       messages.add(Message(role: 'user', content: text));
       _isResponding = true;
@@ -463,12 +486,20 @@ class _ChatPanelState extends State<ChatPanel> {
       _startContextAnimation();
     });
 
+    // Start metrics timer to simulate tok/s ramping
+    _metricsTimer?.cancel();
+    _metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      _updateMetrics();
+    });
+
     // Mock AI response after random 3-10 seconds
     _responseTimer?.cancel();
     final delaySeconds = Random().nextInt(8) + 3;
     _responseTimer = Timer(Duration(seconds: delaySeconds), () {
+      _metricsTimer?.cancel();
       setState(() {
         _isResponding = false;
+        _tokPerSec = _mockTokRate;
         messages.add(Message(
           role: 'ai',
           content: _mockResponses[_mockResponseIndex % _mockResponses.length],
@@ -478,6 +509,41 @@ class _ChatPanelState extends State<ChatPanel> {
         _startContextAnimation();
       });
     });
+  }
+
+  void _updateMetrics() {
+    if (_responseStartTime == null) return;
+    final elapsed = DateTime.now().difference(_responseStartTime!).inMicroseconds / 1000.0;
+
+    if (elapsed < _mockTtftTargetMs) {
+      // TTFT phase: live counter ticking up at 60fps
+      _ttftMs = elapsed;
+      setState(() {});
+      return;
+    }
+
+    // First token arrived: freeze TTFT at target value
+    _ttftMs = _mockTtftTargetMs;
+
+    // Simulate token generation at mock rate (~16ms interval)
+    final elapsedAfterTtft = elapsed - _ttftMs;
+    _tokCount += _mockTokRate * 0.016;
+
+    // Compute live tok/s from actual elapsed time after TTFT
+    final elapsedSec = elapsedAfterTtft / 1000.0;
+    if (elapsedSec > 0) {
+      _tokPerSec = _tokCount / elapsedSec;
+    }
+
+    setState(() {});
+  }
+
+  String _formatTtft(double ms) {
+    if (ms >= 1000) {
+      final sec = ms / 1000.0;
+      return '${sec.toStringAsFixed(2)}s';
+    }
+    return '${ms.round()}ms';
   }
 
   void _executeCommand(String text) {
@@ -565,7 +631,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 ),
                 SizedBox(
                   width: _infoPanelWidth,
-                  child: _ExtraInfoPanel(messages: messages),
+                  child: ExtraInfoPanel(messages: messages),
                 ),
               ],
             );
@@ -588,7 +654,7 @@ class _ChatPanelState extends State<ChatPanel> {
         MouseRegion(
           onHover: _onScrollCommand,
           opaque: false,
-          child: _CommandOverlay(
+          child: CommandOverlay(
             commands: _filteredCommands,
             selectedIndex: _selectedCommandIndex,
             scrollOffset: _commandScrollOffset,
@@ -607,7 +673,7 @@ class _ChatPanelState extends State<ChatPanel> {
         MouseRegion(
           onHover: _onScrollSuggestion,
           opaque: false,
-          child: _SuggestionOverlay(
+          child: SuggestionOverlay(
             suggestions: _filteredSuggestions,
             selectedIndex: _selectedSuggestionIndex,
             scrollOffset: _suggestionScrollOffset,
@@ -654,7 +720,7 @@ class _ChatPanelState extends State<ChatPanel> {
         padding: EdgeInsets.all(1),
         itemCount: messages.length,
         itemBuilder: (context, index) {
-          return _MessageBubble(message: messages[index]);
+          return MessageBubble(message: messages[index]);
         },
       ),
     );
@@ -662,7 +728,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Component _buildToolbar() {
     final modelButton = _isResponding
-        ? _GlossyModelButton(
+        ? GlossyModelButton(
             label: _currentModel,
             isAnimating: true,
             onPressed: _onModelButtonPressed,
@@ -686,6 +752,32 @@ class _ChatPanelState extends State<ChatPanel> {
             Text('\u{F06E}', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           _buildContextBar(),
+          Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+          Text(
+            _isResponding
+                ? '${_tokPerSec.toStringAsFixed(1)} tok/s'
+                : _tokPerSec > 0
+                    ? '${_tokPerSec.toStringAsFixed(1)} tok/s'
+                    : '— tok/s',
+            style: TextStyle(
+              color: _isResponding
+                  ? Color.fromRGB(180, 220, 255)
+                  : Color.fromRGB(80, 80, 100),
+            ),
+          ),
+          Text(' ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+          Text(
+            _isResponding
+                ? _formatTtft(_ttftMs)
+                : _ttftMs > 0
+                    ? _formatTtft(_ttftMs)
+                    : '—',
+            style: TextStyle(
+              color: _isResponding
+                  ? Color.fromRGB(180, 220, 255)
+                  : Color.fromRGB(80, 80, 100),
+            ),
+          ),
           Expanded(child: SizedBox()),
           _buildLocalModelButton(),
         ],
@@ -780,513 +872,6 @@ class _ChatPanelState extends State<ChatPanel> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Overlay panel showing slash command suggestions.
-/// Appears inline above the input row when the user types a `/` command prefix.
-class _CommandOverlay extends StatelessComponent {
-  final List<SlashCommand> commands;
-  final int selectedIndex;
-  final int scrollOffset;
-  final int maxVisible;
-  final void Function(int)? onHover;
-  final void Function(int)? onTap;
-
-  const _CommandOverlay({
-    required this.commands,
-    required this.selectedIndex,
-    required this.scrollOffset,
-    required this.maxVisible,
-    this.onHover,
-    this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final visibleCommands =
-        commands.skip(scrollOffset).take(maxVisible).toList();
-
-    final rows = <Component>[];
-
-
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-    // Header row
-    rows.add(
-      Container(
-        padding: EdgeInsets.symmetric(horizontal: 1),
-        child: Row(
-          children: [
-            Text(
-              'Commands',
-              style: TextStyle(
-                color: Colors.brightMagenta,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-    // Command rows
-    for (int i = 0; i < visibleCommands.length; i++) {
-      final cmd = visibleCommands[i];
-      final actualIndex = scrollOffset + i;
-      final isSelected = actualIndex == selectedIndex;
-
-      rows.add(
-          MouseRegion(
-            onEnter: (_) => onHover?.call(actualIndex),
-            opaque: false,
-            child: GestureDetector(
-              onTap: () => onTap?.call(actualIndex),
-              behavior: HitTestBehavior.opaque,
-              child: _buildCommandRow(cmd, isSelected),
-            ),
-          ),
-        );
-      }
-
-      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-      return Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGB(20, 15, 40),
-        ),
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: rows,
-      ),
-    );
-  }
-
-  Component _buildCommandRow(SlashCommand cmd, bool isSelected) {
-    return Container(
-      decoration: isSelected
-          ? BoxDecoration(color: Color.fromRGB(40, 30, 80))
-          : null,
-      padding: EdgeInsets.symmetric(horizontal: 1),
-      child: Row(
-        children: [
-          Text(
-            isSelected ? '> ' : '  ',
-            style: TextStyle(
-              color: isSelected ? Colors.brightYellow : Colors.gray,
-            ),
-          ),
-          Text(
-            cmd.displayName,
-            style: TextStyle(
-              color: isSelected ? Colors.brightCyan : Colors.white,
-              fontWeight: isSelected ? FontWeight.bold : null,
-            ),
-          ),
-          SizedBox(width: 1),
-          Expanded(
-            child: Text(
-              cmd.description,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.gray,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Overlay panel showing parameter autocomplete suggestions.
-/// Appears inline above the input row when the user types a param value
-/// after selecting a command that has suggestions.
-class _SuggestionOverlay extends StatelessComponent {
-  final List<CommandSuggestion> suggestions;
-  final int selectedIndex;
-  final int scrollOffset;
-  final int maxVisible;
-  final String headerLabel;
-  final void Function(int)? onHover;
-  final void Function(int)? onTap;
-
-  const _SuggestionOverlay({
-    required this.suggestions,
-    required this.selectedIndex,
-    required this.scrollOffset,
-    required this.maxVisible,
-    required this.headerLabel,
-    this.onHover,
-    this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final visibleSuggestions =
-        suggestions.skip(scrollOffset).take(maxVisible).toList();
-
-    final rows = <Component>[];
-
-    // Header row with param label
-    rows.add(
-      Container(
-        padding: EdgeInsets.symmetric(horizontal: 1),
-        child: Row(
-          children: [
-            Text(
-              headerLabel,
-              style: TextStyle(
-                color: Colors.brightMagenta,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-    // Suggestion rows
-    for (int i = 0; i < visibleSuggestions.length; i++) {
-      final suggestion = visibleSuggestions[i];
-      final actualIndex = scrollOffset + i;
-      final isSelected = actualIndex == selectedIndex;
-
-      rows.add(
-          MouseRegion(
-            onEnter: (_) => onHover?.call(actualIndex),
-            opaque: false,
-            child: GestureDetector(
-              onTap: () => onTap?.call(actualIndex),
-              behavior: HitTestBehavior.opaque,
-              child: _buildSuggestionRow(suggestion, isSelected),
-            ),
-          ),
-        );
-      }
-
-      rows.insert(0, Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-      return Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGB(20, 15, 40),
-        ),
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: rows,
-      ),
-    );
-  }
-
-  Component _buildSuggestionRow(CommandSuggestion suggestion, bool isSelected) {
-    return Container(
-      decoration: isSelected
-          ? BoxDecoration(color: Color.fromRGB(40, 30, 80))
-          : null,
-      padding: EdgeInsets.symmetric(horizontal: 1),
-      child: Row(
-        children: [
-          Text(
-            isSelected ? '> ' : '  ',
-            style: TextStyle(
-              color: isSelected ? Colors.brightYellow : Colors.gray,
-            ),
-          ),
-          Text(
-            suggestion.value,
-            style: TextStyle(
-              color: isSelected ? Colors.brightCyan : Colors.white,
-              fontWeight: isSelected ? FontWeight.bold : null,
-            ),
-          ),
-          SizedBox(width: 1),
-          Expanded(
-            child: Text(
-              suggestion.description ?? '',
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.gray,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ExtraInfoPanel extends StatelessComponent {
-  final List<Message> messages;
-
-  const _ExtraInfoPanel({required this.messages});
-
-  @override
-  Component build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Info',
-            style: TextStyle(
-              color: Colors.brightMagenta,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 1),
-          _buildInfoRow('Messages', '${messages.length}'),
-          _buildInfoRow('Model', 'crux-v1'),
-          _buildInfoRow('Status', 'ready'),
-        ],
-      ),
-    );
-  }
-
-  Component _buildInfoRow(String label, String value) {
-    return Row(
-      children: [
-        Text(
-          '$label ',
-          style: TextStyle(color: Colors.gray),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MessageBubble extends StatelessComponent {
-  final Message message;
-
-  const _MessageBubble({required this.message});
-
-  @override
-  Component build(BuildContext context) {
-    final isUser = message.role == 'user';
-
-    return Column(
-      children: [
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isUser ? ' You: ' : ' Crux: ',
-                style: TextStyle(
-                  color: isUser ? Colors.brightCyan : Colors.brightMagenta,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  message.content,
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Divider(color: Color.fromRGB(40, 40, 60), height: 1),
-      ],
-    );
-  }
-}
-
-/// Animated model button with flowing gradient gloss effect.
-/// When animating, a bright band sweeps across the label background
-/// from left to right continuously, creating a "gloss" effect.
-/// When not animating, renders like a regular Button with hover support.
-class _GlossyModelButton extends StatefulComponent {
-  final String label;
-  final bool isAnimating;
-  final VoidCallback? onPressed;
-
-  const _GlossyModelButton({
-    required this.label,
-    required this.isAnimating,
-    this.onPressed,
-  });
-
-  @override
-  State<_GlossyModelButton> createState() => _GlossyModelButtonState();
-}
-
-class _GlossyModelButtonState extends State<_GlossyModelButton> {
-  Timer? _animTimer;
-  double _phase = -_bandWidth;
-  int _tickCount = 0;
-  bool _hovered = false;
-  bool _isFadingOut = false;
-  double _fadeIntensity = 1.0;
-
-  static const double _bandWidth = 8.0;
-  static const int _fadeTicks = 20; // ~1.2s at 60ms per tick
-
-  static const Color _baseBg = Color.fromRGB(25, 20, 45);
-  static const Color _peakBg = Color.fromRGB(120, 80, 200);
-  static const Color _baseFg = Color.fromRGB(120, 100, 160);
-  static const Color _flashFg = Color.fromRGB(255, 255, 255);
-
-  @override
-  void initState() {
-    super.initState();
-    if (component.isAnimating) {
-      _startAnimation();
-    }
-  }
-
-  @override
-  void didUpdateComponent(_GlossyModelButton old) {
-    super.didUpdateComponent(old);
-    if (component.isAnimating && !old.isAnimating) {
-      _isFadingOut = false;
-      _fadeIntensity = 1.0;
-      _startAnimation();
-    } else if (!component.isAnimating && old.isAnimating) {
-      // Start fade-out instead of immediately stopping
-      _isFadingOut = true;
-      _fadeIntensity = 1.0;
-      // Animation timer keeps running during fade
-      if (_animTimer == null) {
-        _startAnimation();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _animTimer?.cancel();
-    _animTimer = null;
-    super.dispose();
-  }
-
-  void _startAnimation() {
-    _phase = -_bandWidth;
-    _tickCount = 0;
-    _animTimer?.cancel();
-    _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
-      _phase += 1.5; // faster sweep
-      final sweepEnd = component.label.length + 2 + _bandWidth; // +2 for padding cells
-      if (_phase > sweepEnd) {
-        _phase = -_bandWidth;
-      }
-      _tickCount++;
-
-      if (_isFadingOut) {
-        _fadeIntensity -= 1.0 / _fadeTicks;
-        if (_fadeIntensity <= 0) {
-          _fadeIntensity = 0;
-          _isFadingOut = false;
-          _stopAnimation();
-          setState(() {});
-          return;
-        }
-      }
-
-      setState(() {});
-    });
-  }
-
-  void _stopAnimation() {
-    _animTimer?.cancel();
-    _animTimer = null;
-  }
-
-  @override
-  Component build(BuildContext context) {
-    final btn = component;
-
-    if (!btn.isAnimating && !_isFadingOut) {
-      // Static mode with hover support
-      final bgColor = _hovered ? Color.fromRGB(40, 30, 80) : _baseBg;
-      final fg = _hovered ? Colors.brightCyan : _baseFg;
-
-      return MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        opaque: false,
-        child: GestureDetector(
-          onTap: btn.onPressed,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            color: bgColor,
-            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Text(
-              btn.label,
-              style: TextStyle(
-                color: fg,
-                fontWeight: _hovered ? FontWeight.bold : null,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Animated/fading mode: flowing gradient sweep + periodic text flash
-    // Render every cell (left padding, label chars, right padding) with
-    // individual sweep-based background color so gradient covers the whole area.
-    // Pulse: brief periodic flash using sin² — peaks every 0.33s
-    final pulseValue = pow(max(0.0, sin(_tickCount * 1.142)), 2.0).toDouble();
-
-    final labelLength = btn.label.length;
-    final cells = <Component>[];
-
-    // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1, right pad = labelLength
-    for (int sweepPos = -1; sweepPos <= labelLength; sweepPos++) {
-      final distance = (sweepPos - _phase).abs();
-      double sweepEase;
-      if (distance < _bandWidth) {
-        final t = 1.0 - distance / _bandWidth;
-        sweepEase = t * t * (3 - 2 * t); // smoothstep
-      } else {
-        sweepEase = 0.0;
-      }
-
-      final bgBrightness = sweepEase * _fadeIntensity;
-      final bg = Color.lerp(_baseBg, _peakBg, bgBrightness)!;
-
-      if (sweepPos >= 0 && sweepPos < labelLength) {
-        // Label character — also has foreground with pulse flash
-        final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
-        final fg = Color.lerp(_baseFg, _flashFg, fgBrightness)!;
-
-        cells.add(
-          Text(
-            btn.label[sweepPos],
-            style: TextStyle(
-              color: fg,
-              backgroundColor: bg,
-              fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
-            ),
-          ),
-        );
-      } else {
-        // Padding cell — space with sweep-based background only
-        cells.add(
-          Text(' ', style: TextStyle(backgroundColor: bg)),
-        );
-      }
-    }
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      opaque: false,
-      child: GestureDetector(
-        onTap: btn.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: Row(children: cells),
       ),
     );
   }

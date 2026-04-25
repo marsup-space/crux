@@ -1,4 +1,9 @@
-export 'src/components/bg_progress_bar.dart';
-export 'src/components/button.dart';
+export 'src/components/ui/bg_progress_bar.dart';
+export 'src/components/ui/button.dart';
+export 'src/components/ui/glossy_model_button.dart';
+export 'src/components/ui/toast.dart';
 export 'src/components/chat_panel.dart';
-export 'src/components/toast.dart';
+export 'src/components/command_overlay.dart';
+export 'src/components/suggestion_overlay.dart';
+export 'src/components/extra_info_panel.dart';
+export 'src/components/message_bubble.dart';
