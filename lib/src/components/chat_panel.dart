@@ -25,6 +25,10 @@ class _ChatPanelState extends State<ChatPanel> {
   // Current model displayed in toolbar
   String _currentModel = 'openai/gpt-4o';
 
+  // Auxiliary local model
+  static const String _localModel = 'local/llama3';
+  static const String _localModelShortName = 'llama3';
+
   // Overlay mode
   _OverlayMode _overlayMode = _OverlayMode.off;
 
@@ -682,9 +686,31 @@ class _ChatPanelState extends State<ChatPanel> {
             Text('\u{F06E}', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           _buildContextBar(),
+          Expanded(child: SizedBox()),
+          _buildLocalModelButton(),
         ],
       ),
     );
+  }
+
+  Component _buildLocalModelButton() {
+    return Button(
+      label: '\u{F233} $_localModelShortName',
+      onPressed: _onLocalModelButtonPressed,
+      color: Color.fromRGB(120, 100, 160),
+      hoverColor: Colors.brightCyan,
+      bgColor: Color.fromRGB(25, 20, 45),
+      hoverBgColor: Color.fromRGB(40, 30, 80),
+      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+    );
+  }
+
+  void _onLocalModelButtonPressed() {
+    setState(() {
+      _currentModel = _localModel;
+      _toastVisible = true;
+      _toastMessage = 'Model switched to $_localModel';
+    });
   }
 
   Component _buildContextBar() {
