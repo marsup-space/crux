@@ -11,9 +11,15 @@ enum SessionStatus {
 class Session {
   final int id;
   final String title;
+  String model;
   SessionStatus status;
   final List<Message> messages;
   final DateTime createdAt;
+  DateTime lastActivityAt;
+
+  // Per-session context state
+  int contextTargetTokens;
+  double contextDisplayTokens;
 
   // Per-session response state
   bool isResponding;
@@ -30,9 +36,13 @@ class Session {
   Session({
     required this.id,
     required this.title,
+    this.model = 'openai/gpt-4o',
+    this.contextTargetTokens = 50000,
+    this.contextDisplayTokens = 50000.0,
     this.status = SessionStatus.idle,
     List<Message>? messages,
     DateTime? createdAt,
+    DateTime? lastActivityAt,
     this.isResponding = false,
     this.tokPerSec = 0.0,
     this.ttftMs = 0.0,
@@ -41,7 +51,8 @@ class Session {
     this.mockTokRate = 0.0,
     this.mockResponseIndex = 0,
   })  : messages = messages ?? [],
-        createdAt = createdAt ?? DateTime.now();
+        createdAt = createdAt ?? DateTime.now(),
+        lastActivityAt = lastActivityAt ?? DateTime.now();
 
   /// Display string for session ID, e.g. "#1"
   String get displayId => '#$id';

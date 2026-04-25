@@ -32,8 +32,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  // Current model displayed in toolbar
-  String _currentModel = 'openai/gpt-4o';
+
 
   // Auxiliary local model
   static const String _localModel = 'local/llama3';
@@ -60,9 +59,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   // (Per-session response state now lives on the Session model)
 
-  // Context window progress state
-  int _contextTargetTokens = 50000;
-  double _contextDisplayTokens = 50000.0;
+  // Context window progress animation (global, operates on current session)
   static const int _contextMaxTokens = 262144;
   Timer? _contextAnimTimer;
   DateTime? _lastContextTick;
@@ -106,11 +103,15 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _createMockSessions() {
-    // Session 1 — idle, already completed conversation
+    final now = DateTime.now();
+
+    // Session 1 — idle, already completed conversation (most recent activity)
     final s1 = Session(
       id: 1,
       title: _mockSessionTitles[0],
+      model: 'openai/gpt-4o',
       status: SessionStatus.idle,
+      lastActivityAt: now.subtract(Duration(minutes: 2)),
       messages: [
         Message(role: 'ai', content: "Hello! I'm Crux, your coding assistant. What would you like to work on today?"),
         Message(role: 'user', content: 'Can you help me build a TUI application with a chat interface?'),
@@ -119,23 +120,13 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     _sessions.add(s1);
 
-    // Session 2 — done (response complete but unread)
-    final s2 = Session(
-      id: 2,
-      title: _mockSessionTitles[1],
-      status: SessionStatus.done,
-      messages: [
-        Message(role: 'user', content: 'The rendering pipeline has a flickering issue on resize.'),
-        Message(role: 'ai', content: "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it."),
-      ],
-    );
-    _sessions.add(s2);
-
-    // Session 3 — needUserAction
+    // Session 3 — needUserAction (second most recent — needs user input)
     final s3 = Session(
       id: 3,
       title: _mockSessionTitles[2],
+      model: 'google/gemini-pro',
       status: SessionStatus.needUserAction,
+      lastActivityAt: now.subtract(Duration(minutes: 5)),
       messages: [
         Message(role: 'user', content: 'Add markdown support to the chat bubbles.'),
         Message(role: 'ai', content: "I can add markdown rendering. Should I use a lightweight inline parser or a full CommonMark implementation?"),
@@ -143,11 +134,27 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     _sessions.add(s3);
 
-    // Session 4 — idle
+    // Session 2 — done (response complete but unread)
+    final s2 = Session(
+      id: 2,
+      title: _mockSessionTitles[1],
+      model: 'anthropic/claude-3.5',
+      status: SessionStatus.done,
+      lastActivityAt: now.subtract(Duration(minutes: 15)),
+      messages: [
+        Message(role: 'user', content: 'The rendering pipeline has a flickering issue on resize.'),
+        Message(role: 'ai', content: "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it."),
+      ],
+    );
+    _sessions.add(s2);
+
+    // Session 4 — idle (least recently active)
     final s4 = Session(
       id: 4,
       title: _mockSessionTitles[3],
+      model: 'local/llama3',
       status: SessionStatus.idle,
+      lastActivityAt: now.subtract(Duration(hours: 1)),
       messages: [
         Message(role: 'user', content: 'Refactor the command registry to support dynamic suggestions.'),
       ],
@@ -569,7 +576,8 @@ class _ChatPanelState extends State<ChatPanel> {
       session.messages.add(Message(role: 'user', content: text));
       session.isResponding = true;
       session.status = SessionStatus.running;
-      _contextTargetTokens += Random().nextInt(12000) + 3000;
+      session.lastActivityAt = DateTime.now();
+      session.contextTargetTokens += Random().nextInt(12000) + 3000;
       _startContextAnimation();
     });
 
@@ -593,7 +601,8 @@ class _ChatPanelState extends State<ChatPanel> {
         ));
         session.mockResponseIndex++;
         session.status = SessionStatus.done;
-        _contextTargetTokens += Random().nextInt(12000) + 3000;
+        session.lastActivityAt = DateTime.now();
+        session.contextTargetTokens += Random().nextInt(12000) + 3000;
         _startContextAnimation();
       });
     });
@@ -642,7 +651,7 @@ class _ChatPanelState extends State<ChatPanel> {
     if (commandName == '/model') {
       if (parts.length > 1 && parts[1].isNotEmpty) {
         setState(() {
-          _currentModel = parts[1];
+          _currentSession.model = parts[1];
           _toastVisible = true;
           _toastMessage = 'Model switched to ${parts[1]}';
         });
@@ -691,15 +700,16 @@ class _ChatPanelState extends State<ChatPanel> {
       final deltaTime = now.difference(_lastContextTick!).inMilliseconds / 1000.0;
       _lastContextTick = now;
 
-      final diff = _contextTargetTokens - _contextDisplayTokens;
+      final session = _currentSession;
+      final diff = session.contextTargetTokens - session.contextDisplayTokens;
       if (diff.abs() < 0.5) {
-        _contextDisplayTokens = _contextTargetTokens.toDouble();
+        session.contextDisplayTokens = session.contextTargetTokens.toDouble();
         _stopContextAnimation();
         setState(() {});
         return;
       }
 
-      _contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
+      session.contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
       setState(() {});
     });
   }
@@ -836,12 +846,12 @@ class _ChatPanelState extends State<ChatPanel> {
     final session = _currentSession;
     final modelButton = session.isResponding
         ? GlossyModelButton(
-            label: _currentModel,
+            label: _currentSession.model,
             isAnimating: true,
             onPressed: _onModelButtonPressed,
           )
         : Button(
-            label: _currentModel,
+            label: _currentSession.model,
             onPressed: _onModelButtonPressed,
             color: Color.fromRGB(120, 100, 160),
             hoverColor: Colors.brightCyan,
@@ -855,7 +865,7 @@ class _ChatPanelState extends State<ChatPanel> {
       child: Row(
         children: [
           modelButton,
-          if (_imageModels.contains(_currentModel))
+          if (_imageModels.contains(_currentSession.model))
             Text('\u{F06E}', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           _buildContextBar(),
@@ -906,15 +916,16 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _onLocalModelButtonPressed() {
     setState(() {
-      _currentModel = _localModel;
+      _currentSession.model = _localModel;
       _toastVisible = true;
       _toastMessage = 'Model switched to $_localModel';
     });
   }
 
   Component _buildContextBar() {
-    final fillRatio = (_contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
-    final displayInt = _contextDisplayTokens.round();
+    final session = _currentSession;
+    final fillRatio = (session.contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
+    final displayInt = session.contextDisplayTokens.round();
     final labelText = _contextBarHovered ? 'Compact' : '$displayInt / $_contextMaxTokens';
 
     final bar = BgProgressBar(

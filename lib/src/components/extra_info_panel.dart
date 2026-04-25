@@ -1,8 +1,9 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../models/session.dart';
-import 'ui/button.dart';
 
-class ExtraInfoPanel extends StatelessComponent {
+class ExtraInfoPanel extends StatefulComponent {
   final List<Session> sessions;
   final int currentSessionId;
   final void Function(int) onSwitchSession;
@@ -13,7 +14,64 @@ class ExtraInfoPanel extends StatelessComponent {
     required this.onSwitchSession,
   });
 
+  @override
+  State<ExtraInfoPanel> createState() => _ExtraInfoPanelState();
+}
+
+class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
+  Timer? _animTimer;
+  double _phase = 0.0;
+  final Set<int> _hoveredIds = {};
+
   static const int _maxTitleLen = 22;
+  static const double _animStep = 0.3;
+  static const Duration _animInterval = Duration(milliseconds: 50);
+
+  static const Color _prefixDim = Color.fromRGB(60, 60, 80);
+  static const Color _prefixBright = Color.fromRGB(100, 200, 255);
+
+  @override
+  void initState() {
+    super.initState();
+    _startAnimIfNeeded();
+  }
+
+  @override
+  void didUpdateComponent(ExtraInfoPanel old) {
+    super.didUpdateComponent(old);
+    _startAnimIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _animTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _hasRunningSession() {
+    return component.sessions.any((s) => s.status == SessionStatus.running);
+  }
+
+  void _startAnimIfNeeded() {
+    if (_hasRunningSession()) {
+      if (_animTimer == null) {
+        _animTimer = Timer.periodic(_animInterval, (_) {
+          _phase += _animStep;
+          setState(() {});
+        });
+      }
+    } else {
+      _animTimer?.cancel();
+      _animTimer = null;
+      _phase = 0.0;
+    }
+  }
+
+  /// Smooth fade intensity using sine wave, oscillating between 0.0 and 1.0
+  double _fadeIntensity() {
+    final raw = (sin(_phase) + 1.0) / 2.0;
+    return raw;
+  }
 
   String _statusPrefix(SessionStatus status) {
     switch (status) {
@@ -28,8 +86,22 @@ class ExtraInfoPanel extends StatelessComponent {
     }
   }
 
-  Color _statusColor(SessionStatus status, bool isCurrent) {
+  Color _prefixColor(SessionStatus status, bool isCurrent) {
     if (isCurrent) return Colors.brightCyan;
+    switch (status) {
+      case SessionStatus.idle:
+        return Color.fromRGB(120, 100, 160);
+      case SessionStatus.running:
+        return Color.lerp(_prefixDim, _prefixBright, _fadeIntensity())!;
+      case SessionStatus.needUserAction:
+        return Color.fromRGB(255, 200, 50);
+      case SessionStatus.done:
+        return Color.fromRGB(200, 150, 255);
+    }
+  }
+
+  Color _titleColor(SessionStatus status, bool isCurrent, bool isHovered) {
+    if (isCurrent || isHovered) return Colors.brightCyan;
     switch (status) {
       case SessionStatus.idle:
         return Color.fromRGB(120, 100, 160);
@@ -42,10 +114,10 @@ class ExtraInfoPanel extends StatelessComponent {
     }
   }
 
-  Color _statusBgColor(bool isCurrent) {
-    return isCurrent
-        ? Color.fromRGB(40, 30, 80)
-        : Color.fromRGB(25, 20, 45);
+  Color _bgColor(bool isCurrent, bool isHovered) {
+    if (isCurrent) return Color.fromRGB(40, 30, 80);
+    if (isHovered) return Color.fromRGB(40, 30, 80);
+    return Color.fromRGB(25, 20, 45);
   }
 
   String _truncate(String text, int maxLen) {
@@ -55,35 +127,64 @@ class ExtraInfoPanel extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    final panel = component;
     final children = <Component>[];
 
-    // Header showing current session
+    // Header
     children.add(Text(
-      'Sessions #$currentSessionId',
+      'Sessions',
       style: TextStyle(
         color: Colors.brightMagenta,
         fontWeight: FontWeight.bold,
       ),
     ));
-    children.add(SizedBox(height: 1));
     children.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
 
-    // Session buttons
-    for (final session in sessions) {
-      final isCurrent = session.id == currentSessionId;
+    // Sort sessions by latest activity (most recent first)
+    final sorted = List<Session>.from(panel.sessions)
+      ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+
+    // Session rows — prefix and title rendered separately so only the
+    // prefix icon fades for running sessions
+    for (final session in sorted) {
+      final isCurrent = session.id == panel.currentSessionId;
+      final isHovered = _hoveredIds.contains(session.id);
       final prefix = _statusPrefix(session.status);
       final title = _truncate(session.title, _maxTitleLen);
-      final label = '$prefix $title';
 
-      children.add(Button(
-        label: label,
-        onPressed: () => onSwitchSession(session.id),
-        color: _statusColor(session.status, isCurrent),
-        hoverColor: Colors.brightCyan,
-        bgColor: _statusBgColor(isCurrent),
-        hoverBgColor: Color.fromRGB(40, 30, 80),
-        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-      ));
+      children.add(
+        MouseRegion(
+          onEnter: (_) => setState(() => _hoveredIds.add(session.id)),
+          onExit: (_) => setState(() => _hoveredIds.remove(session.id)),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => panel.onSwitchSession(session.id),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              decoration: BoxDecoration(color: _bgColor(isCurrent, isHovered)),
+              padding: EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+              child: Row(
+                children: [
+                  Text(
+                    prefix,
+                    style: TextStyle(
+                      color: _prefixColor(session.status, isCurrent),
+                      fontWeight: isCurrent ? FontWeight.bold : null,
+                    ),
+                  ),
+                  Text(
+                    ' $title',
+                    style: TextStyle(
+                      color: _titleColor(session.status, isCurrent, isHovered),
+                      fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     return Container(
