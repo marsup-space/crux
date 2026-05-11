@@ -1,0 +1,27 @@
+# Anthropic provider configuration
+# Filename serves as the provider name: "anthropic"
+
+type = "anthropic"
+endpoint_url = "https://api.anthropic.com/v1"
+
+[[models]]
+id = "claude-3-5-sonnet-20241022"
+name = "Claude 3.5 Sonnet"
+context_size = 200000
+image_support = true
+thinking = true
+thinking_budget = 10000
+
+[[models]]
+id = "claude-3-5-haiku-20241022"
+name = "Claude 3.5 Haiku"
+context_size = 200000
+image_support = true
+thinking = false
+
+[[models]]
+id = "claude-3-opus-20240229"
+name = "Claude 3 Opus"
+context_size = 200000
+image_support = true
+thinking = false

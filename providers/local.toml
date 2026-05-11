@@ -1,0 +1,20 @@
+# Local provider configuration
+# Filename serves as the provider name: "local"
+# Connects to a local inference server (e.g. llama.cpp, ollama)
+
+type = "openai"
+endpoint_url = "http://localhost:8080/v1"
+
+[[models]]
+id = "llama3"
+name = "Llama 3"
+context_size = 8192
+image_support = false
+thinking = false
+
+[[models]]
+id = "mistral"
+name = "Mistral"
+context_size = 32000
+image_support = false
+thinking = false

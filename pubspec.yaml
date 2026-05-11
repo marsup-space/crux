@@ -9,6 +9,8 @@ environment:
 dependencies:
   nocterm:
     path: nocterm
+  toml: ^0.18.0
 
 dev_dependencies:
   lints: ^6.0.0
+  test: ^1.31.0

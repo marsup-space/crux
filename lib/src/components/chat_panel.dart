@@ -5,16 +5,24 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
+import '../services/provider_service.dart';
 import 'ui/button.dart';
 import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
 import 'ui/glossy_model_button.dart';
+import 'provider_wizard_add.dart';
+import 'provider_wizard_remove.dart';
+import 'provider_wizard_modify.dart';
+import 'provider_wizard_connect.dart';
 import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
 import 'message_bubble.dart';
 
-enum _OverlayMode { off, command, parameter }
+enum _OverlayMode { off, command, parameter, wizard }
+
+/// Which provider wizard subcommand is active.
+enum _ProviderWizardSubcommand { add, remove, modify, connect }
 
 class ChatPanel extends StatefulComponent {
   const ChatPanel({super.key});
@@ -27,12 +35,9 @@ class _ChatPanelState extends State<ChatPanel> {
   // Session management
   final List<Session> _sessions = [];
   int _currentSessionId = 1;
-  int _nextSessionId = 1;
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
-
-
 
   // Auxiliary local model
   static const String _localModel = 'local/llama3';
@@ -56,6 +61,10 @@ class _ChatPanelState extends State<ChatPanel> {
   // Toast state
   bool _toastVisible = false;
   String _toastMessage = '';
+
+  // Provider wizard overlay state
+  final ProviderService _providerService = ProviderService();
+  _ProviderWizardSubcommand? _activeWizardSubcommand;
 
   // (Per-session response state now lives on the Session model)
 
@@ -113,9 +122,21 @@ class _ChatPanelState extends State<ChatPanel> {
       status: SessionStatus.idle,
       lastActivityAt: now.subtract(Duration(minutes: 2)),
       messages: [
-        Message(role: 'ai', content: "Hello! I'm Crux, your coding assistant. What would you like to work on today?"),
-        Message(role: 'user', content: 'Can you help me build a TUI application with a chat interface?'),
-        Message(role: 'ai', content: 'Absolutely! I can help you build a TUI chat application using Nocterm. What specific features are you looking for?'),
+        Message(
+          role: 'ai',
+          content:
+              "Hello! I'm Crux, your coding assistant. What would you like to work on today?",
+        ),
+        Message(
+          role: 'user',
+          content:
+              'Can you help me build a TUI application with a chat interface?',
+        ),
+        Message(
+          role: 'ai',
+          content:
+              'Absolutely! I can help you build a TUI chat application using Nocterm. What specific features are you looking for?',
+        ),
       ],
     );
     _sessions.add(s1);
@@ -128,8 +149,15 @@ class _ChatPanelState extends State<ChatPanel> {
       status: SessionStatus.needUserAction,
       lastActivityAt: now.subtract(Duration(minutes: 5)),
       messages: [
-        Message(role: 'user', content: 'Add markdown support to the chat bubbles.'),
-        Message(role: 'ai', content: "I can add markdown rendering. Should I use a lightweight inline parser or a full CommonMark implementation?"),
+        Message(
+          role: 'user',
+          content: 'Add markdown support to the chat bubbles.',
+        ),
+        Message(
+          role: 'ai',
+          content:
+              "I can add markdown rendering. Should I use a lightweight inline parser or a full CommonMark implementation?",
+        ),
       ],
     );
     _sessions.add(s3);
@@ -142,8 +170,15 @@ class _ChatPanelState extends State<ChatPanel> {
       status: SessionStatus.done,
       lastActivityAt: now.subtract(Duration(minutes: 15)),
       messages: [
-        Message(role: 'user', content: 'The rendering pipeline has a flickering issue on resize.'),
-        Message(role: 'ai', content: "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it."),
+        Message(
+          role: 'user',
+          content: 'The rendering pipeline has a flickering issue on resize.',
+        ),
+        Message(
+          role: 'ai',
+          content:
+              "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it.",
+        ),
       ],
     );
     _sessions.add(s2);
@@ -156,12 +191,15 @@ class _ChatPanelState extends State<ChatPanel> {
       status: SessionStatus.idle,
       lastActivityAt: now.subtract(Duration(hours: 1)),
       messages: [
-        Message(role: 'user', content: 'Refactor the command registry to support dynamic suggestions.'),
+        Message(
+          role: 'user',
+          content:
+              'Refactor the command registry to support dynamic suggestions.',
+        ),
       ],
     );
     _sessions.add(s4);
 
-    _nextSessionId = 5;
     _currentSessionId = 1;
   }
 
@@ -220,10 +258,15 @@ class _ChatPanelState extends State<ChatPanel> {
     _currentParamIndex = 0;
     _selectedSuggestionIndex = 0;
     _suggestionScrollOffset = 0;
+    _activeWizardSubcommand = null;
   }
 
   /// Parse input text to determine overlay mode and update state.
   void _onTextChanged() {
+    // When wizard overlay is active, ignore text changes entirely.
+    // The wizard handles its own input fields; the chat input is hidden.
+    if (_overlayMode == _OverlayMode.wizard) return;
+
     final text = textController.text;
     final trimmed = text.replaceFirst(RegExp(r'^\s+'), '');
 
@@ -294,10 +337,9 @@ class _ChatPanelState extends State<ChatPanel> {
     final List<CommandSuggestion> suggestions;
     if (commandName == '/session' && paramIndex == 0) {
       suggestions = _sessions
-          .map((s) => CommandSuggestion(
-                value: s.displayId,
-                description: s.title,
-              ))
+          .map(
+            (s) => CommandSuggestion(value: s.displayId, description: s.title),
+          )
           .toList();
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
@@ -319,7 +361,11 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   /// Compute scroll offset so the selected item is always visible.
-  int _computeScrollOffset(int selectedIndex, int currentOffset, int maxVisible) {
+  int _computeScrollOffset(
+    int selectedIndex,
+    int currentOffset,
+    int maxVisible,
+  ) {
     if (selectedIndex < currentOffset) return selectedIndex;
     if (selectedIndex >= currentOffset + maxVisible) {
       return selectedIndex - maxVisible + 1;
@@ -332,6 +378,14 @@ class _ChatPanelState extends State<ChatPanel> {
   /// in both command and parameter modes.
   bool _handleInputKeyEvent(KeyboardEvent event) {
     if (_overlayMode == _OverlayMode.off) return false;
+
+    // ── Wizard mode ──
+    // When the wizard overlay is active, consume ALL key events so they
+    // don't leak through to the text input field. The wizard's own
+    // Focusable handles Enter/Escape; other keys are just blocked.
+    if (_overlayMode == _OverlayMode.wizard) {
+      return true;
+    }
 
     // ── Command mode ──
     if (_overlayMode == _OverlayMode.command) {
@@ -355,8 +409,8 @@ class _ChatPanelState extends State<ChatPanel> {
         setState(() {
           _selectedCommandIndex =
               _selectedCommandIndex < _filteredCommands.length - 1
-                  ? _selectedCommandIndex + 1
-                  : 0;
+              ? _selectedCommandIndex + 1
+              : 0;
           _commandScrollOffset = _computeScrollOffset(
             _selectedCommandIndex,
             _commandScrollOffset,
@@ -369,8 +423,9 @@ class _ChatPanelState extends State<ChatPanel> {
       if (event.logicalKey == LogicalKey.enter) {
         final selected = _filteredCommands[_selectedCommandIndex];
         textController.text = selected.name + ' ';
-        textController.selection =
-            TextSelection.collapsed(offset: textController.text.length);
+        textController.selection = TextSelection.collapsed(
+          offset: textController.text.length,
+        );
         // _onTextChanged fires and transitions to parameter mode if applicable
         return true;
       }
@@ -407,8 +462,8 @@ class _ChatPanelState extends State<ChatPanel> {
         setState(() {
           _selectedSuggestionIndex =
               _selectedSuggestionIndex < _filteredSuggestions.length - 1
-                  ? _selectedSuggestionIndex + 1
-                  : 0;
+              ? _selectedSuggestionIndex + 1
+              : 0;
           _suggestionScrollOffset = _computeScrollOffset(
             _selectedSuggestionIndex,
             _suggestionScrollOffset,
@@ -420,11 +475,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
       if (event.logicalKey == LogicalKey.enter) {
         final selected = _filteredSuggestions[_selectedSuggestionIndex];
-        final trimmed =
-            textController.text.replaceFirst(RegExp(r'^\s+'), '');
+        final trimmed = textController.text.replaceFirst(RegExp(r'^\s+'), '');
         final commandAndSpace = _activeCommand!.name + ' ';
-        final restOfText =
-            trimmed.substring(_activeCommand!.name.length + 1);
+        final restOfText = trimmed.substring(_activeCommand!.name.length + 1);
 
         // Compute the prefix: everything before the currently-typed param value
         String prefix;
@@ -441,8 +494,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
         final newText = prefix + selected.value + ' ';
         textController.text = newText;
-        textController.selection =
-            TextSelection.collapsed(offset: newText.length);
+        textController.selection = TextSelection.collapsed(
+          offset: newText.length,
+        );
         // _onTextChanged fires and transitions to next param or off
         return true;
       }
@@ -474,8 +528,9 @@ class _ChatPanelState extends State<ChatPanel> {
   void _onTapCommand(int index) {
     final selected = _filteredCommands[index];
     textController.text = selected.name + ' ';
-    textController.selection =
-        TextSelection.collapsed(offset: textController.text.length);
+    textController.selection = TextSelection.collapsed(
+      offset: textController.text.length,
+    );
   }
 
   void _onScrollCommand(MouseEvent event) {
@@ -484,14 +539,18 @@ class _ChatPanelState extends State<ChatPanel> {
         : 0;
     if (event.button == MouseButton.wheelUp && _commandScrollOffset > 0) {
       setState(() {
-        _commandScrollOffset =
-            (_commandScrollOffset - _maxVisibleItems).clamp(0, maxOffset);
+        _commandScrollOffset = (_commandScrollOffset - _maxVisibleItems).clamp(
+          0,
+          maxOffset,
+        );
       });
     } else if (event.button == MouseButton.wheelDown &&
         _commandScrollOffset < maxOffset) {
       setState(() {
-        _commandScrollOffset =
-            (_commandScrollOffset + _maxVisibleItems).clamp(0, maxOffset);
+        _commandScrollOffset = (_commandScrollOffset + _maxVisibleItems).clamp(
+          0,
+          maxOffset,
+        );
       });
     }
   }
@@ -509,11 +568,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _onTapSuggestion(int index) {
     final selected = _filteredSuggestions[index];
-    final trimmed =
-        textController.text.replaceFirst(RegExp(r'^\s+'), '');
+    final trimmed = textController.text.replaceFirst(RegExp(r'^\s+'), '');
     final commandAndSpace = _activeCommand!.name + ' ';
-    final restOfText =
-        trimmed.substring(_activeCommand!.name.length + 1);
+    final restOfText = trimmed.substring(_activeCommand!.name.length + 1);
 
     String prefix;
     if (restOfText.isEmpty || restOfText.endsWith(' ')) {
@@ -527,30 +584,32 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final newText = prefix + selected.value + ' ';
     textController.text = newText;
-    textController.selection =
-        TextSelection.collapsed(offset: newText.length);
+    textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
   void _onScrollSuggestion(MouseEvent event) {
     final maxOffset = _filteredSuggestions.length > _maxVisibleItems
         ? _filteredSuggestions.length - _maxVisibleItems
         : 0;
-    if (event.button == MouseButton.wheelUp &&
-        _suggestionScrollOffset > 0) {
+    if (event.button == MouseButton.wheelUp && _suggestionScrollOffset > 0) {
       setState(() {
-        _suggestionScrollOffset =
-            (_suggestionScrollOffset - _maxVisibleItems).clamp(0, maxOffset);
+        _suggestionScrollOffset = (_suggestionScrollOffset - _maxVisibleItems)
+            .clamp(0, maxOffset);
       });
     } else if (event.button == MouseButton.wheelDown &&
         _suggestionScrollOffset < maxOffset) {
       setState(() {
-        _suggestionScrollOffset =
-            (_suggestionScrollOffset + _maxVisibleItems).clamp(0, maxOffset);
+        _suggestionScrollOffset = (_suggestionScrollOffset + _maxVisibleItems)
+            .clamp(0, maxOffset);
       });
     }
   }
 
   void _sendMessage() {
+    // When wizard overlay is active, block message sending entirely.
+    // The wizard owns the UI; the chat input row is hidden.
+    if (_overlayMode == _OverlayMode.wizard) return;
+
     final text = textController.text.trim();
     if (text.isEmpty) return;
 
@@ -566,7 +625,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
     // Initialize per-session mock metrics
     session.responseStartTime = DateTime.now();
-    session.mockTtftTargetMs = (Random().nextInt(2800) + 200).toDouble(); // 200–3000ms
+    session.mockTtftTargetMs = (Random().nextInt(2800) + 200)
+        .toDouble(); // 200–3000ms
     session.mockTokRate = Random().nextInt(40) + 30.0; // 30–70 tok/s
     session.tokPerSec = 0.0;
     session.ttftMs = 0.0;
@@ -583,7 +643,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
     // Start per-session metrics timer to simulate tok/s ramping
     session.metricsTimer?.cancel();
-    session.metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+    session.metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (
+      _,
+    ) {
       _updateMetrics(session);
     });
 
@@ -595,10 +657,14 @@ class _ChatPanelState extends State<ChatPanel> {
       setState(() {
         session.isResponding = false;
         session.tokPerSec = session.mockTokRate;
-        session.messages.add(Message(
-          role: 'ai',
-          content: _mockAiResponses[session.mockResponseIndex % _mockAiResponses.length],
-        ));
+        session.messages.add(
+          Message(
+            role: 'ai',
+            content:
+                _mockAiResponses[session.mockResponseIndex %
+                    _mockAiResponses.length],
+          ),
+        );
         session.mockResponseIndex++;
         session.status = SessionStatus.done;
         session.lastActivityAt = DateTime.now();
@@ -610,7 +676,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _updateMetrics(Session session) {
     if (session.responseStartTime == null) return;
-    final elapsed = DateTime.now().difference(session.responseStartTime!).inMicroseconds / 1000.0;
+    final elapsed =
+        DateTime.now().difference(session.responseStartTime!).inMicroseconds /
+        1000.0;
 
     if (elapsed < session.mockTtftTargetMs) {
       // TTFT phase: live counter ticking up at 60fps
@@ -679,6 +747,38 @@ class _ChatPanelState extends State<ChatPanel> {
           _toastMessage = 'Usage: /session #<id>';
         });
       }
+    } else if (commandName == '/provider') {
+      // Launch the provider wizard overlay based on subcommand
+      final subcommand = parts.length > 1 ? parts[1] : '';
+      _ProviderWizardSubcommand? wizardSub;
+      switch (subcommand) {
+        case 'add':
+          wizardSub = _ProviderWizardSubcommand.add;
+          break;
+        case 'remove':
+          wizardSub = _ProviderWizardSubcommand.remove;
+          break;
+        case 'modify':
+          wizardSub = _ProviderWizardSubcommand.modify;
+          break;
+        case 'connect':
+          wizardSub = _ProviderWizardSubcommand.connect;
+          break;
+        default:
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Usage: /provider <add|remove|modify|connect>';
+          });
+          return;
+      }
+      // Initialize provider service if needed, then launch wizard
+      _providerService.initialize().then((_) {
+        setState(() {
+          _overlayMode = _OverlayMode.wizard;
+          _activeWizardSubcommand = wizardSub;
+          _setOverlayOffExceptWizard();
+        });
+      });
     } else if (command != null) {
       setState(() {
         _toastVisible = true;
@@ -692,12 +792,89 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
+  /// Reset overlay state but preserve wizard subcommand.
+  void _setOverlayOffExceptWizard() {
+    _filteredCommands = [];
+    _selectedCommandIndex = 0;
+    _commandScrollOffset = 0;
+    _filteredSuggestions = [];
+    _activeCommand = null;
+    _currentParamIndex = 0;
+    _selectedSuggestionIndex = 0;
+    _suggestionScrollOffset = 0;
+  }
+
+  /// Dismiss the wizard overlay and show a completion toast.
+  void _dismissWizard({String? message}) {
+    setState(() {
+      _overlayMode = _OverlayMode.off;
+      _activeWizardSubcommand = null;
+      if (message != null) {
+        _toastVisible = true;
+        _toastMessage = message;
+      }
+    });
+  }
+
+  /// Build the active provider wizard overlay component.
+  Component _buildWizardOverlay() {
+    final sub = _activeWizardSubcommand;
+    if (sub == null) return const SizedBox();
+
+    final VoidCallback onComplete = () {
+      switch (sub) {
+        case _ProviderWizardSubcommand.add:
+          _dismissWizard(message: '✓ Provider added successfully');
+          break;
+        case _ProviderWizardSubcommand.remove:
+          _dismissWizard(message: '✓ Provider removed successfully');
+          break;
+        case _ProviderWizardSubcommand.modify:
+          _dismissWizard(message: '✓ Provider modified successfully');
+          break;
+        case _ProviderWizardSubcommand.connect:
+          _dismissWizard(message: '✓ Provider connected successfully');
+          break;
+      }
+    };
+
+    final VoidCallback onDismiss = () => _dismissWizard();
+
+    switch (sub) {
+      case _ProviderWizardSubcommand.add:
+        return ProviderWizardAdd(
+          service: _providerService,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        );
+      case _ProviderWizardSubcommand.remove:
+        return ProviderWizardRemove(
+          service: _providerService,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        );
+      case _ProviderWizardSubcommand.modify:
+        return ProviderWizardModify(
+          service: _providerService,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        );
+      case _ProviderWizardSubcommand.connect:
+        return ProviderWizardConnect(
+          service: _providerService,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        );
+    }
+  }
+
   void _startContextAnimation() {
     if (_contextAnimTimer != null) return; // already running
     _lastContextTick = DateTime.now();
     _contextAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       final now = DateTime.now();
-      final deltaTime = now.difference(_lastContextTick!).inMilliseconds / 1000.0;
+      final deltaTime =
+          now.difference(_lastContextTick!).inMilliseconds / 1000.0;
       _lastContextTick = now;
 
       final session = _currentSession;
@@ -747,7 +924,11 @@ class _ChatPanelState extends State<ChatPanel> {
                 ),
                 SizedBox(
                   width: _infoPanelWidth,
-                  child: ExtraInfoPanel(sessions: _sessions, currentSessionId: _currentSessionId, onSwitchSession: _switchSession),
+                  child: ExtraInfoPanel(
+                    sessions: _sessions,
+                    currentSessionId: _currentSessionId,
+                    onSwitchSession: _switchSession,
+                  ),
                 ),
               ],
             );
@@ -762,10 +943,16 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildMainInterface() {
     final children = <Component>[];
 
+    // ── Wizard mode: render wizard overlay exclusively (no input, no toolbar) ──
+    if (_overlayMode == _OverlayMode.wizard) {
+      children.add(Expanded(child: _buildWizardOverlay()));
+      return Column(children: children);
+    }
+
+    // ── Normal mode: message list + command/parameter overlay ──
     children.add(Expanded(child: _buildMessageList()));
 
-    if (_overlayMode == _OverlayMode.command &&
-        _filteredCommands.isNotEmpty) {
+    if (_overlayMode == _OverlayMode.command && _filteredCommands.isNotEmpty) {
       children.add(
         MouseRegion(
           onHover: _onScrollCommand,
@@ -803,12 +990,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     if (_toastVisible) {
-      children.add(
-        Toast(
-          message: _toastMessage,
-          onDismissed: _dismissToast,
-        ),
-      );
+      children.add(Toast(message: _toastMessage, onDismissed: _dismissToast));
     }
 
     children.add(_buildToolbar());
@@ -821,10 +1003,7 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildMessageList() {
     if (_currentSession.messages.isEmpty) {
       return Center(
-        child: Text(
-          'No messages yet.',
-          style: TextStyle(color: Colors.gray),
-        ),
+        child: Text('No messages yet.', style: TextStyle(color: Colors.gray)),
       );
     }
 
@@ -866,7 +1045,10 @@ class _ChatPanelState extends State<ChatPanel> {
         children: [
           modelButton,
           if (_imageModels.contains(_currentSession.model))
-            Text('\u{F06E}', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
+            Text(
+              '\u{F06E}',
+              style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+            ),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           _buildContextBar(),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
@@ -874,8 +1056,8 @@ class _ChatPanelState extends State<ChatPanel> {
             session.isResponding
                 ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
                 : session.tokPerSec > 0
-                    ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
-                    : '— tok/s',
+                ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
+                : '— tok/s',
             style: TextStyle(
               color: session.isResponding
                   ? Color.fromRGB(180, 220, 255)
@@ -887,8 +1069,8 @@ class _ChatPanelState extends State<ChatPanel> {
             session.isResponding
                 ? _formatTtft(session.ttftMs)
                 : session.ttftMs > 0
-                    ? _formatTtft(session.ttftMs)
-                    : '—',
+                ? _formatTtft(session.ttftMs)
+                : '—',
             style: TextStyle(
               color: session.isResponding
                   ? Color.fromRGB(180, 220, 255)
@@ -924,9 +1106,14 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Component _buildContextBar() {
     final session = _currentSession;
-    final fillRatio = (session.contextDisplayTokens / _contextMaxTokens).clamp(0.0, 1.0);
+    final fillRatio = (session.contextDisplayTokens / _contextMaxTokens).clamp(
+      0.0,
+      1.0,
+    );
     final displayInt = session.contextDisplayTokens.round();
-    final labelText = _contextBarHovered ? 'Compact' : '$displayInt / $_contextMaxTokens';
+    final labelText = _contextBarHovered
+        ? 'Compact'
+        : '$displayInt / $_contextMaxTokens';
 
     final bar = BgProgressBar(
       value: fillRatio,
@@ -959,15 +1146,13 @@ class _ChatPanelState extends State<ChatPanel> {
   void _onCompactButtonPressed() {
     final newText = '/compact ';
     textController.text = newText;
-    textController.selection =
-        TextSelection.collapsed(offset: newText.length);
+    textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
   void _onModelButtonPressed() {
     final newText = '/model ';
     textController.text = newText;
-    textController.selection =
-        TextSelection.collapsed(offset: newText.length);
+    textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
   Component _buildInputRow() {
@@ -975,10 +1160,7 @@ class _ChatPanelState extends State<ChatPanel> {
       padding: EdgeInsets.all(1),
       child: Row(
         children: [
-          Text(
-            '> ',
-            style: TextStyle(color: Colors.gray),
-          ),
+          Text('> ', style: TextStyle(color: Colors.gray)),
           Expanded(
             child: TextField(
               controller: textController,

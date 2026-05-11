@@ -1,0 +1,39 @@
+# Google Gemini provider configuration (OpenAI Compatible)
+# Filename serves as the provider name: "google"
+
+type = "openai"
+endpoint_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+[[models]]
+id = "gemini-2.5-pro"
+name = "Gemini 2.5 Pro"
+context_size = 1048576
+image_support = true
+reasoning_effort = "medium"
+thinking = true
+thinking_budget = 8192
+
+[[models]]
+id = "gemini-2.5-flash"
+name = "Gemini 2.5 Flash"
+context_size = 1048576
+image_support = true
+reasoning_effort = "low"
+thinking = false
+
+[[models]]
+id = "gemini-2.0-flash"
+name = "Gemini 2.0 Flash"
+context_size = 1048576
+image_support = true
+thinking = false
+
+# Optional: coding-plan quota configuration.
+# Uncomment to enable quota tracking before expensive model calls.
+[quota]
+api_url = "https://generativelanguage.googleapis.com/v1beta/quota"
+
+[quota.usage]
+"5h" = 500
+"1w" = 2000
+"1m" = 8000

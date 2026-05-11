@@ -99,6 +99,19 @@ const List<SlashCommand> slashCommands = [
       ],
     ],
   ),
+  SlashCommand(
+    name: '/provider',
+    description: 'Manage AI providers (add, remove, modify, connect)',
+    params: ['subcommand'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: 'add', description: 'Add a new provider configuration'),
+        CommandSuggestion(value: 'remove', description: 'Remove an existing provider'),
+        CommandSuggestion(value: 'modify', description: 'Modify provider settings or models'),
+        CommandSuggestion(value: 'connect', description: 'Store an API key for a provider'),
+      ],
+    ],
+  ),
 ];
 
 /// Returns commands whose name starts with the given prefix.
