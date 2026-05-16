@@ -37,6 +37,15 @@ class Button extends StatefulComponent {
   /// Text style applied to the label (color is overridden by hover state).
   final TextStyle? style;
 
+  /// Whether the button is keyboard-focused.
+  final bool focused;
+
+  /// Text color when keyboard-focused.
+  final Color focusColor;
+
+  /// Background color when keyboard-focused.
+  final Color focusBgColor;
+
   const Button({
     super.key,
     required this.label,
@@ -45,6 +54,9 @@ class Button extends StatefulComponent {
     this.hoverColor = Colors.brightCyan,
     this.bgColor = const Color.fromRGB(25, 20, 45),
     this.hoverBgColor = const Color.fromRGB(40, 30, 80),
+    this.focused = false,
+    this.focusColor = Colors.brightCyan,
+    this.focusBgColor = const Color.fromRGB(60, 50, 100),
     this.padding = const EdgeInsets.symmetric(horizontal: 1),
     this.style,
   });
@@ -59,12 +71,12 @@ class _ButtonState extends State<Button> {
   @override
   Component build(BuildContext context) {
     final btn = component;
-    final activeColor = _hovered ? btn.hoverColor : btn.color;
-    final activeBgColor = _hovered ? btn.hoverBgColor : btn.bgColor;
+    final activeColor = _hovered ? btn.hoverColor : btn.focused ? btn.focusColor : btn.color;
+    final activeBgColor = _hovered ? btn.hoverBgColor : btn.focused ? btn.focusBgColor : btn.bgColor;
 
     final effectiveStyle = TextStyle(
       color: activeColor,
-      fontWeight: _hovered ? FontWeight.bold : null,
+      fontWeight: _hovered || btn.focused ? FontWeight.bold : null,
     ).merge(btn.style);
 
     return MouseRegion(
