@@ -10,10 +10,8 @@ import 'ui/button.dart';
 import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
 import 'ui/glossy_model_button.dart';
-import 'provider_wizard_add.dart';
-import 'provider_wizard_remove.dart';
-import 'provider_wizard_modify.dart';
-import 'provider_wizard_connect.dart';
+import 'provider_wizard_builtin.dart';
+import 'provider_wizard_custom.dart';
 import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
@@ -22,7 +20,7 @@ import 'message_bubble.dart';
 enum _OverlayMode { off, command, parameter, wizard }
 
 /// Which provider wizard subcommand is active.
-enum _ProviderWizardSubcommand { add, remove, modify, connect }
+enum _ProviderWizardSubcommand { builtin, custom }
 
 class ChatPanel extends StatefulComponent {
   const ChatPanel({super.key});
@@ -65,6 +63,7 @@ class _ChatPanelState extends State<ChatPanel> {
   // Provider wizard overlay state
   final ProviderService _providerService = ProviderService();
   _ProviderWizardSubcommand? _activeWizardSubcommand;
+  String? _builtinProviderName;
 
   // (Per-session response state now lives on the Session model)
 
@@ -748,37 +747,42 @@ class _ChatPanelState extends State<ChatPanel> {
         });
       }
     } else if (commandName == '/provider') {
-      // Launch the provider wizard overlay based on subcommand
       final subcommand = parts.length > 1 ? parts[1] : '';
-      _ProviderWizardSubcommand? wizardSub;
-      switch (subcommand) {
-        case 'add':
-          wizardSub = _ProviderWizardSubcommand.add;
-          break;
-        case 'remove':
-          wizardSub = _ProviderWizardSubcommand.remove;
-          break;
-        case 'modify':
-          wizardSub = _ProviderWizardSubcommand.modify;
-          break;
-        case 'connect':
-          wizardSub = _ProviderWizardSubcommand.connect;
-          break;
-        default:
+      const builtInProviders = {'deepseek', 'infinigence', 'volcengine'};
+
+      if (builtInProviders.contains(subcommand)) {
+        _providerService.initialize().then((_) {
+          final provider = _providerService.providerByName(subcommand);
+          if (provider == null) {
+            setState(() {
+              _toastVisible = true;
+              _toastMessage = 'Provider "$subcommand" not found in config';
+            });
+            return;
+          }
           setState(() {
-            _toastVisible = true;
-            _toastMessage = 'Usage: /provider <add|remove|modify|connect>';
+            _overlayMode = _OverlayMode.wizard;
+            _activeWizardSubcommand = _ProviderWizardSubcommand.builtin;
+            _builtinProviderName = subcommand;
+            _setOverlayOffExceptWizard();
           });
-          return;
-      }
-      // Initialize provider service if needed, then launch wizard
-      _providerService.initialize().then((_) {
-        setState(() {
-          _overlayMode = _OverlayMode.wizard;
-          _activeWizardSubcommand = wizardSub;
-          _setOverlayOffExceptWizard();
         });
-      });
+      } else if (subcommand == 'custom') {
+        _providerService.initialize().then((_) {
+          setState(() {
+            _overlayMode = _OverlayMode.wizard;
+            _activeWizardSubcommand = _ProviderWizardSubcommand.custom;
+            _builtinProviderName = null;
+            _setOverlayOffExceptWizard();
+          });
+        });
+      } else {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage =
+              'Usage: /provider <deepseek|infinigence|volcengine|custom>';
+        });
+      }
     } else if (command != null) {
       setState(() {
         _toastVisible = true;
@@ -808,7 +812,8 @@ class _ChatPanelState extends State<ChatPanel> {
   void _dismissWizard({String? message}) {
     setState(() {
       _overlayMode = _OverlayMode.off;
-      _activeWizardSubcommand = null;
+    _activeWizardSubcommand = null;
+    _builtinProviderName = null;
       if (message != null) {
         _toastVisible = true;
         _toastMessage = message;
@@ -823,44 +828,25 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final VoidCallback onComplete = () {
       switch (sub) {
-        case _ProviderWizardSubcommand.add:
-          _dismissWizard(message: '✓ Provider added successfully');
-          break;
-        case _ProviderWizardSubcommand.remove:
-          _dismissWizard(message: '✓ Provider removed successfully');
-          break;
-        case _ProviderWizardSubcommand.modify:
-          _dismissWizard(message: '✓ Provider modified successfully');
-          break;
-        case _ProviderWizardSubcommand.connect:
-          _dismissWizard(message: '✓ Provider connected successfully');
-          break;
+        case _ProviderWizardSubcommand.builtin:
+          _dismissWizard(message: '✓ ${_builtinProviderName ?? "Provider"} connected successfully');
+        case _ProviderWizardSubcommand.custom:
+          _dismissWizard(message: '✓ Custom provider updated successfully');
       }
     };
 
     final VoidCallback onDismiss = () => _dismissWizard();
 
     switch (sub) {
-      case _ProviderWizardSubcommand.add:
-        return ProviderWizardAdd(
+      case _ProviderWizardSubcommand.builtin:
+        return ProviderWizardBuiltin(
           service: _providerService,
+          providerName: _builtinProviderName!,
           onComplete: onComplete,
           onDismiss: onDismiss,
         );
-      case _ProviderWizardSubcommand.remove:
-        return ProviderWizardRemove(
-          service: _providerService,
-          onComplete: onComplete,
-          onDismiss: onDismiss,
-        );
-      case _ProviderWizardSubcommand.modify:
-        return ProviderWizardModify(
-          service: _providerService,
-          onComplete: onComplete,
-          onDismiss: onDismiss,
-        );
-      case _ProviderWizardSubcommand.connect:
-        return ProviderWizardConnect(
+      case _ProviderWizardSubcommand.custom:
+        return ProviderWizardCustom(
           service: _providerService,
           onComplete: onComplete,
           onDismiss: onDismiss,
@@ -906,37 +892,33 @@ class _ChatPanelState extends State<ChatPanel> {
 
   @override
   Component build(BuildContext context) {
-    return Focusable(
-      focused: true,
-      onKeyEvent: (_) => false,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
 
-          if (showInfoPanel) {
-            return Row(
-              children: [
-                Expanded(child: _buildMainInterface()),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: Color.fromRGB(50, 50, 70),
+        if (showInfoPanel) {
+          return Row(
+            children: [
+              Expanded(child: _buildMainInterface()),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Color.fromRGB(50, 50, 70),
+              ),
+              SizedBox(
+                width: _infoPanelWidth,
+                child: ExtraInfoPanel(
+                  sessions: _sessions,
+                  currentSessionId: _currentSessionId,
+                  onSwitchSession: _switchSession,
                 ),
-                SizedBox(
-                  width: _infoPanelWidth,
-                  child: ExtraInfoPanel(
-                    sessions: _sessions,
-                    currentSessionId: _currentSessionId,
-                    onSwitchSession: _switchSession,
-                  ),
-                ),
-              ],
-            );
-          }
+              ),
+            ],
+          );
+        }
 
-          return _buildMainInterface();
-        },
-      ),
+        return _buildMainInterface();
+      },
     );
   }
 

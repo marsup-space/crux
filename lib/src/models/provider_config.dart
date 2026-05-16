@@ -28,7 +28,7 @@ extension ProviderTypeParse on ProviderType {
 ///
 /// Models like OpenAI o1/o3 allow the user to trade off compute vs. speed.
 /// `null` (absent in TOML) means the model does not support reasoning effort.
-enum ReasoningEffort { low, medium, high }
+enum ReasoningEffort { low, medium, high, max }
 
 extension ReasoningEffortParse on ReasoningEffort {
   static ReasoningEffort? fromString(String? value) {
@@ -40,6 +40,8 @@ extension ReasoningEffortParse on ReasoningEffort {
         return ReasoningEffort.medium;
       case 'high':
         return ReasoningEffort.high;
+      case 'max':
+        return ReasoningEffort.max;
       default:
         throw FormatException('Unknown reasoning effort: "$value"');
     }
