@@ -381,86 +381,6 @@ class _WizardOverlayState extends State<WizardOverlay> {
   /// Moves back to the previous step, if not on the first step.
   void _goBack() => _effectiveController.back();
 
-  /// Handles key events for the step content [Focusable].
-  ///
-  /// Delegates to [WizardStep.onKeyEvent] first. If the step handler
-  /// returns `false` (or is null), applies navigation defaults:
-  /// - **Enter** → advance (next/confirm)
-  /// - **Escape** → cancel
-  /// - **Ctrl+B / Alt+LeftArrow** → go back
-  bool _handleStepContentKeyEvent(KeyboardEvent event) {
-    final step = component.steps[_currentStep];
-
-    // ── First: delegate to the step's onKeyEvent ──
-    if (step.onKeyEvent != null) {
-      if (step.onKeyEvent!(event)) {
-        return true; // Step consumed the key
-      }
-    }
-
-    // ── Fallback: navigation defaults ──
-    if (event.logicalKey == LogicalKey.enter) {
-      _effectiveController.next();
-      return true;
-    }
-    if (event.logicalKey == LogicalKey.escape) {
-      _effectiveController.cancel();
-      return true;
-    }
-    if ((event.isControlPressed && event.logicalKey == LogicalKey.keyB) ||
-        (event.isAltPressed && event.logicalKey == LogicalKey.arrowLeft)) {
-      _goBack();
-      return true;
-    }
-    return false;
-  }
-
-  /// Handles key events for the footer [Focusable].
-  ///
-  /// Delegates to [WizardStep.onFooterKeyEvent] first. If the step
-  /// handler returns `false` (or is null), applies defaults based on
-  /// the currently focused footer button (read from [footerFocusIndex]):
-  /// - **Enter** → activate the focused button (back/next/cancel)
-  /// - **Escape** → cancel
-  bool _handleFooterKeyEvent(KeyboardEvent event) {
-    final step = component.steps[_currentStep];
-
-    // ── First: delegate to the step's onFooterKeyEvent ──
-    if (step.onFooterKeyEvent != null) {
-      if (step.onFooterKeyEvent!(event)) {
-        return true; // Step consumed the key
-      }
-    }
-
-    // ── Fallback: defaults based on focused button ──
-    final footerIdx = step.footerFocusIndex?.call() ?? FooterFocus.none;
-
-    if (event.logicalKey == LogicalKey.enter) {
-      switch (footerIdx) {
-        case FooterFocus.back:
-          _goBack();
-          return true;
-        case FooterFocus.next:
-          _effectiveController.next();
-          return true;
-        case FooterFocus.cancel:
-          _effectiveController.cancel();
-          return true;
-        default:
-          // No focused footer button — advance as default
-          _effectiveController.next();
-          return true;
-      }
-    }
-
-    if (event.logicalKey == LogicalKey.escape) {
-      _effectiveController.cancel();
-      return true;
-    }
-
-    return false;
-  }
-
   @override
   Component build(BuildContext context) {
     final wizard = component;
@@ -469,21 +389,6 @@ class _WizardOverlayState extends State<WizardOverlay> {
     final isLastStep = _currentStep == steps.length - 1;
     final isFirstStep = _currentStep == 0;
     final isValid = step.validate();
-
-    // ── Read focus state from the step callbacks ──
-    // Following the focus_demo pattern: each Focusable uses
-    // focused: <condition based on shared focus state>.
-    //
-    // stepContentFocused: true when focus is on a non-TextField
-    //   area within the step (toggle, list). False when focus is
-    //   on a TextField or footer button. Defaults to true for
-    //   steps without TextFields.
-    //
-    // footerFocused: true when a footer button is keyboard-focused.
-    //   Derived from footerFocusIndex != FooterFocus.none.
-    final stepContentFocused = step.stepContentFocused?.call() ?? true;
-    final footerIdx = step.footerFocusIndex?.call() ?? FooterFocus.none;
-    final footerFocused = footerIdx != FooterFocus.none;
 
     // ── Step indicator dots ──
     // ● = active, ◉ = completed/past, ○ = future
@@ -518,10 +423,6 @@ class _WizardOverlayState extends State<WizardOverlay> {
     final focusedBtnColor = Colors.brightCyan;
     final focusedBtnBgColor = const Color.fromRGB(60, 50, 100);
     final shortcutStyle = const TextStyle(color: Color.fromRGB(60, 50, 90));
-
-    final isBackFocused = footerIdx == FooterFocus.back;
-    final isNextFocused = footerIdx == FooterFocus.next;
-    final isCancelFocused = footerIdx == FooterFocus.cancel;
 
     // ── Build the wizard layout ──
     // Two sibling Focusables following nocterm's focus_demo pattern:
@@ -567,106 +468,136 @@ class _WizardOverlayState extends State<WizardOverlay> {
           Row(children: indicators),
           const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
 
-          // ── Step content Focusable ──
-          // Focused when focus is on a non-TextField area within
-          // the step (toggle buttons, list items, etc.). NOT focused
-          // when focus is on a TextField or footer button.
-          //
-          // Expanded must be the direct child of Column for layout
-          // to work correctly, so Focusable is inside Expanded.
           Expanded(
-            child: Focusable(
-              focused: stepContentFocused,
-              onKeyEvent: _handleStepContentKeyEvent,
-              child: step.contentBuilder(),
-            ),
+            child: step.contentBuilder(),
           ),
 
           const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
 
-          // ── Footer Focusable ──
-          // Each button is paired with its shortcut hint in a Column,
-          // so hints are aligned directly below their button.
-          // Layout: [Back + Ctrl+B] on left, [Next + Enter] [Cancel + Esc] on right.
-          Focusable(
-            focused: footerFocused,
-            onKeyEvent: _handleFooterKeyEvent,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Left: Back button + Ctrl+B shortcut (hidden on first step)
-                if (!isFirstStep)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Button(
-                        label: isBackFocused ? '▸ Back ◂' : ' Back ',
-                        onPressed: _goBack,
-                        color: isBackFocused ? focusedBtnColor : Colors.white,
-                        hoverColor: Colors.brightCyan,
-                        bgColor: isBackFocused
-                            ? focusedBtnBgColor
-                            : const Color.fromRGB(25, 20, 45),
-                        hoverBgColor: const Color.fromRGB(40, 30, 80),
-                      ),
-                      Text('Ctrl+B', style: shortcutStyle),
-                    ],
-                  )
-                else
-                  const SizedBox(width: 0),
-
-                // Right: Next/Confirm + Enter, Cancel + Esc
-                Row(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (!isFirstStep)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Button(
-                          label: isNextFocused
-                              ? (isLastStep ? '▸ Confirm ◂' : '▸ Next ◂')
-                              : (isLastStep ? ' Confirm ' : ' Next '),
-                          onPressed: isValid ? _goNext : null,
-                          color: isNextFocused
-                              ? focusedBtnColor
-                              : isValid
-                              ? Colors.brightCyan
-                              : Colors.gray,
-                          hoverColor: isValid ? Colors.brightCyan : Colors.gray,
-                          bgColor: isNextFocused
-                              ? focusedBtnBgColor
-                              : isValid
-                              ? const Color.fromRGB(25, 20, 45)
-                              : const Color.fromRGB(20, 15, 40),
-                          hoverBgColor: isValid
-                              ? const Color.fromRGB(40, 30, 80)
-                              : const Color.fromRGB(20, 15, 40),
-                        ),
-                        Text('Enter', style: shortcutStyle),
-                      ],
-                    ),
-                    const SizedBox(width: 2),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Button(
-                          label: isCancelFocused ? '▸ Cancel ◂' : ' Cancel ',
-                          onPressed: wizard.onCancel,
-                          color: isCancelFocused
-                              ? focusedBtnColor
-                              : Colors.gray,
-                          hoverColor: Colors.brightYellow,
-                          bgColor: isCancelFocused
+                    Focusable(
+                      onKeyEvent: (event) {
+                        if (event.logicalKey == LogicalKey.enter) {
+                          _goBack();
+                          return true;
+                        }
+                        if (event.logicalKey == LogicalKey.escape) {
+                          _effectiveController.cancel();
+                          return true;
+                        }
+                        return false;
+                      },
+                      child: Builder(builder: (context) {
+                        final focused = Focus.of(context);
+                        return Button(
+                          label: focused ? '▸ Back ◂' : ' Back ',
+                          onPressed: _goBack,
+                          focused: focused,
+                          color: focused ? focusedBtnColor : Colors.white,
+                          hoverColor: Colors.brightCyan,
+                          bgColor: focused
                               ? focusedBtnBgColor
                               : const Color.fromRGB(25, 20, 45),
                           hoverBgColor: const Color.fromRGB(40, 30, 80),
-                        ),
-                        Text('Esc', style: shortcutStyle),
-                      ],
+                        );
+                      }),
                     ),
+                    Text('Ctrl+B', style: shortcutStyle),
                   ],
-                ),
-              ],
-            ),
+                )
+              else
+                const SizedBox(width: 0),
+
+              Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Focusable(
+                        onKeyEvent: (event) {
+                          if (event.logicalKey == LogicalKey.enter && isValid) {
+                            _goNext();
+                            return true;
+                          }
+                          if (event.logicalKey == LogicalKey.escape) {
+                            _effectiveController.cancel();
+                            return true;
+                          }
+                          return false;
+                        },
+                        child: Builder(builder: (context) {
+                          final focused = Focus.of(context);
+                          return Button(
+                            label: focused
+                                ? (isLastStep ? '▸ Confirm ◂' : '▸ Next ◂')
+                                : (isLastStep ? ' Confirm ' : ' Next '),
+                            onPressed: isValid ? _goNext : null,
+                            focused: focused,
+                            color: focused
+                                ? focusedBtnColor
+                                : isValid
+                                ? Colors.brightCyan
+                                : Colors.gray,
+                            hoverColor: isValid ? Colors.brightCyan : Colors.gray,
+                            bgColor: focused
+                                ? focusedBtnBgColor
+                                : isValid
+                                ? const Color.fromRGB(25, 20, 45)
+                                : const Color.fromRGB(20, 15, 40),
+                            hoverBgColor: isValid
+                                ? const Color.fromRGB(40, 30, 80)
+                                : const Color.fromRGB(20, 15, 40),
+                          );
+                        }),
+                      ),
+                      Text('Enter', style: shortcutStyle),
+                    ],
+                  ),
+                  const SizedBox(width: 2),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Focusable(
+                        onKeyEvent: (event) {
+                          if (event.logicalKey == LogicalKey.enter) {
+                            _effectiveController.cancel();
+                            return true;
+                          }
+                          if (event.logicalKey == LogicalKey.escape) {
+                            _effectiveController.cancel();
+                            return true;
+                          }
+                          return false;
+                        },
+                        child: Builder(builder: (context) {
+                          final focused = Focus.of(context);
+                          return Button(
+                            label: focused ? '▸ Cancel ◂' : ' Cancel ',
+                            onPressed: wizard.onCancel,
+                            focused: focused,
+                            color: focused
+                                ? focusedBtnColor
+                                : Colors.gray,
+                            hoverColor: Colors.brightYellow,
+                            bgColor: focused
+                                ? focusedBtnBgColor
+                                : const Color.fromRGB(25, 20, 45),
+                            hoverBgColor: const Color.fromRGB(40, 30, 80),
+                          );
+                        }),
+                      ),
+                      Text('Esc', style: shortcutStyle),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),

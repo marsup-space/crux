@@ -274,7 +274,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
     if (hasKey) {
       rows.add(
         const Text(
-          '    - API key (removed from providers/.env)',
+          '    - API key (removed from auth.json)',
           style: TextStyle(color: Colors.white),
         ),
       );
@@ -432,7 +432,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       await _service.removeProvider(_selectedProviderName!);
       // Also remove the API key if it exists
       if (_service.getApiKey(_selectedProviderName!) != null) {
-        _service.removeApiKey(_selectedProviderName!);
+        await _service.removeApiKey(_selectedProviderName!);
       }
     }
     component.onComplete?.call();

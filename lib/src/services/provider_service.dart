@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:toml/toml.dart';
 import '../models/provider_config.dart';
 import 'provider_config_loader.dart';
@@ -36,8 +37,9 @@ class DiscoveredModel {
 /// Manages provider configuration files, API key storage, and model discovery.
 ///
 /// [ProviderService] wraps a [ProviderConfigLoader] for reading/writing TOML
-/// configs, persists API keys in a `.env` file alongside the provider configs,
-/// and can query remote endpoints to discover available models.
+/// configs, persists API keys in an `auth.json` file following XDG conventions
+/// (`$XDG_DATA_HOME/crux/auth.json` with `0o600` permissions), and can query
+/// remote endpoints to discover available models.
 ///
 /// Example:
 /// ```dart
@@ -57,23 +59,36 @@ class ProviderService {
   /// The loader that reads and parses TOML provider configs.
   final ProviderConfigLoader _loader;
 
-  /// API keys stored in-memory (process-level environment), keyed by env var
-  /// name (e.g. `CRUX_API_KEY_OPENAI`). Keys survive only for the current
-  /// process lifetime and are NOT written to any file.
+  /// API keys stored in-memory, keyed by env var name (e.g.
+  /// `CRUX_API_KEY_OPENAI`). Populated from [authJsonPath] on initialization
+  /// and updated by [setApiKey] / [removeApiKey].
   final Map<String, String> _envKeys = {};
 
+  /// The last model the user switched to via `/model`. Persisted in
+  /// `auth.json` and loaded on startup. Used by [resolveDefaultModel].
+  String? _lastUsedModel;
+
+  /// Path to the auth.json file for persistent key storage.
+  /// Follows XDG: `$XDG_DATA_HOME/crux/auth.json`
+  /// (defaults to `~/.local/share/crux/auth.json`).
+  late final String authJsonPath;
+
   ProviderService({this.providersDir = 'providers'})
-    : _loader = ProviderConfigLoader(providersDir: Directory(providersDir));
+    : _loader = ProviderConfigLoader(providersDir: Directory(providersDir)) {
+    final xdgDataHome = Platform.environment['XDG_DATA_HOME'] ??
+        p.join(Platform.environment['HOME']!, '.local', 'share');
+    authJsonPath = p.join(xdgDataHome, 'crux', 'auth.json');
+  }
 
   // ---------------------------------------------------------------------------
   // Initialization & reload
   // ---------------------------------------------------------------------------
 
-  /// Initializes the service: loads all provider TOML configs.
-  /// API keys are stored only in the in-memory [_envKeys] map for the
-  /// current process lifetime — no file persistence is used.
+  /// Initializes the service: loads all provider TOML configs and API keys
+  /// from the persistent `auth.json` file.
   Future<void> initialize() async {
     await _loader.loadAll();
+    await _loadAuthKeys();
   }
 
   /// Performs a full reload of all provider configs from disk.
@@ -100,6 +115,9 @@ class ProviderService {
 
   /// All models across all providers, as composite keys.
   List<String> allModelKeys() => _loader.allModelKeys();
+
+  /// All models across all providers with full metadata.
+  List<ModelEntry> allModelEntries() => _loader.allModelEntries();
 
   /// The set of composite keys for models that support images.
   Set<String> imageModelKeys() => _loader.imageModelKeys();
@@ -311,13 +329,60 @@ class ProviderService {
   }
 
   // ---------------------------------------------------------------------------
-  // API key management (env vars + .env file persistence)
+  // Model selection persistence & resolution
+  // ---------------------------------------------------------------------------
+
+  /// Persists the given model composite key as the last-used model.
+  ///
+  /// Called when the user switches model via `/model` or the local model
+  /// button. The value is stored in `auth.json` and used by
+  /// [resolveDefaultModel] on the next launch.
+  Future<void> setLastUsedModel(String compositeKey) async {
+    _lastUsedModel = compositeKey;
+    await _persistAuthKeys();
+  }
+
+  /// Resolves the default model to use on startup, following these rules:
+  ///
+  /// 1. **Last used model**: if [_lastUsedModel] is set and still valid
+  ///    (provider exists, model exists, API key available), use it.
+  /// 2. **Latest configured model**: the first model from the first
+  ///    provider that has an API key configured.
+  /// 3. Returns `null` if no models are available at all.
+  String? resolveDefaultModel() {
+    // Rule 1: last used model, if still valid
+    if (_lastUsedModel != null) {
+      final model = modelByCompositeKey(_lastUsedModel!);
+      if (model != null) {
+        final providerName = _lastUsedModel!.split('/').first;
+        if (getApiKey(providerName) != null) {
+          return _lastUsedModel;
+        }
+      }
+    }
+
+    // Rule 2: latest configured model (first model from first provider
+    // with an API key)
+    for (final name in providerNames()) {
+      if (getApiKey(name) == null) continue;
+      final provider = providerByName(name);
+      if (provider != null && provider.models.isNotEmpty) {
+        return provider.models.first.compositeKey(provider.name);
+      }
+    }
+
+    // Rule 3: no available models
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // API key management (env vars + auth.json persistence)
   // ---------------------------------------------------------------------------
 
   /// Retrieves the API key for a given provider.
   ///
   /// Checks the following sources in order:
-  /// 1. Keys stored in the `.env` file (loaded into [_envKeys])
+  /// 1. Keys stored in `auth.json` (loaded into [_envKeys])
   /// 2. Process environment variables ([Platform.environment])
   /// 3. The global default key `CRUX_API_KEY` (from either source)
   ///
@@ -326,35 +391,98 @@ class ProviderService {
   String? getApiKey(String providerName) {
     final envKey = 'CRUX_API_KEY_${providerName.toUpperCase()}';
 
-    // Check .env-loaded keys first
     if (_envKeys.containsKey(envKey)) return _envKeys[envKey];
 
-    // Check process environment
     if (Platform.environment.containsKey(envKey)) {
       return Platform.environment[envKey];
     }
 
-    // Fallback: global default key
     if (_envKeys.containsKey('CRUX_API_KEY')) return _envKeys['CRUX_API_KEY'];
     return Platform.environment['CRUX_API_KEY'];
   }
 
-  /// Stores an API key for a provider in the in-memory environment map.
+  /// Stores an API key for a provider and persists it to `auth.json`.
   ///
-  /// The key is kept only for the current process lifetime — it is NOT
-  /// written to any file. Call [getApiKey] to retrieve it later.
-  void setApiKey(String providerName, String key) {
+  /// The key is written to both the in-memory map and the on-disk
+  /// `auth.json` file (XDG data dir, mode `0o600`).
+  Future<void> setApiKey(String providerName, String key) async {
     final envKey = 'CRUX_API_KEY_${providerName.toUpperCase()}';
     _envKeys[envKey] = key;
+    await _persistAuthKeys();
   }
 
-  /// Removes an API key for a provider from the in-memory environment map.
+  /// Removes an API key for a provider from both memory and `auth.json`.
   ///
   /// Note: if the key was also present in [Platform.environment] (set
   /// externally before the process started), it remains accessible there.
-  void removeApiKey(String providerName) {
+  Future<void> removeApiKey(String providerName) async {
     final envKey = 'CRUX_API_KEY_${providerName.toUpperCase()}';
     _envKeys.remove(envKey);
+    await _persistAuthKeys();
+  }
+
+  /// Loads API keys and last-used model from the `auth.json` file.
+  ///
+  /// Supports two formats:
+  /// - **Legacy** (flat): `{ "CRUX_API_KEY_DEEPSEEK": "sk-..." }`
+  /// - **Current** (structured):
+  ///   ```json
+  ///   {
+  ///     "apiKeys": { "CRUX_API_KEY_DEEPSEEK": "sk-..." },
+  ///     "lastUsedModel": "deepseek/deepseek-v4-flash"
+  ///   }
+  ///   ```
+  Future<void> _loadAuthKeys() async {
+    final file = File(authJsonPath);
+    if (!await file.exists()) return;
+    try {
+      final content = await file.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+
+      if (data.containsKey('apiKeys')) {
+        // Structured format
+        final apiKeys = data['apiKeys'] as Map<String, dynamic>;
+        for (final entry in apiKeys.entries) {
+          if (entry.value is String) {
+            _envKeys[entry.key] = entry.value as String;
+          }
+        }
+        _lastUsedModel = data['lastUsedModel'] as String?;
+      } else {
+        // Legacy flat format — migrate on next write
+        for (final entry in data.entries) {
+          if (entry.value is String) {
+            _envKeys[entry.key] = entry.value as String;
+          }
+        }
+      }
+    } catch (_) {
+      // Corrupt or unreadable auth file — skip gracefully
+    }
+  }
+
+  /// Persists API keys and last-used model to the `auth.json` file.
+  ///
+  /// Creates the XDG data directory if it doesn't exist, then writes
+  /// structured JSON with `0o600` permissions (owner rw only).
+  Future<void> _persistAuthKeys() async {
+    final dir = File(authJsonPath).parent;
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final data = <String, dynamic>{
+      'apiKeys': _envKeys,
+      if (_lastUsedModel != null) 'lastUsedModel': _lastUsedModel,
+    };
+    final content =
+        JsonEncoder.withIndent('  ').convert(data) + '\n';
+    final file = File(authJsonPath);
+    await file.writeAsString(content);
+    try {
+      await Process.run('chmod', ['600', authJsonPath]);
+    } catch (_) {
+      // chmod may not be available on all platforms
+    }
   }
 
   // ---------------------------------------------------------------------------

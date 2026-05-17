@@ -1,0 +1,21 @@
+# DeepSeek provider configuration
+# Filename serves as the provider name: "deepseek"
+# OpenAI-compatible API: https://api.deepseek.com
+# Anthropic-compatible API: https://api.deepseek.com/anthropic
+
+type = "openai"
+endpoint_url = "https://api.deepseek.com"
+
+[[models]]
+id = "deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+context_size = 1048576
+reasoning_effort = "high"
+thinking = true
+
+[[models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+context_size = 1048576
+reasoning_effort = "high"
+thinking = true

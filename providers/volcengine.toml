@@ -1,0 +1,11 @@
+# Volcengine provider configuration (stub)
+# Filename serves as the provider name: "volcengine"
+# TODO: Populate with actual API endpoint and models
+
+type = "openai"
+endpoint_url = "https://ark.cn-beijing.volces.com/api/v3"
+
+[[models]]
+id = "placeholder"
+name = "Placeholder (coming soon)"
+context_size = 131072

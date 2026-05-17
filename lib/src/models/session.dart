@@ -36,7 +36,7 @@ class Session {
   Session({
     required this.id,
     required this.title,
-    this.model = 'openai/gpt-4o',
+    this.model = '',
     this.contextTargetTokens = 50000,
     this.contextDisplayTokens = 50000.0,
     this.status = SessionStatus.idle,

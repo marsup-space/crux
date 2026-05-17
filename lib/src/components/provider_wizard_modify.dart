@@ -865,7 +865,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       rows.add(const SizedBox(height: 1));
       rows.add(
         const Text(
-          '✓ API key will be stored in CRUX_API_KEY_<PROVIDER> env var',
+          '✓ API key will be stored in auth.json (persists across restarts)',
           style: TextStyle(color: Color.fromRGB(100, 220, 100)),
         ),
       );
@@ -2302,10 +2302,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       models: List.unmodifiable(validModels),
     );
 
-    // Store the API key in the in-memory environment if one was provided
+    // Store the API key in auth.json if one was provided
     final apiKey = _apiKeyController.text;
     if (apiKey.isNotEmpty) {
-      _service.setApiKey(provider.name, apiKey);
+      await _service.setApiKey(provider.name, apiKey);
     }
 
     component.onComplete?.call();

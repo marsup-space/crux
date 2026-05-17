@@ -2204,7 +2204,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
           const Text('  API Key: ', style: TextStyle(color: Colors.brightCyan)),
           Text(
             _apiKeyController.text.isNotEmpty
-                ? '✓ Will be stored in CRUX_API_KEY_<PROVIDER> env var'
+                ? '✓ Will be stored in auth.json (persists across restarts)'
                 : 'Not provided (set later via /provider connect)',
             style: TextStyle(
               color: _apiKeyController.text.isNotEmpty
@@ -2257,7 +2257,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
 
     final apiKey = _apiKeyController.text;
     if (apiKey.isNotEmpty) {
-      _service.setApiKey(name, apiKey);
+      await _service.setApiKey(name, apiKey);
     }
 
     component.onComplete?.call();

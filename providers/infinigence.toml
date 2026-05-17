@@ -1,0 +1,11 @@
+# Infinigence provider configuration (stub)
+# Filename serves as the provider name: "infinigence"
+# TODO: Populate with actual API endpoint and models
+
+type = "openai"
+endpoint_url = "https://api.infinigence.ai/v1"
+
+[[models]]
+id = "placeholder"
+name = "Placeholder (coming soon)"
+context_size = 131072

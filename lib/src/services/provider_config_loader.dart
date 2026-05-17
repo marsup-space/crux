@@ -17,6 +17,17 @@ import '../models/provider_config.dart';
 /// final openai = loader.providerByName('openai');
 /// final gpt4o = loader.modelByCompositeKey('openai/gpt-4o');
 /// ```
+class ModelEntry {
+  final String compositeKey;
+  final String providerName;
+  final ModelConfig model;
+  const ModelEntry({
+    required this.compositeKey,
+    required this.providerName,
+    required this.model,
+  });
+}
+
 class ProviderConfigLoader {
   /// The directory containing `.toml` provider config files.
   final Directory providersDir;
@@ -45,6 +56,21 @@ class ProviderConfigLoader {
   /// All models across all providers, as composite keys.
   List<String> allModelKeys() =>
       providers().expand((p) => p.compositeKeys()).toList();
+
+  /// All models across all providers with full metadata.
+  List<ModelEntry> allModelEntries() {
+    final entries = <ModelEntry>[];
+    for (final p in providers()) {
+      for (final m in p.models) {
+        entries.add(ModelEntry(
+          compositeKey: m.compositeKey(p.name),
+          providerName: p.name,
+          model: m,
+        ));
+      }
+    }
+    return entries;
+  }
 
   /// Look up a provider by name. Returns `null` if not found.
   ProviderConfig? providerByName(String name) => _configs[name];

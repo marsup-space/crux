@@ -3,8 +3,6 @@ import 'ui/button.dart';
 import '../models/provider_config.dart';
 import '../services/provider_service.dart';
 
-enum _FocusArea { apiKeyInput, toggleBtn, submitBtn, removeBtn, cancelBtn }
-
 class ProviderWizardBuiltin extends StatefulComponent {
   final ProviderService service;
   final String providerName;
@@ -26,7 +24,6 @@ class ProviderWizardBuiltin extends StatefulComponent {
 class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
   final TextEditingController _apiKeyController = TextEditingController();
   bool _apiKeyObscured = true;
-  _FocusArea _focused = _FocusArea.apiKeyInput;
   bool _disposed = false;
 
   ProviderService get _service => component.service;
@@ -56,75 +53,32 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
 
   void _submit() {
     if (!_keyIsValid) return;
-    _service.setApiKey(_providerName, _apiKeyController.text);
-    component.onComplete?.call();
+    _service.setApiKey(_providerName, _apiKeyController.text).then((_) {
+      component.onComplete?.call();
+    });
   }
 
   void _removeKey() {
-    _service.removeApiKey(_providerName);
-    _apiKeyController.clear();
-    setState(() {});
+    _service.removeApiKey(_providerName).then((_) {
+      _apiKeyController.clear();
+      setState(() {});
+    });
   }
 
-  List<_FocusArea> get _focusSequence {
-    final seq = <_FocusArea>[
-      _FocusArea.apiKeyInput,
-      _FocusArea.toggleBtn,
-      _FocusArea.submitBtn,
-    ];
-    if (_hasExistingKey) seq.add(_FocusArea.removeBtn);
-    seq.add(_FocusArea.cancelBtn);
-    return seq;
-  }
-
-  void _cycleFocus(bool forward) {
-    final seq = _focusSequence;
-    final idx = seq.indexOf(_focused);
-    if (idx == -1) {
-      _focused = _FocusArea.apiKeyInput;
-    } else {
-      final next = forward
-          ? (idx + 1) % seq.length
-          : (idx - 1 + seq.length) % seq.length;
-      _focused = seq[next];
-    }
-  }
-
-  bool _handleKeyEvent(KeyboardEvent event) {
+  bool _handleGlobalKey(KeyboardEvent event) {
     if (event.logicalKey == LogicalKey.escape) {
       component.onDismiss?.call();
       return true;
     }
-    final inTextField = _focused == _FocusArea.apiKeyInput;
-
-    if ((event.logicalKey == LogicalKey.tab && !event.isShiftPressed) ||
-        (!inTextField && event.logicalKey == LogicalKey.arrowDown) ||
-        (!inTextField && event.logicalKey == LogicalKey.arrowRight)) {
-      setState(() => _cycleFocus(true));
-      return true;
-    }
-    if ((event.logicalKey == LogicalKey.tab && event.isShiftPressed) ||
-        (!inTextField && event.logicalKey == LogicalKey.arrowUp) ||
-        (!inTextField && event.logicalKey == LogicalKey.arrowLeft)) {
-      setState(() => _cycleFocus(false));
-      return true;
-    }
-    if (event.logicalKey == LogicalKey.enter) {
-      switch (_focused) {
-        case _FocusArea.submitBtn:
-          _submit();
-        case _FocusArea.removeBtn:
-          _removeKey();
-        case _FocusArea.cancelBtn:
-          component.onDismiss?.call();
-        case _FocusArea.toggleBtn:
-          setState(() => _apiKeyObscured = !_apiKeyObscured);
-        case _FocusArea.apiKeyInput:
-          if (_keyIsValid) _submit();
-      }
-      return true;
-    }
     return false;
+  }
+
+  bool _handleButtonKey(KeyboardEvent event, VoidCallback action) {
+    if (event.logicalKey == LogicalKey.enter) {
+      action();
+      return true;
+    }
+    return _handleGlobalKey(event);
   }
 
   @override
@@ -195,13 +149,17 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
           Expanded(
             child: TextField(
               controller: _apiKeyController,
-              focused: _focused == _FocusArea.apiKeyInput,
+              focused: true,
               onKeyEvent: (event) {
+                if (event.logicalKey == LogicalKey.escape) {
+                  component.onDismiss?.call();
+                  return true;
+                }
                 if (event.logicalKey == LogicalKey.enter && _keyIsValid) {
                   _submit();
                   return true;
                 }
-                return _handleKeyEvent(event);
+                return false;
               },
               obscureText: _apiKeyObscured,
               obscuringCharacter: '•',
@@ -230,56 +188,84 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
     final buttons = <Component>[];
 
     buttons.add(
-      Button(
-        label: _apiKeyObscured ? '👁 Show' : '🔒 Hide',
-        onPressed: () => setState(() => _apiKeyObscured = !_apiKeyObscured),
-        focused: _focused == _FocusArea.toggleBtn,
-        color: Colors.gray,
-        hoverColor: Colors.brightCyan,
-        bgColor: const Color.fromRGB(25, 20, 45),
-        hoverBgColor: const Color.fromRGB(40, 30, 80),
+      Focusable(
+        onKeyEvent: (event) => _handleButtonKey(
+          event,
+          () => setState(() => _apiKeyObscured = !_apiKeyObscured),
+        ),
+        child: Builder(builder: (context) {
+          final focused = Focus.of(context);
+          return Button(
+            label: _apiKeyObscured ? '👁 Show' : '🔒 Hide',
+            onPressed: () => setState(() => _apiKeyObscured = !_apiKeyObscured),
+            focused: focused,
+            color: Colors.gray,
+            hoverColor: Colors.brightCyan,
+            bgColor: const Color.fromRGB(25, 20, 45),
+            hoverBgColor: const Color.fromRGB(40, 30, 80),
+          );
+        }),
       ),
     );
 
     buttons.add(
-      Button(
-        label: ' Connect ',
-        onPressed: _submit,
-        focused: _focused == _FocusArea.submitBtn,
-        color: _keyIsValid
-            ? const Color.fromRGB(100, 220, 100)
-            : Colors.gray,
-        hoverColor: Colors.brightCyan,
-        bgColor: _keyIsValid
-            ? const Color.fromRGB(20, 60, 20)
-            : const Color.fromRGB(25, 20, 45),
-        hoverBgColor: const Color.fromRGB(40, 30, 80),
+      Focusable(
+        onKeyEvent: (event) => _handleButtonKey(event, _submit),
+        child: Builder(builder: (context) {
+          final focused = Focus.of(context);
+          return Button(
+            label: ' Connect ',
+            onPressed: _submit,
+            focused: focused,
+            color: _keyIsValid
+                ? const Color.fromRGB(100, 220, 100)
+                : Colors.gray,
+            hoverColor: Colors.brightCyan,
+            bgColor: _keyIsValid
+                ? const Color.fromRGB(20, 60, 20)
+                : const Color.fromRGB(25, 20, 45),
+            hoverBgColor: const Color.fromRGB(40, 30, 80),
+          );
+        }),
       ),
     );
 
     if (_hasExistingKey) {
       buttons.add(
-        Button(
-          label: ' Remove Key ',
-          onPressed: _removeKey,
-          focused: _focused == _FocusArea.removeBtn,
-          color: const Color.fromRGB(255, 80, 80),
-          hoverColor: Colors.brightYellow,
-          bgColor: const Color.fromRGB(60, 20, 20),
-          hoverBgColor: const Color.fromRGB(40, 30, 80),
+        Focusable(
+          onKeyEvent: (event) => _handleButtonKey(event, _removeKey),
+          child: Builder(builder: (context) {
+            final focused = Focus.of(context);
+            return Button(
+              label: ' Remove Key ',
+              onPressed: _removeKey,
+              focused: focused,
+              color: const Color.fromRGB(255, 80, 80),
+              hoverColor: Colors.brightYellow,
+              bgColor: const Color.fromRGB(60, 20, 20),
+              hoverBgColor: const Color.fromRGB(40, 30, 80),
+            );
+          }),
         ),
       );
     }
 
     buttons.add(
-      Button(
-        label: ' Cancel ',
-        onPressed: () => component.onDismiss?.call(),
-        focused: _focused == _FocusArea.cancelBtn,
-        color: Colors.gray,
-        hoverColor: Colors.brightCyan,
-        bgColor: const Color.fromRGB(25, 20, 45),
-        hoverBgColor: const Color.fromRGB(40, 30, 80),
+      Focusable(
+        onKeyEvent: (event) =>
+            _handleButtonKey(event, () => component.onDismiss?.call()),
+        child: Builder(builder: (context) {
+          final focused = Focus.of(context);
+          return Button(
+            label: ' Cancel ',
+            onPressed: () => component.onDismiss?.call(),
+            focused: focused,
+            color: Colors.gray,
+            hoverColor: Colors.brightCyan,
+            bgColor: const Color.fromRGB(25, 20, 45),
+            hoverBgColor: const Color.fromRGB(40, 30, 80),
+          );
+        }),
       ),
     );
 
@@ -287,9 +273,8 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
 
     final border = BoxBorder.all(color: const Color.fromRGB(80, 60, 120));
 
-    return Focusable(
-      focused: true,
-      onKeyEvent: _handleKeyEvent,
+    return FocusScope(
+      trapping: true,
       child: Container(
         decoration: BoxDecoration(
           color: const Color.fromRGB(18, 14, 30),

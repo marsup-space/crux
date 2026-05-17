@@ -6,6 +6,7 @@ import '../models/session.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
 import '../services/provider_service.dart';
+import '../services/provider_config_loader.dart';
 import 'ui/button.dart';
 import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
@@ -38,8 +39,8 @@ class _ChatPanelState extends State<ChatPanel> {
   final TextEditingController textController = TextEditingController();
 
   // Auxiliary local model
-  static const String _localModel = 'local/llama3';
-  static const String _localModelShortName = 'llama3';
+  String _localModel = 'local/llama3';
+  String _localModelShortName = 'llama3';
 
   // Overlay mode
   _OverlayMode _overlayMode = _OverlayMode.off;
@@ -62,26 +63,27 @@ class _ChatPanelState extends State<ChatPanel> {
 
   // Provider wizard overlay state
   final ProviderService _providerService = ProviderService();
+  bool _providerServiceReady = false;
   _ProviderWizardSubcommand? _activeWizardSubcommand;
   String? _builtinProviderName;
 
   // (Per-session response state now lives on the Session model)
 
   // Context window progress animation (global, operates on current session)
-  static const int _contextMaxTokens = 262144;
+  int get _contextMaxTokens {
+    if (!_providerServiceReady) return 131072;
+    final model = _providerService.modelByCompositeKey(_currentSession.model);
+    return model?.contextSize ?? 131072;
+  }
   Timer? _contextAnimTimer;
   DateTime? _lastContextTick;
   static const double _contextLerpSpeed = 6.0;
   bool _contextBarHovered = false;
 
-  static const Set<String> _imageModels = {
-    'openai/gpt-4o',
-    'openai/gpt-4',
-    'anthropic/claude-3.5',
-    'anthropic/claude-3',
-    'google/gemini-pro',
-    'google/gemini-flash',
-  };
+  bool _modelSupportsImages(String compositeKey) {
+    if (!_providerServiceReady) return false;
+    return _providerService.imageModelKeys().contains(compositeKey);
+  }
 
   static const List<String> _mockAiResponses = [
     "I've analyzed your request. Here's my approach...",
@@ -108,6 +110,21 @@ class _ChatPanelState extends State<ChatPanel> {
     super.initState();
     textController.addListener(_onTextChanged);
     _createMockSessions();
+    _providerService.initialize().then((_) {
+      setState(() {
+        _providerServiceReady = true;
+        final localProvider = _providerService.providerByName('local');
+        if (localProvider != null && localProvider.models.isNotEmpty) {
+          final firstModel = localProvider.models.first;
+          _localModel = firstModel.compositeKey(localProvider.name);
+          _localModelShortName = firstModel.name;
+        }
+        final defaultModel = _providerService.resolveDefaultModel();
+        if (defaultModel != null) {
+          _currentSession.model = defaultModel;
+        }
+      });
+    });
   }
 
   void _createMockSessions() {
@@ -117,7 +134,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final s1 = Session(
       id: 1,
       title: _mockSessionTitles[0],
-      model: 'openai/gpt-4o',
+      model: '',
       status: SessionStatus.idle,
       lastActivityAt: now.subtract(Duration(minutes: 2)),
       messages: [
@@ -295,7 +312,9 @@ class _ChatPanelState extends State<ChatPanel> {
     final commandName = trimmed.substring(0, spaceIndex);
     final command = findCommand(commandName);
 
-    if (command == null || !command.hasSuggestionsForParam(0)) {
+    if (command == null ||
+        (!command.hasSuggestionsForParam(0) &&
+            commandName != '/model')) {
       _setOverlayOff();
       setState(() {});
       return;
@@ -326,13 +345,15 @@ class _ChatPanelState extends State<ChatPanel> {
       paramIndex = parts.length - 1;
     }
 
-    if (!command.hasSuggestionsForParam(paramIndex)) {
+    if (!command.hasSuggestionsForParam(paramIndex) &&
+        !(commandName == '/model' && paramIndex == 0)) {
       _setOverlayOff();
       setState(() {});
       return;
     }
 
     // Dynamic suggestions for /session command: list all existing sessions
+    // Dynamic suggestions for /model command: list all models from loaded providers
     final List<CommandSuggestion> suggestions;
     if (commandName == '/session' && paramIndex == 0) {
       suggestions = _sessions
@@ -340,6 +361,24 @@ class _ChatPanelState extends State<ChatPanel> {
             (s) => CommandSuggestion(value: s.displayId, description: s.title),
           )
           .toList();
+    } else if (commandName == '/model' && paramIndex == 0) {
+      if (_providerServiceReady) {
+        suggestions = _providerService.allModelEntries()
+            .where((e) => _providerService.getApiKey(e.providerName) != null)
+            .map((e) {
+          final ctx = e.model.contextSize >= 1000000
+              ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
+              : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
+          final img = e.model.imageSupport ? ', img' : '';
+          final think = e.model.thinking ? ', think' : '';
+          return CommandSuggestion(
+            value: e.compositeKey,
+            description: '${e.model.name} (${ctx} ctx$img$think)',
+          );
+        }).toList();
+      } else {
+        suggestions = [];
+      }
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }
@@ -717,11 +756,21 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (commandName == '/model') {
       if (parts.length > 1 && parts[1].isNotEmpty) {
-        setState(() {
-          _currentSession.model = parts[1];
-          _toastVisible = true;
-          _toastMessage = 'Model switched to ${parts[1]}';
-        });
+        final modelKey = parts[1];
+        if (_providerServiceReady &&
+            _providerService.modelByCompositeKey(modelKey) == null) {
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Unknown model: $modelKey';
+          });
+        } else {
+          setState(() {
+            _currentSession.model = modelKey;
+            _toastVisible = true;
+            _toastMessage = 'Model switched to $modelKey';
+          });
+          _providerService.setLastUsedModel(modelKey);
+        }
       } else {
         setState(() {
           _toastVisible = true;
@@ -1005,14 +1054,17 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Component _buildToolbar() {
     final session = _currentSession;
+    final modelLabel = _currentSession.model.isEmpty
+        ? 'select model'
+        : _currentSession.model;
     final modelButton = session.isResponding
         ? GlossyModelButton(
-            label: _currentSession.model,
+            label: modelLabel,
             isAnimating: true,
             onPressed: _onModelButtonPressed,
           )
         : Button(
-            label: _currentSession.model,
+            label: modelLabel,
             onPressed: _onModelButtonPressed,
             color: Color.fromRGB(120, 100, 160),
             hoverColor: Colors.brightCyan,
@@ -1026,7 +1078,7 @@ class _ChatPanelState extends State<ChatPanel> {
       child: Row(
         children: [
           modelButton,
-          if (_imageModels.contains(_currentSession.model))
+          if (_modelSupportsImages(_currentSession.model))
             Text(
               '\u{F06E}',
               style: TextStyle(color: Color.fromRGB(120, 100, 160)),
@@ -1084,6 +1136,7 @@ class _ChatPanelState extends State<ChatPanel> {
       _toastVisible = true;
       _toastMessage = 'Model switched to $_localModel';
     });
+    _providerService.setLastUsedModel(_localModel);
   }
 
   Component _buildContextBar() {
@@ -1093,9 +1146,17 @@ class _ChatPanelState extends State<ChatPanel> {
       1.0,
     );
     final displayInt = session.contextDisplayTokens.round();
+    final fmtCtx = (int n) {
+      final k = n ~/ 1024;
+      final kStr = k.toString().replaceAllMapped(
+          RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+      return '${kStr}k';
+    };
+    final fmtNum = (int n) => n.toString().replaceAllMapped(
+        RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
     final labelText = _contextBarHovered
         ? 'Compact'
-        : '$displayInt / $_contextMaxTokens';
+        : '${fmtNum(displayInt)} / ${fmtCtx(_contextMaxTokens)}';
 
     final bar = BgProgressBar(
       value: fillRatio,

@@ -7,19 +7,7 @@ const List<SlashCommand> slashCommands = [
     description: 'Switch the AI model',
     params: ['name'],
     suggestionsPerParam: [
-      [
-        CommandSuggestion(value: 'openai/gpt-4o', description: 'Latest multimodal GPT model'),
-        CommandSuggestion(value: 'openai/gpt-4', description: 'Most capable GPT model'),
-        CommandSuggestion(value: 'openai/gpt-3.5-turbo', description: 'Fast and affordable'),
-        CommandSuggestion(value: 'anthropic/claude-3.5', description: 'Latest Claude model'),
-        CommandSuggestion(value: 'anthropic/claude-3', description: 'Balanced performance'),
-        CommandSuggestion(value: 'google/gemini-pro', description: 'Google Pro model'),
-        CommandSuggestion(value: 'google/gemini-flash', description: 'Fast Gemini model'),
-        CommandSuggestion(value: 'local/llama3', description: 'Local Llama 3 model'),
-        CommandSuggestion(value: 'local/mistral', description: 'Local Mistral model'),
-        CommandSuggestion(value: 'deepseek/deepseek-v4-flash', description: 'DeepSeek V4 Flash (fast, 1M context)'),
-        CommandSuggestion(value: 'deepseek/deepseek-v4-pro', description: 'DeepSeek V4 Pro (reasoning, 1M context)'),
-      ],
+      [],
     ],
   ),
   SlashCommand(

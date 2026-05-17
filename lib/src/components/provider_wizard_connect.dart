@@ -539,7 +539,7 @@ class _ProviderWizardConnectState extends State<ProviderWizardConnect> {
     });
 
     // Store the key in the in-memory environment so discoverModels can use it.
-    _service.setApiKey(providerName, key);
+    await _service.setApiKey(providerName, key);
     _lastTestedKey = key;
 
     try {
@@ -692,14 +692,14 @@ class _ProviderWizardConnectState extends State<ProviderWizardConnect> {
           Button(
             label: ' Skip Verification ',
             onPressed: () {
-              // Store the key even though verification failed
               _service.setApiKey(
                 _selectedProviderName!,
                 _apiKeyController.text,
-              );
-              setState(() {
-                _connectionStatus = _ConnectionStatus.skipped;
-                _lastTestedKey = _apiKeyController.text;
+              ).then((_) {
+                setState(() {
+                  _connectionStatus = _ConnectionStatus.skipped;
+                  _lastTestedKey = _apiKeyController.text;
+                });
               });
             },
             color: Colors.brightYellow,
@@ -803,19 +803,19 @@ class _ProviderWizardConnectState extends State<ProviderWizardConnect> {
     );
     rows.add(
       const Text(
-        '  The key is stored in-memory for this session only.',
+         '  The key is stored persistently in auth.json (XDG data dir).',
         style: TextStyle(color: Colors.white),
       ),
     );
     rows.add(
       const Text(
-        '  It will NOT persist across restarts — set it again next session,',
+        '  It will be available across restarts.',
         style: TextStyle(color: Colors.white),
       ),
     );
     rows.add(
       const Text(
-        '  or set CRUX_API_KEY_<PROVIDER> in your shell environment.',
+        '  Alternatively, set CRUX_API_KEY_<PROVIDER> in your shell environment.',
         style: TextStyle(color: Colors.gray),
       ),
     );
