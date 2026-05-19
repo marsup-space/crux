@@ -1,12 +1,16 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/session.dart';
+import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
+import '../services/chat_service.dart';
+import '../services/llm_client.dart';
 import '../services/provider_service.dart';
-import '../services/provider_config_loader.dart';
+import '../storage/database.dart' hide Session, Message, Part;
+import '../storage/session_lock.dart';
+import '../storage/session_store.dart';
 import 'ui/button.dart';
 import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
@@ -20,7 +24,6 @@ import 'message_bubble.dart';
 
 enum _OverlayMode { off, command, parameter, wizard }
 
-/// Which provider wizard subcommand is active.
 enum _ProviderWizardSubcommand { builtin, custom }
 
 class ChatPanel extends StatefulComponent {
@@ -31,50 +34,48 @@ class ChatPanel extends StatefulComponent {
 }
 
 class _ChatPanelState extends State<ChatPanel> {
-  // Session management
-  final List<Session> _sessions = [];
-  int _currentSessionId = 1;
+  late final SessionStore _store;
+  late final SessionLock _lock;
+  late final ChatService _chatService;
+
+  List<Session> _sessions = [];
+  int? _currentSessionId;
+  final Map<int, SessionRuntimeState> _runtimeStates = {};
+  final Map<int, List<Message>> _messageCache = {};
+  String _streamingContent = '';
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  // Auxiliary local model
   String _localModel = 'local/llama3';
   String _localModelShortName = 'llama3';
 
-  // Overlay mode
   _OverlayMode _overlayMode = _OverlayMode.off;
 
-  // Command mode state
   List<SlashCommand> _filteredCommands = [];
   int _selectedCommandIndex = 0;
   int _commandScrollOffset = 0;
 
-  // Parameter mode state
   SlashCommand? _activeCommand;
   int _currentParamIndex = 0;
   List<CommandSuggestion> _filteredSuggestions = [];
   int _selectedSuggestionIndex = 0;
   int _suggestionScrollOffset = 0;
 
-  // Toast state
   bool _toastVisible = false;
   String _toastMessage = '';
 
-  // Provider wizard overlay state
   final ProviderService _providerService = ProviderService();
   bool _providerServiceReady = false;
   _ProviderWizardSubcommand? _activeWizardSubcommand;
   String? _builtinProviderName;
 
-  // (Per-session response state now lives on the Session model)
-
-  // Context window progress animation (global, operates on current session)
   int get _contextMaxTokens {
     if (!_providerServiceReady) return 131072;
     final model = _providerService.modelByCompositeKey(_currentSession.model);
     return model?.contextSize ?? 131072;
   }
+
   Timer? _contextAnimTimer;
   DateTime? _lastContextTick;
   static const double _contextLerpSpeed = 6.0;
@@ -85,158 +86,99 @@ class _ChatPanelState extends State<ChatPanel> {
     return _providerService.imageModelKeys().contains(compositeKey);
   }
 
-  static const List<String> _mockAiResponses = [
-    "I've analyzed your request. Here's my approach...",
-    "That's an interesting question. Let me break it down for you.",
-    "I can help with that. Let me outline a solution.",
-    "Good thinking! Here's what I'd suggest...",
-    "Let me consider the options and recommend the best path forward.",
-  ];
-
-  static const List<String> _mockSessionTitles = [
-    'Build a TUI chat app',
-    'Debug rendering pipeline',
-    'Add markdown support',
-    'Refactor command registry',
-    'Implement session switching',
-  ];
-
   static const int _infoPanelMinWidth = 100;
   static const double _infoPanelWidth = 28;
   static const int _maxVisibleItems = 6;
 
+  SessionRuntimeState _runtime(int sessionId) {
+    return _runtimeStates.putIfAbsent(
+      sessionId,
+      () {
+        final initial = _computeBaseContext(sessionId);
+        return SessionRuntimeState(
+          sessionId: sessionId,
+          contextTargetTokens: initial,
+          contextDisplayTokens: initial.toDouble(),
+        );
+      },
+    );
+  }
+
+  Session get _currentSession {
+    if (_currentSessionId == null) {
+      return Session(id: 0, title: 'New Session');
+    }
+    return _sessions.firstWhere(
+      (s) => s.id == _currentSessionId,
+      orElse: () => Session(id: 0, title: 'New Session'),
+    );
+  }
+
+  List<Message> get _currentMessages =>
+      _messageCache[_currentSessionId] ?? [];
+
   @override
   void initState() {
     super.initState();
+    _lock = SessionLock();
+    final db = CruxDatabase();
+    _store = SessionStore(db, _lock);
+    _chatService = ChatService(_store, _providerService, LlmClient());
     textController.addListener(_onTextChanged);
-    _createMockSessions();
+    _initSessions();
     _providerService.initialize().then((_) {
       setState(() {
         _providerServiceReady = true;
-        final localProvider = _providerService.providerByName('local');
-        if (localProvider != null && localProvider.models.isNotEmpty) {
-          final firstModel = localProvider.models.first;
-          _localModel = firstModel.compositeKey(localProvider.name);
-          _localModelShortName = firstModel.name;
-        }
-        final defaultModel = _providerService.resolveDefaultModel();
-        if (defaultModel != null) {
-          _currentSession.model = defaultModel;
-        }
+        _resolveLocalModel();
       });
     });
   }
 
-  void _createMockSessions() {
-    final now = DateTime.now();
+  void _resolveLocalModel() {
+    final localProvider = _providerService.providerByName('local');
+    if (localProvider != null && localProvider.models.isNotEmpty) {
+      final firstModel = localProvider.models.first;
+      _localModel = firstModel.compositeKey(localProvider.name);
+      _localModelShortName = firstModel.name;
+    }
+  }
 
-    // Session 1 — idle, already completed conversation (most recent activity)
-    final s1 = Session(
-      id: 1,
-      title: _mockSessionTitles[0],
-      model: '',
-      status: SessionStatus.idle,
-      lastActivityAt: now.subtract(Duration(minutes: 2)),
-      messages: [
-        Message(
-          role: 'ai',
-          content:
-              "Hello! I'm Crux, your coding assistant. What would you like to work on today?",
-        ),
-        Message(
-          role: 'user',
-          content:
-              'Can you help me build a TUI application with a chat interface?',
-        ),
-        Message(
-          role: 'ai',
-          content:
-              'Absolutely! I can help you build a TUI chat application using Nocterm. What specific features are you looking for?',
-        ),
-      ],
-    );
-    _sessions.add(s1);
+  Future<void> _initSessions() async {
+    _sessions = await _store.list();
+    if (_sessions.isEmpty) {
+      await _providerService.initialize();
+      _providerServiceReady = true;
+      final model = _providerService.resolveDefaultModel() ?? '';
+      final session = await _store.create(title: 'New Session', model: model);
+      _sessions = [session];
+      _resolveLocalModel();
+    }
+    _currentSessionId = _sessions.first.id;
+    await _loadMessages(_currentSessionId!);
+    setState(() {});
+  }
 
-    // Session 3 — needUserAction (second most recent — needs user input)
-    final s3 = Session(
-      id: 3,
-      title: _mockSessionTitles[2],
-      model: 'google/gemini-pro',
-      status: SessionStatus.needUserAction,
-      lastActivityAt: now.subtract(Duration(minutes: 5)),
-      messages: [
-        Message(
-          role: 'user',
-          content: 'Add markdown support to the chat bubbles.',
-        ),
-        Message(
-          role: 'ai',
-          content:
-              "I can add markdown rendering. Should I use a lightweight inline parser or a full CommonMark implementation?",
-        ),
-      ],
-    );
-    _sessions.add(s3);
-
-    // Session 2 — done (response complete but unread)
-    final s2 = Session(
-      id: 2,
-      title: _mockSessionTitles[1],
-      model: 'anthropic/claude-3.5',
-      status: SessionStatus.done,
-      lastActivityAt: now.subtract(Duration(minutes: 15)),
-      messages: [
-        Message(
-          role: 'user',
-          content: 'The rendering pipeline has a flickering issue on resize.',
-        ),
-        Message(
-          role: 'ai',
-          content:
-              "I've identified the issue — the diff renderer isn't flushing stale cells on layout changes. Let me patch it.",
-        ),
-      ],
-    );
-    _sessions.add(s2);
-
-    // Session 4 — idle (least recently active)
-    final s4 = Session(
-      id: 4,
-      title: _mockSessionTitles[3],
-      model: 'local/llama3',
-      status: SessionStatus.idle,
-      lastActivityAt: now.subtract(Duration(hours: 1)),
-      messages: [
-        Message(
-          role: 'user',
-          content:
-              'Refactor the command registry to support dynamic suggestions.',
-        ),
-      ],
-    );
-    _sessions.add(s4);
-
-    _currentSessionId = 1;
+  Future<void> _loadMessages(int sessionId) async {
+    _messageCache[sessionId] = await _store.getMessages(sessionId);
   }
 
   @override
   void dispose() {
     textController.removeListener(_onTextChanged);
-    for (final session in _sessions) {
-      session.responseTimer?.cancel();
-      session.metricsTimer?.cancel();
+    _chatService.dispose();
+    for (final rt in _runtimeStates.values) {
+      rt.cancelTimers();
     }
+    for (final timer in _metricsTimers.values) {
+      timer.cancel();
+    }
+    _metricsTimers.clear();
     _contextAnimTimer?.cancel();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
   }
 
-  /// The currently active session.
-  Session get _currentSession =>
-      _sessions.firstWhere((s) => s.id == _currentSessionId);
-
-  /// Find a session by its id, or null if not found.
   Session? _findSession(int id) {
     for (final s in _sessions) {
       if (s.id == id) return s;
@@ -244,8 +186,7 @@ class _ChatPanelState extends State<ChatPanel> {
     return null;
   }
 
-  /// Switch to a different session by id.
-  void _switchSession(int id) {
+  Future<void> _switchSession(int id) async {
     final session = _findSession(id);
     if (session == null) {
       setState(() {
@@ -255,12 +196,22 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    // Mark "done" session as "idle" when user views it
     if (session.status == SessionStatus.done) {
+      await _store.update(id, status: SessionStatus.idle);
       session.status = SessionStatus.idle;
     }
 
     _currentSessionId = id;
+    await _loadMessages(id);
+    final rt = _runtime(id);
+    final base = _computeBaseContext(id);
+    rt.contextTargetTokens = base;
+    rt.contextDisplayTokens = base.toDouble();
+    rt.ttftMs = 0;
+    rt.ttftReceived = false;
+    rt.tokPerSec = 0;
+    rt.isResponding = false;
+    _stopContextAnimation();
     setState(() {});
   }
 
@@ -277,10 +228,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _activeWizardSubcommand = null;
   }
 
-  /// Parse input text to determine overlay mode and update state.
   void _onTextChanged() {
-    // When wizard overlay is active, ignore text changes entirely.
-    // The wizard handles its own input fields; the chat input is hidden.
     if (_overlayMode == _OverlayMode.wizard) return;
 
     final text = textController.text;
@@ -294,7 +242,6 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final spaceIndex = trimmed.indexOf(' ');
 
-    // No space after / → command mode
     if (spaceIndex == -1) {
       _filteredCommands = filterCommands(trimmed);
       if (_filteredCommands.isEmpty) {
@@ -308,7 +255,6 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    // Has a space → check for parameter mode
     final commandName = trimmed.substring(0, spaceIndex);
     final command = findCommand(commandName);
 
@@ -320,17 +266,14 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    // Parse which param we're completing and what's been typed
     final afterCommand = trimmed.substring(spaceIndex + 1);
     int paramIndex;
     String currentInput;
 
     if (afterCommand.isEmpty) {
-      // Just typed "/command ", starting first param
       paramIndex = 0;
       currentInput = '';
     } else if (afterCommand.endsWith(' ')) {
-      // Completed a param, starting the next one
       final completedParts = afterCommand
           .trimRight()
           .split(' ')
@@ -339,7 +282,6 @@ class _ChatPanelState extends State<ChatPanel> {
       paramIndex = completedParts.length;
       currentInput = '';
     } else {
-      // Currently typing a param value
       final parts = afterCommand.split(' ');
       currentInput = parts.last;
       paramIndex = parts.length - 1;
@@ -352,8 +294,6 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    // Dynamic suggestions for /session command: list all existing sessions
-    // Dynamic suggestions for /model command: list all models from loaded providers
     final List<CommandSuggestion> suggestions;
     if (commandName == '/session' && paramIndex == 0) {
       suggestions = _sessions
@@ -398,7 +338,6 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  /// Compute scroll offset so the selected item is always visible.
   int _computeScrollOffset(
     int selectedIndex,
     int currentOffset,
@@ -411,21 +350,13 @@ class _ChatPanelState extends State<ChatPanel> {
     return currentOffset;
   }
 
-  /// Intercept key events when the overlay is visible.
-  /// Handles arrow navigation, Enter to select, and Escape to dismiss
-  /// in both command and parameter modes.
   bool _handleInputKeyEvent(KeyboardEvent event) {
     if (_overlayMode == _OverlayMode.off) return false;
 
-    // ── Wizard mode ──
-    // When the wizard overlay is active, consume ALL key events so they
-    // don't leak through to the text input field. The wizard's own
-    // Focusable handles Enter/Escape; other keys are just blocked.
     if (_overlayMode == _OverlayMode.wizard) {
       return true;
     }
 
-    // ── Command mode ──
     if (_overlayMode == _OverlayMode.command) {
       if (_filteredCommands.isEmpty) return false;
 
@@ -464,7 +395,6 @@ class _ChatPanelState extends State<ChatPanel> {
         textController.selection = TextSelection.collapsed(
           offset: textController.text.length,
         );
-        // _onTextChanged fires and transitions to parameter mode if applicable
         return true;
       }
 
@@ -478,7 +408,6 @@ class _ChatPanelState extends State<ChatPanel> {
       return false;
     }
 
-    // ── Parameter mode ──
     if (_overlayMode == _OverlayMode.parameter) {
       if (_filteredSuggestions.isEmpty) return false;
 
@@ -517,13 +446,10 @@ class _ChatPanelState extends State<ChatPanel> {
         final commandAndSpace = _activeCommand!.name + ' ';
         final restOfText = trimmed.substring(_activeCommand!.name.length + 1);
 
-        // Compute the prefix: everything before the currently-typed param value
         String prefix;
         if (restOfText.isEmpty || restOfText.endsWith(' ')) {
-          // At the start of a new param (empty or just completed one)
           prefix = trimmed;
         } else {
-          // Currently typing a param — replace just the incomplete portion
           final lastSpace = restOfText.lastIndexOf(' ');
           prefix = lastSpace >= 0
               ? commandAndSpace + restOfText.substring(0, lastSpace + 1)
@@ -535,12 +461,10 @@ class _ChatPanelState extends State<ChatPanel> {
         textController.selection = TextSelection.collapsed(
           offset: newText.length,
         );
-        // _onTextChanged fires and transitions to next param or off
         return true;
       }
 
       if (event.logicalKey == LogicalKey.escape) {
-        // Dismiss overlay but keep the command text in the input
         _setOverlayOff();
         setState(() {});
         return true;
@@ -643,9 +567,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
-  void _sendMessage() {
-    // When wizard overlay is active, block message sending entirely.
-    // The wizard owns the UI; the chat input row is hidden.
+  Future<void> _sendMessage() async {
     if (_overlayMode == _OverlayMode.wizard) return;
 
     final text = textController.text.trim();
@@ -653,92 +575,63 @@ class _ChatPanelState extends State<ChatPanel> {
 
     textController.clear();
 
-    // Slash commands are not added to chat log
     if (text.startsWith('/')) {
       _executeCommand(text);
       return;
     }
 
-    final session = _currentSession;
+    final sessionId = _currentSessionId;
+    if (sessionId == null) return;
 
-    // Initialize per-session mock metrics
-    session.responseStartTime = DateTime.now();
-    session.mockTtftTargetMs = (Random().nextInt(2800) + 200)
-        .toDouble(); // 200–3000ms
-    session.mockTokRate = Random().nextInt(40) + 30.0; // 30–70 tok/s
-    session.tokPerSec = 0.0;
-    session.ttftMs = 0.0;
-    session.tokCount = 0.0;
+    final rt = _runtime(sessionId);
+    _streamingContent = '';
 
-    setState(() {
-      session.messages.add(Message(role: 'user', content: text));
-      session.isResponding = true;
-      session.status = SessionStatus.running;
-      session.lastActivityAt = DateTime.now();
-      session.contextTargetTokens += Random().nextInt(12000) + 3000;
-      _startContextAnimation();
-    });
+    rt.isResponding = true;
+    rt.responseStartTime = DateTime.now();
+    rt.ttftMs = 0.0;
+    rt.ttftReceived = false;
+    rt.tokPerSec = 0.0;
+    rt.tokCount = 0.0;
 
-    // Start per-session metrics timer to simulate tok/s ramping
-    session.metricsTimer?.cancel();
-    session.metricsTimer = Timer.periodic(const Duration(milliseconds: 16), (
-      _,
-    ) {
-      _updateMetrics(session);
-    });
-
-    // Mock AI response after random 10-30 seconds (cranked up for multi-session testing)
-    session.responseTimer?.cancel();
-    final delaySeconds = Random().nextInt(21) + 10;
-    session.responseTimer = Timer(Duration(seconds: delaySeconds), () {
-      session.metricsTimer?.cancel();
-      setState(() {
-        session.isResponding = false;
-        session.tokPerSec = session.mockTokRate;
-        session.messages.add(
-          Message(
-            role: 'ai',
-            content:
-                _mockAiResponses[session.mockResponseIndex %
-                    _mockAiResponses.length],
-          ),
-        );
-        session.mockResponseIndex++;
-        session.status = SessionStatus.done;
-        session.lastActivityAt = DateTime.now();
-        session.contextTargetTokens += Random().nextInt(12000) + 3000;
-        _startContextAnimation();
-      });
-    });
-  }
-
-  void _updateMetrics(Session session) {
-    if (session.responseStartTime == null) return;
-    final elapsed =
-        DateTime.now().difference(session.responseStartTime!).inMicroseconds /
-        1000.0;
-
-    if (elapsed < session.mockTtftTargetMs) {
-      // TTFT phase: live counter ticking up at 60fps
-      session.ttftMs = elapsed;
-      setState(() {});
-      return;
-    }
-
-    // First token arrived: freeze TTFT at target value
-    session.ttftMs = session.mockTtftTargetMs;
-
-    // Simulate token generation at mock rate (~16ms interval)
-    final elapsedAfterTtft = elapsed - session.ttftMs;
-    session.tokCount += session.mockTokRate * 0.016;
-
-    // Compute live tok/s from actual elapsed time after TTFT
-    final elapsedSec = elapsedAfterTtft / 1000.0;
-    if (elapsedSec > 0) {
-      session.tokPerSec = session.tokCount / elapsedSec;
-    }
-
+    _startMetricsTimer(sessionId);
     setState(() {});
+
+    _chatService.sendMessage(
+      sessionId: sessionId,
+      userContent: text,
+      session: _currentSession,
+      runtime: rt,
+      onDelta: (delta) {
+        _streamingContent += delta;
+      },
+      onChunk: () {
+        final charCount = _streamingContent.length;
+        final estimatedTokens = (charCount / 3.5).ceil();
+        rt.contextTargetTokens = _computeBaseContext(sessionId) + estimatedTokens;
+        if (!_contextAnimTimerIsActive()) {
+          _startContextAnimation();
+        }
+        setState(() {});
+      },
+      onComplete: (response) async {
+        _streamingContent = '';
+        _stopMetricsTimer(sessionId);
+        final msgs = await _store.getMessages(sessionId);
+        _messageCache[sessionId] = msgs;
+        if (response.promptTokens + response.completionTokens > 0) {
+          rt.contextTargetTokens = _computeBaseContext(sessionId);
+        }
+        _startContextAnimation();
+        setState(() {});
+      },
+      onError: (error) {
+        _stopMetricsTimer(sessionId);
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = error;
+        });
+      },
+    );
   }
 
   String _formatTtft(double ms) {
@@ -749,7 +642,7 @@ class _ChatPanelState extends State<ChatPanel> {
     return '${ms.round()}ms';
   }
 
-  void _executeCommand(String text) {
+  Future<void> _executeCommand(String text) async {
     final parts = text.split(' ');
     final commandName = parts[0];
     final command = findCommand(commandName);
@@ -764,8 +657,11 @@ class _ChatPanelState extends State<ChatPanel> {
             _toastMessage = 'Unknown model: $modelKey';
           });
         } else {
-          setState(() {
+          if (_currentSessionId != null) {
+            await _store.update(_currentSessionId!, model: modelKey);
             _currentSession.model = modelKey;
+          }
+          setState(() {
             _toastVisible = true;
             _toastMessage = 'Model switched to $modelKey';
           });
@@ -782,7 +678,7 @@ class _ChatPanelState extends State<ChatPanel> {
         final idStr = parts[1].replaceFirst('#', '');
         final id = int.tryParse(idStr);
         if (id != null) {
-          _switchSession(id);
+          await _switchSession(id);
         } else {
           setState(() {
             _toastVisible = true;
@@ -795,6 +691,11 @@ class _ChatPanelState extends State<ChatPanel> {
           _toastMessage = 'Usage: /session #<id>';
         });
       }
+    } else if (commandName == '/new') {
+      final model = _providerService.resolveDefaultModel() ?? '';
+      final session = await _store.create(title: 'New Session', model: model);
+      _sessions = await _store.list();
+      await _switchSession(session.id);
     } else if (commandName == '/provider') {
       final subcommand = parts.length > 1 ? parts[1] : '';
       const builtInProviders = {'deepseek', 'infinigence', 'volcengine'};
@@ -845,7 +746,6 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
-  /// Reset overlay state but preserve wizard subcommand.
   void _setOverlayOffExceptWizard() {
     _filteredCommands = [];
     _selectedCommandIndex = 0;
@@ -857,7 +757,6 @@ class _ChatPanelState extends State<ChatPanel> {
     _suggestionScrollOffset = 0;
   }
 
-  /// Dismiss the wizard overlay and show a completion toast.
   void _dismissWizard({String? message}) {
     setState(() {
       _overlayMode = _OverlayMode.off;
@@ -870,7 +769,6 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
-  /// Build the active provider wizard overlay component.
   Component _buildWizardOverlay() {
     final sub = _activeWizardSubcommand;
     if (sub == null) return const SizedBox();
@@ -904,7 +802,7 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _startContextAnimation() {
-    if (_contextAnimTimer != null) return; // already running
+    if (_contextAnimTimer != null) return;
     _lastContextTick = DateTime.now();
     _contextAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       final now = DateTime.now();
@@ -912,16 +810,17 @@ class _ChatPanelState extends State<ChatPanel> {
           now.difference(_lastContextTick!).inMilliseconds / 1000.0;
       _lastContextTick = now;
 
-      final session = _currentSession;
-      final diff = session.contextTargetTokens - session.contextDisplayTokens;
+      if (_currentSessionId == null) return;
+      final rt = _runtime(_currentSessionId!);
+      final diff = rt.contextTargetTokens - rt.contextDisplayTokens;
       if (diff.abs() < 0.5) {
-        session.contextDisplayTokens = session.contextTargetTokens.toDouble();
+        rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
         _stopContextAnimation();
         setState(() {});
         return;
       }
 
-      session.contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
+      rt.contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
       setState(() {});
     });
   }
@@ -931,6 +830,48 @@ class _ChatPanelState extends State<ChatPanel> {
     _contextAnimTimer = null;
     _lastContextTick = null;
   }
+
+  final Map<int, Timer> _metricsTimers = {};
+
+  void _startMetricsTimer(int sessionId) {
+    _stopMetricsTimer(sessionId);
+    _metricsTimers[sessionId] =
+        Timer.periodic(const Duration(milliseconds: 50), (_) {
+      _updateLiveMetrics(sessionId);
+      setState(() {});
+    });
+  }
+
+  void _stopMetricsTimer(int sessionId) {
+    _metricsTimers[sessionId]?.cancel();
+    _metricsTimers.remove(sessionId);
+  }
+
+  void _updateLiveMetrics(int sessionId) {
+    final rt = _runtime(sessionId);
+    if (!rt.isResponding || rt.responseStartTime == null) return;
+
+    final elapsedMs = DateTime.now()
+            .difference(rt.responseStartTime!)
+            .inMicroseconds /
+        1000.0;
+
+    if (!rt.ttftReceived) {
+      rt.ttftMs = elapsedMs;
+    }
+
+    final charCount = _streamingContent.length;
+    if (charCount > 0 && rt.ttftReceived) {
+      final estimatedTokens = (charCount / 3.5).ceil();
+      final elapsedSec =
+          (elapsedMs - rt.ttftMs) / 1000.0;
+      if (elapsedSec > 0) {
+        rt.tokPerSec = estimatedTokens / elapsedSec;
+      }
+    }
+  }
+
+  bool _contextAnimTimerIsActive() => _contextAnimTimer != null;
 
   void _dismissToast() {
     setState(() {
@@ -958,7 +899,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 width: _infoPanelWidth,
                 child: ExtraInfoPanel(
                   sessions: _sessions,
-                  currentSessionId: _currentSessionId,
+                  currentSessionId: _currentSessionId ?? 0,
                   onSwitchSession: _switchSession,
                 ),
               ),
@@ -974,13 +915,11 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildMainInterface() {
     final children = <Component>[];
 
-    // ── Wizard mode: render wizard overlay exclusively (no input, no toolbar) ──
     if (_overlayMode == _OverlayMode.wizard) {
       children.add(Expanded(child: _buildWizardOverlay()));
       return Column(children: children);
     }
 
-    // ── Normal mode: message list + command/parameter overlay ──
     children.add(Expanded(child: _buildMessageList()));
 
     if (_overlayMode == _OverlayMode.command && _filteredCommands.isNotEmpty) {
@@ -1032,11 +971,18 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildMessageList() {
-    if (_currentSession.messages.isEmpty) {
+    final messages = _currentMessages;
+    final sessionId = _currentSessionId;
+    final rt = sessionId != null ? _runtime(sessionId) : null;
+    final isStreaming = rt?.isResponding ?? false;
+
+    if (messages.isEmpty && !isStreaming) {
       return Center(
         child: Text('No messages yet.', style: TextStyle(color: Colors.gray)),
       );
     }
+
+    final itemCount = messages.length + (isStreaming ? 1 : 0);
 
     return Scrollbar(
       controller: scrollController,
@@ -1044,20 +990,31 @@ class _ChatPanelState extends State<ChatPanel> {
       child: ListView.builder(
         controller: scrollController,
         padding: EdgeInsets.all(1),
-        itemCount: _currentSession.messages.length,
+        itemCount: itemCount,
         itemBuilder: (context, index) {
-          return MessageBubble(message: _currentSession.messages[index]);
+          if (index < messages.length) {
+            return MessageBubble(message: messages[index]);
+          }
+          return MessageBubble(
+            message: Message(
+              id: -1,
+              sessionId: sessionId ?? 0,
+              role: 'ai',
+              content: _streamingContent.isEmpty ? '...' : _streamingContent,
+            ),
+          );
         },
       ),
     );
   }
 
   Component _buildToolbar() {
-    final session = _currentSession;
+    final sessionId = _currentSessionId;
+    final rt = sessionId != null ? _runtime(sessionId) : null;
     final modelLabel = _currentSession.model.isEmpty
         ? 'select model'
         : _currentSession.model;
-    final modelButton = session.isResponding
+    final modelButton = (rt?.isResponding ?? false)
         ? GlossyModelButton(
             label: modelLabel,
             isAnimating: true,
@@ -1087,26 +1044,26 @@ class _ChatPanelState extends State<ChatPanel> {
           _buildContextBar(),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           Text(
-            session.isResponding
-                ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
-                : session.tokPerSec > 0
-                ? '${session.tokPerSec.toStringAsFixed(1)} tok/s'
+            rt?.isResponding ?? false
+                ? '${rt!.tokPerSec.toStringAsFixed(1)} tok/s'
+                : rt != null && rt.tokPerSec > 0
+                ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
                 : '— tok/s',
             style: TextStyle(
-              color: session.isResponding
+              color: rt?.isResponding ?? false
                   ? Color.fromRGB(180, 220, 255)
                   : Color.fromRGB(80, 80, 100),
             ),
           ),
           Text(' ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           Text(
-            session.isResponding
-                ? _formatTtft(session.ttftMs)
-                : session.ttftMs > 0
-                ? _formatTtft(session.ttftMs)
+            rt?.isResponding ?? false
+                ? _formatTtft(rt!.ttftMs)
+                : rt != null && rt.ttftMs > 0
+                ? _formatTtft(rt.ttftMs)
                 : '—',
             style: TextStyle(
-              color: session.isResponding
+              color: rt?.isResponding ?? false
                   ? Color.fromRGB(180, 220, 255)
                   : Color.fromRGB(80, 80, 100),
             ),
@@ -1131,21 +1088,39 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onLocalModelButtonPressed() {
+    if (_currentSessionId == null) return;
+    _store.update(_currentSessionId!, model: _localModel);
+    _currentSession.model = _localModel;
     setState(() {
-      _currentSession.model = _localModel;
       _toastVisible = true;
       _toastMessage = 'Model switched to $_localModel';
     });
     _providerService.setLastUsedModel(_localModel);
   }
 
+  int _computeBaseContext(int sessionId) {
+    final session = _findSession(sessionId);
+    if (session != null && session.contextTokens > 0) {
+      return session.contextTokens;
+    }
+    final msgs = _messageCache[sessionId];
+    if (msgs == null || msgs.isEmpty) return 0;
+    var total = 0;
+    for (final m in msgs) {
+      if (m.tokensIn + m.tokensOut > 0) {
+        total = m.tokensIn + m.tokensOut;
+      } else if (m.content.isNotEmpty) {
+        total += (m.content.length / 3.5).ceil();
+      }
+    }
+    return total;
+  }
+
   Component _buildContextBar() {
-    final session = _currentSession;
-    final fillRatio = (session.contextDisplayTokens / _contextMaxTokens).clamp(
-      0.0,
-      1.0,
-    );
-    final displayInt = session.contextDisplayTokens.round();
+    if (_currentSessionId == null) return const SizedBox();
+    final rt = _runtime(_currentSessionId!);
+    final displayTokens = rt.contextDisplayTokens.round();
+    final fillRatio = (displayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final fmtCtx = (int n) {
       final k = n ~/ 1024;
       final kStr = k.toString().replaceAllMapped(
@@ -1156,7 +1131,7 @@ class _ChatPanelState extends State<ChatPanel> {
         RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
     final labelText = _contextBarHovered
         ? 'Compact'
-        : '${fmtNum(displayInt)} / ${fmtCtx(_contextMaxTokens)}';
+        : '${fmtNum(displayTokens)} / ${fmtCtx(_contextMaxTokens)}';
 
     final bar = BgProgressBar(
       value: fillRatio,
@@ -1208,6 +1183,7 @@ class _ChatPanelState extends State<ChatPanel> {
             child: TextField(
               controller: textController,
               focused: true,
+              maxLines: null,
               style: TextStyle(color: Colors.white),
               placeholder: 'Type a message...',
               onSubmitted: (_) => _sendMessage(),

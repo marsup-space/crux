@@ -11,6 +11,10 @@ const List<SlashCommand> slashCommands = [
     ],
   ),
   SlashCommand(
+    name: '/new',
+    description: 'Create a new session',
+  ),
+  SlashCommand(
     name: '/session',
     description: 'Switch to a session',
     params: ['id'],

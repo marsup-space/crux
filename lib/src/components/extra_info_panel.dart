@@ -142,7 +142,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
     // Sort sessions by latest activity (most recent first)
     final sorted = List<Session>.from(panel.sessions)
-      ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     // Session rows — prefix and title rendered separately so only the
     // prefix icon fades for running sessions

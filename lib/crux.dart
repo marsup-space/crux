@@ -1,4 +1,8 @@
 export 'src/models/session.dart';
+export 'src/models/session_runtime_state.dart';
+export 'src/models/message.dart';
+export 'src/models/part.dart';
+export 'src/storage/storage.dart';
 export 'src/components/ui/bg_progress_bar.dart';
 export 'src/components/ui/button.dart';
 export 'src/components/ui/glossy_model_button.dart';
@@ -10,6 +14,8 @@ export 'src/components/suggestion_overlay.dart';
 export 'src/components/extra_info_panel.dart';
 export 'src/components/message_bubble.dart';
 export 'src/models/provider_config.dart';
+export 'src/services/chat_service.dart';
+export 'src/services/llm_client.dart';
 export 'src/services/provider_config_loader.dart';
 export 'src/services/provider_service.dart';
 export 'src/components/provider_wizard_builtin.dart';
