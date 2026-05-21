@@ -884,6 +884,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _reasoningContentMeta = const VerificationMeta(
+    'reasoningContent',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningContent = GeneratedColumn<String>(
+    'reasoning_content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _modelMeta = const VerificationMeta('model');
   @override
   late final GeneratedColumn<String> model = GeneratedColumn<String>(
@@ -965,6 +977,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     sessionId,
     role,
     content,
+    reasoningContent,
     model,
     cost,
     tokensIn,
@@ -1008,6 +1021,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
       context.handle(
         _contentMeta,
         content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    }
+    if (data.containsKey('reasoning_content')) {
+      context.handle(
+        _reasoningContentMeta,
+        reasoningContent.isAcceptableOrUnknown(
+          data['reasoning_content']!,
+          _reasoningContentMeta,
+        ),
       );
     }
     if (data.containsKey('model')) {
@@ -1082,6 +1104,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}content'],
       )!,
+      reasoningContent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_content'],
+      )!,
       model: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}model'],
@@ -1124,6 +1150,7 @@ class Message extends DataClass implements Insertable<Message> {
   final int sessionId;
   final String role;
   final String content;
+  final String reasoningContent;
   final String model;
   final double cost;
   final int tokensIn;
@@ -1136,6 +1163,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.sessionId,
     required this.role,
     required this.content,
+    required this.reasoningContent,
     required this.model,
     required this.cost,
     required this.tokensIn,
@@ -1151,6 +1179,7 @@ class Message extends DataClass implements Insertable<Message> {
     map['session_id'] = Variable<int>(sessionId);
     map['role'] = Variable<String>(role);
     map['content'] = Variable<String>(content);
+    map['reasoning_content'] = Variable<String>(reasoningContent);
     map['model'] = Variable<String>(model);
     map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
@@ -1171,6 +1200,7 @@ class Message extends DataClass implements Insertable<Message> {
       sessionId: Value(sessionId),
       role: Value(role),
       content: Value(content),
+      reasoningContent: Value(reasoningContent),
       model: Value(model),
       cost: Value(cost),
       tokensIn: Value(tokensIn),
@@ -1195,6 +1225,7 @@ class Message extends DataClass implements Insertable<Message> {
       sessionId: serializer.fromJson<int>(json['sessionId']),
       role: serializer.fromJson<String>(json['role']),
       content: serializer.fromJson<String>(json['content']),
+      reasoningContent: serializer.fromJson<String>(json['reasoningContent']),
       model: serializer.fromJson<String>(json['model']),
       cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
@@ -1212,6 +1243,7 @@ class Message extends DataClass implements Insertable<Message> {
       'sessionId': serializer.toJson<int>(sessionId),
       'role': serializer.toJson<String>(role),
       'content': serializer.toJson<String>(content),
+      'reasoningContent': serializer.toJson<String>(reasoningContent),
       'model': serializer.toJson<String>(model),
       'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
@@ -1227,6 +1259,7 @@ class Message extends DataClass implements Insertable<Message> {
     int? sessionId,
     String? role,
     String? content,
+    String? reasoningContent,
     String? model,
     double? cost,
     int? tokensIn,
@@ -1239,6 +1272,7 @@ class Message extends DataClass implements Insertable<Message> {
     sessionId: sessionId ?? this.sessionId,
     role: role ?? this.role,
     content: content ?? this.content,
+    reasoningContent: reasoningContent ?? this.reasoningContent,
     model: model ?? this.model,
     cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
@@ -1253,6 +1287,9 @@ class Message extends DataClass implements Insertable<Message> {
       sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       role: data.role.present ? data.role.value : this.role,
       content: data.content.present ? data.content.value : this.content,
+      reasoningContent: data.reasoningContent.present
+          ? data.reasoningContent.value
+          : this.reasoningContent,
       model: data.model.present ? data.model.value : this.model,
       cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
@@ -1272,6 +1309,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('sessionId: $sessionId, ')
           ..write('role: $role, ')
           ..write('content: $content, ')
+          ..write('reasoningContent: $reasoningContent, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -1289,6 +1327,7 @@ class Message extends DataClass implements Insertable<Message> {
     sessionId,
     role,
     content,
+    reasoningContent,
     model,
     cost,
     tokensIn,
@@ -1305,6 +1344,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.sessionId == this.sessionId &&
           other.role == this.role &&
           other.content == this.content &&
+          other.reasoningContent == this.reasoningContent &&
           other.model == this.model &&
           other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
@@ -1319,6 +1359,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int> sessionId;
   final Value<String> role;
   final Value<String> content;
+  final Value<String> reasoningContent;
   final Value<String> model;
   final Value<double> cost;
   final Value<int> tokensIn;
@@ -1331,6 +1372,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.sessionId = const Value.absent(),
     this.role = const Value.absent(),
     this.content = const Value.absent(),
+    this.reasoningContent = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1344,6 +1386,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required int sessionId,
     required String role,
     this.content = const Value.absent(),
+    this.reasoningContent = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1359,6 +1402,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? sessionId,
     Expression<String>? role,
     Expression<String>? content,
+    Expression<String>? reasoningContent,
     Expression<String>? model,
     Expression<double>? cost,
     Expression<int>? tokensIn,
@@ -1372,6 +1416,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (sessionId != null) 'session_id': sessionId,
       if (role != null) 'role': role,
       if (content != null) 'content': content,
+      if (reasoningContent != null) 'reasoning_content': reasoningContent,
       if (model != null) 'model': model,
       if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
@@ -1387,6 +1432,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int>? sessionId,
     Value<String>? role,
     Value<String>? content,
+    Value<String>? reasoningContent,
     Value<String>? model,
     Value<double>? cost,
     Value<int>? tokensIn,
@@ -1400,6 +1446,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       sessionId: sessionId ?? this.sessionId,
       role: role ?? this.role,
       content: content ?? this.content,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
       model: model ?? this.model,
       cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
@@ -1424,6 +1471,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     }
     if (content.present) {
       map['content'] = Variable<String>(content.value);
+    }
+    if (reasoningContent.present) {
+      map['reasoning_content'] = Variable<String>(reasoningContent.value);
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
@@ -1456,6 +1506,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('sessionId: $sessionId, ')
           ..write('role: $role, ')
           ..write('content: $content, ')
+          ..write('reasoningContent: $reasoningContent, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -2482,6 +2533,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required int sessionId,
       required String role,
       Value<String> content,
+      Value<String> reasoningContent,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2496,6 +2548,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<int> sessionId,
       Value<String> role,
       Value<String> content,
+      Value<String> reasoningContent,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2567,6 +2620,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get content => $composableBuilder(
     column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningContent => $composableBuilder(
+    column: $table.reasoningContent,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2678,6 +2736,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reasoningContent => $composableBuilder(
+    column: $table.reasoningContent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get model => $composableBuilder(
     column: $table.model,
     builder: (column) => ColumnOrderings(column),
@@ -2754,6 +2817,11 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get content =>
       $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get reasoningContent => $composableBuilder(
+    column: $table.reasoningContent,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get model =>
       $composableBuilder(column: $table.model, builder: (column) => column);
@@ -2859,6 +2927,7 @@ class $$MessagesTableTableManager
                 Value<int> sessionId = const Value.absent(),
                 Value<String> role = const Value.absent(),
                 Value<String> content = const Value.absent(),
+                Value<String> reasoningContent = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -2871,6 +2940,7 @@ class $$MessagesTableTableManager
                 sessionId: sessionId,
                 role: role,
                 content: content,
+                reasoningContent: reasoningContent,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,
@@ -2885,6 +2955,7 @@ class $$MessagesTableTableManager
                 required int sessionId,
                 required String role,
                 Value<String> content = const Value.absent(),
+                Value<String> reasoningContent = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -2897,6 +2968,7 @@ class $$MessagesTableTableManager
                 sessionId: sessionId,
                 role: role,
                 content: content,
+                reasoningContent: reasoningContent,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,

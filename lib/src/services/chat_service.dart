@@ -10,14 +10,22 @@ import 'provider_service.dart';
 
 class ChatResponse {
   final String content;
+  final String reasoningContent;
   final int promptTokens;
   final int completionTokens;
+  final int promptCacheHitTokens;
+  final int promptCacheMissTokens;
+  final int reasoningTokens;
   final double cost;
 
   const ChatResponse({
     this.content = '',
+    this.reasoningContent = '',
     this.promptTokens = 0,
     this.completionTokens = 0,
+    this.promptCacheHitTokens = 0,
+    this.promptCacheMissTokens = 0,
+    this.reasoningTokens = 0,
     this.cost = 0.0,
   });
 }
@@ -43,6 +51,7 @@ class ChatService {
     required Session session,
     required SessionRuntimeState runtime,
     required void Function(String delta) onDelta,
+    required void Function(String reasoning) onReasoning,
     required void Function() onChunk,
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
@@ -81,8 +90,12 @@ class ChatService {
     final apiMessages = _buildApiMessages(history);
 
     final buffer = StringBuffer();
+    final reasoningBuffer = StringBuffer();
     int promptTokens = 0;
     int completionTokens = 0;
+    int promptCacheHitTokens = 0;
+    int promptCacheMissTokens = 0;
+    int reasoningTokens = 0;
 
     final stream = _llmClient.streamChat(
       endpointUrl: provider.endpointUrl,
@@ -90,6 +103,8 @@ class ChatService {
       apiKey: apiKey,
       modelId: modelId,
       messages: apiMessages,
+      thinkingMode: runtime.thinkingMode,
+      reasoningEffort: runtime.reasoningEffort,
     );
 
     bool firstToken = true;
@@ -100,12 +115,14 @@ class ChatService {
       if (finalized) return;
       finalized = true;
       final content = buffer.toString();
-      final cost = _estimateCost(provider, modelId, promptTokens, completionTokens);
+      final cost = _estimateCost(provider, modelId, promptTokens, completionTokens,
+          promptCacheHitTokens: promptCacheHitTokens);
 
       await _store.addMessage(
         sessionId,
         role: 'ai',
         content: content,
+        reasoningContent: reasoningBuffer.toString(),
         model: compositeKey,
         cost: cost,
         tokensIn: promptTokens,
@@ -133,8 +150,12 @@ class ChatService {
 
       onComplete(ChatResponse(
         content: content,
+        reasoningContent: reasoningBuffer.toString(),
         promptTokens: promptTokens,
         completionTokens: completionTokens,
+        promptCacheHitTokens: promptCacheHitTokens,
+        promptCacheMissTokens: promptCacheMissTokens,
+        reasoningTokens: reasoningTokens,
         cost: cost,
       ));
     }
@@ -149,7 +170,7 @@ class ChatService {
           return;
         }
 
-        if (chunk.textDelta != null) {
+        if (chunk.textDelta != null || chunk.reasoningContent != null) {
           if (firstToken) {
             final elapsed = DateTime.now()
                 .difference(runtime.responseStartTime!)
@@ -158,8 +179,14 @@ class ChatService {
             runtime.ttftReceived = true;
             firstToken = false;
           }
-          buffer.write(chunk.textDelta);
-          onDelta(chunk.textDelta!);
+          if (chunk.textDelta != null) {
+            buffer.write(chunk.textDelta);
+            onDelta(chunk.textDelta!);
+          }
+          if (chunk.reasoningContent != null) {
+            reasoningBuffer.write(chunk.reasoningContent);
+            onReasoning(chunk.reasoningContent!);
+          }
           onChunk();
         }
 
@@ -168,6 +195,15 @@ class ChatService {
         }
         if (chunk.completionTokens != null) {
           completionTokens = chunk.completionTokens!;
+        }
+        if (chunk.promptCacheHitTokens != null) {
+          promptCacheHitTokens = chunk.promptCacheHitTokens!;
+        }
+        if (chunk.promptCacheMissTokens != null) {
+          promptCacheMissTokens = chunk.promptCacheMissTokens!;
+        }
+        if (chunk.reasoningTokens != null) {
+          reasoningTokens = chunk.reasoningTokens!;
         }
 
         if (chunk.finishReason != null) {
@@ -200,7 +236,11 @@ class ChatService {
   List<Map<String, String>> _buildApiMessages(List<Message> history) {
     return history.map((m) {
       final role = m.role == 'ai' ? 'assistant' : m.role;
-      return {'role': role, 'content': m.content};
+      final msg = <String, String>{'role': role, 'content': m.content};
+      if (m.role == 'ai' && m.reasoningContent.isNotEmpty) {
+        msg['reasoning_content'] = m.reasoningContent;
+      }
+      return msg;
     }).toList();
   }
 
@@ -208,19 +248,23 @@ class ChatService {
     ProviderConfig provider,
     String modelId,
     int promptTokens,
-    int completionTokens,
-  ) {
-    final rates = <String, ({double input, double output})>{
-      'deepseek-v4-flash': (input: 0.10 / 1_000_000, output: 0.40 / 1_000_000),
-      'deepseek-v4-pro': (input: 2.0 / 1_000_000, output: 8.0 / 1_000_000),
-      'gpt-4o': (input: 2.50 / 1_000_000, output: 10.0 / 1_000_000),
-      'gpt-4.1': (input: 2.0 / 1_000_000, output: 8.0 / 1_000_000),
-      'claude-3-5-sonnet': (input: 3.0 / 1_000_000, output: 15.0 / 1_000_000),
+    int completionTokens, {
+    int promptCacheHitTokens = 0,
+  }) {
+    final rates = <String, ({double input, double cacheHit, double output})>{
+      'deepseek-v4-flash': (input: 0.10 / 1_000_000, cacheHit: 0.01 / 1_000_000, output: 0.40 / 1_000_000),
+      'deepseek-v4-pro': (input: 2.0 / 1_000_000, cacheHit: 0.20 / 1_000_000, output: 8.0 / 1_000_000),
+      'gpt-4o': (input: 2.50 / 1_000_000, cacheHit: 1.25 / 1_000_000, output: 10.0 / 1_000_000),
+      'gpt-4.1': (input: 2.0 / 1_000_000, cacheHit: 0.50 / 1_000_000, output: 8.0 / 1_000_000),
+      'claude-3-5-sonnet': (input: 3.0 / 1_000_000, cacheHit: 0.30 / 1_000_000, output: 15.0 / 1_000_000),
     };
 
     final rate = rates[modelId];
     if (rate == null) return 0.0;
-    return (promptTokens * rate.input) + (completionTokens * rate.output);
+    final cacheMissTokens = promptTokens - promptCacheHitTokens;
+    return (cacheMissTokens * rate.input) +
+        (promptCacheHitTokens * rate.cacheHit) +
+        (completionTokens * rate.output);
   }
 
   void dispose() {

@@ -43,6 +43,8 @@ class _ChatPanelState extends State<ChatPanel> {
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> _messageCache = {};
   String _streamingContent = '';
+  String _streamingReasoning = '';
+  bool _thinkingCollapsed = false;
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
@@ -212,6 +214,7 @@ class _ChatPanelState extends State<ChatPanel> {
     rt.tokPerSec = 0;
     rt.isResponding = false;
     _stopContextAnimation();
+    scrollController.scrollToBottom();
     setState(() {});
   }
 
@@ -585,6 +588,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final rt = _runtime(sessionId);
     _streamingContent = '';
+    _streamingReasoning = '';
+    _thinkingCollapsed = false;
 
     rt.isResponding = true;
     rt.responseStartTime = DateTime.now();
@@ -594,6 +599,7 @@ class _ChatPanelState extends State<ChatPanel> {
     rt.tokCount = 0.0;
 
     _startMetricsTimer(sessionId);
+    await _loadMessages(sessionId);
     setState(() {});
 
     _chatService.sendMessage(
@@ -602,7 +608,13 @@ class _ChatPanelState extends State<ChatPanel> {
       session: _currentSession,
       runtime: rt,
       onDelta: (delta) {
+        if (_streamingReasoning.isNotEmpty && !_thinkingCollapsed) {
+          _thinkingCollapsed = true;
+        }
         _streamingContent += delta;
+      },
+      onReasoning: (reasoning) {
+        _streamingReasoning += reasoning;
       },
       onChunk: () {
         final charCount = _streamingContent.length;
@@ -615,13 +627,17 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       onComplete: (response) async {
         _streamingContent = '';
+        _streamingReasoning = '';
+        _thinkingCollapsed = false;
         _stopMetricsTimer(sessionId);
         final msgs = await _store.getMessages(sessionId);
         _messageCache[sessionId] = msgs;
         if (response.promptTokens + response.completionTokens > 0) {
-          rt.contextTargetTokens = _computeBaseContext(sessionId);
+          final finalTokens = _computeBaseContext(sessionId);
+          rt.contextTargetTokens = finalTokens;
+          rt.contextDisplayTokens = finalTokens.toDouble();
+          _stopContextAnimation();
         }
-        _startContextAnimation();
         setState(() {});
       },
       onError: (error) {
@@ -732,6 +748,52 @@ class _ChatPanelState extends State<ChatPanel> {
           _toastMessage =
               'Usage: /provider <deepseek|infinigence|volcengine|custom>';
         });
+      }
+    } else if (commandName == '/think') {
+      if (_currentSessionId == null) return;
+      final rt = _runtime(_currentSessionId!);
+      final effort = parts.length > 1 ? parts[1] : '';
+      switch (effort) {
+        case 'off':
+          rt.thinkingMode = 'disabled';
+          rt.reasoningEffort = null;
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Thinking mode: off';
+          });
+          break;
+        case 'low':
+          rt.thinkingMode = 'enabled';
+          rt.reasoningEffort = 'low';
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Thinking mode: low';
+          });
+          break;
+        case 'high':
+          rt.thinkingMode = 'enabled';
+          rt.reasoningEffort = 'high';
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Thinking mode: high';
+          });
+          break;
+        case 'max':
+          rt.thinkingMode = 'enabled';
+          rt.reasoningEffort = 'max';
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Thinking mode: max';
+          });
+          break;
+        default:
+          final current = rt.thinkingMode == 'disabled'
+              ? 'off'
+              : rt.reasoningEffort ?? 'high';
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Usage: /think <off|low|high|max> (current: $current)';
+          });
       }
     } else if (command != null) {
       setState(() {
@@ -995,13 +1057,49 @@ class _ChatPanelState extends State<ChatPanel> {
           if (index < messages.length) {
             return MessageBubble(message: messages[index]);
           }
-          return MessageBubble(
-            message: Message(
-              id: -1,
-              sessionId: sessionId ?? 0,
-              role: 'ai',
-              content: _streamingContent.isEmpty ? '...' : _streamingContent,
-            ),
+          final hasReasoning = _streamingReasoning.isNotEmpty;
+          final collapsed = _thinkingCollapsed && _streamingContent.isNotEmpty;
+          return Column(
+            children: [
+              if (hasReasoning)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ' Think: ',
+                        style: TextStyle(
+                          color: Color.fromRGB(100, 80, 140),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          collapsed
+                              ? '... (${_streamingReasoning.length} chars)'
+                              : _streamingReasoning,
+                          style: TextStyle(
+                            color: Color.fromRGB(80, 70, 110),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              MessageBubble(
+                message: Message(
+                  id: -1,
+                  sessionId: sessionId ?? 0,
+                  role: 'ai',
+                  content: _streamingContent.isEmpty && !hasReasoning
+                      ? '...'
+                      : _streamingContent.isEmpty
+                          ? ''
+                          : _streamingContent,
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -1068,6 +1166,11 @@ class _ChatPanelState extends State<ChatPanel> {
                   : Color.fromRGB(80, 80, 100),
             ),
           ),
+          if (rt != null && rt.thinkingMode != 'disabled')
+            Text(
+              ' \u{F0EB}${rt.reasoningEffort ?? 'high'}',
+              style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+            ),
           Expanded(child: SizedBox()),
           _buildLocalModelButton(),
         ],

@@ -9,9 +9,35 @@ class MessageBubble extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     final isUser = message.role == 'user';
+    final hasReasoning =
+        !isUser && message.reasoningContent.isNotEmpty;
 
     return Column(
       children: [
+        if (hasReasoning)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ' Think: ',
+                  style: TextStyle(
+                    color: Color.fromRGB(100, 80, 140),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    message.reasoningContent,
+                    style: TextStyle(
+                      color: Color.fromRGB(80, 70, 110),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Container(
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Row(

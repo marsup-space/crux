@@ -6,18 +6,26 @@ import '../models/provider_config.dart';
 
 class LlmChunk {
   final String? textDelta;
+  final String? reasoningContent;
   final String? finishReason;
   final int? promptTokens;
   final int? completionTokens;
   final int? totalTokens;
+  final int? promptCacheHitTokens;
+  final int? promptCacheMissTokens;
+  final int? reasoningTokens;
   final String? error;
 
   const LlmChunk({
     this.textDelta,
+    this.reasoningContent,
     this.finishReason,
     this.promptTokens,
     this.completionTokens,
     this.totalTokens,
+    this.promptCacheHitTokens,
+    this.promptCacheMissTokens,
+    this.reasoningTokens,
     this.error,
   });
 }
@@ -31,6 +39,8 @@ class LlmClient {
     required String apiKey,
     required String modelId,
     required List<Map<String, String>> messages,
+    String thinkingMode = 'enabled',
+    String? reasoningEffort,
   }) {
     final controller = StreamController<LlmChunk>();
 
@@ -96,13 +106,16 @@ class LlmClient {
                   final finishReason = choice['finish_reason'] as String?;
 
                   String? text;
+                  String? reasoning;
                   if (delta != null) {
                     text = delta['content'] as String?;
+                    reasoning = delta['reasoning_content'] as String?;
                   }
 
-                  if (text != null || finishReason != null) {
+                  if (text != null || reasoning != null || finishReason != null) {
                     controller.add(LlmChunk(
                       textDelta: text,
+                      reasoningContent: reasoning,
                       finishReason: finishReason,
                     ));
                   }
@@ -111,10 +124,14 @@ class LlmClient {
 
               if (json.containsKey('usage') && json['usage'] != null) {
                 final usage = json['usage'] as Map<String, dynamic>;
+                final completionDetails = usage['completion_tokens_details'] as Map<String, dynamic>?;
                 controller.add(LlmChunk(
                   promptTokens: usage['prompt_tokens'] as int?,
                   completionTokens: usage['completion_tokens'] as int?,
                   totalTokens: usage['total_tokens'] as int?,
+                  promptCacheHitTokens: usage['prompt_cache_hit_tokens'] as int?,
+                  promptCacheMissTokens: usage['prompt_cache_miss_tokens'] as int?,
+                  reasoningTokens: completionDetails?['reasoning_tokens'] as int?,
                 ));
               }
             } catch (_) {
@@ -162,8 +179,10 @@ class LlmClient {
   String _buildRequestBody(
     String modelId,
     List<Map<String, String>> messages,
-    ProviderType providerType,
-  ) {
+    ProviderType providerType, {
+    String thinkingMode = 'enabled',
+    String? reasoningEffort,
+  }) {
     if (providerType == ProviderType.anthropic) {
       final systemMsg = messages.where((m) => m['role'] == 'system').toList();
       final chatMsgs = messages.where((m) => m['role'] != 'system').toList();
@@ -184,6 +203,8 @@ class LlmClient {
       'messages': messages,
       'stream': true,
       'stream_options': {'include_usage': true},
+      if (thinkingMode != 'disabled') 'thinking': {'type': thinkingMode},
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
     });
   }
 

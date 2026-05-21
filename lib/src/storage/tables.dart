@@ -26,6 +26,7 @@ class Messages extends Table {
       integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
   TextColumn get role => text()();
   TextColumn get content => text().withDefault(const Constant(''))();
+  TextColumn get reasoningContent => text().withDefault(const Constant(''))();
   TextColumn get model => text().withDefault(const Constant(''))();
   RealColumn get cost => real().withDefault(const Constant(0.0))();
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();

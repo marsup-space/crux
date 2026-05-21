@@ -13,6 +13,8 @@ class SessionRuntimeState {
   double tokCount;
   int contextTargetTokens;
   double contextDisplayTokens;
+  String thinkingMode;
+  String? reasoningEffort;
 
   SessionRuntimeState({
     required this.sessionId,
@@ -23,6 +25,8 @@ class SessionRuntimeState {
     this.tokCount = 0.0,
     this.contextTargetTokens = 0,
     this.contextDisplayTokens = 0.0,
+    this.thinkingMode = 'enabled',
+    this.reasoningEffort,
   });
 
   void cancelTimers() {

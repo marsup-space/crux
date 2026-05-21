@@ -3,6 +3,7 @@ class Message {
   final int sessionId;
   final String role;
   final String content;
+  final String reasoningContent;
   final String model;
   final double cost;
   final int tokensIn;
@@ -16,6 +17,7 @@ class Message {
     required this.sessionId,
     required this.role,
     required this.content,
+    this.reasoningContent = '',
     this.model = '',
     this.cost = 0.0,
     this.tokensIn = 0,

@@ -106,6 +106,19 @@ const List<SlashCommand> slashCommands = [
       ],
     ],
   ),
+  SlashCommand(
+    name: '/think',
+    description: 'Toggle thinking mode (off/low/high/max)',
+    params: ['effort'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: 'off', description: 'Disable thinking mode'),
+        CommandSuggestion(value: 'low', description: 'Low reasoning effort (maps to high)'),
+        CommandSuggestion(value: 'high', description: 'High reasoning effort (default)'),
+        CommandSuggestion(value: 'max', description: 'Maximum reasoning effort'),
+      ],
+    ],
+  ),
 ];
 
 /// Returns commands whose name starts with the given prefix.
