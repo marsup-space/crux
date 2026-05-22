@@ -394,10 +394,16 @@ class _ChatPanelState extends State<ChatPanel> {
 
       if (event.logicalKey == LogicalKey.enter) {
         final selected = _filteredCommands[_selectedCommandIndex];
-        textController.text = selected.name + ' ';
-        textController.selection = TextSelection.collapsed(
-          offset: textController.text.length,
-        );
+        if (selected.params.isEmpty) {
+          _setOverlayOff();
+          textController.clear();
+          _executeCommand(selected.name);
+        } else {
+          textController.text = selected.name + ' ';
+          textController.selection = TextSelection.collapsed(
+            offset: textController.text.length,
+          );
+        }
         return true;
       }
 
@@ -459,11 +465,22 @@ class _ChatPanelState extends State<ChatPanel> {
               : commandAndSpace;
         }
 
-        final newText = prefix + selected.value + ' ';
-        textController.text = newText;
-        textController.selection = TextSelection.collapsed(
-          offset: newText.length,
-        );
+        final nextParamIndex = _currentParamIndex + 1;
+        final isLastParam =
+            nextParamIndex >= _activeCommand!.params.length;
+
+        if (isLastParam) {
+          final commandText = prefix + selected.value;
+          _setOverlayOff();
+          textController.clear();
+          _executeCommand(commandText);
+        } else {
+          final newText = prefix + selected.value + ' ';
+          textController.text = newText;
+          textController.selection = TextSelection.collapsed(
+            offset: newText.length,
+          );
+        }
         return true;
       }
 
@@ -492,10 +509,16 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _onTapCommand(int index) {
     final selected = _filteredCommands[index];
-    textController.text = selected.name + ' ';
-    textController.selection = TextSelection.collapsed(
-      offset: textController.text.length,
-    );
+    if (selected.params.isEmpty) {
+      _setOverlayOff();
+      textController.clear();
+      _executeCommand(selected.name);
+    } else {
+      textController.text = selected.name + ' ';
+      textController.selection = TextSelection.collapsed(
+        offset: textController.text.length,
+      );
+    }
   }
 
   void _onScrollCommand(MouseEvent event) {
@@ -547,9 +570,20 @@ class _ChatPanelState extends State<ChatPanel> {
           : commandAndSpace;
     }
 
-    final newText = prefix + selected.value + ' ';
-    textController.text = newText;
-    textController.selection = TextSelection.collapsed(offset: newText.length);
+    final nextParamIndex = _currentParamIndex + 1;
+    final isLastParam =
+        nextParamIndex >= _activeCommand!.params.length;
+
+    if (isLastParam) {
+      final commandText = prefix + selected.value;
+      _setOverlayOff();
+      textController.clear();
+      _executeCommand(commandText);
+    } else {
+      final newText = prefix + selected.value + ' ';
+      textController.text = newText;
+      textController.selection = TextSelection.collapsed(offset: newText.length);
+    }
   }
 
   void _onScrollSuggestion(MouseEvent event) {
