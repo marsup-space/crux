@@ -599,7 +599,13 @@ class _ChatPanelState extends State<ChatPanel> {
     rt.tokCount = 0.0;
 
     _startMetricsTimer(sessionId);
-    await _loadMessages(sessionId);
+    final userMsg = Message(
+      id: -1,
+      sessionId: sessionId,
+      role: 'user',
+      content: text,
+    );
+    _messageCache[sessionId] = [...?_messageCache[sessionId], userMsg];
     setState(() {});
 
     _chatService.sendMessage(
@@ -610,6 +616,9 @@ class _ChatPanelState extends State<ChatPanel> {
       onDelta: (delta) {
         if (_streamingReasoning.isNotEmpty && !_thinkingCollapsed) {
           _thinkingCollapsed = true;
+        }
+        if (_streamingContent.isEmpty) {
+          rt.contentStartTime = DateTime.now();
         }
         _streamingContent += delta;
       },
@@ -922,9 +931,11 @@ class _ChatPanelState extends State<ChatPanel> {
       rt.ttftMs = elapsedMs;
     }
 
-    final charCount = _streamingContent.length;
-    if (charCount > 0 && rt.ttftReceived) {
-      final estimatedTokens = (charCount / 3.5).ceil();
+    final contentChars = _streamingContent.length;
+    final reasoningChars = _streamingReasoning.length;
+    final totalChars = contentChars + reasoningChars;
+    if (totalChars > 0 && rt.ttftReceived) {
+      final estimatedTokens = (totalChars / 3.5).ceil();
       final elapsedSec =
           (elapsedMs - rt.ttftMs) / 1000.0;
       if (elapsedSec > 0) {
@@ -1059,46 +1070,69 @@ class _ChatPanelState extends State<ChatPanel> {
           }
           final hasReasoning = _streamingReasoning.isNotEmpty;
           final collapsed = _thinkingCollapsed && _streamingContent.isNotEmpty;
+          final rt = sessionId != null ? _runtime(sessionId!) : null;
+
+          String thinkingLine = '';
+          if (hasReasoning && collapsed) {
+            final thinkingMs = rt?.thinkingDurationMs ?? 0;
+            final secs = thinkingMs > 0
+                ? (thinkingMs / 1000.0).toStringAsFixed(1)
+                : '?';
+            final tokens = '~${(_streamingReasoning.length / 3.5).ceil()}';
+            thinkingLine = 'thought for ${secs}s, $tokens tokens';
+          }
+
           return Column(
             children: [
-              if (hasReasoning)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ' Crux: ',
+                      style: TextStyle(
+                        color: Colors.brightMagenta,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        hasReasoning && collapsed
+                            ? thinkingLine
+                            : hasReasoning && !collapsed
+                                ? _streamingReasoning
+                                : _streamingContent.isEmpty
+                                    ? '...'
+                                    : _streamingContent,
+                        style: TextStyle(
+                          color: hasReasoning && collapsed
+                              ? Color.fromRGB(100, 85, 140)
+                              : hasReasoning && !collapsed
+                                  ? Color.fromRGB(80, 70, 110)
+                                  : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (hasReasoning && collapsed && _streamingContent.isNotEmpty)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                  padding: EdgeInsets.only(left: 7, right: 1, top: 0, bottom: 0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        ' Think: ',
-                        style: TextStyle(
-                          color: Color.fromRGB(100, 80, 140),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
                       Expanded(
                         child: Text(
-                          collapsed
-                              ? '... (${_streamingReasoning.length} chars)'
-                              : _streamingReasoning,
-                          style: TextStyle(
-                            color: Color.fromRGB(80, 70, 110),
-                          ),
+                          _streamingContent,
+                          style: TextStyle(color: Colors.white),
                         ),
                       ),
                     ],
                   ),
                 ),
-              MessageBubble(
-                message: Message(
-                  id: -1,
-                  sessionId: sessionId ?? 0,
-                  role: 'ai',
-                  content: _streamingContent.isEmpty && !hasReasoning
-                      ? '...'
-                      : _streamingContent.isEmpty
-                          ? ''
-                          : _streamingContent,
-                ),
-              ),
+              Divider(color: Color.fromRGB(40, 40, 60), height: 1),
             ],
           );
         },

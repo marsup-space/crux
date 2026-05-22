@@ -4,6 +4,8 @@ class Message {
   final String role;
   final String content;
   final String reasoningContent;
+  final int reasoningTokens;
+  final int thinkingDurationMs;
   final String model;
   final double cost;
   final int tokensIn;
@@ -18,6 +20,8 @@ class Message {
     required this.role,
     required this.content,
     this.reasoningContent = '',
+    this.reasoningTokens = 0,
+    this.thinkingDurationMs = 0,
     this.model = '',
     this.cost = 0.0,
     this.tokensIn = 0,

@@ -896,6 +896,29 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _reasoningTokensMeta = const VerificationMeta(
+    'reasoningTokens',
+  );
+  @override
+  late final GeneratedColumn<int> reasoningTokens = GeneratedColumn<int>(
+    'reasoning_tokens',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _thinkingDurationMsMeta =
+      const VerificationMeta('thinkingDurationMs');
+  @override
+  late final GeneratedColumn<int> thinkingDurationMs = GeneratedColumn<int>(
+    'thinking_duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _modelMeta = const VerificationMeta('model');
   @override
   late final GeneratedColumn<String> model = GeneratedColumn<String>(
@@ -978,6 +1001,8 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     role,
     content,
     reasoningContent,
+    reasoningTokens,
+    thinkingDurationMs,
     model,
     cost,
     tokensIn,
@@ -1029,6 +1054,24 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         reasoningContent.isAcceptableOrUnknown(
           data['reasoning_content']!,
           _reasoningContentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reasoning_tokens')) {
+      context.handle(
+        _reasoningTokensMeta,
+        reasoningTokens.isAcceptableOrUnknown(
+          data['reasoning_tokens']!,
+          _reasoningTokensMeta,
+        ),
+      );
+    }
+    if (data.containsKey('thinking_duration_ms')) {
+      context.handle(
+        _thinkingDurationMsMeta,
+        thinkingDurationMs.isAcceptableOrUnknown(
+          data['thinking_duration_ms']!,
+          _thinkingDurationMsMeta,
         ),
       );
     }
@@ -1108,6 +1151,14 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_content'],
       )!,
+      reasoningTokens: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reasoning_tokens'],
+      )!,
+      thinkingDurationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}thinking_duration_ms'],
+      )!,
       model: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}model'],
@@ -1151,6 +1202,8 @@ class Message extends DataClass implements Insertable<Message> {
   final String role;
   final String content;
   final String reasoningContent;
+  final int reasoningTokens;
+  final int thinkingDurationMs;
   final String model;
   final double cost;
   final int tokensIn;
@@ -1164,6 +1217,8 @@ class Message extends DataClass implements Insertable<Message> {
     required this.role,
     required this.content,
     required this.reasoningContent,
+    required this.reasoningTokens,
+    required this.thinkingDurationMs,
     required this.model,
     required this.cost,
     required this.tokensIn,
@@ -1180,6 +1235,8 @@ class Message extends DataClass implements Insertable<Message> {
     map['role'] = Variable<String>(role);
     map['content'] = Variable<String>(content);
     map['reasoning_content'] = Variable<String>(reasoningContent);
+    map['reasoning_tokens'] = Variable<int>(reasoningTokens);
+    map['thinking_duration_ms'] = Variable<int>(thinkingDurationMs);
     map['model'] = Variable<String>(model);
     map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
@@ -1201,6 +1258,8 @@ class Message extends DataClass implements Insertable<Message> {
       role: Value(role),
       content: Value(content),
       reasoningContent: Value(reasoningContent),
+      reasoningTokens: Value(reasoningTokens),
+      thinkingDurationMs: Value(thinkingDurationMs),
       model: Value(model),
       cost: Value(cost),
       tokensIn: Value(tokensIn),
@@ -1226,6 +1285,8 @@ class Message extends DataClass implements Insertable<Message> {
       role: serializer.fromJson<String>(json['role']),
       content: serializer.fromJson<String>(json['content']),
       reasoningContent: serializer.fromJson<String>(json['reasoningContent']),
+      reasoningTokens: serializer.fromJson<int>(json['reasoningTokens']),
+      thinkingDurationMs: serializer.fromJson<int>(json['thinkingDurationMs']),
       model: serializer.fromJson<String>(json['model']),
       cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
@@ -1244,6 +1305,8 @@ class Message extends DataClass implements Insertable<Message> {
       'role': serializer.toJson<String>(role),
       'content': serializer.toJson<String>(content),
       'reasoningContent': serializer.toJson<String>(reasoningContent),
+      'reasoningTokens': serializer.toJson<int>(reasoningTokens),
+      'thinkingDurationMs': serializer.toJson<int>(thinkingDurationMs),
       'model': serializer.toJson<String>(model),
       'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
@@ -1260,6 +1323,8 @@ class Message extends DataClass implements Insertable<Message> {
     String? role,
     String? content,
     String? reasoningContent,
+    int? reasoningTokens,
+    int? thinkingDurationMs,
     String? model,
     double? cost,
     int? tokensIn,
@@ -1273,6 +1338,8 @@ class Message extends DataClass implements Insertable<Message> {
     role: role ?? this.role,
     content: content ?? this.content,
     reasoningContent: reasoningContent ?? this.reasoningContent,
+    reasoningTokens: reasoningTokens ?? this.reasoningTokens,
+    thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
     model: model ?? this.model,
     cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
@@ -1290,6 +1357,12 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningContent: data.reasoningContent.present
           ? data.reasoningContent.value
           : this.reasoningContent,
+      reasoningTokens: data.reasoningTokens.present
+          ? data.reasoningTokens.value
+          : this.reasoningTokens,
+      thinkingDurationMs: data.thinkingDurationMs.present
+          ? data.thinkingDurationMs.value
+          : this.thinkingDurationMs,
       model: data.model.present ? data.model.value : this.model,
       cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
@@ -1310,6 +1383,8 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('role: $role, ')
           ..write('content: $content, ')
           ..write('reasoningContent: $reasoningContent, ')
+          ..write('reasoningTokens: $reasoningTokens, ')
+          ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -1328,6 +1403,8 @@ class Message extends DataClass implements Insertable<Message> {
     role,
     content,
     reasoningContent,
+    reasoningTokens,
+    thinkingDurationMs,
     model,
     cost,
     tokensIn,
@@ -1345,6 +1422,8 @@ class Message extends DataClass implements Insertable<Message> {
           other.role == this.role &&
           other.content == this.content &&
           other.reasoningContent == this.reasoningContent &&
+          other.reasoningTokens == this.reasoningTokens &&
+          other.thinkingDurationMs == this.thinkingDurationMs &&
           other.model == this.model &&
           other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
@@ -1360,6 +1439,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> role;
   final Value<String> content;
   final Value<String> reasoningContent;
+  final Value<int> reasoningTokens;
+  final Value<int> thinkingDurationMs;
   final Value<String> model;
   final Value<double> cost;
   final Value<int> tokensIn;
@@ -1373,6 +1454,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.role = const Value.absent(),
     this.content = const Value.absent(),
     this.reasoningContent = const Value.absent(),
+    this.reasoningTokens = const Value.absent(),
+    this.thinkingDurationMs = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1387,6 +1470,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required String role,
     this.content = const Value.absent(),
     this.reasoningContent = const Value.absent(),
+    this.reasoningTokens = const Value.absent(),
+    this.thinkingDurationMs = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1403,6 +1488,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? role,
     Expression<String>? content,
     Expression<String>? reasoningContent,
+    Expression<int>? reasoningTokens,
+    Expression<int>? thinkingDurationMs,
     Expression<String>? model,
     Expression<double>? cost,
     Expression<int>? tokensIn,
@@ -1417,6 +1504,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (role != null) 'role': role,
       if (content != null) 'content': content,
       if (reasoningContent != null) 'reasoning_content': reasoningContent,
+      if (reasoningTokens != null) 'reasoning_tokens': reasoningTokens,
+      if (thinkingDurationMs != null)
+        'thinking_duration_ms': thinkingDurationMs,
       if (model != null) 'model': model,
       if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
@@ -1433,6 +1523,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? role,
     Value<String>? content,
     Value<String>? reasoningContent,
+    Value<int>? reasoningTokens,
+    Value<int>? thinkingDurationMs,
     Value<String>? model,
     Value<double>? cost,
     Value<int>? tokensIn,
@@ -1447,6 +1539,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       role: role ?? this.role,
       content: content ?? this.content,
       reasoningContent: reasoningContent ?? this.reasoningContent,
+      reasoningTokens: reasoningTokens ?? this.reasoningTokens,
+      thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
       model: model ?? this.model,
       cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
@@ -1474,6 +1568,12 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     }
     if (reasoningContent.present) {
       map['reasoning_content'] = Variable<String>(reasoningContent.value);
+    }
+    if (reasoningTokens.present) {
+      map['reasoning_tokens'] = Variable<int>(reasoningTokens.value);
+    }
+    if (thinkingDurationMs.present) {
+      map['thinking_duration_ms'] = Variable<int>(thinkingDurationMs.value);
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
@@ -1507,6 +1607,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('role: $role, ')
           ..write('content: $content, ')
           ..write('reasoningContent: $reasoningContent, ')
+          ..write('reasoningTokens: $reasoningTokens, ')
+          ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -2534,6 +2636,8 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required String role,
       Value<String> content,
       Value<String> reasoningContent,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2549,6 +2653,8 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> role,
       Value<String> content,
       Value<String> reasoningContent,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2625,6 +2731,16 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get reasoningContent => $composableBuilder(
     column: $table.reasoningContent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reasoningTokens => $composableBuilder(
+    column: $table.reasoningTokens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get thinkingDurationMs => $composableBuilder(
+    column: $table.thinkingDurationMs,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2741,6 +2857,16 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get reasoningTokens => $composableBuilder(
+    column: $table.reasoningTokens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get thinkingDurationMs => $composableBuilder(
+    column: $table.thinkingDurationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get model => $composableBuilder(
     column: $table.model,
     builder: (column) => ColumnOrderings(column),
@@ -2820,6 +2946,16 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get reasoningContent => $composableBuilder(
     column: $table.reasoningContent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reasoningTokens => $composableBuilder(
+    column: $table.reasoningTokens,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get thinkingDurationMs => $composableBuilder(
+    column: $table.thinkingDurationMs,
     builder: (column) => column,
   );
 
@@ -2928,6 +3064,8 @@ class $$MessagesTableTableManager
                 Value<String> role = const Value.absent(),
                 Value<String> content = const Value.absent(),
                 Value<String> reasoningContent = const Value.absent(),
+                Value<int> reasoningTokens = const Value.absent(),
+                Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -2941,6 +3079,8 @@ class $$MessagesTableTableManager
                 role: role,
                 content: content,
                 reasoningContent: reasoningContent,
+                reasoningTokens: reasoningTokens,
+                thinkingDurationMs: thinkingDurationMs,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,
@@ -2956,6 +3096,8 @@ class $$MessagesTableTableManager
                 required String role,
                 Value<String> content = const Value.absent(),
                 Value<String> reasoningContent = const Value.absent(),
+                Value<int> reasoningTokens = const Value.absent(),
+                Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -2969,6 +3111,8 @@ class $$MessagesTableTableManager
                 role: role,
                 content: content,
                 reasoningContent: reasoningContent,
+                reasoningTokens: reasoningTokens,
+                thinkingDurationMs: thinkingDurationMs,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,

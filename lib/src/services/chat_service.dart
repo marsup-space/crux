@@ -118,11 +118,15 @@ class ChatService {
       final cost = _estimateCost(provider, modelId, promptTokens, completionTokens,
           promptCacheHitTokens: promptCacheHitTokens);
 
+      final thinkingMs = reasoningBuffer.isNotEmpty ? runtime.thinkingDurationMs.round() : 0;
+
       await _store.addMessage(
         sessionId,
         role: 'ai',
         content: content,
         reasoningContent: reasoningBuffer.toString(),
+        reasoningTokens: reasoningTokens,
+        thinkingDurationMs: thinkingMs,
         model: compositeKey,
         cost: cost,
         tokensIn: promptTokens,
@@ -135,14 +139,14 @@ class ChatService {
         cost: session.cost + cost,
         tokensIn: session.tokensIn + promptTokens,
         tokensOut: session.tokensOut + completionTokens,
-        contextTokens: promptTokens + completionTokens,
+        contextTokens: promptTokens + completionTokens + reasoningTokens,
       );
 
       session.status = SessionStatus.done;
       session.cost += cost;
       session.tokensIn += promptTokens;
       session.tokensOut += completionTokens;
-      session.contextTokens = promptTokens + completionTokens;
+      session.contextTokens = promptTokens + completionTokens + reasoningTokens;
       session.updatedAt = DateTime.now();
 
       runtime.isResponding = false;

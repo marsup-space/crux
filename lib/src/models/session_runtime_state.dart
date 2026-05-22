@@ -10,6 +10,7 @@ class SessionRuntimeState {
   double ttftMs;
   bool ttftReceived;
   DateTime? responseStartTime;
+  DateTime? contentStartTime;
   double tokCount;
   int contextTargetTokens;
   double contextDisplayTokens;
@@ -22,12 +23,20 @@ class SessionRuntimeState {
     this.tokPerSec = 0.0,
     this.ttftMs = 0.0,
     this.ttftReceived = false,
+    this.responseStartTime,
+    this.contentStartTime,
     this.tokCount = 0.0,
     this.contextTargetTokens = 0,
     this.contextDisplayTokens = 0.0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort,
   });
+
+  double get thinkingDurationMs {
+    if (responseStartTime == null) return 0;
+    final end = contentStartTime ?? DateTime.now();
+    return end.difference(responseStartTime!).inMicroseconds / 1000.0;
+  }
 
   void cancelTimers() {
     responseTimer?.cancel();
@@ -42,6 +51,7 @@ class SessionRuntimeState {
     ttftReceived = false;
     tokCount = 0.0;
     responseStartTime = null;
+    contentStartTime = null;
     isResponding = false;
     cancelTimers();
   }
