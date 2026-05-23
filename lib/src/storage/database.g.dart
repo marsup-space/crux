@@ -139,6 +139,29 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _thinkingModeMeta = const VerificationMeta(
+    'thinkingMode',
+  );
+  @override
+  late final GeneratedColumn<String> thinkingMode = GeneratedColumn<String>(
+    'thinking_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('enabled'),
+  );
+  static const VerificationMeta _reasoningEffortMeta = const VerificationMeta(
+    'reasoningEffort',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningEffort = GeneratedColumn<String>(
+    'reasoning_effort',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -186,6 +209,8 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     tokensIn,
     tokensOut,
     contextTokens,
+    thinkingMode,
+    reasoningEffort,
     createdAt,
     updatedAt,
     archivedAt,
@@ -271,6 +296,24 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         ),
       );
     }
+    if (data.containsKey('thinking_mode')) {
+      context.handle(
+        _thinkingModeMeta,
+        thinkingMode.isAcceptableOrUnknown(
+          data['thinking_mode']!,
+          _thinkingModeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reasoning_effort')) {
+      context.handle(
+        _reasoningEffortMeta,
+        reasoningEffort.isAcceptableOrUnknown(
+          data['reasoning_effort']!,
+          _reasoningEffortMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -352,6 +395,14 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.int,
         data['${effectivePrefix}context_tokens'],
       )!,
+      thinkingMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}thinking_mode'],
+      )!,
+      reasoningEffort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_effort'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -389,6 +440,8 @@ class Session extends DataClass implements Insertable<Session> {
   final int tokensIn;
   final int tokensOut;
   final int contextTokens;
+  final String thinkingMode;
+  final String? reasoningEffort;
   final int createdAt;
   final int updatedAt;
   final int? archivedAt;
@@ -405,6 +458,8 @@ class Session extends DataClass implements Insertable<Session> {
     required this.tokensIn,
     required this.tokensOut,
     required this.contextTokens,
+    required this.thinkingMode,
+    this.reasoningEffort,
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
@@ -430,6 +485,10 @@ class Session extends DataClass implements Insertable<Session> {
     map['tokens_in'] = Variable<int>(tokensIn);
     map['tokens_out'] = Variable<int>(tokensOut);
     map['context_tokens'] = Variable<int>(contextTokens);
+    map['thinking_mode'] = Variable<String>(thinkingMode);
+    if (!nullToAbsent || reasoningEffort != null) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort);
+    }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     if (!nullToAbsent || archivedAt != null) {
@@ -454,6 +513,10 @@ class Session extends DataClass implements Insertable<Session> {
       tokensIn: Value(tokensIn),
       tokensOut: Value(tokensOut),
       contextTokens: Value(contextTokens),
+      thinkingMode: Value(thinkingMode),
+      reasoningEffort: reasoningEffort == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reasoningEffort),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       archivedAt: archivedAt == null && nullToAbsent
@@ -482,6 +545,8 @@ class Session extends DataClass implements Insertable<Session> {
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
       tokensOut: serializer.fromJson<int>(json['tokensOut']),
       contextTokens: serializer.fromJson<int>(json['contextTokens']),
+      thinkingMode: serializer.fromJson<String>(json['thinkingMode']),
+      reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
@@ -505,6 +570,8 @@ class Session extends DataClass implements Insertable<Session> {
       'tokensIn': serializer.toJson<int>(tokensIn),
       'tokensOut': serializer.toJson<int>(tokensOut),
       'contextTokens': serializer.toJson<int>(contextTokens),
+      'thinkingMode': serializer.toJson<String>(thinkingMode),
+      'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
@@ -524,6 +591,8 @@ class Session extends DataClass implements Insertable<Session> {
     int? tokensIn,
     int? tokensOut,
     int? contextTokens,
+    String? thinkingMode,
+    Value<String?> reasoningEffort = const Value.absent(),
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
@@ -540,6 +609,10 @@ class Session extends DataClass implements Insertable<Session> {
     tokensIn: tokensIn ?? this.tokensIn,
     tokensOut: tokensOut ?? this.tokensOut,
     contextTokens: contextTokens ?? this.contextTokens,
+    thinkingMode: thinkingMode ?? this.thinkingMode,
+    reasoningEffort: reasoningEffort.present
+        ? reasoningEffort.value
+        : this.reasoningEffort,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
@@ -562,6 +635,12 @@ class Session extends DataClass implements Insertable<Session> {
       contextTokens: data.contextTokens.present
           ? data.contextTokens.value
           : this.contextTokens,
+      thinkingMode: data.thinkingMode.present
+          ? data.thinkingMode.value
+          : this.thinkingMode,
+      reasoningEffort: data.reasoningEffort.present
+          ? data.reasoningEffort.value
+          : this.reasoningEffort,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       archivedAt: data.archivedAt.present
@@ -585,6 +664,8 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
+          ..write('thinkingMode: $thinkingMode, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt')
@@ -606,6 +687,8 @@ class Session extends DataClass implements Insertable<Session> {
     tokensIn,
     tokensOut,
     contextTokens,
+    thinkingMode,
+    reasoningEffort,
     createdAt,
     updatedAt,
     archivedAt,
@@ -626,6 +709,8 @@ class Session extends DataClass implements Insertable<Session> {
           other.tokensIn == this.tokensIn &&
           other.tokensOut == this.tokensOut &&
           other.contextTokens == this.contextTokens &&
+          other.thinkingMode == this.thinkingMode &&
+          other.reasoningEffort == this.reasoningEffort &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.archivedAt == this.archivedAt);
@@ -644,6 +729,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> tokensIn;
   final Value<int> tokensOut;
   final Value<int> contextTokens;
+  final Value<String> thinkingMode;
+  final Value<String?> reasoningEffort;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
@@ -660,6 +747,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
+    this.thinkingMode = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
@@ -677,6 +766,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
+    this.thinkingMode = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
@@ -696,6 +787,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? tokensIn,
     Expression<int>? tokensOut,
     Expression<int>? contextTokens,
+    Expression<String>? thinkingMode,
+    Expression<String>? reasoningEffort,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
@@ -713,6 +806,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (tokensIn != null) 'tokens_in': tokensIn,
       if (tokensOut != null) 'tokens_out': tokensOut,
       if (contextTokens != null) 'context_tokens': contextTokens,
+      if (thinkingMode != null) 'thinking_mode': thinkingMode,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
@@ -732,6 +827,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? tokensIn,
     Value<int>? tokensOut,
     Value<int>? contextTokens,
+    Value<String>? thinkingMode,
+    Value<String?>? reasoningEffort,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
@@ -749,6 +846,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
       contextTokens: contextTokens ?? this.contextTokens,
+      thinkingMode: thinkingMode ?? this.thinkingMode,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
@@ -796,6 +895,12 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (contextTokens.present) {
       map['context_tokens'] = Variable<int>(contextTokens.value);
     }
+    if (thinkingMode.present) {
+      map['thinking_mode'] = Variable<String>(thinkingMode.value);
+    }
+    if (reasoningEffort.present) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -823,6 +928,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
+          ..write('thinkingMode: $thinkingMode, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt')
@@ -919,6 +1026,17 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _reasoningEffortMeta = const VerificationMeta(
+    'reasoningEffort',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningEffort = GeneratedColumn<String>(
+    'reasoning_effort',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _modelMeta = const VerificationMeta('model');
   @override
   late final GeneratedColumn<String> model = GeneratedColumn<String>(
@@ -1003,6 +1121,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     reasoningContent,
     reasoningTokens,
     thinkingDurationMs,
+    reasoningEffort,
     model,
     cost,
     tokensIn,
@@ -1072,6 +1191,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         thinkingDurationMs.isAcceptableOrUnknown(
           data['thinking_duration_ms']!,
           _thinkingDurationMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reasoning_effort')) {
+      context.handle(
+        _reasoningEffortMeta,
+        reasoningEffort.isAcceptableOrUnknown(
+          data['reasoning_effort']!,
+          _reasoningEffortMeta,
         ),
       );
     }
@@ -1159,6 +1287,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}thinking_duration_ms'],
       )!,
+      reasoningEffort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_effort'],
+      ),
       model: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}model'],
@@ -1204,6 +1336,7 @@ class Message extends DataClass implements Insertable<Message> {
   final String reasoningContent;
   final int reasoningTokens;
   final int thinkingDurationMs;
+  final String? reasoningEffort;
   final String model;
   final double cost;
   final int tokensIn;
@@ -1219,6 +1352,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.reasoningContent,
     required this.reasoningTokens,
     required this.thinkingDurationMs,
+    this.reasoningEffort,
     required this.model,
     required this.cost,
     required this.tokensIn,
@@ -1237,6 +1371,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['reasoning_content'] = Variable<String>(reasoningContent);
     map['reasoning_tokens'] = Variable<int>(reasoningTokens);
     map['thinking_duration_ms'] = Variable<int>(thinkingDurationMs);
+    if (!nullToAbsent || reasoningEffort != null) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort);
+    }
     map['model'] = Variable<String>(model);
     map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
@@ -1260,6 +1397,9 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningContent: Value(reasoningContent),
       reasoningTokens: Value(reasoningTokens),
       thinkingDurationMs: Value(thinkingDurationMs),
+      reasoningEffort: reasoningEffort == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reasoningEffort),
       model: Value(model),
       cost: Value(cost),
       tokensIn: Value(tokensIn),
@@ -1287,6 +1427,7 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningContent: serializer.fromJson<String>(json['reasoningContent']),
       reasoningTokens: serializer.fromJson<int>(json['reasoningTokens']),
       thinkingDurationMs: serializer.fromJson<int>(json['thinkingDurationMs']),
+      reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       model: serializer.fromJson<String>(json['model']),
       cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
@@ -1307,6 +1448,7 @@ class Message extends DataClass implements Insertable<Message> {
       'reasoningContent': serializer.toJson<String>(reasoningContent),
       'reasoningTokens': serializer.toJson<int>(reasoningTokens),
       'thinkingDurationMs': serializer.toJson<int>(thinkingDurationMs),
+      'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'model': serializer.toJson<String>(model),
       'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
@@ -1325,6 +1467,7 @@ class Message extends DataClass implements Insertable<Message> {
     String? reasoningContent,
     int? reasoningTokens,
     int? thinkingDurationMs,
+    Value<String?> reasoningEffort = const Value.absent(),
     String? model,
     double? cost,
     int? tokensIn,
@@ -1340,6 +1483,9 @@ class Message extends DataClass implements Insertable<Message> {
     reasoningContent: reasoningContent ?? this.reasoningContent,
     reasoningTokens: reasoningTokens ?? this.reasoningTokens,
     thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
+    reasoningEffort: reasoningEffort.present
+        ? reasoningEffort.value
+        : this.reasoningEffort,
     model: model ?? this.model,
     cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
@@ -1363,6 +1509,9 @@ class Message extends DataClass implements Insertable<Message> {
       thinkingDurationMs: data.thinkingDurationMs.present
           ? data.thinkingDurationMs.value
           : this.thinkingDurationMs,
+      reasoningEffort: data.reasoningEffort.present
+          ? data.reasoningEffort.value
+          : this.reasoningEffort,
       model: data.model.present ? data.model.value : this.model,
       cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
@@ -1385,6 +1534,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('reasoningContent: $reasoningContent, ')
           ..write('reasoningTokens: $reasoningTokens, ')
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -1405,6 +1555,7 @@ class Message extends DataClass implements Insertable<Message> {
     reasoningContent,
     reasoningTokens,
     thinkingDurationMs,
+    reasoningEffort,
     model,
     cost,
     tokensIn,
@@ -1424,6 +1575,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.reasoningContent == this.reasoningContent &&
           other.reasoningTokens == this.reasoningTokens &&
           other.thinkingDurationMs == this.thinkingDurationMs &&
+          other.reasoningEffort == this.reasoningEffort &&
           other.model == this.model &&
           other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
@@ -1441,6 +1593,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> reasoningContent;
   final Value<int> reasoningTokens;
   final Value<int> thinkingDurationMs;
+  final Value<String?> reasoningEffort;
   final Value<String> model;
   final Value<double> cost;
   final Value<int> tokensIn;
@@ -1456,6 +1609,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.reasoningContent = const Value.absent(),
     this.reasoningTokens = const Value.absent(),
     this.thinkingDurationMs = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1472,6 +1626,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.reasoningContent = const Value.absent(),
     this.reasoningTokens = const Value.absent(),
     this.thinkingDurationMs = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.model = const Value.absent(),
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
@@ -1490,6 +1645,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? reasoningContent,
     Expression<int>? reasoningTokens,
     Expression<int>? thinkingDurationMs,
+    Expression<String>? reasoningEffort,
     Expression<String>? model,
     Expression<double>? cost,
     Expression<int>? tokensIn,
@@ -1507,6 +1663,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (reasoningTokens != null) 'reasoning_tokens': reasoningTokens,
       if (thinkingDurationMs != null)
         'thinking_duration_ms': thinkingDurationMs,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (model != null) 'model': model,
       if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
@@ -1525,6 +1682,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? reasoningContent,
     Value<int>? reasoningTokens,
     Value<int>? thinkingDurationMs,
+    Value<String?>? reasoningEffort,
     Value<String>? model,
     Value<double>? cost,
     Value<int>? tokensIn,
@@ -1541,6 +1699,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       reasoningContent: reasoningContent ?? this.reasoningContent,
       reasoningTokens: reasoningTokens ?? this.reasoningTokens,
       thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       model: model ?? this.model,
       cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
@@ -1574,6 +1733,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     }
     if (thinkingDurationMs.present) {
       map['thinking_duration_ms'] = Variable<int>(thinkingDurationMs.value);
+    }
+    if (reasoningEffort.present) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
@@ -1609,6 +1771,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('reasoningContent: $reasoningContent, ')
           ..write('reasoningTokens: $reasoningTokens, ')
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('model: $model, ')
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
@@ -2075,6 +2238,8 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
@@ -2093,6 +2258,8 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
@@ -2208,6 +2375,16 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<int> get contextTokens => $composableBuilder(
     column: $table.contextTokens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get thinkingMode => $composableBuilder(
+    column: $table.thinkingMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2346,6 +2523,16 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get thinkingMode => $composableBuilder(
+    column: $table.thinkingMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2408,6 +2595,16 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<int> get contextTokens => $composableBuilder(
     column: $table.contextTokens,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get thinkingMode => $composableBuilder(
+    column: $table.thinkingMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => column,
   );
 
@@ -2513,6 +2710,8 @@ class $$SessionsTableTableManager
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
+                Value<String> thinkingMode = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
@@ -2529,6 +2728,8 @@ class $$SessionsTableTableManager
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
+                thinkingMode: thinkingMode,
+                reasoningEffort: reasoningEffort,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -2547,6 +2748,8 @@ class $$SessionsTableTableManager
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
+                Value<String> thinkingMode = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
@@ -2563,6 +2766,8 @@ class $$SessionsTableTableManager
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
+                thinkingMode: thinkingMode,
+                reasoningEffort: reasoningEffort,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -2638,6 +2843,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<String> reasoningContent,
       Value<int> reasoningTokens,
       Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2655,6 +2861,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> reasoningContent,
       Value<int> reasoningTokens,
       Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
       Value<String> model,
       Value<double> cost,
       Value<int> tokensIn,
@@ -2741,6 +2948,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get thinkingDurationMs => $composableBuilder(
     column: $table.thinkingDurationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2867,6 +3079,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get model => $composableBuilder(
     column: $table.model,
     builder: (column) => ColumnOrderings(column),
@@ -2956,6 +3173,11 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<int> get thinkingDurationMs => $composableBuilder(
     column: $table.thinkingDurationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => column,
   );
 
@@ -3066,6 +3288,7 @@ class $$MessagesTableTableManager
                 Value<String> reasoningContent = const Value.absent(),
                 Value<int> reasoningTokens = const Value.absent(),
                 Value<int> thinkingDurationMs = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -3081,6 +3304,7 @@ class $$MessagesTableTableManager
                 reasoningContent: reasoningContent,
                 reasoningTokens: reasoningTokens,
                 thinkingDurationMs: thinkingDurationMs,
+                reasoningEffort: reasoningEffort,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,
@@ -3098,6 +3322,7 @@ class $$MessagesTableTableManager
                 Value<String> reasoningContent = const Value.absent(),
                 Value<int> reasoningTokens = const Value.absent(),
                 Value<int> thinkingDurationMs = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
@@ -3113,6 +3338,7 @@ class $$MessagesTableTableManager
                 reasoningContent: reasoningContent,
                 reasoningTokens: reasoningTokens,
                 thinkingDurationMs: thinkingDurationMs,
+                reasoningEffort: reasoningEffort,
                 model: model,
                 cost: cost,
                 tokensIn: tokensIn,

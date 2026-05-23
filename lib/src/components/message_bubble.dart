@@ -24,7 +24,8 @@ class MessageBubble extends StatelessComponent {
       final tokens = message.reasoningTokens > 0
           ? message.reasoningTokens.toString()
           : '~${(message.reasoningContent.length / 3.5).ceil()}';
-      thinkingSummary = 'thought for ${secs}s, $tokens tokens';
+      final effort = message.reasoningEffort ?? 'normal';
+      thinkingSummary = 'thought for ${secs}s, $tokens tokens [$effort]';
     }
 
     return Column(

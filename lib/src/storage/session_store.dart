@@ -7,6 +7,8 @@ import '../models/message.dart';
 import '../models/part.dart';
 import 'session_lock.dart';
 
+const _unset = Object();
+
 class SessionStore {
   final db.CruxDatabase _db;
   final SessionLock _lock;
@@ -102,8 +104,15 @@ class SessionStore {
     int? tokensIn,
     int? tokensOut,
     int? contextTokens,
+    String? thinkingMode,
+    Object? reasoningEffort = _unset,
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final Value<String?> effortValue = reasoningEffort == _unset
+        ? const Value.absent()
+        : reasoningEffort == null
+            ? const Value(null)
+            : Value(reasoningEffort as String);
     await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
       db.SessionsCompanion(
         title: title != null ? Value(title) : const Value.absent(),
@@ -114,6 +123,9 @@ class SessionStore {
         tokensOut: tokensOut != null ? Value(tokensOut) : const Value.absent(),
         contextTokens:
             contextTokens != null ? Value(contextTokens) : const Value.absent(),
+        thinkingMode:
+            thinkingMode != null ? Value(thinkingMode) : const Value.absent(),
+        reasoningEffort: effortValue,
         updatedAt: Value(nowMs),
       ),
     );
@@ -195,6 +207,7 @@ class SessionStore {
     String reasoningContent = '',
     int reasoningTokens = 0,
     int thinkingDurationMs = 0,
+    String? reasoningEffort,
     String model = '',
     double cost = 0.0,
     int tokensIn = 0,
@@ -212,6 +225,7 @@ class SessionStore {
             reasoningContent: Value(reasoningContent),
             reasoningTokens: Value(reasoningTokens),
             thinkingDurationMs: Value(thinkingDurationMs),
+            reasoningEffort: Value(reasoningEffort),
             model: Value(model),
             cost: Value(cost),
             tokensIn: Value(tokensIn),
@@ -230,6 +244,7 @@ class SessionStore {
       reasoningContent: reasoningContent,
       reasoningTokens: reasoningTokens,
       thinkingDurationMs: thinkingDurationMs,
+      reasoningEffort: reasoningEffort,
       model: model,
       cost: cost,
       tokensIn: tokensIn,
@@ -327,6 +342,8 @@ class SessionStore {
       tokensIn: row.tokensIn,
       tokensOut: row.tokensOut,
       contextTokens: row.contextTokens,
+      thinkingMode: row.thinkingMode,
+      reasoningEffort: row.reasoningEffort,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
       archivedAt: row.archivedAt != null
@@ -344,6 +361,7 @@ class SessionStore {
       reasoningContent: row.reasoningContent,
       reasoningTokens: row.reasoningTokens,
       thinkingDurationMs: row.thinkingDurationMs,
+      reasoningEffort: row.reasoningEffort,
       model: row.model,
       cost: row.cost,
       tokensIn: row.tokensIn,

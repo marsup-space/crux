@@ -99,6 +99,7 @@ class ChatService {
 
     final stream = _llmClient.streamChat(
       endpointUrl: provider.endpointUrl,
+      providerName: providerName,
       providerType: provider.type,
       apiKey: apiKey,
       modelId: modelId,
@@ -127,6 +128,9 @@ class ChatService {
         reasoningContent: reasoningBuffer.toString(),
         reasoningTokens: reasoningTokens,
         thinkingDurationMs: thinkingMs,
+        reasoningEffort: runtime.thinkingMode == 'disabled'
+            ? null
+            : runtime.reasoningEffort ?? 'normal',
         model: compositeKey,
         cost: cost,
         tokensIn: promptTokens,
@@ -139,14 +143,14 @@ class ChatService {
         cost: session.cost + cost,
         tokensIn: session.tokensIn + promptTokens,
         tokensOut: session.tokensOut + completionTokens,
-        contextTokens: promptTokens + completionTokens + reasoningTokens,
+        contextTokens: promptTokens + completionTokens - reasoningTokens,
       );
 
       session.status = SessionStatus.done;
       session.cost += cost;
       session.tokensIn += promptTokens;
       session.tokensOut += completionTokens;
-      session.contextTokens = promptTokens + completionTokens + reasoningTokens;
+      session.contextTokens = promptTokens + completionTokens - reasoningTokens;
       session.updatedAt = DateTime.now();
 
       runtime.isResponding = false;

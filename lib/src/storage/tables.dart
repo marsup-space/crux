@@ -15,6 +15,8 @@ class Sessions extends Table {
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();
   IntColumn get tokensOut => integer().withDefault(const Constant(0))();
   IntColumn get contextTokens => integer().withDefault(const Constant(0))();
+  TextColumn get thinkingMode => text().withDefault(const Constant('enabled'))();
+  TextColumn get reasoningEffort => text().nullable()();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();
@@ -29,6 +31,7 @@ class Messages extends Table {
   TextColumn get reasoningContent => text().withDefault(const Constant(''))();
   IntColumn get reasoningTokens => integer().withDefault(const Constant(0))();
   IntColumn get thinkingDurationMs => integer().withDefault(const Constant(0))();
+  TextColumn get reasoningEffort => text().nullable()();
   TextColumn get model => text().withDefault(const Constant(''))();
   RealColumn get cost => real().withDefault(const Constant(0.0))();
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();

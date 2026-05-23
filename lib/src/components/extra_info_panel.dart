@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../models/session.dart';
@@ -128,17 +129,17 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   @override
   Component build(BuildContext context) {
     final panel = component;
-    final children = <Component>[];
+    final topChildren = <Component>[];
 
     // Header
-    children.add(Text(
+    topChildren.add(Text(
       'Sessions',
       style: TextStyle(
         color: Colors.brightMagenta,
         fontWeight: FontWeight.bold,
       ),
     ));
-    children.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    topChildren.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
 
     // Sort sessions by latest activity (most recent first)
     final sorted = List<Session>.from(panel.sessions)
@@ -152,7 +153,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       final prefix = _statusPrefix(session.status);
       final title = _truncate(session.title, _maxTitleLen);
 
-      children.add(
+      topChildren.add(
         MouseRegion(
           onEnter: (_) => setState(() => _hoveredIds.add(session.id)),
           onExit: (_) => setState(() => _hoveredIds.remove(session.id)),
@@ -162,7 +163,6 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             behavior: HitTestBehavior.opaque,
             child: Container(
               decoration: BoxDecoration(color: _bgColor(isCurrent, isHovered)),
-              padding: EdgeInsets.symmetric(horizontal: 0, vertical: 0),
               child: Row(
                 children: [
                   Text(
@@ -187,12 +187,24 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       );
     }
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
-      ),
+    final home = Platform.environment['HOME'] ?? '';
+    final cwd = Directory.current.path;
+    final displayPath = home.isNotEmpty && cwd.startsWith(home)
+        ? '~${cwd.substring(home.length)}'
+        : cwd;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: topChildren,
+        )),
+        Text(
+          displayPath,
+          style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+        ),
+      ],
     );
   }
 }

@@ -18,6 +18,8 @@ class Session {
   int tokensIn;
   int tokensOut;
   int contextTokens;
+  String thinkingMode;
+  String? reasoningEffort;
   final DateTime createdAt;
   DateTime updatedAt;
   DateTime? archivedAt;
@@ -35,6 +37,8 @@ class Session {
     this.tokensIn = 0,
     this.tokensOut = 0,
     this.contextTokens = 0,
+    this.thinkingMode = 'enabled',
+    this.reasoningEffort = 'normal',
     DateTime? createdAt,
     DateTime? updatedAt,
     this.archivedAt,

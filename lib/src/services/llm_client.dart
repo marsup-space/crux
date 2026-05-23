@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/provider_config.dart';
+import 'llm_provider.dart';
 
 class LlmChunk {
   final String? textDelta;
@@ -35,6 +36,7 @@ class LlmClient {
 
   Stream<LlmChunk> streamChat({
     required String endpointUrl,
+    required String providerName,
     required ProviderType providerType,
     required String apiKey,
     required String modelId,
@@ -46,6 +48,7 @@ class LlmClient {
 
     () async {
       try {
+        final provider = providerFor(providerName, providerType);
         final uri = _buildUri(endpointUrl, providerType);
         final request = await _httpClient.postUrl(uri);
 
@@ -53,7 +56,13 @@ class LlmClient {
             .set('Content-Type', 'application/json; charset=utf-8');
         _setAuthHeaders(request, providerType, apiKey);
 
-        final body = _buildRequestBody(modelId, messages, providerType);
+        final bodyMap = provider.buildRequestBody(
+          modelId,
+          messages,
+          thinkingMode: thinkingMode,
+          reasoningEffort: reasoningEffort,
+        );
+        final body = jsonEncode(bodyMap);
         final bodyBytes = utf8.encode(body);
         request.headers.set('Content-Length', bodyBytes.length.toString());
         request.add(bodyBytes);
@@ -174,38 +183,6 @@ class LlmClient {
       request.headers.set('x-api-key', apiKey);
       request.headers.set('anthropic-version', '2023-06-01');
     }
-  }
-
-  String _buildRequestBody(
-    String modelId,
-    List<Map<String, String>> messages,
-    ProviderType providerType, {
-    String thinkingMode = 'enabled',
-    String? reasoningEffort,
-  }) {
-    if (providerType == ProviderType.anthropic) {
-      final systemMsg = messages.where((m) => m['role'] == 'system').toList();
-      final chatMsgs = messages.where((m) => m['role'] != 'system').toList();
-      final body = <String, dynamic>{
-        'model': modelId,
-        'messages': chatMsgs,
-        'max_tokens': 8192,
-        'stream': true,
-      };
-      if (systemMsg.isNotEmpty) {
-        body['system'] = systemMsg.map((m) => m['content']).join('\n');
-      }
-      return jsonEncode(body);
-    }
-
-    return jsonEncode({
-      'model': modelId,
-      'messages': messages,
-      'stream': true,
-      'stream_options': {'include_usage': true},
-      if (thinkingMode != 'disabled') 'thinking': {'type': thinkingMode},
-      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
-    });
   }
 
   void dispose() {

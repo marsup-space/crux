@@ -29,7 +29,7 @@ class SessionRuntimeState {
     this.contextTargetTokens = 0,
     this.contextDisplayTokens = 0.0,
     this.thinkingMode = 'enabled',
-    this.reasoningEffort,
+    this.reasoningEffort = 'normal',
   });
 
   double get thinkingDurationMs {

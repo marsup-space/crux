@@ -6,6 +6,7 @@ class Message {
   final String reasoningContent;
   final int reasoningTokens;
   final int thinkingDurationMs;
+  final String? reasoningEffort;
   final String model;
   final double cost;
   final int tokensIn;
@@ -22,6 +23,7 @@ class Message {
     this.reasoningContent = '',
     this.reasoningTokens = 0,
     this.thinkingDurationMs = 0,
+    this.reasoningEffort,
     this.model = '',
     this.cost = 0.0,
     this.tokensIn = 0,

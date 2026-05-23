@@ -88,6 +88,12 @@ class _ChatPanelState extends State<ChatPanel> {
     return _providerService.imageModelKeys().contains(compositeKey);
   }
 
+  bool _modelSupportsThinking(String compositeKey) {
+    if (!_providerServiceReady) return false;
+    final mc = _providerService.modelByCompositeKey(compositeKey);
+    return mc?.thinking == true || mc?.reasoningEffort != null;
+  }
+
   static const int _infoPanelMinWidth = 100;
   static const double _infoPanelWidth = 28;
   static const int _maxVisibleItems = 6;
@@ -97,10 +103,13 @@ class _ChatPanelState extends State<ChatPanel> {
       sessionId,
       () {
         final initial = _computeBaseContext(sessionId);
+        final session = _findSession(sessionId);
         return SessionRuntimeState(
           sessionId: sessionId,
           contextTargetTokens: initial,
           contextDisplayTokens: initial.toDouble(),
+          thinkingMode: session?.thinkingMode ?? 'enabled',
+          reasoningEffort: session?.reasoningEffort,
         );
       },
     );
@@ -681,7 +690,17 @@ class _ChatPanelState extends State<ChatPanel> {
           rt.contextDisplayTokens = finalTokens.toDouble();
           _stopContextAnimation();
         }
-        setState(() {});
+        final hit = response.promptCacheHitTokens;
+        final miss = response.promptCacheMissTokens;
+        if (hit + miss > 0) {
+          final pct = ((hit / (hit + miss)) * 100).round();
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'cache hit ${hit} miss ${miss} ($pct%)';
+          });
+        } else {
+          setState(() {});
+        }
       },
       onError: (error) {
         _stopMetricsTimer(sessionId);
@@ -800,22 +819,25 @@ class _ChatPanelState extends State<ChatPanel> {
         case 'off':
           rt.thinkingMode = 'disabled';
           rt.reasoningEffort = null;
+          _persistThinkingLevel(rt);
           setState(() {
             _toastVisible = true;
             _toastMessage = 'Thinking mode: off';
           });
           break;
-        case 'low':
+        case 'normal':
           rt.thinkingMode = 'enabled';
-          rt.reasoningEffort = 'low';
+          rt.reasoningEffort = 'normal';
+          _persistThinkingLevel(rt);
           setState(() {
             _toastVisible = true;
-            _toastMessage = 'Thinking mode: low';
+            _toastMessage = 'Thinking mode: normal';
           });
           break;
         case 'high':
           rt.thinkingMode = 'enabled';
           rt.reasoningEffort = 'high';
+          _persistThinkingLevel(rt);
           setState(() {
             _toastVisible = true;
             _toastMessage = 'Thinking mode: high';
@@ -824,6 +846,7 @@ class _ChatPanelState extends State<ChatPanel> {
         case 'max':
           rt.thinkingMode = 'enabled';
           rt.reasoningEffort = 'max';
+          _persistThinkingLevel(rt);
           setState(() {
             _toastVisible = true;
             _toastMessage = 'Thinking mode: max';
@@ -832,10 +855,10 @@ class _ChatPanelState extends State<ChatPanel> {
         default:
           final current = rt.thinkingMode == 'disabled'
               ? 'off'
-              : rt.reasoningEffort ?? 'high';
+              : rt.reasoningEffort ?? 'normal';
           setState(() {
             _toastVisible = true;
-            _toastMessage = 'Usage: /think <off|low|high|max> (current: $current)';
+            _toastMessage = 'Usage: /think <off|normal|high|max> (current: $current)';
           });
       }
     } else if (command != null) {
@@ -1091,7 +1114,13 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final itemCount = messages.length + (isStreaming ? 1 : 0);
 
-    return Scrollbar(
+    return SelectionArea(
+      onSelectionCompleted: (text) {
+        if (text.isNotEmpty) {
+          ClipboardManager.copy(text);
+        }
+      },
+      child: Scrollbar(
       controller: scrollController,
       thumbVisibility: true,
       child: ListView.builder(
@@ -1113,7 +1142,8 @@ class _ChatPanelState extends State<ChatPanel> {
                 ? (thinkingMs / 1000.0).toStringAsFixed(1)
                 : '?';
             final tokens = '~${(_streamingReasoning.length / 3.5).ceil()}';
-            thinkingLine = 'thought for ${secs}s, $tokens tokens';
+            final effort = rt?.reasoningEffort ?? 'normal';
+            thinkingLine = 'thought for ${secs}s, $tokens tokens [$effort]';
           }
 
           return Column(
@@ -1171,6 +1201,7 @@ class _ChatPanelState extends State<ChatPanel> {
           );
         },
       ),
+    ),
     );
   }
 
@@ -1206,6 +1237,18 @@ class _ChatPanelState extends State<ChatPanel> {
               '\u{F06E}',
               style: TextStyle(color: Color.fromRGB(120, 100, 160)),
             ),
+          if (rt != null && _modelSupportsThinking(_currentSession.model))
+            Button(
+              label: _thinkingLabel(rt),
+              onPressed: () => _cycleThinkingLevel(rt),
+              color: rt.thinkingMode == 'disabled'
+                  ? Color.fromRGB(60, 50, 80)
+                  : Color.fromRGB(120, 100, 160),
+              hoverColor: Colors.brightCyan,
+              bgColor: Color.fromRGB(25, 20, 45),
+              hoverBgColor: Color.fromRGB(40, 30, 80),
+              padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            ),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
           _buildContextBar(),
           Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
@@ -1234,11 +1277,6 @@ class _ChatPanelState extends State<ChatPanel> {
                   : Color.fromRGB(80, 80, 100),
             ),
           ),
-          if (rt != null && rt.thinkingMode != 'disabled')
-            Text(
-              ' \u{F0EB}${rt.reasoningEffort ?? 'high'}',
-              style: TextStyle(color: Color.fromRGB(120, 100, 160)),
-            ),
           Expanded(child: SizedBox()),
           _buildLocalModelButton(),
         ],
@@ -1279,9 +1317,10 @@ class _ChatPanelState extends State<ChatPanel> {
     var total = 0;
     for (final m in msgs) {
       if (m.tokensIn + m.tokensOut > 0) {
-        total = m.tokensIn + m.tokensOut;
+        total = m.tokensIn + m.tokensOut - m.reasoningTokens;
       } else if (m.content.isNotEmpty) {
-        total += (m.content.length / 3.5).ceil();
+        final est = (m.content.length / 3.5).ceil();
+        total += est;
       }
     }
     return total;
@@ -1342,6 +1381,57 @@ class _ChatPanelState extends State<ChatPanel> {
     final newText = '/model ';
     textController.text = newText;
     textController.selection = TextSelection.collapsed(offset: newText.length);
+  }
+
+  String _thinkingLabel(SessionRuntimeState rt) {
+    final effort = rt.thinkingMode == 'disabled'
+        ? 'off'
+        : rt.reasoningEffort ?? 'normal';
+    return '\u{F0EB} ${effort.padRight(4)}';
+  }
+
+  void _cycleThinkingLevel(SessionRuntimeState rt) {
+    final levels = ['off', 'normal', 'high', 'max'];
+    final current = rt.thinkingMode == 'disabled'
+        ? 'off'
+        : rt.reasoningEffort ?? 'normal';
+    final idx = levels.indexOf(current);
+    final next = levels[(idx + 1) % levels.length];
+    switch (next) {
+      case 'off':
+        rt.thinkingMode = 'disabled';
+        rt.reasoningEffort = null;
+        break;
+      case 'normal':
+        rt.thinkingMode = 'enabled';
+        rt.reasoningEffort = 'normal';
+        break;
+      case 'high':
+        rt.thinkingMode = 'enabled';
+        rt.reasoningEffort = 'high';
+        break;
+      case 'max':
+        rt.thinkingMode = 'enabled';
+        rt.reasoningEffort = 'max';
+        break;
+    }
+    _persistThinkingLevel(rt);
+    setState(() {});
+  }
+
+  void _persistThinkingLevel(SessionRuntimeState rt) {
+    final sid = _currentSessionId;
+    if (sid == null) return;
+    final session = _findSession(sid);
+    if (session != null) {
+      session.thinkingMode = rt.thinkingMode;
+      session.reasoningEffort = rt.reasoningEffort;
+    }
+    _store.update(
+      sid,
+      thinkingMode: rt.thinkingMode,
+      reasoningEffort: rt.reasoningEffort,
+    );
   }
 
   Component _buildInputRow() {
