@@ -1,0 +1,400 @@
+import 'package:nocterm/nocterm.dart';
+import '../models/session.dart';
+import 'ui/modal_panel.dart';
+
+class SessionManagementPanel extends StatefulComponent {
+  final List<Session> sessions;
+  final int currentSessionId;
+  final Future<void> Function(int sessionId) onDeleteSession;
+  final Future<void> Function(int sessionId, String newTitle) onRenameSession;
+  final void Function(int sessionId) onSwitchSession;
+  final VoidCallback onDismiss;
+
+  const SessionManagementPanel({
+    required this.sessions,
+    required this.currentSessionId,
+    required this.onDeleteSession,
+    required this.onRenameSession,
+    required this.onSwitchSession,
+    required this.onDismiss,
+  });
+
+  @override
+  State<SessionManagementPanel> createState() => _SessionManagementPanelState();
+}
+
+enum _PanelMode { browse, confirmDelete, rename }
+
+class _SessionManagementPanelState extends State<SessionManagementPanel> {
+  int _selectedIndex = 0;
+  _PanelMode _mode = _PanelMode.browse;
+  final _renameController = TextEditingController();
+
+  List<Session> get _sorted {
+    return List<Session>.from(component.sessions)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final sorted = _sorted;
+    final currentIdx = sorted.indexWhere((s) => s.id == component.currentSessionId);
+    _selectedIndex = currentIdx >= 0 ? currentIdx : 0;
+  }
+
+  @override
+  void dispose() {
+    _renameController.dispose();
+    super.dispose();
+  }
+
+  void _selectPrev() {
+    final len = _sorted.length;
+    if (len == 0) return;
+    setState(() {
+      _selectedIndex = _selectedIndex > 0 ? _selectedIndex - 1 : len - 1;
+    });
+  }
+
+  void _selectNext() {
+    final len = _sorted.length;
+    if (len == 0) return;
+    setState(() {
+      _selectedIndex = _selectedIndex < len - 1 ? _selectedIndex + 1 : 0;
+    });
+  }
+
+  void _initiateDelete() {
+    if (_sorted.isEmpty) return;
+    setState(() {
+      _mode = _PanelMode.confirmDelete;
+    });
+  }
+
+  void _confirmDelete() async {
+    if (_sorted.isEmpty) return;
+    final session = _sorted[_selectedIndex];
+    await component.onDeleteSession(session.id);
+    final newLen = _sorted.length;
+    if (newLen == 0) {
+      component.onDismiss();
+      return;
+    }
+    setState(() {
+      _mode = _PanelMode.browse;
+      if (_selectedIndex >= newLen) {
+        _selectedIndex = newLen - 1;
+      }
+    });
+  }
+
+  void _initiateRename() {
+    if (_sorted.isEmpty) return;
+    final session = _sorted[_selectedIndex];
+    _renameController.text = session.title;
+    setState(() {
+      _mode = _PanelMode.rename;
+    });
+  }
+
+  void _confirmRename() async {
+    if (_sorted.isEmpty) return;
+    final session = _sorted[_selectedIndex];
+    final newTitle = _renameController.text.trim();
+    if (newTitle.isNotEmpty && newTitle != session.title) {
+      await component.onRenameSession(session.id, newTitle);
+    }
+    setState(() {
+      _mode = _PanelMode.browse;
+    });
+  }
+
+  void _cancelAction() {
+    setState(() {
+      _mode = _PanelMode.browse;
+    });
+  }
+
+  String _statusIcon(SessionStatus status) {
+    switch (status) {
+      case SessionStatus.idle:
+        return '·';
+      case SessionStatus.running:
+        return '▶';
+      case SessionStatus.needUserAction:
+        return '?';
+      case SessionStatus.done:
+        return '✦';
+    }
+  }
+
+  Color _statusColor(SessionStatus status) {
+    switch (status) {
+      case SessionStatus.idle:
+        return const Color.fromRGB(120, 100, 160);
+      case SessionStatus.running:
+        return const Color.fromRGB(100, 200, 255);
+      case SessionStatus.needUserAction:
+        return const Color.fromRGB(255, 200, 50);
+      case SessionStatus.done:
+        return const Color.fromRGB(200, 150, 255);
+    }
+  }
+
+  bool _handleKeyEvent(KeyboardEvent event) {
+    if (_mode == _PanelMode.confirmDelete) {
+      if (event.isControlPressed && event.logicalKey == LogicalKey.keyD) {
+        _confirmDelete();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.escape) {
+        _cancelAction();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        _selectPrev();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        _selectNext();
+        return true;
+      }
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.arrowUp) {
+      _selectPrev();
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.arrowDown) {
+      _selectNext();
+      return true;
+    }
+    if (event.isControlPressed && event.logicalKey == LogicalKey.keyD) {
+      _initiateDelete();
+      return true;
+    }
+    if (event.isControlPressed && event.logicalKey == LogicalKey.keyR) {
+      _initiateRename();
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.enter) {
+      final sorted = _sorted;
+      if (sorted.isNotEmpty) {
+        component.onSwitchSession(sorted[_selectedIndex].id);
+      }
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.escape) {
+      component.onDismiss();
+      return true;
+    }
+    return true;
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final sorted = _sorted;
+
+    if (_mode == _PanelMode.rename) {
+      return _buildRenameOverlay(sorted);
+    }
+
+    final shortcuts = <ModalPanelShortcut>[
+      ModalPanelShortcut(
+        label: 'delete',
+        keyHint: 'Ctrl+D',
+        matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyD,
+        onActivate: _mode == _PanelMode.confirmDelete ? _confirmDelete : _initiateDelete,
+      ),
+      ModalPanelShortcut(
+        label: 'rename',
+        keyHint: 'Ctrl+R',
+        matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyR,
+        onActivate: _initiateRename,
+      ),
+    ];
+
+    return ModalPanel(
+      title: _mode == _PanelMode.confirmDelete ? 'Confirm Delete' : 'Sessions',
+      onDismiss: component.onDismiss,
+      shortcuts: shortcuts,
+      onKeyEvent: _handleKeyEvent,
+      contentBuilder: (context) {
+        if (sorted.isEmpty) {
+          return Center(
+            child: Text('No sessions found.', style: const TextStyle(color: Colors.gray)),
+          );
+        }
+
+        final children = <Component>[];
+
+        if (_mode == _PanelMode.confirmDelete) {
+          final session = sorted[_selectedIndex];
+          children.add(
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Row(
+                children: [
+                  Text(
+                    'Delete "${session.title}"? Ctrl+D to confirm, Esc to cancel',
+                    style: const TextStyle(color: Color.fromRGB(255, 80, 80)),
+                  ),
+                ],
+              ),
+            ),
+          );
+          children.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+        }
+
+        final headerBg = const Color.fromRGB(40, 30, 80);
+        children.add(
+          Container(
+            decoration: BoxDecoration(color: headerBg),
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 4,
+                  child: Text('#', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                ),
+                SizedBox(
+                  width: 3,
+                  child: Text(' ', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
+                ),
+                SizedBox(
+                  width: 6,
+                  child: Text('St', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                ),
+                Expanded(
+                  child: Text(' Title', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                ),
+                SizedBox(
+                  width: 12,
+                  child: Text('Model', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold), textAlign: TextAlign.right),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        for (int i = 0; i < sorted.length; i++) {
+          final s = sorted[i];
+          final isSelected = i == _selectedIndex;
+          final isCurrent = s.id == component.currentSessionId;
+
+          final bgColor = isSelected
+              ? const Color.fromRGB(60, 50, 100)
+              : isCurrent
+                  ? const Color.fromRGB(40, 30, 80)
+                  : const Color.fromRGB(25, 20, 45);
+          final textColor = isSelected
+              ? Colors.brightCyan
+              : isCurrent
+                  ? Colors.white
+                  : const Color.fromRGB(120, 100, 160);
+
+          final prefix = isSelected ? '▸ ' : '  ';
+          final icon = _statusIcon(s.status);
+          final iconColor = _statusColor(s.status);
+          final titleDisplay = s.title.length > 30 ? '${s.title.substring(0, 29)}~' : s.title;
+          final modelShort = s.model.contains('/') ? s.model.split('/').last : s.model;
+          final modelDisplay = modelShort.length > 12 ? '${modelShort.substring(0, 11)}~' : modelShort;
+
+          children.add(
+            MouseRegion(
+              onEnter: (_) => setState(() => _selectedIndex = i),
+              opaque: false,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _selectedIndex = i);
+                  component.onSwitchSession(s.id);
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  decoration: BoxDecoration(color: bgColor),
+                  padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 4,
+                        child: Text('${s.id}', style: TextStyle(color: textColor)),
+                      ),
+                      Text(prefix, style: TextStyle(color: textColor)),
+                      SizedBox(
+                        width: 3,
+                        child: Text(icon, style: TextStyle(color: iconColor)),
+                      ),
+                      Expanded(
+                        child: Text(' $titleDisplay', style: TextStyle(color: textColor, fontWeight: isSelected ? FontWeight.bold : null)),
+                      ),
+                      SizedBox(
+                        width: 12,
+                        child: Text(modelDisplay, style: TextStyle(color: Color.fromRGB(80, 70, 110)), textAlign: TextAlign.right),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        );
+      },
+    );
+  }
+
+  Component _buildRenameOverlay(List<Session> sorted) {
+    if (sorted.isEmpty) return const SizedBox();
+    final session = sorted[_selectedIndex];
+
+    return ModalPanel(
+      title: 'Rename Session',
+      onDismiss: _cancelAction,
+      contentBuilder: (context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Current: ${session.title}',
+            style: const TextStyle(color: Color.fromRGB(120, 100, 160)),
+          ),
+          const SizedBox(height: 1),
+          Row(
+            children: [
+              Text('New: ', style: const TextStyle(color: Colors.white)),
+              Expanded(
+                child: TextField(
+                  controller: _renameController,
+                  focused: true,
+                  maxLines: 1,
+                  style: const TextStyle(color: Colors.white),
+                  onSubmitted: (_) => _confirmRename(),
+                  onKeyEvent: (event) {
+                    if (event.logicalKey == LogicalKey.escape) {
+                      _cancelAction();
+                      return true;
+                    }
+                    if (event.logicalKey == LogicalKey.enter) {
+                      _confirmRename();
+                      return true;
+                    }
+                    return false;
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'Enter to confirm, Esc to cancel',
+            style: const TextStyle(color: Color.fromRGB(60, 50, 90)),
+          ),
+        ],
+      ),
+    );
+  }
+}

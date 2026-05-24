@@ -68,6 +68,10 @@ class ProviderService {
   /// `auth.json` and loaded on startup. Used by [resolveDefaultModel].
   String? _lastUsedModel;
 
+  /// The auxiliary model used for generating session names, summaries, etc.
+  /// Persisted in `auth.json` and loaded on startup. Global — not per-session.
+  String? _auxiliaryModel;
+
   /// Path to the auth.json file for persistent key storage.
   /// Follows XDG: `$XDG_DATA_HOME/crux/auth.json`
   /// (defaults to `~/.local/share/crux/auth.json`).
@@ -121,12 +125,6 @@ class ProviderService {
 
   /// The set of composite keys for models that support images.
   Set<String> imageModelKeys() => _loader.imageModelKeys();
-
-  /// Whether any model (across all providers) supports image input.
-  bool anyImageSupport() => _loader.anyImageSupport();
-
-  /// Errors encountered during config loading, keyed by file path.
-  Map<String, String> loadErrors() => _loader.loadErrors();
 
   // ---------------------------------------------------------------------------
   // Provider management (add / remove / modify)
@@ -185,69 +183,6 @@ class ProviderService {
     await file.writeAsString(tomlContent);
     await _loader.loadAll();
     return _loader.providerByName(providerName);
-  }
-
-  /// Appends a model to an existing provider config.
-  ///
-  /// The model is added to the end of the provider's models list. The TOML
-  /// file is overwritten and configs are reloaded. Returns the updated
-  /// [ProviderConfig].
-  ///
-  /// Throws if the provider is not found.
-  Future<ProviderConfig> addModelToProvider(
-    String providerName,
-    ModelConfig model,
-  ) async {
-    final current = _loader.providerByName(providerName);
-    if (current == null) {
-      throw StateError('Provider "$providerName" not found');
-    }
-
-    final updated = ProviderConfig(
-      name: current.name,
-      type: current.type,
-      endpointUrl: current.endpointUrl,
-      models: [...current.models, model],
-      quota: current.quota,
-    );
-
-    final file = File('$providersDir/$providerName.toml');
-    final tomlContent = _serializeProviderConfig(updated);
-    await file.writeAsString(tomlContent);
-    await _loader.loadAll();
-    return _loader.providerByName(providerName)!;
-  }
-
-  /// Removes a model from an existing provider config by its ID.
-  ///
-  /// The TOML file is overwritten and configs are reloaded. Returns the
-  /// updated [ProviderConfig].
-  ///
-  /// Throws if the provider is not found.
-  Future<ProviderConfig> removeModelFromProvider(
-    String providerName,
-    String modelId,
-  ) async {
-    final current = _loader.providerByName(providerName);
-    if (current == null) {
-      throw StateError('Provider "$providerName" not found');
-    }
-
-    final updatedModels = current.models.where((m) => m.id != modelId).toList();
-
-    final updated = ProviderConfig(
-      name: current.name,
-      type: current.type,
-      endpointUrl: current.endpointUrl,
-      models: updatedModels,
-      quota: current.quota,
-    );
-
-    final file = File('$providersDir/$providerName.toml');
-    final tomlContent = _serializeProviderConfig(updated);
-    await file.writeAsString(tomlContent);
-    await _loader.loadAll();
-    return _loader.providerByName(providerName)!;
   }
 
   // ---------------------------------------------------------------------------
@@ -339,6 +274,18 @@ class ProviderService {
   /// [resolveDefaultModel] on the next launch.
   Future<void> setLastUsedModel(String compositeKey) async {
     _lastUsedModel = compositeKey;
+    await _persistAuthKeys();
+  }
+
+  /// Returns the auxiliary model composite key, or null if not set.
+  String? get auxiliaryModel => _auxiliaryModel;
+
+  /// Persists the given model composite key as the auxiliary model.
+  ///
+  /// Called when the user selects a model via `/auxiliary`. The value is
+  /// stored globally in `auth.json` and persists across sessions.
+  Future<void> setAuxiliaryModel(String compositeKey) async {
+    _auxiliaryModel = compositeKey;
     await _persistAuthKeys();
   }
 
@@ -448,6 +395,7 @@ class ProviderService {
           }
         }
         _lastUsedModel = data['lastUsedModel'] as String?;
+        _auxiliaryModel = data['auxiliaryModel'] as String?;
       } else {
         // Legacy flat format — migrate on next write
         for (final entry in data.entries) {
@@ -473,6 +421,7 @@ class ProviderService {
     final data = <String, dynamic>{
       'apiKeys': _envKeys,
       if (_lastUsedModel != null) 'lastUsedModel': _lastUsedModel,
+      if (_auxiliaryModel != null) 'auxiliaryModel': _auxiliaryModel,
     };
     final content =
         JsonEncoder.withIndent('  ').convert(data) + '\n';

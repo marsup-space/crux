@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -10,7 +11,6 @@ import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../storage/database.dart' hide Session, Message, Part;
-import '../storage/session_lock.dart';
 import '../storage/session_store.dart';
 import 'ui/button.dart';
 import 'ui/toast.dart';
@@ -21,6 +21,7 @@ import 'provider_wizard_custom.dart';
 import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
+import 'session_management_panel.dart';
 import 'message_bubble.dart';
 
 enum _OverlayMode { off, command, parameter, wizard }
@@ -37,7 +38,6 @@ class ChatPanel extends StatefulComponent {
 
 class _ChatPanelState extends State<ChatPanel> {
   late final SessionStore _store;
-  late final SessionLock _lock;
   late final ChatService _chatService;
 
   List<Session> _sessions = [];
@@ -53,8 +53,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  String _localModel = 'local/llama3';
-  String _localModelShortName = 'llama3';
+  String _auxiliaryModelShortName = 'auxiliary';
 
   _OverlayMode _overlayMode = _OverlayMode.off;
 
@@ -70,6 +69,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
   bool _toastVisible = false;
   String _toastMessage = '';
+
+  bool _showSessionManager = false;
+  bool _metricsHovered = false;
 
   late final ProviderService _providerService;
   bool _providerServiceReady = false;
@@ -136,26 +138,35 @@ class _ChatPanelState extends State<ChatPanel> {
   void initState() {
     super.initState();
     _providerService = ProviderService(providersDir: component.providersDir);
-    _lock = SessionLock();
     final db = CruxDatabase();
-    _store = SessionStore(db, _lock);
+    _store = SessionStore(db);
     _chatService = ChatService(_store, _providerService, LlmClient());
     textController.addListener(_onTextChanged);
     _initSessions();
     _providerService.initialize().then((_) {
       setState(() {
         _providerServiceReady = true;
-        _resolveLocalModel();
+        _resolveAuxiliaryModel();
       });
     });
   }
 
-  void _resolveLocalModel() {
+  void _resolveAuxiliaryModel() {
+    final auxKey = _providerService.auxiliaryModel;
+    if (auxKey == 'none') {
+      _auxiliaryModelShortName = 'none';
+      return;
+    }
+    if (auxKey != null) {
+      final model = _providerService.modelByCompositeKey(auxKey);
+      if (model != null) {
+        _auxiliaryModelShortName = model.name;
+        return;
+      }
+    }
     final localProvider = _providerService.providerByName('local');
     if (localProvider != null && localProvider.models.isNotEmpty) {
-      final firstModel = localProvider.models.first;
-      _localModel = firstModel.compositeKey(localProvider.name);
-      _localModelShortName = firstModel.name;
+      _auxiliaryModelShortName = localProvider.models.first.name;
     }
   }
 
@@ -167,7 +178,7 @@ class _ChatPanelState extends State<ChatPanel> {
       final model = _providerService.resolveDefaultModel() ?? '';
       final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
       _sessions = [session];
-      _resolveLocalModel();
+      _resolveAuxiliaryModel();
     }
     _currentSessionId = _sessions.first.id;
     await _loadMessages(_currentSessionId!);
@@ -243,6 +254,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _selectedSuggestionIndex = 0;
     _suggestionScrollOffset = 0;
     _activeWizardSubcommand = null;
+    _showSessionManager = false;
   }
 
   void _onTextChanged() {
@@ -277,7 +289,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (command == null ||
         (!command.hasSuggestionsForParam(0) &&
-            commandName != '/model')) {
+            commandName != '/model' &&
+            commandName != '/auxiliary')) {
       _setOverlayOff();
       setState(() {});
       return;
@@ -305,7 +318,8 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     if (!command.hasSuggestionsForParam(paramIndex) &&
-        !(commandName == '/model' && paramIndex == 0)) {
+        !(commandName == '/model' && paramIndex == 0) &&
+        !(commandName == '/auxiliary' && paramIndex == 0)) {
       _setOverlayOff();
       setState(() {});
       return;
@@ -318,6 +332,27 @@ class _ChatPanelState extends State<ChatPanel> {
             (s) => CommandSuggestion(value: s.displayId, description: s.title),
           )
           .toList();
+    } else if (commandName == '/auxiliary' && paramIndex == 0) {
+      if (_providerServiceReady) {
+        suggestions = [
+          CommandSuggestion(value: 'none', description: 'No auxiliary model'),
+          ..._providerService.allModelEntries()
+              .where((e) => _providerService.getApiKey(e.providerName) != null)
+              .map((e) {
+            final ctx = e.model.contextSize >= 1000000
+                ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
+                : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
+            final img = e.model.imageSupport ? ', img' : '';
+            final think = e.model.thinking ? ', think' : '';
+            return CommandSuggestion(
+              value: e.compositeKey,
+              description: '${e.model.name} (${ctx} ctx$img$think)',
+            );
+          }),
+        ];
+      } else {
+        suggestions = [];
+      }
     } else if (commandName == '/model' && paramIndex == 0) {
       if (_providerServiceReady) {
         suggestions = _providerService.allModelEntries()
@@ -368,6 +403,7 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   bool _handleInputKeyEvent(KeyboardEvent event) {
+    if (_showSessionManager) return true;
     if (_overlayMode == _OverlayMode.off) return false;
 
     if (_overlayMode == _OverlayMode.wizard) {
@@ -698,13 +734,13 @@ class _ChatPanelState extends State<ChatPanel> {
         final hit = response.promptCacheHitTokens;
         final miss = response.promptCacheMissTokens;
         if (hit + miss > 0) {
-          final pct = ((hit / (hit + miss)) * 100).round();
-          setState(() {
-            _toastVisible = true;
-            _toastMessage = 'cache hit ${hit} miss ${miss} ($pct%)';
-          });
+          rt.cacheHitPct = ((hit / (hit + miss)) * 100).round();
         } else {
-          setState(() {});
+          rt.cacheHitPct = null;
+        }
+        setState(() {});
+        if (_currentSession.title == 'New Session') {
+          _generateTitle(sessionId);
         }
       },
       onError: (error) {
@@ -756,6 +792,36 @@ class _ChatPanelState extends State<ChatPanel> {
           _toastMessage = 'Usage: /model <name>';
         });
       }
+    } else if (commandName == '/auxiliary') {
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        final modelKey = parts[1];
+        if (modelKey == 'none') {
+          await _providerService.setAuxiliaryModel('none');
+          _auxiliaryModelShortName = 'none';
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Auxiliary model disabled';
+          });
+        } else if (_providerServiceReady &&
+            _providerService.modelByCompositeKey(modelKey) == null) {
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Unknown model: $modelKey';
+          });
+        } else {
+          await _providerService.setAuxiliaryModel(modelKey);
+          _resolveAuxiliaryModel();
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Auxiliary model set to $modelKey';
+          });
+        }
+      } else {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = 'Usage: /auxiliary <name>';
+        });
+      }
     } else if (commandName == '/session') {
       if (parts.length > 1 && parts[1].isNotEmpty) {
         final idStr = parts[1].replaceFirst('#', '');
@@ -775,10 +841,19 @@ class _ChatPanelState extends State<ChatPanel> {
         });
       }
     } else if (commandName == '/new') {
-      final model = _providerService.resolveDefaultModel() ?? '';
-      final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
-      _sessions = await _store.list(projectPath: _projectPath);
-      await _switchSession(session.id);
+      final currentMessages = _currentMessages;
+      final isCurrentEmpty = currentMessages.isEmpty && _currentSession.title == 'New Session';
+      if (isCurrentEmpty) {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = 'Already on a new session';
+        });
+      } else {
+        final model = _providerService.resolveDefaultModel() ?? '';
+        final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
+        _sessions = await _store.list(projectPath: _projectPath);
+        await _switchSession(session.id);
+      }
     } else if (commandName == '/provider') {
       final subcommand = parts.length > 1 ? parts[1] : '';
       const builtInProviders = {'deepseek', 'infinigence', 'volcengine'};
@@ -866,6 +941,29 @@ class _ChatPanelState extends State<ChatPanel> {
             _toastMessage = 'Usage: /think <off|normal|high|max> (current: $current)';
           });
       }
+    } else if (commandName == '/project') {
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        final target = p.normalize(p.absolute(parts[1]));
+        final dir = Directory(target);
+        if (!dir.existsSync()) {
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Directory not found: $target';
+          });
+        } else {
+          Directory.current = dir;
+          await _initSessions();
+          setState(() {
+            _toastVisible = true;
+            _toastMessage = 'Switched to $target';
+          });
+        }
+      } else {
+        setState(() {
+          _toastVisible = true;
+          _toastMessage = 'Usage: /project <path> (current: $_projectPath)';
+        });
+      }
     } else if (command != null) {
       setState(() {
         _toastVisible = true;
@@ -899,6 +997,112 @@ class _ChatPanelState extends State<ChatPanel> {
         _toastVisible = true;
         _toastMessage = message;
       }
+    });
+  }
+
+  Component _buildSessionManager() {
+    return SessionManagementPanel(
+      sessions: _sessions,
+      currentSessionId: _currentSessionId ?? 0,
+      onDeleteSession: _deleteSession,
+      onRenameSession: _renameSession,
+      onSwitchSession: (id) {
+        _switchSession(id);
+        setState(() {
+          _showSessionManager = false;
+        });
+      },
+      onDismiss: () {
+        setState(() {
+          _showSessionManager = false;
+        });
+      },
+    );
+  }
+
+  Future<void> _deleteSession(int sessionId) async {
+    final wasCurrent = sessionId == _currentSessionId;
+    await _store.deleteSession(sessionId);
+    _runtimeStates.remove(sessionId);
+    _messageCache.remove(sessionId);
+    _sessions = await _store.list(projectPath: _projectPath);
+
+    if (wasCurrent) {
+      if (_sessions.isNotEmpty) {
+        _currentSessionId = _sessions.first.id;
+        await _loadMessages(_currentSessionId!);
+        final rt = _runtime(_currentSessionId!);
+        final base = _computeBaseContext(_currentSessionId!);
+        rt.contextTargetTokens = base;
+        rt.contextDisplayTokens = base.toDouble();
+      } else {
+        final model = _providerService.resolveDefaultModel() ?? '';
+        final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
+        _sessions = [session];
+        _currentSessionId = session.id;
+        await _loadMessages(session.id);
+      }
+    }
+
+    setState(() {});
+  }
+
+  Future<void> _renameSession(int sessionId, String newTitle) async {
+    await _store.update(sessionId, title: newTitle);
+    final session = _findSession(sessionId);
+    if (session != null) {
+      session.title = newTitle;
+    }
+    setState(() {});
+  }
+
+  void _generateTitle(int sessionId) async {
+    final auxKey = _providerService.auxiliaryModel;
+    if (auxKey == null || auxKey == 'none') {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = '[aux] no auxiliary model set';
+      });
+      return;
+    }
+    final slashIndex = auxKey.indexOf('/');
+    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
+    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
+    final provider = _providerService.providerByName(providerName);
+    final apiKey = _providerService.getApiKey(providerName);
+    if (provider == null) {
+      setState(() { _toastVisible = true; _toastMessage = '[aux] provider "$providerName" not found'; });
+      return;
+    }
+    if (apiKey == null || apiKey.isEmpty) {
+      setState(() { _toastVisible = true; _toastMessage = '[aux] no api key for "$providerName"'; });
+      return;
+    }
+    setState(() {
+      _toastVisible = true;
+      _toastMessage = '[aux] calling $providerName/$modelId...';
+    });
+    final title = await _chatService.generateSessionTitle(sessionId);
+    if (title == null) {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = '[aux] title generation returned null (check terminal for error)';
+      });
+      return;
+    }
+    final session = _findSession(sessionId);
+    if (session == null || session.title != 'New Session') {
+      setState(() {
+        _toastVisible = true;
+        _toastMessage = '[aux] session title already changed';
+      });
+      return;
+    }
+    await _store.update(sessionId, title: title);
+    session.title = title;
+    setState(() {
+      _toastVisible = true;
+      _toastMessage = '[aux] title set: $title';
     });
   }
 
@@ -1022,7 +1226,7 @@ class _ChatPanelState extends State<ChatPanel> {
         final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
 
         if (showInfoPanel) {
-          return Row(
+          final mainContent = Row(
             children: [
               Expanded(child: _buildMainInterface()),
               VerticalDivider(
@@ -1036,8 +1240,33 @@ class _ChatPanelState extends State<ChatPanel> {
                   sessions: _sessions,
                   currentSessionId: _currentSessionId ?? 0,
                   onSwitchSession: _switchSession,
+                  onSessionTitleTap: () {
+                    setState(() {
+                      _showSessionManager = true;
+                    });
+                  },
                 ),
               ),
+            ],
+          );
+
+          if (_showSessionManager) {
+            return Stack(
+              children: [
+                Positioned.fill(child: mainContent),
+                Positioned.fill(child: _buildSessionManager()),
+              ],
+            );
+          }
+
+          return mainContent;
+        }
+
+        if (_showSessionManager) {
+          return Stack(
+            children: [
+              Positioned.fill(child: _buildMainInterface()),
+              Positioned.fill(child: _buildSessionManager()),
             ],
           );
         }
@@ -1232,67 +1461,121 @@ class _ChatPanelState extends State<ChatPanel> {
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           );
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          modelButton,
-          if (_modelSupportsImages(_currentSession.model))
-            Text(
-              '\u{F06E}',
-              style: TextStyle(color: Color.fromRGB(120, 100, 160)),
-            ),
-          if (rt != null && _modelSupportsThinking(_currentSession.model))
-            Button(
-              label: _thinkingLabel(rt),
-              onPressed: () => _cycleThinkingLevel(rt),
-              color: rt.thinkingMode == 'disabled'
-                  ? Color.fromRGB(60, 50, 80)
-                  : Color.fromRGB(120, 100, 160),
-              hoverColor: Colors.brightCyan,
-              bgColor: Color.fromRGB(25, 20, 45),
-              hoverBgColor: Color.fromRGB(40, 30, 80),
-              padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            ),
-          Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
-          _buildContextBar(),
-          Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
-          Text(
-            rt?.isResponding ?? false
-                ? '${rt!.tokPerSec.toStringAsFixed(1)} tok/s'
-                : rt != null && rt.tokPerSec > 0
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const btnPad = 2;
+        const spacer = 2;
+        const smallSpacer = 1;
+
+        final modelW = modelLabel.length + btnPad;
+        final imageW = _modelSupportsImages(_currentSession.model) ? 1 : 0;
+        final thinkingLabel = (rt != null && _modelSupportsThinking(_currentSession.model))
+            ? _thinkingLabel(rt)
+            : null;
+        final thinkingW = thinkingLabel != null ? thinkingLabel.length + btnPad : 0;
+        final contextW = 20 + spacer;
+        final tokText = rt?.isResponding ?? false
+            ? '${rt!.tokPerSec.toStringAsFixed(1)} tok/s'
+            : rt != null && rt.tokPerSec > 0
                 ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
-                : '— tok/s',
-            style: TextStyle(
-              color: rt?.isResponding ?? false
-                  ? Color.fromRGB(180, 220, 255)
-                  : Color.fromRGB(80, 80, 100),
-            ),
-          ),
-          Text(' ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
-          Text(
-            rt?.isResponding ?? false
-                ? _formatTtft(rt!.ttftMs)
-                : rt != null && rt.ttftMs > 0
+                : '— tok/s';
+        final tokW = tokText.length + spacer;
+        final ttftText = rt?.isResponding ?? false
+            ? _formatTtft(rt!.ttftMs)
+            : rt != null && rt.ttftMs > 0
                 ? _formatTtft(rt.ttftMs)
-                : '—',
-            style: TextStyle(
-              color: rt?.isResponding ?? false
-                  ? Color.fromRGB(180, 220, 255)
-                  : Color.fromRGB(80, 80, 100),
-            ),
+                : '—';
+        final ttftW = ttftText.length + smallSpacer;
+        final auxLabel = '\u{F013} $_auxiliaryModelShortName';
+        final auxW = auxLabel.length + btnPad;
+
+        var remaining = constraints.maxWidth.toInt() - modelW - imageW;
+
+        final showThinking = thinkingLabel != null && (remaining - thinkingW) >= 0;
+        if (showThinking) remaining -= thinkingW;
+
+        final showContext = (remaining - contextW) >= 0;
+        if (showContext) remaining -= contextW;
+
+        final showTokPerSec = (remaining - tokW) >= 0;
+        if (showTokPerSec) remaining -= tokW;
+
+        final showTtft = (remaining - ttftW) >= 0;
+        if (showTtft) remaining -= ttftW;
+
+        final showAux = (remaining - auxW) >= 0;
+
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Row(
+            children: [
+              modelButton,
+              if (_modelSupportsImages(_currentSession.model))
+                Text(
+                  '\u{F06E}',
+                  style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+                ),
+              if (showThinking)
+                Button(
+                  label: thinkingLabel!,
+                  onPressed: () => _cycleThinkingLevel(rt!),
+                  color: rt!.thinkingMode == 'disabled'
+                      ? Color.fromRGB(60, 50, 80)
+                      : Color.fromRGB(120, 100, 160),
+                  hoverColor: Colors.brightCyan,
+                  bgColor: Color.fromRGB(25, 20, 45),
+                  hoverBgColor: Color.fromRGB(40, 30, 80),
+                  padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                ),
+              if (showContext) ...[
+                Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+                _buildContextBar(),
+              ],
+              if (showTokPerSec || showTtft)
+                MouseRegion(
+                  onEnter: (_) => setState(() => _metricsHovered = true),
+                  onExit: (_) => setState(() => _metricsHovered = false),
+                  opaque: false,
+                  child: Row(children: [
+                    if (showTokPerSec) ...[
+                      Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+                      Text(
+                        _metricsHovered && rt?.cacheHitPct != null
+                            ? 'cache ${rt!.cacheHitPct}%'
+                            : tokText,
+                        style: TextStyle(
+                          color: rt?.isResponding ?? false
+                              ? Color.fromRGB(180, 220, 255)
+                              : Color.fromRGB(80, 80, 100),
+                        ),
+                      ),
+                    ],
+                    if (showTtft) ...[
+                      Text(' ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+                      Text(
+                        ttftText,
+                        style: TextStyle(
+                          color: rt?.isResponding ?? false
+                              ? Color.fromRGB(180, 220, 255)
+                              : Color.fromRGB(80, 80, 100),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
+              Expanded(child: SizedBox()),
+              if (showAux) _buildAuxiliaryModelButton(),
+            ],
           ),
-          Expanded(child: SizedBox()),
-          _buildLocalModelButton(),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Component _buildLocalModelButton() {
+  Component _buildAuxiliaryModelButton() {
     return Button(
-      label: '\u{F233} $_localModelShortName',
-      onPressed: _onLocalModelButtonPressed,
+      label: '\u{F013} $_auxiliaryModelShortName',
+      onPressed: _onAuxiliaryModelButtonPressed,
       color: Color.fromRGB(120, 100, 160),
       hoverColor: Colors.brightCyan,
       bgColor: Color.fromRGB(25, 20, 45),
@@ -1301,15 +1584,10 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
-  void _onLocalModelButtonPressed() {
-    if (_currentSessionId == null) return;
-    _store.update(_currentSessionId!, model: _localModel);
-    _currentSession.model = _localModel;
-    setState(() {
-      _toastVisible = true;
-      _toastMessage = 'Model switched to $_localModel';
-    });
-    _providerService.setLastUsedModel(_localModel);
+  void _onAuxiliaryModelButtonPressed() {
+    final newText = '/auxiliary ';
+    textController.text = newText;
+    textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
   int _computeBaseContext(int sessionId) {
@@ -1448,7 +1726,7 @@ class _ChatPanelState extends State<ChatPanel> {
           Expanded(
             child: TextField(
               controller: textController,
-              focused: true,
+              focused: !_showSessionManager,
               maxLines: null,
               style: TextStyle(color: Colors.white),
               placeholder: 'Type a message...',

@@ -1,19 +1,14 @@
-import 'dart:convert';
-
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
 import '../models/message.dart';
-import '../models/part.dart';
-import 'session_lock.dart';
 
 const _unset = Object();
 
 class SessionStore {
   final db.CruxDatabase _db;
-  final SessionLock _lock;
 
-  SessionStore(this._db, this._lock);
+  SessionStore(this._db);
 
   int _slugCounter = 0;
 
@@ -133,14 +128,10 @@ class SessionStore {
     return updated!;
   }
 
-  Future<void> archive(int id) async {
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
-      db.SessionsCompanion(
-        archivedAt: Value(nowMs),
-        updatedAt: Value(nowMs),
-      ),
-    );
+  Future<void> deleteSession(int id) async {
+    await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
+    await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
+    await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
   }
 
   Future<int> deleteByProjectPath(String projectPath) async {
@@ -154,63 +145,6 @@ class SessionStore {
     }
     await (_db.delete(_db.sessions)..where((t) => t.projectPath.equals(projectPath))).go();
     return sessionIds.length;
-  }
-
-  Future<void> delete(int id) async {
-    await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
-  }
-
-  Future<Session> fork(int sessionId, {int? upToMessageId}) async {
-    await _lock.acquire(sessionId);
-    try {
-      final source = await getById(sessionId);
-      if (source == null) throw StateError('Session $sessionId not found');
-
-      final forkCount = await _countForks(sessionId);
-      final forked = await create(
-        title: '${source.title} (fork #$forkCount)',
-        model: source.model,
-        projectPath: source.projectPath,
-        agent: source.agent,
-        parentId: sessionId,
-      );
-
-      final messages = await getMessages(sessionId);
-      final toCopy = upToMessageId != null
-          ? messages.where((m) => m.id <= upToMessageId).toList()
-          : messages;
-
-      for (final msg in toCopy) {
-        final newMsg = await addMessage(
-          forked.id,
-          role: msg.role,
-          content: msg.content,
-          model: msg.model,
-        );
-        final parts = await getParts(msg.id);
-        for (final part in parts) {
-          await addPart(
-            newMsg.id,
-            forked.id,
-            type: part.type,
-            data: part.data,
-          );
-        }
-      }
-
-      return forked;
-    } finally {
-      _lock.release(sessionId);
-    }
-  }
-
-  Future<int> _countForks(int parentId) async {
-    final count = _db.sessions.id.count();
-    final query = _db.selectOnly(_db.sessions)
-      ..addColumns([count])
-      ..where(_db.sessions.parentId.equals(parentId));
-    final row = await query.getSingle();
-    return row.read(count) ?? 0;
   }
 
   Future<Message> addMessage(
@@ -287,54 +221,6 @@ class SessionStore {
     return rows.map(_rowToMessage).toList();
   }
 
-  Future<void> deleteMessage(int id) async {
-    await (_db.delete(_db.messages)..where((t) => t.id.equals(id))).go();
-  }
-
-  Future<Part> addPart(
-    int messageId,
-    int sessionId, {
-    required PartType type,
-    Map<String, dynamic>? data,
-  }) async {
-    final now = DateTime.now();
-    final nowMs = now.millisecondsSinceEpoch;
-    final dataStr = jsonEncode(data ?? {});
-    final id = await _db.into(_db.parts).insert(
-          db.PartsCompanion.insert(
-            messageId: messageId,
-            sessionId: sessionId,
-            type: type.name,
-            createdAt: nowMs,
-            data: Value(dataStr),
-          ),
-        );
-    return Part(
-      id: id,
-      messageId: messageId,
-      sessionId: sessionId,
-      type: type,
-      data: data ?? {},
-      createdAt: now,
-    );
-  }
-
-  Future<List<Part>> getParts(int messageId) async {
-    final query = _db.select(_db.parts)
-      ..where((t) => t.messageId.equals(messageId))
-      ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]);
-    final rows = await query.get();
-    return rows.map(_rowToPart).toList();
-  }
-
-  Future<List<Part>> getPartsBySession(int sessionId) async {
-    final query = _db.select(_db.parts)
-      ..where((t) => t.sessionId.equals(sessionId))
-      ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]);
-    final rows = await query.get();
-    return rows.map(_rowToPart).toList();
-  }
-
   Future<void> _touchSession(int sessionId) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.sessions)..where((t) => t.id.equals(sessionId)))
@@ -381,20 +267,6 @@ class SessionStore {
       tokensOut: row.tokensOut,
       error: row.error,
       parentMsgId: row.parentMsgId,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
-    );
-  }
-
-  Part _rowToPart(db.Part row) {
-    return Part(
-      id: row.id,
-      messageId: row.messageId,
-      sessionId: row.sessionId,
-      type: PartType.values.firstWhere(
-        (t) => t.name == row.type,
-        orElse: () => PartType.text,
-      ),
-      data: Part.parseDataJson(row.data),
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
     );
   }

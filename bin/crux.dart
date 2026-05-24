@@ -50,8 +50,7 @@ Future<void> _runDoctor() async {
   stdout.writeln();
 
   final db = CruxDatabase();
-  final lock = SessionLock();
-  final store = SessionStore(db, lock);
+  final store = SessionStore(db);
 
   try {
     stdout.writeln('[1/2] Migrating database to current schema...');

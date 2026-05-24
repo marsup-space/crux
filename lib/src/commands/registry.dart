@@ -5,7 +5,7 @@ const List<SlashCommand> slashCommands = [
   SlashCommand(
     name: '/model',
     description: 'Switch the AI model',
-    params: ['name'],
+    params: ['provider/model'],
     suggestionsPerParam: [
       [],
     ],
@@ -117,6 +117,21 @@ const List<SlashCommand> slashCommands = [
         CommandSuggestion(value: 'high', description: 'High reasoning effort'),
         CommandSuggestion(value: 'max', description: 'Maximum reasoning effort'),
       ],
+    ],
+  ),
+  SlashCommand(
+    name: '/auxiliary',
+    description: 'Select the auxiliary model (for summaries, session names)',
+    params: ['auxiliary model'],    suggestionsPerParam: [
+      [],
+    ],
+  ),
+  SlashCommand(
+    name: '/project',
+    description: 'Switch to a different project directory',
+    params: ['path'],
+    suggestionsPerParam: [
+      [],
     ],
   ),
 ];

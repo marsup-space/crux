@@ -5,28 +5,21 @@ import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
+import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
 import 'provider_service.dart';
 
 class ChatResponse {
-  final String content;
-  final String reasoningContent;
   final int promptTokens;
   final int completionTokens;
   final int promptCacheHitTokens;
   final int promptCacheMissTokens;
-  final int reasoningTokens;
-  final double cost;
 
   const ChatResponse({
-    this.content = '',
-    this.reasoningContent = '',
     this.promptTokens = 0,
     this.completionTokens = 0,
     this.promptCacheHitTokens = 0,
     this.promptCacheMissTokens = 0,
-    this.reasoningTokens = 0,
-    this.cost = 0.0,
   });
 }
 
@@ -43,6 +36,71 @@ class ChatService {
   void cancelStream(int sessionId) {
     _activeStreams[sessionId]?.cancel();
     _activeStreams.remove(sessionId);
+  }
+
+  Future<String?> generateSessionTitle(int sessionId) async {
+    final auxKey = _providerService.auxiliaryModel;
+    if (auxKey == null || auxKey == 'none') {
+      print('[auxiliary] no auxiliary model configured, skipping title generation');
+      return null;
+    }
+
+    final slashIndex = auxKey.indexOf('/');
+    final providerName =
+        slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
+    final modelId =
+        slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
+
+    final provider = _providerService.providerByName(providerName);
+    final apiKey = _providerService.getApiKey(providerName);
+    if (provider == null || apiKey == null || apiKey.isEmpty) return null;
+
+    final messages = await _store.getMessages(sessionId);
+    final userMessage = messages.firstWhere(
+      (m) => m.role == 'user',
+      orElse: () => messages.first,
+    );
+    if (userMessage.content.trim().isEmpty) return null;
+
+    final client = LlmClient();
+    try {
+      final stream = client.streamChat(
+        endpointUrl: provider.endpointUrl,
+        providerName: providerName,
+        providerType: provider.type,
+        apiKey: apiKey,
+        modelId: modelId,
+        messages: [
+          {'role': 'system', 'content': titleSystemPrompt},
+          {'role': 'user', 'content': userMessage.content},
+        ],
+        thinkingMode: 'disabled',
+        reasoningEffort: null,
+      );
+
+      final buffer = StringBuffer();
+      String? streamError;
+      await for (final chunk in stream) {
+        if (chunk.error != null) {
+          streamError = chunk.error;
+          break;
+        }
+        if (chunk.textDelta != null) buffer.write(chunk.textDelta);
+      }
+      if (streamError != null) {
+        print('[auxiliary] stream error: $streamError');
+        return null;
+      }
+      final title = buffer.toString().trim();
+      if (title.isEmpty || title.length > 80) return null;
+      print('[auxiliary] generated title: $title');
+      return title;
+    } catch (e) {
+      print('[auxiliary] title generation failed: $e');
+      return null;
+    } finally {
+      client.dispose();
+    }
   }
 
   Future<void> sendMessage({
@@ -157,14 +215,10 @@ class ChatService {
       _activeStreams.remove(sessionId);
 
       onComplete(ChatResponse(
-        content: content,
-        reasoningContent: reasoningBuffer.toString(),
         promptTokens: promptTokens,
         completionTokens: completionTokens,
         promptCacheHitTokens: promptCacheHitTokens,
         promptCacheMissTokens: promptCacheMissTokens,
-        reasoningTokens: reasoningTokens,
-        cost: cost,
       ));
     }
 

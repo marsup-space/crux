@@ -16,6 +16,7 @@ class SessionRuntimeState {
   double contextDisplayTokens;
   String thinkingMode;
   String? reasoningEffort;
+  int? cacheHitPct;
 
   SessionRuntimeState({
     required this.sessionId,
@@ -30,6 +31,7 @@ class SessionRuntimeState {
     this.contextDisplayTokens = 0.0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.cacheHitPct,
   });
 
   double get thinkingDurationMs {

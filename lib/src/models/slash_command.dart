@@ -29,7 +29,4 @@ class SlashCommand {
   /// Whether this command has parameter suggestions for the given param index.
   bool hasSuggestionsForParam(int index) =>
       index < suggestionsPerParam.length && suggestionsPerParam[index].isNotEmpty;
-
-  /// Checks if this command's name starts with the given prefix.
-  bool matches(String prefix) => name.startsWith(prefix);
 }

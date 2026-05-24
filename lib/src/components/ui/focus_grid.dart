@@ -158,18 +158,4 @@ class FocusGrid<T extends Enum> {
     }
     if (best != null) _current = best.id;
   }
-
-  /// Move to the next cell linearly (Tab order).
-  void moveNext() {
-    final idx = _cells.indexWhere((c) => c.id == _current);
-    final next = (idx + 1) % _cells.length;
-    _current = _cells[next].id;
-  }
-
-  /// Move to the previous cell linearly (Shift+Tab order).
-  void movePrevious() {
-    final idx = _cells.indexWhere((c) => c.id == _current);
-    final prev = (idx - 1 + _cells.length) % _cells.length;
-    _current = _cells[prev].id;
-  }
 }

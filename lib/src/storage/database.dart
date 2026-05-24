@@ -15,8 +15,6 @@ part 'database.g.dart';
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
-  CruxDatabase.forTesting(super.e);
-
   @override
   int get schemaVersion => 5;
 

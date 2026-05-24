@@ -11,7 +11,6 @@ class LlmChunk {
   final String? finishReason;
   final int? promptTokens;
   final int? completionTokens;
-  final int? totalTokens;
   final int? promptCacheHitTokens;
   final int? promptCacheMissTokens;
   final int? reasoningTokens;
@@ -23,7 +22,6 @@ class LlmChunk {
     this.finishReason,
     this.promptTokens,
     this.completionTokens,
-    this.totalTokens,
     this.promptCacheHitTokens,
     this.promptCacheMissTokens,
     this.reasoningTokens,
@@ -137,7 +135,6 @@ class LlmClient {
                 controller.add(LlmChunk(
                   promptTokens: usage['prompt_tokens'] as int?,
                   completionTokens: usage['completion_tokens'] as int?,
-                  totalTokens: usage['total_tokens'] as int?,
                   promptCacheHitTokens: usage['prompt_cache_hit_tokens'] as int?,
                   promptCacheMissTokens: usage['prompt_cache_miss_tokens'] as int?,
                   reasoningTokens: completionDetails?['reasoning_tokens'] as int?,

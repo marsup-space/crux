@@ -8,11 +8,13 @@ class ExtraInfoPanel extends StatefulComponent {
   final List<Session> sessions;
   final int currentSessionId;
   final void Function(int) onSwitchSession;
+  final VoidCallback? onSessionTitleTap;
 
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
     required this.onSwitchSession,
+    this.onSessionTitleTap,
   });
 
   @override
@@ -23,6 +25,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   Timer? _animTimer;
   double _phase = 0.0;
   final Set<int> _hoveredIds = {};
+  bool _titleHovered = false;
 
   static const int _maxTitleLen = 22;
   static const double _animStep = 0.3;
@@ -132,13 +135,42 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     final topChildren = <Component>[];
 
     // Header
-    topChildren.add(Text(
-      'Sessions',
-      style: TextStyle(
-        color: Colors.brightMagenta,
-        fontWeight: FontWeight.bold,
+    topChildren.add(
+      MouseRegion(
+        onEnter: (_) => setState(() => _titleHovered = true),
+        onExit: (_) => setState(() => _titleHovered = false),
+        opaque: false,
+        child: GestureDetector(
+          onTap: () => component.onSessionTitleTap?.call(),
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            decoration: BoxDecoration(
+              color: _titleHovered
+                  ? const Color.fromRGB(40, 30, 80)
+                  : const Color.fromRGB(25, 20, 45),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  'Sessions',
+                  style: TextStyle(
+                    color: _titleHovered ? Colors.brightCyan : Colors.brightMagenta,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (component.onSessionTitleTap != null)
+                  Text(
+                    ' ⚙',
+                    style: TextStyle(
+                      color: _titleHovered ? Colors.brightCyan : Color.fromRGB(80, 60, 120),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
-    ));
+    );
     topChildren.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
 
     // Sort sessions by latest activity (most recent first)

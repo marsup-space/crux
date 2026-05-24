@@ -47,8 +47,6 @@ class Session {
 
   String get displayId => '#$id';
 
-  bool get isArchived => archivedAt != null;
-
   @override
   String toString() {
     return 'Session($displayId: $title, status: $status)';
