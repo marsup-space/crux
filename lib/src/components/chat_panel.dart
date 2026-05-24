@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -27,7 +28,8 @@ enum _OverlayMode { off, command, parameter, wizard }
 enum _ProviderWizardSubcommand { builtin, custom }
 
 class ChatPanel extends StatefulComponent {
-  const ChatPanel({super.key});
+  final String providersDir;
+  const ChatPanel({super.key, required this.providersDir});
 
   @override
   State<ChatPanel> createState() => _ChatPanelState();
@@ -45,6 +47,8 @@ class _ChatPanelState extends State<ChatPanel> {
   String _streamingContent = '';
   String _streamingReasoning = '';
   bool _thinkingCollapsed = false;
+
+  String get _projectPath => Directory.current.path;
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
@@ -67,7 +71,7 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _toastVisible = false;
   String _toastMessage = '';
 
-  final ProviderService _providerService = ProviderService();
+  late final ProviderService _providerService;
   bool _providerServiceReady = false;
   _ProviderWizardSubcommand? _activeWizardSubcommand;
   String? _builtinProviderName;
@@ -131,6 +135,7 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void initState() {
     super.initState();
+    _providerService = ProviderService(providersDir: component.providersDir);
     _lock = SessionLock();
     final db = CruxDatabase();
     _store = SessionStore(db, _lock);
@@ -155,12 +160,12 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _initSessions() async {
-    _sessions = await _store.list();
+    _sessions = await _store.list(projectPath: _projectPath);
     if (_sessions.isEmpty) {
       await _providerService.initialize();
       _providerServiceReady = true;
       final model = _providerService.resolveDefaultModel() ?? '';
-      final session = await _store.create(title: 'New Session', model: model);
+      final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
       _sessions = [session];
       _resolveLocalModel();
     }
@@ -771,8 +776,8 @@ class _ChatPanelState extends State<ChatPanel> {
       }
     } else if (commandName == '/new') {
       final model = _providerService.resolveDefaultModel() ?? '';
-      final session = await _store.create(title: 'New Session', model: model);
-      _sessions = await _store.list();
+      final session = await _store.create(title: 'New Session', model: model, projectPath: _projectPath);
+      _sessions = await _store.list(projectPath: _projectPath);
       await _switchSession(session.id);
     } else if (commandName == '/provider') {
       final subcommand = parts.length > 1 ? parts[1] : '';

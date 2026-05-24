@@ -143,6 +143,19 @@ class SessionStore {
     );
   }
 
+  Future<int> deleteByProjectPath(String projectPath) async {
+    final sessionIds = await (_db.select(_db.sessions)
+          ..where((t) => t.projectPath.equals(projectPath)))
+        .map((row) => row.id)
+        .get();
+    for (final id in sessionIds) {
+      await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
+    }
+    await (_db.delete(_db.sessions)..where((t) => t.projectPath.equals(projectPath))).go();
+    return sessionIds.length;
+  }
+
   Future<void> delete(int id) async {
     await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
   }
