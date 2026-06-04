@@ -1,4 +1,3 @@
-import '../../models/provider_config.dart';
 import '../llm_provider.dart';
 
 class DeepSeekProvider extends LlmProvider {
@@ -25,6 +24,7 @@ class DeepSeekProvider extends LlmProvider {
     List<Map<String, String>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
+    int? thinkingBudget,
   }) {
     return {
       'model': modelId,

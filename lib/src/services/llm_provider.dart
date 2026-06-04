@@ -11,6 +11,7 @@ abstract class LlmProvider {
     List<Map<String, String>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
+    int? thinkingBudget,
   });
 }
 
@@ -38,6 +39,7 @@ class OpenAiProvider extends LlmProvider {
     List<Map<String, String>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
+    int? thinkingBudget,
   }) {
     return {
       'model': modelId,
@@ -75,21 +77,24 @@ class AnthropicProvider extends LlmProvider {
     List<Map<String, String>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
+    int? thinkingBudget,
   }) {
     final systemMsg = messages.where((m) => m['role'] == 'system').toList();
     final chatMsgs = messages.where((m) => m['role'] != 'system').toList();
     final body = <String, dynamic>{
       'model': modelId,
       'messages': chatMsgs,
-      'max_tokens': 8192,
+      'max_tokens': 16384,
       'stream': true,
     };
     if (systemMsg.isNotEmpty) {
       body['system'] = systemMsg.map((m) => m['content']).join('\n');
     }
-    body['thinking'] = {'type': thinkingMode};
-    if (thinkingMode != 'disabled' && reasoningEffort != null) {
-      body['reasoning_effort'] = mapEffort(reasoningEffort);
+    if (thinkingMode == 'enabled') {
+      body['thinking'] = {
+        'type': 'enabled',
+        'budget_tokens': thinkingBudget ?? 10000,
+      };
     }
     return body;
   }

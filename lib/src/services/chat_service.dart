@@ -41,15 +41,15 @@ class ChatService {
   Future<String?> generateSessionTitle(int sessionId) async {
     final auxKey = _providerService.auxiliaryModel;
     if (auxKey == null || auxKey == 'none') {
-      print('[auxiliary] no auxiliary model configured, skipping title generation');
+      print(
+        '[auxiliary] no auxiliary model configured, skipping title generation',
+      );
       return null;
     }
 
     final slashIndex = auxKey.indexOf('/');
-    final providerName =
-        slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
-    final modelId =
-        slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
+    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
+    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
 
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
@@ -114,11 +114,7 @@ class ChatService {
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
   }) async {
-    await _store.addMessage(
-      sessionId,
-      role: 'user',
-      content: userContent,
-    );
+    await _store.addMessage(sessionId, role: 'user', content: userContent);
 
     await _store.update(sessionId, status: SessionStatus.running);
     session.status = SessionStatus.running;
@@ -130,17 +126,24 @@ class ChatService {
 
     final compositeKey = session.model;
     final slashIndex = compositeKey.indexOf('/');
-    final providerName = slashIndex > 0 ? compositeKey.substring(0, slashIndex) : '';
-    final modelId = slashIndex > 0 ? compositeKey.substring(slashIndex + 1) : compositeKey;
+    final providerName = slashIndex > 0
+        ? compositeKey.substring(0, slashIndex)
+        : '';
+    final modelId = slashIndex > 0
+        ? compositeKey.substring(slashIndex + 1)
+        : compositeKey;
 
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
+    final modelConfig = provider?.modelById(modelId);
 
     if (provider == null || apiKey == null || apiKey.isEmpty) {
       await _store.update(sessionId, status: SessionStatus.needUserAction);
       session.status = SessionStatus.needUserAction;
       runtime.isResponding = false;
-      onError('No API key for provider "$providerName". Use /provider to connect.');
+      onError(
+        'No API key for provider "$providerName". Use /provider to connect.',
+      );
       return;
     }
 
@@ -164,6 +167,7 @@ class ChatService {
       messages: apiMessages,
       thinkingMode: runtime.thinkingMode,
       reasoningEffort: runtime.reasoningEffort,
+      thinkingBudget: modelConfig?.thinkingBudget,
     );
 
     bool firstToken = true;
@@ -174,10 +178,17 @@ class ChatService {
       if (finalized) return;
       finalized = true;
       final content = buffer.toString();
-      final cost = _estimateCost(provider, modelId, promptTokens, completionTokens,
-          promptCacheHitTokens: promptCacheHitTokens);
+      final cost = _estimateCost(
+        provider,
+        modelId,
+        promptTokens,
+        completionTokens,
+        promptCacheHitTokens: promptCacheHitTokens,
+      );
 
-      final thinkingMs = reasoningBuffer.isNotEmpty ? runtime.thinkingDurationMs.round() : 0;
+      final thinkingMs = reasoningBuffer.isNotEmpty
+          ? runtime.thinkingDurationMs.round()
+          : 0;
 
       await _store.addMessage(
         sessionId,
@@ -214,12 +225,14 @@ class ChatService {
       runtime.isResponding = false;
       _activeStreams.remove(sessionId);
 
-      onComplete(ChatResponse(
-        promptTokens: promptTokens,
-        completionTokens: completionTokens,
-        promptCacheHitTokens: promptCacheHitTokens,
-        promptCacheMissTokens: promptCacheMissTokens,
-      ));
+      onComplete(
+        ChatResponse(
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          promptCacheHitTokens: promptCacheHitTokens,
+          promptCacheMissTokens: promptCacheMissTokens,
+        ),
+      );
     }
 
     final sub = stream.listen(
@@ -234,9 +247,11 @@ class ChatService {
 
         if (chunk.textDelta != null || chunk.reasoningContent != null) {
           if (firstToken) {
-            final elapsed = DateTime.now()
-                .difference(runtime.responseStartTime!)
-                .inMicroseconds / 1000.0;
+            final elapsed =
+                DateTime.now()
+                    .difference(runtime.responseStartTime!)
+                    .inMicroseconds /
+                1000.0;
             runtime.ttftMs = elapsed;
             runtime.ttftReceived = true;
             firstToken = false;
@@ -298,11 +313,7 @@ class ChatService {
   List<Map<String, String>> _buildApiMessages(List<Message> history) {
     return history.map((m) {
       final role = m.role == 'ai' ? 'assistant' : m.role;
-      final msg = <String, String>{'role': role, 'content': m.content};
-      if (m.role == 'ai' && m.reasoningContent.isNotEmpty) {
-        msg['reasoning_content'] = m.reasoningContent;
-      }
-      return msg;
+      return {'role': role, 'content': m.content};
     }).toList();
   }
 
@@ -314,11 +325,31 @@ class ChatService {
     int promptCacheHitTokens = 0,
   }) {
     final rates = <String, ({double input, double cacheHit, double output})>{
-      'deepseek-v4-flash': (input: 0.10 / 1_000_000, cacheHit: 0.01 / 1_000_000, output: 0.40 / 1_000_000),
-      'deepseek-v4-pro': (input: 2.0 / 1_000_000, cacheHit: 0.20 / 1_000_000, output: 8.0 / 1_000_000),
-      'gpt-4o': (input: 2.50 / 1_000_000, cacheHit: 1.25 / 1_000_000, output: 10.0 / 1_000_000),
-      'gpt-4.1': (input: 2.0 / 1_000_000, cacheHit: 0.50 / 1_000_000, output: 8.0 / 1_000_000),
-      'claude-3-5-sonnet': (input: 3.0 / 1_000_000, cacheHit: 0.30 / 1_000_000, output: 15.0 / 1_000_000),
+      'deepseek-v4-flash': (
+        input: 0.10 / 1_000_000,
+        cacheHit: 0.01 / 1_000_000,
+        output: 0.40 / 1_000_000,
+      ),
+      'deepseek-v4-pro': (
+        input: 2.0 / 1_000_000,
+        cacheHit: 0.20 / 1_000_000,
+        output: 8.0 / 1_000_000,
+      ),
+      'gpt-4o': (
+        input: 2.50 / 1_000_000,
+        cacheHit: 1.25 / 1_000_000,
+        output: 10.0 / 1_000_000,
+      ),
+      'gpt-4.1': (
+        input: 2.0 / 1_000_000,
+        cacheHit: 0.50 / 1_000_000,
+        output: 8.0 / 1_000_000,
+      ),
+      'claude-3-5-sonnet': (
+        input: 3.0 / 1_000_000,
+        cacheHit: 0.30 / 1_000_000,
+        output: 15.0 / 1_000_000,
+      ),
     };
 
     final rate = rates[modelId];
