@@ -1,20 +1,17 @@
 import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
+import 'ui/highlighted_markdown_text.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
   final bool reasoningCollapsed;
 
-  const MessageBubble({
-    required this.message,
-    this.reasoningCollapsed = true,
-  });
+  const MessageBubble({required this.message, this.reasoningCollapsed = true});
 
   @override
   Component build(BuildContext context) {
     final isUser = message.role == 'user';
-    final hasReasoning =
-        !isUser && message.reasoningContent.isNotEmpty;
+    final hasReasoning = !isUser && message.reasoningContent.isNotEmpty;
 
     String thinkingSummary = '';
     if (hasReasoning && reasoningCollapsed) {
@@ -46,9 +43,7 @@ class MessageBubble extends StatelessComponent {
                 Expanded(
                   child: Text(
                     thinkingSummary,
-                    style: TextStyle(
-                      color: Color.fromRGB(100, 85, 140),
-                    ),
+                    style: TextStyle(color: Color.fromRGB(100, 85, 140)),
                   ),
                 ),
               ],
@@ -68,12 +63,7 @@ class MessageBubble extends StatelessComponent {
                   ),
                 ),
                 Expanded(
-                  child: Text(
-                    message.reasoningContent,
-                    style: TextStyle(
-                      color: Color.fromRGB(80, 70, 110),
-                    ),
-                  ),
+                  child: HighlightedMarkdownText(message.reasoningContent),
                 ),
               ],
             ),
@@ -91,10 +81,12 @@ class MessageBubble extends StatelessComponent {
                 ),
               ),
               Expanded(
-                child: Text(
-                  isUser ? message.content : message.content,
-                  style: TextStyle(color: Colors.white),
-                ),
+                child: isUser
+                    ? Text(
+                        message.content,
+                        style: TextStyle(color: Colors.white),
+                      )
+                    : HighlightedMarkdownText(message.content),
               ),
             ],
           ),

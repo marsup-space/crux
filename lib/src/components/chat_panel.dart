@@ -24,6 +24,7 @@ import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
 import 'session_management_panel.dart';
 import 'message_bubble.dart';
+import 'streaming_bubble.dart';
 
 class ChatPanel extends StatefulComponent {
   final String providersDir;
@@ -817,86 +818,14 @@ class _ChatPanelState extends State<ChatPanel> {
             if (index < messages.length) {
               return MessageBubble(message: messages[index]);
             }
-            final hasReasoning =
-                _streamingController.streamingReasoning.isNotEmpty;
-            final collapsed =
-                _streamingController.thinkingCollapsed &&
-                _streamingController.streamingContent.isNotEmpty;
             final rt = sessionId != null
                 ? _sessionController.runtime(sessionId)
                 : null;
-
-            String thinkingLine = '';
-            if (hasReasoning && collapsed) {
-              final thinkingMs = rt?.thinkingDurationMs ?? 0;
-              final secs = thinkingMs > 0
-                  ? (thinkingMs / 1000.0).toStringAsFixed(1)
-                  : '?';
-              final tokens =
-                  '~${(_streamingController.streamingReasoning.length / 3.5).ceil()}';
-              final effort = rt?.reasoningEffort ?? 'normal';
-              thinkingLine = 'thought for ${secs}s, $tokens tokens [$effort]';
-            }
-
-            return Column(
-              children: [
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ' Crux: ',
-                        style: TextStyle(
-                          color: Colors.brightMagenta,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          hasReasoning && collapsed
-                              ? thinkingLine
-                              : hasReasoning && !collapsed
-                              ? _streamingController.streamingReasoning
-                              : _streamingController.streamingContent.isEmpty
-                              ? '...'
-                              : _streamingController.streamingContent,
-                          style: TextStyle(
-                            color: hasReasoning && collapsed
-                                ? Color.fromRGB(100, 85, 140)
-                                : hasReasoning && !collapsed
-                                ? Color.fromRGB(80, 70, 110)
-                                : Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (hasReasoning &&
-                    collapsed &&
-                    _streamingController.streamingContent.isNotEmpty)
-                  Container(
-                    padding: EdgeInsets.only(
-                      left: 7,
-                      right: 1,
-                      top: 0,
-                      bottom: 0,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _streamingController.streamingContent,
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                Divider(color: Color.fromRGB(40, 40, 60), height: 1),
-              ],
+            return StreamingBubble(
+              streamingContent: _streamingController.streamingContent,
+              streamingReasoning: _streamingController.streamingReasoning,
+              thinkingCollapsed: _streamingController.thinkingCollapsed,
+              runtimeState: rt,
             );
           },
         ),

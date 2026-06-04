@@ -13,7 +13,9 @@ void main(List<String> args) async {
       stdout.writeln('Usage: crux [path]');
       stdout.writeln();
       stdout.writeln('Arguments:');
-      stdout.writeln('  path    Directory to open (defaults to current directory)');
+      stdout.writeln(
+        '  path    Directory to open (defaults to current directory)',
+      );
       stdout.writeln();
       stdout.writeln('Options:');
       stdout.writeln('  -h, --help       Show this help message');
@@ -42,6 +44,7 @@ void main(List<String> args) async {
   }
 
   await _showSplashLoading();
+  await HighlightService.initialize();
   await runApp(_CruxApp(providersDir: providersDir));
 }
 
@@ -106,7 +109,11 @@ Future<void> _showSplashLoading() async {
   stdout.writeln();
   stdout.writeln();
 
-  for (int sweep = -bandWidth; sweep <= artWidth + bandWidth; sweep += sweepStep) {
+  for (
+    int sweep = -bandWidth;
+    sweep <= artWidth + bandWidth;
+    sweep += sweepStep
+  ) {
     for (int l = 0; l < art.length; l++) {
       final line = art[l];
       final buf = StringBuffer();
@@ -141,7 +148,9 @@ Future<void> _showSplashLoading() async {
       }
       if (l == art.length - 1) {
         buf
-          ..write('\x1B[0m\x1B[1C\x1B[38;2;$versionLabelR;$versionLabelG;$versionLabelB m')
+          ..write(
+            '\x1B[0m\x1B[1C\x1B[38;2;$versionLabelR;$versionLabelG;$versionLabelB m',
+          )
           ..write(_version)
           ..write('\x1B[0m');
       } else {
