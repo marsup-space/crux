@@ -6,14 +6,9 @@ const List<SlashCommand> slashCommands = [
     name: '/model',
     description: 'Switch the AI model',
     params: ['provider/model'],
-    suggestionsPerParam: [
-      [],
-    ],
+    suggestionsPerParam: [[]],
   ),
-  SlashCommand(
-    name: '/new',
-    description: 'Create a new session',
-  ),
+  SlashCommand(name: '/new', description: 'Create a new session'),
   SlashCommand(
     name: '/session',
     description: 'Switch to a session',
@@ -23,27 +18,33 @@ const List<SlashCommand> slashCommands = [
         CommandSuggestion(value: '#1', description: 'Build a TUI chat app'),
         CommandSuggestion(value: '#2', description: 'Debug rendering pipeline'),
         CommandSuggestion(value: '#3', description: 'Add markdown support'),
-        CommandSuggestion(value: '#4', description: 'Refactor command registry'),
+        CommandSuggestion(
+          value: '#4',
+          description: 'Refactor command registry',
+        ),
       ],
     ],
   ),
-  SlashCommand(
-    name: '/clear',
-    description: 'Clear the chat log',
-  ),
-  SlashCommand(
-    name: '/compact',
-    description: 'Compact the context window',
-  ),
+  SlashCommand(name: '/clear', description: 'Clear the chat log'),
+  SlashCommand(name: '/compact', description: 'Compact the context window'),
   SlashCommand(
     name: '/help',
     description: 'Show help information',
     params: ['topic'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'commands', description: 'Show available commands'),
-        CommandSuggestion(value: 'models', description: 'Show model information'),
-        CommandSuggestion(value: 'shortcuts', description: 'Show keyboard shortcuts'),
+        CommandSuggestion(
+          value: 'commands',
+          description: 'Show available commands',
+        ),
+        CommandSuggestion(
+          value: 'models',
+          description: 'Show model information',
+        ),
+        CommandSuggestion(
+          value: 'shortcuts',
+          description: 'Show keyboard shortcuts',
+        ),
       ],
     ],
   ),
@@ -53,13 +54,22 @@ const List<SlashCommand> slashCommands = [
     params: ['key', 'value'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'model', description: 'Default model configuration'),
+        CommandSuggestion(
+          value: 'model',
+          description: 'Default model configuration',
+        ),
         CommandSuggestion(value: 'theme', description: 'UI theme settings'),
         CommandSuggestion(value: 'api', description: 'API endpoint settings'),
-        CommandSuggestion(value: 'output', description: 'Output format settings'),
+        CommandSuggestion(
+          value: 'output',
+          description: 'Output format settings',
+        ),
       ],
       [
-        CommandSuggestion(value: 'default', description: 'Reset to default value'),
+        CommandSuggestion(
+          value: 'default',
+          description: 'Reset to default value',
+        ),
       ],
     ],
   ),
@@ -71,15 +81,15 @@ const List<SlashCommand> slashCommands = [
       [
         CommandSuggestion(value: 'dark', description: 'Dark color scheme'),
         CommandSuggestion(value: 'light', description: 'Light color scheme'),
-        CommandSuggestion(value: 'monokai', description: 'Monokai-inspired theme'),
+        CommandSuggestion(
+          value: 'monokai',
+          description: 'Monokai-inspired theme',
+        ),
         CommandSuggestion(value: 'dracula', description: 'Dracula theme'),
       ],
     ],
   ),
-  SlashCommand(
-    name: '/quit',
-    description: 'Exit the application',
-  ),
+  SlashCommand(name: '/quit', description: 'Exit the application'),
   SlashCommand(
     name: '/history',
     description: 'Show conversation history',
@@ -99,10 +109,22 @@ const List<SlashCommand> slashCommands = [
     params: ['name'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'deepseek', description: 'DeepSeek (V4 Flash / V4 Pro)'),
-        CommandSuggestion(value: 'infinigence', description: 'Infinigence (coming soon)'),
-        CommandSuggestion(value: 'volcengine', description: 'Volcengine (coming soon)'),
-        CommandSuggestion(value: 'custom', description: 'Add, modify, or remove a custom provider'),
+        CommandSuggestion(
+          value: 'deepseek',
+          description: 'DeepSeek (V4 Flash / V4 Pro)',
+        ),
+        CommandSuggestion(
+          value: 'infinigence',
+          description: 'Infinigence (coming soon)',
+        ),
+        CommandSuggestion(
+          value: 'volcengine',
+          description: 'Volcengine (coming soon)',
+        ),
+        CommandSuggestion(
+          value: 'custom',
+          description: 'Add, modify, or remove a custom provider',
+        ),
       ],
     ],
   ),
@@ -113,26 +135,29 @@ const List<SlashCommand> slashCommands = [
     suggestionsPerParam: [
       [
         CommandSuggestion(value: 'off', description: 'Disable thinking mode'),
-        CommandSuggestion(value: 'normal', description: 'Normal reasoning effort (default)'),
+        CommandSuggestion(
+          value: 'normal',
+          description: 'Normal reasoning effort (default)',
+        ),
         CommandSuggestion(value: 'high', description: 'High reasoning effort'),
-        CommandSuggestion(value: 'max', description: 'Maximum reasoning effort'),
+        CommandSuggestion(
+          value: 'max',
+          description: 'Maximum reasoning effort',
+        ),
       ],
     ],
   ),
   SlashCommand(
     name: '/auxiliary',
     description: 'Select the auxiliary model (for summaries, session names)',
-    params: ['auxiliary model'],    suggestionsPerParam: [
-      [],
-    ],
+    params: ['auxiliary model'],
+    suggestionsPerParam: [[]],
   ),
   SlashCommand(
     name: '/project',
     description: 'Switch to a different project directory',
     params: ['path'],
-    suggestionsPerParam: [
-      [],
-    ],
+    suggestionsPerParam: [[]],
   ),
 ];
 

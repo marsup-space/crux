@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 /// A toast notification that auto-closes after a duration.
 ///
@@ -41,8 +42,8 @@ class Toast extends StatefulComponent {
     this.onDismissed,
     this.duration = const Duration(seconds: 2),
     this.style,
-    this.bgColor = const Color.fromRGB(30, 20, 50),
-    this.borderColor = const Color.fromRGB(80, 60, 120),
+    this.bgColor = CruxTheme.toastBackground,
+    this.borderColor = CruxTheme.toastBorder,
     this.padding = const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
   });
 
@@ -128,7 +129,7 @@ class _ToastState extends State<Toast> {
   Component build(BuildContext context) {
     final toast = component;
     final effectiveStyle = TextStyle(
-      color: Colors.brightYellow,
+      color: CruxTheme.toastText,
       fontWeight: FontWeight.bold,
     ).merge(toast.style);
 
@@ -145,14 +146,12 @@ class _ToastState extends State<Toast> {
             Divider(color: toast.borderColor, height: 1),
             Row(
               children: [
-                Text(' ⚡ ', style: TextStyle(color: Colors.brightYellow)),
-                Expanded(
-                  child: Text(toast.message, style: effectiveStyle),
-                ),
+                Text(' ⚡ ', style: TextStyle(color: CruxTheme.toastText)),
+                Expanded(child: Text(toast.message, style: effectiveStyle)),
                 if (_hovered)
                   Text(
                     ' (paused)',
-                    style: TextStyle(color: Colors.gray),
+                    style: TextStyle(color: CruxTheme.hintText),
                   ),
               ],
             ),

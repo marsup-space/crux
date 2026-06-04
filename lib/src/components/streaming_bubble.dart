@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../theme/crux_theme.dart';
 import '../models/session_runtime_state.dart';
 import 'ui/highlighted_markdown_text.dart';
 
@@ -44,14 +45,14 @@ class StreamingBubble extends StatelessComponent {
               Text(
                 ' Crux: ',
                 style: TextStyle(
-                  color: Color.fromRGB(100, 85, 140),
+                  color: CruxTheme.thinkingPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Expanded(
                 child: Text(
                   thinkingLine,
-                  style: TextStyle(color: Color.fromRGB(100, 85, 140)),
+                  style: TextStyle(color: CruxTheme.thinkingPrefix),
                 ),
               ),
             ],
@@ -68,7 +69,7 @@ class StreamingBubble extends StatelessComponent {
               Text(
                 ' Crux: ',
                 style: TextStyle(
-                  color: Colors.brightMagenta,
+                  color: CruxTheme.aiPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -89,13 +90,13 @@ class StreamingBubble extends StatelessComponent {
               Text(
                 ' Crux: ',
                 style: TextStyle(
-                  color: Colors.brightMagenta,
+                  color: CruxTheme.aiPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Expanded(
                 child: streamingContent.isEmpty
-                    ? Text('...', style: TextStyle(color: Colors.white))
+                    ? Text('...', style: TextStyle(color: CruxTheme.foreground))
                     : HighlightedMarkdownText(streamingContent),
               ),
             ],
@@ -116,7 +117,7 @@ class StreamingBubble extends StatelessComponent {
       );
     }
 
-    children.add(Divider(color: Color.fromRGB(40, 40, 60), height: 1));
+    children.add(Divider(color: CruxTheme.divider, height: 1));
 
     return Column(children: children);
   }

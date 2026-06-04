@@ -1,9 +1,4 @@
-enum SessionStatus {
-  idle,
-  running,
-  needUserAction,
-  done,
-}
+enum SessionStatus { idle, running, needUserAction, done }
 
 class Session {
   final int id;
@@ -42,8 +37,8 @@ class Session {
     DateTime? createdAt,
     DateTime? updatedAt,
     this.archivedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   String get displayId => '#$id';
 

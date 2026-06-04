@@ -28,7 +28,9 @@ class SessionStore {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
     final slug = _generateSlug();
-    final id = await _db.into(_db.sessions).insert(
+    final id = await _db
+        .into(_db.sessions)
+        .insert(
           db.SessionsCompanion.insert(
             status: SessionStatus.idle,
             createdAt: nowMs,
@@ -56,9 +58,9 @@ class SessionStore {
   }
 
   Future<Session?> getById(int id) async {
-    final row = await (_db.select(_db.sessions)
-          ..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.sessions,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (row == null) return null;
     return _rowToSession(row);
   }
@@ -106,8 +108,8 @@ class SessionStore {
     final Value<String?> effortValue = reasoningEffort == _unset
         ? const Value.absent()
         : reasoningEffort == null
-            ? const Value(null)
-            : Value(reasoningEffort as String);
+        ? const Value(null)
+        : Value(reasoningEffort as String);
     await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
       db.SessionsCompanion(
         title: title != null ? Value(title) : const Value.absent(),
@@ -116,10 +118,12 @@ class SessionStore {
         cost: cost != null ? Value(cost) : const Value.absent(),
         tokensIn: tokensIn != null ? Value(tokensIn) : const Value.absent(),
         tokensOut: tokensOut != null ? Value(tokensOut) : const Value.absent(),
-        contextTokens:
-            contextTokens != null ? Value(contextTokens) : const Value.absent(),
-        thinkingMode:
-            thinkingMode != null ? Value(thinkingMode) : const Value.absent(),
+        contextTokens: contextTokens != null
+            ? Value(contextTokens)
+            : const Value.absent(),
+        thinkingMode: thinkingMode != null
+            ? Value(thinkingMode)
+            : const Value.absent(),
         reasoningEffort: effortValue,
         updatedAt: Value(nowMs),
       ),
@@ -135,15 +139,20 @@ class SessionStore {
   }
 
   Future<int> deleteByProjectPath(String projectPath) async {
-    final sessionIds = await (_db.select(_db.sessions)
-          ..where((t) => t.projectPath.equals(projectPath)))
-        .map((row) => row.id)
-        .get();
+    final sessionIds =
+        await (_db.select(_db.sessions)
+              ..where((t) => t.projectPath.equals(projectPath)))
+            .map((row) => row.id)
+            .get();
     for (final id in sessionIds) {
-      await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(
+        _db.messages,
+      )..where((t) => t.sessionId.equals(id))).go();
       await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
     }
-    await (_db.delete(_db.sessions)..where((t) => t.projectPath.equals(projectPath))).go();
+    await (_db.delete(
+      _db.sessions,
+    )..where((t) => t.projectPath.equals(projectPath))).go();
     return sessionIds.length;
   }
 
@@ -163,7 +172,9 @@ class SessionStore {
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
-    final id = await _db.into(_db.messages).insert(
+    final id = await _db
+        .into(_db.messages)
+        .insert(
           db.MessagesCompanion.insert(
             sessionId: sessionId,
             role: role,
@@ -212,7 +223,9 @@ class SessionStore {
 
     if (beforeId != null) {
       query.where(
-          (t) => t.sessionId.equals(sessionId) & t.id.isSmallerThanValue(beforeId));
+        (t) =>
+            t.sessionId.equals(sessionId) & t.id.isSmallerThanValue(beforeId),
+      );
     } else {
       query.where((t) => t.sessionId.equals(sessionId));
     }

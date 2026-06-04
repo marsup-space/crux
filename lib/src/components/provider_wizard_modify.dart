@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import 'ui/button.dart';
 import 'ui/wizard_overlay.dart';
 import '../models/provider_config.dart';
@@ -352,7 +353,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       const Text(
         'Select a provider to modify:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -363,7 +364,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       rows.add(
         const Text(
           'No providers configured. Use /provider add first.',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     } else {
@@ -381,7 +382,9 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
               behavior: HitTestBehavior.opaque,
               child: Container(
                 decoration: isSelected
-                    ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                    ? const BoxDecoration(
+                        color: CruxTheme.buttonBackgroundHover,
+                      )
                     : null,
                 padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 child: Row(
@@ -389,27 +392,33 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                     Text(
                       isSelected ? '▶ ' : '  ',
                       style: TextStyle(
-                        color: isSelected ? Colors.brightCyan : Colors.gray,
+                        color: isSelected
+                            ? CruxTheme.wizardTextSelected
+                            : CruxTheme.wizardTextDim,
                       ),
                     ),
                     Text(
                       provider.name,
                       style: TextStyle(
-                        color: isSelected ? Colors.brightCyan : Colors.white,
+                        color: isSelected
+                            ? CruxTheme.wizardTextSelected
+                            : CruxTheme.foreground,
                         fontWeight: isSelected ? FontWeight.bold : null,
                       ),
                     ),
                     if (hasKey)
                       const Text(
                         ' 🔑',
-                        style: TextStyle(color: Colors.brightYellow),
+                        style: TextStyle(color: CruxTheme.warningColor),
                       ),
                     const SizedBox(width: 2),
                     Expanded(
                       child: Text(
                         '${provider.type.toConfigString()} · ${provider.endpointUrl}',
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.gray,
+                          color: isSelected
+                              ? CruxTheme.foreground
+                              : CruxTheme.wizardTextDim,
                         ),
                       ),
                     ),
@@ -424,23 +433,23 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       // Details panel for the selected provider
       if (_selectedProvider != null) {
         rows.add(const SizedBox(height: 1));
-        rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+        rows.add(const Divider(color: CruxTheme.outline, height: 1));
         rows.add(
           Text(
             '  Type: ${_selectedProvider!.type.toConfigString()}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         rows.add(
           Text(
             '  Endpoint: ${_selectedProvider!.endpointUrl}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         rows.add(
           Text(
             '  Models: ${_selectedProvider!.models.length}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         rows.add(
@@ -448,8 +457,8 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             '  API Key: ${_service.getApiKey(_selectedProvider!.name) != null ? "✓ Set" : "Not set"}',
             style: TextStyle(
               color: _service.getApiKey(_selectedProvider!.name) != null
-                  ? const Color.fromRGB(100, 220, 100)
-                  : Colors.gray,
+                  ? CruxTheme.successColor
+                  : CruxTheme.wizardTextDim,
             ),
           ),
         );
@@ -691,7 +700,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     if (provider == null) {
       return const Text(
         'No provider selected.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       );
     }
 
@@ -702,7 +711,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       const Text(
         'Edit provider settings:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -713,7 +722,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     rows.add(
       const Text(
         'Endpoint URL:',
-        style: TextStyle(color: Colors.brightCyan, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: CruxTheme.wizardTextSelected,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
     rows.add(
@@ -722,13 +734,16 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            const Text('URL: ', style: TextStyle(color: Colors.brightCyan)),
+            const Text(
+              'URL: ',
+              style: TextStyle(color: CruxTheme.wizardTextSelected),
+            ),
             Expanded(
               child: TextField(
                 controller: _endpointController,
                 focused: _focusedArea == _FocusArea.urlInput,
                 onKeyEvent: _handleEndpointFocusKeyEvent,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: CruxTheme.foreground),
                 placeholder: _defaultEndpoint(_selectedType),
               ),
             ),
@@ -744,26 +759,29 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         rows.add(
           const Text(
             '⚠ URL must start with http:// or https://',
-            style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+            style: TextStyle(color: CruxTheme.errorColor),
           ),
         );
       } else if (!_isValidEndpoint(url)) {
         rows.add(
           const Text(
             '⚠ URL host must be a valid domain, IP, or localhost',
-            style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+            style: TextStyle(color: CruxTheme.errorColor),
           ),
         );
       } else if (url != provider.endpointUrl) {
         rows.add(
           const Text(
             '✓ Endpoint URL changed',
-            style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+            style: TextStyle(color: CruxTheme.successColor),
           ),
         );
       } else {
         rows.add(
-          const Text('  (unchanged)', style: TextStyle(color: Colors.gray)),
+          const Text(
+            '  (unchanged)',
+            style: TextStyle(color: CruxTheme.wizardTextDim),
+          ),
         );
       }
     } else {
@@ -771,7 +789,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       rows.add(
         Text(
           '✓ Will keep current: ${provider.endpointUrl}',
-          style: const TextStyle(color: Colors.gray),
+          style: const TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     }
@@ -787,32 +805,35 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           });
         },
         color: _focusedArea == _FocusArea.resetDefaultBtn
-            ? Colors.brightCyan
-            : Colors.gray,
-        hoverColor: Colors.brightCyan,
+            ? CruxTheme.wizardTextSelected
+            : CruxTheme.wizardTextDim,
+        hoverColor: CruxTheme.wizardTextSelected,
         bgColor: _focusedArea == _FocusArea.resetDefaultBtn
-            ? const Color.fromRGB(40, 30, 80)
-            : const Color.fromRGB(25, 20, 45),
-        hoverBgColor: const Color.fromRGB(40, 30, 80),
+            ? CruxTheme.buttonBackgroundHover
+            : CruxTheme.buttonBackground,
+        hoverBgColor: CruxTheme.buttonBackgroundHover,
       ),
     );
 
     rows.add(const SizedBox(height: 1));
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
     rows.add(const SizedBox(height: 1));
 
     // ── API Key ──
     rows.add(
       const Text(
         'API Key (optional — leave empty to keep current):',
-        style: TextStyle(color: Colors.brightCyan, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: CruxTheme.wizardTextSelected,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
     rows.add(const SizedBox(height: 1));
     rows.add(
       const Text(
         '  Stored in environment variable for this session only.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       ),
     );
     rows.add(const SizedBox(height: 1));
@@ -823,7 +844,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            const Text('Key: ', style: TextStyle(color: Colors.brightCyan)),
+            const Text(
+              'Key: ',
+              style: TextStyle(color: CruxTheme.wizardTextSelected),
+            ),
             Expanded(
               child: TextField(
                 controller: _apiKeyController,
@@ -831,7 +855,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                 onKeyEvent: _handleEndpointFocusKeyEvent,
                 obscureText: _apiKeyObscured,
                 obscuringCharacter: '•',
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: CruxTheme.foreground),
                 placeholder: 'Paste your API key...',
               ),
             ),
@@ -849,13 +873,13 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           _apiKeyObscured = !_apiKeyObscured;
         }),
         color: _focusedArea == _FocusArea.showKeyBtn
-            ? Colors.brightCyan
-            : Colors.gray,
-        hoverColor: Colors.brightCyan,
+            ? CruxTheme.wizardTextSelected
+            : CruxTheme.wizardTextDim,
+        hoverColor: CruxTheme.wizardTextSelected,
         bgColor: _focusedArea == _FocusArea.showKeyBtn
-            ? const Color.fromRGB(40, 30, 80)
-            : const Color.fromRGB(25, 20, 45),
-        hoverBgColor: const Color.fromRGB(40, 30, 80),
+            ? CruxTheme.buttonBackgroundHover
+            : CruxTheme.buttonBackground,
+        hoverBgColor: CruxTheme.buttonBackgroundHover,
       ),
     );
 
@@ -866,7 +890,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       rows.add(
         const Text(
           '✓ API key will be stored in auth.json (persists across restarts)',
-          style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+          style: TextStyle(color: CruxTheme.successColor),
         ),
       );
     } else {
@@ -877,20 +901,23 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           existingKey != null
               ? '  Current key: ✓ set (leave empty to keep)'
               : '  No key set — can add later with /provider connect',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     }
 
     rows.add(const SizedBox(height: 1));
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
     rows.add(const SizedBox(height: 1));
 
     // ── Provider Type ──
     rows.add(
       const Text(
         'Provider Type:',
-        style: TextStyle(color: Colors.brightCyan, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: CruxTheme.wizardTextSelected,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
 
@@ -917,7 +944,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             behavior: HitTestBehavior.opaque,
             child: Container(
               decoration: isSelected
-                  ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                  ? const BoxDecoration(color: CruxTheme.buttonBackgroundHover)
                   : null,
               padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
               child: Row(
@@ -925,13 +952,17 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                   Text(
                     isSelected ? '▶ ' : '  ',
                     style: TextStyle(
-                      color: isSelected ? Colors.brightCyan : Colors.gray,
+                      color: isSelected
+                          ? CruxTheme.wizardTextSelected
+                          : CruxTheme.wizardTextDim,
                     ),
                   ),
                   Text(
                     _providerTypeDisplayName(type),
                     style: TextStyle(
-                      color: isSelected ? Colors.brightCyan : Colors.white,
+                      color: isSelected
+                          ? CruxTheme.wizardTextSelected
+                          : CruxTheme.foreground,
                       fontWeight: isSelected ? FontWeight.bold : null,
                     ),
                   ),
@@ -940,14 +971,16 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                     child: Text(
                       descriptions[type] ?? '',
                       style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.gray,
+                        color: isSelected
+                            ? CruxTheme.foreground
+                            : CruxTheme.wizardTextDim,
                       ),
                     ),
                   ),
                   if (type == provider.type && type == _selectedType)
                     const Text(
                       '(current)',
-                      style: TextStyle(color: Colors.gray),
+                      style: TextStyle(color: CruxTheme.wizardTextDim),
                     ),
                 ],
               ),
@@ -964,7 +997,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         Text(
           '⚠ Type will change from ${_providerTypeDisplayName(provider.type)} '
           'to ${_providerTypeDisplayName(_selectedType)}',
-          style: const TextStyle(color: Colors.brightYellow),
+          style: const TextStyle(color: CruxTheme.warningColor),
         ),
       );
     }
@@ -1351,7 +1384,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     if (provider == null) {
       return const Text(
         'No provider selected.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       );
     }
 
@@ -1362,7 +1395,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       const Text(
         'Edit models:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -1388,15 +1421,15 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
               });
             },
             color: _modelFocusedArea == _ModelFocusArea.discoverBtn
-                ? Colors.brightCyan
+                ? CruxTheme.wizardTextSelected
                 : _showDiscoverPanel
-                ? Colors.brightYellow
-                : Colors.brightCyan,
-            hoverColor: Colors.brightCyan,
+                ? CruxTheme.warningColor
+                : CruxTheme.wizardTextSelected,
+            hoverColor: CruxTheme.wizardTextSelected,
             bgColor: _modelFocusedArea == _ModelFocusArea.discoverBtn
-                ? const Color.fromRGB(40, 30, 80)
-                : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
           const SizedBox(width: 2),
           Button(
@@ -1413,13 +1446,13 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
               });
             },
             color: _modelFocusedArea == _ModelFocusArea.addModelBtn
-                ? Colors.brightCyan
-                : Colors.brightCyan,
-            hoverColor: Colors.brightYellow,
+                ? CruxTheme.wizardTextSelected
+                : CruxTheme.wizardTextSelected,
+            hoverColor: CruxTheme.warningColor,
             bgColor: _modelFocusedArea == _ModelFocusArea.addModelBtn
-                ? const Color.fromRGB(40, 30, 80)
-                : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
         ],
       ),
@@ -1429,7 +1462,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     // ── Auto-discover panel ──
     if (_showDiscoverPanel) {
       rows.add(const SizedBox(height: 1));
-      rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+      rows.add(const Divider(color: CruxTheme.outline, height: 1));
       rows.add(const SizedBox(height: 1));
 
       switch (_discoverStatus) {
@@ -1437,7 +1470,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           rows.add(
             const Text(
               '  Ready to discover models from the endpoint...',
-              style: TextStyle(color: Colors.gray),
+              style: TextStyle(color: CruxTheme.wizardTextDim),
             ),
           );
           break;
@@ -1446,7 +1479,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           rows.add(
             const Text(
               '  Discovering models...',
-              style: TextStyle(color: Colors.brightYellow),
+              style: TextStyle(color: CruxTheme.warningColor),
             ),
           );
           break;
@@ -1456,7 +1489,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             Text(
               '  ✓ Found ${_discoveredModels.length} models. '
               'Select which ones to include:',
-              style: const TextStyle(color: Color.fromRGB(100, 220, 100)),
+              style: const TextStyle(color: CruxTheme.successColor),
             ),
           );
           rows.add(const SizedBox(height: 1));
@@ -1482,7 +1515,9 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     decoration: isSelected
-                        ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                        ? const BoxDecoration(
+                            color: CruxTheme.buttonBackgroundHover,
+                          )
                         : null,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 1,
@@ -1493,7 +1528,9 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                         Text(
                           isSelected ? '✓ ' : '  ',
                           style: TextStyle(
-                            color: isSelected ? Colors.brightCyan : Colors.gray,
+                            color: isSelected
+                                ? CruxTheme.wizardTextSelected
+                                : CruxTheme.wizardTextDim,
                           ),
                         ),
                         Expanded(
@@ -1501,20 +1538,24 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                             dm.id,
                             style: TextStyle(
                               color: isSelected
-                                  ? Colors.brightCyan
-                                  : Colors.white,
+                                  ? CruxTheme.wizardTextSelected
+                                  : CruxTheme.foreground,
                             ),
                           ),
                         ),
                         if (dm.contextSize != null)
                           Text(
                             'ctx:${dm.contextSize! ~/ 1024}k',
-                            style: const TextStyle(color: Colors.gray),
+                            style: const TextStyle(
+                              color: CruxTheme.wizardTextDim,
+                            ),
                           ),
                         if (dm.imageSupport ?? false)
                           const Text(
                             ' 🖼',
-                            style: TextStyle(color: Colors.brightCyan),
+                            style: TextStyle(
+                              color: CruxTheme.wizardTextSelected,
+                            ),
                           ),
                       ],
                     ),
@@ -1549,10 +1590,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                     _loadModelFieldsFromPending(_editingModelIndex);
                   });
                 },
-                color: const Color.fromRGB(100, 220, 100),
-                hoverColor: Colors.brightCyan,
-                bgColor: const Color.fromRGB(25, 20, 45),
-                hoverBgColor: const Color.fromRGB(40, 30, 80),
+                color: CruxTheme.successColor,
+                hoverColor: CruxTheme.wizardTextSelected,
+                bgColor: CruxTheme.buttonBackground,
+                hoverBgColor: CruxTheme.buttonBackgroundHover,
               ),
             );
           }
@@ -1562,7 +1603,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           rows.add(
             const Text(
               '  ✕ Discovery failed. Check your endpoint and API key.',
-              style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+              style: TextStyle(color: CruxTheme.errorColor),
             ),
           );
           rows.add(const SizedBox(height: 1));
@@ -1570,17 +1611,17 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             Button(
               label: ' Retry Discovery ',
               onPressed: _discoverModels,
-              color: Colors.brightYellow,
-              hoverColor: Colors.brightCyan,
-              bgColor: const Color.fromRGB(25, 20, 45),
-              hoverBgColor: const Color.fromRGB(40, 30, 80),
+              color: CruxTheme.warningColor,
+              hoverColor: CruxTheme.wizardTextSelected,
+              bgColor: CruxTheme.buttonBackground,
+              hoverBgColor: CruxTheme.buttonBackgroundHover,
             ),
           );
           break;
       }
 
       rows.add(const SizedBox(height: 1));
-      rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+      rows.add(const Divider(color: CruxTheme.outline, height: 1));
       rows.add(const SizedBox(height: 1));
     }
 
@@ -1595,7 +1636,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       rows.add(
         const Text(
           '  No models. Add one above.',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     } else {
@@ -1613,11 +1654,11 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           rows.add(
             Container(
               decoration: const BoxDecoration(
-                color: Color.fromRGB(35, 28, 55),
+                color: CruxTheme.surfaceVariant,
                 border: BoxBorder(
-                  left: BorderSide(color: Colors.brightCyan),
-                  top: BorderSide(color: Color.fromRGB(80, 60, 120)),
-                  bottom: BorderSide(color: Color.fromRGB(80, 60, 120)),
+                  left: BorderSide(color: CruxTheme.wizardTextSelected),
+                  top: BorderSide(color: CruxTheme.outline),
+                  bottom: BorderSide(color: CruxTheme.outline),
                 ),
               ),
               padding: const EdgeInsets.all(1),
@@ -1633,16 +1674,14 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                           Text(
                             '▸ Model ${i + 1}',
                             style: const TextStyle(
-                              color: Colors.brightCyan,
+                              color: CruxTheme.wizardTextSelected,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           if (isNew)
                             const Text(
                               ' ✨',
-                              style: TextStyle(
-                                color: Color.fromRGB(100, 220, 100),
-                              ),
+                              style: TextStyle(color: CruxTheme.successColor),
                             ),
                         ],
                       ),
@@ -1664,10 +1703,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                             }
                           });
                         },
-                        color: const Color.fromRGB(255, 80, 80),
-                        hoverColor: Colors.brightYellow,
-                        bgColor: const Color.fromRGB(35, 28, 55),
-                        hoverBgColor: const Color.fromRGB(50, 40, 70),
+                        color: CruxTheme.errorColor,
+                        hoverColor: CruxTheme.warningColor,
+                        bgColor: CruxTheme.surfaceVariant,
+                        hoverBgColor: CruxTheme.buttonBackgroundHover,
                         padding: const EdgeInsets.symmetric(horizontal: 0),
                       ),
                     ],
@@ -1684,7 +1723,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                       children: [
                         const Text(
                           'ID: ',
-                          style: TextStyle(color: Colors.brightCyan),
+                          style: TextStyle(color: CruxTheme.wizardTextSelected),
                         ),
                         Expanded(
                           child: TextField(
@@ -1692,7 +1731,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                             focused:
                                 _modelFocusedArea == _ModelFocusArea.modelId,
                             onKeyEvent: _handleModelFieldKeyEvent,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(color: CruxTheme.foreground),
                             placeholder: 'e.g. gpt-4o, claude-3-5-sonnet',
                           ),
                         ),
@@ -1711,7 +1750,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                       children: [
                         const Text(
                           'Name: ',
-                          style: TextStyle(color: Colors.brightCyan),
+                          style: TextStyle(color: CruxTheme.wizardTextSelected),
                         ),
                         Expanded(
                           child: TextField(
@@ -1719,7 +1758,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                             focused:
                                 _modelFocusedArea == _ModelFocusArea.modelName,
                             onKeyEvent: _handleModelFieldKeyEvent,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(color: CruxTheme.foreground),
                             placeholder: _modelIdController.text.isEmpty
                                 ? 'defaults to ID'
                                 : _modelIdController.text,
@@ -1727,7 +1766,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                         ),
                         const Text(
                           ' (optional)',
-                          style: TextStyle(color: Colors.gray),
+                          style: TextStyle(color: CruxTheme.wizardTextDim),
                         ),
                       ],
                     ),
@@ -1744,7 +1783,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                       children: [
                         const Text(
                           'Context (k): ',
-                          style: TextStyle(color: Colors.brightCyan),
+                          style: TextStyle(color: CruxTheme.wizardTextSelected),
                         ),
                         Expanded(
                           child: TextField(
@@ -1753,13 +1792,13 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                                 _modelFocusedArea ==
                                 _ModelFocusArea.modelContext,
                             onKeyEvent: _handleModelFieldKeyEvent,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(color: CruxTheme.foreground),
                             placeholder: '128',
                           ),
                         ),
                         const Text(
                           'k tokens',
-                          style: TextStyle(color: Colors.gray),
+                          style: TextStyle(color: CruxTheme.wizardTextDim),
                         ),
                       ],
                     ),
@@ -1783,16 +1822,16 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                         },
                         color:
                             _modelFocusedArea == _ModelFocusArea.imageToggleBtn
-                            ? Colors.brightCyan
+                            ? CruxTheme.wizardTextSelected
                             : m.imageSupport
-                            ? const Color.fromRGB(100, 220, 100)
-                            : Colors.gray,
-                        hoverColor: Colors.brightCyan,
+                            ? CruxTheme.successColor
+                            : CruxTheme.wizardTextDim,
+                        hoverColor: CruxTheme.wizardTextSelected,
                         bgColor:
                             _modelFocusedArea == _ModelFocusArea.imageToggleBtn
-                            ? const Color.fromRGB(40, 30, 80)
-                            : const Color.fromRGB(35, 28, 55),
-                        hoverBgColor: const Color.fromRGB(40, 30, 80),
+                            ? CruxTheme.buttonBackgroundHover
+                            : CruxTheme.surfaceVariant,
+                        hoverBgColor: CruxTheme.buttonBackgroundHover,
                         padding: const EdgeInsets.symmetric(horizontal: 0),
                       ),
                       const SizedBox(width: 1),
@@ -1812,17 +1851,17 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                         color:
                             _modelFocusedArea ==
                                 _ModelFocusArea.thinkingToggleBtn
-                            ? Colors.brightCyan
+                            ? CruxTheme.wizardTextSelected
                             : m.thinking
-                            ? Colors.brightYellow
-                            : Colors.gray,
-                        hoverColor: Colors.brightCyan,
+                            ? CruxTheme.warningColor
+                            : CruxTheme.wizardTextDim,
+                        hoverColor: CruxTheme.wizardTextSelected,
                         bgColor:
                             _modelFocusedArea ==
                                 _ModelFocusArea.thinkingToggleBtn
-                            ? const Color.fromRGB(40, 30, 80)
-                            : const Color.fromRGB(35, 28, 55),
-                        hoverBgColor: const Color.fromRGB(40, 30, 80),
+                            ? CruxTheme.buttonBackgroundHover
+                            : CruxTheme.surfaceVariant,
+                        hoverBgColor: CruxTheme.buttonBackgroundHover,
                         padding: const EdgeInsets.symmetric(horizontal: 0),
                       ),
                     ],
@@ -1833,7 +1872,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                     const SizedBox(height: 1),
                     const Text(
                       '⚠ Model needs a valid ID and context size.',
-                      style: TextStyle(color: Colors.brightYellow),
+                      style: TextStyle(color: CruxTheme.warningColor),
                     ),
                   ],
                 ],
@@ -1858,9 +1897,9 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                 behavior: HitTestBehavior.opaque,
                 child: Container(
                   decoration: const BoxDecoration(
-                    color: Color.fromRGB(30, 25, 50),
+                    color: CruxTheme.progressEmpty,
                     border: BoxBorder(
-                      left: BorderSide(color: Color.fromRGB(80, 60, 120)),
+                      left: BorderSide(color: CruxTheme.outline),
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(
@@ -1869,11 +1908,14 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                   ),
                   child: Row(
                     children: [
-                      Text('  ', style: const TextStyle(color: Colors.gray)),
+                      Text(
+                        '  ',
+                        style: const TextStyle(color: CruxTheme.wizardTextDim),
+                      ),
                       if (isNew)
                         const Text(
                           '✨ ',
-                          style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+                          style: TextStyle(color: CruxTheme.successColor),
                         ),
                       Expanded(
                         child: Text(
@@ -1881,19 +1923,21 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                               ? '${m.id} · ${displayName} · ctx:${m.contextSize ~/ 1024}k'
                               : '${m.id.isNotEmpty ? m.id : "(empty)"} · incomplete',
                           style: TextStyle(
-                            color: m.isValid() ? Colors.white : Colors.gray,
+                            color: m.isValid()
+                                ? CruxTheme.foreground
+                                : CruxTheme.wizardTextDim,
                           ),
                         ),
                       ),
                       if (m.imageSupport)
                         const Text(
                           ' 🖼',
-                          style: TextStyle(color: Colors.brightCyan),
+                          style: TextStyle(color: CruxTheme.wizardTextSelected),
                         ),
                       if (m.thinking)
                         const Text(
                           ' 💭',
-                          style: TextStyle(color: Colors.brightYellow),
+                          style: TextStyle(color: CruxTheme.warningColor),
                         ),
                       Button(
                         label: ' ✕ ',
@@ -1913,10 +1957,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                             }
                           });
                         },
-                        color: const Color.fromRGB(255, 80, 80),
-                        hoverColor: Colors.brightYellow,
-                        bgColor: const Color.fromRGB(30, 25, 50),
-                        hoverBgColor: const Color.fromRGB(40, 30, 80),
+                        color: CruxTheme.errorColor,
+                        hoverColor: CruxTheme.warningColor,
+                        bgColor: CruxTheme.progressEmpty,
+                        hoverBgColor: CruxTheme.buttonBackgroundHover,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 0,
                           vertical: 0,
@@ -1944,7 +1988,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           const Text(
             'Removed models:',
             style: TextStyle(
-              color: Color.fromRGB(255, 80, 80),
+              color: CruxTheme.errorColor,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -1959,12 +2003,12 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
               children: [
                 const Text(
                   '  ✗ ',
-                  style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+                  style: TextStyle(color: CruxTheme.errorColor),
                 ),
                 Expanded(
                   child: Text(
                     '${m.id} (${m.name.isNotEmpty ? m.name : m.id})',
-                    style: const TextStyle(color: Color.fromRGB(255, 80, 80)),
+                    style: const TextStyle(color: CruxTheme.errorColor),
                   ),
                 ),
                 Button(
@@ -1976,10 +2020,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                       _loadModelFieldsFromPending(i);
                     });
                   },
-                  color: const Color.fromRGB(100, 220, 100),
-                  hoverColor: Colors.brightCyan,
-                  bgColor: const Color.fromRGB(25, 20, 45),
-                  hoverBgColor: const Color.fromRGB(40, 30, 80),
+                  color: CruxTheme.successColor,
+                  hoverColor: CruxTheme.wizardTextSelected,
+                  bgColor: CruxTheme.buttonBackground,
+                  hoverBgColor: CruxTheme.buttonBackgroundHover,
                   padding: const EdgeInsets.symmetric(horizontal: 0),
                 ),
               ],
@@ -2007,7 +2051,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     if (provider == null) {
       return const Text(
         'No provider selected.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       );
     }
 
@@ -2022,24 +2066,27 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
       const Text(
         'Review your changes:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
     );
     rows.add(const SizedBox(height: 1));
 
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
 
     // ── Provider settings ──
     rows.add(
       Row(
         children: [
-          const Text('  Name: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  Name: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             provider.name,
             style: const TextStyle(
-              color: Colors.white,
+              color: CruxTheme.foreground,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -2051,15 +2098,18 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     rows.add(
       Row(
         children: [
-          const Text('  Type: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  Type: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             _providerTypeDisplayName(_selectedType),
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
           if (_selectedType != provider.type)
             Text(
               ' (was ${_providerTypeDisplayName(provider.type)})',
-              style: const TextStyle(color: Colors.brightYellow),
+              style: const TextStyle(color: CruxTheme.warningColor),
             ),
         ],
       ),
@@ -2071,18 +2121,18 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         children: [
           const Text(
             '  Endpoint: ',
-            style: TextStyle(color: Colors.brightCyan),
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
           ),
           Expanded(
             child: Text(
               endpointUrl,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: CruxTheme.foreground),
             ),
           ),
           if (endpointUrl != provider.endpointUrl)
             const Text(
               ' (changed)',
-              style: TextStyle(color: Colors.brightYellow),
+              style: TextStyle(color: CruxTheme.warningColor),
             ),
         ],
       ),
@@ -2090,7 +2140,10 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     rows.add(
       Row(
         children: [
-          const Text('  API Key: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  API Key: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             _apiKeyController.text.isNotEmpty
                 ? '✓ Will be stored in CRUX_API_KEY_<PROVIDER> env var'
@@ -2101,22 +2154,22 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
               color:
                   _apiKeyController.text.isNotEmpty ||
                       _service.getApiKey(provider.name) != null
-                  ? const Color.fromRGB(100, 220, 100)
-                  : Colors.gray,
+                  ? CruxTheme.successColor
+                  : CruxTheme.wizardTextDim,
             ),
           ),
         ],
       ),
     );
 
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
 
     // ── Model changes ──
     rows.add(const SizedBox(height: 1));
     rows.add(
       Text(
         '  Models: ${validModels.length} active, ${removedModels.length} removed',
-        style: const TextStyle(color: Colors.brightCyan),
+        style: const TextStyle(color: CruxTheme.wizardTextSelected),
       ),
     );
 
@@ -2130,7 +2183,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         const Text(
           '  ✨ New models:',
           style: TextStyle(
-            color: Color.fromRGB(100, 220, 100),
+            color: CruxTheme.successColor,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -2141,7 +2194,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             '    + ${m.id} (${m.name.isNotEmpty ? m.name : m.id}) ctx:${m.contextSize ~/ 1024}k'
             '${m.imageSupport ? " 🖼" : ""}'
             '${m.thinking ? " 💭" : ""}',
-            style: const TextStyle(color: Color.fromRGB(100, 220, 100)),
+            style: const TextStyle(color: CruxTheme.successColor),
           ),
         );
       }
@@ -2154,7 +2207,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         const Text(
           '  ✗ Removed models:',
           style: TextStyle(
-            color: Color.fromRGB(255, 80, 80),
+            color: CruxTheme.errorColor,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -2163,7 +2216,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         rows.add(
           Text(
             '    - ${m.id} (${m.name.isNotEmpty ? m.name : m.id})',
-            style: const TextStyle(color: Color.fromRGB(255, 80, 80)),
+            style: const TextStyle(color: CruxTheme.errorColor),
           ),
         );
       }
@@ -2184,7 +2237,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         const Text(
           '  ✎ Modified models:',
           style: TextStyle(
-            color: Colors.brightYellow,
+            color: CruxTheme.warningColor,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -2196,7 +2249,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             '    ~ ${m.id} (${m.name.isNotEmpty ? m.name : m.id}) ctx:${m.contextSize ~/ 1024}k'
             '${m.imageSupport ? " 🖼" : ""}'
             '${m.thinking ? " 💭" : ""}',
-            style: const TextStyle(color: Colors.brightYellow),
+            style: const TextStyle(color: CruxTheme.warningColor),
           ),
         );
         // Show specific changes
@@ -2217,7 +2270,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
           rows.add(
             Text(
               '      Changes: ${changes.join(", ")}',
-              style: const TextStyle(color: Colors.gray),
+              style: const TextStyle(color: CruxTheme.wizardTextDim),
             ),
           );
         }
@@ -2236,31 +2289,37 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     if (unchangedModels.isNotEmpty) {
       rows.add(const SizedBox(height: 1));
       rows.add(
-        const Text('  Unchanged models:', style: TextStyle(color: Colors.gray)),
+        const Text(
+          '  Unchanged models:',
+          style: TextStyle(color: CruxTheme.wizardTextDim),
+        ),
       );
       for (final m in unchangedModels) {
         rows.add(
-          Text('    = ${m.id}', style: const TextStyle(color: Colors.gray)),
+          Text(
+            '    = ${m.id}',
+            style: const TextStyle(color: CruxTheme.wizardTextDim),
+          ),
         );
       }
     }
 
     rows.add(const SizedBox(height: 1));
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
     rows.add(const SizedBox(height: 1));
 
     if (_hasChanges()) {
       rows.add(
         const Text(
           'Press Confirm to save changes, or Back to continue editing.',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     } else {
       rows.add(
         const Text(
           'No changes detected. Press Back to make changes, or Cancel to exit.',
-          style: TextStyle(color: Colors.brightYellow),
+          style: TextStyle(color: CruxTheme.warningColor),
         ),
       );
     }

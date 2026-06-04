@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/session.dart';
 
 class ExtraInfoPanel extends StatefulComponent {
@@ -31,8 +32,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   static const double _animStep = 0.3;
   static const Duration _animInterval = Duration(milliseconds: 50);
 
-  static const Color _prefixDim = Color.fromRGB(60, 60, 80);
-  static const Color _prefixBright = Color.fromRGB(100, 200, 255);
+  static const Color _prefixDim = CruxTheme.onSurfaceDim;
+  static const Color _prefixBright = CruxTheme.sessionPrefixRunning;
 
   @override
   void initState() {
@@ -91,37 +92,37 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   }
 
   Color _prefixColor(SessionStatus status, bool isCurrent) {
-    if (isCurrent) return Colors.brightCyan;
+    if (isCurrent) return CruxTheme.sessionPrefixActive;
     switch (status) {
       case SessionStatus.idle:
-        return Color.fromRGB(120, 100, 160);
+        return CruxTheme.sessionPrefixIdle;
       case SessionStatus.running:
         return Color.lerp(_prefixDim, _prefixBright, _fadeIntensity())!;
       case SessionStatus.needUserAction:
-        return Color.fromRGB(255, 200, 50);
+        return CruxTheme.sessionPrefixNeedsAction;
       case SessionStatus.done:
-        return Color.fromRGB(200, 150, 255);
+        return CruxTheme.sessionPrefixDone;
     }
   }
 
   Color _titleColor(SessionStatus status, bool isCurrent, bool isHovered) {
-    if (isCurrent || isHovered) return Colors.brightCyan;
+    if (isCurrent || isHovered) return CruxTheme.sessionPrefixActive;
     switch (status) {
       case SessionStatus.idle:
-        return Color.fromRGB(120, 100, 160);
+        return CruxTheme.sessionPrefixIdle;
       case SessionStatus.running:
-        return Color.fromRGB(100, 200, 255);
+        return CruxTheme.sessionPrefixRunning;
       case SessionStatus.needUserAction:
-        return Color.fromRGB(255, 200, 50);
+        return CruxTheme.sessionPrefixNeedsAction;
       case SessionStatus.done:
-        return Color.fromRGB(200, 150, 255);
+        return CruxTheme.sessionPrefixDone;
     }
   }
 
   Color _bgColor(bool isCurrent, bool isHovered) {
-    if (isCurrent) return Color.fromRGB(40, 30, 80);
-    if (isHovered) return Color.fromRGB(40, 30, 80);
-    return Color.fromRGB(25, 20, 45);
+    if (isCurrent) return CruxTheme.wizardRowBgSelected;
+    if (isHovered) return CruxTheme.wizardRowBgSelected;
+    return CruxTheme.buttonBackground;
   }
 
   String _truncate(String text, int maxLen) {
@@ -146,15 +147,17 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
           child: Container(
             decoration: BoxDecoration(
               color: _titleHovered
-                  ? const Color.fromRGB(40, 30, 80)
-                  : const Color.fromRGB(25, 20, 45),
+                  ? CruxTheme.wizardRowBgSelected
+                  : CruxTheme.buttonBackground,
             ),
             child: Row(
               children: [
                 Text(
                   'Sessions',
                   style: TextStyle(
-                    color: _titleHovered ? Colors.brightCyan : Colors.brightMagenta,
+                    color: _titleHovered
+                        ? CruxTheme.wizardTextSelected
+                        : CruxTheme.wizardTitle,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -162,7 +165,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                   Text(
                     ' ⚙',
                     style: TextStyle(
-                      color: _titleHovered ? Colors.brightCyan : Color.fromRGB(80, 60, 120),
+                      color: _titleHovered
+                          ? CruxTheme.buttonTextFocused
+                          : CruxTheme.outline,
                     ),
                   ),
               ],
@@ -171,7 +176,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         ),
       ),
     );
-    topChildren.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    topChildren.add(Divider(color: CruxTheme.outline, height: 1));
 
     // Sort sessions by latest activity (most recent first)
     final sorted = List<Session>.from(panel.sessions)
@@ -208,7 +213,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     ' $title',
                     style: TextStyle(
                       color: _titleColor(session.status, isCurrent, isHovered),
-                      fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
+                      fontWeight: isCurrent || isHovered
+                          ? FontWeight.bold
+                          : null,
                     ),
                   ),
                 ],
@@ -228,14 +235,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: topChildren,
-        )),
-        Text(
-          displayPath,
-          style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: topChildren,
+          ),
         ),
+        Text(displayPath, style: TextStyle(color: CruxTheme.onSurfaceVariant)),
       ],
     );
   }

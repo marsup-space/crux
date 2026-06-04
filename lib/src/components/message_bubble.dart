@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/message.dart';
 import 'ui/highlighted_markdown_text.dart';
 
@@ -36,14 +37,14 @@ class MessageBubble extends StatelessComponent {
                 Text(
                   ' Crux: ',
                   style: TextStyle(
-                    color: Color.fromRGB(100, 85, 140),
+                    color: CruxTheme.thinkingPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Expanded(
                   child: Text(
                     thinkingSummary,
-                    style: TextStyle(color: Color.fromRGB(100, 85, 140)),
+                    style: TextStyle(color: CruxTheme.thinkingPrefix),
                   ),
                 ),
               ],
@@ -58,7 +59,7 @@ class MessageBubble extends StatelessComponent {
                 Text(
                   ' Crux: ',
                   style: TextStyle(
-                    color: Colors.brightMagenta,
+                    color: CruxTheme.aiPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -76,7 +77,7 @@ class MessageBubble extends StatelessComponent {
               Text(
                 isUser ? ' You: ' : (hasReasoning ? '       ' : ' Crux: '),
                 style: TextStyle(
-                  color: isUser ? Colors.brightCyan : Colors.brightMagenta,
+                  color: isUser ? CruxTheme.userPrefix : CruxTheme.aiPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -84,14 +85,14 @@ class MessageBubble extends StatelessComponent {
                 child: isUser
                     ? Text(
                         message.content,
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: CruxTheme.foreground),
                       )
                     : HighlightedMarkdownText(message.content),
               ),
             ],
           ),
         ),
-        Divider(color: Color.fromRGB(40, 40, 60), height: 1),
+        Divider(color: CruxTheme.divider, height: 1),
       ],
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
@@ -678,11 +679,7 @@ class _ChatPanelState extends State<ChatPanel> {
           final mainContent = Row(
             children: [
               Expanded(child: _buildMainInterface()),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: Color.fromRGB(50, 50, 70),
-              ),
+              VerticalDivider(width: 1, thickness: 1, color: CruxTheme.divider),
               SizedBox(
                 width: _infoPanelWidth,
                 child: ExtraInfoPanel(
@@ -781,7 +778,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     children.add(_buildToolbar());
-    children.add(Divider(color: Color.fromRGB(50, 50, 70), height: 1));
+    children.add(Divider(color: CruxTheme.divider, height: 1));
     children.add(_buildInputRow());
 
     return Column(children: children);
@@ -795,7 +792,10 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (messages.isEmpty && !isStreaming) {
       return Center(
-        child: Text('No messages yet.', style: TextStyle(color: Colors.gray)),
+        child: Text(
+          'No messages yet.',
+          style: TextStyle(color: CruxTheme.onSurfaceDim),
+        ),
       );
     }
 
@@ -848,10 +848,10 @@ class _ChatPanelState extends State<ChatPanel> {
         : Button(
             label: modelLabel,
             onPressed: _onModelButtonPressed,
-            color: Color.fromRGB(120, 100, 160),
-            hoverColor: Colors.brightCyan,
-            bgColor: Color.fromRGB(25, 20, 45),
-            hoverBgColor: Color.fromRGB(40, 30, 80),
+            color: CruxTheme.onSurfaceVariant,
+            hoverColor: CruxTheme.buttonTextHover,
+            bgColor: CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           );
 
@@ -917,22 +917,22 @@ class _ChatPanelState extends State<ChatPanel> {
               if (_modelSupportsImages(_sessionController.currentSession.model))
                 Text(
                   '\u{F06E}',
-                  style: TextStyle(color: Color.fromRGB(120, 100, 160)),
+                  style: TextStyle(color: CruxTheme.onSurfaceVariant),
                 ),
               if (showThinking)
                 Button(
                   label: thinkingLabel!,
                   onPressed: () => _cycleThinkingLevel(rt!),
                   color: rt!.thinkingMode == 'disabled'
-                      ? Color.fromRGB(60, 50, 80)
-                      : Color.fromRGB(120, 100, 160),
-                  hoverColor: Colors.brightCyan,
-                  bgColor: Color.fromRGB(25, 20, 45),
-                  hoverBgColor: Color.fromRGB(40, 30, 80),
+                      ? CruxTheme.thinkingLabelDisabled
+                      : CruxTheme.onSurfaceVariant,
+                  hoverColor: CruxTheme.buttonTextHover,
+                  bgColor: CruxTheme.buttonBackground,
+                  hoverBgColor: CruxTheme.buttonBackgroundHover,
                   padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 ),
               if (showContext) ...[
-                Text('  ', style: TextStyle(color: Color.fromRGB(50, 50, 70))),
+                Text('  ', style: TextStyle(color: CruxTheme.divider)),
                 _buildContextBar(),
               ],
               if (showTokPerSec || showTtft)
@@ -943,32 +943,26 @@ class _ChatPanelState extends State<ChatPanel> {
                   child: Row(
                     children: [
                       if (showTokPerSec) ...[
-                        Text(
-                          '  ',
-                          style: TextStyle(color: Color.fromRGB(50, 50, 70)),
-                        ),
+                        Text('  ', style: TextStyle(color: CruxTheme.divider)),
                         Text(
                           _metricsHovered && rt?.cacheHitPct != null
                               ? 'cache ${rt!.cacheHitPct}%'
                               : tokText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
-                                ? Color.fromRGB(180, 220, 255)
-                                : Color.fromRGB(80, 80, 100),
+                                ? CruxTheme.metricsActive
+                                : CruxTheme.metricsIdle,
                           ),
                         ),
                       ],
                       if (showTtft) ...[
-                        Text(
-                          ' ',
-                          style: TextStyle(color: Color.fromRGB(50, 50, 70)),
-                        ),
+                        Text(' ', style: TextStyle(color: CruxTheme.divider)),
                         Text(
                           ttftText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
-                                ? Color.fromRGB(180, 220, 255)
-                                : Color.fromRGB(80, 80, 100),
+                                ? CruxTheme.metricsActive
+                                : CruxTheme.metricsIdle,
                           ),
                         ),
                       ],
@@ -988,10 +982,10 @@ class _ChatPanelState extends State<ChatPanel> {
     return Button(
       label: '\u{F013} ${_sessionController.auxiliaryModelShortName}',
       onPressed: _onAuxiliaryModelButtonPressed,
-      color: Color.fromRGB(120, 100, 160),
-      hoverColor: Colors.brightCyan,
-      bgColor: Color.fromRGB(25, 20, 45),
-      hoverBgColor: Color.fromRGB(40, 30, 80),
+      color: CruxTheme.onSurfaceVariant,
+      hoverColor: CruxTheme.buttonTextHover,
+      bgColor: CruxTheme.buttonBackground,
+      hoverBgColor: CruxTheme.buttonBackgroundHover,
       padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
     );
   }
@@ -1028,15 +1022,15 @@ class _ChatPanelState extends State<ChatPanel> {
       width: 20,
       label: labelText,
       fillColor: _streamingController.contextBarHovered
-          ? Color.fromRGB(100, 180, 255)
-          : Color.fromRGB(120, 80, 200),
-      emptyColor: Color.fromRGB(30, 25, 50),
+          ? CruxTheme.metricsActive
+          : CruxTheme.progressFill,
+      emptyColor: CruxTheme.progressEmpty,
       labelFillFg: _streamingController.contextBarHovered
-          ? Color.fromRGB(20, 15, 40)
-          : Color.fromRGB(25, 20, 45),
+          ? CruxTheme.outlineDim
+          : CruxTheme.buttonBackground,
       labelEmptyFg: _streamingController.contextBarHovered
-          ? Color.fromRGB(220, 240, 255)
-          : Color.fromRGB(200, 180, 255),
+          ? CruxTheme.metricsActive
+          : CruxTheme.progressLabelEmpty,
     );
 
     return MouseRegion(
@@ -1102,13 +1096,13 @@ class _ChatPanelState extends State<ChatPanel> {
       padding: EdgeInsets.all(1),
       child: Row(
         children: [
-          Text('> ', style: TextStyle(color: Colors.gray)),
+          Text('> ', style: TextStyle(color: CruxTheme.onSurfaceDim)),
           Expanded(
             child: TextField(
               controller: textController,
               focused: !_overlayController.showSessionManager,
               maxLines: null,
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: CruxTheme.foreground),
               placeholder: 'Type a message...',
               onSubmitted: (_) => _sendMessage(),
               onKeyEvent: _handleInputKeyEvent,

@@ -1,5 +1,5 @@
 import 'package:nocterm/nocterm.dart';
-
+import '../theme/crux_theme.dart';
 import 'ui/wizard_overlay.dart';
 import '../models/provider_config.dart';
 import '../services/provider_service.dart';
@@ -80,7 +80,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       const Text(
         'Select a provider to remove:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -91,7 +91,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       rows.add(
         const Text(
           'No providers configured. Nothing to remove.',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     } else {
@@ -109,7 +109,9 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
               behavior: HitTestBehavior.opaque,
               child: Container(
                 decoration: isSelected
-                    ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                    ? const BoxDecoration(
+                        color: CruxTheme.buttonBackgroundHover,
+                      )
                     : null,
                 padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 child: Row(
@@ -117,27 +119,33 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                     Text(
                       isSelected ? '▶ ' : '  ',
                       style: TextStyle(
-                        color: isSelected ? Colors.brightCyan : Colors.gray,
+                        color: isSelected
+                            ? CruxTheme.wizardTextSelected
+                            : CruxTheme.wizardTextDim,
                       ),
                     ),
                     Text(
                       provider.name,
                       style: TextStyle(
-                        color: isSelected ? Colors.brightCyan : Colors.white,
+                        color: isSelected
+                            ? CruxTheme.wizardTextSelected
+                            : CruxTheme.foreground,
                         fontWeight: isSelected ? FontWeight.bold : null,
                       ),
                     ),
                     if (hasKey)
                       const Text(
                         ' 🔑',
-                        style: TextStyle(color: Colors.brightYellow),
+                        style: TextStyle(color: CruxTheme.warningColor),
                       ),
                     const SizedBox(width: 2),
                     Expanded(
                       child: Text(
                         '${provider.type.toConfigString()} · ${provider.endpointUrl}',
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.gray,
+                          color: isSelected
+                              ? CruxTheme.foreground
+                              : CruxTheme.wizardTextDim,
                         ),
                       ),
                     ),
@@ -152,23 +160,23 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       // Details panel for the selected provider
       if (_selectedProvider != null) {
         rows.add(const SizedBox(height: 1));
-        rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+        rows.add(const Divider(color: CruxTheme.outline, height: 1));
         rows.add(
           Text(
             '  Type: ${_selectedProvider!.type.toConfigString()}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         rows.add(
           Text(
             '  Endpoint: ${_selectedProvider!.endpointUrl}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         rows.add(
           Text(
             '  Models: ${_selectedProvider!.models.length}',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
         final keyStatus = _service.getApiKey(_selectedProvider!.name) != null;
@@ -176,7 +184,9 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
           Text(
             '  API Key: ${keyStatus ? "✓ Set (will also be removed)" : "Not set"}',
             style: TextStyle(
-              color: keyStatus ? Colors.brightYellow : Colors.gray,
+              color: keyStatus
+                  ? CruxTheme.warningColor
+                  : CruxTheme.wizardTextDim,
             ),
           ),
         );
@@ -187,7 +197,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
           rows.add(
             const Text(
               '  Models that will be removed:',
-              style: TextStyle(color: Colors.brightYellow),
+              style: TextStyle(color: CruxTheme.warningColor),
             ),
           );
           for (final model in _selectedProvider!.models) {
@@ -195,7 +205,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
               Text(
                 '    - ${model.compositeKey(_selectedProvider!.name)} '
                 '(ctx: ${model.contextSize ~/ 1024}k, img: ${model.imageSupport})',
-                style: const TextStyle(color: Colors.gray),
+                style: const TextStyle(color: CruxTheme.wizardTextDim),
               ),
             );
           }
@@ -217,7 +227,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
     if (provider == null) {
       return const Text(
         'No provider selected.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       );
     }
 
@@ -231,7 +241,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       const Text(
         '⚠ Confirm Provider Removal',
         style: TextStyle(
-          color: Color.fromRGB(255, 80, 80),
+          color: CruxTheme.errorColor,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -241,7 +251,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
     rows.add(
       Text(
         'Are you sure you want to remove provider "${provider.name}"?',
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: CruxTheme.foreground),
       ),
     );
     rows.add(const SizedBox(height: 1));
@@ -250,32 +260,32 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
     rows.add(
       Text(
         '  This will permanently delete:',
-        style: const TextStyle(color: Colors.brightYellow),
+        style: const TextStyle(color: CruxTheme.warningColor),
       ),
     );
     rows.add(
       Text(
         '    - ${provider.name}.toml (configuration file)',
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: CruxTheme.foreground),
       ),
     );
     rows.add(
       Text(
         '    - $modelCount model(s) will be unregistered',
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: CruxTheme.foreground),
       ),
     );
     rows.add(
       Text(
         '    - Endpoint: ${provider.endpointUrl}',
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: CruxTheme.foreground),
       ),
     );
     if (hasKey) {
       rows.add(
         const Text(
           '    - API key (removed from auth.json)',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: CruxTheme.foreground),
         ),
       );
     }
@@ -285,14 +295,14 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       const Text(
         '  This action cannot be undone.',
         style: TextStyle(
-          color: Color.fromRGB(255, 80, 80),
+          color: CruxTheme.errorColor,
           fontWeight: FontWeight.bold,
         ),
       ),
     );
     rows.add(const SizedBox(height: 1));
 
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
     rows.add(const SizedBox(height: 1));
 
     // Choice options
@@ -300,7 +310,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       const Text(
         'Choose an option:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -317,7 +327,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
           behavior: HitTestBehavior.opaque,
           child: Container(
             decoration: _removeChoice == _RemoveChoice.keep
-                ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                ? const BoxDecoration(color: CruxTheme.buttonBackgroundHover)
                 : null,
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
@@ -326,16 +336,16 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                   _removeChoice == _RemoveChoice.keep ? '▶ ' : '  ',
                   style: TextStyle(
                     color: _removeChoice == _RemoveChoice.keep
-                        ? Colors.brightCyan
-                        : Colors.gray,
+                        ? CruxTheme.wizardTextSelected
+                        : CruxTheme.wizardTextDim,
                   ),
                 ),
                 Text(
                   'No, keep it',
                   style: TextStyle(
                     color: _removeChoice == _RemoveChoice.keep
-                        ? Colors.brightCyan
-                        : Colors.white,
+                        ? CruxTheme.wizardTextSelected
+                        : CruxTheme.foreground,
                     fontWeight: _removeChoice == _RemoveChoice.keep
                         ? FontWeight.bold
                         : null,
@@ -344,7 +354,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                 const SizedBox(width: 2),
                 const Text(
                   '(safe — cancel removal)',
-                  style: TextStyle(color: Colors.gray),
+                  style: TextStyle(color: CruxTheme.wizardTextDim),
                 ),
               ],
             ),
@@ -363,7 +373,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
           behavior: HitTestBehavior.opaque,
           child: Container(
             decoration: _removeChoice == _RemoveChoice.remove
-                ? const BoxDecoration(color: Color.fromRGB(60, 20, 20))
+                ? const BoxDecoration(color: CruxTheme.errorColor)
                 : null,
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
@@ -372,16 +382,16 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                   _removeChoice == _RemoveChoice.remove ? '▶ ' : '  ',
                   style: TextStyle(
                     color: _removeChoice == _RemoveChoice.remove
-                        ? const Color.fromRGB(255, 80, 80)
-                        : Colors.gray,
+                        ? CruxTheme.errorColor
+                        : CruxTheme.wizardTextDim,
                   ),
                 ),
                 Text(
                   'Yes, remove',
                   style: TextStyle(
                     color: _removeChoice == _RemoveChoice.remove
-                        ? const Color.fromRGB(255, 80, 80)
-                        : Colors.white,
+                        ? CruxTheme.errorColor
+                        : CruxTheme.foreground,
                     fontWeight: _removeChoice == _RemoveChoice.remove
                         ? FontWeight.bold
                         : null,
@@ -390,7 +400,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                 const SizedBox(width: 2),
                 const Text(
                   '(destructive — permanent deletion)',
-                  style: TextStyle(color: Colors.gray),
+                  style: TextStyle(color: CruxTheme.wizardTextDim),
                 ),
               ],
             ),
@@ -406,7 +416,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
       rows.add(
         const Text(
           '⚠ You have selected permanent removal. Press Confirm to proceed.',
-          style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+          style: TextStyle(color: CruxTheme.errorColor),
         ),
       );
     } else {
@@ -414,7 +424,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
         const Text(
           '✓ Removal canceled. Press Back to choose a different provider, '
           'or Cancel to exit.',
-          style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+          style: TextStyle(color: CruxTheme.successColor),
         ),
       );
     }

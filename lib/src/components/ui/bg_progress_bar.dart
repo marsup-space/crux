@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 /// A progress bar that renders progress using background colors.
 ///
@@ -14,8 +15,8 @@ import 'package:nocterm/nocterm.dart';
 ///   value: 0.48,
 ///   width: 20,
 ///   label: '125073 / 262144',
-///   fillColor: Color.fromRGB(120, 80, 200),
-///   emptyColor: Color.fromRGB(30, 25, 50),
+///   fillColor: CruxTheme.progressFill,
+///   emptyColor: CruxTheme.progressEmpty,
 /// )
 /// ```
 class BgProgressBar extends StatelessComponent {
@@ -45,10 +46,10 @@ class BgProgressBar extends StatelessComponent {
     required this.value,
     required this.width,
     this.label,
-    this.fillColor = const Color.fromRGB(120, 80, 200),
-    this.emptyColor = const Color.fromRGB(30, 25, 50),
-    this.labelFillFg = const Color.fromRGB(25, 20, 45),
-    this.labelEmptyFg = const Color.fromRGB(200, 180, 255),
+    this.fillColor = CruxTheme.progressFill,
+    this.emptyColor = CruxTheme.progressEmpty,
+    this.labelFillFg = CruxTheme.progressLabelFill,
+    this.labelEmptyFg = CruxTheme.progressLabelEmpty,
   });
 
   @override
@@ -77,9 +78,7 @@ class BgProgressBar extends StatelessComponent {
           ),
         );
       } else {
-        cells.add(
-          Text(' ', style: TextStyle(backgroundColor: bg)),
-        );
+        cells.add(Text(' ', style: TextStyle(backgroundColor: bg)));
       }
     }
 

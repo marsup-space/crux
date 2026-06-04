@@ -1,8 +1,6 @@
 import 'dart:convert';
 
-enum PartType {
-  text,
-}
+enum PartType { text }
 
 class Part {
   final int id;
@@ -19,8 +17,8 @@ class Part {
     required this.type,
     Map<String, dynamic>? data,
     DateTime? createdAt,
-  })  : data = data ?? {},
-        createdAt = createdAt ?? DateTime.now();
+  }) : data = data ?? {},
+       createdAt = createdAt ?? DateTime.now();
 
   static Map<String, dynamic> parseDataJson(String json) {
     if (json.isEmpty) return {};

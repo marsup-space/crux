@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import 'ui/button.dart';
 import 'ui/focus_grid.dart';
 import 'ui/option_toggle.dart';
@@ -129,8 +130,9 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
   int _editingModelIndex = 0;
   final TextEditingController _modelIdController = TextEditingController();
   final TextEditingController _modelNameController = TextEditingController();
-  final TextEditingController _modelContextController =
-      TextEditingController(text: '128');
+  final TextEditingController _modelContextController = TextEditingController(
+    text: '128',
+  );
 
   _ModelFocusArea _modelFocusedArea = _ModelFocusArea.modelId;
   late FocusGrid<_ModelContentFocus> _modelGrid;
@@ -209,8 +211,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     return _isValidEndpoint(url);
   }
 
-  bool _validateProviderName() =>
-      _isValidProviderName(_nameController.text);
+  bool _validateProviderName() => _isValidProviderName(_nameController.text);
 
   String _extractNameFromUrl(String url) {
     if (!_isValidEndpoint(url)) return '';
@@ -704,7 +705,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       const Text(
         'Configure your provider:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -716,15 +717,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       Row(
         children: [
           GestureDetector(
-            onTap: () => setState(
-              () => _mergedGrid.moveTo(_MergedFocusArea.urlInput),
-            ),
+            onTap: () =>
+                setState(() => _mergedGrid.moveTo(_MergedFocusArea.urlInput)),
             behavior: HitTestBehavior.opaque,
             child: Row(
               children: [
                 const Text(
                   'URL: ',
-                  style: TextStyle(color: Colors.brightCyan),
+                  style: TextStyle(color: CruxTheme.wizardTextSelected),
                 ),
                 SizedBox(
                   width: 38,
@@ -734,7 +734,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                         !_footerActive &&
                         _mergedGrid.current == _MergedFocusArea.urlInput,
                     onKeyEvent: _handleMergedTextFieldKeyEvent,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: CruxTheme.foreground),
                     placeholder: _defaultEndpoint(_selectedType),
                   ),
                 ),
@@ -751,16 +751,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               });
               wizardController.requestRebuild();
             },
-            color:
-                _mergedGrid.current == _MergedFocusArea.resetDefaultBtn
-                    ? Colors.brightCyan
-                    : Colors.gray,
-            hoverColor: Colors.brightCyan,
-            bgColor:
-                _mergedGrid.current == _MergedFocusArea.resetDefaultBtn
-                    ? const Color.fromRGB(40, 30, 80)
-                    : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+            color: _mergedGrid.current == _MergedFocusArea.resetDefaultBtn
+                ? CruxTheme.wizardTextSelected
+                : CruxTheme.wizardTextDim,
+            hoverColor: CruxTheme.wizardTextSelected,
+            bgColor: _mergedGrid.current == _MergedFocusArea.resetDefaultBtn
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
         ],
       ),
@@ -773,7 +771,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       rows.add(
         const Text(
           '⚠ Invalid URL. Must start with http:// or https:// and have a valid host.',
-          style: TextStyle(color: Colors.brightYellow),
+          style: TextStyle(color: CruxTheme.warningColor),
         ),
       );
     }
@@ -792,7 +790,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               children: [
                 const Text(
                   'Key: ',
-                  style: TextStyle(color: Colors.brightCyan),
+                  style: TextStyle(color: CruxTheme.wizardTextSelected),
                 ),
                 SizedBox(
                   width: 38,
@@ -804,7 +802,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                     onKeyEvent: _handleMergedTextFieldKeyEvent,
                     obscureText: _apiKeyObscured,
                     obscuringCharacter: '•',
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: CruxTheme.foreground),
                     placeholder: _apiKeyHint(_selectedType),
                   ),
                 ),
@@ -821,16 +819,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               });
               wizardController.requestRebuild();
             },
-            color:
-                _mergedGrid.current == _MergedFocusArea.showKeyBtn
-                    ? Colors.brightCyan
-                    : Colors.gray,
-            hoverColor: Colors.brightCyan,
-            bgColor:
-                _mergedGrid.current == _MergedFocusArea.showKeyBtn
-                    ? const Color.fromRGB(40, 30, 80)
-                    : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+            color: _mergedGrid.current == _MergedFocusArea.showKeyBtn
+                ? CruxTheme.wizardTextSelected
+                : CruxTheme.wizardTextDim,
+            hoverColor: CruxTheme.wizardTextSelected,
+            bgColor: _mergedGrid.current == _MergedFocusArea.showKeyBtn
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
         ],
       ),
@@ -843,7 +839,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       rows.add(
         Text(
           '⚠ Key must be at least 20 characters (${key.length}/20)',
-          style: const TextStyle(color: Colors.brightYellow),
+          style: const TextStyle(color: CruxTheme.warningColor),
         ),
       );
     }
@@ -852,15 +848,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     // ── Row 2: Provider Name ──
     rows.add(
       GestureDetector(
-        onTap: () => setState(
-          () => _mergedGrid.moveTo(_MergedFocusArea.nameInput),
-        ),
+        onTap: () =>
+            setState(() => _mergedGrid.moveTo(_MergedFocusArea.nameInput)),
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
             const Text(
               'Name: ',
-              style: TextStyle(color: Colors.brightCyan),
+              style: TextStyle(color: CruxTheme.wizardTextSelected),
             ),
             Expanded(
               child: TextField(
@@ -869,7 +864,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                     !_footerActive &&
                     _mergedGrid.current == _MergedFocusArea.nameInput,
                 onKeyEvent: _handleMergedTextFieldKeyEvent,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: CruxTheme.foreground),
                 placeholder: 'auto-detected from URL',
               ),
             ),
@@ -886,14 +881,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         rows.add(
           const Text(
             '⚠ A provider with this name already exists.',
-            style: TextStyle(color: Colors.brightYellow),
+            style: TextStyle(color: CruxTheme.warningColor),
           ),
         );
       } else {
         rows.add(
           const Text(
             '✓ Name is available.',
-            style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+            style: TextStyle(color: CruxTheme.successColor),
           ),
         );
       }
@@ -904,7 +899,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(
       const Text(
         'Type:',
-        style: TextStyle(color: Colors.brightCyan),
+        style: TextStyle(color: CruxTheme.wizardTextSelected),
       ),
     );
     rows.add(const SizedBox(height: 1));
@@ -914,13 +909,16 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         selectedIndex: _selectedType == ProviderType.openai ? 0 : 1,
         onChanged: (i) {
           setState(() {
-            _selectedType =
-                i == 0 ? ProviderType.openai : ProviderType.anthropic;
+            _selectedType = i == 0
+                ? ProviderType.openai
+                : ProviderType.anthropic;
             _mergedGrid.moveTo(_MergedFocusArea.typeToggle);
           });
           wizardController.requestRebuild();
         },
-        focused: !_footerActive && _mergedGrid.current == _MergedFocusArea.typeToggle,
+        focused:
+            !_footerActive &&
+            _mergedGrid.current == _MergedFocusArea.typeToggle,
       ),
     );
 
@@ -928,7 +926,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(
       const Text(
         'API key is optional — you can set it later via /provider connect.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       ),
     );
 
@@ -956,7 +954,8 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
 
     // Up/Down from model card fields → navigate within grid, switch card at boundary
     if (event.logicalKey == LogicalKey.arrowUp) {
-      final isModelField = _modelFocusedArea == _ModelFocusArea.modelId ||
+      final isModelField =
+          _modelFocusedArea == _ModelFocusArea.modelId ||
           _modelFocusedArea == _ModelFocusArea.modelName ||
           _modelFocusedArea == _ModelFocusArea.modelContext;
       if (isModelField) {
@@ -984,7 +983,8 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       return true;
     }
     if (event.logicalKey == LogicalKey.arrowDown) {
-      final isModelField = _modelFocusedArea == _ModelFocusArea.modelId ||
+      final isModelField =
+          _modelFocusedArea == _ModelFocusArea.modelId ||
           _modelFocusedArea == _ModelFocusArea.modelName ||
           _modelFocusedArea == _ModelFocusArea.modelContext;
       if (isModelField) {
@@ -1566,7 +1566,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       const Text(
         'Configure models for this provider:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -1592,15 +1592,15 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               wizardController.requestRebuild();
             },
             color: _modelFocusedArea == _ModelFocusArea.discoverBtn
-                ? Colors.brightCyan
+                ? CruxTheme.wizardTextSelected
                 : (_showDiscoverPanel
-                      ? Colors.brightYellow
-                      : Colors.brightCyan),
-            hoverColor: Colors.brightCyan,
+                      ? CruxTheme.warningColor
+                      : CruxTheme.wizardTextSelected),
+            hoverColor: CruxTheme.wizardTextSelected,
             bgColor: _modelFocusedArea == _ModelFocusArea.discoverBtn
-                ? const Color.fromRGB(40, 30, 80)
-                : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
           const SizedBox(width: 2),
           Button(
@@ -1616,13 +1616,13 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               wizardController.requestRebuild();
             },
             color: _modelFocusedArea == _ModelFocusArea.addModelBtn
-                ? Colors.brightCyan
-                : Colors.brightCyan,
-            hoverColor: Colors.brightYellow,
+                ? CruxTheme.wizardTextSelected
+                : CruxTheme.wizardTextSelected,
+            hoverColor: CruxTheme.warningColor,
             bgColor: _modelFocusedArea == _ModelFocusArea.addModelBtn
-                ? const Color.fromRGB(40, 30, 80)
-                : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
+                ? CruxTheme.buttonBackgroundHover
+                : CruxTheme.buttonBackground,
+            hoverBgColor: CruxTheme.buttonBackgroundHover,
           ),
         ],
       ),
@@ -1630,7 +1630,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
 
     if (_showDiscoverPanel) {
       rows.add(const SizedBox(height: 1));
-      rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+      rows.add(const Divider(color: CruxTheme.outline, height: 1));
       rows.add(const SizedBox(height: 1));
 
       switch (_discoverStatus) {
@@ -1638,14 +1638,14 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
           rows.add(
             const Text(
               '  Ready to discover models from the endpoint...',
-              style: TextStyle(color: Colors.gray),
+              style: TextStyle(color: CruxTheme.wizardTextDim),
             ),
           );
         case _DiscoverStatus.discovering:
           rows.add(
             const Text(
               '  ⏳ Querying /models endpoint...',
-              style: TextStyle(color: Colors.brightCyan),
+              style: TextStyle(color: CruxTheme.wizardTextSelected),
             ),
           );
         case _DiscoverStatus.discovered:
@@ -1653,7 +1653,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
             Text(
               '  ✓ Found ${_discoveredModels.length} models. '
               'Select which ones to include:',
-              style: const TextStyle(color: Color.fromRGB(100, 220, 100)),
+              style: const TextStyle(color: CruxTheme.successColor),
             ),
           );
           rows.add(const SizedBox(height: 1));
@@ -1679,7 +1679,9 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     decoration: isSelected
-                        ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                        ? const BoxDecoration(
+                            color: CruxTheme.buttonBackgroundHover,
+                          )
                         : null,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 1,
@@ -1690,17 +1692,18 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                         Text(
                           isSelected ? '☑ ' : '☐ ',
                           style: TextStyle(
-                            color: isSelected ? Colors.brightCyan : Colors.gray,
+                            color: isSelected
+                                ? CruxTheme.wizardTextSelected
+                                : CruxTheme.wizardTextDim,
                           ),
                         ),
                         Expanded(
                           child: Text(
-                            dm.id +
-                                (dm.name != null ? ' (${dm.name})' : ''),
+                            dm.id + (dm.name != null ? ' (${dm.name})' : ''),
                             style: TextStyle(
                               color: isSelected
-                                  ? Colors.brightCyan
-                                  : Colors.white,
+                                  ? CruxTheme.wizardTextSelected
+                                  : CruxTheme.foreground,
                             ),
                           ),
                         ),
@@ -1737,10 +1740,10 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                     _loadModelFieldsFromPending(_editingModelIndex);
                   });
                 },
-                color: const Color.fromRGB(100, 220, 100),
-                hoverColor: Colors.brightCyan,
-                bgColor: const Color.fromRGB(25, 20, 45),
-                hoverBgColor: const Color.fromRGB(40, 30, 80),
+                color: CruxTheme.successColor,
+                hoverColor: CruxTheme.wizardTextSelected,
+                bgColor: CruxTheme.buttonBackground,
+                hoverBgColor: CruxTheme.buttonBackgroundHover,
               ),
             );
           }
@@ -1748,13 +1751,13 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
           rows.add(
             const Text(
               '  ✗ Could not discover models from this endpoint.',
-              style: TextStyle(color: Color.fromRGB(255, 80, 80)),
+              style: TextStyle(color: CruxTheme.errorColor),
             ),
           );
           rows.add(
             const Text(
               '  This may be because no API key is set, or the endpoint is unreachable.',
-              style: TextStyle(color: Colors.gray),
+              style: TextStyle(color: CruxTheme.wizardTextDim),
             ),
           );
           rows.add(const SizedBox(height: 1));
@@ -1762,16 +1765,16 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
             Button(
               label: ' Retry Discovery ',
               onPressed: _discoverModels,
-              color: Colors.brightYellow,
-              hoverColor: Colors.brightCyan,
-              bgColor: const Color.fromRGB(25, 20, 45),
-              hoverBgColor: const Color.fromRGB(40, 30, 80),
+              color: CruxTheme.warningColor,
+              hoverColor: CruxTheme.wizardTextSelected,
+              bgColor: CruxTheme.buttonBackground,
+              hoverBgColor: CruxTheme.buttonBackgroundHover,
             ),
           );
       }
 
       rows.add(const SizedBox(height: 1));
-      rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+      rows.add(const Divider(color: CruxTheme.outline, height: 1));
     }
 
     rows.add(const SizedBox(height: 1));
@@ -1782,7 +1785,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       rows.add(
         const Text(
           '  No models configured. Add one manually or discover from API.',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     } else {
@@ -1790,12 +1793,10 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         final m = _models[i];
         final isEditing = i == _editingModelIndex;
         final cardBg = isEditing
-            ? const Color.fromRGB(35, 28, 55)
-            : const Color.fromRGB(28, 23, 45);
+            ? CruxTheme.surfaceVariant
+            : CruxTheme.surfaceVariant;
         final cardBorder = BorderSide(
-          color: isEditing
-              ? Colors.brightCyan
-              : const Color.fromRGB(80, 60, 120),
+          color: isEditing ? CruxTheme.wizardTextSelected : CruxTheme.outline,
         );
 
         rows.add(
@@ -1804,8 +1805,8 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
               color: cardBg,
               border: BoxBorder(
                 left: cardBorder,
-                top: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-                bottom: const BorderSide(color: Color.fromRGB(80, 60, 120)),
+                top: const BorderSide(color: CruxTheme.outline),
+                bottom: const BorderSide(color: CruxTheme.outline),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
@@ -1833,7 +1834,9 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                       child: Text(
                         '▸ Model ${i + 1}',
                         style: TextStyle(
-                          color: isEditing ? Colors.brightCyan : Colors.gray,
+                          color: isEditing
+                              ? CruxTheme.wizardTextSelected
+                              : CruxTheme.wizardTextDim,
                           fontWeight: isEditing ? FontWeight.bold : null,
                         ),
                       ),
@@ -1842,10 +1845,11 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                       GestureDetector(
                         onTap: isEditing
                             ? () => setState(() {
-                                  _modelGrid.moveTo(
-                                      _ModelContentFocus.removeModelBtn);
-                                  _syncModelFocusedFromGrid();
-                                })
+                                _modelGrid.moveTo(
+                                  _ModelContentFocus.removeModelBtn,
+                                );
+                                _syncModelFocusedFromGrid();
+                              })
                             : null,
                         behavior: HitTestBehavior.opaque,
                         child: Button(
@@ -1857,19 +1861,19 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                                 _editingModelIndex = _models.length - 1;
                               }
                               if (_editingModelIndex >= 0) {
-                                _loadModelFieldsFromPending(
-                                    _editingModelIndex);
+                                _loadModelFieldsFromPending(_editingModelIndex);
                               }
                             });
                           },
-                          color: isEditing &&
+                          color:
+                              isEditing &&
                                   _modelFocusedArea ==
                                       _ModelFocusArea.removeModelBtn
-                              ? Colors.brightCyan
-                              : const Color.fromRGB(255, 80, 80),
-                          hoverColor: Colors.brightYellow,
+                              ? CruxTheme.wizardTextSelected
+                              : CruxTheme.errorColor,
+                          hoverColor: CruxTheme.warningColor,
                           bgColor: cardBg,
-                          hoverBgColor: const Color.fromRGB(50, 40, 70),
+                          hoverBgColor: CruxTheme.buttonBackgroundHover,
                           padding: const EdgeInsets.symmetric(horizontal: 0),
                         ),
                       ),
@@ -1884,23 +1888,21 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                       padding: const EdgeInsets.symmetric(horizontal: 1),
                       decoration: BoxDecoration(
                         color: isEditing
-                            ? const Color.fromRGB(40, 30, 80)
-                            : const Color.fromRGB(25, 20, 45),
+                            ? CruxTheme.buttonBackgroundHover
+                            : CruxTheme.buttonBackground,
                         border: BoxBorder(
                           left: BorderSide(
                             color: isEditing
-                                ? Colors.brightCyan
-                                : const Color.fromRGB(80, 60, 120),
+                                ? CruxTheme.wizardTextSelected
+                                : CruxTheme.outline,
                           ),
-                          top: const BorderSide(
-                              color: Color.fromRGB(80, 60, 120)),
-                          bottom: const BorderSide(
-                              color: Color.fromRGB(80, 60, 120)),
-                          right: const BorderSide(
-                              color: Color.fromRGB(80, 60, 120)),
+                          top: const BorderSide(color: CruxTheme.outline),
+                          bottom: const BorderSide(color: CruxTheme.outline),
+                          right: const BorderSide(color: CruxTheme.outline),
                         ),
-                        borderRadius:
-                            const BorderRadius.all(Radius.circular(1)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(1),
+                        ),
                       ),
                       width: 24,
                       child: Column(
@@ -1908,26 +1910,29 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                         children: [
                           const Text(
                             'ID:',
-                            style: TextStyle(color: Colors.brightCyan),
+                            style: TextStyle(
+                              color: CruxTheme.wizardTextSelected,
+                            ),
                           ),
                           if (isEditing)
                             TextField(
                               controller: _modelIdController,
-                              focused: !_modelFooterActive &&
-                                  _modelFocusedArea ==
-                                      _ModelFocusArea.modelId,
+                              focused:
+                                  !_modelFooterActive &&
+                                  _modelFocusedArea == _ModelFocusArea.modelId,
                               onKeyEvent: _handleModelFieldKeyEvent,
-                              style: const TextStyle(color: Colors.white),
-                              placeholder:
-                                  'e.g. gpt-4o',
+                              style: const TextStyle(
+                                color: CruxTheme.foreground,
+                              ),
+                              placeholder: 'e.g. gpt-4o',
                             )
                           else
                             Text(
                               m.id.isNotEmpty ? m.id : '(empty)',
                               style: TextStyle(
                                 color: m.id.isNotEmpty
-                                    ? Colors.white
-                                    : Colors.gray,
+                                    ? CruxTheme.foreground
+                                    : CruxTheme.wizardTextDim,
                               ),
                             ),
                         ],
@@ -1944,39 +1949,45 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                             children: [
                               const Text(
                                 'Name: ',
-                                style: TextStyle(color: Colors.brightCyan),
+                                style: TextStyle(
+                                  color: CruxTheme.wizardTextSelected,
+                                ),
                               ),
                               Expanded(
                                 child: isEditing
                                     ? TextField(
                                         controller: _modelNameController,
-                                        focused: !_modelFooterActive &&
+                                        focused:
+                                            !_modelFooterActive &&
                                             _modelFocusedArea ==
                                                 _ModelFocusArea.modelName,
-                                        onKeyEvent:
-                                            _handleModelFieldKeyEvent,
+                                        onKeyEvent: _handleModelFieldKeyEvent,
                                         style: const TextStyle(
-                                            color: Colors.white),
+                                          color: CruxTheme.foreground,
+                                        ),
                                         placeholder:
                                             _modelIdController.text.isEmpty
-                                                ? 'defaults to ID'
-                                                : _modelIdController.text,
+                                            ? 'defaults to ID'
+                                            : _modelIdController.text,
                                       )
                                     : Text(
                                         m.name.isNotEmpty
                                             ? m.name
                                             : (m.id.isNotEmpty ? m.id : ''),
                                         style: TextStyle(
-                                          color: (m.name.isNotEmpty ||
+                                          color:
+                                              (m.name.isNotEmpty ||
                                                   m.id.isNotEmpty)
-                                              ? Colors.white
-                                              : Colors.gray,
+                                              ? CruxTheme.foreground
+                                              : CruxTheme.wizardTextDim,
                                         ),
                                       ),
                               ),
                               const Text(
                                 ' (opt)',
-                                style: TextStyle(color: Colors.gray),
+                                style: TextStyle(
+                                  color: CruxTheme.wizardTextDim,
+                                ),
                               ),
                             ],
                           ),
@@ -1985,31 +1996,38 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                             children: [
                               const Text(
                                 'Ctx: ',
-                                style: TextStyle(color: Colors.brightCyan),
+                                style: TextStyle(
+                                  color: CruxTheme.wizardTextSelected,
+                                ),
                               ),
                               SizedBox(
                                 width: 6,
                                 child: isEditing
                                     ? TextField(
-                                        controller:
-                                            _modelContextController,
-                                        focused: !_modelFooterActive &&
+                                        controller: _modelContextController,
+                                        focused:
+                                            !_modelFooterActive &&
                                             _modelFocusedArea ==
-                                                _ModelFocusArea
-                                                    .modelContext,
-                                        onKeyEvent:
-                                            _handleModelFieldKeyEvent,
+                                                _ModelFocusArea.modelContext,
+                                        onKeyEvent: _handleModelFieldKeyEvent,
                                         style: const TextStyle(
-                                            color: Colors.white),
+                                          color: CruxTheme.foreground,
+                                        ),
                                         placeholder: '128',
                                       )
                                     : Text(
                                         '${m.contextSize ~/ 1024}',
                                         style: const TextStyle(
-                                            color: Colors.white),
+                                          color: CruxTheme.foreground,
+                                        ),
                                       ),
                               ),
-                              const Text('k', style: TextStyle(color: Colors.gray)),
+                              const Text(
+                                'k',
+                                style: TextStyle(
+                                  color: CruxTheme.wizardTextDim,
+                                ),
+                              ),
                               const SizedBox(width: 2),
                               if (isEditing)
                                 Button(
@@ -2019,25 +2037,29 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                                   onPressed: () {
                                     _syncModelFieldsToPending();
                                     setState(() {
-                                      _modelFocusedArea = _ModelFocusArea
-                                          .imageToggleBtn;
+                                      _modelFocusedArea =
+                                          _ModelFocusArea.imageToggleBtn;
                                       m.imageSupport = !m.imageSupport;
                                     });
                                     wizardController.requestRebuild();
                                   },
-                                  color: _modelFocusedArea ==
+                                  color:
+                                      _modelFocusedArea ==
                                           _ModelFocusArea.imageToggleBtn
-                                      ? Colors.brightCyan
+                                      ? CruxTheme.wizardTextSelected
                                       : m.imageSupport
-                                          ? const Color.fromRGB(100, 220, 100)
-                                          : Colors.gray,
-                                  hoverColor: Colors.brightCyan,
-                                  bgColor: _modelFocusedArea ==
+                                      ? CruxTheme.successColor
+                                      : CruxTheme.wizardTextDim,
+                                  hoverColor: CruxTheme.wizardTextSelected,
+                                  bgColor:
+                                      _modelFocusedArea ==
                                           _ModelFocusArea.imageToggleBtn
-                                      ? const Color.fromRGB(40, 30, 80)
+                                      ? CruxTheme.buttonBackgroundHover
                                       : cardBg,
-                                  hoverBgColor: const Color.fromRGB(40, 30, 80),
-                                  padding: const EdgeInsets.symmetric(horizontal: 0),
+                                  hoverBgColor: CruxTheme.buttonBackgroundHover,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 0,
+                                  ),
                                 )
                               else
                                 Text(
@@ -2046,8 +2068,8 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                                       : ' \u{F03E} OFF ',
                                   style: TextStyle(
                                     color: m.imageSupport
-                                        ? const Color.fromRGB(100, 220, 100)
-                                        : Colors.gray,
+                                        ? CruxTheme.successColor
+                                        : CruxTheme.wizardTextDim,
                                   ),
                                 ),
                               const SizedBox(width: 1),
@@ -2059,25 +2081,29 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                                   onPressed: () {
                                     _syncModelFieldsToPending();
                                     setState(() {
-                                      _modelFocusedArea = _ModelFocusArea
-                                          .thinkingToggleBtn;
+                                      _modelFocusedArea =
+                                          _ModelFocusArea.thinkingToggleBtn;
                                       m.thinking = !m.thinking;
                                     });
                                     wizardController.requestRebuild();
                                   },
-                                  color: _modelFocusedArea ==
+                                  color:
+                                      _modelFocusedArea ==
                                           _ModelFocusArea.thinkingToggleBtn
-                                      ? Colors.brightCyan
+                                      ? CruxTheme.wizardTextSelected
                                       : m.thinking
-                                          ? Colors.brightYellow
-                                          : Colors.gray,
-                                  hoverColor: Colors.brightCyan,
-                                  bgColor: _modelFocusedArea ==
+                                      ? CruxTheme.warningColor
+                                      : CruxTheme.wizardTextDim,
+                                  hoverColor: CruxTheme.wizardTextSelected,
+                                  bgColor:
+                                      _modelFocusedArea ==
                                           _ModelFocusArea.thinkingToggleBtn
-                                      ? const Color.fromRGB(40, 30, 80)
+                                      ? CruxTheme.buttonBackgroundHover
                                       : cardBg,
-                                  hoverBgColor: const Color.fromRGB(40, 30, 80),
-                                  padding: const EdgeInsets.symmetric(horizontal: 0),
+                                  hoverBgColor: CruxTheme.buttonBackgroundHover,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 0,
+                                  ),
                                 )
                               else
                                 Text(
@@ -2086,8 +2112,8 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                                       : ' \u{F085} OFF ',
                                   style: TextStyle(
                                     color: m.thinking
-                                        ? Colors.brightYellow
-                                        : Colors.gray,
+                                        ? CruxTheme.warningColor
+                                        : CruxTheme.wizardTextDim,
                                   ),
                                 ),
                             ],
@@ -2101,7 +2127,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
                   const SizedBox(height: 1),
                   const Text(
                     '⚠ Model needs a valid ID and context size.',
-                    style: TextStyle(color: Colors.brightYellow),
+                    style: TextStyle(color: CruxTheme.warningColor),
                   ),
                 ],
               ],
@@ -2138,22 +2164,25 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       const Text(
         'Review your provider configuration:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
     );
     rows.add(const SizedBox(height: 1));
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
 
     rows.add(
       Row(
         children: [
-          const Text('  Name: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  Name: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             name,
             style: const TextStyle(
-              color: Colors.white,
+              color: CruxTheme.foreground,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -2163,10 +2192,13 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(
       Row(
         children: [
-          const Text('  Type: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  Type: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             _providerTypeDisplayName(_selectedType),
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: CruxTheme.foreground),
           ),
         ],
       ),
@@ -2176,12 +2208,12 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         children: [
           const Text(
             '  Endpoint: ',
-            style: TextStyle(color: Colors.brightCyan),
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
           ),
           Expanded(
             child: Text(
               endpointUrl,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: CruxTheme.foreground),
             ),
           ),
         ],
@@ -2190,10 +2222,13 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(
       Row(
         children: [
-          const Text('  Models: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  Models: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           const Text(
             'Add later via /provider modify',
-            style: TextStyle(color: Colors.gray),
+            style: TextStyle(color: CruxTheme.wizardTextDim),
           ),
         ],
       ),
@@ -2201,31 +2236,34 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(
       Row(
         children: [
-          const Text('  API Key: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            '  API Key: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Text(
             _apiKeyController.text.isNotEmpty
                 ? '✓ Will be stored in auth.json (persists across restarts)'
                 : 'Not provided (set later via /provider connect)',
             style: TextStyle(
               color: _apiKeyController.text.isNotEmpty
-                  ? const Color.fromRGB(100, 220, 100)
-                  : Colors.gray,
+                  ? CruxTheme.successColor
+                  : CruxTheme.wizardTextDim,
             ),
           ),
         ],
       ),
     );
 
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
 
     rows.add(const SizedBox(height: 1));
-    rows.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(const Divider(color: CruxTheme.outline, height: 1));
     rows.add(const SizedBox(height: 1));
 
     rows.add(
       const Text(
         'Press Confirm to create the provider, or Back to edit.',
-        style: TextStyle(color: Colors.gray),
+        style: TextStyle(color: CruxTheme.wizardTextDim),
       ),
     );
 
@@ -2293,7 +2331,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         stepContentFocused: () =>
             !_footerActive &&
             (_isMergedOnContentBtn ||
-             _mergedGrid.current == _MergedFocusArea.typeToggle),
+                _mergedGrid.current == _MergedFocusArea.typeToggle),
         footerFocusIndex: _mergedFooterFocusIndex,
         onFooterKeyEvent: _handleMergedFooterKeyEvent,
       ),
@@ -2305,10 +2343,10 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
         stepContentFocused: () =>
             !_modelFooterActive &&
             (_modelFocusedArea == _ModelFocusArea.discoverBtn ||
-             _modelFocusedArea == _ModelFocusArea.addModelBtn ||
-             _modelFocusedArea == _ModelFocusArea.removeModelBtn ||
-             _modelFocusedArea == _ModelFocusArea.imageToggleBtn ||
-             _modelFocusedArea == _ModelFocusArea.thinkingToggleBtn),
+                _modelFocusedArea == _ModelFocusArea.addModelBtn ||
+                _modelFocusedArea == _ModelFocusArea.removeModelBtn ||
+                _modelFocusedArea == _ModelFocusArea.imageToggleBtn ||
+                _modelFocusedArea == _ModelFocusArea.thinkingToggleBtn),
         footerFocusIndex: _modelFooterFocusIndex,
         onFooterKeyEvent: _handleModelFooterKeyEvent,
       ),

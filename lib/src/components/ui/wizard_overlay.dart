@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 import 'button.dart';
 
 /// Index constants for footer button focus tracking.
@@ -397,10 +398,10 @@ class _WizardOverlayState extends State<WizardOverlay> {
       final isActive = i == _currentStep;
       final isPast = i < _currentStep;
       final dotColor = isActive
-          ? Colors.brightCyan
+          ? CruxTheme.buttonTextFocused
           : isPast
-          ? Colors.brightMagenta
-          : Colors.gray;
+          ? CruxTheme.wizardTitle
+          : CruxTheme.wizardTextDim;
       final dotChar = isActive
           ? '●'
           : isPast
@@ -412,7 +413,7 @@ class _WizardOverlayState extends State<WizardOverlay> {
           Text(
             '─',
             style: TextStyle(
-              color: isPast ? Colors.brightMagenta : Colors.gray,
+              color: isPast ? CruxTheme.wizardTitle : CruxTheme.wizardTextDim,
             ),
           ),
         );
@@ -420,9 +421,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
     }
 
     // ── Footer: buttons with shortcut hints aligned below ──
-    final focusedBtnColor = Colors.brightCyan;
-    final focusedBtnBgColor = const Color.fromRGB(60, 50, 100);
-    final shortcutStyle = const TextStyle(color: Color.fromRGB(60, 50, 90));
+    final focusedBtnColor = CruxTheme.buttonTextFocused;
+    final focusedBtnBgColor = CruxTheme.buttonBackgroundFocused;
+    final shortcutStyle = const TextStyle(color: CruxTheme.hintText);
 
     // ── Build the wizard layout ──
     // Two sibling Focusables following nocterm's focus_demo pattern:
@@ -437,12 +438,12 @@ class _WizardOverlayState extends State<WizardOverlay> {
     // direct child of Column/Flex).
     return Container(
       decoration: BoxDecoration(
-        color: const Color.fromRGB(20, 15, 40),
+        color: CruxTheme.wizardOverlayBg,
         border: BoxBorder(
-          top: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-          right: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-          bottom: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-          left: const BorderSide(color: Color.fromRGB(80, 60, 120)),
+          top: const BorderSide(color: CruxTheme.outline),
+          right: const BorderSide(color: CruxTheme.outline),
+          bottom: const BorderSide(color: CruxTheme.outline),
+          left: const BorderSide(color: CruxTheme.outline),
         ),
       ),
       padding: const EdgeInsets.all(1),
@@ -454,25 +455,23 @@ class _WizardOverlayState extends State<WizardOverlay> {
             children: [
               Text(
                 'Step ${_currentStep + 1}/${steps.length}: ',
-                style: const TextStyle(color: Colors.gray),
+                style: const TextStyle(color: CruxTheme.wizardTextDim),
               ),
               Text(
                 step.title,
                 style: const TextStyle(
-                  color: Colors.brightMagenta,
+                  color: CruxTheme.wizardTitle,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
           Row(children: indicators),
-          const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
+          const Divider(color: CruxTheme.outline, height: 1),
 
-          Expanded(
-            child: step.contentBuilder(),
-          ),
+          Expanded(child: step.contentBuilder()),
 
-          const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
+          const Divider(color: CruxTheme.outline, height: 1),
 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -493,20 +492,24 @@ class _WizardOverlayState extends State<WizardOverlay> {
                         }
                         return false;
                       },
-                      child: Builder(builder: (context) {
-                        final focused = Focus.of(context);
-                        return Button(
-                          label: focused ? '▸ Back ◂' : ' Back ',
-                          onPressed: _goBack,
-                          focused: focused,
-                          color: focused ? focusedBtnColor : Colors.white,
-                          hoverColor: Colors.brightCyan,
-                          bgColor: focused
-                              ? focusedBtnBgColor
-                              : const Color.fromRGB(25, 20, 45),
-                          hoverBgColor: const Color.fromRGB(40, 30, 80),
-                        );
-                      }),
+                      child: Builder(
+                        builder: (context) {
+                          final focused = Focus.of(context);
+                          return Button(
+                            label: focused ? '▸ Back ◂' : ' Back ',
+                            onPressed: _goBack,
+                            focused: focused,
+                            color: focused
+                                ? focusedBtnColor
+                                : CruxTheme.foreground,
+                            hoverColor: CruxTheme.buttonTextFocused,
+                            bgColor: focused
+                                ? focusedBtnBgColor
+                                : CruxTheme.buttonBackground,
+                            hoverBgColor: CruxTheme.buttonBackgroundHover,
+                          );
+                        },
+                      ),
                     ),
                     Text('Ctrl+B', style: shortcutStyle),
                   ],
@@ -531,30 +534,34 @@ class _WizardOverlayState extends State<WizardOverlay> {
                           }
                           return false;
                         },
-                        child: Builder(builder: (context) {
-                          final focused = Focus.of(context);
-                          return Button(
-                            label: focused
-                                ? (isLastStep ? '▸ Confirm ◂' : '▸ Next ◂')
-                                : (isLastStep ? ' Confirm ' : ' Next '),
-                            onPressed: isValid ? _goNext : null,
-                            focused: focused,
-                            color: focused
-                                ? focusedBtnColor
-                                : isValid
-                                ? Colors.brightCyan
-                                : Colors.gray,
-                            hoverColor: isValid ? Colors.brightCyan : Colors.gray,
-                            bgColor: focused
-                                ? focusedBtnBgColor
-                                : isValid
-                                ? const Color.fromRGB(25, 20, 45)
-                                : const Color.fromRGB(20, 15, 40),
-                            hoverBgColor: isValid
-                                ? const Color.fromRGB(40, 30, 80)
-                                : const Color.fromRGB(20, 15, 40),
-                          );
-                        }),
+                        child: Builder(
+                          builder: (context) {
+                            final focused = Focus.of(context);
+                            return Button(
+                              label: focused
+                                  ? (isLastStep ? '▸ Confirm ◂' : '▸ Next ◂')
+                                  : (isLastStep ? ' Confirm ' : ' Next '),
+                              onPressed: isValid ? _goNext : null,
+                              focused: focused,
+                              color: focused
+                                  ? focusedBtnColor
+                                  : isValid
+                                  ? CruxTheme.buttonTextFocused
+                                  : CruxTheme.wizardTextDim,
+                              hoverColor: isValid
+                                  ? CruxTheme.buttonTextFocused
+                                  : CruxTheme.wizardTextDim,
+                              bgColor: focused
+                                  ? focusedBtnBgColor
+                                  : isValid
+                                  ? CruxTheme.buttonBackground
+                                  : CruxTheme.wizardOverlayBg,
+                              hoverBgColor: isValid
+                                  ? CruxTheme.buttonBackgroundHover
+                                  : CruxTheme.wizardOverlayBg,
+                            );
+                          },
+                        ),
                       ),
                       Text('Enter', style: shortcutStyle),
                     ],
@@ -575,22 +582,24 @@ class _WizardOverlayState extends State<WizardOverlay> {
                           }
                           return false;
                         },
-                        child: Builder(builder: (context) {
-                          final focused = Focus.of(context);
-                          return Button(
-                            label: focused ? '▸ Cancel ◂' : ' Cancel ',
-                            onPressed: wizard.onCancel,
-                            focused: focused,
-                            color: focused
-                                ? focusedBtnColor
-                                : Colors.gray,
-                            hoverColor: Colors.brightYellow,
-                            bgColor: focused
-                                ? focusedBtnBgColor
-                                : const Color.fromRGB(25, 20, 45),
-                            hoverBgColor: const Color.fromRGB(40, 30, 80),
-                          );
-                        }),
+                        child: Builder(
+                          builder: (context) {
+                            final focused = Focus.of(context);
+                            return Button(
+                              label: focused ? '▸ Cancel ◂' : ' Cancel ',
+                              onPressed: wizard.onCancel,
+                              focused: focused,
+                              color: focused
+                                  ? focusedBtnColor
+                                  : CruxTheme.wizardTextDim,
+                              hoverColor: CruxTheme.wizardMarkerSelected,
+                              bgColor: focused
+                                  ? focusedBtnBgColor
+                                  : CruxTheme.buttonBackground,
+                              hoverBgColor: CruxTheme.buttonBackgroundHover,
+                            );
+                          },
+                        ),
                       ),
                       Text('Esc', style: shortcutStyle),
                     ],

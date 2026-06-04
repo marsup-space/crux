@@ -2,10 +2,7 @@ class CommandSuggestion {
   final String value;
   final String? description;
 
-  const CommandSuggestion({
-    required this.value,
-    this.description,
-  });
+  const CommandSuggestion({required this.value, this.description});
 }
 
 class SlashCommand {
@@ -22,11 +19,11 @@ class SlashCommand {
   });
 
   /// Returns the full command string with parameter placeholders.
-  String get displayName => params.isEmpty
-      ? name
-      : '$name ${params.map((p) => '<$p>').join(' ')}';
+  String get displayName =>
+      params.isEmpty ? name : '$name ${params.map((p) => '<$p>').join(' ')}';
 
   /// Whether this command has parameter suggestions for the given param index.
   bool hasSuggestionsForParam(int index) =>
-      index < suggestionsPerParam.length && suggestionsPerParam[index].isNotEmpty;
+      index < suggestionsPerParam.length &&
+      suggestionsPerParam[index].isNotEmpty;
 }

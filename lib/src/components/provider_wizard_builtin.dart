@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import 'ui/button.dart';
 import '../models/provider_config.dart';
 import '../services/provider_service.dart';
@@ -92,7 +93,7 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       Text(
         _providerName,
         style: const TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -102,13 +103,13 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       rows.add(
         Text(
           '  ${provider.type.toConfigString().toUpperCase()} · ${provider.endpointUrl}',
-          style: const TextStyle(color: Colors.gray),
+          style: const TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
       rows.add(
         Text(
           '  Models: ${provider.models.map((m) => m.name).join(', ')}',
-          style: const TextStyle(color: Colors.gray),
+          style: const TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     }
@@ -121,12 +122,12 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
           children: [
             const Text(
               '  ✓ Connected',
-              style: TextStyle(color: Color.fromRGB(100, 220, 100)),
+              style: TextStyle(color: CruxTheme.successColor),
             ),
             const SizedBox(width: 2),
             Text(
               '(CRUX_API_KEY_${_providerName.toUpperCase()})',
-              style: const TextStyle(color: Colors.gray),
+              style: const TextStyle(color: CruxTheme.wizardTextDim),
             ),
           ],
         ),
@@ -135,7 +136,7 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       rows.add(
         const Text(
           '  Not connected',
-          style: TextStyle(color: Colors.gray),
+          style: TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );
     }
@@ -145,7 +146,10 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
     rows.add(
       Row(
         children: [
-          const Text('Key: ', style: TextStyle(color: Colors.brightCyan)),
+          const Text(
+            'Key: ',
+            style: TextStyle(color: CruxTheme.wizardTextSelected),
+          ),
           Expanded(
             child: TextField(
               controller: _apiKeyController,
@@ -163,7 +167,7 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
               },
               obscureText: _apiKeyObscured,
               obscuringCharacter: '•',
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: CruxTheme.foreground),
               placeholder: _hasExistingKey
                   ? 'Enter new key to replace...'
                   : 'Paste your API key...',
@@ -178,7 +182,7 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       rows.add(
         Text(
           '  ⚠ At least 20 characters (${keyText.length}/20)',
-          style: const TextStyle(color: Colors.brightYellow),
+          style: const TextStyle(color: CruxTheme.warningColor),
         ),
       );
     }
@@ -193,40 +197,45 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
           event,
           () => setState(() => _apiKeyObscured = !_apiKeyObscured),
         ),
-        child: Builder(builder: (context) {
-          final focused = Focus.of(context);
-          return Button(
-            label: _apiKeyObscured ? '👁 Show' : '🔒 Hide',
-            onPressed: () => setState(() => _apiKeyObscured = !_apiKeyObscured),
-            focused: focused,
-            color: Colors.gray,
-            hoverColor: Colors.brightCyan,
-            bgColor: const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
-          );
-        }),
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context);
+            return Button(
+              label: _apiKeyObscured ? '👁 Show' : '🔒 Hide',
+              onPressed: () =>
+                  setState(() => _apiKeyObscured = !_apiKeyObscured),
+              focused: focused,
+              color: CruxTheme.wizardTextDim,
+              hoverColor: CruxTheme.wizardTextSelected,
+              bgColor: CruxTheme.buttonBackground,
+              hoverBgColor: CruxTheme.buttonBackgroundHover,
+            );
+          },
+        ),
       ),
     );
 
     buttons.add(
       Focusable(
         onKeyEvent: (event) => _handleButtonKey(event, _submit),
-        child: Builder(builder: (context) {
-          final focused = Focus.of(context);
-          return Button(
-            label: ' Connect ',
-            onPressed: _submit,
-            focused: focused,
-            color: _keyIsValid
-                ? const Color.fromRGB(100, 220, 100)
-                : Colors.gray,
-            hoverColor: Colors.brightCyan,
-            bgColor: _keyIsValid
-                ? const Color.fromRGB(20, 60, 20)
-                : const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
-          );
-        }),
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context);
+            return Button(
+              label: ' Connect ',
+              onPressed: _submit,
+              focused: focused,
+              color: _keyIsValid
+                  ? CruxTheme.successColor
+                  : CruxTheme.wizardTextDim,
+              hoverColor: CruxTheme.wizardTextSelected,
+              bgColor: _keyIsValid
+                  ? CruxTheme.successColor
+                  : CruxTheme.buttonBackground,
+              hoverBgColor: CruxTheme.buttonBackgroundHover,
+            );
+          },
+        ),
       ),
     );
 
@@ -234,18 +243,20 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       buttons.add(
         Focusable(
           onKeyEvent: (event) => _handleButtonKey(event, _removeKey),
-          child: Builder(builder: (context) {
-            final focused = Focus.of(context);
-            return Button(
-              label: ' Remove Key ',
-              onPressed: _removeKey,
-              focused: focused,
-              color: const Color.fromRGB(255, 80, 80),
-              hoverColor: Colors.brightYellow,
-              bgColor: const Color.fromRGB(60, 20, 20),
-              hoverBgColor: const Color.fromRGB(40, 30, 80),
-            );
-          }),
+          child: Builder(
+            builder: (context) {
+              final focused = Focus.of(context);
+              return Button(
+                label: ' Remove Key ',
+                onPressed: _removeKey,
+                focused: focused,
+                color: CruxTheme.errorColor,
+                hoverColor: CruxTheme.warningColor,
+                bgColor: CruxTheme.errorColor,
+                hoverBgColor: CruxTheme.buttonBackgroundHover,
+              );
+            },
+          ),
         ),
       );
     }
@@ -254,30 +265,32 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
       Focusable(
         onKeyEvent: (event) =>
             _handleButtonKey(event, () => component.onDismiss?.call()),
-        child: Builder(builder: (context) {
-          final focused = Focus.of(context);
-          return Button(
-            label: ' Cancel ',
-            onPressed: () => component.onDismiss?.call(),
-            focused: focused,
-            color: Colors.gray,
-            hoverColor: Colors.brightCyan,
-            bgColor: const Color.fromRGB(25, 20, 45),
-            hoverBgColor: const Color.fromRGB(40, 30, 80),
-          );
-        }),
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context);
+            return Button(
+              label: ' Cancel ',
+              onPressed: () => component.onDismiss?.call(),
+              focused: focused,
+              color: CruxTheme.wizardTextDim,
+              hoverColor: CruxTheme.wizardTextSelected,
+              bgColor: CruxTheme.buttonBackground,
+              hoverBgColor: CruxTheme.buttonBackgroundHover,
+            );
+          },
+        ),
       ),
     );
 
     rows.add(Row(children: buttons));
 
-    final border = BoxBorder.all(color: const Color.fromRGB(80, 60, 120));
+    final border = BoxBorder.all(color: CruxTheme.outline);
 
     return FocusScope(
       trapping: true,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color.fromRGB(18, 14, 30),
+          color: CruxTheme.wizardOverlayBg,
           border: border,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),

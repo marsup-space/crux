@@ -49,16 +49,13 @@ class FocusGrid<T extends Enum> {
   final List<FocusCell<T>> _cells;
   T _current;
 
-  FocusGrid({
-    required List<FocusCell<T>> cells,
-    required T initial,
-  }) : _cells = List.unmodifiable(cells),
-       _current = initial;
+  FocusGrid({required List<FocusCell<T>> cells, required T initial})
+    : _cells = List.unmodifiable(cells),
+      _current = initial;
 
   T get current => _current;
 
-  FocusCell<T> _cellFor(T id) =>
-      _cells.firstWhere((c) => c.id == id);
+  FocusCell<T> _cellFor(T id) => _cells.firstWhere((c) => c.id == id);
 
   void moveTo(T id) => _current = id;
 
@@ -72,7 +69,8 @@ class FocusGrid<T extends Enum> {
       if (cell.row >= cur.row) continue;
       final colDist = (cell.col - cur.col).abs();
       final rowDist = cur.row - cell.row;
-      final score = rowDist * 100 + colDist * 10 + (cell.col == cur.col ? 0 : 1);
+      final score =
+          rowDist * 100 + colDist * 10 + (cell.col == cur.col ? 0 : 1);
       if (best == null || score < bestScore) {
         best = cell;
         bestScore = score;
@@ -91,7 +89,8 @@ class FocusGrid<T extends Enum> {
       if (cell.row <= cur.row) continue;
       final colDist = (cell.col - cur.col).abs();
       final rowDist = cell.row - cur.row;
-      final score = rowDist * 100 + colDist * 10 + (cell.col == cur.col ? 0 : 1);
+      final score =
+          rowDist * 100 + colDist * 10 + (cell.col == cur.col ? 0 : 1);
       if (best == null || score < bestScore) {
         best = cell;
         bestScore = score;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 class GlossyModelButton extends StatefulComponent {
   final String label;
@@ -28,10 +29,10 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
   static const double _bandWidth = 8.0;
   static const int _fadeTicks = 20; // ~1.2s at 60ms per tick
 
-  static const Color _baseBg = Color.fromRGB(25, 20, 45);
-  static const Color _peakBg = Color.fromRGB(120, 80, 200);
-  static const Color _baseFg = Color.fromRGB(120, 100, 160);
-  static const Color _flashFg = Color.fromRGB(255, 255, 255);
+  static const Color _baseBg = CruxTheme.buttonBackground;
+  static const Color _peakBg = CruxTheme.progressFill;
+  static const Color _baseFg = CruxTheme.onSurfaceVariant;
+  static const Color _flashFg = CruxTheme.foreground;
 
   @override
   void initState() {
@@ -72,7 +73,8 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
       _phase += 1.5; // faster sweep
-      final sweepEnd = component.label.length + 2 + _bandWidth; // +2 for padding cells
+      final sweepEnd =
+          component.label.length + 2 + _bandWidth; // +2 for padding cells
       if (_phase > sweepEnd) {
         _phase = -_bandWidth;
       }
@@ -104,8 +106,8 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
 
     if (!btn.isAnimating && !_isFadingOut) {
       // Static mode with hover support
-      final bgColor = _hovered ? Color.fromRGB(40, 30, 80) : _baseBg;
-      final fg = _hovered ? Colors.brightCyan : _baseFg;
+      final bgColor = _hovered ? CruxTheme.buttonBackgroundHover : _baseBg;
+      final fg = _hovered ? CruxTheme.buttonTextHover : _baseFg;
 
       return MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
@@ -169,9 +171,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
         );
       } else {
         // Padding cell — space with sweep-based background only
-        cells.add(
-          Text(' ', style: TextStyle(backgroundColor: bg)),
-        );
+        cells.add(Text(' ', style: TextStyle(backgroundColor: bg)));
       }
     }
 

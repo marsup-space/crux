@@ -18,6 +18,7 @@ export 'src/components/message_bubble.dart';
 export 'src/components/streaming_bubble.dart';
 export 'src/components/ui/highlighted_markdown_text.dart';
 export 'src/components/ui/highlight_service.dart';
+export 'src/theme/crux_theme.dart';
 export 'src/models/provider_config.dart';
 export 'src/services/chat_service.dart';
 export 'src/services/llm_client.dart';

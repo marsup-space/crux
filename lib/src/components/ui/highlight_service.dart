@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:textmate_highlight/textmate_highlight.dart' as tm;
+import '../../theme/crux_theme.dart';
 
 class HighlightService {
   static HighlightService? _instance;
@@ -76,29 +77,29 @@ class HighlightService {
 }
 
 const _scopeColorMap = <String, Color>{
-  'keyword': Color.fromRGB(197, 134, 192),
-  'storage': Color.fromRGB(197, 134, 192),
-  'entity.name.function': Color.fromRGB(220, 220, 170),
-  'entity.name.type': Color.fromRGB(78, 201, 176),
-  'entity.name.class': Color.fromRGB(78, 201, 176),
-  'support.function': Color.fromRGB(220, 220, 170),
-  'support.class': Color.fromRGB(78, 201, 176),
-  'string': Color.fromRGB(206, 145, 120),
-  'string.quoted': Color.fromRGB(206, 145, 120),
-  'string.template': Color.fromRGB(206, 145, 120),
-  'comment': Color.fromRGB(92, 99, 112),
-  'constant': Color.fromRGB(86, 156, 214),
-  'constant.numeric': Color.fromRGB(181, 206, 168),
-  'variable': Color.fromRGB(156, 220, 254),
-  'variable.parameter': Color.fromRGB(156, 220, 254),
-  'tag': Color.fromRGB(78, 201, 176),
-  'attribute.name': Color.fromRGB(156, 220, 254),
-  'punctuation': Color.fromRGB(212, 212, 212),
-  'punctuation.definition': Color.fromRGB(212, 212, 212),
-  'meta': Color.fromRGB(212, 212, 212),
-  'heading': Color.fromRGB(78, 201, 176),
-  'emphasis': Color.fromRGB(220, 220, 170),
-  'strong': Color.fromRGB(220, 220, 170),
+  'keyword': CruxTheme.highlightKeyword,
+  'storage': CruxTheme.highlightStorage,
+  'entity.name.function': CruxTheme.highlightFunction,
+  'entity.name.type': CruxTheme.highlightType,
+  'entity.name.class': CruxTheme.highlightType,
+  'support.function': CruxTheme.highlightFunction,
+  'support.class': CruxTheme.highlightType,
+  'string': CruxTheme.highlightString,
+  'string.quoted': CruxTheme.highlightString,
+  'string.template': CruxTheme.highlightString,
+  'comment': CruxTheme.highlightComment,
+  'constant': CruxTheme.highlightConstant,
+  'constant.numeric': CruxTheme.highlightNumeric,
+  'variable': CruxTheme.highlightVariable,
+  'variable.parameter': CruxTheme.highlightVariable,
+  'tag': CruxTheme.highlightTag,
+  'attribute.name': CruxTheme.highlightAttribute,
+  'punctuation': CruxTheme.highlightPunctuation,
+  'punctuation.definition': CruxTheme.highlightPunctuation,
+  'meta': CruxTheme.highlightMeta,
+  'heading': CruxTheme.highlightType,
+  'emphasis': CruxTheme.highlightFunction,
+  'strong': CruxTheme.highlightFunction,
 };
 
 Color colorForScopes(List<String> scopes) {
@@ -109,7 +110,7 @@ Color colorForScopes(List<String> scopes) {
       }
     }
   }
-  return const Color.fromRGB(212, 212, 212);
+  return CruxTheme.highlightDefault;
 }
 
 List<String> _scopeFallbacks(String scope) {
@@ -128,7 +129,7 @@ List<InlineSpan> highlightCode(String code, String language) {
     return [
       TextSpan(
         text: code,
-        style: const TextStyle(color: Color.fromRGB(212, 212, 212)),
+        style: const TextStyle(color: CruxTheme.highlightDefault),
       ),
     ];
   }
@@ -140,7 +141,7 @@ List<InlineSpan> highlightCode(String code, String language) {
     return [
       TextSpan(
         text: code,
-        style: const TextStyle(color: Color.fromRGB(212, 212, 212)),
+        style: const TextStyle(color: CruxTheme.highlightDefault),
       ),
     ];
   }
@@ -151,7 +152,7 @@ List<InlineSpan> highlightCode(String code, String language) {
       spans.add(
         TextSpan(
           text: code.substring(lastEnd, token.start),
-          style: const TextStyle(color: Color.fromRGB(212, 212, 212)),
+          style: const TextStyle(color: CruxTheme.highlightDefault),
         ),
       );
     }
@@ -183,7 +184,7 @@ List<InlineSpan> highlightCode(String code, String language) {
     spans.add(
       TextSpan(
         text: code.substring(lastEnd),
-        style: const TextStyle(color: Color.fromRGB(212, 212, 212)),
+        style: const TextStyle(color: CruxTheme.highlightDefault),
       ),
     );
   }

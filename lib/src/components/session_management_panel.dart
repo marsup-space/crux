@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import 'ui/modal_panel.dart';
 
@@ -39,7 +40,9 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   void initState() {
     super.initState();
     final sorted = _sorted;
-    final currentIdx = sorted.indexWhere((s) => s.id == component.currentSessionId);
+    final currentIdx = sorted.indexWhere(
+      (s) => s.id == component.currentSessionId,
+    );
     _selectedIndex = currentIdx >= 0 ? currentIdx : 0;
   }
 
@@ -132,13 +135,13 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   Color _statusColor(SessionStatus status) {
     switch (status) {
       case SessionStatus.idle:
-        return const Color.fromRGB(120, 100, 160);
+        return CruxTheme.sessionPrefixIdle;
       case SessionStatus.running:
-        return const Color.fromRGB(100, 200, 255);
+        return CruxTheme.sessionPrefixRunning;
       case SessionStatus.needUserAction:
-        return const Color.fromRGB(255, 200, 50);
+        return CruxTheme.sessionPrefixNeedsAction;
       case SessionStatus.done:
-        return const Color.fromRGB(200, 150, 255);
+        return CruxTheme.sessionPrefixDone;
     }
   }
 
@@ -205,7 +208,9 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         label: 'delete',
         keyHint: 'Ctrl+D',
         matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyD,
-        onActivate: _mode == _PanelMode.confirmDelete ? _confirmDelete : _initiateDelete,
+        onActivate: _mode == _PanelMode.confirmDelete
+            ? _confirmDelete
+            : _initiateDelete,
       ),
       ModalPanelShortcut(
         label: 'rename',
@@ -223,7 +228,10 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       contentBuilder: (context) {
         if (sorted.isEmpty) {
           return Center(
-            child: Text('No sessions found.', style: const TextStyle(color: Colors.gray)),
+            child: Text(
+              'No sessions found.',
+              style: const TextStyle(color: CruxTheme.onSurfaceDim),
+            ),
           );
         }
 
@@ -238,16 +246,16 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                 children: [
                   Text(
                     'Delete "${session.title}"? Ctrl+D to confirm, Esc to cancel',
-                    style: const TextStyle(color: Color.fromRGB(255, 80, 80)),
+                    style: const TextStyle(color: CruxTheme.deleteWarning),
                   ),
                 ],
               ),
             ),
           );
-          children.add(const Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+          children.add(const Divider(color: CruxTheme.outline, height: 1));
         }
 
-        final headerBg = const Color.fromRGB(40, 30, 80);
+        final headerBg = CruxTheme.wizardRowBgSelected;
         children.add(
           Container(
             decoration: BoxDecoration(color: headerBg),
@@ -256,22 +264,50 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               children: [
                 SizedBox(
                   width: 4,
-                  child: Text('#', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                  child: Text(
+                    '#',
+                    style: TextStyle(
+                      color: CruxTheme.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
                 SizedBox(
                   width: 3,
-                  child: Text(' ', style: TextStyle(color: Color.fromRGB(120, 100, 160))),
+                  child: Text(
+                    ' ',
+                    style: TextStyle(color: CruxTheme.onSurfaceVariant),
+                  ),
                 ),
                 SizedBox(
                   width: 6,
-                  child: Text('St', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'St',
+                    style: TextStyle(
+                      color: CruxTheme.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
                 Expanded(
-                  child: Text(' Title', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold)),
+                  child: Text(
+                    ' Title',
+                    style: TextStyle(
+                      color: CruxTheme.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
                 SizedBox(
                   width: 12,
-                  child: Text('Model', style: TextStyle(color: Color.fromRGB(120, 100, 160), fontWeight: FontWeight.bold), textAlign: TextAlign.right),
+                  child: Text(
+                    'Model',
+                    style: TextStyle(
+                      color: CruxTheme.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
                 ),
               ],
             ),
@@ -284,22 +320,28 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           final isCurrent = s.id == component.currentSessionId;
 
           final bgColor = isSelected
-              ? const Color.fromRGB(60, 50, 100)
+              ? CruxTheme.wizardRowBgSelected
               : isCurrent
-                  ? const Color.fromRGB(40, 30, 80)
-                  : const Color.fromRGB(25, 20, 45);
+              ? CruxTheme.buttonBackgroundHover
+              : CruxTheme.buttonBackground;
           final textColor = isSelected
-              ? Colors.brightCyan
+              ? CruxTheme.wizardTextSelected
               : isCurrent
-                  ? Colors.white
-                  : const Color.fromRGB(120, 100, 160);
+              ? CruxTheme.foreground
+              : CruxTheme.onSurfaceVariant;
 
           final prefix = isSelected ? '▸ ' : '  ';
           final icon = _statusIcon(s.status);
           final iconColor = _statusColor(s.status);
-          final titleDisplay = s.title.length > 30 ? '${s.title.substring(0, 29)}~' : s.title;
-          final modelShort = s.model.contains('/') ? s.model.split('/').last : s.model;
-          final modelDisplay = modelShort.length > 12 ? '${modelShort.substring(0, 11)}~' : modelShort;
+          final titleDisplay = s.title.length > 30
+              ? '${s.title.substring(0, 29)}~'
+              : s.title;
+          final modelShort = s.model.contains('/')
+              ? s.model.split('/').last
+              : s.model;
+          final modelDisplay = modelShort.length > 12
+              ? '${modelShort.substring(0, 11)}~'
+              : modelShort;
 
           children.add(
             MouseRegion(
@@ -313,12 +355,18 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                 behavior: HitTestBehavior.opaque,
                 child: Container(
                   decoration: BoxDecoration(color: bgColor),
-                  padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 1,
+                    vertical: 0,
+                  ),
                   child: Row(
                     children: [
                       SizedBox(
                         width: 4,
-                        child: Text('${s.id}', style: TextStyle(color: textColor)),
+                        child: Text(
+                          '${s.id}',
+                          style: TextStyle(color: textColor),
+                        ),
                       ),
                       Text(prefix, style: TextStyle(color: textColor)),
                       SizedBox(
@@ -326,11 +374,21 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                         child: Text(icon, style: TextStyle(color: iconColor)),
                       ),
                       Expanded(
-                        child: Text(' $titleDisplay', style: TextStyle(color: textColor, fontWeight: isSelected ? FontWeight.bold : null)),
+                        child: Text(
+                          ' $titleDisplay',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: isSelected ? FontWeight.bold : null,
+                          ),
+                        ),
                       ),
                       SizedBox(
                         width: 12,
-                        child: Text(modelDisplay, style: TextStyle(color: Color.fromRGB(80, 70, 110)), textAlign: TextAlign.right),
+                        child: Text(
+                          modelDisplay,
+                          style: TextStyle(color: CruxTheme.onSurfaceDim),
+                          textAlign: TextAlign.right,
+                        ),
                       ),
                     ],
                   ),
@@ -360,18 +418,21 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         children: [
           Text(
             'Current: ${session.title}',
-            style: const TextStyle(color: Color.fromRGB(120, 100, 160)),
+            style: const TextStyle(color: CruxTheme.onSurfaceVariant),
           ),
           const SizedBox(height: 1),
           Row(
             children: [
-              Text('New: ', style: const TextStyle(color: Colors.white)),
+              Text(
+                'New: ',
+                style: const TextStyle(color: CruxTheme.foreground),
+              ),
               Expanded(
                 child: TextField(
                   controller: _renameController,
                   focused: true,
                   maxLines: 1,
-                  style: const TextStyle(color: Colors.white),
+                  style: const TextStyle(color: CruxTheme.foreground),
                   onSubmitted: (_) => _confirmRename(),
                   onKeyEvent: (event) {
                     if (event.logicalKey == LogicalKey.escape) {
@@ -391,7 +452,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           const SizedBox(height: 1),
           Text(
             'Enter to confirm, Esc to cancel',
-            style: const TextStyle(color: Color.fromRGB(60, 50, 90)),
+            style: const TextStyle(color: CruxTheme.hintText),
           ),
         ],
       ),

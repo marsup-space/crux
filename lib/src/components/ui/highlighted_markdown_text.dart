@@ -6,6 +6,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'highlight_service.dart';
+import '../../theme/crux_theme.dart';
 
 class HighlightedMarkdownText extends StatefulComponent {
   const HighlightedMarkdownText(
@@ -107,44 +108,58 @@ class HighlightMarkdownStyleSheet {
     return HighlightMarkdownStyleSheet(
       h1Style: const TextStyle(
         fontWeight: FontWeight.bold,
-        color: Color.fromRGB(224, 189, 255),
+        color: CruxTheme.mdH1,
       ),
       h2Style: const TextStyle(
         fontWeight: FontWeight.bold,
-        color: Color.fromRGB(180, 160, 220),
+        color: CruxTheme.mdH2,
       ),
       h3Style: const TextStyle(
         fontWeight: FontWeight.bold,
-        color: Color.fromRGB(140, 200, 170),
+        color: CruxTheme.mdH3,
       ),
-      h4Style: const TextStyle(fontWeight: FontWeight.bold),
-      h5Style: const TextStyle(fontWeight: FontWeight.bold),
-      h6Style: const TextStyle(fontWeight: FontWeight.bold),
-      boldStyle: const TextStyle(fontWeight: FontWeight.bold),
-      italicStyle: const TextStyle(fontStyle: FontStyle.italic),
+      h4Style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: CruxTheme.mdH4,
+      ),
+      h5Style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: CruxTheme.mdH5,
+      ),
+      h6Style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: CruxTheme.mdH6,
+      ),
+      boldStyle: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: CruxTheme.mdBold,
+      ),
+      italicStyle: const TextStyle(
+        fontStyle: FontStyle.italic,
+        color: CruxTheme.mdItalic,
+      ),
       strikethroughStyle: const TextStyle(
         decoration: TextDecoration.lineThrough,
+        color: CruxTheme.mdStrikethrough,
       ),
       codeStyle: const TextStyle(
-        color: Color.fromRGB(206, 145, 120),
-        backgroundColor: Color.fromRGB(40, 40, 60),
+        color: CruxTheme.mdInlineCode,
+        backgroundColor: CruxTheme.mdInlineCodeBg,
       ),
       codeBlockStyle: const TextStyle(
-        color: Color.fromRGB(212, 212, 212),
-        backgroundColor: Color.fromRGB(30, 30, 46),
+        color: CruxTheme.mdCodeBlockText,
+        backgroundColor: CruxTheme.codeBlockBackground,
       ),
       blockquoteStyle: const TextStyle(
-        color: Color.fromRGB(100, 100, 120),
+        color: CruxTheme.mdBlockquote,
         fontStyle: FontStyle.italic,
       ),
       linkStyle: const TextStyle(
-        color: Color.fromRGB(100, 180, 255),
+        color: CruxTheme.mdLink,
         decoration: TextDecoration.underline,
       ),
-      codeBlockBackground: const Color.fromRGB(30, 30, 46),
-      codeBlockHeaderStyle: const TextStyle(
-        color: Color.fromRGB(140, 130, 170),
-      ),
+      codeBlockBackground: CruxTheme.codeBlockBackground,
+      codeBlockHeaderStyle: const TextStyle(color: CruxTheme.codeBlockHeader),
     );
   }
 
@@ -223,7 +238,7 @@ class _HighlightMarkdownVisitor {
     return null;
   }
 
-InlineSpan? visitElement(md.Element element) {
+  InlineSpan? visitElement(md.Element element) {
     switch (element.tag) {
       case 'h1':
       case 'h2':
@@ -234,14 +249,14 @@ InlineSpan? visitElement(md.Element element) {
         final style = element.tag == 'h1'
             ? styleSheet.h1Style
             : element.tag == 'h2'
-                ? styleSheet.h2Style
-                : element.tag == 'h3'
-                    ? styleSheet.h3Style
-                    : element.tag == 'h4'
-                        ? styleSheet.h4Style
-                        : element.tag == 'h5'
-                            ? styleSheet.h5Style
-                            : styleSheet.h6Style;
+            ? styleSheet.h2Style
+            : element.tag == 'h3'
+            ? styleSheet.h3Style
+            : element.tag == 'h4'
+            ? styleSheet.h4Style
+            : element.tag == 'h5'
+            ? styleSheet.h5Style
+            : styleSheet.h6Style;
         return TextSpan(
           children: [
             ...visitChildren(element),
@@ -348,7 +363,7 @@ InlineSpan? visitElement(md.Element element) {
         final width = maxWidth ?? 40;
         return TextSpan(
           text: styleSheet.horizontalRule * width + '\n\n',
-          style: const TextStyle(color: Colors.grey),
+          style: const TextStyle(color: CruxTheme.outline),
         );
       case 'br':
         return const TextSpan(text: '\n');
@@ -374,15 +389,15 @@ InlineSpan? visitElement(md.Element element) {
     }
 
     final bgColor =
-        styleSheet.codeBlockBackground ?? const Color.fromRGB(30, 30, 46);
+        styleSheet.codeBlockBackground ?? CruxTheme.codeBlockBackground;
     final headerStyle =
         styleSheet.codeBlockHeaderStyle ??
-        const TextStyle(color: Color.fromRGB(140, 130, 170));
+        const TextStyle(color: CruxTheme.codeBlockHeader);
     final codeStyle =
         styleSheet.codeBlockStyle ??
         const TextStyle(
-          color: Color.fromRGB(212, 212, 212),
-          backgroundColor: Color.fromRGB(30, 30, 46),
+          color: CruxTheme.mdCodeBlockText,
+          backgroundColor: CruxTheme.codeBlockBackground,
         );
 
     final width = maxWidth ?? 80;
@@ -410,7 +425,7 @@ InlineSpan? visitElement(md.Element element) {
           text: '│ ',
           style: TextStyle(
             backgroundColor: bgColor,
-            color: Color.fromRGB(100, 90, 130),
+            color: CruxTheme.codeBlockGutter,
           ),
         ),
       );

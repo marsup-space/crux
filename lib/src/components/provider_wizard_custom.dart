@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import 'ui/wizard_overlay.dart';
 import '../services/provider_service.dart';
 import 'provider_wizard_add.dart';
@@ -47,20 +48,20 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
       _selectedAction = action;
       _activeWizard = switch (action) {
         _CustomAction.add => ProviderWizardAdd(
-            service: _service,
-            onComplete: onComplete,
-            onDismiss: onDismiss,
-          ),
+          service: _service,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        ),
         _CustomAction.modify => ProviderWizardModify(
-            service: _service,
-            onComplete: onComplete,
-            onDismiss: onDismiss,
-          ),
+          service: _service,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        ),
         _CustomAction.remove => ProviderWizardRemove(
-            service: _service,
-            onComplete: onComplete,
-            onDismiss: onDismiss,
-          ),
+          service: _service,
+          onComplete: onComplete,
+          onDismiss: onDismiss,
+        ),
       };
     });
   }
@@ -83,8 +84,7 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
                 final idx = _selectedAction != null
                     ? values.indexOf(_selectedAction!)
                     : -1;
-                _selectedAction =
-                    values[(idx - 1).clamp(0, values.length - 1)];
+                _selectedAction = values[(idx - 1).clamp(0, values.length - 1)];
               });
               return true;
             }
@@ -94,8 +94,7 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
                 final idx = _selectedAction != null
                     ? values.indexOf(_selectedAction!)
                     : -1;
-                _selectedAction =
-                    values[(idx + 1).clamp(0, values.length - 1)];
+                _selectedAction = values[(idx + 1).clamp(0, values.length - 1)];
               });
               return true;
             }
@@ -119,8 +118,16 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
 
   Component _buildMenuStep() {
     final actions = [
-      (_CustomAction.add, 'Add', 'Add a new custom provider (OpenAI or Anthropic compatible)'),
-      (_CustomAction.modify, 'Modify', 'Edit an existing provider\'s config or models'),
+      (
+        _CustomAction.add,
+        'Add',
+        'Add a new custom provider (OpenAI or Anthropic compatible)',
+      ),
+      (
+        _CustomAction.modify,
+        'Modify',
+        'Edit an existing provider\'s config or models',
+      ),
       (_CustomAction.remove, 'Remove', 'Remove an existing provider'),
     ];
 
@@ -130,7 +137,7 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
       const Text(
         'Manage custom providers:',
         style: TextStyle(
-          color: Colors.brightMagenta,
+          color: CruxTheme.wizardTitle,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -148,7 +155,7 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
             behavior: HitTestBehavior.opaque,
             child: Container(
               decoration: isSelected
-                  ? const BoxDecoration(color: Color.fromRGB(40, 30, 80))
+                  ? const BoxDecoration(color: CruxTheme.buttonBackgroundHover)
                   : null,
               padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
               child: Row(
@@ -156,13 +163,17 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
                   Text(
                     isSelected ? '▶ ' : '  ',
                     style: TextStyle(
-                      color: isSelected ? Colors.brightCyan : Colors.gray,
+                      color: isSelected
+                          ? CruxTheme.wizardTextSelected
+                          : CruxTheme.wizardTextDim,
                     ),
                   ),
                   Text(
                     label,
                     style: TextStyle(
-                      color: isSelected ? Colors.brightCyan : Colors.white,
+                      color: isSelected
+                          ? CruxTheme.wizardTextSelected
+                          : CruxTheme.foreground,
                       fontWeight: isSelected ? FontWeight.bold : null,
                     ),
                   ),
@@ -171,7 +182,9 @@ class _ProviderWizardCustomState extends State<ProviderWizardCustom> {
                     child: Text(
                       description,
                       style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.gray,
+                        color: isSelected
+                            ? CruxTheme.foreground
+                            : CruxTheme.wizardTextDim,
                       ),
                     ),
                   ),

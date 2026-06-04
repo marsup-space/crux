@@ -20,26 +20,26 @@ class CruxDatabase extends _$CruxDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (Migrator m) async {
-          await m.createAll();
-        },
-        onUpgrade: (Migrator m, int from, int to) async {
-          if (from < 2) {
-            await m.addColumn(messages, messages.reasoningContent);
-          }
-          if (from < 3) {
-            await m.addColumn(messages, messages.reasoningTokens);
-            await m.addColumn(messages, messages.thinkingDurationMs);
-          }
-          if (from < 4) {
-            await m.addColumn(sessions, sessions.thinkingMode);
-            await m.addColumn(sessions, sessions.reasoningEffort);
-          }
-          if (from < 5) {
-            await m.addColumn(messages, messages.reasoningEffort);
-          }
-        },
-      );
+    onCreate: (Migrator m) async {
+      await m.createAll();
+    },
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        await m.addColumn(messages, messages.reasoningContent);
+      }
+      if (from < 3) {
+        await m.addColumn(messages, messages.reasoningTokens);
+        await m.addColumn(messages, messages.thinkingDurationMs);
+      }
+      if (from < 4) {
+        await m.addColumn(sessions, sessions.thinkingMode);
+        await m.addColumn(sessions, sessions.reasoningEffort);
+      }
+      if (from < 5) {
+        await m.addColumn(messages, messages.reasoningEffort);
+      }
+    },
+  );
 }
 
 LazyDatabase _openConnection() {
@@ -59,8 +59,7 @@ String _getDatabaseDirectory() {
   if (xdgDataHome != null && xdgDataHome.isNotEmpty) {
     return p.join(xdgDataHome, 'crux');
   }
-  return p.join(
-      Platform.environment['HOME'] ?? '.', '.local', 'share', 'crux');
+  return p.join(Platform.environment['HOME'] ?? '.', '.local', 'share', 'crux');
 }
 
 DynamicLibrary _openLinuxSqlite() {

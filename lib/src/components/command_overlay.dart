@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/slash_command.dart';
 
 class CommandOverlay extends StatelessComponent {
@@ -20,12 +21,14 @@ class CommandOverlay extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final visibleCommands =
-        commands.skip(scrollOffset).take(maxVisible).toList();
+    final visibleCommands = commands
+        .skip(scrollOffset)
+        .take(maxVisible)
+        .toList();
 
     final rows = <Component>[];
 
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(Divider(color: CruxTheme.outline, height: 1));
 
     // Header row
     rows.add(
@@ -36,7 +39,7 @@ class CommandOverlay extends StatelessComponent {
             Text(
               'Commands',
               style: TextStyle(
-                color: Colors.brightMagenta,
+                color: CruxTheme.wizardTitle,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -44,7 +47,7 @@ class CommandOverlay extends StatelessComponent {
         ),
       ),
     );
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(Divider(color: CruxTheme.outline, height: 1));
 
     // Command rows
     for (int i = 0; i < visibleCommands.length; i++) {
@@ -53,25 +56,23 @@ class CommandOverlay extends StatelessComponent {
       final isSelected = actualIndex == selectedIndex;
 
       rows.add(
-          MouseRegion(
-            onEnter: (_) => onHover?.call(actualIndex),
-            opaque: false,
-            child: GestureDetector(
-              onTap: () => onTap?.call(actualIndex),
-              behavior: HitTestBehavior.opaque,
-              child: _buildCommandRow(cmd, isSelected),
-            ),
+        MouseRegion(
+          onEnter: (_) => onHover?.call(actualIndex),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => onTap?.call(actualIndex),
+            behavior: HitTestBehavior.opaque,
+            child: _buildCommandRow(cmd, isSelected),
           ),
-        );
-      }
-
-      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-      return Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGB(20, 15, 40),
         ),
-        child: Column(
+      );
+    }
+
+    rows.add(Divider(color: CruxTheme.outline, height: 1));
+
+    return Container(
+      decoration: BoxDecoration(color: CruxTheme.wizardOverlayBg),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
       ),
@@ -81,7 +82,7 @@ class CommandOverlay extends StatelessComponent {
   Component _buildCommandRow(SlashCommand cmd, bool isSelected) {
     return Container(
       decoration: isSelected
-          ? BoxDecoration(color: Color.fromRGB(40, 30, 80))
+          ? BoxDecoration(color: CruxTheme.wizardRowBgSelected)
           : null,
       padding: EdgeInsets.symmetric(horizontal: 1),
       child: Row(
@@ -89,13 +90,17 @@ class CommandOverlay extends StatelessComponent {
           Text(
             isSelected ? '> ' : '  ',
             style: TextStyle(
-              color: isSelected ? Colors.brightYellow : Colors.gray,
+              color: isSelected
+                  ? CruxTheme.wizardMarkerSelected
+                  : CruxTheme.wizardMarkerUnselected,
             ),
           ),
           Text(
             cmd.displayName,
             style: TextStyle(
-              color: isSelected ? Colors.brightCyan : Colors.white,
+              color: isSelected
+                  ? CruxTheme.wizardTextSelected
+                  : CruxTheme.wizardTextUnselected,
               fontWeight: isSelected ? FontWeight.bold : null,
             ),
           ),
@@ -104,7 +109,9 @@ class CommandOverlay extends StatelessComponent {
             child: Text(
               cmd.description,
               style: TextStyle(
-                color: isSelected ? Colors.white : Colors.gray,
+                color: isSelected
+                    ? CruxTheme.wizardTextUnselected
+                    : CruxTheme.wizardTextDim,
               ),
             ),
           ),

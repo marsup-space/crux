@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 /// A reusable button component with hover and click support.
 ///
@@ -50,13 +51,13 @@ class Button extends StatefulComponent {
     super.key,
     required this.label,
     this.onPressed,
-    this.color = Colors.gray,
-    this.hoverColor = Colors.brightCyan,
-    this.bgColor = const Color.fromRGB(25, 20, 45),
-    this.hoverBgColor = const Color.fromRGB(40, 30, 80),
+    this.color = CruxTheme.buttonTextDisabled,
+    this.hoverColor = CruxTheme.buttonTextHover,
+    this.bgColor = CruxTheme.buttonBackground,
+    this.hoverBgColor = CruxTheme.buttonBackgroundHover,
     this.focused = false,
-    this.focusColor = Colors.brightCyan,
-    this.focusBgColor = const Color.fromRGB(60, 50, 100),
+    this.focusColor = CruxTheme.buttonTextFocused,
+    this.focusBgColor = CruxTheme.buttonBackgroundFocused,
     this.padding = const EdgeInsets.symmetric(horizontal: 1),
     this.style,
   });
@@ -71,8 +72,16 @@ class _ButtonState extends State<Button> {
   @override
   Component build(BuildContext context) {
     final btn = component;
-    final activeColor = _hovered ? btn.hoverColor : btn.focused ? btn.focusColor : btn.color;
-    final activeBgColor = _hovered ? btn.hoverBgColor : btn.focused ? btn.focusBgColor : btn.bgColor;
+    final activeColor = _hovered
+        ? btn.hoverColor
+        : btn.focused
+        ? btn.focusColor
+        : btn.color;
+    final activeBgColor = _hovered
+        ? btn.hoverBgColor
+        : btn.focused
+        ? btn.focusBgColor
+        : btn.bgColor;
 
     final effectiveStyle = TextStyle(
       color: activeColor,
@@ -87,9 +96,7 @@ class _ButtonState extends State<Button> {
         onTap: btn.onPressed,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          decoration: BoxDecoration(
-            color: activeBgColor,
-          ),
+          decoration: BoxDecoration(color: activeBgColor),
           padding: btn.padding,
           child: Text(btn.label, style: effectiveStyle),
         ),

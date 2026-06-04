@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 /// A segmented toggle widget that displays mutually exclusive options
 /// side-by-side in a bordered group.
@@ -63,14 +64,14 @@ class OptionToggle extends StatefulComponent {
     required this.selectedIndex,
     required this.onChanged,
     required this.focused,
-    this.focusedBorderColor = Colors.brightCyan,
-    this.unfocusedBorderColor = const Color.fromRGB(80, 60, 120),
-    this.selectedBgColor = const Color.fromRGB(40, 30, 80),
-    this.unselectedBgColor = const Color.fromRGB(25, 20, 45),
-    this.hoverBgColor = const Color.fromRGB(35, 28, 60),
-    this.selectedTextColor = Colors.brightCyan,
-    this.unselectedTextColor = Colors.gray,
-    this.hoverTextColor = Colors.white,
+    this.focusedBorderColor = CruxTheme.buttonTextFocused,
+    this.unfocusedBorderColor = CruxTheme.outline,
+    this.selectedBgColor = CruxTheme.wizardRowBgSelected,
+    this.unselectedBgColor = CruxTheme.buttonBackground,
+    this.hoverBgColor = CruxTheme.surfaceVariant,
+    this.selectedTextColor = CruxTheme.buttonTextFocused,
+    this.unselectedTextColor = CruxTheme.buttonTextDisabled,
+    this.hoverTextColor = CruxTheme.foreground,
   });
 
   @override
@@ -119,9 +120,7 @@ class _OptionToggleState extends State<OptionToggle> {
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
               decoration: BoxDecoration(color: bgColor),
               child: Text(
-                isSelected
-                    ? '▶ ${comp.options[i]}'
-                    : '  ${comp.options[i]}',
+                isSelected ? '▶ ${comp.options[i]}' : '  ${comp.options[i]}',
                 style: TextStyle(
                   color: textColor,
                   fontWeight: isSelected ? FontWeight.bold : null,
@@ -134,16 +133,14 @@ class _OptionToggleState extends State<OptionToggle> {
 
       if (i < comp.options.length - 1) {
         children.add(
-          const Text(
-            ' │ ',
-            style: TextStyle(color: Color.fromRGB(80, 60, 120)),
-          ),
+          const Text(' │ ', style: TextStyle(color: CruxTheme.outline)),
         );
       }
     }
 
-    final borderColor =
-        comp.focused ? comp.focusedBorderColor : comp.unfocusedBorderColor;
+    final borderColor = comp.focused
+        ? comp.focusedBorderColor
+        : comp.unfocusedBorderColor;
 
     return Container(
       decoration: BoxDecoration(
@@ -155,10 +152,7 @@ class _OptionToggleState extends State<OptionToggle> {
           left: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 }

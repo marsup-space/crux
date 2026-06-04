@@ -62,11 +62,13 @@ class ProviderConfigLoader {
     final entries = <ModelEntry>[];
     for (final p in providers()) {
       for (final m in p.models) {
-        entries.add(ModelEntry(
-          compositeKey: m.compositeKey(p.name),
-          providerName: p.name,
-          model: m,
-        ));
+        entries.add(
+          ModelEntry(
+            compositeKey: m.compositeKey(p.name),
+            providerName: p.name,
+            model: m,
+          ),
+        );
       }
     }
     return entries;

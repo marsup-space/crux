@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../theme/crux_theme.dart';
 
 class ModalPanel extends StatefulComponent {
   final String title;
@@ -43,7 +44,7 @@ class _ModalPanelState extends State<ModalPanel> {
         children: [
           Positioned.fill(
             child: ModalBarrier(
-              color: const Color.fromRGB(20, 15, 40),
+              color: CruxTheme.wizardOverlayBg,
               dismissible: false,
               obscure: true,
             ),
@@ -55,12 +56,12 @@ class _ModalPanelState extends State<ModalPanel> {
             bottom: 1,
             child: Container(
               decoration: BoxDecoration(
-                color: const Color.fromRGB(20, 15, 40),
+                color: CruxTheme.wizardOverlayBg,
                 border: BoxBorder(
-                  top: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-                  right: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-                  bottom: const BorderSide(color: Color.fromRGB(80, 60, 120)),
-                  left: const BorderSide(color: Color.fromRGB(80, 60, 120)),
+                  top: const BorderSide(color: CruxTheme.outline),
+                  right: const BorderSide(color: CruxTheme.outline),
+                  bottom: const BorderSide(color: CruxTheme.outline),
+                  left: const BorderSide(color: CruxTheme.outline),
                 ),
               ),
               padding: const EdgeInsets.all(1),
@@ -72,25 +73,21 @@ class _ModalPanelState extends State<ModalPanel> {
                       Text(
                         component.title,
                         style: const TextStyle(
-                          color: Colors.brightMagenta,
+                          color: CruxTheme.wizardTitle,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const Spacer(),
                       Text(
                         'Esc close',
-                        style: const TextStyle(
-                          color: Color.fromRGB(60, 50, 90),
-                        ),
+                        style: const TextStyle(color: CruxTheme.hintText),
                       ),
                     ],
                   ),
-                  const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
-                  Expanded(
-                    child: component.contentBuilder(context),
-                  ),
+                  const Divider(color: CruxTheme.outline, height: 1),
+                  Expanded(child: component.contentBuilder(context)),
                   if (component.shortcuts.isNotEmpty) ...[
-                    const Divider(color: Color.fromRGB(80, 60, 120), height: 1),
+                    const Divider(color: CruxTheme.outline, height: 1),
                     _buildShortcutsFooter(),
                   ],
                 ],
@@ -106,13 +103,17 @@ class _ModalPanelState extends State<ModalPanel> {
     final items = <Component>[];
     for (int i = 0; i < component.shortcuts.length; i++) {
       if (i > 0) {
-        items.add(Text('  ', style: const TextStyle(color: Color.fromRGB(60, 50, 90))));
+        items.add(
+          Text('  ', style: const TextStyle(color: CruxTheme.hintText)),
+        );
       }
       final s = component.shortcuts[i];
-      items.add(Text(
-        '${s.keyHint} ${s.label}',
-        style: const TextStyle(color: Color.fromRGB(120, 100, 160)),
-      ));
+      items.add(
+        Text(
+          '${s.keyHint} ${s.label}',
+          style: const TextStyle(color: CruxTheme.onSurfaceVariant),
+        ),
+      );
     }
     return Row(children: items);
   }

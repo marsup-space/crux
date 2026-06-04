@@ -79,7 +79,8 @@ class ProviderService {
 
   ProviderService({this.providersDir = 'providers'})
     : _loader = ProviderConfigLoader(providersDir: Directory(providersDir)) {
-    final xdgDataHome = Platform.environment['XDG_DATA_HOME'] ??
+    final xdgDataHome =
+        Platform.environment['XDG_DATA_HOME'] ??
         p.join(Platform.environment['HOME']!, '.local', 'share');
     authJsonPath = p.join(xdgDataHome, 'crux', 'auth.json');
   }
@@ -423,8 +424,7 @@ class ProviderService {
       if (_lastUsedModel != null) 'lastUsedModel': _lastUsedModel,
       if (_auxiliaryModel != null) 'auxiliaryModel': _auxiliaryModel,
     };
-    final content =
-        JsonEncoder.withIndent('  ').convert(data) + '\n';
+    final content = JsonEncoder.withIndent('  ').convert(data) + '\n';
     final file = File(authJsonPath);
     await file.writeAsString(content);
     try {

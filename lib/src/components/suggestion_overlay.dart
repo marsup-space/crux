@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../theme/crux_theme.dart';
 import '../models/slash_command.dart';
 
 class SuggestionOverlay extends StatelessComponent {
@@ -22,8 +23,10 @@ class SuggestionOverlay extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final visibleSuggestions =
-        suggestions.skip(scrollOffset).take(maxVisible).toList();
+    final visibleSuggestions = suggestions
+        .skip(scrollOffset)
+        .take(maxVisible)
+        .toList();
 
     final rows = <Component>[];
 
@@ -36,7 +39,7 @@ class SuggestionOverlay extends StatelessComponent {
             Text(
               headerLabel,
               style: TextStyle(
-                color: Colors.brightMagenta,
+                color: CruxTheme.wizardTitle,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -44,7 +47,7 @@ class SuggestionOverlay extends StatelessComponent {
         ),
       ),
     );
-    rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
+    rows.add(Divider(color: CruxTheme.outline, height: 1));
 
     // Suggestion rows
     for (int i = 0; i < visibleSuggestions.length; i++) {
@@ -53,26 +56,24 @@ class SuggestionOverlay extends StatelessComponent {
       final isSelected = actualIndex == selectedIndex;
 
       rows.add(
-          MouseRegion(
-            onEnter: (_) => onHover?.call(actualIndex),
-            opaque: false,
-            child: GestureDetector(
-              onTap: () => onTap?.call(actualIndex),
-              behavior: HitTestBehavior.opaque,
-              child: _buildSuggestionRow(suggestion, isSelected),
-            ),
+        MouseRegion(
+          onEnter: (_) => onHover?.call(actualIndex),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => onTap?.call(actualIndex),
+            behavior: HitTestBehavior.opaque,
+            child: _buildSuggestionRow(suggestion, isSelected),
           ),
-        );
-      }
-
-      rows.insert(0, Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-      rows.add(Divider(color: Color.fromRGB(80, 60, 120), height: 1));
-
-      return Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGB(20, 15, 40),
         ),
-        child: Column(
+      );
+    }
+
+    rows.insert(0, Divider(color: CruxTheme.outline, height: 1));
+    rows.add(Divider(color: CruxTheme.outline, height: 1));
+
+    return Container(
+      decoration: BoxDecoration(color: CruxTheme.wizardOverlayBg),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
       ),
@@ -82,7 +83,7 @@ class SuggestionOverlay extends StatelessComponent {
   Component _buildSuggestionRow(CommandSuggestion suggestion, bool isSelected) {
     return Container(
       decoration: isSelected
-          ? BoxDecoration(color: Color.fromRGB(40, 30, 80))
+          ? BoxDecoration(color: CruxTheme.wizardRowBgSelected)
           : null,
       padding: EdgeInsets.symmetric(horizontal: 1),
       child: Row(
@@ -90,13 +91,17 @@ class SuggestionOverlay extends StatelessComponent {
           Text(
             isSelected ? '> ' : '  ',
             style: TextStyle(
-              color: isSelected ? Colors.brightYellow : Colors.gray,
+              color: isSelected
+                  ? CruxTheme.wizardMarkerSelected
+                  : CruxTheme.wizardMarkerUnselected,
             ),
           ),
           Text(
             suggestion.value,
             style: TextStyle(
-              color: isSelected ? Colors.brightCyan : Colors.white,
+              color: isSelected
+                  ? CruxTheme.wizardTextSelected
+                  : CruxTheme.wizardTextUnselected,
               fontWeight: isSelected ? FontWeight.bold : null,
             ),
           ),
@@ -105,7 +110,9 @@ class SuggestionOverlay extends StatelessComponent {
             child: Text(
               suggestion.description ?? '',
               style: TextStyle(
-                color: isSelected ? Colors.white : Colors.gray,
+                color: isSelected
+                    ? CruxTheme.wizardTextUnselected
+                    : CruxTheme.wizardTextDim,
               ),
             ),
           ),
