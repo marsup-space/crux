@@ -18,6 +18,7 @@ dependencies:
   drift: ^2.22.1
   sqlite3: ^2.7.4
   json_annotation: ^4.9.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   lints: ^6.0.0

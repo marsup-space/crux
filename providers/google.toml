@@ -1,7 +1,7 @@
 # Google Gemini provider configuration (OpenAI Compatible)
 # Filename serves as the provider name: "google"
 
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 [[models]]

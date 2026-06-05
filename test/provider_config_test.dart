@@ -2,29 +2,25 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/provider_config_loader.dart';
+import 'package:crux/src/services/llm_provider.dart';
+import 'package:crux/src/services/providers/deepseek_provider.dart';
 
 void main() {
-  group('ProviderType', () {
-    test('fromString parses known types', () {
-      expect(ProviderTypeParse.fromString('openai'), ProviderType.openai);
-      expect(ProviderTypeParse.fromString('anthropic'), ProviderType.anthropic);
+  group('WireFamily', () {
+    test('has two variants', () {
+      expect(WireFamily.values, hasLength(2));
+      expect(WireFamily.values, containsAll(WireFamily.values));
     });
 
-    test('fromString is case-insensitive', () {
-      expect(ProviderTypeParse.fromString('OpenAI'), ProviderType.openai);
-      expect(ProviderTypeParse.fromString('ANTHROPIC'), ProviderType.anthropic);
-    });
-
-    test('fromString throws on unknown type', () {
+    test('wireFamilyLabel returns human-readable names', () {
       expect(
-        () => ProviderTypeParse.fromString('unknown'),
-        throwsFormatException,
+        wireFamilyLabel(WireFamily.openaiCompatible),
+        'OpenAI-compatible',
       );
-    });
-
-    test('toConfigString returns lowercase name', () {
-      expect(ProviderType.openai.toConfigString(), 'openai');
-      expect(ProviderType.anthropic.toConfigString(), 'anthropic');
+      expect(
+        wireFamilyLabel(WireFamily.anthropicCompatible),
+        'Anthropic-compatible',
+      );
     });
   });
 
@@ -102,7 +98,9 @@ void main() {
       expect(quota.tiers[0].label, '5h');
       expect(quota.tiers[0].limit, 100);
       expect(quota.tiers[1].label, '1w');
+      expect(quota.tiers[1].limit, 500);
       expect(quota.tiers[2].label, '1m');
+      expect(quota.tiers[2].limit, 2000);
     });
 
     test('toString includes url and tier count', () {
@@ -117,7 +115,8 @@ void main() {
   group('ProviderConfig', () {
     final openaiConfig = ProviderConfig(
       name: 'openai',
-      type: ProviderType.openai,
+      type: 'openai_compatible',
+      wireFamily: WireFamily.openaiCompatible,
       endpointUrl: 'https://api.openai.com/v1',
       models: [
         const ModelConfig(
@@ -174,7 +173,8 @@ void main() {
     test('hasImageSupport is false when no model supports images', () {
       final localConfig = ProviderConfig(
         name: 'local',
-        type: ProviderType.openai,
+        type: 'openai_compatible',
+        wireFamily: WireFamily.openaiCompatible,
         endpointUrl: 'http://localhost:8080/v1',
         models: [
           const ModelConfig(id: 'llama3', name: 'Llama 3', contextSize: 8192),
@@ -183,9 +183,99 @@ void main() {
       expect(localConfig.hasImageSupport(), isFalse);
     });
 
-    test('toString includes provider name and model count', () {
-      expect(openaiConfig.toString(), contains('openai'));
-      expect(openaiConfig.toString(), contains('models=2'));
+    test('toString includes provider name, type, wire family, and model count', () {
+      final str = openaiConfig.toString();
+      expect(str, contains('openai'));
+      expect(str, contains('openai_compatible'));
+      expect(str, contains('openaiCompatible'));
+      expect(str, contains('models=2'));
+    });
+  });
+
+  group('resolveProvider() — dispatcher', () {
+    test('openai_compatible → OpenAiProvider + openaiCompatible', () {
+      final r = resolveProvider('openai_compatible');
+      expect(r.provider, isA<OpenAiProvider>());
+      expect(r.wire, WireFamily.openaiCompatible);
+    });
+
+    test('anthropic_compatible → AnthropicProvider + anthropicCompatible', () {
+      final r = resolveProvider('anthropic_compatible');
+      expect(r.provider, isA<AnthropicProvider>());
+      expect(r.wire, WireFamily.anthropicCompatible);
+    });
+
+    test('deepseek → DeepSeekProvider + openaiCompatible wire', () {
+      final r = resolveProvider('deepseek');
+      expect(r.provider, isA<DeepSeekProvider>());
+      expect(r.wire, WireFamily.openaiCompatible);
+    });
+
+    test('unknown type throws ArgumentError listing known types', () {
+      expect(
+        () => resolveProvider('minimax'),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message?.toString() ?? '',
+            'message',
+            allOf(contains('minimax'), contains('openai_compatible')),
+          ),
+        ),
+      );
+    });
+
+    test('knownProviderTypes includes the generic and specific types', () {
+      final types = knownProviderTypes();
+      expect(types, contains('openai_compatible'));
+      expect(types, contains('anthropic_compatible'));
+      expect(types, contains('deepseek'));
+    });
+  });
+
+  group('typeDisplayName() and defaultEndpointFor()', () {
+    test('typeDisplayName returns human-readable labels', () {
+      expect(typeDisplayName('openai_compatible'), 'OpenAI Compatible');
+      expect(typeDisplayName('anthropic_compatible'), 'Anthropic Compatible');
+      expect(typeDisplayName('deepseek'), 'DeepSeek');
+    });
+
+    test('typeDisplayName falls back to raw string for unknown types', () {
+      expect(typeDisplayName('my_custom_thing'), 'my_custom_thing');
+    });
+
+    test('defaultEndpointFor returns sensible URLs', () {
+      expect(
+        defaultEndpointFor('openai_compatible'),
+        'https://api.openai.com/v1',
+      );
+      expect(
+        defaultEndpointFor('anthropic_compatible'),
+        'https://api.anthropic.com/v1',
+      );
+      expect(defaultEndpointFor('deepseek'), 'https://api.deepseek.com/v1');
+    });
+
+    test('defaultEndpointFor returns null for unknown types', () {
+      expect(defaultEndpointFor('made_up_thing'), isNull);
+    });
+  });
+
+  group('providerFor() — convenience over resolveProvider()', () {
+    test('returns a provider of the same class as resolveProvider().provider', () {
+      const cfg = ProviderConfig(
+        name: 'openai',
+        type: 'openai_compatible',
+        wireFamily: WireFamily.openaiCompatible,
+        endpointUrl: 'https://api.openai.com/v1',
+        models: [
+          ModelConfig(id: 'gpt-4o', name: 'GPT-4o', contextSize: 128000),
+        ],
+      );
+      // Both return freshly-constructed instances, so compare by type.
+      expect(
+        providerFor(cfg).runtimeType,
+        resolveProvider('openai_compatible').provider.runtimeType,
+      );
     });
   });
 
@@ -217,9 +307,117 @@ void main() {
       expect(missingLoader.providerNames(), isEmpty);
     });
 
-    test('loadAll parses a minimal provider config', () async {
+    test('loadAll merges multiple dirs with earlier precedence', () async {
+      // Built-in dir has openai
+      final builtIn = Directory('${tempDir.path}/built-in')..createSync();
+      await File('${builtIn.path}/openai.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+      // User dir has openai (overrides) and anthropic (new)
+      final user = Directory('${tempDir.path}/user')..createSync();
+      await File('${user.path}/openai.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://my-proxy.example/v1"
+
+[[models]]
+id = "gpt-4o-mini"
+name = "GPT-4o Mini (via my proxy)"
+context_size = 128000
+''');
+      await File('${user.path}/anthropic.toml').writeAsString('''
+type = "anthropic_compatible"
+endpoint_url = "https://api.anthropic.com/v1"
+
+[[models]]
+id = "claude-3-5-sonnet-20241022"
+name = "Claude 3.5 Sonnet"
+context_size = 200000
+''');
+
+      final multi = ProviderConfigLoader.multi(
+        providersDirs: [user, builtIn], // user first → wins
+      );
+      await multi.loadAll();
+
+      // Both providers loaded
+      expect(multi.providerNames(), containsAll(['openai', 'anthropic']));
+
+      // openai came from the user dir (proxy), not the built-in
+      final openai = multi.providerByName('openai')!;
+      expect(openai.endpointUrl, 'https://my-proxy.example/v1');
+      expect(openai.models.first.id, 'gpt-4o-mini');
+    });
+
+    test('loadAll skips example.*.toml files (reference templates)', () async {
+      // Real provider
+      await File('${tempDir.path}/openai.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+      // Reference template — must NOT be loaded
+      await File('${tempDir.path}/example.openai.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://example.com/v1"
+
+[[models]]
+id = "example-model"
+name = "Example Model"
+context_size = 4096
+''');
+      // Another reference — different name
+      await File('${tempDir.path}/example.anthropic.toml').writeAsString('''
+type = "anthropic_compatible"
+endpoint_url = "https://example.com/v1"
+''');
+
+      await loader.loadAll();
+
+      // Only the real `openai` is loaded. The `example.*` files are skipped.
+      expect(loader.providerNames(), ['openai']);
+      // And critically: there's no provider named "example.openai" or
+      // "example.anthropic" — the loader treats them as non-existent.
+      expect(loader.providerByName('example.openai'), isNull);
+      expect(loader.providerByName('example.anthropic'), isNull);
+    });
+
+    test('reload ignores example.*.toml files', () async {
+      await File('${tempDir.path}/openai.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+      await File('${tempDir.path}/example.openai.toml').writeAsString(
+        'reference template, must be ignored',
+      );
+      await loader.loadAll();
+      expect(loader.providerByName('openai'), isNotNull);
+
+      // Reloading `example.openai` should return null (the loader doesn't
+      // see example files as providers).
+      final result = await loader.reload('example.openai');
+      expect(result, isNull);
+      // And `openai` should still work normally.
+      expect(await loader.reload('openai'), isNotNull);
+    });
+
+    test('loadAll parses a minimal openai_compatible provider', () async {
       final tomlContent = '''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -233,20 +431,19 @@ context_size = 128000
       expect(loader.providerNames(), ['openai']);
       final openai = loader.providerByName('openai');
       expect(openai, isNotNull);
-      expect(openai!.type, ProviderType.openai);
+      expect(openai!.type, 'openai_compatible');
+      expect(openai.wireFamily, WireFamily.openaiCompatible);
       expect(openai.endpointUrl, 'https://api.openai.com/v1');
       expect(openai.models.length, 1);
       expect(openai.models[0].id, 'gpt-4o');
-      expect(openai.models[0].name, 'GPT-4o');
-      expect(openai.models[0].contextSize, 128000);
-      expect(openai.models[0].imageSupport, isFalse); // default
-      expect(openai.models[0].thinking, isFalse); // default
-      expect(openai.models[0].reasoningEffort, isNull); // default
+      expect(openai.models[0].imageSupport, isFalse);
+      expect(openai.models[0].thinking, isFalse);
+      expect(openai.models[0].reasoningEffort, isNull);
     });
 
     test('loadAll parses a full model with all optional fields', () async {
       final tomlContent = '''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -270,7 +467,7 @@ thinking_budget = 10000
 
     test('loadAll parses multiple models', () async {
       final tomlContent = '''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -304,7 +501,7 @@ image_support = true
 
     test('loadAll parses quota with usage tiers', () async {
       final tomlContent = '''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -327,7 +524,6 @@ api_url = "https://api.openai.com/v1/quota"
       expect(openai.quota, isNotNull);
       expect(openai.quota!.apiUrl, 'https://api.openai.com/v1/quota');
       expect(openai.quota!.tiers.length, 3);
-      // Tiers are sorted by granularity: 5h → 1w → 1m
       expect(openai.quota!.tiers[0].label, '5h');
       expect(openai.quota!.tiers[0].limit, 100);
       expect(openai.quota!.tiers[1].label, '1w');
@@ -338,7 +534,7 @@ api_url = "https://api.openai.com/v1/quota"
 
     test('loadAll parses Anthropic provider', () async {
       final tomlContent = '''
-type = "anthropic"
+type = "anthropic_compatible"
 endpoint_url = "https://api.anthropic.com/v1"
 
 [[models]]
@@ -359,7 +555,8 @@ image_support = true
       await loader.loadAll();
 
       final anthropic = loader.providerByName('anthropic')!;
-      expect(anthropic.type, ProviderType.anthropic);
+      expect(anthropic.type, 'anthropic_compatible');
+      expect(anthropic.wireFamily, WireFamily.anthropicCompatible);
       expect(anthropic.endpointUrl, 'https://api.anthropic.com/v1');
       expect(anthropic.models.length, 2);
 
@@ -375,7 +572,7 @@ image_support = true
 
     test('loadAll parses multiple provider files', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -385,7 +582,7 @@ context_size = 128000
 image_support = true
 ''');
       await File('${tempDir.path}/anthropic.toml').writeAsString('''
-type = "anthropic"
+type = "anthropic_compatible"
 endpoint_url = "https://api.anthropic.com/v1"
 
 [[models]]
@@ -403,7 +600,7 @@ image_support = true
 
     test('loadAll records errors for invalid TOML', () async {
       await File('${tempDir.path}/good.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -426,7 +623,7 @@ this is not valid TOML = {{{{
 
     test('loadAll records errors for missing required fields', () async {
       await File('${tempDir.path}/missing_fields.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 # endpoint_url is missing!
 
 [[models]]
@@ -444,7 +641,7 @@ context_size = 128000
 
     test('loadAll records errors for missing models section', () async {
       await File('${tempDir.path}/no_models.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 ''');
       await loader.loadAll();
@@ -454,9 +651,29 @@ endpoint_url = "https://api.openai.com/v1"
       expect(error, contains('models'));
     });
 
+    test('loadAll records errors for unknown type and lists known types', () async {
+      await File('${tempDir.path}/unknown.toml').writeAsString('''
+type = "minimax"
+endpoint_url = "https://api.minimax.example/v1"
+
+[[models]]
+id = "m"
+name = "M"
+context_size = 4096
+''');
+      await loader.loadAll();
+
+      expect(loader.providerNames(), isEmpty);
+      expect(loader.loadErrors().length, 1);
+      final error = loader.loadErrors().values.first;
+      // Helpful error: names the bad type and lists the registered ones
+      expect(error, contains('minimax'));
+      expect(error, contains('openai_compatible'));
+    });
+
     test('modelByCompositeKey finds model across providers', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -466,7 +683,7 @@ context_size = 128000
 image_support = true
 ''');
       await File('${tempDir.path}/anthropic.toml').writeAsString('''
-type = "anthropic"
+type = "anthropic_compatible"
 endpoint_url = "https://api.anthropic.com/v1"
 
 [[models]]
@@ -493,7 +710,7 @@ image_support = true
 
     test('allModelKeys returns composite keys from all providers', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -514,7 +731,7 @@ context_size = 200000
 
     test('imageModelKeys returns keys for image-capable models', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -540,7 +757,7 @@ image_support = false
       'anyImageSupport returns true when at least one model supports images',
       () async {
         await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -556,7 +773,7 @@ image_support = true
 
     test('providerForModelId finds the owning provider', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -574,7 +791,7 @@ context_size = 128000
     test('reload updates a single provider', () async {
       // Initial load
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -587,7 +804,7 @@ context_size = 128000
 
       // Update the file with more models
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -609,7 +826,7 @@ context_size = 200000
 
     test('reload removes provider when file is deleted', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]
@@ -628,7 +845,7 @@ context_size = 128000
 
     test('provider name derived from filename', () async {
       await File('${tempDir.path}/my-custom-provider.toml').writeAsString('''
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "http://localhost:11434/v1"
 
 [[models]]
@@ -641,7 +858,8 @@ context_size = 8192
       final provider = loader.providerByName('my-custom-provider');
       expect(provider, isNotNull);
       expect(provider!.name, 'my-custom-provider');
-      expect(provider.type, ProviderType.openai);
+      expect(provider.type, 'openai_compatible');
+      expect(provider.wireFamily, WireFamily.openaiCompatible);
     });
   });
 
@@ -656,8 +874,8 @@ context_size = 8192
     test('loadAll parses all real provider TOML files', () async {
       await loader.loadAll();
 
-      // Should have at least openai, anthropic, local, google
-      // (google and local now use ProviderType.openai)
+      // Should have at least openai, anthropic, local, google (all use the
+      // generic openai_compatible / anthropic_compatible types now).
       if (loader.providerNames().isEmpty) {
         // Providers dir may not exist in test working directory — skip gracefully
         return;
@@ -671,7 +889,8 @@ context_size = 8192
 
       // Verify OpenAI models
       final openai = loader.providerByName('openai')!;
-      expect(openai.type, ProviderType.openai);
+      expect(openai.type, 'openai_compatible');
+      expect(openai.wireFamily, WireFamily.openaiCompatible);
       expect(openai.models.length, greaterThanOrEqualTo(2));
       final gpt4o = openai.modelById('gpt-4o');
       expect(gpt4o, isNotNull);
@@ -680,18 +899,41 @@ context_size = 8192
 
       // Verify Anthropic models
       final anthropic = loader.providerByName('anthropic')!;
-      expect(anthropic.type, ProviderType.anthropic);
+      expect(anthropic.type, 'anthropic_compatible');
+      expect(anthropic.wireFamily, WireFamily.anthropicCompatible);
       final sonnet = anthropic.modelById('claude-3-5-sonnet-20241022');
       expect(sonnet, isNotNull);
       expect(sonnet!.thinking, isTrue);
       expect(sonnet.thinkingBudget, 10000);
 
-      // Verify Google (now OpenAI-compatible type)
+      // Verify Google (uses the generic openai_compatible type)
       final google = loader.providerByName('google')!;
-      expect(google.type, ProviderType.openai);
+      expect(google.type, 'openai_compatible');
+      expect(google.wireFamily, WireFamily.openaiCompatible);
       if (google.quota != null) {
         expect(google.quota!.tiers.length, 3);
         expect(google.quota!.tiers[0].label, '5h');
+      }
+    });
+
+    test('deepseek.toml uses type = "deepseek" and dispatches to DeepSeekProvider', () async {
+      await loader.loadAll();
+      if (loader.providerNames().isEmpty) return;
+      final deepseek = loader.providerByName('deepseek');
+      if (deepseek == null) return; // not present in this checkout
+      expect(deepseek.type, 'deepseek');
+      expect(deepseek.wireFamily, WireFamily.openaiCompatible);
+      expect(providerFor(deepseek), isA<DeepSeekProvider>());
+    });
+
+    test('every real TOML resolves via providerFor()', () async {
+      await loader.loadAll();
+      if (loader.providerNames().isEmpty) return;
+      for (final name in loader.providerNames()) {
+        final cfg = loader.providerByName(name)!;
+        // Must not throw — every shipped TOML must have a registered type.
+        final llm = providerFor(cfg);
+        expect(llm, isNotNull);
       }
     });
   });

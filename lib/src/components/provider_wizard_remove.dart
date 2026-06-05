@@ -141,7 +141,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
                     const SizedBox(width: 2),
                     Expanded(
                       child: Text(
-                        '${provider.type.toConfigString()} · ${provider.endpointUrl}',
+                        '${provider.type} · ${provider.endpointUrl}',
                         style: TextStyle(
                           color: isSelected
                               ? CruxTheme.foreground
@@ -163,7 +163,7 @@ class _ProviderWizardRemoveState extends State<ProviderWizardRemove> {
         rows.add(const Divider(color: CruxTheme.outline, height: 1));
         rows.add(
           Text(
-            '  Type: ${_selectedProvider!.type.toConfigString()}',
+            '  Type: ${_selectedProvider!.type}',
             style: const TextStyle(color: CruxTheme.foreground),
           ),
         );

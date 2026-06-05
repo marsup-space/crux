@@ -2,8 +2,14 @@
 # Filename serves as the provider name: "deepseek"
 # OpenAI-compatible API: https://api.deepseek.com
 # Anthropic-compatible API: https://api.deepseek.com/anthropic
+#
+# The custom `type = "deepseek"` value is registered in
+# `llm_provider.dart`'s resolveProvider() — it dispatches to a DeepSeek-
+# specific LlmProvider that uses DeepSeek's reasoning effort names
+# (e.g. "xhigh" for "high"). Without this, the dispatcher would fall
+# back to OpenAiProvider, which maps "high" to "high".
 
-type = "openai"
+type = "deepseek"
 endpoint_url = "https://api.deepseek.com"
 
 [[models]]

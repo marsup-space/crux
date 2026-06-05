@@ -1,7 +1,7 @@
 # OpenAI provider configuration
 # Filename serves as the provider name: "openai"
 
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
 [[models]]

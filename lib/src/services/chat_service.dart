@@ -74,8 +74,7 @@ class ChatService {
     try {
       final stream = client.streamChat(
         endpointUrl: provider.endpointUrl,
-        providerName: providerName,
-        providerType: provider.type,
+        config: provider,
         apiKey: apiKey,
         modelId: modelId,
         messages: <Map<String, dynamic>>[
@@ -161,7 +160,7 @@ class ChatService {
     final history = await _store.getMessages(sessionId);
     final apiMessages = _buildApiMessages(history);
     final toolDefs = _toolExecutor.getApiToolDefinitions();
-    final providerType = provider.type;
+    final wireFamily = provider.wireFamily;
 
     final fullTextBuffer = StringBuffer();
     final fullReasoningBuffer = StringBuffer();
@@ -188,8 +187,7 @@ class ChatService {
 
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
-        providerName: providerName,
-        providerType: providerType,
+        config: provider,
         apiKey: apiKey,
         modelId: modelId,
         messages: List<Map<String, dynamic>>.from(apiMessages),
@@ -276,11 +274,11 @@ class ChatService {
         _toolExecutor.formatAssistantToolCallsMessage(
           toolCalls,
           roundTextBuffer.toString(),
-          providerType,
+          wireFamily,
         ),
       );
 
-      if (providerType == ProviderType.anthropic) {
+      if (wireFamily == WireFamily.anthropicCompatible) {
         final content = <Map<String, dynamic>>[];
         for (final call in toolCalls) {
           final ctx = ToolContext(

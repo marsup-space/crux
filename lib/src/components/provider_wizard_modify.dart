@@ -4,6 +4,7 @@ import '../theme/crux_theme.dart';
 import 'ui/button.dart';
 import 'ui/wizard_overlay.dart';
 import '../models/provider_config.dart';
+import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 
 /// A temporary model entry being edited in the modify wizard.
@@ -148,7 +149,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
   _FocusArea _focusedArea = _FocusArea.urlInput;
 
   int _selectedTypeIndex = 0;
-  ProviderType _selectedType = ProviderType.openai;
+  String _selectedType = 'openai_compatible';
 
   // ── Step 3: Models ──
   final List<_EditableModel> _editableModels = [];
@@ -178,27 +179,12 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
   // ── Convenience accessor ──
   ProviderService get _service => component.service;
 
-  static const List<ProviderType> _typeOptions = [
-    ProviderType.openai,
-    ProviderType.anthropic,
-  ];
-
-  String _providerTypeDisplayName(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'OpenAI Compatible';
-      case ProviderType.anthropic:
-        return 'Anthropic Compatible';
-    }
+  String _providerTypeDisplayName(String type) {
+    return typeDisplayName(type);
   }
 
-  String _defaultEndpoint(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'https://api.openai.com/v1';
-      case ProviderType.anthropic:
-        return 'https://api.anthropic.com/v1';
-    }
+  String _defaultEndpoint(String type) {
+    return defaultEndpointFor(type) ?? '';
   }
 
   @override
@@ -258,7 +244,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
   void _initFromProvider(ProviderConfig provider) {
     _endpointController.text = provider.endpointUrl;
     _selectedType = provider.type;
-    _selectedTypeIndex = _typeOptions.indexOf(provider.type);
+    _selectedTypeIndex = knownProviderTypes().indexOf(provider.type);
     if (_selectedTypeIndex < 0) _selectedTypeIndex = 0;
 
     _editableModels.clear();
@@ -414,7 +400,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
                     const SizedBox(width: 2),
                     Expanded(
                       child: Text(
-                        '${provider.type.toConfigString()} · ${provider.endpointUrl}',
+                        '${provider.type} · ${provider.endpointUrl}',
                         style: TextStyle(
                           color: isSelected
                               ? CruxTheme.foreground
@@ -436,7 +422,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         rows.add(const Divider(color: CruxTheme.outline, height: 1));
         rows.add(
           Text(
-            '  Type: ${_selectedProvider!.type.toConfigString()}',
+            '  Type: ${_selectedProvider!.type}',
             style: const TextStyle(color: CruxTheme.foreground),
           ),
         );
@@ -604,13 +590,13 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
         setState(() {
           _selectedTypeIndex = (_selectedTypeIndex > 0)
               ? _selectedTypeIndex - 1
-              : _typeOptions.length - 1;
+              : knownProviderTypes().length - 1;
         });
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown) {
         setState(() {
-          _selectedTypeIndex = (_selectedTypeIndex < _typeOptions.length - 1)
+          _selectedTypeIndex = (_selectedTypeIndex < knownProviderTypes().length - 1)
               ? _selectedTypeIndex + 1
               : 0;
         });
@@ -922,12 +908,15 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
     );
 
     final descriptions = {
-      ProviderType.openai: 'Chat completions API (OpenAI, Ollama, vLLM, etc.)',
-      ProviderType.anthropic: 'Messages API (Claude, etc.)',
+      'openai_compatible':
+        'Chat completions API (OpenAI, Ollama, vLLM, etc.)',
+      'anthropic_compatible': 'Messages API (Claude, etc.)',
+      'deepseek': 'DeepSeek with custom reasoning effort mapping',
     };
 
-    for (int i = 0; i < _typeOptions.length; i++) {
-      final type = _typeOptions[i];
+    final types = knownProviderTypes();
+    for (int i = 0; i < types.length; i++) {
+      final type = types[i];
       final isSelected = i == _selectedTypeIndex;
 
       rows.add(
@@ -938,7 +927,7 @@ class _ProviderWizardModifyState extends State<ProviderWizardModify> {
             onTap: () {
               setState(() {
                 _selectedTypeIndex = i;
-                _selectedType = _typeOptions[i];
+                _selectedType = types[i];
               });
             },
             behavior: HitTestBehavior.opaque,

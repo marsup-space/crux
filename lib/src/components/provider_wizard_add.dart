@@ -6,6 +6,7 @@ import 'ui/focus_grid.dart';
 import 'ui/option_toggle.dart';
 import 'ui/wizard_overlay.dart';
 import '../models/provider_config.dart';
+import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 
 class _PendingModel {
@@ -118,7 +119,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   bool _apiKeyObscured = true;
-  ProviderType _selectedType = ProviderType.openai;
+  String _selectedType = 'openai_compatible';
 
   late FocusGrid<_MergedFocusArea> _mergedGrid;
 
@@ -153,31 +154,19 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
 
   ProviderService get _service => component.service;
 
-  String _defaultEndpoint(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'https://api.openai.com/v1';
-      case ProviderType.anthropic:
-        return 'https://api.anthropic.com';
-    }
+  String _defaultEndpoint(String type) {
+    return defaultEndpointFor(type) ?? '';
   }
 
-  String _providerTypeDisplayName(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'OpenAI Compatible';
-      case ProviderType.anthropic:
-        return 'Anthropic Compatible';
-    }
+  String _providerTypeDisplayName(String type) {
+    return typeDisplayName(type);
   }
 
-  String _apiKeyHint(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'Enter your API key';
-      case ProviderType.anthropic:
-        return 'Enter your Anthropic API key';
+  String _apiKeyHint(String type) {
+    if (type == 'anthropic_compatible') {
+      return 'Enter your Anthropic API key';
     }
+    return 'Enter your API key';
   }
 
   bool _isValidEndpoint(String url) {
@@ -571,13 +560,21 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
       return true;
     }
 
-    // Left/Right toggles between OpenAI / Anthropic
+    // Left/Right cycles through registered provider types
     if (event.logicalKey == LogicalKey.arrowLeft) {
-      setState(() => _selectedType = ProviderType.openai);
+      setState(() {
+        final types = knownProviderTypes();
+        final i = types.indexOf(_selectedType);
+        _selectedType = types[(i - 1 + types.length) % types.length];
+      });
       return true;
     }
     if (event.logicalKey == LogicalKey.arrowRight) {
-      setState(() => _selectedType = ProviderType.anthropic);
+      setState(() {
+        final types = knownProviderTypes();
+        final i = types.indexOf(_selectedType);
+        _selectedType = types[(i + 1) % types.length];
+      });
       return true;
     }
 
@@ -905,13 +902,11 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     rows.add(const SizedBox(height: 1));
     rows.add(
       OptionToggle(
-        options: const ['OpenAI Compatible', 'Anthropic Compatible'],
-        selectedIndex: _selectedType == ProviderType.openai ? 0 : 1,
+        options: knownProviderTypes().map(typeDisplayName).toList(),
+        selectedIndex: knownProviderTypes().indexOf(_selectedType),
         onChanged: (i) {
           setState(() {
-            _selectedType = i == 0
-                ? ProviderType.openai
-                : ProviderType.anthropic;
+            _selectedType = knownProviderTypes()[i];
             _mergedGrid.moveTo(_MergedFocusArea.typeToggle);
           });
           wizardController.requestRebuild();
@@ -2287,6 +2282,7 @@ class _ProviderWizardAddState extends State<ProviderWizardAdd> {
     final config = ProviderConfig(
       name: name,
       type: _selectedType,
+      wireFamily: resolveProvider(_selectedType).wire,
       endpointUrl: endpointUrl,
       models: List.unmodifiable(validModels),
     );

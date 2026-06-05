@@ -2,7 +2,7 @@
 # Filename serves as the provider name: "local"
 # Connects to a local inference server (e.g. llama.cpp, ollama)
 
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "http://localhost:8080/v1"
 
 [[models]]

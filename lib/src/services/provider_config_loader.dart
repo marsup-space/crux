@@ -1,17 +1,28 @@
 import 'dart:io';
 import 'package:toml/toml.dart';
 import '../models/provider_config.dart';
+import 'llm_provider.dart';
+import 'provider_seeder.dart';
 
-/// Loads and manages provider configuration files from a TOML-based directory.
+/// Loads and manages provider configuration files from TOML directories.
 ///
-/// Each provider is defined by a single `.toml` file in the providers directory.
-/// The filename (sans `.toml`) becomes the provider name, e.g. `openai.toml`
-/// yields provider `"openai"`.
+/// Each provider is defined by a single `.toml` file in one of the
+/// configured search directories. The filename (sans `.toml`) becomes
+/// the provider name, e.g. `openai.toml` → provider `"openai"`.
+///
+/// Multiple search directories are supported — typically a read-only
+/// built-in dir (shipped with the binary) plus a writable per-user
+/// dir (e.g. `~/.config/crux/providers/`). Earlier entries in the
+/// list take precedence on name collisions, so the user dir should
+/// be listed first to allow overriding built-ins.
 ///
 /// Usage:
 /// ```dart
 /// final loader = ProviderConfigLoader(
-///   providersDir: Directory('providers'),
+///   providersDirs: [
+///     Directory('~/.config/crux/providers'),
+///     Directory('providers'),  // built-in
+///   ],
 /// );
 /// await loader.loadAll();
 /// final openai = loader.providerByName('openai');
@@ -29,8 +40,9 @@ class ModelEntry {
 }
 
 class ProviderConfigLoader {
-  /// The directory containing `.toml` provider config files.
-  final Directory providersDir;
+  /// The directories searched for `.toml` provider config files, in
+  /// precedence order (earlier wins on name collisions).
+  final List<Directory> providersDirs;
 
   /// Loaded configs keyed by provider name.
   final Map<String, ProviderConfig> _configs = {};
@@ -41,7 +53,14 @@ class ProviderConfigLoader {
   /// Any errors encountered during loading, keyed by filename.
   final Map<String, String> _errors = {};
 
-  ProviderConfigLoader({required this.providersDir});
+  /// Convenience: search a single directory. Use [providersDirs] for
+  /// multi-dir precedence.
+  ProviderConfigLoader({required Directory providersDir})
+    : providersDirs = [providersDir];
+
+  /// Search multiple directories, earlier entries win on collisions.
+  ProviderConfigLoader.multi({required List<Directory> providersDirs})
+    : providersDirs = providersDirs;
 
   /// Whether any configs have been loaded.
   bool get isLoaded => _configs.isNotEmpty;
@@ -117,37 +136,45 @@ class ProviderConfigLoader {
   /// Errors encountered during loading, keyed by filename.
   Map<String, String> loadErrors() => Map.unmodifiable(_errors);
 
-  /// Load all `.toml` files from [providersDir].
+  /// Load all `.toml` files from [providersDirs].
   ///
   /// Clears any previously loaded configs and errors first.
+  /// Directories are searched in order; the first occurrence of a given
+  /// provider name wins, so list the user dir (where customizations live)
+  /// before the built-in dir.
   /// Files that fail to parse are skipped; their errors are recorded in
   /// [loadErrors].
+  /// Files matching [isExampleProviderFile] (e.g. `example.openai.toml`)
+  /// are skipped — those are reference templates, not real providers.
   Future<void> loadAll() async {
     _configs.clear();
     _loadOrder.clear();
     _errors.clear();
 
-    if (!await providersDir.exists()) {
-      return; // No providers directory — nothing to load.
-    }
+    for (final dir in providersDirs) {
+      if (!await dir.exists()) continue;
 
-    final files = providersDir
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.toml'))
-        .toList();
+      final files = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.toml'))
+          .where((f) => !isExampleProviderFile(f.path))
+          .toList();
 
-    // Sort by filename for deterministic load order.
-    files.sort((a, b) => a.path.compareTo(b.path));
+      // Sort by filename for deterministic load order within each dir.
+      files.sort((a, b) => a.path.compareTo(b.path));
 
-    for (final file in files) {
-      final name = _providerNameFromFile(file);
-      try {
-        final config = await _loadSingle(file, name);
-        _configs[name] = config;
-        _loadOrder.add(name);
-      } catch (e) {
-        _errors[file.path] = e.toString();
+      for (final file in files) {
+        final name = _providerNameFromFile(file);
+        // Skip names already loaded from a higher-priority dir.
+        if (_configs.containsKey(name)) continue;
+        try {
+          final config = await _loadSingle(file, name);
+          _configs[name] = config;
+          _loadOrder.add(name);
+        } catch (e) {
+          _errors[file.path] = e.toString();
+        }
       }
     }
   }
@@ -156,9 +183,23 @@ class ProviderConfigLoader {
   ///
   /// Useful after editing a TOML file. Returns the updated config, or `null`
   /// if the file no longer exists or fails to parse.
+  ///
+  /// Searches all configured [providersDirs] in precedence order; the
+  /// first matching file wins. If a previously-loaded config came from
+  /// a higher-priority dir and that file still exists, it stays put.
   Future<ProviderConfig?> reload(String providerName) async {
-    final file = File('${providersDir.path}/$providerName.toml');
-    if (!await file.exists()) {
+    File? file;
+    for (final dir in providersDirs) {
+      final candidate = File('${dir.path}/$providerName.toml');
+      // Example files (e.g. `example.openai.toml`) are reference templates,
+      // not real providers — never reload through them.
+      if (isExampleProviderFile(candidate.path)) continue;
+      if (await candidate.exists()) {
+        file = candidate;
+        break;
+      }
+    }
+    if (file == null) {
       _configs.remove(providerName);
       _loadOrder.remove(providerName);
       return null;
@@ -198,9 +239,13 @@ class ProviderConfigLoader {
   /// Parse the top-level TOML map into a [ProviderConfig].
   ProviderConfig _parseProviderConfig(Map<String, dynamic> map, String name) {
     // --- Required fields ---
-    final typeStr = _requireString(map, 'type');
-    final type = ProviderTypeParse.fromString(typeStr);
+    final type = _requireString(map, 'type');
     final endpointUrl = _requireString(map, 'endpoint_url');
+
+    // Resolve the type to a (provider, wireFamily) pair. Unknown types
+    // throw a helpful ArgumentError which we surface as a load error
+    // recorded in _errors instead of aborting startup.
+    final resolved = resolveProvider(type);
 
     // --- Models ([[models]] array of tables) ---
     final modelsRaw = map['models'];
@@ -226,6 +271,7 @@ class ProviderConfigLoader {
     return ProviderConfig(
       name: name,
       type: type,
+      wireFamily: resolved.wire,
       endpointUrl: endpointUrl,
       models: List.unmodifiable(models),
       quota: quota,

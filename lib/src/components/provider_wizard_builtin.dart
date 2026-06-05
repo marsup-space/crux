@@ -1,7 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import 'ui/button.dart';
-import '../models/provider_config.dart';
 import '../services/provider_service.dart';
 
 class ProviderWizardBuiltin extends StatefulComponent {
@@ -102,7 +101,7 @@ class _ProviderWizardBuiltinState extends State<ProviderWizardBuiltin> {
     if (provider != null) {
       rows.add(
         Text(
-          '  ${provider.type.toConfigString().toUpperCase()} · ${provider.endpointUrl}',
+          '  ${provider.type.toUpperCase()} · ${provider.endpointUrl}',
           style: const TextStyle(color: CruxTheme.wizardTextDim),
         ),
       );

@@ -1,7 +1,7 @@
 # Anthropic provider configuration
 # Filename serves as the provider name: "anthropic"
 
-type = "anthropic"
+type = "anthropic_compatible"
 endpoint_url = "https://api.anthropic.com/v1"
 
 [[models]]

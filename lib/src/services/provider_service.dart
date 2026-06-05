@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:toml/toml.dart';
 import '../models/provider_config.dart';
+import 'llm_provider.dart';
 import 'provider_config_loader.dart';
 
 /// A model discovered from a provider's remote API endpoint.
@@ -41,9 +42,22 @@ class DiscoveredModel {
 /// (`$XDG_DATA_HOME/crux/auth.json` with `0o600` permissions), and can query
 /// remote endpoints to discover available models.
 ///
+/// Two directories drive config lookup:
+/// - [userProvidersDir] (e.g. `~/.config/crux/providers/`) — writable,
+///   per-user, populated by [seedExampleProviders] on launch.
+/// - [builtInProvidersDir] (e.g. `./providers/`, next to the binary) —
+///   read-only, shipped with the binary.
+///
+/// The loader searches the user dir first, then the built-in dir, so the
+/// user can override any built-in example by placing a same-named file in
+/// their user dir.
+///
 /// Example:
 /// ```dart
-/// final service = ProviderService();
+/// final service = ProviderService(
+///   userProvidersDir: '~/.config/crux/providers',
+///   builtInProvidersDir: 'providers',
+/// );
 /// await service.initialize();
 ///
 /// final openai = service.providerByName('openai');
@@ -53,8 +67,16 @@ class DiscoveredModel {
 /// print(service.getApiKey('openai')); // sk-xxx
 /// ```
 class ProviderService {
-  /// Path to the directory containing provider `.toml` config files.
-  final String providersDir;
+  /// Path to the per-user, writable providers directory. All writes
+  /// (add/modify/remove from the custom wizard) go here.
+  final String userProvidersDir;
+
+  /// Path to the read-only built-in providers directory (shipped with
+  /// the binary). Used as a fallback for built-in examples.
+  final String? builtInProvidersDir;
+
+  /// Convenience: the writable user dir.
+  String get providersDir => userProvidersDir;
 
   /// The loader that reads and parses TOML provider configs.
   final ProviderConfigLoader _loader;
@@ -77,8 +99,15 @@ class ProviderService {
   /// (defaults to `~/.local/share/crux/auth.json`).
   late final String authJsonPath;
 
-  ProviderService({this.providersDir = 'providers'})
-    : _loader = ProviderConfigLoader(providersDir: Directory(providersDir)) {
+  ProviderService({
+    required this.userProvidersDir,
+    this.builtInProvidersDir,
+  }) : _loader = ProviderConfigLoader.multi(
+           providersDirs: [
+             Directory(userProvidersDir),
+             if (builtInProvidersDir != null) Directory(builtInProvidersDir!),
+           ],
+         ) {
     final xdgDataHome =
         Platform.environment['XDG_DATA_HOME'] ??
         p.join(Platform.environment['HOME']!, '.local', 'share');
@@ -164,16 +193,20 @@ class ProviderService {
   Future<ProviderConfig?> modifyProvider(
     String providerName, {
     String? endpointUrl,
-    ProviderType? type,
+    String? type,
     List<ModelConfig>? models,
     UsageQuotaConfig? quota,
   }) async {
     final current = _loader.providerByName(providerName);
     if (current == null) return null;
 
+    final newType = type ?? current.type;
+    final resolved = resolveProvider(newType);
+
     final updated = ProviderConfig(
       name: providerName,
-      type: type ?? current.type,
+      type: newType,
+      wireFamily: resolved.wire,
       endpointUrl: endpointUrl ?? current.endpointUrl,
       models: models ?? current.models,
       quota: quota ?? current.quota,
@@ -201,10 +234,10 @@ class ProviderService {
     if (provider == null) return [];
 
     // Anthropic has no public model list endpoint
-    if (provider.type == ProviderType.anthropic) return [];
+    if (provider.wireFamily == WireFamily.anthropicCompatible) return [];
 
     // OpenAI-compatible providers expose a /models endpoint
-    if (provider.type == ProviderType.openai) {
+    if (provider.wireFamily == WireFamily.openaiCompatible) {
       return _discoverOpenAIModels(provider);
     }
 
@@ -229,13 +262,13 @@ class ProviderService {
       final request = await client.getUrl(modelsUri);
 
       // Attach auth header if an API key is available.
-      // Header format varies by provider type:
-      //   OpenAI:   Authorization: Bearer <key>
-      //   Anthropic: x-api-key: <key>
+      // Header format varies by wire family:
+      //   OpenAI-compatible:   Authorization: Bearer <key>
+      //   Anthropic-compatible: x-api-key: <key>
       if (apiKey != null && apiKey.isNotEmpty) {
-        if (provider.type == ProviderType.openai) {
+        if (provider.wireFamily == WireFamily.openaiCompatible) {
           request.headers.set('Authorization', 'Bearer $apiKey');
-        } else if (provider.type == ProviderType.anthropic) {
+        } else if (provider.wireFamily == WireFamily.anthropicCompatible) {
           request.headers.set('x-api-key', apiKey);
         }
       }
@@ -445,7 +478,7 @@ class ProviderService {
   /// and `reasoning_effort` is omitted when `null`.
   String _serializeProviderConfig(ProviderConfig config) {
     final map = <String, dynamic>{
-      'type': config.type.toConfigString(),
+      'type': config.type,
       'endpoint_url': config.endpointUrl,
       'models': config.models.map(_serializeModelConfig).toList(),
     };

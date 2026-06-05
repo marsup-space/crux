@@ -1,27 +1,20 @@
-/// The API protocol family a provider uses.
+/// The HTTP wire family a provider uses — determines URL paths, auth headers,
+/// and how streaming responses are parsed.
 ///
-/// This determines how requests are formatted and responses are parsed.
-enum ProviderType { openai, anthropic }
+/// This is derived from the TOML `type` field via the dispatcher in
+/// `llm_provider.dart`. Two providers can share a [WireFamily] (e.g. DeepSeek
+/// and a generic OpenAI-compatible endpoint) but have different request
+/// bodies — that's what the [LlmProvider] implementation handles.
+enum WireFamily { openaiCompatible, anthropicCompatible }
 
-/// Extension to parse [ProviderType] from TOML string values.
-extension ProviderTypeParse on ProviderType {
-  /// Parse a provider type string from config.
-  ///
-  /// Accepts: "openai", "anthropic".
-  /// Throws [FormatException] for unknown values.
-  static ProviderType fromString(String value) {
-    switch (value.toLowerCase()) {
-      case 'openai':
-        return ProviderType.openai;
-      case 'anthropic':
-        return ProviderType.anthropic;
-      default:
-        throw FormatException('Unknown provider type: "$value"');
-    }
+/// Human-readable label for a [WireFamily] (used in UI / logs).
+String wireFamilyLabel(WireFamily w) {
+  switch (w) {
+    case WireFamily.openaiCompatible:
+      return 'OpenAI-compatible';
+    case WireFamily.anthropicCompatible:
+      return 'Anthropic-compatible';
   }
-
-  /// Serialize back to the TOML-friendly string.
-  String toConfigString() => name;
 }
 
 /// Reasoning effort levels for models that support adjustable reasoning.
@@ -138,9 +131,20 @@ class UsageQuotaConfig {
 /// The filename (without `.toml`) serves as the provider name, e.g.
 /// `openai.toml` → provider name `"openai"`.
 ///
+/// The `type` field is a free-form string that selects a registered
+/// `LlmProvider` implementation. Two flavors of values are supported:
+///
+/// - **Generic**: `"openai_compatible"`, `"anthropic_compatible"`. These
+///   work for any endpoint that speaks the standard wire protocol — pick
+///   one of these to point crux at a new compatible service without
+///   recompiling.
+/// - **Specific**: `"deepseek"`, and any other provider with custom request
+///   body quirks. These are registered in `llm_provider.dart`'s
+///   `resolveProvider()` dispatcher and require a rebuild to add new ones.
+///
 /// Example TOML:
 /// ```toml
-/// type = "openai"
+/// type = "openai_compatible"
 /// endpoint_url = "https://api.openai.com/v1"
 ///
 /// [[models]]
@@ -171,8 +175,16 @@ class ProviderConfig {
   /// Provider name derived from the TOML filename (sans extension).
   final String name;
 
-  /// Which API protocol family this provider uses.
-  final ProviderType type;
+  /// The TOML `type` value — the dispatch key into the LlmProvider registry.
+  ///
+  /// Always one of the values accepted by `resolveProvider()`. If the TOML
+  /// contains an unknown type, the loader records a load error and skips
+  /// the file.
+  final String type;
+
+  /// The HTTP wire family (URL paths, auth headers, stream parsing).
+  /// Derived from [type] by the loader.
+  final WireFamily wireFamily;
 
   /// The base endpoint URL for API calls.
   final String endpointUrl;
@@ -186,6 +198,7 @@ class ProviderConfig {
   const ProviderConfig({
     required this.name,
     required this.type,
+    required this.wireFamily,
     required this.endpointUrl,
     required this.models,
     this.quota,
@@ -215,6 +228,6 @@ class ProviderConfig {
 
   @override
   String toString() =>
-      'ProviderConfig($name, type=$type, '
+      'ProviderConfig($name, type=$type, wire=$wireFamily, '
       'endpoint=$endpointUrl, models=${models.length}, quota=$quota)';
 }

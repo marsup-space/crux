@@ -2,7 +2,7 @@
 # Filename serves as the provider name: "volcengine"
 # TODO: Populate with actual API endpoint and models
 
-type = "openai"
+type = "openai_compatible"
 endpoint_url = "https://ark.cn-beijing.volces.com/api/v3"
 
 [[models]]

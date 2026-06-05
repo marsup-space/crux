@@ -41,9 +41,9 @@ class ToolExecutor {
   Map<String, dynamic> formatToolResultForApi(
     ToolCall call,
     ToolResult result,
-    ProviderType providerType,
+    WireFamily wireFamily,
   ) {
-    if (providerType == ProviderType.anthropic) {
+    if (wireFamily == WireFamily.anthropicCompatible) {
       return {
         'role': 'user',
         'content': [
@@ -65,9 +65,9 @@ class ToolExecutor {
   Map<String, dynamic> formatAssistantToolCallsMessage(
     List<ToolCall> calls,
     String textContent,
-    ProviderType providerType,
+    WireFamily wireFamily,
   ) {
-    if (providerType == ProviderType.anthropic) {
+    if (wireFamily == WireFamily.anthropicCompatible) {
       final content = <Map<String, dynamic>>[];
       if (textContent.isNotEmpty) {
         content.add({'type': 'text', 'text': textContent});

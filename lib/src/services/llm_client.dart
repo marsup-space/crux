@@ -53,8 +53,7 @@ class LlmClient {
 
   Stream<LlmChunk> streamChat({
     required String endpointUrl,
-    required String providerName,
-    required ProviderType providerType,
+    required ProviderConfig config,
     required String apiKey,
     required String modelId,
     required List<Map<String, dynamic>> messages,
@@ -64,15 +63,16 @@ class LlmClient {
     List<Map<String, dynamic>>? tools,
   }) {
     final controller = StreamController<LlmChunk>();
+    final wireFamily = config.wireFamily;
 
     () async {
       try {
-        final provider = providerFor(providerName, providerType);
-        final uri = _buildUri(endpointUrl, providerType);
+        final provider = providerFor(config);
+        final uri = _buildUri(endpointUrl, wireFamily);
         final request = await _httpClient.postUrl(uri);
 
         request.headers.set('Content-Type', 'application/json; charset=utf-8');
-        _setAuthHeaders(request, providerType, apiKey);
+        _setAuthHeaders(request, wireFamily, apiKey);
 
         final bodyMap = provider.buildRequestBody(
           modelId,
@@ -98,7 +98,7 @@ class LlmClient {
           return;
         }
 
-        if (providerType == ProviderType.anthropic) {
+        if (wireFamily == WireFamily.anthropicCompatible) {
           await _handleAnthropicStream(response, controller);
         } else {
           await _handleOpenAiStream(response, controller);
@@ -328,13 +328,13 @@ class LlmClient {
     await controller.close();
   }
 
-  Uri _buildUri(String endpointUrl, ProviderType providerType) {
+  Uri _buildUri(String endpointUrl, WireFamily wireFamily) {
     var base = endpointUrl;
-    if (providerType == ProviderType.openai && !base.endsWith('/v1')) {
+    if (wireFamily == WireFamily.openaiCompatible && !base.endsWith('/v1')) {
       base = '$base/v1';
     }
     final uri = Uri.parse(base);
-    if (providerType == ProviderType.anthropic) {
+    if (wireFamily == WireFamily.anthropicCompatible) {
       return uri.resolve('messages');
     }
     return uri.resolve('chat/completions');
@@ -342,12 +342,12 @@ class LlmClient {
 
   void _setAuthHeaders(
     HttpClientRequest request,
-    ProviderType providerType,
+    WireFamily wireFamily,
     String apiKey,
   ) {
-    if (providerType == ProviderType.openai) {
+    if (wireFamily == WireFamily.openaiCompatible) {
       request.headers.set('Authorization', 'Bearer $apiKey');
-    } else if (providerType == ProviderType.anthropic) {
+    } else if (wireFamily == WireFamily.anthropicCompatible) {
       request.headers.set('x-api-key', apiKey);
       request.headers.set('anthropic-version', '2023-06-01');
     }

@@ -31,8 +31,13 @@ import 'message_bubble.dart';
 import 'streaming_bubble.dart';
 
 class ChatPanel extends StatefulComponent {
-  final String providersDir;
-  const ChatPanel({super.key, required this.providersDir});
+  final String userProvidersDir;
+  final String? builtInProvidersDir;
+  const ChatPanel({
+    super.key,
+    required this.userProvidersDir,
+    this.builtInProvidersDir,
+  });
 
   @override
   State<ChatPanel> createState() => _ChatPanelState();
@@ -81,7 +86,10 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void initState() {
     super.initState();
-    _providerService = ProviderService(providersDir: component.providersDir);
+    _providerService = ProviderService(
+      userProvidersDir: component.userProvidersDir,
+      builtInProvidersDir: component.builtInProvidersDir,
+    );
     final db = CruxDatabase();
     _store = SessionStore(db);
     final tracker = FileReadTracker();

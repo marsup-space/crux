@@ -23,6 +23,7 @@ export 'src/models/provider_config.dart';
 export 'src/services/chat_service.dart';
 export 'src/services/llm_client.dart';
 export 'src/services/provider_config_loader.dart';
+export 'src/services/provider_seeder.dart';
 export 'src/services/provider_service.dart';
 export 'src/components/provider_wizard_builtin.dart';
 export 'src/components/provider_wizard_custom.dart';
