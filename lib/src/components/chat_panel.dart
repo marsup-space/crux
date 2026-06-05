@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
+import '../utils/cjk_word_boundary.dart';
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
@@ -1126,6 +1127,7 @@ class _ChatPanelState extends State<ChatPanel> {
               placeholder: 'Type a message...',
               onSubmitted: (_) => _sendMessage(),
               onKeyEvent: _handleInputKeyEvent,
+              wordBoundaryProvider: cjkWordBoundaryProvider,
             ),
           ),
         ],

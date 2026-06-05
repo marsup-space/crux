@@ -4,3 +4,6 @@
 [submodule "textmate_highlight"]
 	path = textmate_highlight
 	url = git@github.com:marsup-space/textmate_highlight.git
+[submodule "dart-jieba"]
+	path = dart-jieba
+	url = git@github.com:marsup-space/dart-jieba.git

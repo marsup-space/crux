@@ -9,6 +9,8 @@ environment:
 dependencies:
   nocterm:
     path: nocterm
+  dart_jieba:
+    path: dart-jieba
   textmate_highlight:
     path: textmate_highlight
   markdown: ^7.2.0
