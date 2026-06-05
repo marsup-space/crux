@@ -1,13 +1,20 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
+import 'package:crux/src/utils/windows_vt.dart';
 
 const _version = 'v0.1.0';
 
 void main(List<String> args) async {
+  // Enable ANSI/VT escape processing on the Windows stdout console BEFORE
+  // anything writes an escape sequence. Without this, the legacy Windows
+  // console drops `\x1B[...` codes and the splash + TUI render as a
+  // blank screen. No-op on non-Windows and when stdout is redirected.
+  enableWindowsVt();
+
+
   for (final arg in args) {
     if (arg == '--help' || arg == '-h') {
       stdout.writeln('Usage: crux [path]');
@@ -50,29 +57,35 @@ void main(List<String> args) async {
   final builtInDir = _resolveBuiltInProvidersDir();
   final userDir = _resolveUserProvidersDir();
 
-  // Run two isolates concurrently and wait for both to finish before
-  // launching the UI:
+  // Run the splash and the loading work in the same isolate. The splash
+  // runs as a Future that takes a `loadingDone` callback; it renders the
+  // full animation unless loading beats it, in which case it bails out
+  // and we still get the 904ms minimum (504ms sweep + 400ms pause).
   //
-  //   1. Animation isolate: renders the full logo splash. Always runs
-  //      for the full 904ms (504ms sweep + 400ms post-pause), regardless
-  //      of how fast the loading is.
+  // Why a single isolate (and not two with `Isolate.spawn`):
+  //   The TUI's startup sequence writes `\x1B[?1049h` (alt screen) and
+  //   other CSI codes to stdout. If those writes interleave with a
+  //   still-flushing splash from another isolate, conhost in vanilla
+  //   CMD/PowerShell can split the escape sequences and end up in a
+  //   bad state (blank screen, alt screen ignored). Tabby is more
+  //   tolerant; the legacy Windows console is not. Single-isolate
+  //   sequencing avoids the race entirely.
   //
-  //   2. Loading isolate: does all warmup work — seeding example TOMLs
-  //      into the user dir, initializing the syntax highlighter, etc.
-  //
-  // Total wall time = max(904ms, loading_time):
-  //   - Fast loading (< 904ms): user sees the full animation, then app.
-  //   - Slow loading (> 904ms): animation ends at 904ms, then we wait
-  //     on the loading isolate to finish, then app starts immediately
-  //     (no extra post-pause — the static-logo hold replaced it).
-  final seederResults = await _runLaunchIsolates(
-    builtInDirPath: builtInDir.path,
-    userDirPath: userDir.path,
+  // Behavior:
+  //   - Fast loading (< 504ms): splash runs to completion (504ms) +
+  //     400ms post-pause = 904ms wall time. App starts.
+  //   - Slow loading (>= 504ms): splash bails out at the frame where
+  //     loading completes, then `await loadingDone` extends the hold
+  //     on the static logo until loading is done. Total wall time =
+  //     loading_time (animation ≤ loading_time ≤ 904ms).
+  final results = await _runSplashAndLoading(
+    builtInDir: builtInDir,
+    userDir: userDir,
   );
 
   // Log seeder changes after the splash is done, so the stderr lines
   // don't interleave with the logo frames.
-  for (final r in seederResults) {
+  for (final r in results) {
     if (r.action == SeedAction.unchanged) continue;
     stderr.writeln('  ${r.action.name}: ${r.fileName}');
   }
@@ -85,142 +98,62 @@ void main(List<String> args) async {
   );
 }
 
-/// Run the loading and animation isolates in parallel; return the seeder
-/// results once both have finished.
+/// Run the splash animation and the loading work concurrently in the
+/// current isolate. Returns the seeder results.
 ///
-/// Errors from either isolate are propagated. The isolates are always
-/// killed on exit (success or failure) so we don't leak OS processes.
-Future<List<SeedResult>> _runLaunchIsolates({
-  required String builtInDirPath,
-  required String userDirPath,
+/// The animation always runs for at least 504ms (the sweep). If loading
+/// finishes during the sweep, the sweep bails out and we run a 400ms
+/// post-pause. If loading takes longer than the sweep, we hold the
+/// static logo until loading is done — no post-pause, just the wait.
+///
+/// Total wall time is `max(loading_time, 904ms)` when loading < 504ms,
+/// or just `loading_time` when loading >= 504ms.
+Future<List<SeedResult>> _runSplashAndLoading({
+  required Directory builtInDir,
+  required Directory userDir,
 }) async {
-  // ── Loading isolate ────────────────────────────────────────────────
-  final loadingPort = ReceivePort();
-  final loadingResult = Completer<List<SeedResult>>();
-  loadingPort.listen(
-    (msg) {
-      if (msg is List<SeedResult>) {
-        loadingResult.complete(msg);
-      } else if (msg is _IsolateError) {
-        loadingResult.completeError(msg.error, msg.stack);
-      }
-    },
-    onError: (e, st) => loadingResult.completeError(e, st),
-  );
-  final loadingIsolate = await Isolate.spawn<_LoadingArgs>(
-    _loadingIsolateEntry,
-    _LoadingArgs(
-      builtInDirPath: builtInDirPath,
-      userDirPath: userDirPath,
-      resultPort: loadingPort.sendPort,
-    ),
-  );
+  // Start the loading work as a Future. It's mostly I/O (file reads,
+  // SHA computation, and HighlightService's grammar compile) so it
+  // cooperates with the splash's `Future.delayed` between frames.
+  final loadingFuture = _doLoading(builtInDir, userDir);
 
-  // ── Animation isolate ──────────────────────────────────────────────
-  final animationPort = ReceivePort();
-  final animationDone = Completer<void>();
-  animationPort.listen(
-    (msg) {
-      if (identical(msg, _doneSentinel)) {
-        animationDone.complete();
-      } else if (msg is _IsolateError) {
-        animationDone.completeError(msg.error, msg.stack);
-      }
-    },
-    onError: (e, st) => animationDone.completeError(e, st),
-  );
-  final animationIsolate = await Isolate.spawn<_AnimationArgs>(
-    _animationIsolateEntry,
-    _AnimationArgs(donePort: animationPort.sendPort),
-  );
+  // Run the splash, with a callback that lets it know when loading is
+  // done so it can bail out early.
+  await _showSplashLoading(loadingFuture);
 
-  try {
-    // Wait for the animation first — that's our 904ms floor. If loading
-    // is faster, awaiting it next returns immediately. If loading is
-    // slower, this wait extends until loading is done.
-    await animationDone.future;
-    return await loadingResult.future;
-  } finally {
-    loadingPort.close();
-    animationPort.close();
-    loadingIsolate.kill(priority: Isolate.immediate);
-    animationIsolate.kill(priority: Isolate.immediate);
-  }
+  // Defensive: the splash only returns after both it and loading are
+  // done, but `await` again is cheap insurance.
+  return await loadingFuture;
 }
 
-// ── Isolate arguments and messages ────────────────────────────────────
-
-class _LoadingArgs {
-  final String builtInDirPath;
-  final String userDirPath;
-  final SendPort resultPort;
-  const _LoadingArgs({
-    required this.builtInDirPath,
-    required this.userDirPath,
-    required this.resultPort,
-  });
+/// All the warmup work the app needs before the UI appears.
+Future<List<SeedResult>> _doLoading(Directory builtInDir, Directory userDir) async {
+  final results = await seedExampleProviders(
+    builtInDir: builtInDir,
+    userDir: userDir,
+  );
+  await HighlightService.initialize();
+  return results;
 }
 
-class _AnimationArgs {
-  final SendPort donePort;
-  const _AnimationArgs({required this.donePort});
-}
+// ── Splash renderer ──────────────────────────────────────────────────
 
-class _IsolateError {
-  final Object error;
-  final StackTrace stack;
-  const _IsolateError(this.error, this.stack);
-}
-
-/// Sentinel for the animation isolate's "I'm done" message. Using a
-/// constant instance avoids allocating a new object per launch.
-const _doneSentinel = Object();
-
-// ── Isolate entry points (must be top-level functions) ─────────────────
-
-/// Runs in the loading isolate.
+/// Run the splash logo animation concurrently with [loading].
 ///
-/// Does all warmup work that's safe to run before the UI appears:
-/// 1. Seeds example provider TOMLs into the user dir (and reports
-///    what it did back to the main isolate for logging).
-/// 2. Initializes the syntax highlighter.
+/// The two run in parallel via the event loop (no isolates needed — the
+/// splash's `Future.delayed` yields control between frames, so the
+/// loading work can run in the gaps).
 ///
-/// Stdout/stderr is left alone — the loading isolate doesn't log
-/// directly, so its output never interleaves with the splash frames.
-void _loadingIsolateEntry(_LoadingArgs args) async {
-  try {
-    final results = await seedExampleProviders(
-      builtInDir: Directory(args.builtInDirPath),
-      userDir: Directory(args.userDirPath),
-    );
-    await HighlightService.initialize();
-    args.resultPort.send(results);
-  } catch (e, st) {
-    args.resultPort.send(_IsolateError(e, st));
-  }
-}
-
-/// Runs in the animation isolate.
-///
-/// Always renders the full splash — the 504ms sweep, then a 400ms
-/// post-pause — for a total of 904ms. There's no "skip ahead if
-/// loading is done" optimization here; the main isolate coordinates
-/// the wait for both to finish, so the animation is the floor.
-void _animationIsolateEntry(_AnimationArgs args) async {
-  try {
-    await _runSplashAnimation();
-    args.donePort.send(_doneSentinel);
-  } catch (e, st) {
-    args.donePort.send(_IsolateError(e, st));
-  }
-}
-
-// ── Splash renderer (runs inside the animation isolate) ────────────────
-
-/// Render the full logo splash: 504ms sweep + 400ms post-pause = 904ms.
-/// Writes the animation to stdout via ANSI escapes, then shows the
-/// cursor and waits briefly so the user registers the final frame.
-Future<void> _runSplashAnimation() async {
+/// Behavior:
+/// - If [loading] completes during the ~1s animation: animation finishes
+///   normally, brief post-pause, then return.
+/// - If [loading] is still running after the animation: the static logo
+///   stays on screen (cursor hidden, no more redraws) until [loading]
+///   completes, then return.
+/// - This function only returns after BOTH the animation cycle and
+///   [loading] have finished — so the caller can safely call `runApp`
+///   right after, knowing the warmup work is done.
+Future<void> _showSplashLoading(Future<void> loading) async {
   const art = [
     '  ██████╗   ██████╗  ██╗   ██╗ ██╗  ██╗',
     ' ██╔════╝  ██╔══██╗ ██║   ██║  ██╗██╔╝',
@@ -243,7 +176,18 @@ Future<void> _runSplashAnimation() async {
   stdout.writeln();
   stdout.writeln();
 
-  for (int sweep = -bandWidth; sweep <= artWidth + bandWidth; sweep += sweepStep) {
+  // Bail out of the sweep early if loading finishes while the animation
+  // is running. The Future is shared with the loading task — when it
+  // completes, this loop's `&& !loadingDone` flips false and we drop
+  // into the post-animation hold below.
+  var loadingDone = false;
+  loading.whenComplete(() => loadingDone = true);
+
+  for (
+    int sweep = -bandWidth;
+    sweep <= artWidth + bandWidth && !loadingDone;
+    sweep += sweepStep
+  ) {
     for (int l = 0; l < art.length; l++) {
       final line = art[l];
       final buf = StringBuffer();
@@ -292,10 +236,24 @@ Future<void> _runSplashAnimation() async {
     await Future.delayed(Duration(milliseconds: frameDelayMs));
   }
 
+  // Move cursor below the logo and restore it. This is the "last write"
+  // of the splash — the TUI's first write (`\x1B[?1049h` for alt screen)
+  // will follow immediately. Both go to the same file descriptor in
+  // the same isolate, so there's no inter-isolate race.
   stdout.write('\x1B[${art.length}B');
   stdout.write('\x1B[?25h');
+  await stdout.flush();
 
-  await Future.delayed(Duration(milliseconds: postAnimationPauseMs));
+  if (!loadingDone) {
+    // Animation ended naturally but loading is still in flight — hold
+    // the static logo on screen (no more redraws) until it finishes.
+    await loading;
+  } else {
+    // Animation bailed out because loading completed mid-sweep, OR
+    // finished naturally and loading was already done. Give the user
+    // a brief post-pause so they register the final frame.
+    await Future.delayed(Duration(milliseconds: postAnimationPauseMs));
+  }
 }
 
 // ── Dir resolution (unchanged) ────────────────────────────────────────
