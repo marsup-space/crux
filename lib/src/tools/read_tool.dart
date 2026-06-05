@@ -11,7 +11,7 @@ class ReadTool extends ToolDef {
 
   @override
   String get description =>
-      'Reads a file or directory from the local filesystem. '
+      'Reads file or directory from filesystem. '
       'Returns up to 2000 lines with line number prefixes. '
       'Use offset/limit for later sections.';
 

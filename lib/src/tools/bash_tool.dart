@@ -10,7 +10,7 @@ class BashTool extends ToolDef {
 
   @override
   String get description =>
-      'Executes a bash command with optional timeout. '
+      'Executes bash command with optional timeout. '
       'Prefer bash over multiple tool calls when operations can be chained.';
 
   @override
