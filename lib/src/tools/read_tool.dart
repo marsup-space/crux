@@ -21,15 +21,15 @@ class ReadTool extends ToolDef {
     'properties': {
       'filePath': {
         'type': 'string',
-        'description': 'The absolute path to the file or directory to read',
+        'description': 'Path to file or directory',
       },
       'offset': {
         'type': 'integer',
-        'description': 'The line number to start reading from (1-indexed)',
+        'description': 'Line number to start from (1-indexed)',
       },
       'limit': {
         'type': 'integer',
-        'description': 'The maximum number of lines to read (defaults to 2000)',
+        'description': 'Max lines to read (default 2000)',
       },
     },
     'required': ['filePath'],
@@ -45,7 +45,7 @@ class ReadTool extends ToolDef {
       return ToolResult.error('Missing required parameter: filePath');
     }
 
-    final path = filePath;
+    final path = resolvePath(filePath, ctx.workingDirectory);
     final type = FileSystemEntity.typeSync(path);
 
     if (type == FileSystemEntityType.notFound) {

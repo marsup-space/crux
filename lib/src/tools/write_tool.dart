@@ -14,15 +14,8 @@ class WriteTool extends ToolDef {
   Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {
-      'filePath': {
-        'type': 'string',
-        'description':
-            'The absolute path to the file to write (must be absolute, not relative)',
-      },
-      'content': {
-        'type': 'string',
-        'description': 'The content to write to the file',
-      },
+      'filePath': {'type': 'string', 'description': 'Path to file'},
+      'content': {'type': 'string', 'description': 'Content to write'},
     },
     'required': ['filePath', 'content'],
   };
@@ -42,16 +35,12 @@ class WriteTool extends ToolDef {
     if (content == null) {
       return ToolResult.error('Missing required parameter: content');
     }
-    if (!filePath.startsWith('/')) {
-      return ToolResult.error(
-        'filePath must be an absolute path, got: $filePath',
-      );
-    }
 
-    final file = File(filePath);
+    final resolved = resolvePath(filePath, ctx.workingDirectory);
+    final file = File(resolved);
 
     if (tracker != null && file.existsSync()) {
-      final guard = tracker!.checkWriteGuard(filePath);
+      final guard = tracker!.checkWriteGuard(resolved);
       if (guard != null) {
         return ToolResult(
           title: 'Read-before-write guard triggered',
@@ -62,7 +51,7 @@ class WriteTool extends ToolDef {
     }
 
     final parentDir = Directory(
-      filePath.substring(0, filePath.lastIndexOf('/')),
+      resolved.substring(0, resolved.lastIndexOf('/')),
     );
     if (!parentDir.existsSync()) {
       parentDir.createSync(recursive: true);
@@ -71,12 +60,12 @@ class WriteTool extends ToolDef {
     await file.writeAsString(content);
 
     if (tracker != null) {
-      tracker!.recordRead(filePath, await _mtimeMs(file));
+      tracker!.recordRead(resolved, await _mtimeMs(file));
     }
 
     return ToolResult(
-      title: 'Write file: $filePath',
-      output: 'Successfully wrote ${content.length} characters to $filePath',
+      title: 'Write file: $resolved',
+      output: 'Successfully wrote ${content.length} characters to $resolved',
     );
   }
 

@@ -17,10 +17,10 @@ class BashTool extends ToolDef {
   Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {
-      'command': {'type': 'string', 'description': 'The command to execute'},
+      'command': {'type': 'string', 'description': 'Command to execute'},
       'timeout': {
         'type': 'integer',
-        'description': 'Optional timeout in milliseconds (default 120000)',
+        'description': 'Timeout in milliseconds (default 120000)',
       },
     },
     'required': ['command'],

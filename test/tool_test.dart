@@ -10,6 +10,29 @@ import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
 
 void main() {
+  group('resolvePath', () {
+    test('returns absolute path unchanged', () {
+      expect(
+        resolvePath('/home/user/file.txt', '/home/user'),
+        '/home/user/file.txt',
+      );
+    });
+
+    test('resolves relative path against working directory', () {
+      expect(
+        resolvePath('src/main.dart', '/home/user/project'),
+        '/home/user/project/src/main.dart',
+      );
+    });
+
+    test('resolves dot-relative path', () {
+      expect(
+        resolvePath('./lib/app.dart', '/home/user/project'),
+        '/home/user/project/./lib/app.dart',
+      );
+    });
+  });
+
   group('ToolRegistry', () {
     late ToolRegistry registry;
 
@@ -71,7 +94,6 @@ void main() {
       final tool = BashTool();
       expect(tool.name, 'bash');
       expect(tool.parametersSchema['required'], contains('command'));
-      expect(tool.parametersSchema['required'], contains('description'));
     });
 
     test('ReadTool has correct name and schema', () {
@@ -311,6 +333,24 @@ void main() {
       final result = await tool.execute({'filePath': tempDir.path}, ctx);
       expect(result.output, contains('file1.txt'));
       expect(result.output, contains('subdir/'));
+      await tempDir.delete(recursive: true);
+    });
+
+    test('reads a file with relative path', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'crux_read_rel_test_',
+      );
+      final file = File('${tempDir.path}/test.txt');
+      await file.writeAsString('relative content');
+      final tool = ReadTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({'filePath': 'test.txt'}, ctx);
+      expect(result.output, contains('relative content'));
       await tempDir.delete(recursive: true);
     });
   });

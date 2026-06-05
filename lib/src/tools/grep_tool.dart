@@ -8,46 +8,29 @@ class GrepTool extends ToolDef {
 
   @override
   String get description =>
-      '- Fast content search tool that works with any codebase size\n'
-      '- Searches file contents using regular expressions\n'
-      '- Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)\n'
-      '- Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")\n'
-      '- Returns file paths and line numbers with at least one match sorted by modification time\n'
-      '- Use this tool when you need to find files containing specific patterns\n'
-      '- If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep) directly. '
-      'Do NOT use `grep`.\n'
-      '- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, '
-      'use the Task tool instead';
+      'Search file contents with regex. '
+      'Returns file paths and line numbers with matches. '
+      'For match counts, use Bash with `rg` directly.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {
-      'pattern': {
-        'type': 'string',
-        'description': 'The regex pattern to search for in file contents',
-      },
+      'pattern': {'type': 'string', 'description': 'Regex pattern to search'},
       'path': {
         'type': 'string',
-        'description':
-            'Directory to search in (defaults to current working directory)',
+        'description': 'Directory to search in (default: cwd)',
       },
-      'include': {
-        'type': 'string',
-        'description': 'File pattern to include (e.g. "*.js", "*.{ts,tsx}")',
-      },
+      'include': {'type': 'string', 'description': 'File pattern filter'},
       'caseInsensitive': {
         'type': 'boolean',
-        'description': 'Case-insensitive search (-i)',
+        'description': 'Case-insensitive search',
       },
       'context': {
         'type': 'integer',
-        'description': 'Number of lines around each match (-C)',
+        'description': 'Context lines around each match',
       },
-      'headLimit': {
-        'type': 'integer',
-        'description': 'Maximum number of results to return',
-      },
+      'headLimit': {'type': 'integer', 'description': 'Max results to return'},
     },
     'required': ['pattern'],
   };
@@ -55,7 +38,10 @@ class GrepTool extends ToolDef {
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final pattern = args['pattern'] as String?;
-    final path = (args['path'] as String?) ?? ctx.workingDirectory;
+    final path = resolvePath(
+      (args['path'] as String?) ?? ctx.workingDirectory,
+      ctx.workingDirectory,
+    );
     final include = args['include'] as String?;
     final caseInsensitive = (args['caseInsensitive'] as bool?) ?? false;
     final context = args['context'] as int?;

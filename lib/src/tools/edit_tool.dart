@@ -13,36 +13,25 @@ class EditTool extends ToolDef {
 
   @override
   String get description =>
-      'Performs exact string replacements in files. '
-      'You must use your Read tool at least once in the conversation before editing. '
-      'This tool will error if you attempt an edit without reading the file first. '
-      'When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) '
-      'as it appears AFTER the line number prefix. '
-      'The edit will FAIL if oldString is not found in the file with an error "oldString not found in content". '
-      'The edit will FAIL if oldString is found multiple times in the file with an error "Found multiple matches for oldString". '
-      'Provide more surrounding lines in oldString to identify the correct match. '
-      'Use replaceAll for replacing and renaming strings across the file. '
-      'IMPORTANT: DO NOT ADD ANY COMMENTS unless asked.';
+      'Exact string replacements in files. '
+      'Use replaceAll for renaming across file.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {
-      'filePath': {
-        'type': 'string',
-        'description': 'The absolute path to the file to modify',
-      },
+      'filePath': {'type': 'string', 'description': 'Path to file'},
       'oldString': {
         'type': 'string',
-        'description': 'The text to replace (must be different from newString)',
+        'description': 'Text to replace (must differ from newString)',
       },
       'newString': {
         'type': 'string',
-        'description': 'The replacement text (must differ from oldString)',
+        'description': 'Replacement text (must differ from oldString)',
       },
       'replaceAll': {
         'type': 'boolean',
-        'description': 'Replace all occurrences of oldString (default false)',
+        'description': 'Replace all occurrences (default false)',
       },
     },
     'required': ['filePath', 'oldString', 'newString'],
@@ -77,13 +66,14 @@ class EditTool extends ToolDef {
       return ToolResult.error('oldString and newString must be different');
     }
 
-    final file = File(filePath);
+    final resolved = resolvePath(filePath, ctx.workingDirectory);
+    final file = File(resolved);
     if (!file.existsSync()) {
-      return ToolResult.error('File not found: $filePath');
+      return ToolResult.error('File not found: $resolved');
     }
 
     if (tracker != null) {
-      final guard = tracker!.checkWriteGuard(filePath);
+      final guard = tracker!.checkWriteGuard(resolved);
       if (guard != null) {
         return ToolResult(
           title: 'Read-before-write guard triggered',
@@ -97,9 +87,9 @@ class EditTool extends ToolDef {
 
     if (oldString.isEmpty) {
       await file.writeAsString(newString);
-      if (tracker != null) tracker!.recordRead(filePath, await _mtimeMs(file));
+      if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
       return ToolResult(
-        title: 'Edit file: $filePath',
+        title: 'Edit file: $resolved',
         output: 'Created file with ${newString.length} characters',
       );
     }
@@ -121,11 +111,11 @@ class EditTool extends ToolDef {
     );
     await file.writeAsString(newContent);
 
-    if (tracker != null) tracker!.recordRead(filePath, await _mtimeMs(file));
+    if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
 
     final count = matchResult.positions.length;
     return ToolResult(
-      title: 'Edit file: $filePath',
+      title: 'Edit file: $resolved',
       output: 'Replaced $count occurrence(s) of oldString',
     );
   }

@@ -44,6 +44,11 @@ class ToolResult {
   }
 }
 
+String resolvePath(String filePath, String workingDirectory) {
+  if (filePath.startsWith('/')) return filePath;
+  return '$workingDirectory/$filePath';
+}
+
 abstract class ToolDef {
   String get name;
   String get description;
