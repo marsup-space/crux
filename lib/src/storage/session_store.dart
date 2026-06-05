@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
 import '../models/message.dart';
+import '../models/part.dart';
 
 const _unset = Object();
 
@@ -261,6 +264,67 @@ class SessionStore {
       archivedAt: row.archivedAt != null
           ? DateTime.fromMillisecondsSinceEpoch(row.archivedAt!)
           : null,
+    );
+  }
+
+  Future<List<Part>> addParts(
+    int sessionId,
+    int messageId,
+    List<PartData> parts,
+  ) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final results = <Part>[];
+    for (final p in parts) {
+      final id = await _db
+          .into(_db.parts)
+          .insert(
+            db.PartsCompanion.insert(
+              messageId: messageId,
+              sessionId: sessionId,
+              type: p.type.value,
+              data: Value(jsonEncode(p.data)),
+              createdAt: nowMs,
+            ),
+          );
+      results.add(
+        Part(
+          id: id,
+          messageId: messageId,
+          sessionId: sessionId,
+          type: p.type,
+          data: p.data,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(nowMs),
+        ),
+      );
+    }
+    return results;
+  }
+
+  Future<List<Part>> getPartsByMessage(int messageId) async {
+    final rows = await (_db.select(
+      _db.parts,
+    )..where((t) => t.messageId.equals(messageId))).get();
+    return rows.map(_rowToPart).toList();
+  }
+
+  Future<List<Part>> getPartsBySession(int sessionId) async {
+    final rows = await (_db.select(
+      _db.parts,
+    )..where((t) => t.sessionId.equals(sessionId))).get();
+    return rows.map(_rowToPart).toList();
+  }
+
+  Part _rowToPart(db.Part row) {
+    return Part(
+      id: row.id,
+      messageId: row.messageId,
+      sessionId: row.sessionId,
+      type: PartType.values.firstWhere(
+        (t) => t.value == row.type,
+        orElse: () => PartType.text,
+      ),
+      data: Part.parseDataJson(row.data),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
     );
   }
 

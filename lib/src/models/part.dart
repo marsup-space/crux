@@ -1,6 +1,17 @@
 import 'dart:convert';
 
-enum PartType { text }
+enum PartType { text, tool }
+
+extension PartTypeValue on PartType {
+  String get value => name;
+}
+
+class PartData {
+  final PartType type;
+  final Map<String, dynamic> data;
+
+  const PartData({required this.type, required this.data});
+}
 
 class Part {
   final int id;

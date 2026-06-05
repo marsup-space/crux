@@ -43,6 +43,13 @@ class Messages extends Table {
   IntColumn get createdAt => integer()();
 }
 
+class FileReadState extends Table {
+  IntColumn get sessionId =>
+      integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
+  TextColumn get path => text()();
+  IntColumn get mtimeMs => integer()();
+}
+
 class Parts extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get messageId =>

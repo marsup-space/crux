@@ -5,6 +5,20 @@ import 'dart:io';
 import '../models/provider_config.dart';
 import 'llm_provider.dart';
 
+class ToolUseChunk {
+  final int index;
+  final String callId;
+  final String name;
+  final String inputDelta;
+
+  const ToolUseChunk({
+    this.index = 0,
+    required this.callId,
+    required this.name,
+    this.inputDelta = '',
+  });
+}
+
 class LlmChunk {
   final String? textDelta;
   final String? reasoningContent;
@@ -15,6 +29,7 @@ class LlmChunk {
   final int? promptCacheMissTokens;
   final int? reasoningTokens;
   final String? error;
+  final ToolUseChunk? toolUse;
 
   const LlmChunk({
     this.textDelta,
@@ -26,11 +41,15 @@ class LlmChunk {
     this.promptCacheMissTokens,
     this.reasoningTokens,
     this.error,
+    this.toolUse,
   });
 }
 
 class LlmClient {
   final HttpClient _httpClient = HttpClient();
+  final Map<int, ({String callId, String name})> _anthropicToolBlocks = {};
+
+  void clearToolBlockState() => _anthropicToolBlocks.clear();
 
   Stream<LlmChunk> streamChat({
     required String endpointUrl,
@@ -38,10 +57,11 @@ class LlmClient {
     required ProviderType providerType,
     required String apiKey,
     required String modelId,
-    required List<Map<String, String>> messages,
+    required List<Map<String, dynamic>> messages,
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    List<Map<String, dynamic>>? tools,
   }) {
     final controller = StreamController<LlmChunk>();
 
@@ -60,6 +80,7 @@ class LlmClient {
           thinkingMode: thinkingMode,
           reasoningEffort: reasoningEffort,
           thinkingBudget: thinkingBudget,
+          tools: tools,
         );
         final body = jsonEncode(bodyMap);
         final bodyBytes = utf8.encode(body);
@@ -133,21 +154,42 @@ class LlmClient {
               final delta = choice['delta'] as Map<String, dynamic>?;
               final finishReason = choice['finish_reason'] as String?;
 
-              String? text;
-              String? reasoning;
               if (delta != null) {
-                text = delta['content'] as String?;
-                reasoning = delta['reasoning_content'] as String?;
+                final text = delta['content'] as String?;
+                final reasoning = delta['reasoning_content'] as String?;
+
+                if (text != null || reasoning != null) {
+                  controller.add(
+                    LlmChunk(textDelta: text, reasoningContent: reasoning),
+                  );
+                }
+
+                final toolCalls = delta['tool_calls'] as List<dynamic>?;
+                if (toolCalls != null) {
+                  for (final tc in toolCalls) {
+                    final tcMap = tc as Map<String, dynamic>;
+                    final tcIndex = tcMap['index'] as int? ?? 0;
+                    final tcId = tcMap['id'] as String? ?? '';
+                    final tcFunction =
+                        tcMap['function'] as Map<String, dynamic>?;
+                    final tcName = tcFunction?['name'] as String? ?? '';
+                    final tcArgs = tcFunction?['arguments'] as String? ?? '';
+                    controller.add(
+                      LlmChunk(
+                        toolUse: ToolUseChunk(
+                          index: tcIndex,
+                          callId: tcId,
+                          name: tcName,
+                          inputDelta: tcArgs,
+                        ),
+                      ),
+                    );
+                  }
+                }
               }
 
-              if (text != null || reasoning != null || finishReason != null) {
-                controller.add(
-                  LlmChunk(
-                    textDelta: text,
-                    reasoningContent: reasoning,
-                    finishReason: finishReason,
-                  ),
-                );
+              if (finishReason != null) {
+                controller.add(LlmChunk(finishReason: finishReason));
               }
             }
           }
@@ -215,6 +257,17 @@ class LlmClient {
             return;
           }
 
+          if (eventType == 'content_block_start') {
+            final contentBlock = json['content_block'] as Map<String, dynamic>?;
+            if (contentBlock != null && contentBlock['type'] == 'tool_use') {
+              final index = json['index'] as int? ?? 0;
+              _anthropicToolBlocks[index] = (
+                callId: contentBlock['id'] as String? ?? '',
+                name: contentBlock['name'] as String? ?? '',
+              );
+            }
+          }
+
           if (eventType == 'message_start') {
             final message = json['message'] as Map<String, dynamic>?;
             if (message != null) {
@@ -235,6 +288,19 @@ class LlmClient {
                 );
               } else if (deltaType == 'text_delta') {
                 controller.add(LlmChunk(textDelta: delta['text'] as String?));
+              } else if (deltaType == 'input_json_delta') {
+                final partialJson = delta['partial_json'] as String? ?? '';
+                final index = json['index'] as int? ?? 0;
+                final block = _anthropicToolBlocks[index];
+                controller.add(
+                  LlmChunk(
+                    toolUse: ToolUseChunk(
+                      callId: block?.callId ?? '',
+                      name: block?.name ?? '',
+                      inputDelta: partialJson,
+                    ),
+                  ),
+                );
               }
             }
           }

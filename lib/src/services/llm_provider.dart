@@ -8,10 +8,11 @@ abstract class LlmProvider {
 
   Map<String, dynamic> buildRequestBody(
     String modelId,
-    List<Map<String, String>> messages, {
+    List<Map<String, dynamic>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    List<Map<String, dynamic>>? tools,
   });
 }
 
@@ -36,10 +37,11 @@ class OpenAiProvider extends LlmProvider {
   @override
   Map<String, dynamic> buildRequestBody(
     String modelId,
-    List<Map<String, String>> messages, {
+    List<Map<String, dynamic>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    List<Map<String, dynamic>>? tools,
   }) {
     return {
       'model': modelId,
@@ -49,6 +51,19 @@ class OpenAiProvider extends LlmProvider {
       'thinking': {'type': thinkingMode},
       if (thinkingMode != 'disabled' && reasoningEffort != null)
         'reasoning_effort': mapEffort(reasoningEffort),
+      if (tools != null && tools.isNotEmpty)
+        'tools': tools
+            .map(
+              (t) => {
+                'type': 'function',
+                'function': {
+                  'name': t['name'],
+                  'description': t['description'],
+                  'parameters': t['parameters'],
+                },
+              },
+            )
+            .toList(),
     };
   }
 }
@@ -74,10 +89,11 @@ class AnthropicProvider extends LlmProvider {
   @override
   Map<String, dynamic> buildRequestBody(
     String modelId,
-    List<Map<String, String>> messages, {
+    List<Map<String, dynamic>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    List<Map<String, dynamic>>? tools,
   }) {
     final systemMsg = messages.where((m) => m['role'] == 'system').toList();
     final chatMsgs = messages.where((m) => m['role'] != 'system').toList();
@@ -95,6 +111,17 @@ class AnthropicProvider extends LlmProvider {
         'type': 'enabled',
         'budget_tokens': thinkingBudget ?? 10000,
       };
+    }
+    if (tools != null && tools.isNotEmpty) {
+      body['tools'] = tools
+          .map(
+            (t) => ({
+              'name': t['name'],
+              'description': t['description'],
+              'input_schema': t['parameters'] as Map<String, dynamic>,
+            }),
+          )
+          .toList();
     }
     return body;
   }

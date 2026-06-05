@@ -11,12 +11,12 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Sessions, Messages, Parts])
+@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState])
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -37,6 +37,9 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 5) {
         await m.addColumn(messages, messages.reasoningEffort);
+      }
+      if (from < 6) {
+        await m.createTable(fileReadState);
       }
     },
   );

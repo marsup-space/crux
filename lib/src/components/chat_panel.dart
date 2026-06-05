@@ -9,8 +9,11 @@ import '../commands/command_executor.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
+import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
+import '../tools/registry.dart';
+import '../tools/file_read_tracker.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -81,7 +84,16 @@ class _ChatPanelState extends State<ChatPanel> {
     _providerService = ProviderService(providersDir: component.providersDir);
     final db = CruxDatabase();
     _store = SessionStore(db);
-    _chatService = ChatService(_store, _providerService, LlmClient());
+    final tracker = FileReadTracker();
+    final registry = ToolRegistry();
+    registry.registerDefaults(tracker);
+    final toolExecutor = ToolExecutor(registry);
+    _chatService = ChatService(
+      _store,
+      _providerService,
+      LlmClient(),
+      toolExecutor,
+    );
 
     _sessionController = SessionController(
       store: _store,

@@ -21,10 +21,11 @@ class DeepSeekProvider extends LlmProvider {
   @override
   Map<String, dynamic> buildRequestBody(
     String modelId,
-    List<Map<String, String>> messages, {
+    List<Map<String, dynamic>> messages, {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    List<Map<String, dynamic>>? tools,
   }) {
     return {
       'model': modelId,
@@ -34,6 +35,19 @@ class DeepSeekProvider extends LlmProvider {
       'thinking': {'type': thinkingMode},
       if (thinkingMode != 'disabled' && reasoningEffort != null)
         'reasoning_effort': mapEffort(reasoningEffort),
+      if (tools != null && tools.isNotEmpty)
+        'tools': tools
+            .map(
+              (t) => {
+                'type': 'function',
+                'function': {
+                  'name': t['name'],
+                  'description': t['description'],
+                  'parameters': t['parameters'],
+                },
+              },
+            )
+            .toList(),
     };
   }
 }

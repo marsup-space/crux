@@ -2183,12 +2183,281 @@ class PartsCompanion extends UpdateCompanion<Part> {
   }
 }
 
+class $FileReadStateTable extends FileReadState
+    with TableInfo<$FileReadStateTable, FileReadStateData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileReadStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<int> sessionId = GeneratedColumn<int>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES sessions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mtimeMsMeta = const VerificationMeta(
+    'mtimeMs',
+  );
+  @override
+  late final GeneratedColumn<int> mtimeMs = GeneratedColumn<int>(
+    'mtime_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [sessionId, path, mtimeMs];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_read_state';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileReadStateData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('mtime_ms')) {
+      context.handle(
+        _mtimeMsMeta,
+        mtimeMs.isAcceptableOrUnknown(data['mtime_ms']!, _mtimeMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mtimeMsMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => const {};
+  @override
+  FileReadStateData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileReadStateData(
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}session_id'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      mtimeMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mtime_ms'],
+      )!,
+    );
+  }
+
+  @override
+  $FileReadStateTable createAlias(String alias) {
+    return $FileReadStateTable(attachedDatabase, alias);
+  }
+}
+
+class FileReadStateData extends DataClass
+    implements Insertable<FileReadStateData> {
+  final int sessionId;
+  final String path;
+  final int mtimeMs;
+  const FileReadStateData({
+    required this.sessionId,
+    required this.path,
+    required this.mtimeMs,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['session_id'] = Variable<int>(sessionId);
+    map['path'] = Variable<String>(path);
+    map['mtime_ms'] = Variable<int>(mtimeMs);
+    return map;
+  }
+
+  FileReadStateCompanion toCompanion(bool nullToAbsent) {
+    return FileReadStateCompanion(
+      sessionId: Value(sessionId),
+      path: Value(path),
+      mtimeMs: Value(mtimeMs),
+    );
+  }
+
+  factory FileReadStateData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileReadStateData(
+      sessionId: serializer.fromJson<int>(json['sessionId']),
+      path: serializer.fromJson<String>(json['path']),
+      mtimeMs: serializer.fromJson<int>(json['mtimeMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'sessionId': serializer.toJson<int>(sessionId),
+      'path': serializer.toJson<String>(path),
+      'mtimeMs': serializer.toJson<int>(mtimeMs),
+    };
+  }
+
+  FileReadStateData copyWith({int? sessionId, String? path, int? mtimeMs}) =>
+      FileReadStateData(
+        sessionId: sessionId ?? this.sessionId,
+        path: path ?? this.path,
+        mtimeMs: mtimeMs ?? this.mtimeMs,
+      );
+  FileReadStateData copyWithCompanion(FileReadStateCompanion data) {
+    return FileReadStateData(
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      path: data.path.present ? data.path.value : this.path,
+      mtimeMs: data.mtimeMs.present ? data.mtimeMs.value : this.mtimeMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileReadStateData(')
+          ..write('sessionId: $sessionId, ')
+          ..write('path: $path, ')
+          ..write('mtimeMs: $mtimeMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, path, mtimeMs);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileReadStateData &&
+          other.sessionId == this.sessionId &&
+          other.path == this.path &&
+          other.mtimeMs == this.mtimeMs);
+}
+
+class FileReadStateCompanion extends UpdateCompanion<FileReadStateData> {
+  final Value<int> sessionId;
+  final Value<String> path;
+  final Value<int> mtimeMs;
+  final Value<int> rowid;
+  const FileReadStateCompanion({
+    this.sessionId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.mtimeMs = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileReadStateCompanion.insert({
+    required int sessionId,
+    required String path,
+    required int mtimeMs,
+    this.rowid = const Value.absent(),
+  }) : sessionId = Value(sessionId),
+       path = Value(path),
+       mtimeMs = Value(mtimeMs);
+  static Insertable<FileReadStateData> custom({
+    Expression<int>? sessionId,
+    Expression<String>? path,
+    Expression<int>? mtimeMs,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (sessionId != null) 'session_id': sessionId,
+      if (path != null) 'path': path,
+      if (mtimeMs != null) 'mtime_ms': mtimeMs,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileReadStateCompanion copyWith({
+    Value<int>? sessionId,
+    Value<String>? path,
+    Value<int>? mtimeMs,
+    Value<int>? rowid,
+  }) {
+    return FileReadStateCompanion(
+      sessionId: sessionId ?? this.sessionId,
+      path: path ?? this.path,
+      mtimeMs: mtimeMs ?? this.mtimeMs,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (sessionId.present) {
+      map['session_id'] = Variable<int>(sessionId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (mtimeMs.present) {
+      map['mtime_ms'] = Variable<int>(mtimeMs.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileReadStateCompanion(')
+          ..write('sessionId: $sessionId, ')
+          ..write('path: $path, ')
+          ..write('mtimeMs: $mtimeMs, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
   late final $SessionsTable sessions = $SessionsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $PartsTable parts = $PartsTable(this);
+  late final $FileReadStateTable fileReadState = $FileReadStateTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2197,6 +2466,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     sessions,
     messages,
     parts,
+    fileReadState,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -2220,6 +2490,13 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('parts', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'sessions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('file_read_state', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -2302,6 +2579,24 @@ final class $$SessionsTableReferences
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_partsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$FileReadStateTable, List<FileReadStateData>>
+  _fileReadStateRefsTable(_$CruxDatabase db) => MultiTypedResultKey.fromTable(
+    db.fileReadState,
+    aliasName: $_aliasNameGenerator(db.sessions.id, db.fileReadState.sessionId),
+  );
+
+  $$FileReadStateTableProcessedTableManager get fileReadStateRefs {
+    final manager = $$FileReadStateTableTableManager(
+      $_db,
+      $_db.fileReadState,
+    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_fileReadStateRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -2444,6 +2739,31 @@ class $$SessionsTableFilterComposer
           }) => $$PartsTableFilterComposer(
             $db: $db,
             $table: $db.parts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> fileReadStateRefs(
+    Expression<bool> Function($$FileReadStateTableFilterComposer f) f,
+  ) {
+    final $$FileReadStateTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.fileReadState,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FileReadStateTableFilterComposer(
+            $db: $db,
+            $table: $db.fileReadState,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2668,6 +2988,31 @@ class $$SessionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> fileReadStateRefs<T extends Object>(
+    Expression<T> Function($$FileReadStateTableAnnotationComposer a) f,
+  ) {
+    final $$FileReadStateTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.fileReadState,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FileReadStateTableAnnotationComposer(
+            $db: $db,
+            $table: $db.fileReadState,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$SessionsTableTableManager
@@ -2683,7 +3028,11 @@ class $$SessionsTableTableManager
           $$SessionsTableUpdateCompanionBuilder,
           (Session, $$SessionsTableReferences),
           Session,
-          PrefetchHooks Function({bool messagesRefs, bool partsRefs})
+          PrefetchHooks Function({
+            bool messagesRefs,
+            bool partsRefs,
+            bool fileReadStateRefs,
+          })
         > {
   $$SessionsTableTableManager(_$CruxDatabase db, $SessionsTable table)
     : super(
@@ -2780,42 +3129,89 @@ class $$SessionsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({messagesRefs = false, partsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (messagesRefs) db.messages,
-                if (partsRefs) db.parts,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (messagesRefs)
-                    await $_getPrefetchedData<Session, $SessionsTable, Message>(
-                      currentTable: table,
-                      referencedTable: $$SessionsTableReferences
-                          ._messagesRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$SessionsTableReferences(db, table, p0).messagesRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.sessionId == item.id),
-                      typedResults: items,
-                    ),
-                  if (partsRefs)
-                    await $_getPrefetchedData<Session, $SessionsTable, Part>(
-                      currentTable: table,
-                      referencedTable: $$SessionsTableReferences
-                          ._partsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$SessionsTableReferences(db, table, p0).partsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.sessionId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({
+                messagesRefs = false,
+                partsRefs = false,
+                fileReadStateRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (messagesRefs) db.messages,
+                    if (partsRefs) db.parts,
+                    if (fileReadStateRefs) db.fileReadState,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (messagesRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          Message
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._messagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).messagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (partsRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          Part
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._partsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).partsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (fileReadStateRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          FileReadStateData
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._fileReadStateRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).fileReadStateRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -2832,7 +3228,11 @@ typedef $$SessionsTableProcessedTableManager =
       $$SessionsTableUpdateCompanionBuilder,
       (Session, $$SessionsTableReferences),
       Session,
-      PrefetchHooks Function({bool messagesRefs, bool partsRefs})
+      PrefetchHooks Function({
+        bool messagesRefs,
+        bool partsRefs,
+        bool fileReadStateRefs,
+      })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
     MessagesCompanion Function({
@@ -3839,6 +4239,292 @@ typedef $$PartsTableProcessedTableManager =
       Part,
       PrefetchHooks Function({bool messageId, bool sessionId})
     >;
+typedef $$FileReadStateTableCreateCompanionBuilder =
+    FileReadStateCompanion Function({
+      required int sessionId,
+      required String path,
+      required int mtimeMs,
+      Value<int> rowid,
+    });
+typedef $$FileReadStateTableUpdateCompanionBuilder =
+    FileReadStateCompanion Function({
+      Value<int> sessionId,
+      Value<String> path,
+      Value<int> mtimeMs,
+      Value<int> rowid,
+    });
+
+final class $$FileReadStateTableReferences
+    extends
+        BaseReferences<_$CruxDatabase, $FileReadStateTable, FileReadStateData> {
+  $$FileReadStateTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $SessionsTable _sessionIdTable(_$CruxDatabase db) =>
+      db.sessions.createAlias(
+        $_aliasNameGenerator(db.fileReadState.sessionId, db.sessions.id),
+      );
+
+  $$SessionsTableProcessedTableManager get sessionId {
+    final $_column = $_itemColumn<int>('session_id')!;
+
+    final manager = $$SessionsTableTableManager(
+      $_db,
+      $_db.sessions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$FileReadStateTableFilterComposer
+    extends Composer<_$CruxDatabase, $FileReadStateTable> {
+  $$FileReadStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mtimeMs => $composableBuilder(
+    column: $table.mtimeMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$SessionsTableFilterComposer get sessionId {
+    final $$SessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileReadStateTableOrderingComposer
+    extends Composer<_$CruxDatabase, $FileReadStateTable> {
+  $$FileReadStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get mtimeMs => $composableBuilder(
+    column: $table.mtimeMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$SessionsTableOrderingComposer get sessionId {
+    final $$SessionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileReadStateTableAnnotationComposer
+    extends Composer<_$CruxDatabase, $FileReadStateTable> {
+  $$FileReadStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get mtimeMs =>
+      $composableBuilder(column: $table.mtimeMs, builder: (column) => column);
+
+  $$SessionsTableAnnotationComposer get sessionId {
+    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileReadStateTableTableManager
+    extends
+        RootTableManager<
+          _$CruxDatabase,
+          $FileReadStateTable,
+          FileReadStateData,
+          $$FileReadStateTableFilterComposer,
+          $$FileReadStateTableOrderingComposer,
+          $$FileReadStateTableAnnotationComposer,
+          $$FileReadStateTableCreateCompanionBuilder,
+          $$FileReadStateTableUpdateCompanionBuilder,
+          (FileReadStateData, $$FileReadStateTableReferences),
+          FileReadStateData,
+          PrefetchHooks Function({bool sessionId})
+        > {
+  $$FileReadStateTableTableManager(_$CruxDatabase db, $FileReadStateTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileReadStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileReadStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileReadStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> sessionId = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<int> mtimeMs = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileReadStateCompanion(
+                sessionId: sessionId,
+                path: path,
+                mtimeMs: mtimeMs,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int sessionId,
+                required String path,
+                required int mtimeMs,
+                Value<int> rowid = const Value.absent(),
+              }) => FileReadStateCompanion.insert(
+                sessionId: sessionId,
+                path: path,
+                mtimeMs: mtimeMs,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$FileReadStateTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({sessionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (sessionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$FileReadStateTableProcessedTableManager =
+    ProcessedTableManager<
+      _$CruxDatabase,
+      $FileReadStateTable,
+      FileReadStateData,
+      $$FileReadStateTableFilterComposer,
+      $$FileReadStateTableOrderingComposer,
+      $$FileReadStateTableAnnotationComposer,
+      $$FileReadStateTableCreateCompanionBuilder,
+      $$FileReadStateTableUpdateCompanionBuilder,
+      (FileReadStateData, $$FileReadStateTableReferences),
+      FileReadStateData,
+      PrefetchHooks Function({bool sessionId})
+    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -3849,4 +4535,6 @@ class $CruxDatabaseManager {
       $$MessagesTableTableManager(_db, _db.messages);
   $$PartsTableTableManager get parts =>
       $$PartsTableTableManager(_db, _db.parts);
+  $$FileReadStateTableTableManager get fileReadState =>
+      $$FileReadStateTableTableManager(_db, _db.fileReadState);
 }
