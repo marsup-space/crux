@@ -17,7 +17,6 @@ dependencies:
   toml: ^0.18.0
   drift: ^2.22.1
   sqlite3: ^2.7.4
-  sqlite3_flutter_libs: ^0.5.28
   json_annotation: ^4.9.0
 
 dev_dependencies:
