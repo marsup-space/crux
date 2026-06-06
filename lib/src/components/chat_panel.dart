@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../utils/cjk_word_boundary.dart';
+import '../utils/markdown_headings.dart';
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
@@ -30,6 +31,7 @@ import 'extra_info_panel.dart';
 import 'session_management_panel.dart';
 import 'message_bubble.dart';
 import 'streaming_bubble.dart';
+import 'tldr_bubble.dart';
 
 class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
@@ -314,7 +316,42 @@ class _ChatPanelState extends State<ChatPanel> {
 
   bool _handleInputKeyEvent(KeyboardEvent event) {
     if (_overlayController.showSessionManager) return true;
-    if (_overlayController.overlayMode == OverlayMode.off) return false;
+
+    if (_overlayController.overlayMode == OverlayMode.off) {
+      if (event.logicalKey == LogicalKey.pageUp && (event.isControlPressed || event.isAltPressed)) {
+        _jumpToPreviousUserInput();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.pageDown && (event.isControlPressed || event.isAltPressed)) {
+        _jumpToNextUserInput();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.pageUp) {
+        scrollController.pageUp();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.pageDown) {
+        scrollController.pageDown();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowUp && event.isControlPressed) {
+        scrollController.scrollUp(scrollController.viewportDimension / 2);
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowDown && event.isControlPressed) {
+        scrollController.scrollDown(scrollController.viewportDimension / 2);
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.home && event.isControlPressed) {
+        scrollController.scrollToStart();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.end && event.isControlPressed) {
+        scrollController.scrollToBottom();
+        return true;
+      }
+      return false;
+    }
 
     if (_overlayController.overlayMode == OverlayMode.wizard) {
       return true;
@@ -428,6 +465,66 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     return false;
+  }
+
+  void _jumpToPreviousUserInput() {
+    final messages = _sessionController.currentMessages;
+    final userIndices = <int>[];
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].role == 'user') userIndices.add(i);
+    }
+    if (userIndices.isEmpty) return;
+
+    final avgHeight = scrollController.maxScrollExtent > 0 && messages.isNotEmpty
+        ? scrollController.maxScrollExtent / messages.length
+        : 3.0;
+
+    final currentOffset = scrollController.offset;
+    int? targetMsgIndex;
+    for (final idx in userIndices.reversed) {
+      final estOffset = idx * avgHeight;
+      if (estOffset < currentOffset - 1) {
+        targetMsgIndex = idx;
+        break;
+      }
+    }
+
+    if (targetMsgIndex != null) {
+      scrollController.jumpTo((targetMsgIndex * avgHeight).clamp(
+        scrollController.minScrollExtent,
+        scrollController.maxScrollExtent,
+      ));
+    }
+  }
+
+  void _jumpToNextUserInput() {
+    final messages = _sessionController.currentMessages;
+    final userIndices = <int>[];
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].role == 'user') userIndices.add(i);
+    }
+    if (userIndices.isEmpty) return;
+
+    final avgHeight = scrollController.maxScrollExtent > 0 && messages.isNotEmpty
+        ? scrollController.maxScrollExtent / messages.length
+        : 3.0;
+
+    final currentOffset = scrollController.offset;
+    int? targetMsgIndex;
+    for (final idx in userIndices) {
+      final estOffset = idx * avgHeight;
+      if (estOffset > currentOffset + 1) {
+        targetMsgIndex = idx;
+        break;
+      }
+    }
+
+    if (targetMsgIndex != null) {
+      scrollController.jumpTo((targetMsgIndex * avgHeight).clamp(
+        scrollController.minScrollExtent,
+        scrollController.maxScrollExtent,
+      ));
+    }
   }
 
   void _onHoverCommand(int index) {
@@ -556,6 +653,13 @@ class _ChatPanelState extends State<ChatPanel> {
         if (_sessionController.currentSession.title == 'New Session') {
           _sessionController.generateTitle(sessionId);
         }
+        final lastAiMsg = msgs.lastWhere(
+          (m) => m.role == 'ai',
+          orElse: () => Message(id: -1, sessionId: sessionId, role: 'ai', content: ''),
+        );
+        if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
+          _maybeGenerateTldr(sessionId, lastAiMsg);
+        }
       },
       onError: (error) {
         _streamingController.stopMetricsTimer(sessionId);
@@ -585,6 +689,9 @@ class _ChatPanelState extends State<ChatPanel> {
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
       resolveAuxiliaryModel: _sessionController.resolveAuxiliaryModel,
+      triggerTldr: (sessionId, aiMsg) {
+        _maybeGenerateTldr(sessionId, aiMsg);
+      },
       enterBuiltinWizard: (name) {
         setState(() {
           _overlayController.enterBuiltinWizard(name);
@@ -611,6 +718,60 @@ class _ChatPanelState extends State<ChatPanel> {
       projectPath: Directory.current.path,
     );
     await _switchSession(session.id);
+  }
+
+  Future<void> _maybeGenerateTldr(int sessionId, Message aiMsg) async {
+    final threshold = _providerService.tldrThreshold;
+    if (aiMsg.content.length < threshold) return;
+
+    if (aiMsg.tldr.isNotEmpty) return;
+
+    final rt = _sessionController.runtime(sessionId);
+    final hasAuxModel = _providerService.auxiliaryModel != null &&
+        _providerService.auxiliaryModel != 'none';
+
+    if (!hasAuxModel) {
+      setState(() {});
+      return;
+    }
+
+    rt.isGeneratingTldr = true;
+    setState(() {});
+
+    final tldrText = await _chatService.generateTldr(aiMsg.content);
+    rt.isGeneratingTldr = false;
+    if (tldrText != null && tldrText.isNotEmpty) {
+      await _store.updateMessageTldr(aiMsg.id, tldrText);
+      final msgs = _sessionController.messageCache[sessionId];
+      if (msgs != null) {
+        for (var i = 0; i < msgs.length; i++) {
+          if (msgs[i].id == aiMsg.id) {
+            msgs[i] = Message(
+              id: msgs[i].id,
+              sessionId: msgs[i].sessionId,
+              role: msgs[i].role,
+              content: msgs[i].content,
+              reasoningContent: msgs[i].reasoningContent,
+              reasoningTokens: msgs[i].reasoningTokens,
+              thinkingDurationMs: msgs[i].thinkingDurationMs,
+              reasoningEffort: msgs[i].reasoningEffort,
+              model: msgs[i].model,
+              cost: msgs[i].cost,
+              tokensIn: msgs[i].tokensIn,
+              tokensOut: msgs[i].tokensOut,
+              error: msgs[i].error,
+              parentMsgId: msgs[i].parentMsgId,
+              createdAt: msgs[i].createdAt,
+              toolCalls: msgs[i].toolCalls,
+              toolCallId: msgs[i].toolCallId,
+              tldr: tldrText,
+            );
+            break;
+          }
+        }
+      }
+    }
+    setState(() {});
   }
 
   void _dismissWizard({String? message}) {
@@ -832,7 +993,55 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
-    final itemCount = messages.length + (isStreaming ? 1 : 0);
+    final items = <Component>[];
+    for (var i = 0; i < messages.length; i++) {
+      final msg = messages[i];
+      final collapsed = i < lastRoundStart;
+      Message? pairedResult;
+      if (msg.role == 'tool_call') {
+        for (final tc in msg.toolCalls) {
+          if (resultByCallId.containsKey(tc.callId)) {
+            pairedResult = resultByCallId[tc.callId]!;
+            break;
+          }
+        }
+      }
+      items.add(
+        MessageBubble(
+          message: msg,
+          reasoningCollapsed: collapsed,
+          pairedResult: pairedResult,
+          toolRegistry: _toolRegistry,
+        ),
+      );
+
+      if (msg.role == 'ai' && msg.id > 0 && rt != null) {
+        final hasTldr = msg.tldr.isNotEmpty;
+        if (hasTldr || rt.isGeneratingTldr) {
+          final headings = extractHeadings(msg.content);
+          items.add(
+            TldrBubble(
+              tldrText: msg.tldr,
+              headings: headings,
+              isGenerating: rt.isGeneratingTldr && !hasTldr,
+              hasAuxiliaryModel:
+                  _providerService.auxiliaryModel != null &&
+                  _providerService.auxiliaryModel != 'none',
+            ),
+          );
+        }
+      }
+    }
+
+    if (isStreaming) {
+      items.add(
+        StreamingBubble(
+          streamingContent: _streamingController.streamingContent,
+          streamingReasoning: _streamingController.streamingReasoning,
+          runtimeState: rt,
+        ),
+      );
+    }
 
     return SelectionArea(
       onSelectionCompleted: (text) {
@@ -846,36 +1055,8 @@ class _ChatPanelState extends State<ChatPanel> {
         child: ListView.builder(
           controller: scrollController,
           padding: EdgeInsets.all(1),
-          itemCount: itemCount,
-          itemBuilder: (context, index) {
-            if (index < messages.length) {
-              final msg = messages[index];
-              final collapsed = index < lastRoundStart;
-              Message? pairedResult;
-              if (msg.role == 'tool_call') {
-                for (final tc in msg.toolCalls) {
-                  if (resultByCallId.containsKey(tc.callId)) {
-                    pairedResult = resultByCallId[tc.callId]!;
-                    break;
-                  }
-                }
-              }
-              return MessageBubble(
-                message: msg,
-                reasoningCollapsed: collapsed,
-                pairedResult: pairedResult,
-                toolRegistry: _toolRegistry,
-              );
-            }
-            final rt = sessionId != null
-                ? _sessionController.runtime(sessionId)
-                : null;
-            return StreamingBubble(
-              streamingContent: _streamingController.streamingContent,
-              streamingReasoning: _streamingController.streamingReasoning,
-              runtimeState: rt,
-            );
-          },
+          itemCount: items.length,
+          itemBuilder: (context, index) => items[index],
         ),
       ),
     );
