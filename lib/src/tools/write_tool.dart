@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
@@ -16,7 +16,11 @@ class WriteTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateTokens(content);
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: content,
+    );
     return '$lines lines, $sizeStr, ~${tokens}t written';
   }
 
@@ -76,7 +80,8 @@ class WriteTool extends ToolDef {
 
     return ToolResult(
       title: 'Write file: $resolved',
-      output: 'Successfully wrote ${content.length} characters to ${relativePath(resolved, ctx.workingDirectory)}',
+      output:
+          'Successfully wrote ${content.length} characters to ${relativePath(resolved, ctx.workingDirectory)}',
     );
   }
 

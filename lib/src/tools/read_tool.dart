@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
 const _defaultLimit = 2000;
@@ -17,7 +17,11 @@ class ReadTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateTokens(result.output);
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+    );
     return '$lines lines, $sizeStr, ~${tokens}t';
   }
 
@@ -95,7 +99,12 @@ class ReadTool extends ToolDef {
     return ToolResult(title: 'List directory: $path', output: output);
   }
 
-  Future<ToolResult> _readFile(String path, int offset, int limit, String workingDirectory) async {
+  Future<ToolResult> _readFile(
+    String path,
+    int offset,
+    int limit,
+    String workingDirectory,
+  ) async {
     final file = File(path);
 
     final binaryExts = {

@@ -243,8 +243,10 @@ void main() {
       expect(result, isNotNull);
       expect(result!.positions.length, 1);
       final pos = result.positions[0];
-      expect(content.substring(pos, pos + 'hello   world'.length),
-          equals('hello   world'));
+      expect(
+        content.substring(pos, pos + 'hello   world'.length),
+        equals('hello   world'),
+      );
     });
 
     test('positions map correctly with leading whitespace', () {
@@ -268,8 +270,9 @@ void main() {
     });
 
     test('replacement via WhitespaceMatcher does not corrupt file', () async {
-      final tempDir =
-          await Directory.systemTemp.createTemp('crux_ws_edit_test_');
+      final tempDir = await Directory.systemTemp.createTemp(
+        'crux_ws_edit_test_',
+      );
       final file = File('${tempDir.path}/test.txt');
       await file.writeAsString('hello   world\nmore   text');
 
@@ -294,8 +297,9 @@ void main() {
     });
 
     test('WhitespaceMatcher preserves surrounding content with tabs', () async {
-      final tempDir =
-          await Directory.systemTemp.createTemp('crux_ws_tab_test_');
+      final tempDir = await Directory.systemTemp.createTemp(
+        'crux_ws_tab_test_',
+      );
       final file = File('${tempDir.path}/test.txt');
       await file.writeAsString('prefix\tfoo\tbar\tsuffix');
 
@@ -503,36 +507,43 @@ void main() {
       }
     });
 
-    test('replaceAll with different length replacement preserves positions', () async {
-      final content = '[Nocterm](https://github.com/wu-sheng/nocterm)\n'
-          'Some text\n'
-          '[Nocterm](https://github.com/wu-sheng/nocterm)';
-      final file = File('${tempDir.path}/readme.md');
-      await file.writeAsString(content);
+    test(
+      'replaceAll with different length replacement preserves positions',
+      () async {
+        final content =
+            '[Nocterm](https://github.com/wu-sheng/nocterm)\n'
+            'Some text\n'
+            '[Nocterm](https://github.com/wu-sheng/nocterm)';
+        final file = File('${tempDir.path}/readme.md');
+        await file.writeAsString(content);
 
-      final tool = EditTool();
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
-      final result = await tool.execute({
-        'filePath': 'readme.md',
-        'oldString': 'https://github.com/wu-sheng/nocterm',
-        'newString': 'https://github.com/marsup-space/nocterm',
-        'replaceAll': true,
-      }, ctx);
+        final tool = EditTool();
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+        final result = await tool.execute({
+          'filePath': 'readme.md',
+          'oldString': 'https://github.com/wu-sheng/nocterm',
+          'newString': 'https://github.com/marsup-space/nocterm',
+          'replaceAll': true,
+        }, ctx);
 
-      expect(result.output, contains('Replaced 2 occurrence'));
+        expect(result.output, contains('Replaced 2 occurrence'));
 
-      final updated = await file.readAsString();
-      expect(updated, equals(
-        '[Nocterm](https://github.com/marsup-space/nocterm)\n'
-        'Some text\n'
-        '[Nocterm](https://github.com/marsup-space/nocterm)',
-      ));
-    });
+        final updated = await file.readAsString();
+        expect(
+          updated,
+          equals(
+            '[Nocterm](https://github.com/marsup-space/nocterm)\n'
+            'Some text\n'
+            '[Nocterm](https://github.com/marsup-space/nocterm)',
+          ),
+        );
+      },
+    );
 
     test('replaceAll with same length replacement works', () async {
       final file = File('${tempDir.path}/code.dart');
@@ -577,7 +588,12 @@ void main() {
 
       expect(result.output, contains('Replaced 2 occurrence'));
       final updated = await file.readAsString();
-      expect(updated, equals('url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com'));
+      expect(
+        updated,
+        equals(
+          'url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com',
+        ),
+      );
     });
   });
 
@@ -603,6 +619,107 @@ void main() {
       final asciiTokens = estimateTokens('aaaa');
       final cjkTokens = estimateTokens('你好你好');
       expect(cjkTokens, greaterThan(asciiTokens));
+    });
+  });
+
+  group('estimateToolRoundTripTokens', () {
+    test('includes tool name, args, result, and overhead', () {
+      final result = estimateToolRoundTripTokens(
+        toolName: 'read',
+        args: {'filePath': '/foo/bar.txt'},
+        resultOutput: 'file contents here',
+      );
+      final nameTokens = estimateTokens('read');
+      final argsTokens = estimateTokens('{"filePath":"/foo/bar.txt"}');
+      final outputTokens = estimateTokens('file contents here');
+      expect(result, equals(nameTokens + argsTokens + outputTokens + 25));
+    });
+
+    test('without anthropic overhead', () {
+      final result = estimateToolRoundTripTokens(
+        toolName: 'read',
+        args: {'filePath': '/foo/bar.txt'},
+        resultOutput: 'file contents here',
+        anthropicOverhead: false,
+      );
+      final nameTokens = estimateTokens('read');
+      final argsTokens = estimateTokens('{"filePath":"/foo/bar.txt"}');
+      final outputTokens = estimateTokens('file contents here');
+      expect(result, equals(nameTokens + argsTokens + outputTokens));
+    });
+
+    test('with anthropic overhead is larger than without', () {
+      final withOverhead = estimateToolRoundTripTokens(
+        toolName: 'read',
+        args: {'filePath': '/foo'},
+        resultOutput: 'output',
+      );
+      final withoutOverhead = estimateToolRoundTripTokens(
+        toolName: 'read',
+        args: {'filePath': '/foo'},
+        resultOutput: 'output',
+        anthropicOverhead: false,
+      );
+      expect(withOverhead, greaterThan(withoutOverhead));
+    });
+
+    test('excludeArgsFromEstimate removes specified args from estimate', () {
+      final full = estimateToolRoundTripTokens(
+        toolName: 'edit',
+        args: {
+          'filePath': '/foo.txt',
+          'oldString': 'a' * 1000,
+          'newString': 'b' * 1000,
+        },
+        resultOutput: 'Replaced 1 occurrence',
+      );
+      final excluded = estimateToolRoundTripTokens(
+        toolName: 'edit',
+        args: {
+          'filePath': '/foo.txt',
+          'oldString': 'a' * 1000,
+          'newString': 'b' * 1000,
+        },
+        resultOutput: 'Replaced 1 occurrence',
+        excludeArgsFromEstimate: {'oldString', 'newString'},
+      );
+      expect(excluded, lessThan(full));
+      expect(excluded, lessThan(100));
+    });
+  });
+
+  group('estimateToolDefsTokens', () {
+    test('estimates tokens for tool definitions', () {
+      final defs = [
+        {
+          'name': 'read',
+          'description': 'Reads a file',
+          'parameters': {
+            'type': 'object',
+            'properties': {
+              'filePath': {'type': 'string'},
+            },
+          },
+        },
+      ];
+      final result = estimateToolDefsTokens(defs);
+      expect(result, greaterThan(0));
+    });
+
+    test('empty list returns minimal tokens', () {
+      final result = estimateToolDefsTokens([]);
+      expect(result, equals(estimateTokens('[]')));
+    });
+
+    test('more tools means more tokens', () {
+      final one = [
+        {'name': 'read', 'description': 'Reads a file', 'parameters': {}},
+      ];
+      final two = [
+        {'name': 'read', 'description': 'Reads a file', 'parameters': {}},
+        {'name': 'write', 'description': 'Writes a file', 'parameters': {}},
+      ];
+      expect(estimateToolDefsTokens(two), greaterThan(estimateToolDefsTokens(one)));
     });
   });
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
 class GlobTool extends ToolDef {
@@ -11,7 +11,11 @@ class GlobTool extends ToolDef {
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
     final pattern = args['pattern'] as String? ?? '';
     final count = '\n'.allMatches(result.output).length + 1;
-    final tokens = estimateTokens(result.output);
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+    );
     return '"$pattern": $count items, ~${tokens}t';
   }
 
@@ -63,7 +67,9 @@ class GlobTool extends ToolDef {
           );
         }
         final lines = output.trim().split('\n');
-        final relativeLines = lines.map((l) => relativePath(l, ctx.workingDirectory)).toList();
+        final relativeLines = lines
+            .map((l) => relativePath(l, ctx.workingDirectory))
+            .toList();
         if (relativeLines.length > 100) {
           final kept = relativeLines.take(100).join('\n');
           return ToolResult(
@@ -72,7 +78,10 @@ class GlobTool extends ToolDef {
             truncated: true,
           );
         }
-        return ToolResult(title: 'Glob: $pattern', output: relativeLines.join('\n'));
+        return ToolResult(
+          title: 'Glob: $pattern',
+          output: relativeLines.join('\n'),
+        );
       }
       if (result.exitCode == 1) {
         return ToolResult(

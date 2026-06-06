@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
 const _maxLines = 2000;
@@ -12,7 +12,9 @@ class BashTool extends ToolDef {
   @override
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
     final command = args['command'] as String? ?? '';
-    final preview = command.length > 30 ? '${command.substring(0, 27)}...' : command;
+    final preview = command.length > 30
+        ? '${command.substring(0, 27)}...'
+        : command;
     final exitCode = result.metadata['exitCode'];
     final suffix = exitCode != null && exitCode != 0 ? ' [exit $exitCode]' : '';
     final lines = '\n'.allMatches(result.output).length + 1;
@@ -20,7 +22,11 @@ class BashTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateTokens(result.output);
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+    );
     return '$preview: $lines lines, $sizeStr, ~${tokens}t$suffix';
   }
 

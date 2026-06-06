@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
 class WebFetchTool extends ToolDef {
@@ -16,7 +16,11 @@ class WebFetchTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateTokens(result.output);
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+    );
     return '$url: $lines lines, $sizeStr, ~${tokens}t';
   }
 

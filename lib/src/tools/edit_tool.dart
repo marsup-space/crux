@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
 import 'matchers/exact_matcher.dart';
@@ -20,9 +20,13 @@ class EditTool extends ToolDef {
     final count = replaceAll ? 'all' : '1';
     final oldLines = '\n'.allMatches(oldString).length + 1;
     final newLines = '\n'.allMatches(newString).length + 1;
-    final oldTokens = estimateTokens(oldString);
-    final newTokens = estimateTokens(newString);
-    return '$count replacement, $oldLines→$newLines lines, ~${oldTokens}→~${newTokens}t';
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+      excludeArgsFromEstimate: {'oldString', 'newString'},
+    );
+    return '$count replacement, $oldLines→$newLines lines, ~${tokens}t';
   }
 
   @override
@@ -83,7 +87,9 @@ class EditTool extends ToolDef {
     final resolved = resolvePath(filePath, ctx.workingDirectory);
     final file = File(resolved);
     if (!file.existsSync()) {
-      return ToolResult.error('File not found: ${relativePath(resolved, ctx.workingDirectory)}');
+      return ToolResult.error(
+        'File not found: ${relativePath(resolved, ctx.workingDirectory)}',
+      );
     }
 
     if (tracker != null) {
@@ -161,16 +167,12 @@ class EditTool extends ToolDef {
       var result = content;
       for (final pos in positions.reversed) {
         result =
-            result.substring(0, pos) +
-            newString +
-            result.substring(pos + len);
+            result.substring(0, pos) + newString + result.substring(pos + len);
       }
       return result;
     }
     final pos = positions.first;
-    return content.substring(0, pos) +
-        newString +
-        content.substring(pos + len);
+    return content.substring(0, pos) + newString + content.substring(pos + len);
   }
 
   Future<int> _mtimeMs(File file) async {
