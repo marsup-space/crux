@@ -139,6 +139,39 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _ttftMsMeta = const VerificationMeta('ttftMs');
+  @override
+  late final GeneratedColumn<double> ttftMs = GeneratedColumn<double>(
+    'ttft_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.0),
+  );
+  static const VerificationMeta _tokPerSecMeta = const VerificationMeta(
+    'tokPerSec',
+  );
+  @override
+  late final GeneratedColumn<double> tokPerSec = GeneratedColumn<double>(
+    'tok_per_sec',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.0),
+  );
+  static const VerificationMeta _promptCacheHitTokensMeta =
+      const VerificationMeta('promptCacheHitTokens');
+  @override
+  late final GeneratedColumn<int> promptCacheHitTokens = GeneratedColumn<int>(
+    'prompt_cache_hit_tokens',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _thinkingModeMeta = const VerificationMeta(
     'thinkingMode',
   );
@@ -209,6 +242,9 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     tokensIn,
     tokensOut,
     contextTokens,
+    ttftMs,
+    tokPerSec,
+    promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
     createdAt,
@@ -293,6 +329,27 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         contextTokens.isAcceptableOrUnknown(
           data['context_tokens']!,
           _contextTokensMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ttft_ms')) {
+      context.handle(
+        _ttftMsMeta,
+        ttftMs.isAcceptableOrUnknown(data['ttft_ms']!, _ttftMsMeta),
+      );
+    }
+    if (data.containsKey('tok_per_sec')) {
+      context.handle(
+        _tokPerSecMeta,
+        tokPerSec.isAcceptableOrUnknown(data['tok_per_sec']!, _tokPerSecMeta),
+      );
+    }
+    if (data.containsKey('prompt_cache_hit_tokens')) {
+      context.handle(
+        _promptCacheHitTokensMeta,
+        promptCacheHitTokens.isAcceptableOrUnknown(
+          data['prompt_cache_hit_tokens']!,
+          _promptCacheHitTokensMeta,
         ),
       );
     }
@@ -395,6 +452,18 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.int,
         data['${effectivePrefix}context_tokens'],
       )!,
+      ttftMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ttft_ms'],
+      )!,
+      tokPerSec: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}tok_per_sec'],
+      )!,
+      promptCacheHitTokens: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}prompt_cache_hit_tokens'],
+      )!,
       thinkingMode: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}thinking_mode'],
@@ -440,6 +509,9 @@ class Session extends DataClass implements Insertable<Session> {
   final int tokensIn;
   final int tokensOut;
   final int contextTokens;
+  final double ttftMs;
+  final double tokPerSec;
+  final int promptCacheHitTokens;
   final String thinkingMode;
   final String? reasoningEffort;
   final int createdAt;
@@ -458,6 +530,9 @@ class Session extends DataClass implements Insertable<Session> {
     required this.tokensIn,
     required this.tokensOut,
     required this.contextTokens,
+    required this.ttftMs,
+    required this.tokPerSec,
+    required this.promptCacheHitTokens,
     required this.thinkingMode,
     this.reasoningEffort,
     required this.createdAt,
@@ -485,6 +560,9 @@ class Session extends DataClass implements Insertable<Session> {
     map['tokens_in'] = Variable<int>(tokensIn);
     map['tokens_out'] = Variable<int>(tokensOut);
     map['context_tokens'] = Variable<int>(contextTokens);
+    map['ttft_ms'] = Variable<double>(ttftMs);
+    map['tok_per_sec'] = Variable<double>(tokPerSec);
+    map['prompt_cache_hit_tokens'] = Variable<int>(promptCacheHitTokens);
     map['thinking_mode'] = Variable<String>(thinkingMode);
     if (!nullToAbsent || reasoningEffort != null) {
       map['reasoning_effort'] = Variable<String>(reasoningEffort);
@@ -513,6 +591,9 @@ class Session extends DataClass implements Insertable<Session> {
       tokensIn: Value(tokensIn),
       tokensOut: Value(tokensOut),
       contextTokens: Value(contextTokens),
+      ttftMs: Value(ttftMs),
+      tokPerSec: Value(tokPerSec),
+      promptCacheHitTokens: Value(promptCacheHitTokens),
       thinkingMode: Value(thinkingMode),
       reasoningEffort: reasoningEffort == null && nullToAbsent
           ? const Value.absent()
@@ -545,6 +626,11 @@ class Session extends DataClass implements Insertable<Session> {
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
       tokensOut: serializer.fromJson<int>(json['tokensOut']),
       contextTokens: serializer.fromJson<int>(json['contextTokens']),
+      ttftMs: serializer.fromJson<double>(json['ttftMs']),
+      tokPerSec: serializer.fromJson<double>(json['tokPerSec']),
+      promptCacheHitTokens: serializer.fromJson<int>(
+        json['promptCacheHitTokens'],
+      ),
       thinkingMode: serializer.fromJson<String>(json['thinkingMode']),
       reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -570,6 +656,9 @@ class Session extends DataClass implements Insertable<Session> {
       'tokensIn': serializer.toJson<int>(tokensIn),
       'tokensOut': serializer.toJson<int>(tokensOut),
       'contextTokens': serializer.toJson<int>(contextTokens),
+      'ttftMs': serializer.toJson<double>(ttftMs),
+      'tokPerSec': serializer.toJson<double>(tokPerSec),
+      'promptCacheHitTokens': serializer.toJson<int>(promptCacheHitTokens),
       'thinkingMode': serializer.toJson<String>(thinkingMode),
       'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -591,6 +680,9 @@ class Session extends DataClass implements Insertable<Session> {
     int? tokensIn,
     int? tokensOut,
     int? contextTokens,
+    double? ttftMs,
+    double? tokPerSec,
+    int? promptCacheHitTokens,
     String? thinkingMode,
     Value<String?> reasoningEffort = const Value.absent(),
     int? createdAt,
@@ -609,6 +701,9 @@ class Session extends DataClass implements Insertable<Session> {
     tokensIn: tokensIn ?? this.tokensIn,
     tokensOut: tokensOut ?? this.tokensOut,
     contextTokens: contextTokens ?? this.contextTokens,
+    ttftMs: ttftMs ?? this.ttftMs,
+    tokPerSec: tokPerSec ?? this.tokPerSec,
+    promptCacheHitTokens: promptCacheHitTokens ?? this.promptCacheHitTokens,
     thinkingMode: thinkingMode ?? this.thinkingMode,
     reasoningEffort: reasoningEffort.present
         ? reasoningEffort.value
@@ -635,6 +730,11 @@ class Session extends DataClass implements Insertable<Session> {
       contextTokens: data.contextTokens.present
           ? data.contextTokens.value
           : this.contextTokens,
+      ttftMs: data.ttftMs.present ? data.ttftMs.value : this.ttftMs,
+      tokPerSec: data.tokPerSec.present ? data.tokPerSec.value : this.tokPerSec,
+      promptCacheHitTokens: data.promptCacheHitTokens.present
+          ? data.promptCacheHitTokens.value
+          : this.promptCacheHitTokens,
       thinkingMode: data.thinkingMode.present
           ? data.thinkingMode.value
           : this.thinkingMode,
@@ -664,6 +764,9 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
+          ..write('ttftMs: $ttftMs, ')
+          ..write('tokPerSec: $tokPerSec, ')
+          ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
           ..write('createdAt: $createdAt, ')
@@ -687,6 +790,9 @@ class Session extends DataClass implements Insertable<Session> {
     tokensIn,
     tokensOut,
     contextTokens,
+    ttftMs,
+    tokPerSec,
+    promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
     createdAt,
@@ -709,6 +815,9 @@ class Session extends DataClass implements Insertable<Session> {
           other.tokensIn == this.tokensIn &&
           other.tokensOut == this.tokensOut &&
           other.contextTokens == this.contextTokens &&
+          other.ttftMs == this.ttftMs &&
+          other.tokPerSec == this.tokPerSec &&
+          other.promptCacheHitTokens == this.promptCacheHitTokens &&
           other.thinkingMode == this.thinkingMode &&
           other.reasoningEffort == this.reasoningEffort &&
           other.createdAt == this.createdAt &&
@@ -729,6 +838,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> tokensIn;
   final Value<int> tokensOut;
   final Value<int> contextTokens;
+  final Value<double> ttftMs;
+  final Value<double> tokPerSec;
+  final Value<int> promptCacheHitTokens;
   final Value<String> thinkingMode;
   final Value<String?> reasoningEffort;
   final Value<int> createdAt;
@@ -747,6 +859,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
+    this.ttftMs = const Value.absent(),
+    this.tokPerSec = const Value.absent(),
+    this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -766,6 +881,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
+    this.ttftMs = const Value.absent(),
+    this.tokPerSec = const Value.absent(),
+    this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
     required int createdAt,
@@ -787,6 +905,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? tokensIn,
     Expression<int>? tokensOut,
     Expression<int>? contextTokens,
+    Expression<double>? ttftMs,
+    Expression<double>? tokPerSec,
+    Expression<int>? promptCacheHitTokens,
     Expression<String>? thinkingMode,
     Expression<String>? reasoningEffort,
     Expression<int>? createdAt,
@@ -806,6 +927,10 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (tokensIn != null) 'tokens_in': tokensIn,
       if (tokensOut != null) 'tokens_out': tokensOut,
       if (contextTokens != null) 'context_tokens': contextTokens,
+      if (ttftMs != null) 'ttft_ms': ttftMs,
+      if (tokPerSec != null) 'tok_per_sec': tokPerSec,
+      if (promptCacheHitTokens != null)
+        'prompt_cache_hit_tokens': promptCacheHitTokens,
       if (thinkingMode != null) 'thinking_mode': thinkingMode,
       if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (createdAt != null) 'created_at': createdAt,
@@ -827,6 +952,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? tokensIn,
     Value<int>? tokensOut,
     Value<int>? contextTokens,
+    Value<double>? ttftMs,
+    Value<double>? tokPerSec,
+    Value<int>? promptCacheHitTokens,
     Value<String>? thinkingMode,
     Value<String?>? reasoningEffort,
     Value<int>? createdAt,
@@ -846,6 +974,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
       contextTokens: contextTokens ?? this.contextTokens,
+      ttftMs: ttftMs ?? this.ttftMs,
+      tokPerSec: tokPerSec ?? this.tokPerSec,
+      promptCacheHitTokens: promptCacheHitTokens ?? this.promptCacheHitTokens,
       thinkingMode: thinkingMode ?? this.thinkingMode,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       createdAt: createdAt ?? this.createdAt,
@@ -895,6 +1026,17 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (contextTokens.present) {
       map['context_tokens'] = Variable<int>(contextTokens.value);
     }
+    if (ttftMs.present) {
+      map['ttft_ms'] = Variable<double>(ttftMs.value);
+    }
+    if (tokPerSec.present) {
+      map['tok_per_sec'] = Variable<double>(tokPerSec.value);
+    }
+    if (promptCacheHitTokens.present) {
+      map['prompt_cache_hit_tokens'] = Variable<int>(
+        promptCacheHitTokens.value,
+      );
+    }
     if (thinkingMode.present) {
       map['thinking_mode'] = Variable<String>(thinkingMode.value);
     }
@@ -928,6 +1070,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
+          ..write('ttftMs: $ttftMs, ')
+          ..write('tokPerSec: $tokPerSec, ')
+          ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
           ..write('createdAt: $createdAt, ')
@@ -1081,6 +1226,40 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _toolCallsMeta = const VerificationMeta(
+    'toolCalls',
+  );
+  @override
+  late final GeneratedColumn<String> toolCalls = GeneratedColumn<String>(
+    'tool_calls',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _toolCallIdMeta = const VerificationMeta(
+    'toolCallId',
+  );
+  @override
+  late final GeneratedColumn<String> toolCallId = GeneratedColumn<String>(
+    'tool_call_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _tldrMeta = const VerificationMeta('tldr');
+  @override
+  late final GeneratedColumn<String> tldr = GeneratedColumn<String>(
+    'tldr',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _errorMeta = const VerificationMeta('error');
   @override
   late final GeneratedColumn<String> error = GeneratedColumn<String>(
@@ -1126,6 +1305,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     cost,
     tokensIn,
     tokensOut,
+    toolCalls,
+    toolCallId,
+    tldr,
     error,
     parentMsgId,
     createdAt,
@@ -1227,6 +1409,27 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         tokensOut.isAcceptableOrUnknown(data['tokens_out']!, _tokensOutMeta),
       );
     }
+    if (data.containsKey('tool_calls')) {
+      context.handle(
+        _toolCallsMeta,
+        toolCalls.isAcceptableOrUnknown(data['tool_calls']!, _toolCallsMeta),
+      );
+    }
+    if (data.containsKey('tool_call_id')) {
+      context.handle(
+        _toolCallIdMeta,
+        toolCallId.isAcceptableOrUnknown(
+          data['tool_call_id']!,
+          _toolCallIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tldr')) {
+      context.handle(
+        _tldrMeta,
+        tldr.isAcceptableOrUnknown(data['tldr']!, _tldrMeta),
+      );
+    }
     if (data.containsKey('error')) {
       context.handle(
         _errorMeta,
@@ -1307,6 +1510,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}tokens_out'],
       )!,
+      toolCalls: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_calls'],
+      )!,
+      toolCallId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_call_id'],
+      )!,
+      tldr: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tldr'],
+      )!,
       error: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}error'],
@@ -1341,6 +1556,9 @@ class Message extends DataClass implements Insertable<Message> {
   final double cost;
   final int tokensIn;
   final int tokensOut;
+  final String toolCalls;
+  final String toolCallId;
+  final String tldr;
   final String? error;
   final int? parentMsgId;
   final int createdAt;
@@ -1357,6 +1575,9 @@ class Message extends DataClass implements Insertable<Message> {
     required this.cost,
     required this.tokensIn,
     required this.tokensOut,
+    required this.toolCalls,
+    required this.toolCallId,
+    required this.tldr,
     this.error,
     this.parentMsgId,
     required this.createdAt,
@@ -1378,6 +1599,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
     map['tokens_out'] = Variable<int>(tokensOut);
+    map['tool_calls'] = Variable<String>(toolCalls);
+    map['tool_call_id'] = Variable<String>(toolCallId);
+    map['tldr'] = Variable<String>(tldr);
     if (!nullToAbsent || error != null) {
       map['error'] = Variable<String>(error);
     }
@@ -1404,6 +1628,9 @@ class Message extends DataClass implements Insertable<Message> {
       cost: Value(cost),
       tokensIn: Value(tokensIn),
       tokensOut: Value(tokensOut),
+      toolCalls: Value(toolCalls),
+      toolCallId: Value(toolCallId),
+      tldr: Value(tldr),
       error: error == null && nullToAbsent
           ? const Value.absent()
           : Value(error),
@@ -1432,6 +1659,9 @@ class Message extends DataClass implements Insertable<Message> {
       cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
       tokensOut: serializer.fromJson<int>(json['tokensOut']),
+      toolCalls: serializer.fromJson<String>(json['toolCalls']),
+      toolCallId: serializer.fromJson<String>(json['toolCallId']),
+      tldr: serializer.fromJson<String>(json['tldr']),
       error: serializer.fromJson<String?>(json['error']),
       parentMsgId: serializer.fromJson<int?>(json['parentMsgId']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -1453,6 +1683,9 @@ class Message extends DataClass implements Insertable<Message> {
       'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
       'tokensOut': serializer.toJson<int>(tokensOut),
+      'toolCalls': serializer.toJson<String>(toolCalls),
+      'toolCallId': serializer.toJson<String>(toolCallId),
+      'tldr': serializer.toJson<String>(tldr),
       'error': serializer.toJson<String?>(error),
       'parentMsgId': serializer.toJson<int?>(parentMsgId),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -1472,6 +1705,9 @@ class Message extends DataClass implements Insertable<Message> {
     double? cost,
     int? tokensIn,
     int? tokensOut,
+    String? toolCalls,
+    String? toolCallId,
+    String? tldr,
     Value<String?> error = const Value.absent(),
     Value<int?> parentMsgId = const Value.absent(),
     int? createdAt,
@@ -1490,6 +1726,9 @@ class Message extends DataClass implements Insertable<Message> {
     cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
     tokensOut: tokensOut ?? this.tokensOut,
+    toolCalls: toolCalls ?? this.toolCalls,
+    toolCallId: toolCallId ?? this.toolCallId,
+    tldr: tldr ?? this.tldr,
     error: error.present ? error.value : this.error,
     parentMsgId: parentMsgId.present ? parentMsgId.value : this.parentMsgId,
     createdAt: createdAt ?? this.createdAt,
@@ -1516,6 +1755,11 @@ class Message extends DataClass implements Insertable<Message> {
       cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
       tokensOut: data.tokensOut.present ? data.tokensOut.value : this.tokensOut,
+      toolCalls: data.toolCalls.present ? data.toolCalls.value : this.toolCalls,
+      toolCallId: data.toolCallId.present
+          ? data.toolCallId.value
+          : this.toolCallId,
+      tldr: data.tldr.present ? data.tldr.value : this.tldr,
       error: data.error.present ? data.error.value : this.error,
       parentMsgId: data.parentMsgId.present
           ? data.parentMsgId.value
@@ -1539,6 +1783,9 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
+          ..write('toolCalls: $toolCalls, ')
+          ..write('toolCallId: $toolCallId, ')
+          ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
           ..write('createdAt: $createdAt')
@@ -1560,6 +1807,9 @@ class Message extends DataClass implements Insertable<Message> {
     cost,
     tokensIn,
     tokensOut,
+    toolCalls,
+    toolCallId,
+    tldr,
     error,
     parentMsgId,
     createdAt,
@@ -1580,6 +1830,9 @@ class Message extends DataClass implements Insertable<Message> {
           other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
           other.tokensOut == this.tokensOut &&
+          other.toolCalls == this.toolCalls &&
+          other.toolCallId == this.toolCallId &&
+          other.tldr == this.tldr &&
           other.error == this.error &&
           other.parentMsgId == this.parentMsgId &&
           other.createdAt == this.createdAt);
@@ -1598,6 +1851,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<double> cost;
   final Value<int> tokensIn;
   final Value<int> tokensOut;
+  final Value<String> toolCalls;
+  final Value<String> toolCallId;
+  final Value<String> tldr;
   final Value<String?> error;
   final Value<int?> parentMsgId;
   final Value<int> createdAt;
@@ -1614,6 +1870,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
+    this.toolCalls = const Value.absent(),
+    this.toolCallId = const Value.absent(),
+    this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1631,6 +1890,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
+    this.toolCalls = const Value.absent(),
+    this.toolCallId = const Value.absent(),
+    this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
     required int createdAt,
@@ -1650,6 +1912,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<double>? cost,
     Expression<int>? tokensIn,
     Expression<int>? tokensOut,
+    Expression<String>? toolCalls,
+    Expression<String>? toolCallId,
+    Expression<String>? tldr,
     Expression<String>? error,
     Expression<int>? parentMsgId,
     Expression<int>? createdAt,
@@ -1668,6 +1933,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
       if (tokensOut != null) 'tokens_out': tokensOut,
+      if (toolCalls != null) 'tool_calls': toolCalls,
+      if (toolCallId != null) 'tool_call_id': toolCallId,
+      if (tldr != null) 'tldr': tldr,
       if (error != null) 'error': error,
       if (parentMsgId != null) 'parent_msg_id': parentMsgId,
       if (createdAt != null) 'created_at': createdAt,
@@ -1687,6 +1955,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<double>? cost,
     Value<int>? tokensIn,
     Value<int>? tokensOut,
+    Value<String>? toolCalls,
+    Value<String>? toolCallId,
+    Value<String>? tldr,
     Value<String?>? error,
     Value<int?>? parentMsgId,
     Value<int>? createdAt,
@@ -1704,6 +1975,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
+      toolCalls: toolCalls ?? this.toolCalls,
+      toolCallId: toolCallId ?? this.toolCallId,
+      tldr: tldr ?? this.tldr,
       error: error ?? this.error,
       parentMsgId: parentMsgId ?? this.parentMsgId,
       createdAt: createdAt ?? this.createdAt,
@@ -1749,6 +2023,15 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (tokensOut.present) {
       map['tokens_out'] = Variable<int>(tokensOut.value);
     }
+    if (toolCalls.present) {
+      map['tool_calls'] = Variable<String>(toolCalls.value);
+    }
+    if (toolCallId.present) {
+      map['tool_call_id'] = Variable<String>(toolCallId.value);
+    }
+    if (tldr.present) {
+      map['tldr'] = Variable<String>(tldr.value);
+    }
     if (error.present) {
       map['error'] = Variable<String>(error.value);
     }
@@ -1776,6 +2059,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
+          ..write('toolCalls: $toolCalls, ')
+          ..write('toolCallId: $toolCallId, ')
+          ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
           ..write('createdAt: $createdAt')
@@ -2515,6 +2801,9 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
       required int createdAt,
@@ -2535,6 +2824,9 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
       Value<int> createdAt,
@@ -2670,6 +2962,21 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<int> get contextTokens => $composableBuilder(
     column: $table.contextTokens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get ttftMs => $composableBuilder(
+    column: $table.ttftMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get tokPerSec => $composableBuilder(
+    column: $table.tokPerSec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get promptCacheHitTokens => $composableBuilder(
+    column: $table.promptCacheHitTokens,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2843,6 +3150,21 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get ttftMs => $composableBuilder(
+    column: $table.ttftMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get tokPerSec => $composableBuilder(
+    column: $table.tokPerSec,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get promptCacheHitTokens => $composableBuilder(
+    column: $table.promptCacheHitTokens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get thinkingMode => $composableBuilder(
     column: $table.thinkingMode,
     builder: (column) => ColumnOrderings(column),
@@ -2915,6 +3237,17 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<int> get contextTokens => $composableBuilder(
     column: $table.contextTokens,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get ttftMs =>
+      $composableBuilder(column: $table.ttftMs, builder: (column) => column);
+
+  GeneratedColumn<double> get tokPerSec =>
+      $composableBuilder(column: $table.tokPerSec, builder: (column) => column);
+
+  GeneratedColumn<int> get promptCacheHitTokens => $composableBuilder(
+    column: $table.promptCacheHitTokens,
     builder: (column) => column,
   );
 
@@ -3059,6 +3392,9 @@ class $$SessionsTableTableManager
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
+                Value<double> ttftMs = const Value.absent(),
+                Value<double> tokPerSec = const Value.absent(),
+                Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -3077,6 +3413,9 @@ class $$SessionsTableTableManager
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
+                ttftMs: ttftMs,
+                tokPerSec: tokPerSec,
+                promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
                 createdAt: createdAt,
@@ -3097,6 +3436,9 @@ class $$SessionsTableTableManager
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
+                Value<double> ttftMs = const Value.absent(),
+                Value<double> tokPerSec = const Value.absent(),
+                Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
                 required int createdAt,
@@ -3115,6 +3457,9 @@ class $$SessionsTableTableManager
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
+                ttftMs: ttftMs,
+                tokPerSec: tokPerSec,
+                promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
                 createdAt: createdAt,
@@ -3248,6 +3593,9 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
       required int createdAt,
@@ -3266,6 +3614,9 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
       Value<int> createdAt,
@@ -3373,6 +3724,21 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get tokensOut => $composableBuilder(
     column: $table.tokensOut,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolCalls => $composableBuilder(
+    column: $table.toolCalls,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tldr => $composableBuilder(
+    column: $table.tldr,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3504,6 +3870,21 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get toolCalls => $composableBuilder(
+    column: $table.toolCalls,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tldr => $composableBuilder(
+    column: $table.tldr,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get error => $composableBuilder(
     column: $table.error,
     builder: (column) => ColumnOrderings(column),
@@ -3592,6 +3973,17 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<int> get tokensOut =>
       $composableBuilder(column: $table.tokensOut, builder: (column) => column);
+
+  GeneratedColumn<String> get toolCalls =>
+      $composableBuilder(column: $table.toolCalls, builder: (column) => column);
+
+  GeneratedColumn<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get tldr =>
+      $composableBuilder(column: $table.tldr, builder: (column) => column);
 
   GeneratedColumn<String> get error =>
       $composableBuilder(column: $table.error, builder: (column) => column);
@@ -3693,6 +4085,9 @@ class $$MessagesTableTableManager
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
+                Value<String> toolCalls = const Value.absent(),
+                Value<String> toolCallId = const Value.absent(),
+                Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -3709,6 +4104,9 @@ class $$MessagesTableTableManager
                 cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
+                toolCalls: toolCalls,
+                toolCallId: toolCallId,
+                tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
                 createdAt: createdAt,
@@ -3727,6 +4125,9 @@ class $$MessagesTableTableManager
                 Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
+                Value<String> toolCalls = const Value.absent(),
+                Value<String> toolCallId = const Value.absent(),
+                Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
                 required int createdAt,
@@ -3743,6 +4144,9 @@ class $$MessagesTableTableManager
                 cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
+                toolCalls: toolCalls,
+                toolCallId: toolCallId,
+                tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
                 createdAt: createdAt,

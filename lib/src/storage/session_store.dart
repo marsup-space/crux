@@ -106,6 +106,9 @@ class SessionStore {
     int? contextTokens,
     String? thinkingMode,
     Object? reasoningEffort = _unset,
+    double? ttftMs,
+    double? tokPerSec,
+    int? promptCacheHitTokens,
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final Value<String?> effortValue = reasoningEffort == _unset
@@ -128,6 +131,11 @@ class SessionStore {
             ? Value(thinkingMode)
             : const Value.absent(),
         reasoningEffort: effortValue,
+        ttftMs: ttftMs != null ? Value(ttftMs) : const Value.absent(),
+        tokPerSec: tokPerSec != null ? Value(tokPerSec) : const Value.absent(),
+        promptCacheHitTokens: promptCacheHitTokens != null
+            ? Value(promptCacheHitTokens)
+            : const Value.absent(),
         updatedAt: Value(nowMs),
       ),
     );
@@ -172,6 +180,9 @@ class SessionStore {
     int tokensIn = 0,
     int tokensOut = 0,
     String? error,
+    List<ToolCallData> toolCalls = const [],
+    String toolCallId = '',
+    String tldr = '',
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -192,6 +203,9 @@ class SessionStore {
             tokensIn: Value(tokensIn),
             tokensOut: Value(tokensOut),
             error: Value(error),
+            toolCalls: Value(Message.encodeToolCalls(toolCalls)),
+            toolCallId: Value(toolCallId),
+            tldr: Value(tldr),
           ),
         );
 
@@ -212,6 +226,9 @@ class SessionStore {
       tokensOut: tokensOut,
       error: error,
       createdAt: now,
+      toolCalls: toolCalls,
+      toolCallId: toolCallId,
+      tldr: tldr,
     );
   }
 
@@ -243,6 +260,11 @@ class SessionStore {
         .write(db.SessionsCompanion(updatedAt: Value(nowMs)));
   }
 
+  Future<void> updateMessageTldr(int messageId, String tldr) async {
+    await (_db.update(_db.messages)..where((t) => t.id.equals(messageId)))
+        .write(db.MessagesCompanion(tldr: Value(tldr)));
+  }
+
   Session _rowToSession(db.Session row) {
     return Session(
       id: row.id,
@@ -259,6 +281,9 @@ class SessionStore {
       contextTokens: row.contextTokens,
       thinkingMode: row.thinkingMode,
       reasoningEffort: row.reasoningEffort,
+      ttftMs: row.ttftMs,
+      tokPerSec: row.tokPerSec,
+      promptCacheHitTokens: row.promptCacheHitTokens,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
       archivedAt: row.archivedAt != null
@@ -345,6 +370,9 @@ class SessionStore {
       error: row.error,
       parentMsgId: row.parentMsgId,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+      toolCalls: Message.parseToolCallsJson(row.toolCalls),
+      toolCallId: row.toolCallId,
+      tldr: row.tldr,
     );
   }
 }

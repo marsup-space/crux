@@ -13,6 +13,9 @@ class Session {
   int tokensIn;
   int tokensOut;
   int contextTokens;
+  double ttftMs;
+  double tokPerSec;
+  int promptCacheHitTokens;
   String thinkingMode;
   String? reasoningEffort;
   final DateTime createdAt;
@@ -32,6 +35,9 @@ class Session {
     this.tokensIn = 0,
     this.tokensOut = 0,
     this.contextTokens = 0,
+    this.ttftMs = 0.0,
+    this.tokPerSec = 0.0,
+    this.promptCacheHitTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
     DateTime? createdAt,

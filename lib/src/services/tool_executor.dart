@@ -9,11 +9,13 @@ class ToolCall {
   final String callId;
   final String name;
   final Map<String, dynamic> input;
+  final String? parseError;
 
   const ToolCall({
     required this.callId,
     required this.name,
     required this.input,
+    this.parseError,
   });
 }
 
@@ -31,6 +33,9 @@ class ToolExecutor {
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
   Future<ToolResult> executeTool(ToolCall call, ToolContext ctx) async {
+    if (call.parseError != null) {
+      return ToolResult.error(call.parseError!);
+    }
     final tool = _registry.lookup(call.name);
     if (tool == null) {
       return ToolResult.error('Unknown tool: ${call.name}');
@@ -124,13 +129,26 @@ class ToolExecutor {
       final acc = groups[idx]!;
       if (acc.callId == null || acc.name == null) continue;
       Map<String, dynamic> input = {};
+      String? parseError;
       try {
         final raw = acc.inputBuffer.toString();
         if (raw.isNotEmpty) {
-          input = jsonDecode(raw) as Map<String, dynamic>;
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic>) {
+            input = decoded;
+          } else {
+            parseError = 'Tool input must be a JSON object, got ${decoded.runtimeType}';
+          }
         }
-      } catch (_) {}
-      calls.add(ToolCall(callId: acc.callId!, name: acc.name!, input: input));
+      } catch (e) {
+        parseError = 'Failed to parse tool input JSON: $e';
+      }
+      calls.add(ToolCall(
+        callId: acc.callId!,
+        name: acc.name!,
+        input: input,
+        parseError: parseError,
+      ));
     }
     return calls;
   }

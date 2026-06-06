@@ -15,6 +15,10 @@ class Sessions extends Table {
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();
   IntColumn get tokensOut => integer().withDefault(const Constant(0))();
   IntColumn get contextTokens => integer().withDefault(const Constant(0))();
+  RealColumn get ttftMs => real().withDefault(const Constant(0.0))();
+  RealColumn get tokPerSec => real().withDefault(const Constant(0.0))();
+  IntColumn get promptCacheHitTokens =>
+      integer().withDefault(const Constant(0))();
   TextColumn get thinkingMode =>
       text().withDefault(const Constant('enabled'))();
   TextColumn get reasoningEffort => text().nullable()();
@@ -38,6 +42,9 @@ class Messages extends Table {
   RealColumn get cost => real().withDefault(const Constant(0.0))();
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();
   IntColumn get tokensOut => integer().withDefault(const Constant(0))();
+  TextColumn get toolCalls => text().withDefault(const Constant(''))();
+  TextColumn get toolCallId => text().withDefault(const Constant(''))();
+  TextColumn get tldr => text().withDefault(const Constant(''))();
   TextColumn get error => text().nullable()();
   IntColumn get parentMsgId => integer().nullable()();
   IntColumn get createdAt => integer()();

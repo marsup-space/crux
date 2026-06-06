@@ -16,7 +16,7 @@ class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -40,6 +40,18 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 6) {
         await m.createTable(fileReadState);
+      }
+      if (from < 7) {
+        await m.addColumn(messages, messages.toolCalls);
+        await m.addColumn(messages, messages.toolCallId);
+      }
+      if (from < 8) {
+        await m.addColumn(messages, messages.tldr);
+      }
+      if (from < 9) {
+        await m.addColumn(sessions, sessions.ttftMs);
+        await m.addColumn(sessions, sessions.tokPerSec);
+        await m.addColumn(sessions, sessions.promptCacheHitTokens);
       }
     },
   );
