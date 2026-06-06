@@ -13,9 +13,15 @@ class EditTool extends ToolDef {
 
   @override
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
-    final filePath = args['filePath'] as String? ?? '';
-    final name = filePath.split('/').last;
-    return '$name: ok';
+    final oldString = args['oldString'] as String? ?? '';
+    final newString = args['newString'] as String? ?? '';
+    final replaceAll = (args['replaceAll'] as bool?) ?? false;
+    final count = replaceAll
+        ? 'all'
+        : '1';
+    final oldLines = '\n'.allMatches(oldString).length + 1;
+    final newLines = '\n'.allMatches(newString).length + 1;
+    return '$count replacement, $oldLines→$newLines lines';
   }
 
   @override

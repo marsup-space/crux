@@ -38,7 +38,7 @@ class MessageBubble extends StatelessComponent {
           ? message.reasoningTokens.toString()
           : '~${(message.reasoningContent.length / 3.5).ceil()}';
       final effort = message.reasoningEffort ?? 'normal';
-      thinkingSummary = 'thought for ${secs}s, $tokens tokens [$effort]';
+      thinkingSummary = '${secs}s, $tokens tokens [$effort]';
     }
 
     return Column(
@@ -50,16 +50,16 @@ class MessageBubble extends StatelessComponent {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ' Crux: ',
+                  ' Think: ',
                   style: TextStyle(
-                    color: CruxTheme.thinkingPrefix,
+                    color: CruxTheme.thinkPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Expanded(
                   child: Text(
                     thinkingSummary,
-                    style: TextStyle(color: CruxTheme.thinkingPrefix),
+                    style: TextStyle(color: CruxTheme.thinkPrefix),
                   ),
                 ),
               ],
@@ -74,9 +74,9 @@ class MessageBubble extends StatelessComponent {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    ' Crux: ',
+                    ' Think: ',
                     style: TextStyle(
-                      color: CruxTheme.thinkingPrefix,
+                      color: CruxTheme.thinkPrefix,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -96,9 +96,9 @@ class MessageBubble extends StatelessComponent {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                isUser ? ' You: ' : (hasReasoning ? '       ' : ' Crux: '),
+                isUser ? ' You: ' : ' Crux: ',
                 style: TextStyle(
-                  color: isUser ? CruxTheme.userPrefix : CruxTheme.aiPrefix,
+                  color: isUser ? CruxTheme.userPrefix : CruxTheme.responsePrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -213,10 +213,11 @@ class MessageBubble extends StatelessComponent {
     if (reasoningCollapsed) return const SizedBox.shrink();
     final preview = _truncateOutput(message.content, 800);
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: EdgeInsets.only(left: 8, right: 1, top: 0, bottom: 0),
       child: Text(
         preview,
         style: TextStyle(color: CruxTheme.onSurfaceDim),
+        softWrap: true,
       ),
     );
   }

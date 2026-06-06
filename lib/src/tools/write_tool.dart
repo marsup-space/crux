@@ -9,9 +9,13 @@ class WriteTool extends ToolDef {
 
   @override
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
-    final filePath = args['filePath'] as String? ?? '';
-    final name = filePath.split('/').last;
-    return '$name: ok';
+    final content = args['content'] as String? ?? '';
+    final lines = '\n'.allMatches(content).length + 1;
+    final size = content.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    return '$lines lines, $sizeStr written';
   }
 
   @override

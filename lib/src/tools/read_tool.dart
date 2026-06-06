@@ -11,14 +11,12 @@ class ReadTool extends ToolDef {
 
   @override
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
-    final filePath = args['filePath'] as String? ?? '';
-    final name = filePath.split('/').last;
     final lines = '\n'.allMatches(result.output).length + 1;
     final size = result.output.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$name: $lines lines, $sizeStr';
+    return '$lines lines, $sizeStr';
   }
 
   @override
