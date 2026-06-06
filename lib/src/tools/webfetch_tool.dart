@@ -8,6 +8,17 @@ class WebFetchTool extends ToolDef {
   String get name => 'webfetch';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final url = args['url'] as String? ?? '';
+    final lines = '\n'.allMatches(result.output).length + 1;
+    final size = result.output.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    return '$url: $lines lines, $sizeStr';
+  }
+
+  @override
   String get description =>
       'Fetch content from URL. Converts to requested format (markdown by default). '
       'HTTP auto-upgraded to HTTPS. Large results may be summarized.';

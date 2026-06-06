@@ -55,6 +55,15 @@ abstract class ToolDef {
   Map<String, dynamic> get parametersSchema;
 
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx);
+
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final lines = '\n'.allMatches(result.output).length + 1;
+    final size = result.output.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    return '$lines lines, $sizeStr';
+  }
 }
 
 class GuardResult {

@@ -7,6 +7,13 @@ class GrepTool extends ToolDef {
   String get name => 'grep';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final pattern = args['pattern'] as String? ?? '';
+    final matchCount = '\n'.allMatches(result.output).length + 1;
+    return '"$pattern": $matchCount matches';
+  }
+
+  @override
   String get description =>
       'Search file contents with regex. '
       'Returns file paths and line numbers with matches. '

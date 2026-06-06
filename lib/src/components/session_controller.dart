@@ -41,7 +41,10 @@ class SessionController {
     );
   }
 
-  List<Message> get currentMessages => messageCache[currentSessionId] ?? [];
+  List<Message> get currentMessages {
+    final all = messageCache[currentSessionId] ?? [];
+    return all;
+  }
 
   Session? findSession(int id) {
     for (final s in sessions) {
@@ -73,6 +76,7 @@ class SessionController {
     if (msgs == null || msgs.isEmpty) return 0;
     var total = 0;
     for (final m in msgs) {
+      if (m.role == 'tool_call' || m.role == 'tool') continue;
       if (m.tokensIn + m.tokensOut > 0) {
         total = m.tokensIn + m.tokensOut - m.reasoningTokens;
       } else if (m.content.isNotEmpty) {

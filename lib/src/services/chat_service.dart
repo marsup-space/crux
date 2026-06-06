@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../models/message.dart';
 import '../models/provider_config.dart';
@@ -120,6 +121,7 @@ class ChatService {
     required void Function() onChunk,
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
+    void Function()? onToolRound,
   }) async {
     await _store.addMessage(sessionId, role: 'user', content: userContent);
 
@@ -158,9 +160,9 @@ class ChatService {
     }
 
     final history = await _store.getMessages(sessionId);
-    final apiMessages = _buildApiMessages(history);
-    final toolDefs = _toolExecutor.getApiToolDefinitions();
     final wireFamily = provider.wireFamily;
+    final apiMessages = _buildApiMessages(history, wireFamily);
+    final toolDefs = _toolExecutor.getApiToolDefinitions();
 
     final fullTextBuffer = StringBuffer();
     final fullReasoningBuffer = StringBuffer();
@@ -171,9 +173,8 @@ class ChatService {
     int reasoningTokens = 0;
 
     var firstTokenEver = true;
-    const maxRounds = 50;
 
-    for (var round = 0; round < maxRounds; round++) {
+    while (true) {
       if (_cancelRequested.contains(sessionId)) {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
@@ -270,15 +271,33 @@ class ChatService {
       final toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       if (toolCalls.isEmpty) break;
 
-      apiMessages.add(
-        _toolExecutor.formatAssistantToolCallsMessage(
-          toolCalls,
-          roundTextBuffer.toString(),
-          wireFamily,
-        ),
+      final roundText = roundTextBuffer.toString();
+
+      final toolCallData = toolCalls
+          .map(
+            (call) => ToolCallData(
+              callId: call.callId,
+              name: call.name,
+              input: call.input,
+            ),
+          )
+          .toList();
+
+      await _store.addMessage(
+        sessionId,
+        role: 'tool_call',
+        content: roundText,
+        toolCalls: toolCallData,
       );
 
       if (wireFamily == WireFamily.anthropicCompatible) {
+        final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
+          toolCalls,
+          roundText,
+          wireFamily,
+        );
+        apiMessages.add(assistantMsg);
+
         final content = <Map<String, dynamic>>[];
         for (final call in toolCalls) {
           final ctx = ToolContext(
@@ -293,9 +312,22 @@ class ChatService {
             'tool_use_id': call.callId,
             'content': result.output,
           });
+          await _store.addMessage(
+            sessionId,
+            role: 'tool',
+            content: result.output,
+            toolCallId: call.callId,
+          );
         }
         apiMessages.add({'role': 'user', 'content': content});
       } else {
+        final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
+          toolCalls,
+          roundText,
+          wireFamily,
+        );
+        apiMessages.add(assistantMsg);
+
         for (final call in toolCalls) {
           final ctx = ToolContext(
             sessionId: sessionId,
@@ -309,8 +341,18 @@ class ChatService {
             'tool_call_id': call.callId,
             'content': result.output,
           });
+          await _store.addMessage(
+            sessionId,
+            role: 'tool',
+            content: result.output,
+            toolCallId: call.callId,
+          );
         }
       }
+
+      roundTextBuffer.clear();
+      roundReasoningBuffer.clear();
+      onToolRound?.call();
     }
 
     final content = fullTextBuffer.toString();
@@ -373,11 +415,86 @@ class ChatService {
     );
   }
 
-  List<Map<String, dynamic>> _buildApiMessages(List<Message> history) {
-    return history.map((m) {
-      final role = m.role == 'ai' ? 'assistant' : m.role;
-      return <String, dynamic>{'role': role, 'content': m.content};
-    }).toList();
+  List<Map<String, dynamic>> _buildApiMessages(
+    List<Message> history,
+    WireFamily wireFamily,
+  ) {
+    final result = <Map<String, dynamic>>[];
+
+    for (final m in history) {
+      switch (m.role) {
+        case 'user':
+          result.add({'role': 'user', 'content': m.content});
+        case 'system':
+          result.add({'role': 'system', 'content': m.content});
+        case 'ai':
+          result.add({
+            'role': 'assistant',
+            'content': m.content.isEmpty ? null : m.content,
+          });
+        case 'tool_call':
+          if (wireFamily == WireFamily.anthropicCompatible) {
+            final content = <Map<String, dynamic>>[];
+            if (m.content.isNotEmpty) {
+              content.add({'type': 'text', 'text': m.content});
+            }
+            for (final call in m.toolCalls) {
+              content.add({
+                'type': 'tool_use',
+                'id': call.callId,
+                'name': call.name,
+                'input': call.input,
+              });
+            }
+            result.add({'role': 'assistant', 'content': content});
+          } else {
+            final toolCalls = m.toolCalls
+                .map(
+                  (call) => {
+                    'id': call.callId,
+                    'type': 'function',
+                    'function': {
+                      'name': call.name,
+                      'arguments': jsonEncode(call.input),
+                    },
+                  },
+                )
+                .toList();
+            result.add({
+              'role': 'assistant',
+              'content': m.content.isNotEmpty ? m.content : null,
+              'tool_calls': toolCalls,
+            });
+          }
+        case 'tool':
+          if (wireFamily == WireFamily.anthropicCompatible) {
+            final last = result.isNotEmpty ? result.last : null;
+            final toolResult = {
+              'type': 'tool_result',
+              'tool_use_id': m.toolCallId,
+              'content': m.content,
+            };
+            if (last != null &&
+                last['role'] == 'user' &&
+                last['content'] is List) {
+              (last['content'] as List<dynamic>).add(toolResult);
+            } else {
+              result.add({
+                'role': 'user',
+                'content': [toolResult],
+              });
+            }
+          } else {
+            result.add({
+              'role': 'tool',
+              'tool_call_id': m.toolCallId,
+              'content': m.content,
+            });
+          }
+      }
+    }
+
+    return result;
   }
 
   double _estimateCost(

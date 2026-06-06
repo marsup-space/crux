@@ -48,6 +48,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final SessionStore _store;
   late final ChatService _chatService;
   late final ProviderService _providerService;
+  late final ToolRegistry _toolRegistry;
   late final SessionController _sessionController;
   late final OverlayController _overlayController;
   late final StreamingController _streamingController;
@@ -97,6 +98,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final registry = ToolRegistry();
     registry.registerDefaults(tracker);
     final toolExecutor = ToolExecutor(registry);
+    _toolRegistry = registry;
     _chatService = ChatService(
       _store,
       _providerService,
@@ -481,7 +483,6 @@ class _ChatPanelState extends State<ChatPanel> {
     final rt = _sessionController.runtime(sessionId);
     _streamingController.streamingContent = '';
     _streamingController.streamingReasoning = '';
-    _streamingController.thinkingCollapsed = false;
 
     rt.isResponding = true;
     rt.responseStartTime = DateTime.now();
@@ -509,10 +510,6 @@ class _ChatPanelState extends State<ChatPanel> {
       session: _sessionController.currentSession,
       runtime: rt,
       onDelta: (delta) {
-        if (_streamingController.streamingReasoning.isNotEmpty &&
-            !_streamingController.thinkingCollapsed) {
-          _streamingController.thinkingCollapsed = true;
-        }
         if (_streamingController.streamingContent.isEmpty) {
           rt.contentStartTime = DateTime.now();
         }
@@ -531,10 +528,14 @@ class _ChatPanelState extends State<ChatPanel> {
         }
         setState(() {});
       },
+      onToolRound: () {
+        _streamingController.streamingContent = '';
+        _streamingController.streamingReasoning = '';
+        _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
+      },
       onComplete: (response) async {
         _streamingController.streamingContent = '';
         _streamingController.streamingReasoning = '';
-        _streamingController.thinkingCollapsed = false;
         _streamingController.stopMetricsTimer(sessionId);
         final msgs = await _store.getMessages(sessionId);
         _sessionController.messageCache[sessionId] = msgs;
@@ -811,6 +812,17 @@ class _ChatPanelState extends State<ChatPanel> {
     final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
     final isStreaming = rt?.isResponding ?? false;
 
+    final lastRoundStart = isStreaming
+        ? -1
+        : messages.lastIndexWhere((m) => m.role == 'user');
+
+    final resultByCallId = <String, Message>{};
+    for (final m in messages) {
+      if (m.role == 'tool' && m.toolCallId.isNotEmpty) {
+        resultByCallId[m.toolCallId] = m;
+      }
+    }
+
     if (messages.isEmpty && !isStreaming) {
       return Center(
         child: Text(
@@ -837,7 +849,23 @@ class _ChatPanelState extends State<ChatPanel> {
           itemCount: itemCount,
           itemBuilder: (context, index) {
             if (index < messages.length) {
-              return MessageBubble(message: messages[index]);
+              final msg = messages[index];
+              final collapsed = index < lastRoundStart;
+              Message? pairedResult;
+              if (msg.role == 'tool_call' && collapsed) {
+                for (final tc in msg.toolCalls) {
+                  if (resultByCallId.containsKey(tc.callId)) {
+                    pairedResult = resultByCallId[tc.callId]!;
+                    break;
+                  }
+                }
+              }
+              return MessageBubble(
+                message: msg,
+                reasoningCollapsed: collapsed,
+                pairedResult: pairedResult,
+                toolRegistry: _toolRegistry,
+              );
             }
             final rt = sessionId != null
                 ? _sessionController.runtime(sessionId)
@@ -845,7 +873,6 @@ class _ChatPanelState extends State<ChatPanel> {
             return StreamingBubble(
               streamingContent: _streamingController.streamingContent,
               streamingReasoning: _streamingController.streamingReasoning,
-              thinkingCollapsed: _streamingController.thinkingCollapsed,
               runtimeState: rt,
             );
           },

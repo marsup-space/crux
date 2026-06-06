@@ -12,6 +12,13 @@ class EditTool extends ToolDef {
   String get name => 'edit';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final filePath = args['filePath'] as String? ?? '';
+    final name = filePath.split('/').last;
+    return '$name: ok';
+  }
+
+  @override
   String get description =>
       'Exact string replacements in files. '
       'Use replaceAll for renaming across file.';
@@ -142,7 +149,7 @@ class EditTool extends ToolDef {
   ) {
     if (replaceAll) {
       var result = content;
-      for (final pos in positions) {
+      for (final pos in positions.reversed) {
         result =
             result.substring(0, pos) +
             newString +

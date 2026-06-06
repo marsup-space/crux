@@ -9,6 +9,20 @@ class BashTool extends ToolDef {
   String get name => 'bash';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final command = args['command'] as String? ?? '';
+    final preview = command.length > 30 ? '${command.substring(0, 27)}...' : command;
+    final exitCode = result.metadata['exitCode'];
+    final suffix = exitCode != null && exitCode != 0 ? ' [exit $exitCode]' : '';
+    final lines = '\n'.allMatches(result.output).length + 1;
+    final size = result.output.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    return '$preview: $lines lines, $sizeStr$suffix';
+  }
+
+  @override
   String get description =>
       'Executes bash command with optional timeout. '
       'Prefer bash over multiple tool calls when operations can be chained.';

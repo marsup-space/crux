@@ -10,6 +10,18 @@ class ReadTool extends ToolDef {
   String get name => 'read';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final filePath = args['filePath'] as String? ?? '';
+    final name = filePath.split('/').last;
+    final lines = '\n'.allMatches(result.output).length + 1;
+    final size = result.output.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    return '$name: $lines lines, $sizeStr';
+  }
+
+  @override
   String get description =>
       'Reads file or directory from filesystem. '
       'Returns up to 2000 lines with line number prefixes. '

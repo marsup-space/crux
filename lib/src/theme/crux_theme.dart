@@ -49,6 +49,7 @@ class CruxTheme {
 
   static const aiPrefix = purple;
   static const userPrefix = cyan;
+  static const toolPrefix = yellow;
   static const thinkingPrefix = comment;
   static const thinkingCollapsedText = comment;
   static const thinkingExpandedText = Color(0x6272A4);

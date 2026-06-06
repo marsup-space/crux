@@ -7,6 +7,13 @@ class GlobTool extends ToolDef {
   String get name => 'glob';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final pattern = args['pattern'] as String? ?? '';
+    final count = '\n'.allMatches(result.output).length + 1;
+    return '"$pattern": $count items';
+  }
+
+  @override
   String get description =>
       'Find files by glob pattern. '
       'Returns matching paths sorted by modification time.';

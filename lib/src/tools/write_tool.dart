@@ -8,6 +8,13 @@ class WriteTool extends ToolDef {
   String get name => 'write';
 
   @override
+  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+    final filePath = args['filePath'] as String? ?? '';
+    final name = filePath.split('/').last;
+    return '$name: ok';
+  }
+
+  @override
   String get description => 'Writes file, overwriting if exists.';
 
   @override

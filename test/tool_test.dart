@@ -5,6 +5,7 @@ import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/bash_tool.dart';
 import 'package:crux/src/tools/read_tool.dart';
+import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
@@ -352,6 +353,97 @@ void main() {
       final result = await tool.execute({'filePath': 'test.txt'}, ctx);
       expect(result.output, contains('relative content'));
       await tempDir.delete(recursive: true);
+    });
+  });
+
+  group('EditTool replaceAll', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_edit_test_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('replaceAll with different length replacement preserves positions', () async {
+      final content = '[Nocterm](https://github.com/wu-sheng/nocterm)\n'
+          'Some text\n'
+          '[Nocterm](https://github.com/wu-sheng/nocterm)';
+      final file = File('${tempDir.path}/readme.md');
+      await file.writeAsString(content);
+
+      final tool = EditTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({
+        'filePath': 'readme.md',
+        'oldString': 'https://github.com/wu-sheng/nocterm',
+        'newString': 'https://github.com/marsup-space/nocterm',
+        'replaceAll': true,
+      }, ctx);
+
+      expect(result.output, contains('Replaced 2 occurrence'));
+
+      final updated = await file.readAsString();
+      expect(updated, equals(
+        '[Nocterm](https://github.com/marsup-space/nocterm)\n'
+        'Some text\n'
+        '[Nocterm](https://github.com/marsup-space/nocterm)',
+      ));
+    });
+
+    test('replaceAll with same length replacement works', () async {
+      final file = File('${tempDir.path}/code.dart');
+      await file.writeAsString('foo bar foo bar foo');
+
+      final tool = EditTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({
+        'filePath': 'code.dart',
+        'oldString': 'foo',
+        'newString': 'baz',
+        'replaceAll': true,
+      }, ctx);
+
+      expect(result.output, contains('Replaced 3 occurrence'));
+      final updated = await file.readAsString();
+      expect(updated, equals('baz bar baz bar baz'));
+    });
+
+    test('replaceAll with longer replacement does not corrupt content', () async {
+      final file = File('${tempDir.path}/config.txt');
+      await file.writeAsString('url=http://old\nname=test\nurl=http://old');
+
+      final tool = EditTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({
+        'filePath': 'config.txt',
+        'oldString': 'http://old',
+        'newString': 'https://new-server.example.com',
+        'replaceAll': true,
+      }, ctx);
+
+      expect(result.output, contains('Replaced 2 occurrence'));
+      final updated = await file.readAsString();
+      expect(updated, equals('url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com'));
     });
   });
 }
