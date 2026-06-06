@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
 
 class ScrollbarMarker {
   const ScrollbarMarker({
@@ -446,37 +448,110 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     if (markerY == null) return;
 
     final scrollbarX = size.width - thickness;
-    final maxTooltipWidth = (scrollbarX - 1).toInt();
+    final maxTooltipWidth = math.min(
+      (scrollbarX - 1).toInt(),
+      (size.width / 2).floor(),
+    );
     if (maxTooltipWidth <= 0) return;
 
-    final displayText = label.length > maxTooltipWidth
-        ? label.substring(0, maxTooltipWidth - 1) + '…'
-        : label.padRight(maxTooltipWidth);
-    final tooltipWidth = displayText.length.toDouble();
+    const maxLines = 4;
+    final lines = _wrapText(label, maxTooltipWidth);
+    final trimmedLines = lines.length > maxLines
+        ? [...lines.sublist(0, maxLines - 1), '${lines[maxLines - 1]}…']
+        : lines;
 
-    final tooltipX = scrollbarX - tooltipWidth - 1;
-    final tooltipY = markerY;
+    var tooltipLineCount = trimmedLines.length;
+    if (markerY + tooltipLineCount > size.height) {
+      tooltipLineCount = (size.height - markerY).toInt();
+    }
+    if (tooltipLineCount <= 0) return;
 
+    final effectiveLines = trimmedLines.sublist(0, tooltipLineCount);
     final bgColor = tooltipBackgroundColor ?? const Color(0x21222C);
 
-    canvas.fillRect(
-      Rect.fromLTWH(
-        offset.dx + tooltipX,
-        offset.dy + tooltipY,
-        tooltipWidth,
-        1.0,
-      ),
-      ' ',
-      style: TextStyle(backgroundColor: bgColor),
-    );
+    final rightEdge = scrollbarX - 1;
 
-    canvas.drawText(
-      offset + Offset(tooltipX, tooltipY),
-      displayText,
-      style: TextStyle(
-        color: marker.color,
-        backgroundColor: bgColor,
-      ),
-    );
+    for (var lineIdx = 0; lineIdx < effectiveLines.length; lineIdx++) {
+      final line = effectiveLines[lineIdx];
+      final lineWidth = UnicodeWidth.stringWidth(line);
+
+      final lineY = markerY + lineIdx.toDouble();
+
+      canvas.fillRect(
+        Rect.fromLTWH(
+          offset.dx + rightEdge - maxTooltipWidth,
+          offset.dy + lineY,
+          maxTooltipWidth.toDouble(),
+          1.0,
+        ),
+        ' ',
+        style: TextStyle(backgroundColor: bgColor),
+      );
+
+      canvas.drawText(
+        offset + Offset(
+          rightEdge - lineWidth.toDouble(),
+          lineY,
+        ),
+        line,
+        style: TextStyle(
+          color: marker.color,
+          backgroundColor: bgColor,
+        ),
+      );
+    }
+  }
+
+  List<String> _wrapText(String text, int maxWidth) {
+    if (maxWidth <= 0) return [];
+    final words = text.split(RegExp(r'\s+'));
+    final lines = <String>[];
+    var currentLine = '';
+
+    for (final word in words) {
+      if (word.isEmpty) continue;
+      final wordWidth = UnicodeWidth.stringWidth(word);
+
+      if (currentLine.isEmpty) {
+        if (wordWidth <= maxWidth) {
+          currentLine = word;
+        } else {
+          currentLine = _truncateToWidth(word, maxWidth);
+        }
+      } else {
+        final combinedWidth =
+            UnicodeWidth.stringWidth(currentLine) + 1 + wordWidth;
+        if (combinedWidth <= maxWidth) {
+          currentLine = '$currentLine $word';
+        } else {
+          lines.add(currentLine);
+          if (wordWidth <= maxWidth) {
+            currentLine = word;
+          } else {
+            currentLine = _truncateToWidth(word, maxWidth);
+          }
+        }
+      }
+    }
+
+    if (currentLine.isNotEmpty) {
+      lines.add(currentLine);
+    }
+
+    return lines;
+  }
+
+  String _truncateToWidth(String text, int maxWidth) {
+    if (maxWidth <= 1) return '…';
+    final targetWidth = maxWidth - 1;
+    var width = 0;
+    final buffer = StringBuffer();
+    for (final char in text.characters) {
+      final charWidth = UnicodeWidth.stringWidth(char);
+      if (width + charWidth > targetWidth) break;
+      buffer.write(char);
+      width += charWidth;
+    }
+    return '$buffer…';
   }
 }
