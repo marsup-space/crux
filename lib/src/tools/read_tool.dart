@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'tool_def.dart';
 
 const _defaultLimit = 2000;
@@ -16,7 +17,8 @@ class ReadTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$lines lines, $sizeStr';
+    final tokens = estimateTokens(result.output);
+    return '$lines lines, $sizeStr, ~${tokens}t';
   }
 
   @override

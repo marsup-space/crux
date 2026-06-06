@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'tool_def.dart';
 
 class WebFetchTool extends ToolDef {
@@ -15,7 +16,8 @@ class WebFetchTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$url: $lines lines, $sizeStr';
+    final tokens = estimateTokens(result.output);
+    return '$url: $lines lines, $sizeStr, ~${tokens}t';
   }
 
   @override

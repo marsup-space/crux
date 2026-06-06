@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
@@ -15,7 +16,8 @@ class WriteTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$lines lines, $sizeStr written';
+    final tokens = estimateTokens(content);
+    return '$lines lines, $sizeStr, ~${tokens}t written';
   }
 
   @override

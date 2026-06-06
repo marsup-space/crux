@@ -3,6 +3,7 @@ import '../theme/crux_theme.dart';
 import '../models/message.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
+import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
 
 class MessageBubble extends StatelessComponent {
@@ -33,7 +34,7 @@ class MessageBubble extends StatelessComponent {
           : '?';
       final tokens = message.reasoningTokens > 0
           ? message.reasoningTokens.toString()
-          : '~${(message.reasoningContent.length / 3.5).ceil()}';
+          : '~${estimateTokens(message.reasoningContent)}';
       final effort = message.reasoningEffort ?? 'normal';
       thinkingSummary = '${secs}s, $tokens tokens [$effort]';
     }

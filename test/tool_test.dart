@@ -9,6 +9,7 @@ import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
+import 'package:crux/src/utils/token_estimate.dart';
 
 void main() {
   group('resolvePath', () {
@@ -444,6 +445,31 @@ void main() {
       expect(result.output, contains('Replaced 2 occurrence'));
       final updated = await file.readAsString();
       expect(updated, equals('url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com'));
+    });
+  });
+
+  group('estimateTokens', () {
+    test('pure ASCII text uses 4 chars per token', () {
+      expect(estimateTokens('hello world'), equals(3));
+    });
+
+    test('pure CJK text uses 1.25 chars per token', () {
+      expect(estimateTokens('你好世界'), equals(4));
+    });
+
+    test('mixed CJK and ASCII', () {
+      final result = estimateTokens('hello 你好 world');
+      expect(result, greaterThan(0));
+    });
+
+    test('empty string returns 0', () {
+      expect(estimateTokens(''), equals(0));
+    });
+
+    test('CJK gets more tokens than same-length ASCII', () {
+      final asciiTokens = estimateTokens('aaaa');
+      final cjkTokens = estimateTokens('你好你好');
+      expect(cjkTokens, greaterThan(asciiTokens));
     });
   });
 }

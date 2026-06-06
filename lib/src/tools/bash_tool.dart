@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'tool_def.dart';
 
 const _maxLines = 2000;
@@ -19,7 +20,8 @@ class BashTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$preview: $lines lines, $sizeStr$suffix';
+    final tokens = estimateTokens(result.output);
+    return '$preview: $lines lines, $sizeStr, ~${tokens}t$suffix';
   }
 
   @override

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
 import 'matchers/exact_matcher.dart';
@@ -16,12 +17,12 @@ class EditTool extends ToolDef {
     final oldString = args['oldString'] as String? ?? '';
     final newString = args['newString'] as String? ?? '';
     final replaceAll = (args['replaceAll'] as bool?) ?? false;
-    final count = replaceAll
-        ? 'all'
-        : '1';
+    final count = replaceAll ? 'all' : '1';
     final oldLines = '\n'.allMatches(oldString).length + 1;
     final newLines = '\n'.allMatches(newString).length + 1;
-    return '$count replacement, $oldLines→$newLines lines';
+    final oldTokens = estimateTokens(oldString);
+    final newTokens = estimateTokens(newString);
+    return '$count replacement, $oldLines→$newLines lines, ~${oldTokens}→~${newTokens}t';
   }
 
   @override

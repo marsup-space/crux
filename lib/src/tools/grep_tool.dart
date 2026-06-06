@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../utils/token_estimate.dart';
 import 'tool_def.dart';
 
 class GrepTool extends ToolDef {
@@ -10,7 +11,8 @@ class GrepTool extends ToolDef {
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
     final pattern = args['pattern'] as String? ?? '';
     final matchCount = '\n'.allMatches(result.output).length + 1;
-    return '"$pattern": $matchCount matches';
+    final tokens = estimateTokens(result.output);
+    return '"$pattern": $matchCount matches, ~${tokens}t';
   }
 
   @override
