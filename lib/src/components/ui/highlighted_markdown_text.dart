@@ -105,61 +105,70 @@ class HighlightMarkdownStyleSheet {
   });
 
   factory HighlightMarkdownStyleSheet.terminalDark() {
+    return _buildTerminalDark(CruxTheme.foreground);
+  }
+
+  factory HighlightMarkdownStyleSheet.thinking() {
+    return _buildTerminalDark(CruxTheme.thinkingPrefix);
+  }
+
+  static HighlightMarkdownStyleSheet _buildTerminalDark(Color baseColor) {
     return HighlightMarkdownStyleSheet(
-      h1Style: const TextStyle(
+      paragraphStyle: TextStyle(color: baseColor),
+      h1Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH1,
+        color: baseColor,
       ),
-      h2Style: const TextStyle(
+      h2Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH2,
+        color: baseColor,
       ),
-      h3Style: const TextStyle(
+      h3Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH3,
+        color: baseColor,
       ),
-      h4Style: const TextStyle(
+      h4Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH4,
+        color: baseColor,
       ),
-      h5Style: const TextStyle(
+      h5Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH5,
+        color: baseColor,
       ),
-      h6Style: const TextStyle(
+      h6Style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdH6,
+        color: baseColor,
       ),
-      boldStyle: const TextStyle(
+      boldStyle: TextStyle(
         fontWeight: FontWeight.bold,
-        color: CruxTheme.mdBold,
+        color: baseColor,
       ),
-      italicStyle: const TextStyle(
+      italicStyle: TextStyle(
         fontStyle: FontStyle.italic,
-        color: CruxTheme.mdItalic,
+        color: baseColor,
       ),
-      strikethroughStyle: const TextStyle(
+      strikethroughStyle: TextStyle(
         decoration: TextDecoration.lineThrough,
-        color: CruxTheme.mdStrikethrough,
+        color: baseColor,
       ),
-      codeStyle: const TextStyle(
-        color: CruxTheme.mdInlineCode,
+      codeStyle: TextStyle(
+        color: baseColor,
         backgroundColor: CruxTheme.mdInlineCodeBg,
       ),
-      codeBlockStyle: const TextStyle(
-        color: CruxTheme.mdCodeBlockText,
+      codeBlockStyle: TextStyle(
+        color: baseColor,
         backgroundColor: CruxTheme.codeBlockBackground,
       ),
-      blockquoteStyle: const TextStyle(
-        color: CruxTheme.mdBlockquote,
+      blockquoteStyle: TextStyle(
+        color: baseColor,
         fontStyle: FontStyle.italic,
       ),
-      linkStyle: const TextStyle(
-        color: CruxTheme.mdLink,
+      linkStyle: TextStyle(
+        color: baseColor,
         decoration: TextDecoration.underline,
       ),
       codeBlockBackground: CruxTheme.codeBlockBackground,
-      codeBlockHeaderStyle: const TextStyle(color: CruxTheme.codeBlockHeader),
+      codeBlockHeaderStyle: TextStyle(color: baseColor),
     );
   }
 

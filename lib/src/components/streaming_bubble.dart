@@ -50,49 +50,28 @@ class StreamingBubble extends StatelessComponent {
       );
     }
 
-    if (!hasReasoning) {
-      children.add(
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ' Crux: ',
-                style: TextStyle(
-                  color: CruxTheme.responsePrefix,
-                  fontWeight: FontWeight.bold,
-                ),
+    children.add(
+      Container(
+        padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              ' Crux: ',
+              style: TextStyle(
+                color: CruxTheme.responsePrefix,
+                fontWeight: FontWeight.bold,
               ),
-              Expanded(
-                child: streamingContent.isEmpty
-                    ? Text('...', style: TextStyle(color: CruxTheme.foreground))
-                    : HighlightedMarkdownText(streamingContent),
-              ),
-            ],
-          ),
+            ),
+            Expanded(
+              child: streamingContent.isEmpty
+                  ? Text('...', style: TextStyle(color: CruxTheme.foreground))
+                  : HighlightedMarkdownText(streamingContent),
+            ),
+          ],
         ),
-      );
-    } else if (streamingContent.isNotEmpty) {
-      children.add(
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ' Crux: ',
-                style: TextStyle(
-                  color: CruxTheme.responsePrefix,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Expanded(child: HighlightedMarkdownText(streamingContent)),
-            ],
-          ),
-        ),
-      );
-    }
+      ),
+    );
 
     children.add(Divider(color: CruxTheme.divider, height: 1));
 

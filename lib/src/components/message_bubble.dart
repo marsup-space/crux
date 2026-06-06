@@ -21,8 +21,8 @@ class MessageBubble extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    if (message.role == 'tool_call') return _buildToolCall(context);
     if (message.role == 'tool') return const SizedBox.shrink();
+    if (message.role == 'tool_call') return _buildToolCallWithContent(context);
 
     final isUser = message.role == 'user';
     final hasReasoning = !isUser && message.reasoningContent.isNotEmpty;
@@ -116,21 +116,112 @@ class MessageBubble extends StatelessComponent {
     );
   }
 
-  Component _buildToolCall(BuildContext context) {
-    final calls = message.toolCalls;
-    if (calls.isEmpty) {
-      return Container(
-        padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-        child: Text('(no calls)', style: TextStyle(color: CruxTheme.onSurfaceDim)),
+  Component _buildToolCallWithContent(BuildContext context) {
+    final hasReasoning = message.reasoningContent.isNotEmpty;
+    final hasContent = message.content.trim().isNotEmpty;
+
+    String thinkingSummary = '';
+    if (hasReasoning && reasoningCollapsed) {
+      final tokens = message.reasoningTokens > 0
+          ? message.reasoningTokens.toString()
+          : '~${estimateTokens(message.reasoningContent)}';
+      thinkingSummary = '$tokens tokens';
+    }
+
+    final children = <Component>[];
+
+    if (hasReasoning && reasoningCollapsed) {
+      children.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                ' Think: ',
+                style: TextStyle(
+                  color: CruxTheme.thinkPrefix,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  thinkingSummary,
+                  style: TextStyle(color: CruxTheme.thinkPrefix),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (hasReasoning) {
+      children.add(
+        Tint(
+          color: CruxTheme.thinkingExpandedText.withOpacity(0.5),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ' Think: ',
+                  style: TextStyle(
+                    color: CruxTheme.thinkPrefix,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Expanded(
+                  child: HighlightedMarkdownText(
+                    message.reasoningContent,
+                    styleSheet: HighlightMarkdownStyleSheet.thinking(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: calls.map((tc) => _buildCollapsedToolCall(tc)).toList(),
-      ),
-    );
+
+    if (hasContent) {
+      children.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                ' Crux: ',
+                style: TextStyle(
+                  color: CruxTheme.responsePrefix,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: HighlightedMarkdownText(message.content),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final calls = message.toolCalls;
+    if (calls.isNotEmpty) {
+      children.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: calls.map((tc) => _buildCollapsedToolCall(tc)).toList(),
+          ),
+        ),
+      );
+    }
+
+    children.add(Divider(color: CruxTheme.divider, height: 1));
+
+    return Column(children: children);
   }
 
   Component _buildCollapsedToolCall(ToolCallData tc) {

@@ -7,7 +7,6 @@ class StreamingController {
 
   String streamingContent = '';
   String streamingReasoning = '';
-  bool thinkingCollapsed = false;
   bool contextBarHovered = false;
 
   final Map<int, Timer> _metricsTimers = {};
@@ -54,7 +53,18 @@ class StreamingController {
     final totalChars = contentChars + reasoningChars;
     if (totalChars > 0 && rt.ttftReceived) {
       final estimatedTokens = (totalChars / 3.5).ceil();
-      final elapsedSec = (elapsedMs - rt.ttftMs) / 1000.0;
+      // Measure tok/s as "tokens per second of generation" — i.e. from
+      // first-token-arrival to now. Using rt.effectiveStreamingMs here
+      // would include the TTFT wait, which deflates the rate
+      // significantly for thinking-mode providers (e.g. MiniMax, where
+      // TTFT includes a long thinking preamble before the first text
+      // delta). If firstTokenTime is somehow null here (race during the
+      // first tick), fall back to elapsedMs-since-responseStart.
+      final firstT = rt.firstTokenTime;
+      final genMs = firstT != null
+          ? DateTime.now().difference(firstT).inMicroseconds / 1000.0
+          : elapsedMs;
+      final elapsedSec = genMs / 1000.0;
       if (elapsedSec > 0) {
         rt.tokPerSec = estimatedTokens / elapsedSec;
       }
