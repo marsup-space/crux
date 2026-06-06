@@ -1,7 +1,10 @@
 import 'dart:io';
 
-import '../utils/token_estimate.dart';
+import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
+
+const _maxMatches = 100;
+const _maxLineLength = 2000;
 
 class GrepTool extends ToolDef {
   @override
@@ -10,15 +13,21 @@ class GrepTool extends ToolDef {
   @override
   String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
     final pattern = args['pattern'] as String? ?? '';
-    final matchCount = '\n'.allMatches(result.output).length + 1;
-    final tokens = estimateTokens(result.output);
-    return '"$pattern": $matchCount matches, ~${tokens}t';
+    final total = result.metadata['totalMatches'] as int? ?? 0;
+    final tokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: result.output,
+    );
+    final suffix = result.truncated ? ' [truncated]' : '';
+    return '"$pattern": $total matches, ~${tokens}t$suffix';
   }
 
   @override
   String get description =>
       'Search file contents with regex. '
-      'Returns file paths and line numbers with matches. '
+      'Returns file paths and line numbers with matches, '
+      'up to $_maxMatches results. '
       'For match counts, use Bash with `rg` directly.';
 
   @override
@@ -64,6 +73,8 @@ class GrepTool extends ToolDef {
     cmdArgs.add('--line-number');
     cmdArgs.add('--with-filename');
     cmdArgs.add('--sort=path');
+    cmdArgs.add('--max-columns');
+    cmdArgs.add(_maxLineLength.toString());
 
     if (caseInsensitive) cmdArgs.add('-i');
     if (include != null) {
@@ -90,12 +101,23 @@ class GrepTool extends ToolDef {
           return ToolResult(
             title: 'Grep: $pattern',
             output: 'No matches found',
+            truncated: false,
+            metadata: {'totalMatches': 0, 'truncated': false},
           );
         }
-        return ToolResult(title: 'Grep: $pattern', output: _makePathsRelative(output.trim(), ctx.workingDirectory));
+        final relativeOutput = _makePathsRelative(
+          output.trim(),
+          ctx.workingDirectory,
+        );
+        return _applyLimits(relativeOutput, pattern);
       }
       if (result.exitCode == 1) {
-        return ToolResult(title: 'Grep: $pattern', output: 'No matches found');
+        return ToolResult(
+          title: 'Grep: $pattern',
+          output: 'No matches found',
+          truncated: false,
+          metadata: {'totalMatches': 0, 'truncated': false},
+        );
       }
       final stderr = result.stderr as String;
       if (stderr.isNotEmpty) {
@@ -109,17 +131,55 @@ class GrepTool extends ToolDef {
     }
   }
 
-  String _makePathsRelative(String output, String workingDirectory) {
-    final prefix = '$workingDirectory/';
-    return output.split('\n').map((line) {
-      if (line.startsWith(prefix)) {
-        final colonIdx = line.indexOf(':', prefix.length);
-        if (colonIdx != -1) {
-          return line.substring(prefix.length);
-        }
-        return line.substring(prefix.length);
+  ToolResult _applyLimits(String output, String pattern) {
+    final lines = output.split('\n');
+    final totalMatches = lines.length;
+    final wasTruncated = totalMatches > _maxMatches;
+
+    final kept = wasTruncated ? lines.sublist(0, _maxMatches) : lines;
+    final truncatedLines = kept.map((line) {
+      if (line.length > _maxLineLength) {
+        return '${line.substring(0, _maxLineLength)}...';
       }
       return line;
     }).join('\n');
+
+    final header = wasTruncated
+        ? 'Found $totalMatches matches (showing first $_maxMatches)\n'
+        : '';
+    final footer = wasTruncated
+        ? '\n\n(Results truncated: showing $_maxMatches of $totalMatches matches '
+            '${totalMatches - _maxMatches} hidden). '
+            'Consider using a more specific path or pattern.)'
+        : '';
+
+    // TODO: Claude Code approach — persist full output to disk when exceeding
+    // a size threshold (e.g. 20KB) and return a preview (2KB) with the file
+    // path, so the model can page through results via head_limit + offset.
+    // Also add an `offset` parameter for pagination instead of just truncating.
+
+    return ToolResult(
+      title: 'Grep: $pattern',
+      output: '$header$truncatedLines$footer',
+      truncated: wasTruncated,
+      metadata: {'totalMatches': totalMatches, 'truncated': wasTruncated},
+    );
+  }
+
+  String _makePathsRelative(String output, String workingDirectory) {
+    final prefix = '$workingDirectory/';
+    return output
+        .split('\n')
+        .map((line) {
+          if (line.startsWith(prefix)) {
+            final colonIdx = line.indexOf(':', prefix.length);
+            if (colonIdx != -1) {
+              return line.substring(prefix.length);
+            }
+            return line.substring(prefix.length);
+          }
+          return line;
+        })
+        .join('\n');
   }
 }
