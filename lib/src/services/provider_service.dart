@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
-import 'package:toml/toml.dart';
 import '../models/provider_config.dart';
 import 'llm_provider.dart';
 import 'provider_config_loader.dart';
@@ -94,6 +93,11 @@ class ProviderService {
   /// Persisted in `auth.json` and loaded on startup. Global — not per-session.
   String? _auxiliaryModel;
 
+  /// Character threshold for TLDR generation. If an AI response exceeds this
+  /// many characters, a TLDR summary is generated using the auxiliary model.
+  /// Persisted in `auth.json`. Default is 5000.
+  int _tldrThreshold = 5000;
+
   /// Path to the auth.json file for persistent key storage.
   /// Follows XDG: `$XDG_DATA_HOME/crux/auth.json`
   /// (defaults to `~/.local/share/crux/auth.json`).
@@ -157,69 +161,6 @@ class ProviderService {
   Set<String> imageModelKeys() => _loader.imageModelKeys();
 
   // ---------------------------------------------------------------------------
-  // Provider management (add / remove / modify)
-  // ---------------------------------------------------------------------------
-
-  /// Creates a new provider config file and loads it.
-  ///
-  /// Writes a TOML file at `providersDir/<name>.toml`, then reloads
-  /// all configs. Returns the loaded [ProviderConfig].
-  Future<ProviderConfig> addProvider(ProviderConfig config) async {
-    final file = File('$providersDir/${config.name}.toml');
-    final tomlContent = _serializeProviderConfig(config);
-    await _ensureProvidersDir();
-    await file.writeAsString(tomlContent);
-    await _loader.loadAll();
-    return _loader.providerByName(config.name)!;
-  }
-
-  /// Deletes a provider config file and reloads.
-  ///
-  /// Returns `true` if the file was deleted, `false` if it didn't exist.
-  Future<bool> removeProvider(String providerName) async {
-    final file = File('$providersDir/$providerName.toml');
-    if (!await file.exists()) return false;
-    await file.delete();
-    await _loader.loadAll();
-    return true;
-  }
-
-  /// Modifies an existing provider config by merging non-null fields.
-  ///
-  /// Only the fields that are explicitly provided (non-null) are updated;
-  /// all others retain their current values. The TOML file is overwritten
-  /// and configs are reloaded. Returns the updated [ProviderConfig], or
-  /// `null` if the provider wasn't found.
-  Future<ProviderConfig?> modifyProvider(
-    String providerName, {
-    String? endpointUrl,
-    String? type,
-    List<ModelConfig>? models,
-    UsageQuotaConfig? quota,
-  }) async {
-    final current = _loader.providerByName(providerName);
-    if (current == null) return null;
-
-    final newType = type ?? current.type;
-    final resolved = resolveProvider(newType);
-
-    final updated = ProviderConfig(
-      name: providerName,
-      type: newType,
-      wireFamily: resolved.wire,
-      endpointUrl: endpointUrl ?? current.endpointUrl,
-      models: models ?? current.models,
-      quota: quota ?? current.quota,
-    );
-
-    final file = File('$providersDir/$providerName.toml');
-    final tomlContent = _serializeProviderConfig(updated);
-    await file.writeAsString(tomlContent);
-    await _loader.loadAll();
-    return _loader.providerByName(providerName);
-  }
-
-  // ---------------------------------------------------------------------------
   // Model discovery (query remote /models endpoint)
   // ---------------------------------------------------------------------------
 
@@ -261,14 +202,14 @@ class ProviderService {
     try {
       final request = await client.getUrl(modelsUri);
 
-      // Attach auth header if an API key is available.
-      // Header format varies by wire family:
-      //   OpenAI-compatible:   Authorization: Bearer <key>
-      //   Anthropic-compatible: x-api-key: <key>
+      // Header format varies by auth style:
+      //   Bearer:             Authorization: Bearer <key>
+      //   Anthropic API key:  x-api-key: <key>
       if (apiKey != null && apiKey.isNotEmpty) {
-        if (provider.wireFamily == WireFamily.openaiCompatible) {
+        final authStyle = resolveProvider(provider.type).authStyle;
+        if (authStyle == AuthStyle.bearer) {
           request.headers.set('Authorization', 'Bearer $apiKey');
-        } else if (provider.wireFamily == WireFamily.anthropicCompatible) {
+        } else if (authStyle == AuthStyle.anthropicApiKey) {
           request.headers.set('x-api-key', apiKey);
         }
       }
@@ -314,12 +255,21 @@ class ProviderService {
   /// Returns the auxiliary model composite key, or null if not set.
   String? get auxiliaryModel => _auxiliaryModel;
 
+  /// Returns the TLDR threshold in characters.
+  int get tldrThreshold => _tldrThreshold;
+
   /// Persists the given model composite key as the auxiliary model.
   ///
   /// Called when the user selects a model via `/auxiliary`. The value is
   /// stored globally in `auth.json` and persists across sessions.
   Future<void> setAuxiliaryModel(String compositeKey) async {
     _auxiliaryModel = compositeKey;
+    await _persistAuthKeys();
+  }
+
+  /// Sets the TLDR threshold and persists it to `auth.json`.
+  Future<void> setTldrThreshold(int threshold) async {
+    _tldrThreshold = threshold;
     await _persistAuthKeys();
   }
 
@@ -430,6 +380,7 @@ class ProviderService {
         }
         _lastUsedModel = data['lastUsedModel'] as String?;
         _auxiliaryModel = data['auxiliaryModel'] as String?;
+        _tldrThreshold = data['tldrThreshold'] as int? ?? 5000;
       } else {
         // Legacy flat format — migrate on next write
         for (final entry in data.entries) {
@@ -456,6 +407,7 @@ class ProviderService {
       'apiKeys': _envKeys,
       if (_lastUsedModel != null) 'lastUsedModel': _lastUsedModel,
       if (_auxiliaryModel != null) 'auxiliaryModel': _auxiliaryModel,
+      'tldrThreshold': _tldrThreshold,
     };
     final content = JsonEncoder.withIndent('  ').convert(data) + '\n';
     final file = File(authJsonPath);
@@ -467,85 +419,4 @@ class ProviderService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // TOML serialization (private)
-  // ---------------------------------------------------------------------------
-
-  /// Converts a [ProviderConfig] to a TOML string.
-  ///
-  /// Only non-default and non-null optional fields are written to keep the
-  /// output clean. For example, `image_support` is only written when `true`,
-  /// and `reasoning_effort` is omitted when `null`.
-  String _serializeProviderConfig(ProviderConfig config) {
-    final map = <String, dynamic>{
-      'type': config.type,
-      'endpoint_url': config.endpointUrl,
-      'models': config.models.map(_serializeModelConfig).toList(),
-    };
-
-    if (config.quota != null) {
-      map['quota'] = _serializeUsageQuotaConfig(config.quota!);
-    }
-
-    final doc = TomlDocument.fromMap(map);
-    return doc.toString();
-  }
-
-  /// Converts a [ModelConfig] to a TOML-friendly map.
-  ///
-  /// Required fields (`id`, `name`, `context_size`) are always included.
-  /// Optional fields are included only when they differ from defaults:
-  /// - `image_support` → only if `true` (default is `false`)
-  /// - `thinking` → only if `true` (default is `false`)
-  /// - `reasoning_effort` → only if non-null
-  /// - `thinking_budget` → only if non-null
-  Map<String, dynamic> _serializeModelConfig(ModelConfig model) {
-    final map = <String, dynamic>{
-      'id': model.id,
-      'name': model.name,
-      'context_size': model.contextSize,
-    };
-
-    if (model.imageSupport) map['image_support'] = true;
-    if (model.thinking) map['thinking'] = true;
-    if (model.reasoningEffort != null) {
-      map['reasoning_effort'] = model.reasoningEffort!.toConfigString();
-    }
-    if (model.thinkingBudget != null) {
-      map['thinking_budget'] = model.thinkingBudget!;
-    }
-
-    return map;
-  }
-
-  /// Converts a [UsageQuotaConfig] to a TOML-friendly map.
-  ///
-  /// Produces a nested structure that serializes as:
-  /// ```toml
-  /// [quota]
-  /// api_url = "..."
-  ///
-  /// [quota.usage]
-  /// "5h" = 100
-  /// ```
-  Map<String, dynamic> _serializeUsageQuotaConfig(UsageQuotaConfig quota) {
-    final usage = <String, dynamic>{};
-    for (final tier in quota.tiers) {
-      usage[tier.label] = tier.limit;
-    }
-
-    return {'api_url': quota.apiUrl, 'usage': usage};
-  }
-
-  // ---------------------------------------------------------------------------
-  // Utility (private)
-  // ---------------------------------------------------------------------------
-
-  /// Ensures the providers directory exists on disk.
-  Future<void> _ensureProvidersDir() async {
-    final dir = Directory(providersDir);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-  }
 }

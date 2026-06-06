@@ -161,12 +161,10 @@ class ProviderConfigLoader {
           .where((f) => !isExampleProviderFile(f.path))
           .toList();
 
-      // Sort by filename for deterministic load order within each dir.
       files.sort((a, b) => a.path.compareTo(b.path));
 
       for (final file in files) {
         final name = _providerNameFromFile(file);
-        // Skip names already loaded from a higher-priority dir.
         if (_configs.containsKey(name)) continue;
         try {
           final config = await _loadSingle(file, name);
@@ -295,6 +293,10 @@ class ProviderConfigLoader {
     // Optional thinking_budget (int)
     final thinkingBudget = _optionalInt(map, 'thinking_budget');
 
+    final maxTokens = _optionalInt(map, 'max_tokens');
+
+    final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -303,6 +305,8 @@ class ProviderConfigLoader {
       reasoningEffort: reasoningEffort,
       thinking: thinking,
       thinkingBudget: thinkingBudget,
+      maxTokens: maxTokens,
+      streamLerp: streamLerp,
     );
   }
 

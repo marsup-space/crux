@@ -3,7 +3,7 @@ import '../models/slash_command.dart';
 
 enum OverlayMode { off, command, parameter, wizard }
 
-enum ProviderWizardSubcommand { builtin, custom }
+enum ProviderWizardSubcommand { builtin }
 
 class OverlayController {
   OverlayMode overlayMode = OverlayMode.off;
@@ -64,13 +64,6 @@ class OverlayController {
     overlayMode = OverlayMode.wizard;
     activeWizardSubcommand = ProviderWizardSubcommand.builtin;
     builtinProviderName = providerName;
-    setOverlayOffExceptWizard();
-  }
-
-  void enterCustomWizard() {
-    overlayMode = OverlayMode.wizard;
-    activeWizardSubcommand = ProviderWizardSubcommand.custom;
-    builtinProviderName = null;
     setOverlayOffExceptWizard();
   }
 

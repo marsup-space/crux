@@ -1,11 +1,18 @@
-/// The HTTP wire family a provider uses — determines URL paths, auth headers,
-/// and how streaming responses are parsed.
+/// The HTTP wire family a provider uses — determines URL paths, stream
+/// parsing, and message format.
 ///
 /// This is derived from the TOML `type` field via the dispatcher in
 /// `llm_provider.dart`. Two providers can share a [WireFamily] (e.g. DeepSeek
 /// and a generic OpenAI-compatible endpoint) but have different request
 /// bodies — that's what the [LlmProvider] implementation handles.
 enum WireFamily { openaiCompatible, anthropicCompatible }
+
+/// How the API key is sent in HTTP headers — independent of [WireFamily].
+///
+/// Most providers use Bearer tokens regardless of wire protocol.
+/// Anthropic's native API uses `x-api-key`, but some Anthropic-compatible
+/// providers (like MiniMax) use `Authorization: Bearer` instead.
+enum AuthStyle { bearer, anthropicApiKey }
 
 /// Human-readable label for a [WireFamily] (used in UI / logs).
 String wireFamilyLabel(WireFamily w) {
@@ -77,6 +84,14 @@ class ModelConfig {
   /// consume (e.g. Anthropic's `budget_tokens`).
   final int? thinkingBudget;
 
+  /// Maximum output tokens the model can generate per request.
+  ///
+  /// Maps to `max_tokens` (Anthropic) or `max_completion_tokens` (OpenAI).
+  /// When `null`, the provider uses its own default.
+  final int? maxTokens;
+
+  final bool streamLerp;
+
   const ModelConfig({
     required this.id,
     required this.name,
@@ -85,6 +100,8 @@ class ModelConfig {
     this.reasoningEffort,
     this.thinking = false,
     this.thinkingBudget,
+    this.maxTokens,
+    this.streamLerp = false,
   });
 
   /// The composite key used throughout Crux: `providerName/modelId`.
