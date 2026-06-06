@@ -473,13 +473,14 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
     for (var lineIdx = 0; lineIdx < effectiveLines.length; lineIdx++) {
       final line = effectiveLines[lineIdx];
-      final lineWidth = UnicodeWidth.stringWidth(line);
 
       final lineY = markerY + lineIdx.toDouble();
 
+      final tooltipX = rightEdge - maxTooltipWidth;
+
       canvas.fillRect(
         Rect.fromLTWH(
-          offset.dx + rightEdge - maxTooltipWidth,
+          offset.dx + tooltipX,
           offset.dy + lineY,
           maxTooltipWidth.toDouble(),
           1.0,
@@ -490,7 +491,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
       canvas.drawText(
         offset + Offset(
-          rightEdge - lineWidth.toDouble(),
+          tooltipX.toDouble(),
           lineY,
         ),
         line,
