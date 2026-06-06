@@ -34,6 +34,13 @@ class ChatService {
   final Set<int> _activeSessions = {};
   final Set<int> _cancelRequested = {};
 
+  /// Maximum number of model→tool→model round-trips allowed in a single
+  /// user turn. Prevents an agentic loop from running unbounded if the
+  /// model keeps calling tools without producing a final answer. 50 is
+  /// generous enough for genuine multi-step tasks (build, refactor, debug)
+  /// while still bounding worst-case cost and latency.
+  static const int _maxStepsPerTurn = 50;
+
   ChatService(
     this._store,
     this._providerService,
@@ -111,6 +118,64 @@ class ChatService {
     }
   }
 
+  Future<String?> generateTldr(
+    String responseContent, {
+    TldrDetail detail = TldrDetail.defaultLevel,
+  }) async {
+    final auxKey = _providerService.auxiliaryModel;
+    if (auxKey == null || auxKey == 'none') return null;
+
+    final slashIndex = auxKey.indexOf('/');
+    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
+    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
+
+    final provider = _providerService.providerByName(providerName);
+    final apiKey = _providerService.getApiKey(providerName);
+    if (provider == null || apiKey == null || apiKey.isEmpty) return null;
+
+    final client = LlmClient();
+    try {
+      final stream = client.streamChat(
+        endpointUrl: provider.endpointUrl,
+        config: provider,
+        apiKey: apiKey,
+        modelId: modelId,
+        messages: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'role': 'system',
+            'content': tldrSystemPromptFor(detail),
+          },
+          <String, dynamic>{'role': 'user', 'content': responseContent},
+        ],
+        thinkingMode: 'disabled',
+        reasoningEffort: null,
+      );
+
+      final buffer = StringBuffer();
+      String? streamError;
+      await for (final chunk in stream) {
+        if (chunk.error != null) {
+          streamError = chunk.error;
+          break;
+        }
+        if (chunk.textDelta != null) buffer.write(chunk.textDelta);
+      }
+      if (streamError != null) {
+        print('[tldr] stream error: $streamError');
+        return null;
+      }
+      final tldr = buffer.toString().trim();
+      if (tldr.isEmpty) return null;
+      print('[tldr] generated: ${tldr.length} chars');
+      return tldr;
+    } catch (e) {
+      print('[tldr] generation failed: $e');
+      return null;
+    } finally {
+      client.dispose();
+    }
+  }
+
   Future<void> sendMessage({
     required int sessionId,
     required String userContent,
@@ -173,9 +238,18 @@ class ChatService {
     int reasoningTokens = 0;
 
     var firstTokenEver = true;
+    var stepCount = 0;
+    var stepLimitReached = false;
 
     while (true) {
+      stepCount++;
+      if (stepCount > _maxStepsPerTurn) {
+        stepLimitReached = true;
+        break;
+      }
+
       if (_cancelRequested.contains(sessionId)) {
+        runtime.pauseStreamingTimer();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -186,6 +260,8 @@ class ChatService {
 
       _llmClient.clearToolBlockState();
 
+      runtime.startStreamingTimer();
+
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
         config: provider,
@@ -195,6 +271,7 @@ class ChatService {
         thinkingMode: runtime.thinkingMode,
         reasoningEffort: runtime.reasoningEffort,
         thinkingBudget: modelConfig?.thinkingBudget,
+        maxTokens: modelConfig?.maxTokens,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
       );
 
@@ -202,9 +279,61 @@ class ChatService {
       final roundTextBuffer = StringBuffer();
       final roundReasoningBuffer = StringBuffer();
 
+      final useLerp = modelConfig?.streamLerp ?? false;
+      String lerpPendingText = '';
+      String lerpPendingReasoning = '';
+      Timer? lerpTimer;
+      var lerpStreamDone = false;
+      Completer<void>? lerpDrainCompleter;
+
       try {
+
+        void ensureLerpTimer() {
+          if (lerpTimer != null) return;
+          lerpTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+            final totalPending = lerpPendingText.length + lerpPendingReasoning.length;
+            if (totalPending == 0) {
+              if (lerpStreamDone && lerpDrainCompleter != null && !lerpDrainCompleter!.isCompleted) {
+                lerpDrainCompleter!.complete();
+              }
+              return;
+            }
+
+            final alpha = lerpStreamDone ? 0.03 : 0.016;
+            final minCount = lerpStreamDone ? 2 : 1;
+            final count = (totalPending * alpha).ceil().clamp(minCount, totalPending);
+
+            var remaining = count;
+
+            if (lerpPendingText.isNotEmpty) {
+              final take = remaining.clamp(0, lerpPendingText.length);
+              if (take > 0) {
+                final emit = lerpPendingText.substring(0, take);
+                lerpPendingText = lerpPendingText.substring(take);
+                fullTextBuffer.write(emit);
+                onDelta(emit);
+                remaining -= take;
+              }
+            }
+
+            if (remaining > 0 && lerpPendingReasoning.isNotEmpty) {
+              final take = remaining.clamp(0, lerpPendingReasoning.length);
+              if (take > 0) {
+                final emit = lerpPendingReasoning.substring(0, take);
+                lerpPendingReasoning = lerpPendingReasoning.substring(take);
+                fullReasoningBuffer.write(emit);
+                onReasoning(emit);
+              }
+            }
+
+            onChunk();
+          });
+        }
+
         await for (final chunk in stream) {
           if (chunk.error != null) {
+            lerpTimer?.cancel();
+            runtime.pauseStreamingTimer();
             runtime.isResponding = false;
             await _store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
@@ -217,26 +346,45 @@ class ChatService {
 
           if (chunk.textDelta != null || chunk.reasoningContent != null) {
             if (firstTokenEver) {
+              final now = DateTime.now();
               final elapsed =
-                  DateTime.now()
-                      .difference(runtime.responseStartTime!)
-                      .inMicroseconds /
+                  now.difference(runtime.responseStartTime!).inMicroseconds /
                   1000.0;
               runtime.ttftMs = elapsed;
               runtime.ttftReceived = true;
+              // Stash the wall-clock time of the first delta so the
+              // tok/s display can measure generation rate from this
+              // point on, excluding the TTFT wait. Without this, the
+              // tok/s denominator is inflated by the time spent
+              // waiting for the model to start emitting — significant
+              // for thinking-mode providers (MiniMax, etc.) where
+              // TTFT includes a long thinking preamble.
+              runtime.firstTokenTime = now;
               firstTokenEver = false;
             }
             if (chunk.textDelta != null) {
               roundTextBuffer.write(chunk.textDelta);
-              fullTextBuffer.write(chunk.textDelta);
-              onDelta(chunk.textDelta!);
+              if (useLerp) {
+                lerpPendingText += chunk.textDelta!;
+                ensureLerpTimer();
+              } else {
+                fullTextBuffer.write(chunk.textDelta);
+                onDelta(chunk.textDelta!);
+              }
             }
             if (chunk.reasoningContent != null) {
               roundReasoningBuffer.write(chunk.reasoningContent);
-              fullReasoningBuffer.write(chunk.reasoningContent);
-              onReasoning(chunk.reasoningContent!);
+              if (useLerp) {
+                lerpPendingReasoning += chunk.reasoningContent!;
+                ensureLerpTimer();
+              } else {
+                fullReasoningBuffer.write(chunk.reasoningContent);
+                onReasoning(chunk.reasoningContent!);
+              }
             }
-            onChunk();
+            if (!useLerp) {
+              onChunk();
+            }
           }
 
           if (chunk.promptTokens != null) {
@@ -256,6 +404,8 @@ class ChatService {
           }
         }
       } catch (e) {
+        lerpTimer?.cancel();
+        runtime.pauseStreamingTimer();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -263,6 +413,25 @@ class ChatService {
         onError(e.toString());
         return;
       }
+
+      lerpStreamDone = true;
+
+      if (lerpTimer != null) {
+        if (lerpPendingText.isEmpty && lerpPendingReasoning.isEmpty) {
+          lerpTimer!.cancel();
+          lerpTimer = null;
+        } else {
+          lerpDrainCompleter = Completer<void>();
+          await lerpDrainCompleter!.future.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {},
+          );
+          lerpTimer?.cancel();
+          lerpTimer = null;
+        }
+      }
+
+      runtime.pauseStreamingTimer();
 
       final finishReason = ToolExecutor.parseFinishReason(chunks);
 
@@ -272,6 +441,7 @@ class ChatService {
       if (toolCalls.isEmpty) break;
 
       final roundText = roundTextBuffer.toString();
+      final roundReasoning = roundReasoningBuffer.toString();
 
       final toolCallData = toolCalls
           .map(
@@ -287,6 +457,7 @@ class ChatService {
         sessionId,
         role: 'tool_call',
         content: roundText,
+        reasoningContent: roundReasoning,
         toolCalls: toolCallData,
       );
 
@@ -392,6 +563,10 @@ class ChatService {
       tokensIn: session.tokensIn + promptTokens,
       tokensOut: session.tokensOut + completionTokens,
       contextTokens: promptTokens + completionTokens - reasoningTokens,
+      ttftMs: session.ttftMs > 0 ? session.ttftMs : runtime.ttftMs,
+      tokPerSec: runtime.tokPerSec,
+      promptCacheHitTokens:
+          session.promptCacheHitTokens + promptCacheHitTokens,
     );
 
     session.status = SessionStatus.done;
@@ -399,11 +574,28 @@ class ChatService {
     session.tokensIn += promptTokens;
     session.tokensOut += completionTokens;
     session.contextTokens = promptTokens + completionTokens - reasoningTokens;
+    if (session.ttftMs <= 0 && runtime.ttftMs > 0) {
+      session.ttftMs = runtime.ttftMs;
+    }
+    session.tokPerSec = runtime.tokPerSec;
+    session.promptCacheHitTokens += promptCacheHitTokens;
     session.updatedAt = DateTime.now();
 
     runtime.isResponding = false;
     _activeSessions.remove(sessionId);
     _cancelRequested.remove(sessionId);
+
+    if (stepLimitReached) {
+      // Soft signal to the user (toast in the UI) that the agent loop
+      // stopped because of the per-turn step cap. The session is left
+      // in `done` state with whatever text + tool history was generated
+      // up to this point, so the user can read it and send another
+      // message to continue. This is not an error — it's a safety brake.
+      onError(
+        'Step limit reached ($_maxStepsPerTurn tool rounds). '
+        'Send another message to continue.',
+      );
+    }
 
     onComplete(
       ChatResponse(
