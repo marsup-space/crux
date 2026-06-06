@@ -1124,6 +1124,10 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
 
+      if (msg.role == 'user') {
+        items.add(Divider(color: CruxTheme.divider, height: 1));
+      }
+
       if (msg.role == 'ai' && msg.id > 0 && rt != null) {
         final hasTldr = msg.tldr.isNotEmpty;
         if (hasTldr || rt.isGeneratingTldr) {
@@ -1131,6 +1135,7 @@ class _ChatPanelState extends State<ChatPanel> {
           final aiMessageItemIndex = items.length - 1;
           final aiMessageId = msg.id;
           final aiMessageContent = msg.content;
+          items.add(Divider(color: CruxTheme.divider, height: 1));
           items.add(
             TldrBubble(
               tldrText: msg.tldr,
@@ -1148,6 +1153,13 @@ class _ChatPanelState extends State<ChatPanel> {
               ),
             ),
           );
+          items.add(Divider(color: CruxTheme.divider, height: 1));
+        } else {
+          final nextIsUser = i + 1 < messages.length &&
+              messages[i + 1].role == 'user';
+          if (nextIsUser) {
+            items.add(Divider(color: CruxTheme.divider, height: 1));
+          }
         }
       }
     }

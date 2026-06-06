@@ -97,8 +97,6 @@ class TldrBubble extends StatelessComponent {
       );
     }
 
-    children.add(Divider(color: CruxTheme.divider, height: 1));
-
     return Column(children: children);
   }
 
