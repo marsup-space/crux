@@ -8,20 +8,20 @@ class IndentationMatcher extends Matcher {
 
     if (patternLines.isEmpty) return null;
 
-    final patternBaseIndent = _leadingSpaces(patternLines.first);
+    final patternBaseIndent = _leadingIndent(patternLines.first);
 
     final positions = <int>[];
 
     for (int ci = 0; ci <= contentLines.length - patternLines.length; ci++) {
-      final contentBaseIndent = _leadingSpaces(contentLines[ci]);
+      final contentBaseIndent = _leadingIndent(contentLines[ci]);
 
       var match = true;
       for (int pi = 0; pi < patternLines.length; pi++) {
         final contentLine = contentLines[ci + pi];
         final patternLine = patternLines[pi];
 
-        final cIndent = _leadingSpaces(contentLine);
-        final pIndent = _leadingSpaces(patternLine);
+        final cIndent = _leadingIndent(contentLine);
+        final pIndent = _leadingIndent(patternLine);
 
         final cRelativeIndent = cIndent - contentBaseIndent;
         final pRelativeIndent = pIndent - patternBaseIndent;
@@ -57,7 +57,7 @@ class IndentationMatcher extends Matcher {
     return MatchResult(positions: positions);
   }
 
-  int _leadingSpaces(String line) {
+  int _leadingIndent(String line) {
     int count = 0;
     for (final ch in line.codeUnits) {
       if (ch == 32 || ch == 9) {

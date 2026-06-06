@@ -122,6 +122,7 @@ class EditTool extends ToolDef {
       oldString,
       newString,
       replaceAll,
+      matchResult.matchLength,
     );
     await file.writeAsString(newContent);
 
@@ -153,21 +154,23 @@ class EditTool extends ToolDef {
     String oldString,
     String newString,
     bool replaceAll,
+    int? matchLength,
   ) {
+    final len = matchLength ?? oldString.length;
     if (replaceAll) {
       var result = content;
       for (final pos in positions.reversed) {
         result =
             result.substring(0, pos) +
             newString +
-            result.substring(pos + oldString.length);
+            result.substring(pos + len);
       }
       return result;
     }
     final pos = positions.first;
     return content.substring(0, pos) +
         newString +
-        content.substring(pos + oldString.length);
+        content.substring(pos + len);
   }
 
   Future<int> _mtimeMs(File file) async {
