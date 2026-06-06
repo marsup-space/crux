@@ -1,0 +1,191 @@
+<div align="center">
+
+```
+  ██████╗   ██████╗  ██╗   ██╗ ██╗  ██╗
+ ██╔════╝  ██╔══██╗ ██║   ██║  ██╗██╔╝
+ ██║      ██████╔╝ ██║   ██║   ███╔╝
+ ██║      ██╔══██╗ ██║   ██║  ██╔██╗
+  ██████╗ ██║  ██║  █████╔╝ ██╔╝ ██╗
+```
+
+# Crux · 十字星
+
+**终端里的 AI 编程助手 — 智能体编排框架**
+
+[English](#english) · [中文](#chinese)
+
+---
+
+</div>
+
+## <a name="chinese"></a>🇨🇳 中文
+
+### 十字星 — 跨越关键，如星指引
+
+**Crux**（拉丁文原意"十字"）是天文学中南十字座的学名，也是英文中"核心关键"与"最难路段"的代名词。
+
+**十字星（Crux）** 是一个运行在终端中的 AI 编程助手（AI Coding Agent），通过智能体编排（Agentic Orchestration）帮助你更高效地编写代码、管理项目。
+
+| 中文名 | 十字星 |
+|--------|--------|
+| 英文名 | Crux |
+| 寓意 | ✚ 十字 = 拉丁文 crux 本意，亦指枢纽交汇点 |
+| | ⭐ 星 = 南十字星座，指引方向的坐标 |
+| | 🧗 攀岩术语 crux = 路线最难路段，harness 助你跨越 |
+| | 🎯 the crux of = 核心关键 |
+
+### 特性
+
+- 🖥️ **纯终端界面** — 基于 Nocterm TUI 框架，无需 Electron，无需浏览器
+- 🤖 **多模型支持** — 支持 DeepSeek、Anthropic Claude、OpenAI、Google 等主流 LLM
+- 🔧 **Agentic 工具调用** — Agent 可自主调用文件读写、搜索、bash 执行等工具
+- 💬 **会话管理** — 多会话并行，支持切换、历史回溯、自动标题生成
+- 🧠 **推理模式** — 支持思考模式（Thinking Mode），可调节推理深度
+- 🔌 **Provider 插件** — 灵活接入任意 API 兼容的模型供应商
+- 💰 **用量统计** — 实时 Token 计数和成本估算
+- 🎨 **Dracula 主题** — 精心调校的暗色终端配色
+
+### 快速开始
+
+```bash
+# 运行（从项目根目录）
+dart run bin/crux.dart
+
+# 指定工作目录
+dart run bin/crux.dart /path/to/your/project
+```
+
+首次启动会展示启动动画，并自动初始化数据库和语法高亮服务。
+
+### 配置 Provider
+
+通过 `/provider` 命令接入 LLM 服务商：
+
+| Provider | 命令 | 模型 |
+|----------|------|------|
+| DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro |
+| Anthropic | `/provider anthropic` | Claude 3.5 Sonnet / Haiku |
+| OpenAI | `/provider openai` | GPT-4o 等 |
+| Google | `/provider google` | Gemini 系列 |
+| 自定义 | `/provider custom` | 任意兼容 API |
+
+### 命令列表
+
+| 命令 | 说明 |
+|------|------|
+| `/model` | 切换 AI 模型 |
+| `/new` | 创建新会话 |
+| `/session` | 切换会话 |
+| `/clear` | 清空聊天记录 |
+| `/compact` | 压缩上下文窗口 |
+| `/help` | 查看帮助 |
+| `/config` | 查看/编辑配置 |
+| `/theme` | 切换主题 |
+| `/provider` | 管理 Provider |
+| `/think` | 切换思考模式 |
+| `/auxiliary` | 配置辅助模型 |
+| `/project` | 切换项目目录 |
+| `/quit` | 退出 |
+
+### 快捷键
+
+- `Tab` — 命令补全
+- `Ctrl+C` — 取消当前流式响应
+- `↑/↓` — 浏览历史消息（在会话管理面板中）
+
+### 技术栈
+
+- **语言**: Dart 3.11+
+- **UI 框架**: [Nocterm](https://github.com/marsup-space/nocterm) — 纯 Dart TUI 框架
+- **数据库**: SQLite (drift)
+- **语法高亮**: TextMate 语法
+- **中文分词**: dart-jieba (结巴分词 Dart 移植)
+
+### 项目结构
+
+```
+crux/
+├── bin/crux.dart         # 入口
+├── lib/
+│   ├── crux.dart         # 库导出
+│   ├── src/
+│   │   ├── agents/       # Agent 定义（可扩展）
+│   │   ├── commands/     # 斜杠命令
+│   │   ├── components/   # TUI 组件
+│   │   ├── models/       # 数据模型
+│   │   ├── services/     # 核心服务
+│   │   ├── storage/      # 持久化存储
+│   │   ├── theme/        # 主题
+│   │   ├── tools/        # Agent 工具
+│   │   └── utils/        # 工具函数
+├── providers/            # 内置 Provider 配置
+├── docs/                 # 设计文档
+└── test/                 # 测试
+```
+
+### 许可
+
+MIT
+
+---
+
+## <a name="english"></a>🇬🇧 English
+
+### Crux — Cross the crux, guided by the star
+
+**Crux** is a terminal-based AI coding agent with agentic orchestration. Named after the Southern Cross constellation (Latin for "cross"), it embodies both the guiding star and the core challenge — helping you cross the crux of development.
+
+| Chinese name | 十字星 (Cross Star) |
+|-------------|--------------------|
+| English name | Crux |
+
+### Features
+
+- 🖥️ **Pure terminal UI** — Built on the Nocterm TUI framework, no Electron or browser needed
+- 🤖 **Multi-model** — DeepSeek, Anthropic Claude, OpenAI, Google, and more
+- 🔧 **Agentic tool use** — Autonomous file read/write, search, bash execution
+- 💬 **Session management** — Parallel sessions, history, auto-title generation
+- 🧠 **Thinking mode** — Adjustable reasoning depth
+- 🔌 **Pluggable providers** — Connect any API-compatible LLM provider
+- 💰 **Usage tracking** — Real-time token counting and cost estimation
+- 🎨 **Dracula theme** — Carefully tuned dark terminal color scheme
+
+### Quick Start
+
+```bash
+# Run from project root
+dart run bin/crux.dart
+
+# With a working directory
+dart run bin/crux.dart /path/to/your/project
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/model` | Switch AI model |
+| `/new` | Create new session |
+| `/session` | Switch session |
+| `/clear` | Clear chat log |
+| `/compact` | Compact context window |
+| `/help` | Show help |
+| `/config` | View/edit configuration |
+| `/theme` | Change theme |
+| `/provider` | Manage providers |
+| `/think` | Toggle thinking mode |
+| `/auxiliary` | Configure auxiliary model |
+| `/project` | Switch project directory |
+| `/quit` | Exit |
+
+### Tech Stack
+
+- **Language**: Dart 3.11+
+- **UI**: [Nocterm](https://github.com/marsup-space/nocterm) — pure Dart TUI framework
+- **Database**: SQLite (drift)
+- **Syntax highlighting**: TextMate grammars
+- **Chinese segmentation**: dart-jieba
+
+### License
+
+MIT

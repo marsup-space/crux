@@ -183,7 +183,7 @@ packages:
       path: dart-jieba
       relative: true
     source: path
-    version: "0.1.0"
+    version: "1.0.1"
   dart_markdown_parser:
     dependency: transitive
     description:
@@ -382,7 +382,7 @@ packages:
       path: nocterm
       relative: true
     source: path
-    version: "0.6.0"
+    version: "0.7.0"
   node_preamble:
     dependency: transitive
     description:

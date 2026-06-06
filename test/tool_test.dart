@@ -235,6 +235,89 @@ void main() {
       final result = matcher.findMatches('hello', 'world', false);
       expect(result, isNull);
     });
+
+    test('positions are in original content space, not normalized', () {
+      final matcher = WhitespaceMatcher();
+      final content = 'hello   world';
+      final result = matcher.findMatches(content, 'hello world', false);
+      expect(result, isNotNull);
+      expect(result!.positions.length, 1);
+      final pos = result.positions[0];
+      expect(content.substring(pos, pos + 'hello   world'.length),
+          equals('hello   world'));
+    });
+
+    test('positions map correctly with leading whitespace', () {
+      final matcher = WhitespaceMatcher();
+      final content = '  hello   world';
+      final result = matcher.findMatches(content, 'hello world', false);
+      expect(result, isNotNull);
+      expect(result!.positions.length, 1);
+      final pos = result.positions[0];
+      expect(content.substring(pos).startsWith('hello'), isTrue);
+    });
+
+    test('positions map correctly with tabs', () {
+      final matcher = WhitespaceMatcher();
+      final content = 'foo\tbar\tbaz';
+      final result = matcher.findMatches(content, 'foo bar baz', false);
+      expect(result, isNotNull);
+      expect(result!.positions.length, 1);
+      final pos = result.positions[0];
+      expect(content.substring(pos), equals('foo\tbar\tbaz'));
+    });
+
+    test('replacement via WhitespaceMatcher does not corrupt file', () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('crux_ws_edit_test_');
+      final file = File('${tempDir.path}/test.txt');
+      await file.writeAsString('hello   world\nmore   text');
+
+      final tool = EditTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({
+        'filePath': 'test.txt',
+        'oldString': 'hello world',
+        'newString': 'hello universe',
+      }, ctx);
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      final updated = await file.readAsString();
+      expect(updated, equals('hello universe\nmore   text'));
+
+      await tempDir.delete(recursive: true);
+    });
+
+    test('WhitespaceMatcher preserves surrounding content with tabs', () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('crux_ws_tab_test_');
+      final file = File('${tempDir.path}/test.txt');
+      await file.writeAsString('prefix\tfoo\tbar\tsuffix');
+
+      final tool = EditTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await tool.execute({
+        'filePath': 'test.txt',
+        'oldString': 'foo bar',
+        'newString': 'baz qux',
+      }, ctx);
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      final updated = await file.readAsString();
+      expect(updated, equals('prefix\tbaz qux\tsuffix'));
+
+      await tempDir.delete(recursive: true);
+    });
   });
 
   group('IndentationMatcher', () {
@@ -275,6 +358,56 @@ void main() {
       expect(result.output, contains('hello_crux_test'));
       expect(result.metadata['exitCode'], 0);
     });
+
+    test('appends exit code suffix when command fails', () async {
+      final tool = BashTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      final result = await tool.execute({
+        'command': 'exit 7',
+        'description': 'Test failing command',
+      }, ctx);
+      expect(result.metadata['exitCode'], 7);
+      expect(result.output.trimRight().endsWith('[exit code: 7]'), isTrue);
+    });
+
+    test(
+      'places exit code suffix AFTER truncation marker, not inside kept lines',
+      () async {
+        final tool = BashTool();
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: Directory.systemTemp.path,
+        );
+        // 2500 lines + a failing command → output is truncated and exit != 0
+        final result = await tool.execute({
+          'command': 'seq 1 2500; exit 3',
+          'description': 'Long failing output',
+        }, ctx);
+        expect(result.truncated, isTrue);
+        expect(result.outputPath, isNotNull);
+        expect(result.metadata['exitCode'], 3);
+        // The exit code marker must be the LAST thing in the output
+        expect(
+          result.output.trimRight().endsWith('[exit code: 3]'),
+          isTrue,
+          reason: 'exit code should appear at the end, after truncation marker',
+        );
+        // And the truncation marker should mention the temp file path
+        expect(result.output, contains('output truncated to 2000 lines'));
+        expect(result.output, contains('full output:'));
+        // The truncation marker should come BEFORE the exit code marker
+        final truncIdx = result.output.indexOf('output truncated');
+        final exitIdx = result.output.lastIndexOf('[exit code: 3]');
+        expect(truncIdx, lessThan(exitIdx));
+      },
+    );
   });
 
   group('ReadTool execute', () {

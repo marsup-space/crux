@@ -193,15 +193,15 @@ void main() {
   });
 
   group('resolveProvider() — dispatcher', () {
-    test('openai_compatible → OpenAiProvider + openaiCompatible', () {
+    test('openai_compatible → OpenAICompatibleProvider + openaiCompatible', () {
       final r = resolveProvider('openai_compatible');
-      expect(r.provider, isA<OpenAiProvider>());
+      expect(r.provider, isA<OpenAICompatibleProvider>());
       expect(r.wire, WireFamily.openaiCompatible);
     });
 
-    test('anthropic_compatible → AnthropicProvider + anthropicCompatible', () {
+    test('anthropic_compatible → AnthropicCompatibleProvider + anthropicCompatible', () {
       final r = resolveProvider('anthropic_compatible');
-      expect(r.provider, isA<AnthropicProvider>());
+      expect(r.provider, isA<AnthropicCompatibleProvider>());
       expect(r.wire, WireFamily.anthropicCompatible);
     });
 
@@ -213,12 +213,15 @@ void main() {
 
     test('unknown type throws ArgumentError listing known types', () {
       expect(
-        () => resolveProvider('minimax'),
+        () => resolveProvider('definitely_not_a_real_provider'),
         throwsA(
           isA<ArgumentError>().having(
             (e) => e.message?.toString() ?? '',
             'message',
-            allOf(contains('minimax'), contains('openai_compatible')),
+            allOf(
+              contains('definitely_not_a_real_provider'),
+              contains('openai_compatible'),
+            ),
           ),
         ),
       );
@@ -232,7 +235,7 @@ void main() {
     });
   });
 
-  group('typeDisplayName() and defaultEndpointFor()', () {
+  group('typeDisplayName()', () {
     test('typeDisplayName returns human-readable labels', () {
       expect(typeDisplayName('openai_compatible'), 'OpenAI Compatible');
       expect(typeDisplayName('anthropic_compatible'), 'Anthropic Compatible');
@@ -241,22 +244,6 @@ void main() {
 
     test('typeDisplayName falls back to raw string for unknown types', () {
       expect(typeDisplayName('my_custom_thing'), 'my_custom_thing');
-    });
-
-    test('defaultEndpointFor returns sensible URLs', () {
-      expect(
-        defaultEndpointFor('openai_compatible'),
-        'https://api.openai.com/v1',
-      );
-      expect(
-        defaultEndpointFor('anthropic_compatible'),
-        'https://api.anthropic.com/v1',
-      );
-      expect(defaultEndpointFor('deepseek'), 'https://api.deepseek.com/v1');
-    });
-
-    test('defaultEndpointFor returns null for unknown types', () {
-      expect(defaultEndpointFor('made_up_thing'), isNull);
     });
   });
 
@@ -653,8 +640,8 @@ endpoint_url = "https://api.openai.com/v1"
 
     test('loadAll records errors for unknown type and lists known types', () async {
       await File('${tempDir.path}/unknown.toml').writeAsString('''
-type = "minimax"
-endpoint_url = "https://api.minimax.example/v1"
+type = "definitely_not_a_real_provider"
+endpoint_url = "https://api.example.invalid/v1"
 
 [[models]]
 id = "m"
@@ -667,7 +654,7 @@ context_size = 4096
       expect(loader.loadErrors().length, 1);
       final error = loader.loadErrors().values.first;
       // Helpful error: names the bad type and lists the registered ones
-      expect(error, contains('minimax'));
+      expect(error, contains('definitely_not_a_real_provider'));
       expect(error, contains('openai_compatible'));
     });
 
