@@ -76,7 +76,7 @@ class WriteTool extends ToolDef {
 
     return ToolResult(
       title: 'Write file: $resolved',
-      output: 'Successfully wrote ${content.length} characters to $resolved',
+      output: 'Successfully wrote ${content.length} characters to ${relativePath(resolved, ctx.workingDirectory)}',
     );
   }
 

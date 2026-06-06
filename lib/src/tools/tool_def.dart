@@ -49,6 +49,14 @@ String resolvePath(String filePath, String workingDirectory) {
   return '$workingDirectory/$filePath';
 }
 
+String relativePath(String absolutePath, String workingDirectory) {
+  if (absolutePath.startsWith('$workingDirectory/')) {
+    return absolutePath.substring(workingDirectory.length + 1);
+  }
+  if (absolutePath == workingDirectory) return '.';
+  return absolutePath;
+}
+
 abstract class ToolDef {
   String get name;
   String get description;

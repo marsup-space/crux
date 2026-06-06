@@ -62,9 +62,10 @@ class ReadTool extends ToolDef {
 
     if (type == FileSystemEntityType.notFound) {
       final suggestions = _suggestSimilarFiles(path);
+      final relPath = relativePath(path, ctx.workingDirectory);
       final msg = suggestions.isNotEmpty
-          ? 'Path not found: $path\nSimilar files in the same directory:\n$suggestions'
-          : 'Path not found: $path';
+          ? 'Path not found: $relPath\nSimilar files in the same directory:\n$suggestions'
+          : 'Path not found: $relPath';
       return ToolResult.error(msg);
     }
 
@@ -73,11 +74,11 @@ class ReadTool extends ToolDef {
     }
 
     if (type == FileSystemEntityType.file) {
-      return _readFile(path, offset, limit);
+      return _readFile(path, offset, limit, ctx.workingDirectory);
     }
 
     return ToolResult.error(
-      'Cannot read: $path (FileSystemEntity type: $type)',
+      'Cannot read: ${relativePath(path, ctx.workingDirectory)} (FileSystemEntity type: $type)',
     );
   }
 
@@ -94,7 +95,7 @@ class ReadTool extends ToolDef {
     return ToolResult(title: 'List directory: $path', output: output);
   }
 
-  Future<ToolResult> _readFile(String path, int offset, int limit) async {
+  Future<ToolResult> _readFile(String path, int offset, int limit, String workingDirectory) async {
     final file = File(path);
 
     final binaryExts = {
@@ -116,7 +117,7 @@ class ReadTool extends ToolDef {
     final ext = path.contains('.') ? '.${path.split('.').last}' : '';
     if (binaryExts.contains(ext.toLowerCase())) {
       return ToolResult.error(
-        'Binary file detected: $path. Use bash tool for binary inspection.',
+        'Binary file detected: ${relativePath(path, workingDirectory)}. Use bash tool for binary inspection.',
       );
     }
 
@@ -133,7 +134,7 @@ class ReadTool extends ToolDef {
     };
     if (imageExts.contains(ext.toLowerCase())) {
       return ToolResult.error(
-        'Image file: $path. Image preview not yet supported in phase 1.',
+        'Image file: ${relativePath(path, workingDirectory)}. Image preview not yet supported in phase 1.',
       );
     }
 

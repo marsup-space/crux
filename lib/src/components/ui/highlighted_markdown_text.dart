@@ -17,6 +17,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.overflow = TextOverflow.clip,
     this.maxLines,
     this.styleSheet,
+    this.highlightText,
   });
 
   final String data;
@@ -25,6 +26,7 @@ class HighlightedMarkdownText extends StatefulComponent {
   final TextOverflow overflow;
   final int? maxLines;
   final HighlightMarkdownStyleSheet? styleSheet;
+  final String? highlightText;
 
   @override
   State<HighlightedMarkdownText> createState() =>
@@ -36,6 +38,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   int? _lastMaxWidth;
   String? _lastData;
   HighlightMarkdownStyleSheet? _lastStyleSheet;
+  String? _lastHighlightText;
 
   List<InlineSpan> _parseMarkdown({int? maxWidth}) {
     final effectiveStyleSheet =
@@ -61,13 +64,19 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             ? constraints.maxWidth.toInt()
             : null;
 
+        final highlight = component.highlightText;
         if (component.data != _lastData ||
             component.styleSheet != _lastStyleSheet ||
-            maxWidth != _lastMaxWidth) {
+            maxWidth != _lastMaxWidth ||
+            highlight != _lastHighlightText) {
           _lastData = component.data;
           _lastStyleSheet = component.styleSheet;
           _lastMaxWidth = maxWidth;
+          _lastHighlightText = highlight;
           _spans = _parseMarkdown(maxWidth: maxWidth);
+          if (highlight != null && highlight.isNotEmpty) {
+            _spans = _applyHighlight(_spans, highlight);
+          }
         }
 
         return RichText(
@@ -80,6 +89,159 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
       },
     );
   }
+}
+
+const _highlightStyle = TextStyle(
+  backgroundColor: Color(0xF1FA8C),
+  fontWeight: FontWeight.bold,
+);
+
+List<InlineSpan> _applyHighlight(List<InlineSpan> spans, String search) {
+  final flat = _flattenSpans(spans);
+  final plainText = flat.map((e) => e.$1).join();
+
+  final matchRange = _findHighlightRange(plainText, search);
+  if (matchRange == null) return spans;
+
+  final (index, end) = matchRange;
+  final result = <_FlatSpan>[];
+  int pos = 0;
+  for (final span in flat) {
+    final spanStart = pos;
+    final spanEnd = pos + span.$1.length;
+    if (spanEnd <= index || spanStart >= end) {
+      result.add(span);
+    } else {
+      final before = index > spanStart ? span.$1.substring(0, index - spanStart) : '';
+      final match = span.$1.substring(
+        index.clamp(spanStart, spanEnd) - spanStart,
+        end.clamp(spanStart, spanEnd) - spanStart,
+      );
+      final after = end < spanEnd ? span.$1.substring(end - spanStart) : '';
+      if (before.isNotEmpty) result.add((before, span.$2));
+      result.add((match, _mergedWithHighlight(span.$2)));
+      if (after.isNotEmpty) result.add((after, span.$2));
+    }
+    pos = spanEnd;
+  }
+  return _unflattenSpans(result);
+}
+
+(int, int)? _findHighlightRange(String plainText, String search) {
+  if (search.isEmpty) return null;
+
+  final exact = plainText.indexOf(search);
+  if (exact >= 0) return (exact, exact + search.length);
+
+  final normText = _norm(plainText);
+  final normSearch = _norm(search);
+  final normIdx = normText.indexOf(normSearch);
+  if (normIdx >= 0) {
+    return _recoverRange(plainText, normText, normIdx, normSearch.length);
+  }
+
+  return _wordOverlapRange(plainText, search);
+}
+
+String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+
+(int, int)? _recoverRange(String text, String normText, int normStart, int normLen) {
+  int charPos = 0;
+  int normPos = 0;
+  int start = -1;
+
+  while (charPos < text.length && normPos < normStart) {
+    final ch = text[charPos];
+    charPos++;
+    if (ch == ' ' || ch == '\n' || ch == '\t') {
+      while (charPos < text.length &&
+          (text[charPos] == ' ' || text[charPos] == '\n' || text[charPos] == '\t')) {
+        charPos++;
+      }
+    }
+    normPos++;
+  }
+
+  start = charPos;
+  int normEnd = normStart + normLen;
+  while (charPos < text.length && normPos < normEnd) {
+    final ch = text[charPos];
+    charPos++;
+    if (ch == ' ' || ch == '\n' || ch == '\t') {
+      while (charPos < text.length &&
+          (text[charPos] == ' ' || text[charPos] == '\n' || text[charPos] == '\t')) {
+        charPos++;
+      }
+    }
+    normPos++;
+  }
+
+  return (start, charPos);
+}
+
+(int, int)? _wordOverlapRange(String plainText, String search) {
+  final excerptWords = _norm(search).split(' ').where((w) => w.length > 2).toList();
+  if (excerptWords.isEmpty) return null;
+
+  final windowSize = search.length * 2;
+  final step = (windowSize / 2).floor();
+
+  int bestStart = 0;
+  double bestScore = 0;
+
+  for (int start = 0; start < plainText.length; start += step) {
+    final end = (start + windowSize).clamp(0, plainText.length);
+    final window = plainText.substring(start, end);
+    final windowNorm = _norm(window);
+
+    int matched = 0;
+    for (final word in excerptWords) {
+      if (windowNorm.contains(word)) matched++;
+    }
+
+    final score = matched / excerptWords.length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestStart = start;
+    }
+  }
+
+  if (bestScore >= 0.6) {
+    final end = (bestStart + windowSize).clamp(0, plainText.length);
+    return (bestStart, end);
+  }
+  return null;
+}
+
+TextStyle? _mergedWithHighlight(TextStyle? base) {
+  return TextStyle(
+    color: base?.color ?? _highlightStyle.color,
+    backgroundColor: _highlightStyle.backgroundColor,
+    fontWeight: _highlightStyle.fontWeight,
+    fontStyle: base?.fontStyle,
+    decoration: base?.decoration,
+  );
+}
+
+typedef _FlatSpan = (String, TextStyle?);
+
+List<_FlatSpan> _flattenSpans(List<InlineSpan> spans) {
+  final result = <_FlatSpan>[];
+  for (final span in spans) {
+    if (span is TextSpan) {
+      if (span.text != null && span.text!.isNotEmpty) {
+        result.add((span.text!, span.style));
+      }
+      if (span.children != null) {
+        result.addAll(_flattenSpans(span.children!));
+      }
+    }
+  }
+  return result;
+}
+
+List<InlineSpan> _unflattenSpans(List<_FlatSpan> flat) {
+  return flat.map((e) => TextSpan(text: e.$1, style: e.$2)).toList();
 }
 
 class HighlightMarkdownStyleSheet {

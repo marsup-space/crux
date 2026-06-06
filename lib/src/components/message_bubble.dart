@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/message.dart';
@@ -11,12 +13,14 @@ class MessageBubble extends StatelessComponent {
   final bool reasoningCollapsed;
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
+  final String? highlightText;
 
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
     this.pairedResult,
     this.toolRegistry,
+    this.highlightText,
   });
 
   @override
@@ -106,7 +110,10 @@ class MessageBubble extends StatelessComponent {
                         message.content,
                         style: TextStyle(color: CruxTheme.foreground),
                       )
-                    : HighlightedMarkdownText(message.content),
+                    : HighlightedMarkdownText(
+                        message.content,
+                        highlightText: highlightText,
+                      ),
               ),
             ],
           ),
@@ -198,7 +205,10 @@ class MessageBubble extends StatelessComponent {
                 ),
               ),
               Expanded(
-                child: HighlightedMarkdownText(message.content),
+                child: HighlightedMarkdownText(
+                  message.content,
+                  highlightText: highlightText,
+                ),
               ),
             ],
           ),
@@ -270,7 +280,13 @@ class MessageBubble extends StatelessComponent {
   String _keyArg(ToolCallData tc) {
     const priorityKeys = ['file_path', 'path', 'filePath', 'command', 'query', 'url', 'directory'];
     for (final key in priorityKeys) {
-      if (tc.input.containsKey(key)) return _truncateArg(tc.input[key], 40);
+      if (tc.input.containsKey(key)) {
+        final value = tc.input[key].toString();
+        final display = (key != 'command' && key != 'query' && key != 'url')
+            ? relativePath(value, Directory.current.path)
+            : value;
+        return _truncateArg(display, 40);
+      }
     }
     if (tc.input.isNotEmpty) {
       return _truncateArg(tc.input.values.first, 40);

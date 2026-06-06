@@ -3,6 +3,7 @@ import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
+import '../utils/url_launcher.dart';
 import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
@@ -63,6 +64,8 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _toastVisible = false;
   String _toastMessage = '';
   bool _metricsHovered = false;
+  String? _highlightText;
+  int? _highlightMessageId;
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
@@ -610,14 +613,24 @@ class _ChatPanelState extends State<ChatPanel> {
     final text = textController.text.trim();
     if (text.isEmpty) return;
 
-    textController.clear();
+    final sessionId = _sessionController.currentSessionId;
+    final isResponding = sessionId != null &&
+        _sessionController.runtime(sessionId).isResponding;
 
     if (text.startsWith('/')) {
+      final cmd = findCommand(text.split(' ').first);
+      if (isResponding && (cmd == null || !cmd.availableDuringResponse)) {
+        return;
+      }
+      textController.clear();
       _executeCommand(text);
       return;
     }
 
-    final sessionId = _sessionController.currentSessionId;
+    if (isResponding) return;
+
+    textController.clear();
+
     if (sessionId == null) return;
 
     final rt = _sessionController.runtime(sessionId);
@@ -1041,9 +1054,13 @@ class _ChatPanelState extends State<ChatPanel> {
       children.add(Toast(message: _toastMessage, onDismissed: _dismissToast));
     }
 
+    final sessionId = _sessionController.currentSessionId;
+    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
+    final isStreaming = rt?.isResponding ?? false;
+
     children.add(_buildToolbar());
     children.add(Divider(color: CruxTheme.divider, height: 1));
-    children.add(_buildInputRow());
+    children.add(_buildInputRow(isStreaming: isStreaming));
 
     return Column(children: children);
   }
@@ -1102,6 +1119,7 @@ class _ChatPanelState extends State<ChatPanel> {
           reasoningCollapsed: collapsed,
           pairedResult: pairedResult,
           toolRegistry: _toolRegistry,
+          highlightText: msg.id == _highlightMessageId ? _highlightText : null,
         ),
       );
 
@@ -1109,6 +1127,9 @@ class _ChatPanelState extends State<ChatPanel> {
         final hasTldr = msg.tldr.isNotEmpty;
         if (hasTldr || rt.isGeneratingTldr) {
           final headings = extractHeadings(msg.content);
+          final aiMessageItemIndex = items.length - 1;
+          final aiMessageId = msg.id;
+          final aiMessageContent = msg.content;
           items.add(
             TldrBubble(
               tldrText: msg.tldr,
@@ -1117,6 +1138,13 @@ class _ChatPanelState extends State<ChatPanel> {
               hasAuxiliaryModel:
                   _providerService.auxiliaryModel != null &&
                   _providerService.auxiliaryModel != 'none',
+              onHeadingTap: (heading, url) => _handleTldrReferenceTap(
+                itemIndex: aiMessageItemIndex,
+                messageId: aiMessageId,
+                messageContent: aiMessageContent,
+                heading: heading,
+                url: url,
+              ),
             ),
           );
         }
@@ -1433,7 +1461,78 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  Component _buildInputRow() {
+  void _handleTldrReferenceTap({
+    required int itemIndex,
+    required int messageId,
+    required String messageContent,
+    required String heading,
+    required String? url,
+  }) {
+    if (url != null && url.isNotEmpty) {
+      final result = openUrl(url);
+      switch (result) {
+        case UrlLaunchResult.launched:
+          return;
+        case UrlLaunchResult.rejected:
+          _showToast('Refused to open url: $url');
+          return;
+        case UrlLaunchResult.failed:
+          _showToast("Couldn't open url: $url");
+          return;
+      }
+    }
+
+    setState(() {
+      _highlightText = heading;
+      _highlightMessageId = messageId;
+    });
+    _clearHighlightAfterDelay();
+
+    final itemInfo = scrollController.getItemIndexOffsetAndExtent(itemIndex);
+    if (itemInfo != null) {
+      final lineOffset = _findExcerptLineOffset(messageContent, heading);
+      scrollController.jumpTo(itemInfo.$1 + lineOffset);
+    }
+  }
+
+  double _findExcerptLineOffset(String content, String excerpt) {
+    int idx = content.indexOf(excerpt);
+    if (idx < 0) {
+      final normContent = content.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      final normExcerpt = excerpt.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      final normIdx = normContent.indexOf(normExcerpt);
+      if (normIdx < 0) return 0;
+      int charPos = 0;
+      int normPos = 0;
+      while (charPos < content.length && normPos < normIdx) {
+        final ch = content[charPos];
+        charPos++;
+        if (ch == ' ' || ch == '\n' || ch == '\t') {
+          while (charPos < content.length &&
+              (content[charPos] == ' ' || content[charPos] == '\n' || content[charPos] == '\t')) {
+            charPos++;
+          }
+        }
+        normPos++;
+      }
+      idx = charPos;
+    }
+    final lineCount = '\n'.allMatches(content.substring(0, idx)).length;
+    return lineCount.toDouble();
+  }
+
+  void _clearHighlightAfterDelay() {
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _highlightText = null;
+          _highlightMessageId = null;
+        });
+      }
+    });
+  }
+
+  Component _buildInputRow({required bool isStreaming}) {
     return Container(
       padding: EdgeInsets.all(1),
       child: Row(

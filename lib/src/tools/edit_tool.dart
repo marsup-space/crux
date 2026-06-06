@@ -83,7 +83,7 @@ class EditTool extends ToolDef {
     final resolved = resolvePath(filePath, ctx.workingDirectory);
     final file = File(resolved);
     if (!file.existsSync()) {
-      return ToolResult.error('File not found: $resolved');
+      return ToolResult.error('File not found: ${relativePath(resolved, ctx.workingDirectory)}');
     }
 
     if (tracker != null) {

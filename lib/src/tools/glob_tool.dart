@@ -63,15 +63,16 @@ class GlobTool extends ToolDef {
           );
         }
         final lines = output.trim().split('\n');
-        if (lines.length > 100) {
-          final kept = lines.take(100).join('\n');
+        final relativeLines = lines.map((l) => relativePath(l, ctx.workingDirectory)).toList();
+        if (relativeLines.length > 100) {
+          final kept = relativeLines.take(100).join('\n');
           return ToolResult(
             title: 'Glob: $pattern',
-            output: kept + '\n... and ${lines.length - 100} more',
+            output: kept + '\n... and ${relativeLines.length - 100} more',
             truncated: true,
           );
         }
-        return ToolResult(title: 'Glob: $pattern', output: output.trim());
+        return ToolResult(title: 'Glob: $pattern', output: relativeLines.join('\n'));
       }
       if (result.exitCode == 1) {
         return ToolResult(

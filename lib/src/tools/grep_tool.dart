@@ -92,7 +92,7 @@ class GrepTool extends ToolDef {
             output: 'No matches found',
           );
         }
-        return ToolResult(title: 'Grep: $pattern', output: output.trim());
+        return ToolResult(title: 'Grep: $pattern', output: _makePathsRelative(output.trim(), ctx.workingDirectory));
       }
       if (result.exitCode == 1) {
         return ToolResult(title: 'Grep: $pattern', output: 'No matches found');
@@ -107,5 +107,19 @@ class GrepTool extends ToolDef {
         'ripgrep not available: $e. Install ripgrep or use bash tool.',
       );
     }
+  }
+
+  String _makePathsRelative(String output, String workingDirectory) {
+    final prefix = '$workingDirectory/';
+    return output.split('\n').map((line) {
+      if (line.startsWith(prefix)) {
+        final colonIdx = line.indexOf(':', prefix.length);
+        if (colonIdx != -1) {
+          return line.substring(prefix.length);
+        }
+        return line.substring(prefix.length);
+      }
+      return line;
+    }).join('\n');
   }
 }

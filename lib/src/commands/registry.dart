@@ -7,8 +7,9 @@ const List<SlashCommand> slashCommands = [
     description: 'Switch the AI model',
     params: ['provider/model'],
     suggestionsPerParam: [[]],
+    availableDuringResponse: true,
   ),
-  SlashCommand(name: '/new', description: 'Create a new session'),
+  SlashCommand(name: '/new', description: 'Create a new session', availableDuringResponse: true),
   SlashCommand(
     name: '/session',
     description: 'Switch to a session',
@@ -24,6 +25,7 @@ const List<SlashCommand> slashCommands = [
         ),
       ],
     ],
+    availableDuringResponse: true,
   ),
   SlashCommand(name: '/clear', description: 'Clear the chat log'),
   SlashCommand(name: '/compact', description: 'Compact the context window'),
@@ -47,6 +49,7 @@ const List<SlashCommand> slashCommands = [
         ),
       ],
     ],
+    availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/config',
@@ -88,8 +91,9 @@ const List<SlashCommand> slashCommands = [
         CommandSuggestion(value: 'dracula', description: 'Dracula theme'),
       ],
     ],
+    availableDuringResponse: true,
   ),
-  SlashCommand(name: '/quit', description: 'Exit the application'),
+  SlashCommand(name: '/quit', description: 'Exit the application', availableDuringResponse: true),
   SlashCommand(
     name: '/history',
     description: 'Show conversation history',
@@ -110,6 +114,7 @@ const List<SlashCommand> slashCommands = [
     suggestionsPerParam: [
       [],
     ],
+    availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/think',
@@ -129,12 +134,14 @@ const List<SlashCommand> slashCommands = [
         ),
       ],
     ],
+    availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/auxiliary',
     description: 'Select the auxiliary model (for summaries, session names)',
     params: ['auxiliary model'],
     suggestionsPerParam: [[]],
+    availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/tldr',
@@ -162,6 +169,7 @@ const List<SlashCommand> slashCommands = [
     description: 'Switch to a different project directory',
     params: ['path'],
     suggestionsPerParam: [[]],
+    availableDuringResponse: true,
   ),
 ];
 

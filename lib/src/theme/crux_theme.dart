@@ -143,5 +143,6 @@ class CruxTheme {
   static const tldrPrefix = Color(0xF1FA8C);
   static const tldrBody = Color(0xF8F8F2);
   static const tldrLink = Color(0x8BE9FD);
+  static const tldrLinkHoverFg = Color(0x282A36);
   static const tldrHint = Color(0x6272A4);
 }

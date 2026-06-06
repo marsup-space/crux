@@ -10,12 +10,14 @@ class SlashCommand {
   final String description;
   final List<String> params;
   final List<List<CommandSuggestion>> suggestionsPerParam;
+  final bool availableDuringResponse;
 
   const SlashCommand({
     required this.name,
     required this.description,
     this.params = const [],
     this.suggestionsPerParam = const [],
+    this.availableDuringResponse = false,
   });
 
   /// Returns the full command string with parameter placeholders.

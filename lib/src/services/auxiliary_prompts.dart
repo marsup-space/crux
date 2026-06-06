@@ -11,37 +11,29 @@ const titleSystemPrompt =
 enum TldrDetail { concise, defaultLevel, detailed }
 
 const _headingRefInstruction =
-    'Each bullet point MUST reference its corresponding section heading from '
-    'the response using square brackets, e.g. '
-    '"- Key point here [Section Heading]". '
-    'You MUST use the EXACT heading text as it appears in the response — '
-    'do not paraphrase or abbreviate headings. Every bullet must include '
-    'at least one [Heading] reference. '
-    'You MUST use the same language as the response. '
-    'Output ONLY the bullet points, nothing else. No preamble, no conclusion.';
+    'Reference sections of the response by quoting exact excerpts in square '
+    'brackets, e.g. "The function returns early on invalid input [returns '
+    'early if the input buffer is empty]". The bracketed text is hidden from '
+    'the user and used to locate the original passage in the source — it is '
+    'matched verbatim, so it must be an exact, word-for-word copy from the '
+    'response. Do not paraphrase, truncate, or alter it in any way; it can be '
+    'as long as needed. Use markdown formatting (tables, lists, headings, etc.) '
+    'if it helps present the summary clearly. '
+    'You MUST use the same language as the response.';
 
 String tldrSystemPromptFor(TldrDetail detail) {
   switch (detail) {
     case TldrDetail.concise:
-      return 'Summarize the following AI response in as few bullet points as '
-          'possible — strictly the minimum needed to convey the core message. '
-          'Aim for 1-3 bullets total, even if the response has many sections. '
-          'Prefer brevity over completeness: omit any section that is not '
-          'essential to understanding the result. '
-          'Keep each bullet under 12 words. $_headingRefInstruction';
+      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
+          'response. Be as concise as possible — only the essentials. '
+          '$_headingRefInstruction';
     case TldrDetail.detailed:
-      return 'Summarize the following AI response in thorough bullet points. '
-          'Cover every meaningful section of the response — do not skip '
-          'sections just to stay short. You may use many bullets if the '
-          'response warrants it. Preserve important nuances, caveats, and '
-          'distinctions from the original. Keep each bullet under 25 words. '
-          '$_headingRefInstruction';
+      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
+          'response. Make it easy to read and do not skip any topic from the '
+          'original. $_headingRefInstruction';
     case TldrDetail.defaultLevel:
-      return 'Summarize the following AI response in concise bullet points. '
-          'Decide the number of bullets yourself based on the content — '
-          'use as few or as many as are needed to capture the key points '
-          'without redundancy. Keep each bullet under 15 words. '
-          '$_headingRefInstruction';
+      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
+          'response. $_headingRefInstruction';
   }
 }
 

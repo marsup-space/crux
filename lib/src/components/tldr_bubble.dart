@@ -1,51 +1,24 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_headings.dart';
+import 'ui/response_link_text.dart';
 
-/// Converts TLDR [Heading] references to markdown **bold** so they render
-/// in the configured `tldrLink` color via [MarkdownStyleSheet.boldStyle].
-/// The headings parameter is accepted for backwards compatibility (the
-/// caller still extracts them) but is no longer used to gate styling —
-/// markdown handles all rendering now.
-String _renderTldrAsMarkdown(String tldrText) {
-  // Match bracketed, non-empty, non-whitespace-only segments.
-  final bracketRegex = RegExp(r'\[([^\]\n]+)\]');
-  return tldrText.replaceAllMapped(bracketRegex, (m) {
-    final inner = m.group(1)!.trim();
-    if (inner.isEmpty) return m.group(0)!;
-    return '**$inner**';
-  });
-}
-
-final MarkdownStyleSheet _tldrStyleSheet = MarkdownStyleSheet(
-  paragraphStyle: TextStyle(color: CruxTheme.tldrBody),
-  listBullet: '• ',
-  // The AI is required to wrap heading references in **...** so this
-  // style paints the reference in tldrLink with an underline — keeping
-  // the old "clickable heading" affordance visually intact.
-  boldStyle: TextStyle(
-    color: CruxTheme.tldrLink,
-    fontWeight: FontWeight.bold,
-    decoration: TextDecoration.underline,
-  ),
-  italicStyle: TextStyle(
-    color: CruxTheme.tldrBody,
-    fontStyle: FontStyle.italic,
-  ),
-  codeStyle: TextStyle(color: CruxTheme.tldrLink),
-);
+typedef TldrHeadingTapCallback = void Function(String heading, String? url);
 
 class TldrBubble extends StatelessComponent {
   final String tldrText;
   final List<MarkdownHeading> headings;
   final bool isGenerating;
   final bool hasAuxiliaryModel;
+  final TldrHeadingTapCallback? onHeadingTap;
 
   const TldrBubble({
+    super.key,
     required this.tldrText,
     required this.headings,
     required this.isGenerating,
     required this.hasAuxiliaryModel,
+    this.onHeadingTap,
   });
 
   @override
@@ -88,7 +61,17 @@ class TldrBubble extends StatelessComponent {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Expanded(child: _buildTldrBody(tldrText)),
+              Expanded(
+                child: ResponseLinkText(
+                  markdownText: tldrText,
+                  onLinkTap: onHeadingTap != null
+                      ? (link) => onHeadingTap!(
+                            link.anchor ?? link.text,
+                            link.url,
+                          )
+                      : null,
+                ),
+              ),
             ],
           ),
         ),
@@ -119,35 +102,6 @@ class TldrBubble extends StatelessComponent {
     return Column(children: children);
   }
 
-  Component _buildTldrBody(String tldrText) {
-    // Normalize: strip leading "- " / "• " from each line so the markdown
-    // engine doesn't see a bullet that's already a list marker. Then
-    // route the whole text through MarkdownText so bullets, bold (used
-    // for [Heading] refs), italic, and inline code all render through
-    // nocterm's soft-wrapping paragraph renderer — fixing the original
-    // Row-of-Text overflow bug in the process.
-    final normalized = tldrText
-        .split('\n')
-        .map((l) {
-          final t = l.trimRight();
-          if (t.startsWith('- ')) return t.substring(2);
-          if (t.startsWith('• ')) return t.substring(2);
-          if (t.startsWith('* ')) return t.substring(2);
-          return t;
-        })
-        .where((l) => l.trim().isNotEmpty)
-        .map((l) => '- $l')
-        .join('\n');
-
-    final markdown = _renderTldrAsMarkdown(normalized);
-
-    return MarkdownText(
-      markdown,
-      softWrap: true,
-      styleSheet: _tldrStyleSheet,
-    );
-  }
-
   Component _buildHeadingsFallback() {
     if (headings.isEmpty) {
       final hint = hasAuxiliaryModel
@@ -165,7 +119,7 @@ class TldrBubble extends StatelessComponent {
         Row(
           children: [
             Text('$indent• ', style: TextStyle(color: CruxTheme.tldrBody)),
-            Text(h.text, style: TextStyle(color: CruxTheme.tldrBody)),
+            Expanded(child: Text(h.text, style: TextStyle(color: CruxTheme.tldrBody))),
           ],
         ),
       );
