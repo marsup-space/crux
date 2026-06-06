@@ -11,7 +11,6 @@ class SessionController {
   final ProviderService _providerService;
   final ChatService _chatService;
   final void Function() _refresh;
-  final void Function(String) _showToast;
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -24,12 +23,10 @@ class SessionController {
     required ProviderService providerService,
     required ChatService chatService,
     required void Function() refresh,
-    required void Function(String) showToast,
   }) : _store = store,
        _providerService = providerService,
        _chatService = chatService,
-       _refresh = refresh,
-       _showToast = showToast;
+       _refresh = refresh;
 
   Session get currentSession {
     if (currentSessionId == null) {
@@ -175,41 +172,32 @@ class SessionController {
     _refresh();
   }
 
+  bool _isGeneratingTitle = false;
+
   Future<void> generateTitle(int sessionId) async {
+    if (_isGeneratingTitle) return;
     final auxKey = _providerService.auxiliaryModel;
-    if (auxKey == null || auxKey == 'none') {
-      _showToast('[aux] no auxiliary model set');
-      return;
-    }
+    if (auxKey == null || auxKey == 'none') return;
     final slashIndex = auxKey.indexOf('/');
     final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
     final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
-    if (provider == null) {
-      _showToast('[aux] provider "$providerName" not found');
-      return;
+    if (provider == null) return;
+    if (apiKey == null || apiKey.isEmpty) return;
+    _isGeneratingTitle = true;
+    try {
+      final title = await _chatService.generateSessionTitle(sessionId);
+      if (title == null) return;
+      final session = findSession(sessionId);
+      if (session == null || session.title != 'New Session') return;
+      await _store.update(sessionId, title: title);
+      session.title = title;
+      _refresh();
+    } catch (_) {
+    } finally {
+      _isGeneratingTitle = false;
     }
-    if (apiKey == null || apiKey.isEmpty) {
-      _showToast('[aux] no api key for "$providerName"');
-      return;
-    }
-    _showToast('[aux] calling $providerName/$modelId...');
-    final title = await _chatService.generateSessionTitle(sessionId);
-    if (title == null) {
-      _showToast(
-        '[aux] title generation returned null (check terminal for error)',
-      );
-      return;
-    }
-    final session = findSession(sessionId);
-    if (session == null || session.title != 'New Session') {
-      _showToast('[aux] session title already changed');
-      return;
-    }
-    await _store.update(sessionId, title: title);
-    session.title = title;
-    _showToast('[aux] title set: $title');
   }
 
   void resolveAuxiliaryModel() {

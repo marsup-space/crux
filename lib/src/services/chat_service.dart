@@ -106,7 +106,7 @@ class ChatService {
         print('[auxiliary] stream error: $streamError');
         return null;
       }
-      final title = buffer.toString().trim();
+      final title = buffer.toString().trim().replaceAll(RegExp(r'[\r\n]+'), ' ');
       if (title.isEmpty || title.length > 80) return null;
       print('[auxiliary] generated title: $title');
       return title;

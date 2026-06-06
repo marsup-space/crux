@@ -115,7 +115,6 @@ class _ChatPanelState extends State<ChatPanel> {
       providerService: _providerService,
       chatService: _chatService,
       refresh: _refresh,
-      showToast: _showToast,
     );
     _overlayController = OverlayController(
       maxVisibleItems: _maxVisibleItems,
@@ -625,22 +624,6 @@ class _ChatPanelState extends State<ChatPanel> {
     _streamingController.streamingContent = '';
     _streamingController.streamingReasoning = '';
 
-    // DEBUG: trace context bar state at turn start.
-    stderr.writeln(
-      '[CTX-DBG] _sendMessage START sid=$sessionId '
-      'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens} '
-      'rt.contextTarget=${rt.contextTargetTokens} '
-      'rt.contextDisplay=${rt.contextDisplayTokens} '
-      'animActive=${_streamingController.contextAnimTimerIsActive()}',
-    );
-
-    // Defensive: at the start of a new turn, snap the context bar back
-    // to the persistent base (session.contextTokens). This handles edge
-    // cases where the prior turn's onComplete didn't fire (cancelled or
-    // errored response) and the animation is still running with a stale
-    // target — without this, the bar could lerp from the prior value
-    // toward whatever the prior turn's streaming target was, which can
-    // be 0 if computeBaseContext returned 0 during a degraded path.
     final turnBase = _sessionController.computeBaseContext(sessionId);
     rt.contextTargetTokens = turnBase;
     rt.contextDisplayTokens = turnBase.toDouble();
@@ -667,18 +650,6 @@ class _ChatPanelState extends State<ChatPanel> {
     ];
     setState(() {});
 
-    // DEBUG: trace right after the turn-start setState.
-    stderr.writeln(
-      '[CTX-DBG] _sendMessage POST-setState sid=$sessionId '
-      'rt.contextTarget=${rt.contextTargetTokens} '
-      'rt.contextDisplay=${rt.contextDisplayTokens} '
-      'computeBaseContext=${_sessionController.computeBaseContext(sessionId)}',
-    );
-
-    // Kick off the title generation in parallel with the main response
-    // when the auxiliary model is on a different provider/model. If they
-    // share the same model, the post-response `onComplete` hook handles
-    // it so we don't double up on the same provider.
     _maybeKickOffTitleEarly(sessionId);
 
     _chatService.sendMessage(
@@ -703,12 +674,6 @@ class _ChatPanelState extends State<ChatPanel> {
         if (!_streamingController.contextAnimTimerIsActive()) {
           _streamingController.startContextAnimation();
         }
-        // DEBUG: trace onChunk updates.
-        stderr.writeln(
-          '[CTX-DBG] onChunk sid=$sessionId base=$base est=$estimatedTokens '
-          'target=${rt.contextTargetTokens} display=${rt.contextDisplayTokens} '
-          'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens}',
-        );
         setState(() {});
       },
       onToolRound: () {
@@ -724,14 +689,6 @@ class _ChatPanelState extends State<ChatPanel> {
         _sessionController.messageCache[sessionId] = msgs;
         if (response.promptTokens + response.completionTokens > 0) {
           final finalTokens = _sessionController.computeBaseContext(sessionId);
-          // DEBUG: trace onComplete final values.
-          stderr.writeln(
-            '[CTX-DBG] onComplete sid=$sessionId '
-            'response.prompt=${response.promptTokens} '
-            'response.completion=${response.completionTokens} '
-            'finalTokens=$finalTokens '
-            'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens}',
-          );
           rt.contextTargetTokens = finalTokens;
           rt.contextDisplayTokens = finalTokens.toDouble();
           _streamingController.stopContextAnimation();
@@ -1373,17 +1330,6 @@ class _ChatPanelState extends State<ChatPanel> {
     final currentSid = _sessionController.currentSessionId!;
     final rt = _sessionController.runtime(currentSid);
     final displayTokens = rt.contextDisplayTokens.round();
-    // DEBUG: trace what's actually being rendered. Throttled: only prints
-    // while the display is mid-animation toward a non-zero target.
-    if ((rt.contextTargetTokens - rt.contextDisplayTokens).abs() > 0.5 &&
-        rt.contextTargetTokens > 0) {
-      stderr.writeln(
-        '[CTX-DBG] buildContextBar sid=$currentSid '
-        'display=$displayTokens target=${rt.contextTargetTokens} '
-        'session.contextTokens=${_sessionController.findSession(currentSid)?.contextTokens} '
-        'computeBaseContext=${_sessionController.computeBaseContext(currentSid)}',
-      );
-    }
     final fillRatio = (displayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final fmtCtx = (int n) {
       final k = n ~/ 1024;
