@@ -1250,7 +1250,7 @@ class _ChatPanelState extends State<ChatPanel> {
             '\u{F013} ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
 
-        var remaining = constraints.maxWidth.toInt() - modelW - imageW;
+        var remaining = constraints.maxWidth.toInt() - 2 - modelW - imageW;
 
         final showThinking =
             thinkingLabel != null && (remaining - thinkingW) >= 0;
