@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
@@ -1218,7 +1219,7 @@ class _ChatPanelState extends State<ChatPanel> {
         const spacer = 2;
         const smallSpacer = 1;
 
-        final modelW = modelLabel.length + btnPad;
+        final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
             ? 2
@@ -1229,7 +1230,7 @@ class _ChatPanelState extends State<ChatPanel> {
             ? _thinkingLabel(rt)
             : null;
         final thinkingW = thinkingLabel != null
-            ? thinkingLabel.length + btnPad
+            ? UnicodeWidth.stringWidth(thinkingLabel) + btnPad
             : 0;
         final contextW = 20 + spacer;
         final isResponding = rt?.isResponding ?? false;
@@ -1238,16 +1239,16 @@ class _ChatPanelState extends State<ChatPanel> {
             : rt != null && rt.tokPerSec > 0
             ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
             : '— tok/s';
-        final tokW = tokText.length + spacer;
+        final tokW = UnicodeWidth.stringWidth(tokText) + spacer;
         final ttftText = isResponding && rt != null
             ? _streamingController.formatTtft(rt.ttftMs)
             : rt != null && rt.ttftMs > 0
             ? _streamingController.formatTtft(rt.ttftMs)
             : '—';
-        final ttftW = ttftText.length + smallSpacer;
+        final ttftW = UnicodeWidth.stringWidth(ttftText) + smallSpacer;
         final auxLabel =
             '\u{F013} ${_sessionController.auxiliaryModelShortName}';
-        final auxW = auxLabel.length + btnPad;
+        final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
 
         var remaining = constraints.maxWidth.toInt() - modelW - imageW;
 
