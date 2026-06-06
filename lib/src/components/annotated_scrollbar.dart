@@ -399,6 +399,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
       trackEnd.toInt(),
     );
 
+    final occupiedY = <int, (int, double)>{};
     for (var i = 0; i < _markers.length; i++) {
       final marker = _markers[i];
       final info = ctrl.getItemIndexOffsetAndExtent(marker.itemIndex);
@@ -411,15 +412,21 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
       if (yInt >= thumbStart && yInt < thumbEnd) continue;
 
+      occupiedY[yInt] = (i, markerY);
+    }
+
+    for (final yInt in occupiedY.keys) {
+      final (i, _) = occupiedY[yInt]!;
+
       _visibleMarkers.add((i, yInt.toDouble()));
 
       Color markerColor;
       if (i == _hoveredMarkerIndex) {
-        markerColor = marker.color;
+        markerColor = _markers[i].color;
       } else if (_isScrollbarHovered) {
-        markerColor = _dimColor(marker.color, 0.6);
+        markerColor = _dimColor(_markers[i].color, 0.6);
       } else {
-        markerColor = _dimColor(marker.color, 0.3);
+        markerColor = _dimColor(_markers[i].color, 0.3);
       }
 
       canvas.drawText(

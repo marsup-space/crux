@@ -129,6 +129,7 @@ class SessionController {
     rt.ttftMs = 0;
     rt.ttftReceived = false;
     rt.tokPerSec = 0;
+    rt.streamingDurationMs = 0;
     rt.isResponding = false;
 
     return null;

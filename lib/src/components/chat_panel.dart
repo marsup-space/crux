@@ -9,6 +9,7 @@ import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
 import '../commands/command_executor.dart';
+import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
@@ -25,7 +26,6 @@ import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
 import 'ui/glossy_model_button.dart';
 import 'provider_wizard_builtin.dart';
-import 'provider_wizard_custom.dart';
 import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
@@ -210,7 +210,8 @@ class _ChatPanelState extends State<ChatPanel> {
     if (command == null ||
         (!command.hasSuggestionsForParam(0) &&
             commandName != '/model' &&
-            commandName != '/auxiliary')) {
+            commandName != '/auxiliary' &&
+            commandName != '/provider')) {
       _overlayController.setOverlayOff();
       setState(() {});
       return;
@@ -239,7 +240,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (!command.hasSuggestionsForParam(paramIndex) &&
         !(commandName == '/model' && paramIndex == 0) &&
-        !(commandName == '/auxiliary' && paramIndex == 0)) {
+        !(commandName == '/auxiliary' && paramIndex == 0) &&
+        !(commandName == '/provider' && paramIndex == 0)) {
       _overlayController.setOverlayOff();
       setState(() {});
       return;
@@ -271,6 +273,21 @@ class _ChatPanelState extends State<ChatPanel> {
                 );
               }),
         ];
+      } else {
+        suggestions = [];
+      }
+    } else if (commandName == '/provider' && paramIndex == 0) {
+      if (_providerServiceReady) {
+        suggestions = _providerService
+            .providerNames()
+            .map(
+              (name) => CommandSuggestion(
+                value: name,
+                description:
+                    _providerService.getApiKey(name) != null ? 'key set' : null,
+              ),
+            )
+            .toList();
       } else {
         suggestions = [];
       }
@@ -563,6 +580,31 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
+  /// Returns true when the session's chat model and the configured auxiliary
+  /// model resolve to the same provider/model. When they match, firing the
+  /// auxiliary title call in parallel with the main chat response would
+  /// contend for the same provider's rate limits, so we fall back to the
+  /// legacy behavior of generating the title after the chat response
+  /// completes. When they differ, the title can safely be requested in
+  /// parallel right when the user submits their input.
+  bool _shouldDeferTitleToAfterResponse() {
+    final session = _sessionController.currentSession;
+    if (session.id == 0) return true;
+    final auxKey = _providerService.auxiliaryModel;
+    if (auxKey == null || auxKey == 'none') return true;
+    return session.model == auxKey;
+  }
+
+  /// Fire-and-forget title generation right after the user submits their
+  /// message, but only when the auxiliary model is configured AND is on a
+  /// different provider/model than the main chat. In all other cases the
+  /// post-response `onComplete` hook handles it.
+  void _maybeKickOffTitleEarly(int sessionId) {
+    if (_sessionController.currentSession.title != 'New Session') return;
+    if (_shouldDeferTitleToAfterResponse()) return;
+    _sessionController.generateTitle(sessionId);
+  }
+
   Future<void> _sendMessage() async {
     if (_overlayController.overlayMode == OverlayMode.wizard) return;
 
@@ -583,12 +625,34 @@ class _ChatPanelState extends State<ChatPanel> {
     _streamingController.streamingContent = '';
     _streamingController.streamingReasoning = '';
 
+    // DEBUG: trace context bar state at turn start.
+    stderr.writeln(
+      '[CTX-DBG] _sendMessage START sid=$sessionId '
+      'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens} '
+      'rt.contextTarget=${rt.contextTargetTokens} '
+      'rt.contextDisplay=${rt.contextDisplayTokens} '
+      'animActive=${_streamingController.contextAnimTimerIsActive()}',
+    );
+
+    // Defensive: at the start of a new turn, snap the context bar back
+    // to the persistent base (session.contextTokens). This handles edge
+    // cases where the prior turn's onComplete didn't fire (cancelled or
+    // errored response) and the animation is still running with a stale
+    // target — without this, the bar could lerp from the prior value
+    // toward whatever the prior turn's streaming target was, which can
+    // be 0 if computeBaseContext returned 0 during a degraded path.
+    final turnBase = _sessionController.computeBaseContext(sessionId);
+    rt.contextTargetTokens = turnBase;
+    rt.contextDisplayTokens = turnBase.toDouble();
+    _streamingController.stopContextAnimation();
+
     rt.isResponding = true;
     rt.responseStartTime = DateTime.now();
     rt.ttftMs = 0.0;
     rt.ttftReceived = false;
     rt.tokPerSec = 0.0;
     rt.tokCount = 0.0;
+    rt.firstTokenTime = null;
 
     _streamingController.startMetricsTimer(sessionId);
     final userMsg = Message(
@@ -602,6 +666,20 @@ class _ChatPanelState extends State<ChatPanel> {
       userMsg,
     ];
     setState(() {});
+
+    // DEBUG: trace right after the turn-start setState.
+    stderr.writeln(
+      '[CTX-DBG] _sendMessage POST-setState sid=$sessionId '
+      'rt.contextTarget=${rt.contextTargetTokens} '
+      'rt.contextDisplay=${rt.contextDisplayTokens} '
+      'computeBaseContext=${_sessionController.computeBaseContext(sessionId)}',
+    );
+
+    // Kick off the title generation in parallel with the main response
+    // when the auxiliary model is on a different provider/model. If they
+    // share the same model, the post-response `onComplete` hook handles
+    // it so we don't double up on the same provider.
+    _maybeKickOffTitleEarly(sessionId);
 
     _chatService.sendMessage(
       sessionId: sessionId,
@@ -620,11 +698,17 @@ class _ChatPanelState extends State<ChatPanel> {
       onChunk: () {
         final charCount = _streamingController.streamingContent.length;
         final estimatedTokens = (charCount / 3.5).ceil();
-        rt.contextTargetTokens =
-            _sessionController.computeBaseContext(sessionId) + estimatedTokens;
+        final base = _sessionController.computeBaseContext(sessionId);
+        rt.contextTargetTokens = base + estimatedTokens;
         if (!_streamingController.contextAnimTimerIsActive()) {
           _streamingController.startContextAnimation();
         }
+        // DEBUG: trace onChunk updates.
+        stderr.writeln(
+          '[CTX-DBG] onChunk sid=$sessionId base=$base est=$estimatedTokens '
+          'target=${rt.contextTargetTokens} display=${rt.contextDisplayTokens} '
+          'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens}',
+        );
         setState(() {});
       },
       onToolRound: () {
@@ -640,6 +724,14 @@ class _ChatPanelState extends State<ChatPanel> {
         _sessionController.messageCache[sessionId] = msgs;
         if (response.promptTokens + response.completionTokens > 0) {
           final finalTokens = _sessionController.computeBaseContext(sessionId);
+          // DEBUG: trace onComplete final values.
+          stderr.writeln(
+            '[CTX-DBG] onComplete sid=$sessionId '
+            'response.prompt=${response.promptTokens} '
+            'response.completion=${response.completionTokens} '
+            'finalTokens=$finalTokens '
+            'session.contextTokens=${_sessionController.findSession(sessionId)?.contextTokens}',
+          );
           rt.contextTargetTokens = finalTokens;
           rt.contextDisplayTokens = finalTokens.toDouble();
           _streamingController.stopContextAnimation();
@@ -691,17 +783,12 @@ class _ChatPanelState extends State<ChatPanel> {
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
       resolveAuxiliaryModel: _sessionController.resolveAuxiliaryModel,
-      triggerTldr: (sessionId, aiMsg) {
-        _maybeGenerateTldr(sessionId, aiMsg);
+      triggerTldr: (sessionId, aiMsg, detail) {
+        _maybeGenerateTldr(sessionId, aiMsg, force: true, detail: detail);
       },
       enterBuiltinWizard: (name) {
         setState(() {
           _overlayController.enterBuiltinWizard(name);
-        });
-      },
-      enterCustomWizard: () {
-        setState(() {
-          _overlayController.enterCustomWizard();
         });
       },
     );
@@ -722,25 +809,74 @@ class _ChatPanelState extends State<ChatPanel> {
     await _switchSession(session.id);
   }
 
-  Future<void> _maybeGenerateTldr(int sessionId, Message aiMsg) async {
-    final threshold = _providerService.tldrThreshold;
-    if (aiMsg.content.length < threshold) return;
-
-    if (aiMsg.tldr.isNotEmpty) return;
-
+  Future<void> _maybeGenerateTldr(
+    int sessionId,
+    Message aiMsg, {
+    bool force = false,
+    TldrDetail detail = TldrDetail.defaultLevel,
+  }) async {
     final rt = _sessionController.runtime(sessionId);
     final hasAuxModel = _providerService.auxiliaryModel != null &&
         _providerService.auxiliaryModel != 'none';
 
     if (!hasAuxModel) {
+      if (force) {
+        _showToast('No auxiliary model — set one with /auxiliary');
+      }
       setState(() {});
       return;
+    }
+
+    if (!force) {
+      final threshold = _providerService.tldrThreshold;
+      if (aiMsg.content.length < threshold) return;
+      if (aiMsg.tldr.isNotEmpty) return;
+    } else if (rt.isGeneratingTldr) {
+      // Manual /tldr while a generation is already running: ignore.
+      return;
+    }
+
+    // Manual regeneration: clear the cached tldr on the in-memory message so
+    // the bubble re-enters its generating state immediately.
+    if (force && aiMsg.tldr.isNotEmpty) {
+      await _store.updateMessageTldr(aiMsg.id, '');
+      final msgs = _sessionController.messageCache[sessionId];
+      if (msgs != null) {
+        for (var i = 0; i < msgs.length; i++) {
+          if (msgs[i].id == aiMsg.id) {
+            msgs[i] = Message(
+              id: msgs[i].id,
+              sessionId: msgs[i].sessionId,
+              role: msgs[i].role,
+              content: msgs[i].content,
+              reasoningContent: msgs[i].reasoningContent,
+              reasoningTokens: msgs[i].reasoningTokens,
+              thinkingDurationMs: msgs[i].thinkingDurationMs,
+              reasoningEffort: msgs[i].reasoningEffort,
+              model: msgs[i].model,
+              cost: msgs[i].cost,
+              tokensIn: msgs[i].tokensIn,
+              tokensOut: msgs[i].tokensOut,
+              error: msgs[i].error,
+              parentMsgId: msgs[i].parentMsgId,
+              createdAt: msgs[i].createdAt,
+              toolCalls: msgs[i].toolCalls,
+              toolCallId: msgs[i].toolCallId,
+              tldr: '',
+            );
+            break;
+          }
+        }
+      }
     }
 
     rt.isGeneratingTldr = true;
     setState(() {});
 
-    final tldrText = await _chatService.generateTldr(aiMsg.content);
+    final tldrText = await _chatService.generateTldr(
+      aiMsg.content,
+      detail: detail,
+    );
     rt.isGeneratingTldr = false;
     if (tldrText != null && tldrText.isNotEmpty) {
       await _store.updateMessageTldr(aiMsg.id, tldrText);
@@ -817,34 +953,20 @@ class _ChatPanelState extends State<ChatPanel> {
     if (sub == null) return const SizedBox();
 
     final VoidCallback onComplete = () {
-      switch (sub) {
-        case ProviderWizardSubcommand.builtin:
-          _dismissWizard(
-            message:
-                '✓ ${_overlayController.builtinProviderName ?? "Provider"} connected successfully',
-          );
-        case ProviderWizardSubcommand.custom:
-          _dismissWizard(message: '✓ Custom provider updated successfully');
-      }
+      _dismissWizard(
+        message:
+            '✓ ${_overlayController.builtinProviderName ?? "Provider"} connected successfully',
+      );
     };
 
     final VoidCallback onDismiss = () => _dismissWizard();
 
-    switch (sub) {
-      case ProviderWizardSubcommand.builtin:
-        return ProviderWizardBuiltin(
-          service: _providerService,
-          providerName: _overlayController.builtinProviderName!,
-          onComplete: onComplete,
-          onDismiss: onDismiss,
-        );
-      case ProviderWizardSubcommand.custom:
-        return ProviderWizardCustom(
-          service: _providerService,
-          onComplete: onComplete,
-          onDismiss: onDismiss,
-        );
-    }
+    return ProviderWizardBuiltin(
+      service: _providerService,
+      providerName: _overlayController.builtinProviderName!,
+      onComplete: onComplete,
+      onDismiss: onDismiss,
+    );
   }
 
   void _dismissToast() {
@@ -1248,8 +1370,20 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Component _buildContextBar() {
     if (_sessionController.currentSessionId == null) return const SizedBox();
-    final rt = _sessionController.runtime(_sessionController.currentSessionId!);
+    final currentSid = _sessionController.currentSessionId!;
+    final rt = _sessionController.runtime(currentSid);
     final displayTokens = rt.contextDisplayTokens.round();
+    // DEBUG: trace what's actually being rendered. Throttled: only prints
+    // while the display is mid-animation toward a non-zero target.
+    if ((rt.contextTargetTokens - rt.contextDisplayTokens).abs() > 0.5 &&
+        rt.contextTargetTokens > 0) {
+      stderr.writeln(
+        '[CTX-DBG] buildContextBar sid=$currentSid '
+        'display=$displayTokens target=${rt.contextTargetTokens} '
+        'session.contextTokens=${_sessionController.findSession(currentSid)?.contextTokens} '
+        'computeBaseContext=${_sessionController.computeBaseContext(currentSid)}',
+      );
+    }
     final fillRatio = (displayTokens / _contextMaxTokens).clamp(0.0, 1.0);
     final fmtCtx = (int n) {
       final k = n ~/ 1024;

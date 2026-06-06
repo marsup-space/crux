@@ -105,27 +105,10 @@ const List<SlashCommand> slashCommands = [
   ),
   SlashCommand(
     name: '/provider',
-    description: 'Connect a built-in provider or manage custom providers',
+    description: 'Connect a provider by entering your API key',
     params: ['name'],
     suggestionsPerParam: [
-      [
-        CommandSuggestion(
-          value: 'deepseek',
-          description: 'DeepSeek (V4 Flash / V4 Pro)',
-        ),
-        CommandSuggestion(
-          value: 'infinigence',
-          description: 'Infinigence (coming soon)',
-        ),
-        CommandSuggestion(
-          value: 'volcengine',
-          description: 'Volcengine (coming soon)',
-        ),
-        CommandSuggestion(
-          value: 'custom',
-          description: 'Add, modify, or remove a custom provider',
-        ),
-      ],
+      [],
     ],
   ),
   SlashCommand(
@@ -152,6 +135,27 @@ const List<SlashCommand> slashCommands = [
     description: 'Select the auxiliary model (for summaries, session names)',
     params: ['auxiliary model'],
     suggestionsPerParam: [[]],
+  ),
+  SlashCommand(
+    name: '/tldr',
+    description: 'Generate TLDR for the last AI response',
+    params: ['level'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(
+          value: 'concise',
+          description: 'Fewer bullets, focus on the core message',
+        ),
+        CommandSuggestion(
+          value: 'default',
+          description: 'Balanced summary (default if no level is given)',
+        ),
+        CommandSuggestion(
+          value: 'detailed',
+          description: 'Thorough summary covering every section',
+        ),
+      ],
+    ],
   ),
   SlashCommand(
     name: '/project',

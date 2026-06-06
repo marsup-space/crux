@@ -139,4 +139,9 @@ class CruxTheme {
 
   static const primary = purple;
   static const secondary = pink;
+
+  static const tldrPrefix = Color(0xF1FA8C);
+  static const tldrBody = Color(0xF8F8F2);
+  static const tldrLink = Color(0x8BE9FD);
+  static const tldrHint = Color(0x6272A4);
 }

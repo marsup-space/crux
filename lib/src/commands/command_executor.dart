@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
+import '../services/auxiliary_prompts.dart';
 import '../services/provider_service.dart';
 import '../storage/session_store.dart';
 import '../commands/registry.dart';
@@ -25,7 +26,7 @@ class CommandContext {
   final void Function(SessionRuntimeState) persistThinkingLevel;
   final void Function() resolveAuxiliaryModel;
   final void Function(String) enterBuiltinWizard;
-  final void Function() enterCustomWizard;
+  final void Function(int, Message, TldrDetail)? triggerTldr;
 
   CommandContext({
     required this.store,
@@ -45,7 +46,7 @@ class CommandContext {
     required this.persistThinkingLevel,
     required this.resolveAuxiliaryModel,
     required this.enterBuiltinWizard,
-    required this.enterCustomWizard,
+    this.triggerTldr,
   });
 }
 
@@ -68,6 +69,8 @@ class CommandExecutor {
         await executeProvider(parts, ctx);
       case '/think':
         await executeThink(parts, ctx);
+      case '/tldr':
+        await executeTldr(parts, ctx);
       case '/project':
         await executeProject(parts, ctx);
       default:
@@ -145,26 +148,22 @@ class CommandExecutor {
 
   Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
     final subcommand = parts.length > 1 ? parts[1] : '';
-    const builtInProviders = {'deepseek', 'infinigence', 'volcengine'};
 
-    if (builtInProviders.contains(subcommand)) {
-      ctx.providerService.initialize().then((_) {
-        final provider = ctx.providerService.providerByName(subcommand);
-        if (provider == null) {
-          ctx.showToast('Provider "$subcommand" not found in config');
-          return;
-        }
-        ctx.enterBuiltinWizard(subcommand);
-      });
-    } else if (subcommand == 'custom') {
-      ctx.providerService.initialize().then((_) {
-        ctx.enterCustomWizard();
-      });
-    } else {
-      ctx.showToast(
-        'Usage: /provider <deepseek|infinigence|volcengine|custom>',
-      );
+    if (subcommand.isEmpty) {
+      final names = ctx.providerService.providerNames();
+      ctx.showToast('Usage: /provider <${names.join("|")}>');
+      return;
     }
+
+    ctx.providerService.initialize().then((_) {
+      final provider = ctx.providerService.providerByName(subcommand);
+      if (provider == null) {
+        final names = ctx.providerService.providerNames();
+        ctx.showToast('Provider "$subcommand" not found. Available: ${names.join(", ")}');
+        return;
+      }
+      ctx.enterBuiltinWizard(subcommand);
+    });
   }
 
   Future<void> executeThink(List<String> parts, CommandContext ctx) async {
@@ -215,6 +214,43 @@ class CommandExecutor {
       }
     } else {
       ctx.showToast('Usage: /project <path> (current: ${ctx.projectPath})');
+    }
+  }
+
+  Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session');
+      return;
+    }
+    final lastAi = ctx.currentMessages.lastWhere(
+      (m) => m.role == 'ai',
+      orElse: () => Message(id: -1, sessionId: 0, role: 'ai', content: ''),
+    );
+    if (lastAi.id <= 0 || lastAi.content.isEmpty) {
+      ctx.showToast('No AI response to summarize');
+      return;
+    }
+
+    // Optional level param. Missing or "default" → TldrDetail.defaultLevel.
+    final rawLevel = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+    final TldrDetail detail;
+    switch (rawLevel) {
+      case '':
+      case 'default':
+        detail = TldrDetail.defaultLevel;
+      case 'concise':
+        detail = TldrDetail.concise;
+      case 'detailed':
+        detail = TldrDetail.detailed;
+      default:
+        ctx.showToast(
+          'Unknown /tldr level "$rawLevel". Use concise, default, or detailed.',
+        );
+        return;
+    }
+
+    if (ctx.triggerTldr != null) {
+      ctx.triggerTldr!(ctx.currentSessionId!, lastAi, detail);
     }
   }
 }
