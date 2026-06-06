@@ -1222,7 +1222,7 @@ class _ChatPanelState extends State<ChatPanel> {
         final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
-            ? 2
+            ? UnicodeWidth.stringWidth('\u{F06E}')
             : 0;
         final thinkingLabel =
             (rt != null &&
