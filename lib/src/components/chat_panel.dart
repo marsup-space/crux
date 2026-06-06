@@ -1221,7 +1221,7 @@ class _ChatPanelState extends State<ChatPanel> {
         final modelW = modelLabel.length + btnPad;
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
-            ? 1
+            ? 2
             : 0;
         final thinkingLabel =
             (rt != null &&
