@@ -51,9 +51,27 @@ class FileReadTracker {
   String _normalize(String path) {
     var p = path;
     if (!p.startsWith('/')) p = '/$p';
-    while (p.contains('/../') || p.contains('/./')) {
-      p = p.replaceAll('/./', '/');
+    p = p.replaceAll('/./', '/');
+    p = p.replaceAll(RegExp(r'/\.$'), '');
+    if (p.endsWith('/..')) {
+      p = '${p.substring(0, p.length - 3)}/__dotdot__';
+    }
+    var iterations = 0;
+    while (p.contains('/../') && iterations < 64) {
       p = p.replaceAll(RegExp(r'/[^/]+/\.\./'), '/');
+      iterations++;
+    }
+    p = p.replaceAll('/__dotdot__', '/..');
+    if (p.endsWith('/..')) {
+      final lastSep = p.lastIndexOf('/', p.length - 4);
+      if (lastSep > 0) {
+        p = p.substring(0, lastSep);
+      } else {
+        p = '/';
+      }
+    }
+    while (p.length > 1 && p.endsWith('/')) {
+      p = p.substring(0, p.length - 1);
     }
     return p;
   }

@@ -144,14 +144,13 @@ class ReadTool extends ToolDef {
     final endLine = (startLine + limit).clamp(0, totalLines);
 
     final selected = lines.sublist(startLine, endLine);
-    final numbered = selected
-        .map((line) {
-          final truncatedLine = line.length > _maxLineLength
-              ? '${line.substring(0, _maxLineLength)}... [truncated]'
-              : line;
-          return '${startLine + selected.indexOf(truncatedLine == line ? line : truncatedLine) + 1}: $truncatedLine';
-        })
-        .join('\n');
+    final numbered = List.generate(selected.length, (i) {
+      final line = selected[i];
+      final truncatedLine = line.length > _maxLineLength
+          ? '${line.substring(0, _maxLineLength)}... [truncated]'
+          : line;
+      return '${startLine + i + 1}: $truncatedLine';
+    }).join('\n');
 
     final header = totalLines > endLine
         ? '[showing lines ${startLine + 1}-${endLine} of $totalLines]'
@@ -162,17 +161,19 @@ class ReadTool extends ToolDef {
   }
 
   String _suggestSimilarFiles(String path) {
-    final dirPath = path.substring(0, path.lastIndexOf('/'));
-    final target = path.split('/').last;
+    final sep = Platform.pathSeparator;
+    final lastSep = path.lastIndexOf(sep);
+    if (lastSep == -1) return '';
+    final dirPath = path.substring(0, lastSep);
+    final target = path.substring(lastSep + 1);
+    final prefix = target.toLowerCase().substring(0, target.length.clamp(0, 3));
+    if (prefix.isEmpty) return '';
     final dir = Directory(dirPath);
     if (!dir.existsSync()) return '';
     final candidates = dir
         .listSync()
-        .map((e) => e.path.split('/').last)
-        .where(
-          (name) =>
-              name.toLowerCase().contains(target.toLowerCase().substring(0, 3)),
-        )
+        .map((e) => e.path.split(sep).last)
+        .where((name) => name.toLowerCase().contains(prefix))
         .take(5)
         .join('\n');
     return candidates;

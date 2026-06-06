@@ -63,7 +63,7 @@ class GrepTool extends ToolDef {
     final cmdArgs = <String>[];
     cmdArgs.add('--line-number');
     cmdArgs.add('--with-filename');
-    cmdArgs.add('--sort-path');
+    cmdArgs.add('--sort=path');
 
     if (caseInsensitive) cmdArgs.add('-i');
     if (include != null) {

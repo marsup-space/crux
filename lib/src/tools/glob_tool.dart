@@ -49,7 +49,7 @@ class GlobTool extends ToolDef {
     cmdArgs.add('--files');
     cmdArgs.add('--glob');
     cmdArgs.add(pattern);
-    cmdArgs.add('--sort-path');
+    cmdArgs.add('--sort=modified');
     cmdArgs.add(path);
 
     try {

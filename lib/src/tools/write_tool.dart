@@ -63,9 +63,7 @@ class WriteTool extends ToolDef {
       }
     }
 
-    final parentDir = Directory(
-      resolved.substring(0, resolved.lastIndexOf('/')),
-    );
+    final parentDir = Directory(file.parent.path);
     if (!parentDir.existsSync()) {
       parentDir.createSync(recursive: true);
     }

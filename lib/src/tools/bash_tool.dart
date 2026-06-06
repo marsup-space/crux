@@ -95,11 +95,24 @@ class BashTool extends ToolDef {
       }
 
       final exitCode = result.exitCode;
-      final suffix = exitCode == 0 ? '' : '\n\n[exit code: $exitCode]';
+
+      // Trailing status block: truncation marker (if any) then exit code
+      // (if non-zero). Keeping these in a single suffix appended *after* the
+      // (possibly truncated) output means the model always sees the exit code
+      // at the very end, regardless of whether output was truncated.
+      final tail = StringBuffer();
+      if (truncated) {
+        tail.writeln(
+          '\n[output truncated to $_maxLines lines; full output: $outputPath]',
+        );
+      }
+      if (exitCode != 0) {
+        tail.write('\n[exit code: $exitCode]');
+      }
 
       return ToolResult(
         title: 'Ran: $command',
-        output: output + suffix,
+        output: output + tail.toString(),
         truncated: truncated,
         outputPath: outputPath,
         metadata: {'exitCode': exitCode},
