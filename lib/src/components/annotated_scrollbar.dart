@@ -6,6 +6,26 @@ import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
+// Rounded-border glyphs used by the hover tooltip. These match the
+// `_BorderCharacters.rounded` set in nocterm's `decorated_box.dart`
+// (BoxBorderStyle.rounded), so the visual output is identical to what
+// `BoxBorder.all(style: BoxBorderStyle.rounded)` would produce.
+//
+// We draw the border by hand rather than using a `Container` with a
+// `BoxDecoration` because the tooltip is painted directly inside
+// `RenderAnnotatedScrollbar.paint`, at a position derived from the
+// scrollbar-internal marker coordinates (`_visibleMarkers`, `scrollbarX`,
+// `markerY`). Those coordinates are only known during the paint pass; a
+// `Container` would need them at layout time, which would mean hoisting
+// marker-position math out of the render object and through the widget
+// tree — a much bigger change than the rest of the scrollbar warrants.
+const _tooltipTopLeft = '╭';
+const _tooltipTopRight = '╮';
+const _tooltipBottomLeft = '╰';
+const _tooltipBottomRight = '╯';
+const _tooltipHorizontal = '─';
+const _tooltipVertical = '│';
+
 class ScrollbarMarker {
   const ScrollbarMarker({
     required this.itemIndex,
@@ -42,6 +62,7 @@ class AnnotatedScrollbar extends StatefulComponent {
     this.trackColor,
     this.thumbColor,
     this.tooltipBackgroundColor,
+    this.tooltipBorderColor,
     this.markers = const [],
   });
 
@@ -52,6 +73,7 @@ class AnnotatedScrollbar extends StatefulComponent {
   final Color? trackColor;
   final Color? thumbColor;
   final Color? tooltipBackgroundColor;
+  final Color? tooltipBorderColor;
   final List<ScrollbarMarker> markers;
 
   @override
@@ -155,6 +177,7 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
         trackColor: component.trackColor,
         thumbColor: component.thumbColor,
         tooltipBackgroundColor: component.tooltipBackgroundColor,
+        tooltipBorderColor: component.tooltipBorderColor,
         markers: component.markers,
         hoveredMarkerIndex: _hoveredMarkerIndex,
         isScrollbarHovered: _isHovered,
@@ -174,6 +197,7 @@ class _AnnotatedScrollbarRenderObjectWidget
     this.trackColor,
     this.thumbColor,
     this.tooltipBackgroundColor,
+    this.tooltipBorderColor,
     required this.markers,
     required this.hoveredMarkerIndex,
     required this.isScrollbarHovered,
@@ -186,6 +210,7 @@ class _AnnotatedScrollbarRenderObjectWidget
   final Color? trackColor;
   final Color? thumbColor;
   final Color? tooltipBackgroundColor;
+  final Color? tooltipBorderColor;
   final List<ScrollbarMarker> markers;
   final int? hoveredMarkerIndex;
   final bool isScrollbarHovered;
@@ -200,6 +225,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       trackColor: trackColor ?? theme.surface,
       thumbColor: thumbColor ?? theme.onSurface,
       tooltipBackgroundColor: tooltipBackgroundColor,
+      tooltipBorderColor: tooltipBorderColor,
       markers: markers,
       hoveredMarkerIndex: hoveredMarkerIndex,
       isScrollbarHovered: isScrollbarHovered,
@@ -217,6 +243,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       ..trackColor = trackColor ?? theme.surface
       ..thumbColor = thumbColor ?? theme.onSurface
       ..tooltipBackgroundColor = tooltipBackgroundColor
+      ..tooltipBorderColor = tooltipBorderColor
       ..markers = markers
       ..hoveredMarkerIndex = hoveredMarkerIndex
       ..isScrollbarHovered = isScrollbarHovered;
@@ -231,19 +258,29 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     required super.trackColor,
     required super.thumbColor,
     Color? tooltipBackgroundColor,
+    Color? tooltipBorderColor,
     List<ScrollbarMarker> markers = const [],
     int? hoveredMarkerIndex,
     bool isScrollbarHovered = false,
   })  : _markers = markers,
         _hoveredMarkerIndex = hoveredMarkerIndex,
         _isScrollbarHovered = isScrollbarHovered,
-        _tooltipBackgroundColor = tooltipBackgroundColor;
+        _tooltipBackgroundColor = tooltipBackgroundColor,
+        _tooltipBorderColor = tooltipBorderColor;
 
   Color? _tooltipBackgroundColor;
   Color? get tooltipBackgroundColor => _tooltipBackgroundColor;
   set tooltipBackgroundColor(Color? value) {
     if (_tooltipBackgroundColor == value) return;
     _tooltipBackgroundColor = value;
+    markNeedsPaint();
+  }
+
+  Color? _tooltipBorderColor;
+  Color? get tooltipBorderColor => _tooltipBorderColor;
+  set tooltipBorderColor(Color? value) {
+    if (_tooltipBorderColor == value) return;
+    _tooltipBorderColor = value;
     markNeedsPaint();
   }
 
@@ -462,28 +499,61 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     if (maxTooltipWidth <= 0) return;
 
     const maxLines = 4;
-    final lines = _wrapText(label, maxTooltipWidth);
+    // Reserve 2 columns for the left/right border.
+    final innerWidth = maxTooltipWidth - 2;
+    if (innerWidth <= 0) return;
+
+    final lines = _wrapText(label, innerWidth);
     final trimmedLines = lines.length > maxLines
         ? [...lines.sublist(0, maxLines - 1), '${lines[maxLines - 1]}…']
         : lines;
 
+    // Vertical layout:
+    //   row 0: top border (╭──…──╮)
+    //   rows 1..N: content lines (│…│)
+    //   row N+1: bottom border (╰──…──╯)
+    // The content is anchored to the marker row (markerY), so the top border
+    // sits one row above the marker, and the content lines start at markerY.
+    final topY = markerY - 1;
+    if (topY < 0) return;
+
     var tooltipLineCount = trimmedLines.length;
-    if (markerY + tooltipLineCount > size.height) {
-      tooltipLineCount = (size.height - markerY).toInt();
+    // Clamp the number of content lines to whatever fits before the bottom.
+    final maxBottomY = size.height - 1; // reserve 1 row for the bottom border
+    if (markerY + tooltipLineCount > maxBottomY) {
+      tooltipLineCount = (maxBottomY - markerY).toInt();
     }
     if (tooltipLineCount <= 0) return;
 
     final effectiveLines = trimmedLines.sublist(0, tooltipLineCount);
     final bgColor = tooltipBackgroundColor ?? const Color(0x21222C);
+    final borderColor = tooltipBorderColor ?? const Color(0x6272A4);
 
     final rightEdge = scrollbarX - 1;
+    final tooltipX = rightEdge - maxTooltipWidth;
 
+    // Top border: ╭──…──╮
+    final topRow = '$_tooltipTopLeft${_tooltipHorizontal * innerWidth}$_tooltipTopRight';
+    canvas.fillRect(
+      Rect.fromLTWH(
+        offset.dx + tooltipX,
+        offset.dy + topY,
+        maxTooltipWidth.toDouble(),
+        1.0,
+      ),
+      ' ',
+      style: TextStyle(backgroundColor: bgColor),
+    );
+    canvas.drawText(
+      offset + Offset(tooltipX.toDouble(), topY),
+      topRow,
+      style: TextStyle(color: borderColor, backgroundColor: bgColor),
+    );
+
+    // Content rows: │<padded text>│
     for (var lineIdx = 0; lineIdx < effectiveLines.length; lineIdx++) {
       final line = effectiveLines[lineIdx];
-
       final lineY = markerY + lineIdx.toDouble();
-
-      final tooltipX = rightEdge - maxTooltipWidth;
 
       canvas.fillRect(
         Rect.fromLTWH(
@@ -496,16 +566,47 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
         style: TextStyle(backgroundColor: bgColor),
       );
 
+      // Side borders.
       canvas.drawText(
-        offset + Offset(
-          tooltipX.toDouble(),
-          lineY,
-        ),
+        offset + Offset(tooltipX.toDouble(), lineY),
+        _tooltipVertical,
+        style: TextStyle(color: borderColor, backgroundColor: bgColor),
+      );
+      canvas.drawText(
+        offset + Offset((tooltipX + maxTooltipWidth - 1).toDouble(), lineY),
+        _tooltipVertical,
+        style: TextStyle(color: borderColor, backgroundColor: bgColor),
+      );
+
+      canvas.drawText(
+        offset + Offset((tooltipX + 1).toDouble(), lineY),
         line,
         style: TextStyle(
           color: marker.color,
           backgroundColor: bgColor,
         ),
+      );
+    }
+
+    // Bottom border: ╰──…──╯
+    final bottomY = markerY + tooltipLineCount;
+    if (bottomY < size.height) {
+      final bottomRow =
+          '$_tooltipBottomLeft${_tooltipHorizontal * innerWidth}$_tooltipBottomRight';
+      canvas.fillRect(
+        Rect.fromLTWH(
+          offset.dx + tooltipX,
+          offset.dy + bottomY,
+          maxTooltipWidth.toDouble(),
+          1.0,
+        ),
+        ' ',
+        style: TextStyle(backgroundColor: bgColor),
+      );
+      canvas.drawText(
+        offset + Offset(tooltipX.toDouble(), bottomY),
+        bottomRow,
+        style: TextStyle(color: borderColor, backgroundColor: bgColor),
       );
     }
   }
