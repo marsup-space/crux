@@ -20,6 +20,7 @@ import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../tools/registry.dart';
 import '../tools/file_read_tracker.dart';
+import '../utils/token_estimate.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -286,8 +287,9 @@ class _ChatPanelState extends State<ChatPanel> {
             .map(
               (name) => CommandSuggestion(
                 value: name,
-                description:
-                    _providerService.getApiKey(name) != null ? 'key set' : null,
+                description: _providerService.getApiKey(name) != null
+                    ? 'key set'
+                    : null,
               ),
             )
             .toList();
@@ -340,11 +342,13 @@ class _ChatPanelState extends State<ChatPanel> {
     if (_overlayController.showSessionManager) return true;
 
     if (_overlayController.overlayMode == OverlayMode.off) {
-      if (event.logicalKey == LogicalKey.pageUp && (event.isControlPressed || event.isAltPressed)) {
+      if (event.logicalKey == LogicalKey.pageUp &&
+          (event.isControlPressed || event.isAltPressed)) {
         _jumpToPreviousUserInput();
         return true;
       }
-      if (event.logicalKey == LogicalKey.pageDown && (event.isControlPressed || event.isAltPressed)) {
+      if (event.logicalKey == LogicalKey.pageDown &&
+          (event.isControlPressed || event.isAltPressed)) {
         _jumpToNextUserInput();
         return true;
       }
@@ -497,7 +501,8 @@ class _ChatPanelState extends State<ChatPanel> {
     }
     if (userIndices.isEmpty) return;
 
-    final avgHeight = scrollController.maxScrollExtent > 0 && messages.isNotEmpty
+    final avgHeight =
+        scrollController.maxScrollExtent > 0 && messages.isNotEmpty
         ? scrollController.maxScrollExtent / messages.length
         : 3.0;
 
@@ -512,10 +517,12 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     if (targetMsgIndex != null) {
-      scrollController.jumpTo((targetMsgIndex * avgHeight).clamp(
-        scrollController.minScrollExtent,
-        scrollController.maxScrollExtent,
-      ));
+      scrollController.jumpTo(
+        (targetMsgIndex * avgHeight).clamp(
+          scrollController.minScrollExtent,
+          scrollController.maxScrollExtent,
+        ),
+      );
     }
   }
 
@@ -527,7 +534,8 @@ class _ChatPanelState extends State<ChatPanel> {
     }
     if (userIndices.isEmpty) return;
 
-    final avgHeight = scrollController.maxScrollExtent > 0 && messages.isNotEmpty
+    final avgHeight =
+        scrollController.maxScrollExtent > 0 && messages.isNotEmpty
         ? scrollController.maxScrollExtent / messages.length
         : 3.0;
 
@@ -542,10 +550,12 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     if (targetMsgIndex != null) {
-      scrollController.jumpTo((targetMsgIndex * avgHeight).clamp(
-        scrollController.minScrollExtent,
-        scrollController.maxScrollExtent,
-      ));
+      scrollController.jumpTo(
+        (targetMsgIndex * avgHeight).clamp(
+          scrollController.minScrollExtent,
+          scrollController.maxScrollExtent,
+        ),
+      );
     }
   }
 
@@ -615,8 +625,8 @@ class _ChatPanelState extends State<ChatPanel> {
     if (text.isEmpty) return;
 
     final sessionId = _sessionController.currentSessionId;
-    final isResponding = sessionId != null &&
-        _sessionController.runtime(sessionId).isResponding;
+    final isResponding =
+        sessionId != null && _sessionController.runtime(sessionId).isResponding;
 
     if (text.startsWith('/')) {
       final cmd = findCommand(text.split(' ').first);
@@ -638,7 +648,14 @@ class _ChatPanelState extends State<ChatPanel> {
     _streamingController.streamingContent = '';
     _streamingController.streamingReasoning = '';
 
-    final turnBase = _sessionController.computeBaseContext(sessionId);
+    final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
+    final userTokens = estimateTokens(text);
+    final turnBase =
+        _sessionController.computeBaseContext(sessionId) +
+        userTokens +
+        toolDefsTokens;
+    rt.turnBaseTokens = turnBase;
+    rt.accumulatedToolTokens = 0;
     rt.contextTargetTokens = turnBase;
     rt.contextDisplayTokens = turnBase.toDouble();
     _streamingController.stopContextAnimation();
@@ -650,6 +667,10 @@ class _ChatPanelState extends State<ChatPanel> {
     rt.tokPerSec = 0.0;
     rt.tokCount = 0.0;
     rt.firstTokenTime = null;
+    rt.cumulativeGenMs = 0.0;
+    rt.cumulativeCompletionTokens = 0;
+    rt.roundFirstTokenTime = null;
+    rt.roundStreaming = false;
 
     _streamingController.startMetricsTimer(sessionId);
     final userMsg = Message(
@@ -681,24 +702,35 @@ class _ChatPanelState extends State<ChatPanel> {
         _streamingController.streamingReasoning += reasoning;
       },
       onChunk: () {
-        final charCount = _streamingController.streamingContent.length;
-        final estimatedTokens = (charCount / 3.5).ceil();
-        final base = _sessionController.computeBaseContext(sessionId);
-        rt.contextTargetTokens = base + estimatedTokens;
+        final streamingTokens = estimateTokens(
+          _streamingController.streamingContent +
+              _streamingController.streamingReasoning,
+        );
+        rt.contextTargetTokens =
+            rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
         if (!_streamingController.contextAnimTimerIsActive()) {
           _streamingController.startContextAnimation();
         }
         setState(() {});
       },
-      onToolRound: () {
+      onToolRound: (int toolResultTokens) {
+        final streamingTokens = estimateTokens(
+          _streamingController.streamingContent +
+              _streamingController.streamingReasoning,
+        );
+        rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
         _streamingController.streamingContent = '';
         _streamingController.streamingReasoning = '';
+        rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
+        rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
         _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
       },
       onComplete: (response) async {
         _streamingController.streamingContent = '';
         _streamingController.streamingReasoning = '';
         _streamingController.stopMetricsTimer(sessionId);
+        rt.turnBaseTokens = 0;
+        rt.accumulatedToolTokens = 0;
         final msgs = await _store.getMessages(sessionId);
         _sessionController.messageCache[sessionId] = msgs;
         if (response.promptTokens + response.completionTokens > 0) {
@@ -709,8 +741,12 @@ class _ChatPanelState extends State<ChatPanel> {
         }
         final hit = response.promptCacheHitTokens;
         final total = response.promptTokens;
-        if (total > 0 && hit > 0) {
+        final miss = response.promptCacheMissTokens;
+        final nonCached = total - hit;
+        if (total > 0 && hit > 0 && nonCached > 0) {
           rt.cacheHitPct = ((hit / total) * 100).round();
+        } else if (total > 0 && miss > 0 && hit == 0) {
+          rt.cacheHitPct = 0;
         } else {
           rt.cacheHitPct = null;
         }
@@ -720,7 +756,8 @@ class _ChatPanelState extends State<ChatPanel> {
         }
         final lastAiMsg = msgs.lastWhere(
           (m) => m.role == 'ai',
-          orElse: () => Message(id: -1, sessionId: sessionId, role: 'ai', content: ''),
+          orElse: () =>
+              Message(id: -1, sessionId: sessionId, role: 'ai', content: ''),
         );
         if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
           _maybeGenerateTldr(sessionId, lastAiMsg);
@@ -787,7 +824,8 @@ class _ChatPanelState extends State<ChatPanel> {
     TldrDetail detail = TldrDetail.defaultLevel,
   }) async {
     final rt = _sessionController.runtime(sessionId);
-    final hasAuxModel = _providerService.auxiliaryModel != null &&
+    final hasAuxModel =
+        _providerService.auxiliaryModel != null &&
         _providerService.auxiliaryModel != 'none';
 
     if (!hasAuxModel) {
@@ -1316,7 +1354,10 @@ class _ChatPanelState extends State<ChatPanel> {
                         Text('  ', style: TextStyle(color: CruxTheme.divider)),
                         Text(
                           _metricsHovered
-                              ? _cacheHitLabel(rt, _sessionController.currentSession)
+                              ? _cacheHitLabel(
+                                  rt,
+                                  _sessionController.currentSession,
+                                )
                               : tokText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
@@ -1522,7 +1563,9 @@ class _ChatPanelState extends State<ChatPanel> {
         charPos++;
         if (ch == ' ' || ch == '\n' || ch == '\t') {
           while (charPos < content.length &&
-              (content[charPos] == ' ' || content[charPos] == '\n' || content[charPos] == '\t')) {
+              (content[charPos] == ' ' ||
+                  content[charPos] == '\n' ||
+                  content[charPos] == '\t')) {
             charPos++;
           }
         }

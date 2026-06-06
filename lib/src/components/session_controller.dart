@@ -5,6 +5,7 @@ import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../storage/session_store.dart';
+import '../utils/token_estimate.dart';
 
 class SessionController {
   final SessionStore _store;
@@ -73,12 +74,44 @@ class SessionController {
     if (msgs == null || msgs.isEmpty) return 0;
     var total = 0;
     for (final m in msgs) {
-      if (m.role == 'tool_call' || m.role == 'tool') continue;
       if (m.tokensIn + m.tokensOut > 0) {
         total = m.tokensIn + m.tokensOut - m.reasoningTokens;
-      } else if (m.content.isNotEmpty) {
-        final est = (m.content.length / 3.5).ceil();
-        total += est;
+      } else {
+        switch (m.role) {
+          case 'user':
+          case 'system':
+          case 'ai':
+            if (m.content.isNotEmpty) {
+              total += estimateTokens(m.content);
+            }
+            if (m.reasoningContent.isNotEmpty) {
+              total += estimateTokens(m.reasoningContent);
+            }
+          case 'tool_call':
+            if (m.content.isNotEmpty) {
+              total += estimateTokens(m.content);
+            }
+            if (m.reasoningContent.isNotEmpty) {
+              total += estimateTokens(m.reasoningContent);
+            }
+            for (final call in m.toolCalls) {
+              total += estimateToolRoundTripTokens(
+                toolName: call.name,
+                args: call.input,
+                resultOutput: '',
+                excludeArgsFromEstimate:
+                    largePayloadTools.contains(call.name)
+                        ? largePayloadExcludedArgs[call.name]
+                        : null,
+              );
+            }
+          case 'tool':
+            total += estimateToolRoundTripTokens(
+              toolName: '',
+              args: {},
+              resultOutput: m.content,
+            );
+        }
       }
     }
     return total;
@@ -127,6 +160,10 @@ class SessionController {
     rt.ttftReceived = false;
     rt.tokPerSec = 0;
     rt.streamingDurationMs = 0;
+    rt.cumulativeGenMs = 0.0;
+    rt.cumulativeCompletionTokens = 0;
+    rt.roundFirstTokenTime = null;
+    rt.roundStreaming = false;
     rt.isResponding = false;
 
     return null;

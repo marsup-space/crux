@@ -7,6 +7,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
+import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
 import 'provider_service.dart';
@@ -186,7 +187,7 @@ class ChatService {
     required void Function() onChunk,
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
-    void Function()? onToolRound,
+    void Function(int toolResultTokens)? onToolRound,
   }) async {
     await _store.addMessage(sessionId, role: 'user', content: userContent);
 
@@ -261,6 +262,12 @@ class ChatService {
       _llmClient.clearToolBlockState();
 
       runtime.startStreamingTimer();
+      // Mark that the LLM is not currently streaming deltas — the first
+      // delta of this round will flip this on, and the metrics timer
+      // uses the flag to pause tok/s while we wait for the model to
+      // start emitting and while tools run.
+      runtime.roundStreaming = false;
+      runtime.roundFirstTokenTime = null;
 
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
@@ -344,8 +351,29 @@ class ChatService {
 
           chunks.add(chunk);
 
-          if (chunk.textDelta != null || chunk.reasoningContent != null) {
-            if (firstTokenEver) {
+          // First delta of the current round (text, reasoning, or
+          // tool_use): mark the start of active generation for this
+          // round. The metrics timer uses roundFirstTokenTime to
+          // compute the live tok/s denominator. The cumulative
+          // completion-token counter also gets a small bump for
+          // tool_use JSON fragments so the LLM's tool-call generation
+          // is included in tok/s (text and reasoning are accounted
+          // for via estimateTokens in the metrics timer).
+          if (chunk.textDelta != null ||
+              chunk.reasoningContent != null ||
+              chunk.toolUse != null) {
+            if (!runtime.roundStreaming) {
+              final now = DateTime.now();
+              runtime.roundFirstTokenTime = now;
+              runtime.roundStreaming = true;
+            }
+            if (chunk.toolUse != null && chunk.toolUse!.inputDelta.isNotEmpty) {
+              runtime.cumulativeCompletionTokens += estimateTokens(
+                chunk.toolUse!.inputDelta,
+              );
+            }
+            if (firstTokenEver &&
+                (chunk.textDelta != null || chunk.reasoningContent != null)) {
               final now = DateTime.now();
               final elapsed =
                   now.difference(runtime.responseStartTime!).inMicroseconds /
@@ -382,7 +410,7 @@ class ChatService {
                 onReasoning(chunk.reasoningContent!);
               }
             }
-            if (!useLerp) {
+            if (!useLerp && (chunk.textDelta != null || chunk.reasoningContent != null)) {
               onChunk();
             }
           }
@@ -415,6 +443,24 @@ class ChatService {
       }
 
       lerpStreamDone = true;
+
+      // Round stream finished. Fold this round's wall-clock generation
+      // time into the per-turn cumulative total and clear the
+      // round-streaming flag so the metrics timer pauses while tools
+      // execute and while we wait for the next LLM response. Done
+      // BEFORE the lerp drain so the denominator reflects only the
+      // LLM's actual generation time, not the visual lerp animation
+      // (up to 10s of post-stream UI smoothing).
+      if (runtime.roundStreaming &&
+          runtime.roundFirstTokenTime != null) {
+        final roundMs = DateTime.now()
+                .difference(runtime.roundFirstTokenTime!)
+                .inMicroseconds /
+            1000.0;
+        runtime.cumulativeGenMs += roundMs;
+      }
+      runtime.roundStreaming = false;
+      runtime.roundFirstTokenTime = null;
 
       if (lerpTimer != null) {
         if (lerpPendingText.isEmpty && lerpPendingReasoning.isEmpty) {
@@ -470,6 +516,7 @@ class ChatService {
         apiMessages.add(assistantMsg);
 
         final content = <Map<String, dynamic>>[];
+        var roundResultTokens = 0;
         for (final call in toolCalls) {
           final ctx = ToolContext(
             sessionId: sessionId,
@@ -483,6 +530,14 @@ class ChatService {
             'tool_use_id': call.callId,
             'content': result.output,
           });
+          roundResultTokens += estimateToolRoundTripTokens(
+            toolName: call.name,
+            args: call.input,
+            resultOutput: result.output,
+            excludeArgsFromEstimate: largePayloadTools.contains(call.name)
+                ? largePayloadExcludedArgs[call.name]
+                : null,
+          );
           await _store.addMessage(
             sessionId,
             role: 'tool',
@@ -491,6 +546,9 @@ class ChatService {
           );
         }
         apiMessages.add({'role': 'user', 'content': content});
+        roundTextBuffer.clear();
+        roundReasoningBuffer.clear();
+        onToolRound?.call(roundResultTokens);
       } else {
         final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
           toolCalls,
@@ -499,6 +557,7 @@ class ChatService {
         );
         apiMessages.add(assistantMsg);
 
+        var roundResultTokens = 0;
         for (final call in toolCalls) {
           final ctx = ToolContext(
             sessionId: sessionId,
@@ -512,6 +571,14 @@ class ChatService {
             'tool_call_id': call.callId,
             'content': result.output,
           });
+          roundResultTokens += estimateToolRoundTripTokens(
+            toolName: call.name,
+            args: call.input,
+            resultOutput: result.output,
+            excludeArgsFromEstimate: largePayloadTools.contains(call.name)
+                ? largePayloadExcludedArgs[call.name]
+                : null,
+          );
           await _store.addMessage(
             sessionId,
             role: 'tool',
@@ -519,11 +586,10 @@ class ChatService {
             toolCallId: call.callId,
           );
         }
+        roundTextBuffer.clear();
+        roundReasoningBuffer.clear();
+        onToolRound?.call(roundResultTokens);
       }
-
-      roundTextBuffer.clear();
-      roundReasoningBuffer.clear();
-      onToolRound?.call();
     }
 
     final content = fullTextBuffer.toString();

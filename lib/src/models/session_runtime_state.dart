@@ -11,6 +11,7 @@ class SessionRuntimeState {
   bool ttftReceived;
   DateTime? responseStartTime;
   DateTime? contentStartTime;
+
   /// Wall-clock time of the first text or reasoning delta on the current
   /// turn. Used to compute tok/s as `tokens / (now - firstTokenTime)`,
   /// which excludes the TTFT wait. Without this, the tok/s denominator
@@ -19,11 +20,43 @@ class SessionRuntimeState {
   /// (e.g. MiniMax, where TTFT can be 5–15s of thinking preambles).
   /// Reset to null at the start of each turn.
   DateTime? firstTokenTime;
+
+  /// Wall-clock time the LLM was actively emitting deltas, summed across
+  /// every model round of the current turn. Excludes (a) the TTFT wait
+  /// before the first delta of each round, and (b) the time spent
+  /// executing tools / waiting for the next round to start. Updated by
+  /// `chat_service` when a round ends; combined with the in-flight round
+  /// timing by `streaming_controller` to compute tok/s live.
+  double cumulativeGenMs = 0.0;
+
+  /// Estimated completion tokens (text + reasoning + tool_use input
+  /// deltas) emitted by the LLM across all rounds of the current turn.
+  /// Includes tool-call argument JSON, which the LLM also generated as
+  /// part of its completion.
+  int cumulativeCompletionTokens = 0;
+
+  /// First delta time of the *current* round (the round that is currently
+  /// receiving deltas). Null between rounds (i.e. while the previous
+  /// round is done and the next LLM call has not produced its first
+  /// delta yet, or while tools are executing). Together with
+  /// `cumulativeGenMs`, this lets the live tok/s readout exclude
+  /// tool-execution time and the wait-for-next-round.
+  DateTime? roundFirstTokenTime;
+
+  /// True while the LLM is actively streaming deltas for the current
+  /// round. False during tool execution and the wait between rounds.
+  /// The metrics timer checks this so the displayed tok/s doesn't keep
+  /// ticking down while we're sending a tool result back and waiting for
+  /// the model to respond.
+  bool roundStreaming = false;
+
   double tokCount;
   double streamingDurationMs;
   DateTime? _streamingStart;
   int contextTargetTokens;
   double contextDisplayTokens;
+  int turnBaseTokens;
+  int accumulatedToolTokens;
   String thinkingMode;
   String? reasoningEffort;
   int? cacheHitPct;
@@ -43,6 +76,8 @@ class SessionRuntimeState {
     this.streamingDurationMs = 0.0,
     this.contextTargetTokens = 0,
     this.contextDisplayTokens = 0.0,
+    this.turnBaseTokens = 0,
+    this.accumulatedToolTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
     this.cacheHitPct,
@@ -72,6 +107,10 @@ class SessionRuntimeState {
     responseStartTime = null;
     contentStartTime = null;
     firstTokenTime = null;
+    cumulativeGenMs = 0.0;
+    cumulativeCompletionTokens = 0;
+    roundFirstTokenTime = null;
+    roundStreaming = false;
     isResponding = false;
     cancelTimers();
   }
@@ -88,8 +127,7 @@ class SessionRuntimeState {
   void pauseStreamingTimer() {
     if (_streamingStart != null) {
       streamingDurationMs +=
-          DateTime.now().difference(_streamingStart!).inMicroseconds /
-          1000.0;
+          DateTime.now().difference(_streamingStart!).inMicroseconds / 1000.0;
       _streamingStart = null;
     }
   }
@@ -98,8 +136,7 @@ class SessionRuntimeState {
     var total = streamingDurationMs;
     if (_streamingStart != null) {
       total +=
-          DateTime.now().difference(_streamingStart!).inMicroseconds /
-          1000.0;
+          DateTime.now().difference(_streamingStart!).inMicroseconds / 1000.0;
     }
     return total;
   }
