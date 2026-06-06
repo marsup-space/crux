@@ -60,19 +60,22 @@ class LlmClient {
     String thinkingMode = 'enabled',
     String? reasoningEffort,
     int? thinkingBudget,
+    int? maxTokens,
     List<Map<String, dynamic>>? tools,
   }) {
     final controller = StreamController<LlmChunk>();
-    final wireFamily = config.wireFamily;
+    final resolved = resolveProvider(config.type);
+    final wireFamily = resolved.wire;
+    final authStyle = resolved.authStyle;
 
     () async {
       try {
-        final provider = providerFor(config);
+        final provider = resolved.provider;
         final uri = _buildUri(endpointUrl, wireFamily);
         final request = await _httpClient.postUrl(uri);
 
         request.headers.set('Content-Type', 'application/json; charset=utf-8');
-        _setAuthHeaders(request, wireFamily, apiKey);
+        _setAuthHeaders(request, authStyle, apiKey);
 
         final bodyMap = provider.buildRequestBody(
           modelId,
@@ -80,13 +83,13 @@ class LlmClient {
           thinkingMode: thinkingMode,
           reasoningEffort: reasoningEffort,
           thinkingBudget: thinkingBudget,
+          maxTokens: maxTokens,
           tools: tools,
         );
         final body = jsonEncode(bodyMap);
         final bodyBytes = utf8.encode(body);
         request.headers.set('Content-Length', bodyBytes.length.toString());
         request.add(bodyBytes);
-
         final response = await request.close();
 
         if (response.statusCode != 200) {
@@ -119,8 +122,8 @@ class LlmClient {
     StreamController<LlmChunk> controller,
   ) async {
     String buffer = '';
-    await for (final chunk in response.transform(utf8.decoder)) {
-      buffer += chunk;
+    await for (final chunk in response) {
+      buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();
 
@@ -226,8 +229,23 @@ class LlmClient {
     String buffer = '';
     String? eventType;
 
-    await for (final chunk in response.transform(utf8.decoder)) {
-      buffer += chunk;
+    // Accumulated usage, populated incrementally as SSE events arrive.
+    // Anthropic's streaming API reports *cumulative* usage: message_start
+    // sets input_tokens and the cache_* fields (which stay constant), and
+    // message_delta updates output_tokens (which grows as the model
+    // generates). Critically, message_delta may emit explicit 0 values for
+    // the cache fields — we must NOT overwrite the values from
+    // message_start. We mirror the behavior of Claude Code's
+    // `updateUsage` and the AI SDK's anthropic-language-model stream
+    // handler: only adopt cache_*_tokens from a later event when the
+    // value is non-null and non-zero.
+    int inputTokens = 0;
+    int outputTokens = 0;
+    int cacheReadInputTokens = 0;
+    int cacheCreationInputTokens = 0;
+
+    await for (final chunk in response) {
+      buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();
 
@@ -272,9 +290,14 @@ class LlmClient {
             final message = json['message'] as Map<String, dynamic>?;
             if (message != null) {
               final usage = message['usage'] as Map<String, dynamic>?;
-              controller.add(
-                LlmChunk(promptTokens: usage?['input_tokens'] as int?),
-              );
+              if (usage != null) {
+                final inT = usage['input_tokens'] as int?;
+                if (inT != null) inputTokens = inT;
+                final cr = usage['cache_read_input_tokens'] as int?;
+                if (cr != null) cacheReadInputTokens = cr;
+                final cc = usage['cache_creation_input_tokens'] as int?;
+                if (cc != null) cacheCreationInputTokens = cc;
+              }
             }
           }
 
@@ -308,13 +331,33 @@ class LlmClient {
           if (eventType == 'message_delta') {
             final delta = json['delta'] as Map<String, dynamic>?;
             final usage = json['usage'] as Map<String, dynamic>?;
+            if (usage != null) {
+              // output_tokens is cumulative and only ever grows; safe to
+              // overwrite directly.
+              final outT = usage['output_tokens'] as int?;
+              if (outT != null) outputTokens = outT;
+              // Cache fields may be reported as 0 in message_delta even
+              // when they were set in message_start. Only adopt a
+              // non-zero value, otherwise keep what message_start gave us.
+              final cr = usage['cache_read_input_tokens'] as int?;
+              if (cr != null && cr > 0) cacheReadInputTokens = cr;
+              final cc = usage['cache_creation_input_tokens'] as int?;
+              if (cc != null && cc > 0) cacheCreationInputTokens = cc;
+            }
+            // Emit a single final usage chunk with all accumulated
+            // totals. This is the AI SDK's pattern: usage is buffered
+            // during the stream and only released on the terminal
+            // message_delta, so downstream consumers can't see partial
+            // / zeroed values.
             controller.add(
               LlmChunk(
                 finishReason: delta?['stop_reason'] as String?,
-                completionTokens: usage?['output_tokens'] as int?,
-                promptCacheHitTokens: usage?['cache_read_input_tokens'] as int?,
-                promptCacheMissTokens:
-                    usage?['cache_creation_input_tokens'] as int?,
+                promptTokens: inputTokens +
+                    cacheCreationInputTokens +
+                    cacheReadInputTokens,
+                promptCacheHitTokens: cacheReadInputTokens,
+                promptCacheMissTokens: cacheCreationInputTokens,
+                completionTokens: outputTokens,
               ),
             );
           }
@@ -333,21 +376,24 @@ class LlmClient {
     if (wireFamily == WireFamily.openaiCompatible && !base.endsWith('/v1')) {
       base = '$base/v1';
     }
-    final uri = Uri.parse(base);
+    var uri = Uri.parse(base);
     if (wireFamily == WireFamily.anthropicCompatible) {
-      return uri.resolve('messages');
+      final path = uri.path.endsWith('/')
+          ? '${uri.path}messages'
+          : '${uri.path}/messages';
+      return uri.replace(path: path);
     }
     return uri.resolve('chat/completions');
   }
 
   void _setAuthHeaders(
     HttpClientRequest request,
-    WireFamily wireFamily,
+    AuthStyle authStyle,
     String apiKey,
   ) {
-    if (wireFamily == WireFamily.openaiCompatible) {
+    if (authStyle == AuthStyle.bearer) {
       request.headers.set('Authorization', 'Bearer $apiKey');
-    } else if (wireFamily == WireFamily.anthropicCompatible) {
+    } else if (authStyle == AuthStyle.anthropicApiKey) {
       request.headers.set('x-api-key', apiKey);
       request.headers.set('anthropic-version', '2023-06-01');
     }
