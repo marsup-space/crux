@@ -21,10 +21,7 @@ class MessageBubble extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     if (message.role == 'tool_call') return _buildToolCall(context);
-    if (message.role == 'tool') {
-      if (reasoningCollapsed) return const SizedBox.shrink();
-      return _buildToolResult(context);
-    }
+    if (message.role == 'tool') return const SizedBox.shrink();
 
     final isUser = message.role == 'user';
     final hasReasoning = !isUser && message.reasoningContent.isNotEmpty;
@@ -120,53 +117,17 @@ class MessageBubble extends StatelessComponent {
 
   Component _buildToolCall(BuildContext context) {
     final calls = message.toolCalls;
-    if (reasoningCollapsed) {
-      if (calls.isEmpty) {
-        return Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: Text('(no calls)', style: TextStyle(color: CruxTheme.onSurfaceDim)),
-        );
-      }
+    if (calls.isEmpty) {
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: calls.map((tc) => _buildCollapsedToolCall(tc)).toList(),
-        ),
+        child: Text('(no calls)', style: TextStyle(color: CruxTheme.onSurfaceDim)),
       );
     }
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: calls.isEmpty
-            ? [Text(
-                message.content.isNotEmpty ? message.content : '(no calls)',
-                style: TextStyle(color: CruxTheme.foreground),
-              )]
-            : calls.map((tc) {
-                final args = tc.input.entries
-                    .map((e) => '${e.key}=${_truncateArg(e.value)}')
-                    .join(', ');
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ' ${_capitalize(tc.name)}: ',
-                      style: TextStyle(
-                        color: CruxTheme.toolPrefix,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        args,
-                        style: TextStyle(color: CruxTheme.foreground),
-                      ),
-                    ),
-                  ],
-                );
-              }).toList(),
+        children: calls.map((tc) => _buildCollapsedToolCall(tc)).toList(),
       ),
     );
   }
@@ -209,19 +170,6 @@ class MessageBubble extends StatelessComponent {
     );
   }
 
-  Component _buildToolResult(BuildContext context) {
-    if (reasoningCollapsed) return const SizedBox.shrink();
-    final preview = _truncateOutput(message.content, 800);
-    return Container(
-      padding: EdgeInsets.only(left: 8, right: 1, top: 0, bottom: 0),
-      child: Text(
-        preview,
-        style: TextStyle(color: CruxTheme.onSurfaceDim),
-        softWrap: true,
-      ),
-    );
-  }
-
   String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
@@ -250,10 +198,5 @@ class MessageBubble extends StatelessComponent {
   String _truncateArg(dynamic value, [int maxLen = 80]) {
     final s = value.toString();
     return s.length > maxLen ? '${s.substring(0, maxLen - 3)}...' : s;
-  }
-
-  String _truncateOutput(String text, int maxLen) {
-    if (text.length <= maxLen) return text;
-    return '${text.substring(0, maxLen)}...';
   }
 }

@@ -852,7 +852,7 @@ class _ChatPanelState extends State<ChatPanel> {
               final msg = messages[index];
               final collapsed = index < lastRoundStart;
               Message? pairedResult;
-              if (msg.role == 'tool_call' && collapsed) {
+              if (msg.role == 'tool_call') {
                 for (final tc in msg.toolCalls) {
                   if (resultByCallId.containsKey(tc.callId)) {
                     pairedResult = resultByCallId[tc.callId]!;
