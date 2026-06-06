@@ -211,6 +211,11 @@ class SessionController {
 
   bool _isGeneratingTitle = false;
 
+  /// True while a session-title generation is in flight. The chat panel
+  /// watches this to flash the auxiliary model label/button so the user
+  /// can see which model is working in the background.
+  bool get isGeneratingTitle => _isGeneratingTitle;
+
   Future<void> generateTitle(int sessionId) async {
     if (_isGeneratingTitle) return;
     final auxKey = _providerService.auxiliaryModel;
@@ -223,6 +228,7 @@ class SessionController {
     if (provider == null) return;
     if (apiKey == null || apiKey.isEmpty) return;
     _isGeneratingTitle = true;
+    _refresh();
     try {
       final title = await _chatService.generateSessionTitle(sessionId);
       if (title == null) return;
@@ -234,6 +240,7 @@ class SessionController {
     } catch (_) {
     } finally {
       _isGeneratingTitle = false;
+      _refresh();
     }
   }
 

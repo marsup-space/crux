@@ -1390,14 +1390,19 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildAuxiliaryModelButton() {
-    return Button(
+    final sessionId = _sessionController.currentSessionId;
+    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
+    // Flash the auxiliary label/button while the auxiliary model is
+    // working on a background task — either a session title or a TLDR
+    // summary — so the user gets the same visual feedback as for the
+    // main model during a chat response.
+    final isAuxBusy =
+        _sessionController.isGeneratingTitle ||
+        (rt?.isGeneratingTldr ?? false);
+    return GlossyModelButton(
       label: '\u{F013} ${_sessionController.auxiliaryModelShortName}',
+      isAnimating: isAuxBusy,
       onPressed: _onAuxiliaryModelButtonPressed,
-      color: CruxTheme.onSurfaceVariant,
-      hoverColor: CruxTheme.buttonTextHover,
-      bgColor: CruxTheme.buttonBackground,
-      hoverBgColor: CruxTheme.buttonBackgroundHover,
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
     );
   }
 
