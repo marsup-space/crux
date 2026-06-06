@@ -29,6 +29,7 @@ import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
 import 'session_management_panel.dart';
+import 'annotated_scrollbar.dart';
 import 'message_bubble.dart';
 import 'streaming_bubble.dart';
 import 'tldr_bubble.dart';
@@ -994,6 +995,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     final items = <Component>[];
+    final userItemIndices = <int>[];
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
       final collapsed = i < lastRoundStart;
@@ -1006,6 +1008,11 @@ class _ChatPanelState extends State<ChatPanel> {
           }
         }
       }
+
+      if (msg.role == 'user') {
+        userItemIndices.add(items.length);
+      }
+
       items.add(
         MessageBubble(
           message: msg,
@@ -1043,15 +1050,23 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
+    final markers = userItemIndices
+        .map((idx) => ScrollbarMarker(
+              itemIndex: idx,
+              color: CruxTheme.userPrefix,
+            ))
+        .toList();
+
     return SelectionArea(
       onSelectionCompleted: (text) {
         if (text.isNotEmpty) {
           ClipboardManager.copy(text);
         }
       },
-      child: Scrollbar(
+      child: AnnotatedScrollbar(
         controller: scrollController,
         thumbVisibility: true,
+        markers: markers,
         child: ListView.builder(
           controller: scrollController,
           padding: EdgeInsets.all(1),
