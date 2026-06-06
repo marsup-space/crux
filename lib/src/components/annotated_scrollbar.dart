@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+import 'package:nocterm/src/rendering/mouse_tracker.dart';
 
 class ScrollbarMarker {
   const ScrollbarMarker({
@@ -249,6 +250,66 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
   Offset _myPaintOffset = Offset.zero;
   final List<(int, double)> _visibleMarkers = [];
+  MouseTrackerAnnotation? _customAnnotation;
+  bool _isLeftButtonPressed = false;
+
+  @override
+  MouseTrackerAnnotation? get annotation {
+    final parent = super.annotation;
+    if (parent == null) return null;
+    _customAnnotation ??= MouseTrackerAnnotation(
+      onEnter: parent.onEnter,
+      onExit: parent.onExit,
+      onHover: _handleHover,
+      renderObject: this,
+    );
+    return _customAnnotation;
+  }
+
+  void _handleHover(MouseEvent event) {
+    final parent = super.annotation;
+    if (parent == null) return;
+    final ctrl = controller;
+    if (ctrl == null || !thumbVisibility) {
+      parent.onHover?.call(event);
+      return;
+    }
+    if (ctrl.maxScrollExtent <= 0 || size.height < 3) {
+      parent.onHover?.call(event);
+      return;
+    }
+
+    final leftDown = event.pressed || event.isPrimaryButtonDown;
+    if (event.button == MouseButton.left || event.isPrimaryButtonDown) {
+      if (leftDown && !_isLeftButtonPressed) {
+        _isLeftButtonPressed = true;
+        final localX = event.x.toDouble() - _myPaintOffset.dx;
+        final localY = event.y.toDouble() - _myPaintOffset.dy;
+        final scrollbarX = size.width - thickness;
+        if (localX >= scrollbarX) {
+          final hasArrows = size.height >= 3;
+          final trackStart = hasArrows ? 1.0 : 0.0;
+          final trackEnd = hasArrows ? size.height - 1 : size.height;
+          final isReversed = ctrl.isReversed;
+          if (localY < trackStart) {
+            isReversed
+                ? ctrl.scrollToEnd()
+                : ctrl.scrollToStart();
+            return;
+          } else if (localY >= trackEnd) {
+            isReversed
+                ? ctrl.scrollToStart()
+                : ctrl.scrollToEnd();
+            return;
+          }
+        }
+      } else if (!leftDown && _isLeftButtonPressed) {
+        _isLeftButtonPressed = false;
+      }
+    }
+
+    parent.onHover?.call(event);
+  }
 
   @override
   void paint(TerminalCanvas canvas, Offset offset) {
