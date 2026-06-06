@@ -8,11 +8,14 @@ class ScrollbarMarker {
   const ScrollbarMarker({
     required this.itemIndex,
     required this.color,
+    this.label,
   });
 
   final int itemIndex;
 
   final Color color;
+
+  final String? label;
 
   @override
   bool operator ==(Object other) =>
@@ -20,10 +23,11 @@ class ScrollbarMarker {
       other is ScrollbarMarker &&
           runtimeType == other.runtimeType &&
           itemIndex == other.itemIndex &&
-          color == other.color;
+          color == other.color &&
+          label == other.label;
 
   @override
-  int get hashCode => Object.hash(itemIndex, color);
+  int get hashCode => Object.hash(itemIndex, color, label);
 }
 
 class AnnotatedScrollbar extends StatefulComponent {
@@ -35,6 +39,7 @@ class AnnotatedScrollbar extends StatefulComponent {
     this.thickness = 1.0,
     this.trackColor,
     this.thumbColor,
+    this.tooltipBackgroundColor,
     this.markers = const [],
   });
 
@@ -44,6 +49,7 @@ class AnnotatedScrollbar extends StatefulComponent {
   final double thickness;
   final Color? trackColor;
   final Color? thumbColor;
+  final Color? tooltipBackgroundColor;
   final List<ScrollbarMarker> markers;
 
   @override
@@ -146,6 +152,7 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
         thickness: component.thickness,
         trackColor: component.trackColor,
         thumbColor: component.thumbColor,
+        tooltipBackgroundColor: component.tooltipBackgroundColor,
         markers: component.markers,
         hoveredMarkerIndex: _hoveredMarkerIndex,
         isScrollbarHovered: _isHovered,
@@ -164,6 +171,7 @@ class _AnnotatedScrollbarRenderObjectWidget
     required this.thickness,
     this.trackColor,
     this.thumbColor,
+    this.tooltipBackgroundColor,
     required this.markers,
     required this.hoveredMarkerIndex,
     required this.isScrollbarHovered,
@@ -175,6 +183,7 @@ class _AnnotatedScrollbarRenderObjectWidget
   final double thickness;
   final Color? trackColor;
   final Color? thumbColor;
+  final Color? tooltipBackgroundColor;
   final List<ScrollbarMarker> markers;
   final int? hoveredMarkerIndex;
   final bool isScrollbarHovered;
@@ -188,6 +197,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       thickness: thickness,
       trackColor: trackColor ?? theme.surface,
       thumbColor: thumbColor ?? theme.onSurface,
+      tooltipBackgroundColor: tooltipBackgroundColor,
       markers: markers,
       hoveredMarkerIndex: hoveredMarkerIndex,
       isScrollbarHovered: isScrollbarHovered,
@@ -204,6 +214,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       ..thickness = thickness
       ..trackColor = trackColor ?? theme.surface
       ..thumbColor = thumbColor ?? theme.onSurface
+      ..tooltipBackgroundColor = tooltipBackgroundColor
       ..markers = markers
       ..hoveredMarkerIndex = hoveredMarkerIndex
       ..isScrollbarHovered = isScrollbarHovered;
@@ -217,12 +228,22 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     required super.thickness,
     required super.trackColor,
     required super.thumbColor,
+    Color? tooltipBackgroundColor,
     List<ScrollbarMarker> markers = const [],
     int? hoveredMarkerIndex,
     bool isScrollbarHovered = false,
   })  : _markers = markers,
         _hoveredMarkerIndex = hoveredMarkerIndex,
-        _isScrollbarHovered = isScrollbarHovered;
+        _isScrollbarHovered = isScrollbarHovered,
+        _tooltipBackgroundColor = tooltipBackgroundColor;
+
+  Color? _tooltipBackgroundColor;
+  Color? get tooltipBackgroundColor => _tooltipBackgroundColor;
+  set tooltipBackgroundColor(Color? value) {
+    if (_tooltipBackgroundColor == value) return;
+    _tooltipBackgroundColor = value;
+    markNeedsPaint();
+  }
 
   List<ScrollbarMarker> _markers;
   List<ScrollbarMarker> get markers => _markers;
@@ -320,6 +341,9 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     if (controller!.maxScrollExtent <= 0) return;
     if (_markers.isEmpty) return;
     _paintMarkers(canvas, offset);
+    if (_hoveredMarkerIndex != null) {
+      _paintTooltip(canvas, offset);
+    }
   }
 
   int? markerAtGlobalPosition(int globalX, int globalY) {
@@ -402,5 +426,57 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
         style: TextStyle(color: markerColor),
       );
     }
+  }
+
+  void _paintTooltip(TerminalCanvas canvas, Offset offset) {
+    if (_hoveredMarkerIndex == null) return;
+    if (_hoveredMarkerIndex! >= _markers.length) return;
+
+    final marker = _markers[_hoveredMarkerIndex!];
+    final label = marker.label;
+    if (label == null || label.isEmpty) return;
+
+    double? markerY;
+    for (final (idx, y) in _visibleMarkers) {
+      if (idx == _hoveredMarkerIndex) {
+        markerY = y;
+        break;
+      }
+    }
+    if (markerY == null) return;
+
+    final scrollbarX = size.width - thickness;
+    final maxTooltipWidth = (scrollbarX - 1).toInt();
+    if (maxTooltipWidth <= 0) return;
+
+    final displayText = label.length > maxTooltipWidth
+        ? label.substring(0, maxTooltipWidth - 1) + '…'
+        : label.padRight(maxTooltipWidth);
+    final tooltipWidth = displayText.length.toDouble();
+
+    final tooltipX = scrollbarX - tooltipWidth - 1;
+    final tooltipY = markerY;
+
+    final bgColor = tooltipBackgroundColor ?? const Color(0x21222C);
+
+    canvas.fillRect(
+      Rect.fromLTWH(
+        offset.dx + tooltipX,
+        offset.dy + tooltipY,
+        tooltipWidth,
+        1.0,
+      ),
+      ' ',
+      style: TextStyle(backgroundColor: bgColor),
+    );
+
+    canvas.drawText(
+      offset + Offset(tooltipX, tooltipY),
+      displayText,
+      style: TextStyle(
+        color: marker.color,
+        backgroundColor: bgColor,
+      ),
+    );
   }
 }

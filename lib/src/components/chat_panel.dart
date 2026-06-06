@@ -4,6 +4,7 @@ import '../theme/crux_theme.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
 import '../models/message.dart';
+import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
 import '../commands/registry.dart';
@@ -644,9 +645,9 @@ class _ChatPanelState extends State<ChatPanel> {
           _streamingController.stopContextAnimation();
         }
         final hit = response.promptCacheHitTokens;
-        final miss = response.promptCacheMissTokens;
-        if (hit + miss > 0) {
-          rt.cacheHitPct = ((hit / (hit + miss)) * 100).round();
+        final total = response.promptTokens;
+        if (total > 0 && hit > 0) {
+          rt.cacheHitPct = ((hit / total) * 100).round();
         } else {
           rt.cacheHitPct = null;
         }
@@ -996,6 +997,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final items = <Component>[];
     final userItemIndices = <int>[];
+    final userItemLabels = <String>[];
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
       final collapsed = i < lastRoundStart;
@@ -1011,6 +1013,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
       if (msg.role == 'user') {
         userItemIndices.add(items.length);
+        final text = msg.content.replaceAll('\n', ' ').trim();
+        userItemLabels.add(text);
       }
 
       items.add(
@@ -1050,12 +1054,13 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
-    final markers = userItemIndices
-        .map((idx) => ScrollbarMarker(
-              itemIndex: idx,
-              color: CruxTheme.userPrefix,
-            ))
-        .toList();
+    final markers = List.generate(userItemIndices.length, (i) {
+      return ScrollbarMarker(
+        itemIndex: userItemIndices[i],
+        color: CruxTheme.userPrefix,
+        label: userItemLabels[i],
+      );
+    });
 
     return SelectionArea(
       onSelectionCompleted: (text) {
@@ -1067,6 +1072,7 @@ class _ChatPanelState extends State<ChatPanel> {
         controller: scrollController,
         thumbVisibility: true,
         markers: markers,
+        tooltipBackgroundColor: CruxTheme.overlayBackground,
         child: ListView.builder(
           controller: scrollController,
           padding: EdgeInsets.all(1),
@@ -1189,8 +1195,8 @@ class _ChatPanelState extends State<ChatPanel> {
                       if (showTokPerSec) ...[
                         Text('  ', style: TextStyle(color: CruxTheme.divider)),
                         Text(
-                          _metricsHovered && rt?.cacheHitPct != null
-                              ? 'cache ${rt!.cacheHitPct}%'
+                          _metricsHovered
+                              ? _cacheHitLabel(rt, _sessionController.currentSession)
                               : tokText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
@@ -1308,6 +1314,18 @@ class _ChatPanelState extends State<ChatPanel> {
         ? 'off'
         : rt.reasoningEffort ?? 'normal';
     return '\u{F0EB} ${effort.padRight(4)}';
+  }
+
+  String _cacheHitLabel(SessionRuntimeState? rt, Session session) {
+    if (rt?.cacheHitPct != null) {
+      return 'cache ${rt!.cacheHitPct}%';
+    }
+    final hit = session.promptCacheHitTokens;
+    final total = session.tokensIn;
+    if (total > 0 && hit > 0) {
+      return 'cache ${((hit / total) * 100).round()}%';
+    }
+    return '—';
   }
 
   void _cycleThinkingLevel(SessionRuntimeState rt) {
