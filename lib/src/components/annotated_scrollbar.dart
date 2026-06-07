@@ -323,6 +323,12 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
       onHover: _handleHover,
       renderObject: this,
     );
+    // Propagate the capturing state from the parent (RenderScrollbar)
+    // so that mouse capture during scrollbar dragging works correctly.
+    // Without this, the custom annotation always reports capturing=false,
+    // and the MouseTracker delivers hover events to other widgets (like
+    // the right-hand session panel) while the user is dragging the thumb.
+    _customAnnotation!.capturing = parent.capturing;
     return _customAnnotation;
   }
 
