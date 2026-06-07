@@ -43,6 +43,7 @@ _ParsedTldr _parseTldrRefs(String tldrText) {
   final links = <ResponseLink>[];
 
   var cursor = 0;
+  var refIndex = 0;
   for (final match in _refRegex.allMatches(tldrText)) {
     if (match.start > cursor) {
       buffer.write(tldrText.substring(cursor, match.start));
@@ -52,12 +53,15 @@ _ParsedTldr _parseTldrRefs(String tldrText) {
     if (excerpt.isEmpty) {
       buffer.write(match.group(0)!);
     } else {
-      final linkOffset = buffer.length;
+      refIndex++;
       buffer.write(excerpt);
+      final refMarker = ' [R$refIndex]';
+      final linkOffset = buffer.length;
+      buffer.write(refMarker);
       links.add(ResponseLink(
-        text: excerpt,
+        text: refMarker,
         offset: linkOffset,
-        length: excerpt.length,
+        length: refMarker.length,
         url: (url != null && url.isNotEmpty) ? url : null,
         anchor: excerpt,
       ));
@@ -120,7 +124,7 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
 
     final resolvedLinks = <ResponseLink>[];
     for (final link in parsed.links) {
-      final idx = plainText.indexOf(link.text);
+      final idx = plainText.indexOf(link.text, link.offset > plainText.length ? 0 : link.offset);
       if (idx >= 0) {
         resolvedLinks.add(ResponseLink(
           text: link.text,

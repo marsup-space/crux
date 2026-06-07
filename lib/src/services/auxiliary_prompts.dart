@@ -12,12 +12,13 @@ enum TldrDetail { concise, defaultLevel, detailed }
 
 const _headingRefInstruction =
     'Reference sections of the response by quoting exact excerpts in square '
-    'brackets, e.g. "The function returns early on invalid input [returns '
-    'early if the input buffer is empty]". The bracketed text is hidden from '
-    'the user and used to locate the original passage in the source — it is '
-    'matched verbatim, so it must be an exact, word-for-word copy from the '
-    'response. Do not paraphrase, truncate, or alter it in any way; it can be '
-    'as long as needed. Use markdown formatting (tables, lists, headings, etc.) '
+    'brackets after the claim, e.g. "The function returns early on invalid '
+    'input [returns early if the input buffer is empty]". The bracketed text '
+    'is replaced with a clickable reference marker in the summary — the user '
+    'never sees it directly. It is matched verbatim against the original '
+    'response to locate the passage, so it must be an exact, word-for-word '
+    'copy. Do not paraphrase, truncate, or alter it in any way; it can be as '
+    'long as needed. Use markdown formatting (tables, lists, headings, etc.) '
     'if it helps present the summary clearly. '
     'You MUST use the same language as the response.';
 
