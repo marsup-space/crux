@@ -39,32 +39,7 @@ class OverlayController {
     currentParamIndex = 0;
     selectedSuggestionIndex = 0;
     suggestionScrollOffset = 0;
-    activeWizardSubcommand = null;
     showSessionManager = false;
-  }
-
-  void setOverlayOffExceptWizard() {
-    filteredCommands = [];
-    selectedCommandIndex = 0;
-    commandScrollOffset = 0;
-    filteredSuggestions = [];
-    activeCommand = null;
-    currentParamIndex = 0;
-    selectedSuggestionIndex = 0;
-    suggestionScrollOffset = 0;
-  }
-
-  void dismissWizard() {
-    overlayMode = OverlayMode.off;
-    activeWizardSubcommand = null;
-    builtinProviderName = null;
-  }
-
-  void enterBuiltinWizard(String providerName) {
-    overlayMode = OverlayMode.wizard;
-    activeWizardSubcommand = ProviderWizardSubcommand.builtin;
-    builtinProviderName = providerName;
-    setOverlayOffExceptWizard();
   }
 
   int computeScrollOffset(

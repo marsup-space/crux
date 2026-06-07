@@ -29,7 +29,6 @@ class CommandContext {
   final SessionRuntimeState Function(int) runtime;
   final void Function(SessionRuntimeState) persistThinkingLevel;
   final void Function() resolveAuxiliaryModel;
-  final void Function(String) enterBuiltinWizard;
   final void Function(int, Message, TldrDetail)? triggerTldr;
 
   /// Re-trigger the chat pipeline for a single turn. When [text] is
@@ -99,7 +98,6 @@ class CommandContext {
     required this.runtime,
     required this.persistThinkingLevel,
     required this.resolveAuxiliaryModel,
-    required this.enterBuiltinWizard,
     this.triggerTldr,
     required this.sendTurn,
     required this.findLastUserMessage,
@@ -138,6 +136,10 @@ class CommandExecutor {
         await executeRetry(ctx);
       case '/btw':
         await executeBtw(parts, ctx);
+      case '/archive':
+        await executeArchive(parts, ctx);
+      case '/unarchive':
+        await executeUnarchive(parts, ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':
@@ -233,24 +235,67 @@ class CommandExecutor {
     }
   }
 
+  /// `/provider [<name> [<key>|remove]]`
+  ///
+  /// Inline provider / API-key management. The full-screen key-entry
+  /// wizard is gone — setting a key is a one-liner. Add a new
+  /// provider by `cp`ing the bundled `example.provider.toml` to
+  /// `~/.config/crux/providers/<name>.toml` and editing the fields.
+  ///
+  /// Forms accepted:
+  /// - `/provider`                    → list registered providers
+  /// - `/provider <name>`             → show that provider's status
+  ///                                   (key set? endpoint? models?)
+  /// - `/provider <name> <key>`       → persist the API key (writes
+  ///                                   to `auth.json` with `0o600`)
+  /// - `/provider <name> remove`      → delete the persisted key
   Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
-    final subcommand = parts.length > 1 ? parts[1] : '';
+    final name = parts.length > 1 ? parts[1].trim() : '';
+    final arg = parts.length > 2 ? parts[2].trim() : '';
 
-    if (subcommand.isEmpty) {
+    if (name.isEmpty) {
       final names = ctx.providerService.providerNames();
-      ctx.showToast('Usage: /provider <${names.join("|")}>');
+      ctx.showToast(
+        'Providers: ${names.join(", ")}. '
+        'Usage: /provider <name> [<key>|remove]',
+      );
       return;
     }
 
-    ctx.providerService.initialize().then((_) {
-      final provider = ctx.providerService.providerByName(subcommand);
-      if (provider == null) {
-        final names = ctx.providerService.providerNames();
-        ctx.showToast('Provider "$subcommand" not found. Available: ${names.join(", ")}', mode: ToastMode.error);
-        return;
-      }
-      ctx.enterBuiltinWizard(subcommand);
-    });
+    final provider = ctx.providerService.providerByName(name);
+    if (provider == null) {
+      final names = ctx.providerService.providerNames();
+      ctx.showToast(
+        'Provider "$name" not found. Available: ${names.join(", ")}. '
+        'To add it, copy ~/.config/crux/providers/example.provider.toml '
+        'to ~/.config/crux/providers/$name.toml and edit it.',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    if (arg.isEmpty) {
+      // /provider <name> — show status.
+      final hasKey = ctx.providerService.getApiKey(name) != null;
+      final models = provider.models.map((m) => m.name).join(', ');
+      ctx.showToast(
+        '$name  [${provider.type}]  '
+        'endpoint=${provider.endpointUrl}  '
+        'key=${hasKey ? "set" : "missing"}  '
+        'models=$models',
+      );
+      return;
+    }
+
+    if (arg == 'remove' || arg == '--remove' || arg == 'rm') {
+      await ctx.providerService.removeApiKey(name);
+      ctx.showToast('✓ Removed API key for $name', mode: ToastMode.status);
+      return;
+    }
+
+    // /provider <name> <key> — persist.
+    await ctx.providerService.setApiKey(name, arg);
+    ctx.showToast('✓ Saved API key for $name', mode: ToastMode.status);
   }
 
   Future<void> executeThink(List<String> parts, CommandContext ctx) async {
@@ -487,6 +532,72 @@ class CommandExecutor {
       return;
     }
     await ctx.sendBtwTurn(prompt);
+  }
+
+  /// `/archive` — archive the current session so it disappears from
+  /// the sidebar. The session is not deleted; it is simply hidden by
+  /// setting [Session.archivedAt]. The sidebar's session list already
+  /// filters out archived sessions. After archiving, the chat panel
+  /// switches to the next available session (or creates a new one if
+  /// none remain), just like [SessionController.deleteSession] does
+  /// when the current session is deleted.
+  Future<void> executeArchive(List<String> parts, CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final sessionId = ctx.currentSessionId!;
+    final session = ctx.sessions.where((s) => s.id == sessionId).firstOrNull;
+    final title = session?.title ?? '#$sessionId';
+    await ctx.store.archiveSession(sessionId);
+    // Reload the session list and switch to another session.
+    await ctx.initSessions();
+    ctx.showToast('Archived "$title"', mode: ToastMode.status);
+  }
+
+  /// `/unarchive #<id>` — restore an archived session so it
+  /// reappears in the sidebar.
+  Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
+    if (parts.length > 1 && parts[1].isNotEmpty) {
+      final idStr = parts[1].replaceFirst('#', '');
+      final id = int.tryParse(idStr);
+      if (id != null) {
+        final session = await ctx.store.getById(id);
+        if (session == null) {
+          ctx.showToast('Session #$id not found', mode: ToastMode.error);
+          return;
+        }
+        if (session.archivedAt == null) {
+          ctx.showToast('Session #$id is not archived');
+          return;
+        }
+        await ctx.store.unarchiveSession(id);
+        await ctx.initSessions();
+        ctx.showToast(
+          'Unarchived "${session.title}"',
+          mode: ToastMode.status,
+        );
+      } else {
+        ctx.showToast('Usage: /unarchive #<id>');
+      }
+    } else {
+      // Show archived sessions when no id is given.
+      final archived = await ctx.store.list(
+        projectPath: ctx.projectPath,
+        includeArchived: true,
+        limit: 100,
+      );
+      final onlyArchived = archived.where((s) => s.archivedAt != null).toList();
+      if (onlyArchived.isEmpty) {
+        ctx.showToast('No archived sessions');
+        return;
+      }
+      final lines = <String>['Archived sessions:'];
+      for (final s in onlyArchived) {
+        lines.add('  #${s.id} ${s.title}');
+      }
+      ctx.showToast(lines.join('\n'));
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────

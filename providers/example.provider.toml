@@ -1,0 +1,108 @@
+# =============================================================================
+# Reference template for a custom provider.
+# =============================================================================
+#
+# The "example." filename prefix marks this as a reference template —
+# the loader skips it, so it never becomes an active provider. To use
+# it, copy it to a unique provider name and edit:
+#
+#   cp ~/.config/crux/providers/example.provider.toml \
+#      ~/.config/crux/providers/mycorp.toml
+#   # edit mycorp.toml: change `endpoint_url`, `id`/`name` fields
+#
+# ⚠ The filename (without `.toml`) IS the provider name — renaming
+#   the file is how you register a new provider. Don't edit this
+#   file in place; always copy to a new name first.
+#
+# The shape below is OpenAI-compatible (the most common). To use an
+# Anthropic-compatible endpoint, change:
+#
+#   type          = "anthropic_compatible"
+#   endpoint_url  = "https://api.anthropic.com/v1"
+#
+# All other field names/meanings are identical between the two shapes.
+# Built-in `deepseek` / `minimax` are also valid `type` values, but
+# they pin you to a specific provider's request-body quirks — pick
+# one of the two generic shapes above unless you have a reason to.
+#
+# -----------------------------------------------------------------------------
+# Field reference
+# -----------------------------------------------------------------------------
+#   type            (required)  "openai_compatible" | "anthropic_compatible"
+#                               | "deepseek" | "minimax"
+#   endpoint_url    (required)  Base URL; Crux appends the path
+#                               (/chat/completions, /messages, ...).
+#
+#   default_max_rounds  (opt)   Provider-wide cap on model→tool→model
+#                               round-trips per user turn. Per-model
+#                               `max_rounds` overrides this. 0/absent
+#                               = unbounded.
+#
+#   [quota]             (opt)   Coding-plan quota section — Crux can
+#                               query `api_url` before expensive calls.
+#
+#   [[models]]
+#     id              (required)  Exact model ID from the upstream API
+#                                 docs (sent verbatim in requests).
+#     name            (required)  Human-readable label shown in
+#                                 pickers. Free-form; picker's display
+#                                 only, not sent to the API.
+#     context_size    (required)  Max context window in tokens.
+#     image_support   (opt, default false)  Accepts image inputs?
+#     thinking        (opt, default false)  Extended thinking / CoT?
+#     thinking_budget (opt)   Reasoning-token cap (Anthropic-style
+#                             `budget_tokens`; OpenAI ignores it).
+#     reasoning_effort (opt)  "low" | "medium" | "high" | "max".
+#                             Omit if the model has no effort knob.
+#     max_tokens      (opt)   Cap on output tokens per request.
+#                             → `max_completion_tokens` (OpenAI) or
+#                             → `max_tokens` (Anthropic).
+#     stream_lerp     (opt, default false)  Smoother stream rendering
+#                                           for some chatty models.
+#     max_rounds      (opt)   Per-model override of round-trip cap.
+#                             0/absent = fall back to default_max_rounds.
+# -----------------------------------------------------------------------------
+
+# Pick the shape that matches your upstream's wire protocol.
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+# Optional provider-wide round-trip cap. Per-model `max_rounds`
+# overrides this. 0 or absent = unbounded.
+default_max_rounds = 50
+
+# === Reasoning / thinking model (o-series / Claude-with-thinking style) ===
+[[models]]
+id = "reasoning-flagship"
+name = "Reasoning Flagship"
+context_size = 200000
+image_support = true
+thinking = true
+thinking_budget = 10000      # cap on reasoning tokens
+reasoning_effort = "medium"  # low | medium | high | max
+max_tokens = 16384           # cap on output tokens
+# max_rounds omitted → falls back to default_max_rounds = 50
+
+# === Cheap/fast chat model ===
+[[models]]
+id = "fast-chat"
+name = "Fast Chat"
+context_size = 128000
+image_support = false
+thinking = false
+# max_tokens omitted → upstream default
+max_rounds = 15              # tighter cap on the cheap model
+stream_lerp = true           # smoother stream rendering for chatty output
+
+# === Optional: coding-plan quota section ===
+# Uncomment to enable quota tracking before expensive model calls.
+# The loader sorts tiers short-window first; the user UI iterates
+# them in the order written here.
+#
+# [quota]
+# api_url = "https://api.openai.com/v1/quota"
+#
+# [quota.usage]
+# "5h" = 500
+# "1w" = 2000
+# "1m" = 8000

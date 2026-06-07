@@ -32,7 +32,6 @@ import 'ui/button.dart';
 import 'ui/toast.dart';
 import 'ui/bg_progress_bar.dart';
 import 'ui/glossy_model_button.dart';
-import 'provider_wizard_builtin.dart';
 import 'command_overlay.dart';
 import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
@@ -241,8 +240,6 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onTextChanged() {
-    if (_overlayController.overlayMode == OverlayMode.wizard) return;
-
     final text = textController.text;
     final trimmed = text.replaceFirst(RegExp(r'^\s+'), '');
 
@@ -468,10 +465,6 @@ class _ChatPanelState extends State<ChatPanel> {
         return true;
       }
       return false;
-    }
-
-    if (_overlayController.overlayMode == OverlayMode.wizard) {
-      return true;
     }
 
     if (_overlayController.overlayMode == OverlayMode.command) {
@@ -710,8 +703,6 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _sendMessage() async {
-    if (_overlayController.overlayMode == OverlayMode.wizard) return;
-
     final text = textController.text.trim();
     if (text.isEmpty) return;
 
@@ -1301,11 +1292,6 @@ class _ChatPanelState extends State<ChatPanel> {
       triggerTldr: (sessionId, aiMsg, detail) {
         _maybeGenerateTldr(sessionId, aiMsg, force: true, detail: detail);
       },
-      enterBuiltinWizard: (name) {
-        setState(() {
-          _overlayController.enterBuiltinWizard(name);
-        });
-      },
       sendTurn: _sendTurn,
       findLastUserMessage: _findLastUserMessage,
       deleteMessagesFrom: _deleteMessagesFrom,
@@ -1433,15 +1419,6 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  void _dismissWizard({String? message}) {
-    setState(() {
-      _overlayController.dismissWizard();
-      if (message != null) {
-        _toastKey.currentState?.show(message, mode: ToastMode.status);
-      }
-    });
-  }
-
   Component _buildSessionManager() {
     return SessionManagementPanel(
       sessions: _sessionController.sessions,
@@ -1468,27 +1445,6 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
-  Component _buildWizardOverlay() {
-    final sub = _overlayController.activeWizardSubcommand;
-    if (sub == null) return const SizedBox();
-
-    final VoidCallback onComplete = () {
-      _dismissWizard(
-        message:
-            '✓ ${_overlayController.builtinProviderName ?? "Provider"} connected successfully',
-      );
-    };
-
-    final VoidCallback onDismiss = () => _dismissWizard();
-
-    return ProviderWizardBuiltin(
-      service: _providerService,
-      providerName: _overlayController.builtinProviderName!,
-      onComplete: onComplete,
-      onDismiss: onDismiss,
-    );
-  }
-
   @override
   Component build(BuildContext context) {
     return LayoutBuilder(
@@ -1507,6 +1463,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   sessions: _sessionController.sessions,
                   currentSessionId: _sessionController.currentSessionId ?? 0,
                   onSwitchSession: _switchSession,
+                  archivedCount: _sessionController.archivedCount,
                   onSessionTitleTap: () {
                     setState(() {
                       _overlayController.showSessionManager = true;
@@ -1547,11 +1504,6 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Component _buildMainInterface() {
     final children = <Component>[];
-
-    if (_overlayController.overlayMode == OverlayMode.wizard) {
-      children.add(Expanded(child: _buildWizardOverlay()));
-      return Column(children: children);
-    }
 
     // Build overlay components that float above the message list
     // without pushing it up. They are positioned at the bottom of the

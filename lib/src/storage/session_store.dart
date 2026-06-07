@@ -95,6 +95,67 @@ class SessionStore {
     return rows.map(_rowToSession).toList();
   }
 
+  Future<void> archiveSession(int id) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+      db.SessionsCompanion(
+        archivedAt: Value(nowMs),
+        updatedAt: Value(nowMs),
+      ),
+    );
+  }
+
+  Future<void> unarchiveSession(int id) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+      db.SessionsCompanion(
+        archivedAt: const Value(null),
+        updatedAt: Value(nowMs),
+      ),
+    );
+  }
+
+  /// Auto-archive all un-archived sessions for [projectPath] whose
+  /// [updatedAt] is older than [olderThan]. Returns the number of
+  /// sessions that were archived.
+  Future<int> autoArchive({
+    String? projectPath,
+    required Duration olderThan,
+  }) async {
+    final cutoffMs =
+        DateTime.now().subtract(olderThan).millisecondsSinceEpoch;
+    final candidates = await _db.select(_db.sessions).get();
+    final toArchive = <int>[];
+    for (final row in candidates) {
+      if (row.archivedAt != null) continue;
+      if (projectPath != null && row.projectPath != projectPath) continue;
+      if (row.updatedAt < cutoffMs) {
+        toArchive.add(row.id);
+      }
+    }
+    if (toArchive.isEmpty) return 0;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (final id in toArchive) {
+      await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+        db.SessionsCompanion(
+          archivedAt: Value(nowMs),
+          updatedAt: Value(nowMs),
+        ),
+      );
+    }
+    return toArchive.length;
+  }
+
+  /// Count of archived sessions for a given project path.
+  Future<int> archivedCount({String? projectPath}) async {
+    final archived = await list(
+      projectPath: projectPath,
+      includeArchived: true,
+      limit: 1000,
+    );
+    return archived.where((s) => s.archivedAt != null).length;
+  }
+
   Future<Session> update(
     int id, {
     String? title,

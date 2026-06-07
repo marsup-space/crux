@@ -144,7 +144,7 @@ class ProviderConfigLoader {
   /// before the built-in dir.
   /// Files that fail to parse are skipped; their errors are recorded in
   /// [loadErrors].
-  /// Files matching [isExampleProviderFile] (e.g. `example.openai.toml`)
+  /// Files matching [isExampleProviderFile] (e.g. `example.provider.toml`)
   /// are skipped — those are reference templates, not real providers.
   Future<void> loadAll() async {
     _configs.clear();
@@ -189,7 +189,7 @@ class ProviderConfigLoader {
     File? file;
     for (final dir in providersDirs) {
       final candidate = File('${dir.path}/$providerName.toml');
-      // Example files (e.g. `example.openai.toml`) are reference templates,
+      // Example files (e.g. `example.provider.toml`) are reference templates,
       // not real providers — never reload through them.
       if (isExampleProviderFile(candidate.path)) continue;
       if (await candidate.exists()) {

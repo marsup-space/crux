@@ -190,9 +190,11 @@ const List<SlashCommand> _baseCommands = [
   ),
   SlashCommand(
     name: '/provider',
-    description: 'Connect a provider by entering your API key',
-    params: ['name'],
+    description: 'Connect a provider (usage: /provider <name> [<key>|remove])',
+    params: ['name', 'key?'],
     suggestionsPerParam: [
+      // First param: name (autocompleted from registered providers
+      // in the chat panel — see chat_panel.dart's suggestion handler).
       [],
     ],
     availableDuringResponse: true,
@@ -299,6 +301,18 @@ const List<SlashCommand> _baseCommands = [
     name: '/btw',
     description:
         'Ephemeral side-question — not saved, discarded on next real turn',
+  ),
+  SlashCommand(
+    name: '/archive',
+    description: 'Archive the current session (hide from sidebar)',
+    availableDuringResponse: true,
+  ),
+  SlashCommand(
+    name: '/unarchive',
+    description: 'Unarchive a session by id (restore to sidebar)',
+    params: ['id'],
+    suggestionsPerParam: [[]],
+    availableDuringResponse: true,
   ),
 ];
 

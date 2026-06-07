@@ -34,7 +34,7 @@ void main() {
       await userDir.delete(recursive: true);
       expect(userDir.existsSync(), isFalse);
 
-      await File('${builtInDir.path}/openai.toml').writeAsString('''
+      await File('${builtInDir.path}/provider.toml').writeAsString('''
 type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 ''');
@@ -54,7 +54,7 @@ id = "gpt-4o"
 name = "GPT-4o"
 context_size = 128000
 ''';
-      await File('${builtInDir.path}/openai.toml').writeAsString(bundled);
+      await File('${builtInDir.path}/provider.toml').writeAsString(bundled);
 
       final results = await seedExampleProviders(
         builtInDir: builtInDir,
@@ -64,14 +64,14 @@ context_size = 128000
       expect(results, hasLength(1));
       final r = results.single;
       // Examples are written as `example.<name>.toml`, not `<name>.toml`.
-      expect(r.fileName, 'example.openai.toml');
+      expect(r.fileName, 'example.provider.toml');
       expect(r.action, SeedAction.created);
       expect(r.oldSha256, isNull);
       expect(r.newSha256, isNotNull);
 
       // The file now exists in the user dir with the bundled content,
       // under the `example.` prefix.
-      final userFile = File('${userDir.path}/example.openai.toml');
+      final userFile = File('${userDir.path}/example.provider.toml');
       expect(await userFile.readAsString(), bundled);
     });
 
@@ -92,10 +92,10 @@ context_size = 128000
     test('overwrites file when SHA-256 differs (destructive)', () async {
       const builtInContent = 'NEW: bundled version 2.0';
       const userContent = 'OLD: user-edited version 1.0';
-      await File('${builtInDir.path}/openai.toml').writeAsString(
+      await File('${builtInDir.path}/provider.toml').writeAsString(
         builtInContent,
       );
-      await File('${userDir.path}/example.openai.toml').writeAsString(
+      await File('${userDir.path}/example.provider.toml').writeAsString(
         userContent,
       );
 
@@ -105,11 +105,11 @@ context_size = 128000
       );
 
       expect(results.single.action, SeedAction.overwritten);
-      expect(results.single.fileName, 'example.openai.toml');
+      expect(results.single.fileName, 'example.provider.toml');
       expect(results.single.oldSha256, isNot(equals(results.single.newSha256)));
 
       // The file's content has been clobbered with the bundled version.
-      final userFile = File('${userDir.path}/example.openai.toml');
+      final userFile = File('${userDir.path}/example.provider.toml');
       expect(await userFile.readAsString(), builtInContent);
     });
 
@@ -130,8 +130,37 @@ context_size = 128000
       expect(results.every((r) => r.action == SeedAction.created), isTrue);
     });
 
+    test('strips pre-existing "example." prefix from built-in basename', () async {
+      // A built-in whose name already starts with `example.` should
+      // not produce a doubly-prefixed `example.example.X.toml` copy
+      // in the user dir. Without the strip the loader would still
+      // skip the file (startsWith("example.")), but the double prefix
+      // is confusing for users reading their providers directory.
+      await File('${builtInDir.path}/example.provider.toml').writeAsString(
+        'reference template',
+      );
+
+      final results = await seedExampleProviders(
+        builtInDir: builtInDir,
+        userDir: userDir,
+      );
+
+      expect(results.single.fileName, 'example.provider.toml');
+      expect(
+        await File('${userDir.path}/example.provider.toml').exists(),
+        isTrue,
+      );
+      expect(
+        await File(
+          '${userDir.path}/example.example.provider.toml',
+        ).exists(),
+        isFalse,
+        reason: 'No doubly-prefixed file should be created',
+      );
+    });
+
     test('ignores non-TOML files in built-in dir', () async {
-      await File('${builtInDir.path}/openai.toml').writeAsString('a');
+      await File('${builtInDir.path}/provider.toml').writeAsString('a');
       await File('${builtInDir.path}/README.md').writeAsString('docs');
       await File('${builtInDir.path}/schema.json').writeAsString('{}');
 
@@ -141,7 +170,7 @@ context_size = 128000
       );
 
       expect(results, hasLength(1));
-      expect(results.single.fileName, 'example.openai.toml');
+      expect(results.single.fileName, 'example.provider.toml');
       // README and schema are left alone in the user dir
       expect(
         File('${userDir.path}/README.md').existsSync(),
@@ -195,8 +224,12 @@ context_size = 128000
     });
 
     test('does not touch real provider files already in user dir', () async {
-      // User has a real provider file at openai.toml
-      const realOpenai = '''
+      // User has a real provider file at a name unrelated to any built-in
+      // (the bundled `provider.toml` would become `example.provider.toml`,
+      // which is the prefix-skip path — that's covered by other tests).
+      // Here we verify the seeder doesn't write over a real (non-example)
+      // file in the user dir.
+      const realCustom = '''
 type = "openai_compatible"
 endpoint_url = "https://my-proxy.example/v1"
 
@@ -205,20 +238,20 @@ id = "gpt-4o"
 name = "GPT-4o via my proxy"
 context_size = 128000
 ''';
-      await File('${userDir.path}/openai.toml').writeAsString(realOpenai);
+      await File('${userDir.path}/mycorp.toml').writeAsString(realCustom);
       // And the bundled has the canonical example
-      await File('${builtInDir.path}/openai.toml').writeAsString('original');
+      await File('${builtInDir.path}/provider.toml').writeAsString('original');
 
       await seedExampleProviders(builtInDir: builtInDir, userDir: userDir);
 
-      // The real openai.toml is preserved untouched.
+      // The real mycorp.toml is preserved untouched.
       expect(
-        await File('${userDir.path}/openai.toml').readAsString(),
-        realOpenai,
+        await File('${userDir.path}/mycorp.toml').readAsString(),
+        realCustom,
       );
       // The example is created under its prefixed name.
       expect(
-        await File('${userDir.path}/example.openai.toml').readAsString(),
+        await File('${userDir.path}/example.provider.toml').readAsString(),
         'original',
       );
     });
@@ -226,16 +259,18 @@ context_size = 128000
 
   group('isExampleProviderFile', () {
     test('matches `example.` prefix', () {
-      expect(isExampleProviderFile('example.openai.toml'), isTrue);
-      expect(isExampleProviderFile('example.anthropic.toml'), isTrue);
-      expect(isExampleProviderFile('/full/path/to/example.openai.toml'),
-          isTrue);
+      expect(isExampleProviderFile('example.provider.toml'), isTrue);
+      expect(isExampleProviderFile('example.deepseek.toml'), isTrue);
+      expect(
+        isExampleProviderFile('/full/path/to/example.provider.toml'),
+        isTrue,
+      );
     });
 
     test('does not match real provider files', () {
       expect(isExampleProviderFile('openai.toml'), isFalse);
-      expect(isExampleProviderFile('anthropic.toml'), isFalse);
-      expect(isExampleProviderFile('/full/path/to/openai.toml'), isFalse);
+      expect(isExampleProviderFile('deepseek.toml'), isFalse);
+      expect(isExampleProviderFile('/full/path/to/deepseek.toml'), isFalse);
     });
 
     test('does not match files that merely contain "example" in the name', () {
@@ -244,8 +279,8 @@ context_size = 128000
     });
 
     test('does not match non-TOML files', () {
-      expect(isExampleProviderFile('example.openai.json'), isFalse);
-      expect(isExampleProviderFile('example.openai.md'), isFalse);
+      expect(isExampleProviderFile('example.provider.json'), isFalse);
+      expect(isExampleProviderFile('example.provider.md'), isFalse);
     });
   });
 }

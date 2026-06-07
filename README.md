@@ -37,7 +37,7 @@
 ### 特性
 
 - 🖥️ **纯终端界面** — 基于 Nocterm TUI 框架，无需 Electron，无需浏览器
-- 🤖 **多模型支持** — 支持 DeepSeek、Anthropic Claude、OpenAI、Google 等主流 LLM
+- 🤖 **多模型支持** — 内置 DeepSeek、Local、MiniMax,亦可接入任意兼容 API 的供应商
 - 🔧 **Agentic 工具调用** — Agent 可自主调用文件读写、搜索、bash 执行等工具
 - 💬 **会话管理** — 多会话并行，支持切换、历史回溯、自动标题生成
 - 🧠 **推理模式** — 支持思考模式（Thinking Mode），可调节推理深度
@@ -64,9 +64,8 @@ dart run bin/crux.dart /path/to/your/project
 | Provider | 命令 | 模型 |
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro |
-| Anthropic | `/provider anthropic` | Claude 3.5 Sonnet / Haiku |
-| OpenAI | `/provider openai` | GPT-4o 等 |
-| Google | `/provider google` | Gemini 系列 |
+| Local | `/provider local` | Llama 3 / Mistral |
+| MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | 自定义 | `/provider custom` | 任意兼容 API |
 
 ### 命令列表
@@ -143,7 +142,7 @@ MIT
 ### Features
 
 - 🖥️ **Pure terminal UI** — Built on the Nocterm TUI framework, no Electron or browser needed
-- 🤖 **Multi-model** — DeepSeek, Anthropic Claude, OpenAI, Google, and more
+- 🤖 **Multi-model** — DeepSeek, Local, and MiniMax out of the box; any API-compatible provider can be plugged in
 - 🔧 **Agentic tool use** — Autonomous file read/write, search, bash execution
 - 💬 **Session management** — Parallel sessions, history, auto-title generation
 - 🧠 **Thinking mode** — Adjustable reasoning depth

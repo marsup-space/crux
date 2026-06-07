@@ -79,7 +79,6 @@ void main() {
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
         resolveAuxiliaryModel: () => {},
-        enterBuiltinWizard: (_) {},
         sendTurn: sendTurnImpl,
         findLastUserMessage: findLastUserMessageImpl ??
             () async => null,
@@ -350,7 +349,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {
               events.add('sendTurn:${text ?? '<null>'}');
             },
@@ -400,7 +398,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {
               sendTurnCalls++;
             },
@@ -442,7 +439,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {
               sendTurnCalls++;
             },
@@ -493,7 +489,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {
               sendTurnCalls++;
               lastTextSent = text;
@@ -569,7 +564,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {},
             findLastUserMessage: () async => null,
             deleteMessagesFrom: (_) async {},
@@ -618,7 +612,6 @@ void main() {
               runtime: (id) => runtime,
               persistThinkingLevel: (_) {},
               resolveAuxiliaryModel: () {},
-              enterBuiltinWizard: (_) {},
               sendTurn: ({String? text}) async {},
               findLastUserMessage: () async => null,
               deleteMessagesFrom: (_) async {},
@@ -671,7 +664,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {},
             findLastUserMessage: () async => null,
             deleteMessagesFrom: (_) async {},
@@ -717,7 +709,6 @@ void main() {
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
             resolveAuxiliaryModel: () {},
-            enterBuiltinWizard: (_) {},
             sendTurn: ({String? text}) async {},
             findLastUserMessage: () async => null,
             deleteMessagesFrom: (_) async {},

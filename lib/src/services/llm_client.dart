@@ -374,7 +374,8 @@ class LlmClient {
 
   Uri _buildUri(String endpointUrl, WireFamily wireFamily) {
     var base = endpointUrl;
-    if (wireFamily == WireFamily.openaiCompatible && !base.endsWith('/v1')) {
+    if (wireFamily == WireFamily.openaiCompatible &&
+        !_endsWithVersionSegment(base)) {
       base = '$base/v1';
     }
     var uri = Uri.parse(base);
@@ -384,7 +385,22 @@ class LlmClient {
           : '${uri.path}/messages';
       return uri.replace(path: path);
     }
-    return uri.resolve('chat/completions');
+    // For OpenAI-compatible endpoints, append `/chat/completions` to
+    // the existing path (don't use `uri.resolve`, which would replace
+    // the last path segment — e.g. `.../v1` would become `.../`).
+    final path = uri.path.endsWith('/')
+        ? '${uri.path}chat/completions'
+        : '${uri.path}/chat/completions';
+    return uri.replace(path: path);
+  }
+
+  /// `true` if [url] ends in `/v1` or `/v1/`. Used by
+  /// [_buildUri] to decide whether the OpenAI-compatible endpoint
+  /// already declares its version segment (in which case we don't
+  /// want to add another `/v1`, or we'd get `.../v1/v1/chat/completions`).
+  bool _endsWithVersionSegment(String url) {
+    final stripped = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    return stripped.endsWith('/v1');
   }
 
   void _setAuthHeaders(

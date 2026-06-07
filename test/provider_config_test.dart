@@ -355,7 +355,7 @@ name = "GPT-4o"
 context_size = 128000
 ''');
       // Reference template — must NOT be loaded
-      await File('${tempDir.path}/example.openai.toml').writeAsString('''
+      await File('${tempDir.path}/example.provider.toml').writeAsString('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 
@@ -365,7 +365,7 @@ name = "Example Model"
 context_size = 4096
 ''');
       // Another reference — different name
-      await File('${tempDir.path}/example.anthropic.toml').writeAsString('''
+      await File('${tempDir.path}/example.other.toml').writeAsString('''
 type = "anthropic_compatible"
 endpoint_url = "https://example.com/v1"
 ''');
@@ -374,10 +374,10 @@ endpoint_url = "https://example.com/v1"
 
       // Only the real `openai` is loaded. The `example.*` files are skipped.
       expect(loader.providerNames(), ['openai']);
-      // And critically: there's no provider named "example.openai" or
-      // "example.anthropic" — the loader treats them as non-existent.
-      expect(loader.providerByName('example.openai'), isNull);
-      expect(loader.providerByName('example.anthropic'), isNull);
+      // And critically: there's no provider named "example.provider" or
+      // "example.other" — the loader treats them as non-existent.
+      expect(loader.providerByName('example.provider'), isNull);
+      expect(loader.providerByName('example.other'), isNull);
     });
 
     test('reload ignores example.*.toml files', () async {
@@ -390,15 +390,15 @@ id = "gpt-4o"
 name = "GPT-4o"
 context_size = 128000
 ''');
-      await File('${tempDir.path}/example.openai.toml').writeAsString(
+      await File('${tempDir.path}/example.provider.toml').writeAsString(
         'reference template, must be ignored',
       );
       await loader.loadAll();
       expect(loader.providerByName('openai'), isNotNull);
 
-      // Reloading `example.openai` should return null (the loader doesn't
+      // Reloading `example.provider` should return null (the loader doesn't
       // see example files as providers).
-      final result = await loader.reload('example.openai');
+      final result = await loader.reload('example.provider');
       expect(result, isNull);
       // And `openai` should still work normally.
       expect(await loader.reload('openai'), isNotNull);
@@ -863,46 +863,37 @@ context_size = 8192
     test('loadAll parses all real provider TOML files', () async {
       await loader.loadAll();
 
-      // Should have at least openai, anthropic, local, google (all use the
-      // generic openai_compatible / anthropic_compatible types now).
+      // Built-ins shipped with the repo. `example.provider.toml` is the
+      // reference template and is skipped by the loader (see
+      // `loadAll skips example.*.toml files` above).
+      const builtIns = ['deepseek', 'local', 'minimax'];
+
       if (loader.providerNames().isEmpty) {
-        // Providers dir may not exist in test working directory — skip gracefully
+        // Providers dir may not exist in test working directory — skip
+        // gracefully. The temp-dir tests above cover the parser fully.
         return;
       }
 
-      expect(
-        loader.providerNames(),
-        containsAll(['anthropic', 'google', 'local', 'openai']),
-      );
+      expect(loader.providerNames(), containsAll(builtIns));
       expect(loader.loadErrors(), isEmpty);
 
-      // Verify OpenAI models
-      final openai = loader.providerByName('openai')!;
-      expect(openai.type, 'openai_compatible');
-      expect(openai.wireFamily, WireFamily.openaiCompatible);
-      expect(openai.models.length, greaterThanOrEqualTo(2));
-      final gpt4o = openai.modelById('gpt-4o');
-      expect(gpt4o, isNotNull);
-      expect(gpt4o!.imageSupport, isTrue);
-      expect(gpt4o.contextSize, 128000);
+      // Verify DeepSeek (custom `type` registered in resolveProvider())
+      final deepseek = loader.providerByName('deepseek')!;
+      expect(deepseek.type, 'deepseek');
+      expect(deepseek.wireFamily, WireFamily.openaiCompatible);
+      expect(deepseek.models, isNotEmpty);
 
-      // Verify Anthropic models
-      final anthropic = loader.providerByName('anthropic')!;
-      expect(anthropic.type, 'anthropic_compatible');
-      expect(anthropic.wireFamily, WireFamily.anthropicCompatible);
-      final sonnet = anthropic.modelById('claude-3-5-sonnet-20241022');
-      expect(sonnet, isNotNull);
-      expect(sonnet!.thinking, isTrue);
-      expect(sonnet.thinkingBudget, 10000);
+      // Verify Local (uses the generic openai_compatible type)
+      final local = loader.providerByName('local')!;
+      expect(local.type, 'openai_compatible');
+      expect(local.wireFamily, WireFamily.openaiCompatible);
+      expect(local.models, isNotEmpty);
 
-      // Verify Google (uses the generic openai_compatible type)
-      final google = loader.providerByName('google')!;
-      expect(google.type, 'openai_compatible');
-      expect(google.wireFamily, WireFamily.openaiCompatible);
-      if (google.quota != null) {
-        expect(google.quota!.tiers.length, 3);
-        expect(google.quota!.tiers[0].label, '5h');
-      }
+      // Verify MiniMax (Anthropic wire, custom type, Bearer auth)
+      final minimax = loader.providerByName('minimax')!;
+      expect(minimax.type, 'minimax');
+      expect(minimax.wireFamily, WireFamily.anthropicCompatible);
+      expect(minimax.models, isNotEmpty);
     });
 
     test('deepseek.toml uses type = "deepseek" and dispatches to DeepSeekProvider', () async {

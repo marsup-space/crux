@@ -26,4 +26,3 @@ export 'src/services/llm_client.dart';
 export 'src/services/provider_config_loader.dart';
 export 'src/services/provider_seeder.dart';
 export 'src/services/provider_service.dart';
-export 'src/components/provider_wizard_builtin.dart';

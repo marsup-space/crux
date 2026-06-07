@@ -27,6 +27,7 @@ class SessionController {
 
   List<Session> sessions = [];
   int? currentSessionId;
+  int archivedCount = 0;
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
@@ -191,7 +192,15 @@ class SessionController {
   }
 
   Future<void> initSessions() async {
+    // Auto-archive sessions not updated in the last 5 days.
+    await _store.autoArchive(
+      projectPath: Directory.current.path,
+      olderThan: const Duration(days: 5),
+    );
     sessions = await _store.list(projectPath: Directory.current.path);
+    archivedCount = await _store.archivedCount(
+      projectPath: Directory.current.path,
+    );
     if (sessions.isEmpty) {
       await _providerService.initialize();
       final model = _providerService.resolveDefaultModel() ?? '';
@@ -266,6 +275,9 @@ class SessionController {
     // no longer exists. Other sessions' chains are untouched.
     btwBuffer.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
+    archivedCount = await _store.archivedCount(
+      projectPath: Directory.current.path,
+    );
 
     if (wasCurrent) {
       if (sessions.isNotEmpty) {

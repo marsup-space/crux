@@ -11,7 +11,7 @@ import 'package:path/path.dart' as p;
 ///
 /// To customize an example, copy it to a new file:
 /// ```sh
-/// cp ~/.config/crux/providers/example.openai.toml \
+/// cp ~/.config/crux/providers/example.provider.toml \
 ///    ~/.config/crux/providers/mycorp.toml
 /// # then edit mycorp.toml
 /// ```
@@ -21,7 +21,7 @@ const String kExampleFilePrefix = 'example.';
 /// loader should ignore.
 ///
 /// Matches any `*.toml` whose basename starts with [kExampleFilePrefix],
-/// e.g. `example.openai.toml`, `example.anthropic.toml`.
+/// e.g. `example.provider.toml`.
 bool isExampleProviderFile(String filename) {
   final base = p.basename(filename);
   return base.endsWith('.toml') &&
@@ -79,9 +79,9 @@ class SeedResult {
 ///
 /// For each `*.toml` file in [builtInDir], the seeder writes a copy
 /// to [userDir] under the [kExampleFilePrefix] name
-/// (e.g. `openai.toml` → `example.openai.toml`). The example file is a
-/// **reference template** — the loader skips it; the user copies it to
-/// a real provider name (`mycorp.toml`) to customize.
+/// (e.g. `provider.toml` → `example.provider.toml`). The example file
+/// is a **reference template** — the loader skips it; the user copies
+/// it to a real provider name (`mycorp.toml`) to customize.
 ///
 /// SHA-256 comparison is destructive by design:
 /// - **No file in user dir** → write the bundled example (`created`).
@@ -116,7 +116,14 @@ Future<List<SeedResult>> seedExampleProviders({
 
   final results = <SeedResult>[];
   for (final builtInFile in builtInFiles) {
-    final baseName = p.basenameWithoutExtension(builtInFile.path);
+    // Strip a pre-existing `example.` prefix from the built-in basename
+    // so the user-dir copy isn't doubly prefixed (e.g. a built-in named
+    // `example.foo.toml` would otherwise seed as `example.example.foo.toml`).
+    // The loader would still skip it (startsWith("example.")), but the
+    // double prefix is ugly and confusing for the user.
+    final baseName = p
+        .basenameWithoutExtension(builtInFile.path)
+        .replaceFirst(kExampleFilePrefix, '');
     // Write as `example.<name>.toml` so the loader skips it.
     final exampleName = '$kExampleFilePrefix$baseName.toml';
     final userFile = File(p.join(userDir.path, exampleName));
