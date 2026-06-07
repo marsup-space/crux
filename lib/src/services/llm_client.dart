@@ -47,9 +47,6 @@ class LlmChunk {
 
 class LlmClient {
   final HttpClient _httpClient = HttpClient();
-  final Map<int, ({String callId, String name})> _anthropicToolBlocks = {};
-
-  void clearToolBlockState() => _anthropicToolBlocks.clear();
 
   Stream<LlmChunk> streamChat({
     required String endpointUrl,
@@ -67,6 +64,7 @@ class LlmClient {
     final resolved = resolveProvider(config.type);
     final wireFamily = resolved.wire;
     final authStyle = resolved.authStyle;
+    final anthropicToolBlocks = <int, ({String callId, String name})>{};
 
     () async {
       try {
@@ -102,7 +100,7 @@ class LlmClient {
         }
 
         if (wireFamily == WireFamily.anthropicCompatible) {
-          await _handleAnthropicStream(response, controller);
+          await _handleAnthropicStream(response, controller, anthropicToolBlocks);
         } else {
           await _handleOpenAiStream(response, controller);
         }
@@ -225,6 +223,7 @@ class LlmClient {
   Future<void> _handleAnthropicStream(
     HttpClientResponse response,
     StreamController<LlmChunk> controller,
+    Map<int, ({String callId, String name})> toolBlocks,
   ) async {
     String buffer = '';
     String? eventType;
@@ -279,7 +278,7 @@ class LlmClient {
             final contentBlock = json['content_block'] as Map<String, dynamic>?;
             if (contentBlock != null && contentBlock['type'] == 'tool_use') {
               final index = json['index'] as int? ?? 0;
-              _anthropicToolBlocks[index] = (
+              toolBlocks[index] = (
                 callId: contentBlock['id'] as String? ?? '',
                 name: contentBlock['name'] as String? ?? '',
               );
@@ -314,7 +313,7 @@ class LlmClient {
               } else if (deltaType == 'input_json_delta') {
                 final partialJson = delta['partial_json'] as String? ?? '';
                 final index = json['index'] as int? ?? 0;
-                final block = _anthropicToolBlocks[index];
+                final block = toolBlocks[index];
                 controller.add(
                   LlmChunk(
                     toolUse: ToolUseChunk(

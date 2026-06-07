@@ -6,9 +6,29 @@ class StreamingController {
   final SessionController _sessionController;
   final void Function() _refresh;
 
-  String streamingContent = '';
-  String streamingReasoning = '';
+  final Map<int, String> _streamingContent = {};
+  final Map<int, String> _streamingReasoning = {};
   bool contextBarHovered = false;
+
+  String streamingContentFor(int sessionId) =>
+      _streamingContent[sessionId] ?? '';
+  String streamingReasoningFor(int sessionId) =>
+      _streamingReasoning[sessionId] ?? '';
+
+  void appendStreamingContent(int sessionId, String delta) {
+    _streamingContent[sessionId] =
+        (_streamingContent[sessionId] ?? '') + delta;
+  }
+
+  void appendStreamingReasoning(int sessionId, String delta) {
+    _streamingReasoning[sessionId] =
+        (_streamingReasoning[sessionId] ?? '') + delta;
+  }
+
+  void clearStreamingFor(int sessionId) {
+    _streamingContent.remove(sessionId);
+    _streamingReasoning.remove(sessionId);
+  }
 
   final Map<int, Timer> _metricsTimers = {};
   Timer? _contextAnimTimer;
@@ -66,7 +86,7 @@ class StreamingController {
     // generation rate for an agentic turn, not just the visible
     // text rate.
     final liveStreamingTokens = estimateTokens(
-      streamingContent + streamingReasoning,
+      streamingContentFor(sessionId) + streamingReasoningFor(sessionId),
     );
     final tokens = rt.cumulativeCompletionTokens + liveStreamingTokens;
 

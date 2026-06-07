@@ -64,8 +64,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   bool _providerServiceReady = false;
 
-  bool _toastVisible = false;
-  String _toastMessage = '';
+  final _toastKey = GlobalKey<ToastHubState>();
   bool _metricsHovered = false;
   String? _highlightText;
   int? _highlightMessageId;
@@ -135,6 +134,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _commandExecutor = CommandExecutor();
 
     textController.addListener(_onTextChanged);
+    CommandRegistry.instance.addListener(_refresh);
     _initSessions();
     _providerService.initialize().then((_) {
       setState(() {
@@ -148,11 +148,9 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  void _showToast(String message) {
-    setState(() {
-      _toastVisible = true;
-      _toastMessage = message;
-    });
+  void _showToast(String message, {ToastMode? mode}) {
+    // `mode: null` triggers the toast hub's keyword-based auto-detection.
+    _toastKey.currentState?.show(message, mode: mode);
   }
 
   static int get _maxVisibleItems => 6;
@@ -167,7 +165,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _streamingController.stopContextAnimation();
     scrollController.scrollToBottom();
     if (error != null) {
-      _showToast(error);
+      _showToast(error, mode: ToastMode.error);
     }
     setState(() {});
   }
@@ -175,6 +173,7 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void dispose() {
     textController.removeListener(_onTextChanged);
+    CommandRegistry.instance.removeListener(_refresh);
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -647,8 +646,7 @@ class _ChatPanelState extends State<ChatPanel> {
     if (sessionId == null) return;
 
     final rt = _sessionController.runtime(sessionId);
-    _streamingController.streamingContent = '';
-    _streamingController.streamingReasoning = '';
+    _streamingController.clearStreamingFor(sessionId);
 
     final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
     final userTokens = estimateTokens(text);
@@ -695,18 +693,18 @@ class _ChatPanelState extends State<ChatPanel> {
       session: _sessionController.currentSession,
       runtime: rt,
       onDelta: (delta) {
-        if (_streamingController.streamingContent.isEmpty) {
+        if (_streamingController.streamingContentFor(sessionId).isEmpty) {
           rt.contentStartTime = DateTime.now();
         }
-        _streamingController.streamingContent += delta;
+        _streamingController.appendStreamingContent(sessionId, delta);
       },
       onReasoning: (reasoning) {
-        _streamingController.streamingReasoning += reasoning;
+        _streamingController.appendStreamingReasoning(sessionId, reasoning);
       },
       onChunk: () {
         final streamingTokens = estimateTokens(
-          _streamingController.streamingContent +
-              _streamingController.streamingReasoning,
+          _streamingController.streamingContentFor(sessionId) +
+              _streamingController.streamingReasoningFor(sessionId),
         );
         rt.contextTargetTokens =
             rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
@@ -717,19 +715,17 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       onToolRound: (int toolResultTokens) {
         final streamingTokens = estimateTokens(
-          _streamingController.streamingContent +
-              _streamingController.streamingReasoning,
+          _streamingController.streamingContentFor(sessionId) +
+              _streamingController.streamingReasoningFor(sessionId),
         );
         rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
-        _streamingController.streamingContent = '';
-        _streamingController.streamingReasoning = '';
+        _streamingController.clearStreamingFor(sessionId);
         rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
         rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
         _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
       },
       onComplete: (response) async {
-        _streamingController.streamingContent = '';
-        _streamingController.streamingReasoning = '';
+        _streamingController.clearStreamingFor(sessionId);
         _streamingController.stopMetricsTimer(sessionId);
         rt.turnBaseTokens = 0;
         rt.accumulatedToolTokens = 0;
@@ -767,10 +763,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       onError: (error) {
         _streamingController.stopMetricsTimer(sessionId);
-        setState(() {
-          _toastVisible = true;
-          _toastMessage = error;
-        });
+        _toastKey.currentState?.show(error, mode: ToastMode.error);
       },
     );
   }
@@ -832,7 +825,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (!hasAuxModel) {
       if (force) {
-        _showToast('No auxiliary model — set one with /auxiliary');
+        _showToast('No auxiliary model — set one with /auxiliary', mode: ToastMode.error);
       }
       setState(() {});
       return;
@@ -927,8 +920,7 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {
       _overlayController.dismissWizard();
       if (message != null) {
-        _toastVisible = true;
-        _toastMessage = message;
+        _toastKey.currentState?.show(message, mode: ToastMode.status);
       }
     });
   }
@@ -978,13 +970,6 @@ class _ChatPanelState extends State<ChatPanel> {
       onComplete: onComplete,
       onDismiss: onDismiss,
     );
-  }
-
-  void _dismissToast() {
-    setState(() {
-      _toastVisible = false;
-      _toastMessage = '';
-    });
   }
 
   @override
@@ -1049,21 +1034,29 @@ class _ChatPanelState extends State<ChatPanel> {
       return Column(children: children);
     }
 
-    children.add(Expanded(child: _buildMessageList()));
+    // Build overlay components that float above the message list
+    // without pushing it up. They are positioned at the bottom of the
+    // message area so they sit just above the toolbar.
+    final overlays = <Component>[];
 
     if (_overlayController.overlayMode == OverlayMode.command &&
         _overlayController.filteredCommands.isNotEmpty) {
-      children.add(
-        MouseRegion(
-          onHover: _onScrollCommand,
-          opaque: false,
-          child: CommandOverlay(
-            commands: _overlayController.filteredCommands,
-            selectedIndex: _overlayController.selectedCommandIndex,
-            scrollOffset: _overlayController.commandScrollOffset,
-            maxVisible: _maxVisibleItems,
-            onHover: _onHoverCommand,
-            onTap: _onTapCommand,
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: _onScrollCommand,
+            opaque: false,
+            child: CommandOverlay(
+              commands: _overlayController.filteredCommands,
+              selectedIndex: _overlayController.selectedCommandIndex,
+              scrollOffset: _overlayController.commandScrollOffset,
+              maxVisible: _maxVisibleItems,
+              onHover: _onHoverCommand,
+              onTap: _onTapCommand,
+            ),
           ),
         ),
       );
@@ -1075,26 +1068,51 @@ class _ChatPanelState extends State<ChatPanel> {
           ? _overlayController.activeCommand!.params[_overlayController
                 .currentParamIndex]
           : 'value';
-      children.add(
-        MouseRegion(
-          onHover: _onScrollSuggestion,
-          opaque: false,
-          child: SuggestionOverlay(
-            suggestions: _overlayController.filteredSuggestions,
-            selectedIndex: _overlayController.selectedSuggestionIndex,
-            scrollOffset: _overlayController.suggestionScrollOffset,
-            maxVisible: _maxVisibleItems,
-            headerLabel: paramLabel,
-            onHover: _onHoverSuggestion,
-            onTap: _onTapSuggestion,
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: _onScrollSuggestion,
+            opaque: false,
+            child: SuggestionOverlay(
+              suggestions: _overlayController.filteredSuggestions,
+              selectedIndex: _overlayController.selectedSuggestionIndex,
+              scrollOffset: _overlayController.suggestionScrollOffset,
+              maxVisible: _maxVisibleItems,
+              headerLabel: paramLabel,
+              onHover: _onHoverSuggestion,
+              onTap: _onTapSuggestion,
+            ),
           ),
         ),
       );
     }
 
-    if (_toastVisible) {
-      children.add(Toast(message: _toastMessage, onDismissed: _dismissToast));
-    }
+    // Toast hub always present — manages its own queue and visibility.
+    overlays.add(
+      Positioned(
+        bottom: 0,
+        left: 0,
+        right: 0,
+        child: ToastHub(key: _toastKey),
+      ),
+    );
+
+    // Wrap the message list with its floating overlays in a Stack
+    // so the overlays render on top without affecting layout.
+    children.add(
+      Expanded(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _buildMessageList(),
+            ...overlays,
+          ],
+        ),
+      ),
+    );
 
     final sessionId = _sessionController.currentSessionId;
     final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
@@ -1208,8 +1226,12 @@ class _ChatPanelState extends State<ChatPanel> {
     if (isStreaming) {
       items.add(
         StreamingBubble(
-          streamingContent: _streamingController.streamingContent,
-          streamingReasoning: _streamingController.streamingReasoning,
+          streamingContent: _streamingController.streamingContentFor(
+            _sessionController.currentSessionId ?? 0,
+          ),
+          streamingReasoning: _streamingController.streamingReasoningFor(
+            _sessionController.currentSessionId ?? 0,
+          ),
           runtimeState: rt,
         ),
       );
@@ -1536,10 +1558,10 @@ class _ChatPanelState extends State<ChatPanel> {
         case UrlLaunchResult.launched:
           return;
         case UrlLaunchResult.rejected:
-          _showToast('Refused to open url: $url');
+          _showToast('Refused to open url: $url', mode: ToastMode.error);
           return;
         case UrlLaunchResult.failed:
-          _showToast("Couldn't open url: $url");
+          _showToast("Couldn't open url: $url", mode: ToastMode.error);
           return;
       }
     }

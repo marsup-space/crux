@@ -259,8 +259,6 @@ class ChatService {
         return;
       }
 
-      _llmClient.clearToolBlockState();
-
       runtime.startStreamingTimer();
       // Mark that the LLM is not currently streaming deltas — the first
       // delta of this round will flip this on, and the metrics timer
