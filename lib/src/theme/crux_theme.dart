@@ -158,4 +158,14 @@ class CruxTheme {
   static const tldrLink = Color(0x8BE9FD);
   static const tldrLinkHoverFg = Color(0x282A36);
   static const tldrHint = Color(0x6272A4);
+
+  // `/btw` ephemeral chain. Picked to read as visually distinct
+  // from regular conversation (which uses cyan/yellow prefixes on
+  // the base background) without screaming for attention — btw
+  // chains live in the same scroll and the user wants to read them
+  // like any other turn, just clearly demarcated.
+  static const btwBackground = Color(0x21222C);
+  static const btwBorder = Color(0x44475A);
+  static const btwUserPrefix = Color(0x6272A4);
+  static const btwAiPrefix = Color(0xBD93F9);
 }
