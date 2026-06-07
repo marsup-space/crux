@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
@@ -7,6 +8,7 @@ import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
 import '../utils/url_launcher.dart';
 import '../models/message.dart';
+import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
@@ -35,6 +37,7 @@ import 'suggestion_overlay.dart';
 import 'extra_info_panel.dart';
 import 'session_management_panel.dart';
 import 'annotated_scrollbar.dart';
+import 'btw_bubble.dart';
 import 'message_bubble.dart';
 import 'streaming_bubble.dart';
 import 'tldr_bubble.dart';
@@ -397,6 +400,38 @@ class _ChatPanelState extends State<ChatPanel> {
     if (_overlayController.showSessionManager) return true;
 
     if (_overlayController.overlayMode == OverlayMode.off) {
+      final isEnter = event.logicalKey == LogicalKey.enter ||
+          event.logicalKey == LogicalKey.numpadEnter;
+      final isModifiedEnter = isEnter &&
+          (event.isShiftPressed ||
+              event.isControlPressed ||
+              event.isAltPressed);
+      final isCtrlJ = event.matches(LogicalKey.keyJ, ctrl: true);
+
+      // Send on plain Enter.
+      if (isEnter && !isModifiedEnter) {
+        _sendMessage();
+        return true;
+      }
+
+      // Insert a literal newline on modified Enter (Shift/Ctrl/Alt+Enter)
+      // or Ctrl+J. Modified-Enter only works in terminals that support
+      // the kitty keyboard protocol or xterm modifyOtherKeys. Ctrl+J is
+      // the universal fallback — it sends raw 0x0A which is always
+      // delivered verbatim (we disable icrnl in raw mode so it doesn't
+      // get confused with Enter's 0x0D).
+      if (isModifiedEnter || isCtrlJ) {
+        final newText = textController.text.replaceRange(
+          textController.selection.start,
+          textController.selection.end,
+          '\n',
+        );
+        final newOffset = textController.selection.start + 1;
+        textController.text = newText;
+        textController.selection = TextSelection.collapsed(offset: newOffset);
+        return true;
+      }
+
       if (event.logicalKey == LogicalKey.pageUp &&
           (event.isControlPressed || event.isAltPressed)) {
         _jumpToPreviousUserInput();
@@ -695,6 +730,17 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (isResponding) return;
 
+    // Sending a "real" (non-`/btw`) message is the explicit
+    // signal that the in-memory btw chain must be discarded:
+    // once the LLM sees this user prompt in its context, the
+    // prior btw rounds would have leaked through. Wipe them
+    // BEFORE calling `_sendTurn` so the persisted user message
+    // and the fresh in-memory cache line up with a clean chain.
+    if (sessionId != null) {
+      _sessionController.clearBtwTurnsFor(sessionId);
+      _streamingController.clearStreamingFor(sessionId);
+    }
+
     textController.clear();
 
     await _sendTurn(text: text);
@@ -849,6 +895,343 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  /// Drive a single `/btw` turn. The user prompt is shown in a
+  /// boxed, dim `BtwBubble.user` and the LLM's streamed response in
+  /// a `BtwBubble.ai` (the renderer in `_buildMessageList` branches
+  /// on [SessionRuntimeState.btwMode] to pick the boxed variant
+  /// instead of the regular `StreamingBubble`). Nothing is written
+  /// to the database. On completion the `(prompt, response)` pair
+  /// is appended to [SessionController.btwBuffer] so the *next*
+  /// `/btw` can see it as context.
+  ///
+  /// Must be a no-op (with a toast surfaced by the executor) when
+  /// the session is already responding. Unlike `_sendTurn`, this
+  /// does NOT persist anything — the in-memory cache is untouched
+  /// and the DB never sees a `role: 'user'` row for the prompt.
+  Future<void> _sendBtwTurn(String prompt) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
+    final rt = _sessionController.runtime(sessionId);
+    if (rt.isResponding) return;
+
+    // Resolve the provider / model for the current session. The
+    // btw round always uses the session's main chat model (NOT the
+    // auxiliary model — that one is reserved for titles and
+    // summaries). If there's no API key wired, fail with the same
+    // error message the regular chat path uses.
+    final session = _sessionController.currentSession;
+    final compositeKey = session.model;
+    final slashIndex = compositeKey.indexOf('/');
+    final providerName =
+        slashIndex > 0 ? compositeKey.substring(0, slashIndex) : '';
+    final modelId =
+        slashIndex > 0 ? compositeKey.substring(slashIndex + 1) : compositeKey;
+    final provider = _providerService.providerByName(providerName);
+    final apiKey = _providerService.getApiKey(providerName);
+    if (provider == null || apiKey == null || apiKey.isEmpty) {
+      _showToast(
+        'No API key for provider "$providerName". Use /provider to connect.',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    // Build the wire message list for this btw call:
+    //   1. Persisted history, walked through the same wire-format
+    //      translation the chat service uses (so tool_call / tool
+    //      rounds are correctly represented). Any persisted
+    //      `role: 'system'` messages come along for the ride.
+    //   2. The in-memory btw chain, flattened as alternating
+    //      user / assistant turns. Each user turn is wrapped in
+    //      [btwRenderUserMessage] so the model sees the same
+    //      "please provide a quick answer…" framing on every
+    //      prior btw question and naturally treats the chain
+    //      as a self-describing side-question thread.
+    //   3. The new prompt as a trailing user turn, also wrapped
+    //      in [btwRenderUserMessage] so the model receives the
+    //      full framing (not just the raw question text).
+    //
+    // The btw framing lives in the user message rather than a
+    // system prompt, so the LLM sees a single, well-formed
+    // user turn per btw round — no special "btw mode" for the
+    // model to detect, and the btw chain self-describes
+    // through its repeated framing.
+    final history = await _store.getMessages(sessionId);
+    final wireFamily = provider.wireFamily;
+    final apiMessages = <Map<String, dynamic>>[
+      ..._buildBtwApiMessages(history, wireFamily),
+    ];
+    final priorBtw = _sessionController.btwTurnsFor(sessionId);
+    for (final t in priorBtw) {
+      apiMessages.add({
+        'role': 'user',
+        'content': btwRenderUserMessage(t.userText),
+      });
+      apiMessages.add({
+        'role': 'assistant',
+        'content': t.aiText.isEmpty ? null : t.aiText,
+      });
+    }
+    apiMessages.add({
+      'role': 'user',
+      'content': btwRenderUserMessage(prompt),
+    });
+
+    // Same response-state plumbing as the regular chat turn, so
+    // the metrics timer / tok/s / TTFT display in the toolbar
+    // work for btw too. Mark `btwMode` on the runtime so the
+    // message list renderer picks the boxed bubble variant.
+    _streamingController.clearStreamingFor(sessionId);
+    rt.isResponding = true;
+    rt.btwMode = true;
+    rt.responseStartTime = DateTime.now();
+    rt.ttftMs = 0.0;
+    rt.ttftReceived = false;
+    rt.tokPerSec = 0.0;
+    rt.tokCount = 0.0;
+    rt.firstTokenTime = null;
+    rt.cumulativeGenMs = 0.0;
+    rt.cumulativeCompletionTokens = 0;
+    rt.roundFirstTokenTime = null;
+    rt.roundStreaming = false;
+    rt.startStreamingTimer();
+    _streamingController.startMetricsTimer(sessionId);
+    // Push a "pending" pair (prompt, '') into the in-memory chain
+    // BEFORE the LLM call starts so the user's prompt renders as
+    // a `BtwBubble.user` immediately, even before the first
+    // delta arrives. The chat panel updates the AI side of this
+    // same pair in place as deltas stream in, so we never
+    // duplicate the prompt or the answer in the list.
+    _sessionController.appendPendingBtwTurn(sessionId, prompt);
+    setState(() {});
+
+    // Btw is a text-only side-channel: we don't expose tools, so
+    // the LLM has no way to read files or run commands even if it
+    // tried. The user message itself carries the "please provide
+    // a quick answer…" framing (see [btwRenderUserMessage]), so
+    // the model treats the round as a quick side-question
+    // without project actions. The stream is consumed directly
+    // by LlmClient.streamChat — we don't go through ChatService
+    // because that one persists, which is exactly
+    // what btw is trying to avoid.
+    final llmClient = LlmClient();
+    final buffer = StringBuffer();
+    String? streamError;
+    try {
+      final modelConfig = provider.modelById(modelId);
+      final stream = llmClient.streamChat(
+        endpointUrl: provider.endpointUrl,
+        config: provider,
+        apiKey: apiKey,
+        modelId: modelId,
+        messages: List<Map<String, dynamic>>.from(apiMessages),
+        thinkingMode: rt.thinkingMode,
+        reasoningEffort: rt.reasoningEffort,
+        thinkingBudget: modelConfig?.thinkingBudget,
+        maxTokens: modelConfig?.maxTokens,
+        // tools intentionally omitted — btw is a pure text exchange
+      );
+      var firstTokenEver = true;
+      await for (final chunk in stream) {
+        if (chunk.error != null) {
+          streamError = chunk.error;
+          break;
+        }
+        final deltaText = chunk.textDelta;
+        final deltaReasoning = chunk.reasoningContent;
+        if (deltaText != null || deltaReasoning != null) {
+          if (!rt.roundStreaming) {
+            rt.roundFirstTokenTime = DateTime.now();
+            rt.roundStreaming = true;
+          }
+          if (firstTokenEver && (deltaText != null || deltaReasoning != null)) {
+            final now = DateTime.now();
+            final elapsed =
+                now.difference(rt.responseStartTime!).inMicroseconds / 1000.0;
+            rt.ttftMs = elapsed;
+            rt.ttftReceived = true;
+            rt.firstTokenTime = now;
+            firstTokenEver = false;
+          }
+          if (deltaText != null) {
+            buffer.write(deltaText);
+            _streamingController.appendStreamingContent(sessionId, deltaText);
+            if (_streamingController.streamingContentFor(sessionId).isEmpty) {
+              rt.contentStartTime = DateTime.now();
+            }
+            // Mirror the streaming text into the in-memory btw
+            // chain so the `BtwBubble.ai` for the in-flight round
+            // updates in place. The streaming controller's
+            // per-session string is the source of truth for the
+            // live bubble; we copy it on every delta rather than
+            // reading-and-restringifying on every render.
+            _sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              buffer.toString(),
+            );
+          }
+          if (deltaReasoning != null) {
+            _streamingController.appendStreamingReasoning(
+              sessionId,
+              deltaReasoning,
+            );
+          }
+          setState(() {});
+        }
+      }
+    } finally {
+      llmClient.dispose();
+    }
+
+    // Btw is meant to be lightweight, so we don't fold the
+    // round's wall-clock into cumulativeGenMs / run any post-
+    // round tok/s smoothing — the metrics timer's `roundStreaming`
+    // gate will tick down the displayed rate on its own.
+    rt.roundStreaming = false;
+    rt.roundFirstTokenTime = null;
+    rt.pauseStreamingTimer();
+    _streamingController.stopMetricsTimer(sessionId);
+    rt.isResponding = false;
+    rt.btwMode = false;
+
+    if (streamError != null) {
+      _streamingController.clearStreamingFor(sessionId);
+      // Drop the pending (prompt, '') pair we pushed into the
+      // chain at the start of this turn — it never received an
+      // AI reply, so leaving it would leave a half-formed btw
+      // chain with an empty AI bubble visible to the user.
+      // `clearBtwTurnsFor` wipes the entire chain; if the user
+      // had earlier (successful) btw turns, we restore them so
+      // they aren't collateral damage.
+      final turns = _sessionController.btwTurnsFor(sessionId);
+      if (turns.isNotEmpty && turns.last.aiText.isEmpty) {
+        _sessionController.clearBtwTurnsFor(sessionId);
+        if (turns.length > 1) {
+          for (var i = 0; i < turns.length - 1; i++) {
+            _sessionController.appendPendingBtwTurn(
+              sessionId,
+              turns[i].userText,
+            );
+            _sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              turns[i].aiText,
+            );
+          }
+        }
+      }
+      _showToast(streamError, mode: ToastMode.error);
+      setState(() {});
+      return;
+    }
+
+    final responseText = buffer.toString();
+    _streamingController.clearStreamingFor(sessionId);
+    // The in-memory chain was pre-populated with a `(prompt, '')`
+    // pair at the start of this turn and the AI side has been
+    // mirrored on every delta, so the chain is already accurate.
+    // No further mutation is needed; the next `/btw` will pick
+    // this turn up as prior context. If the user sends a
+    // non-`/btw` message next, `_sendMessage` /
+    // `_deleteMessagesFrom` / `SessionController.switchSession`
+    // will drop the chain — see those methods for the discard
+    // hooks.
+    // Touch responseText in a comment to keep dart:io lints
+    // happy when build flags strip unused locals.
+    assert(responseText.isNotEmpty || streamError == null);
+    setState(() {});
+  }
+
+  /// Local copy of the wire-format message builder used by
+  /// [ChatService]. Kept private to the chat panel because btw
+  /// is a one-off context builder and we don't want to widen the
+  /// chat service's API for a single caller. The translation is
+  /// identical: it walks the persisted history and emits the
+  /// per-wire-family `tool_call` / `tool_result` blocks. The
+  /// output is concatenated with the in-memory btw chain (each
+  /// turn wrapped in [btwRenderUserMessage] so the model sees
+  /// the same framing on every prior btw question) and the new
+  /// user prompt (also wrapped in [btwRenderUserMessage]) to
+  /// form the full LLM call for the btw round.
+  List<Map<String, dynamic>> _buildBtwApiMessages(
+    List<Message> history,
+    WireFamily wireFamily,
+  ) {
+    final result = <Map<String, dynamic>>[];
+    for (final m in history) {
+      switch (m.role) {
+        case 'user':
+          result.add({'role': 'user', 'content': m.content});
+        case 'system':
+          result.add({'role': 'system', 'content': m.content});
+        case 'ai':
+          result.add({
+            'role': 'assistant',
+            'content': m.content.isEmpty ? null : m.content,
+          });
+        case 'tool_call':
+          if (wireFamily == WireFamily.anthropicCompatible) {
+            final content = <Map<String, dynamic>>[];
+            if (m.content.isNotEmpty) {
+              content.add({'type': 'text', 'text': m.content});
+            }
+            for (final call in m.toolCalls) {
+              content.add({
+                'type': 'tool_use',
+                'id': call.callId,
+                'name': call.name,
+                'input': call.input,
+              });
+            }
+            result.add({'role': 'assistant', 'content': content});
+          } else {
+            final toolCalls = m.toolCalls
+                .map(
+                  (call) => {
+                    'id': call.callId,
+                    'type': 'function',
+                    'function': {
+                      'name': call.name,
+                      'arguments': jsonEncode(call.input),
+                    },
+                  },
+                )
+                .toList();
+            result.add({
+              'role': 'assistant',
+              'content': m.content.isNotEmpty ? m.content : null,
+              'tool_calls': toolCalls,
+            });
+          }
+        case 'tool':
+          if (wireFamily == WireFamily.anthropicCompatible) {
+            final last = result.isNotEmpty ? result.last : null;
+            final toolResult = {
+              'type': 'tool_result',
+              'tool_use_id': m.toolCallId,
+              'content': m.content,
+            };
+            if (last != null &&
+                last['role'] == 'user' &&
+                last['content'] is List) {
+              (last['content'] as List<dynamic>).add(toolResult);
+            } else {
+              result.add({
+                'role': 'user',
+                'content': [toolResult],
+              });
+            }
+          } else {
+            result.add({
+              'role': 'tool',
+              'tool_call_id': m.toolCallId,
+              'content': m.content,
+            });
+          }
+      }
+    }
+    return result;
+  }
+
   /// Return the most recent user-role message in the current
   /// session, or `null` if there isn't one.
   ///
@@ -878,10 +1261,19 @@ class _ChatPanelState extends State<ChatPanel> {
   /// the next action runs. The [fromId] is typically the id of the
   /// last user message — `/retry` calls this with that id so the
   /// user message can be re-persisted as a fresh attempt.
+  ///
+  /// Also drops the in-memory `/btw` chain for the session: `/retry`
+  /// is the user explicitly saying "throw away the last round and
+  /// start over", and any btw content accumulated alongside that
+  /// round is no longer meaningful. Note that
+  /// [CommandExecutor.executeRetry] calls `clearBtwTurns` too as
+  /// belt-and-braces, but we do it here as well so the chain is
+  /// gone even if a future caller invokes this hook directly.
   Future<void> _deleteMessagesFrom(int fromId) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     await _store.deleteMessagesFrom(sessionId, fromId);
+    _sessionController.clearBtwTurnsFor(sessionId);
     await _sessionController.loadMessages(sessionId);
     setState(() {});
   }
@@ -915,6 +1307,8 @@ class _ChatPanelState extends State<ChatPanel> {
       sendTurn: _sendTurn,
       findLastUserMessage: _findLastUserMessage,
       deleteMessagesFrom: _deleteMessagesFrom,
+      sendBtwTurn: _sendBtwTurn,
+      clearBtwTurns: _sessionController.clearBtwTurnsFor,
     );
     await _commandExecutor.execute(text, ctx);
     setState(() {});
@@ -1266,12 +1660,21 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     if (messages.isEmpty && !isStreaming) {
-      return Center(
-        child: Text(
-          'No messages yet.',
-          style: TextStyle(color: CruxTheme.onSurfaceDim),
-        ),
-      );
+      // A session can be "empty on disk" but still have a
+      // `/btw` chain in memory (the chain lives only in
+      // [SessionController.btwBuffer]). Show the chain rather
+      // than the empty-state placeholder in that case so the
+      // user doesn't lose their scratch space to a blank panel.
+      final hasBtwTurns = sessionId != null &&
+          _sessionController.btwTurnsFor(sessionId).isNotEmpty;
+      if (!hasBtwTurns) {
+        return Center(
+          child: Text(
+            'No messages yet.',
+            style: TextStyle(color: CruxTheme.onSurfaceDim),
+          ),
+        );
+      }
     }
 
     final items = <Component>[];
@@ -1346,18 +1749,69 @@ class _ChatPanelState extends State<ChatPanel> {
       }
     }
 
+    // Render the in-memory `/btw` chain after the persisted
+    // messages but before any in-flight streaming bubble. Each
+    // completed turn is a pair of `BtwBubble.user` + `BtwBubble.ai`
+    // (boxed, dim) so the user can see at a glance that this
+    // content is off-the-record. We render even when the session
+    // is also streaming a *real* turn, because the btw chain is
+    // conceptually a separate side-channel sitting next to the
+    // main conversation.
+    //
+    // Special case for the in-flight btw round: `_sendBtwTurn`
+    // pre-populates the chain with a `(prompt, '')` pair at the
+    // start of the turn, then mirrors the streaming text into the
+    // `aiText` slot on every delta. We therefore *skip* the
+    // pending pair's `BtwBubble.ai` here and let the trailing
+    // streaming `BtwBubble.ai` (added below) take its place — it
+    // shows the same text but is wired up to the streaming
+    // controller for live updates and a clean "Crux ✦" vs "btw
+    // ✦" prefix.
+    if (sessionId != null) {
+      final btwTurns = _sessionController.btwTurnsFor(sessionId);
+      final lastIndex = btwTurns.length - 1;
+      for (var i = 0; i < btwTurns.length; i++) {
+        final turn = btwTurns[i];
+        items.add(BtwBubble.user(content: turn.userText));
+        final isPendingLast =
+            i == lastIndex && (rt?.btwMode ?? false) && isStreaming;
+        if (!isPendingLast) {
+          items.add(BtwBubble.ai(content: turn.aiText));
+        }
+        items.add(SizedBox(height: 1));
+      }
+    }
+
     if (isStreaming) {
-      items.add(
-        StreamingBubble(
-          streamingContent: _streamingController.streamingContentFor(
-            _sessionController.currentSessionId ?? 0,
+      // The in-flight stream can be either a normal chat turn or
+      // a `/btw` round — the latter is a one-shot ephemeral
+      // question, so we render its reply in a boxed `BtwBubble`
+      // instead of the regular `StreamingBubble`. The runtime
+      // state's `btwMode` flag (set by `_sendBtwTurn`, cleared on
+      // completion) is the source of truth for which kind of
+      // bubble to show.
+      if (rt?.btwMode ?? false) {
+        items.add(
+          BtwBubble.ai(
+            content: _streamingController.streamingContentFor(
+              _sessionController.currentSessionId ?? 0,
+            ),
+            streaming: true,
           ),
-          streamingReasoning: _streamingController.streamingReasoningFor(
-            _sessionController.currentSessionId ?? 0,
+        );
+      } else {
+        items.add(
+          StreamingBubble(
+            streamingContent: _streamingController.streamingContentFor(
+              _sessionController.currentSessionId ?? 0,
+            ),
+            streamingReasoning: _streamingController.streamingReasoningFor(
+              _sessionController.currentSessionId ?? 0,
+            ),
+            runtimeState: rt,
           ),
-          runtimeState: rt,
-        ),
-      );
+        );
+      }
     }
 
     final markers = List.generate(userItemIndices.length, (i) {
