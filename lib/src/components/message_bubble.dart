@@ -8,6 +8,15 @@ import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
 
+String _displayEffort(String effort) {
+  switch (effort) {
+    case 'normal':
+      return 'adaptive';
+    default:
+      return effort;
+  }
+}
+
 class MessageBubble extends StatelessComponent {
   final Message message;
   final bool reasoningCollapsed;
@@ -39,7 +48,7 @@ class MessageBubble extends StatelessComponent {
       final tokens = message.reasoningTokens > 0
           ? message.reasoningTokens.toString()
           : '~${estimateTokens(message.reasoningContent)}';
-      final effort = message.reasoningEffort ?? 'normal';
+      final effort = _displayEffort(message.reasoningEffort ?? 'normal');
       thinkingSummary = '${secs}s, $tokens tokens [$effort]';
     }
 
@@ -134,7 +143,7 @@ class MessageBubble extends StatelessComponent {
       final tokens = message.reasoningTokens > 0
           ? message.reasoningTokens.toString()
           : '~${estimateTokens(message.reasoningContent)}';
-      final effort = message.reasoningEffort ?? 'normal';
+      final effort = _displayEffort(message.reasoningEffort ?? 'normal');
       thinkingSummary = '${secs}s, $tokens tokens [$effort]';
     }
 

@@ -2032,16 +2032,13 @@ class _ChatPanelState extends State<ChatPanel> {
     textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
-  String _displayEff(String effort) {
+  /// Map internal reasoning effort values to user-facing display names.
+  /// The internal value 'normal' maps to 'adaptive' to reflect the
+  /// MiniMax thinking type that gets emitted for this preset.
+  String _displayEffort(String effort) {
     switch (effort) {
       case 'normal':
-        return 'med';
-      case 'high':
-        return 'high';
-      case 'max':
-        return 'max';
-      case 'low':
-        return 'low';
+        return 'adaptive';
       default:
         return effort;
     }
@@ -2049,8 +2046,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
   String _thinkingLabel(SessionRuntimeState rt) {
     final effort = rt.thinkingMode == 'disabled'
- ? 'off' : _displayEff(rt.reasoningEffort ?? 'normal');
-   return '\ \{F0EB} ${effort.padRight(4)}';
+        ? 'off'
+        : _displayEffort(rt.reasoningEffort ?? 'normal');
+    return '\u{F0EB} ${effort.padRight(4)}';
   }
 
   String _cacheHitLabel(SessionRuntimeState? rt, Session session) {
