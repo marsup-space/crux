@@ -29,13 +29,21 @@ class ResponseLink {
 
 typedef ResponseLinkTapCallback = void Function(ResponseLink link);
 
-final _refRegex = RegExp(r'\[([^\]\n\(]+)(?:\(([^\s\)\n]+)\))?\]');
+final _refRegex = RegExp(r'\[([^\]]+)\]');
 
 class _ParsedTldr {
   final String displayText;
   final List<ResponseLink> links;
 
   const _ParsedTldr({required this.displayText, required this.links});
+}
+
+String _normForCompare(String s) {
+  return s
+      .replaceAll(RegExp(r'[*_`~"\u201C\u201D\u2018\u2019]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim()
+      .toLowerCase();
 }
 
 _ParsedTldr _parseTldrRefs(String tldrText) {
@@ -49,20 +57,24 @@ _ParsedTldr _parseTldrRefs(String tldrText) {
       buffer.write(tldrText.substring(cursor, match.start));
     }
     final excerpt = match.group(1)!.trim();
-    final url = match.group(2);
     if (excerpt.isEmpty) {
       buffer.write(match.group(0)!);
     } else {
       refIndex++;
-      buffer.write(excerpt);
-      final refMarker = ' [R$refIndex]';
+      final bufStr = buffer.toString();
+      final normExcerpt = _normForCompare(excerpt);
+      final normBuf = _normForCompare(bufStr);
+      final isRedundant = normBuf.endsWith(normExcerpt);
+      if (!isRedundant) {
+        buffer.write(excerpt);
+      }
       final linkOffset = buffer.length;
-      buffer.write(refMarker);
+      buffer.write(' [R$refIndex]');
       links.add(ResponseLink(
-        text: refMarker,
-        offset: linkOffset,
-        length: refMarker.length,
-        url: (url != null && url.isNotEmpty) ? url : null,
+        text: '[R$refIndex]',
+        offset: linkOffset + 1,
+        length: '[R$refIndex]'.length,
+        url: null,
         anchor: excerpt,
       ));
     }
