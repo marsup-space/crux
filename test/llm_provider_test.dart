@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
+import 'package:crux/src/services/install_slug.dart';
 import 'package:crux/src/services/llm_provider.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
@@ -202,7 +203,7 @@ void main() {
         'claude-sonnet-4-6',
         userMsg,
         thinkingMode: 'enabled',
-        userId: 'crux-session-42',
+        userId: 'abc123-42',
       );
       expect(body.containsKey('user_id'), isFalse);
     });
@@ -216,9 +217,9 @@ void main() {
         'deepseek-v4-pro',
         userMsg,
         thinkingMode: 'enabled',
-        userId: 'crux-session-42',
+        userId: 'abc123-42',
       );
-      expect(body['user_id'], 'crux-session-42');
+      expect(body['user_id'], 'abc123-42');
     });
 
     test('omits user_id when userId is null', () {
@@ -239,9 +240,9 @@ void main() {
         'deepseek-v4-pro',
         userMsg,
         thinkingMode: 'enabled',
-        userId: 'crux-session-7',
+        userId: 'abc123-7',
       );
-      expect(body['user_id'], 'crux-session-7');
+      expect(body['user_id'], 'abc123-7');
     });
 
     test('maps effort "high" to wire "xhigh"', () {
@@ -373,6 +374,15 @@ void main() {
       final chat = body['messages'] as List;
       final content = chat.last['content'] as List;
       expect(content.last['cache_control'], {'type': 'ephemeral'});
+    });
+  });
+
+  group('InstallSlug', () {
+    test('produces a non-empty slug matching DeepSeek user_id regex', () {
+      final slug = InstallSlug.slug;
+      expect(slug, isNotEmpty);
+      expect(RegExp(r'^[a-zA-Z0-9\-_]+$').hasMatch(slug), isTrue);
+      expect(slug.length, 12);
     });
   });
 }

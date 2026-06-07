@@ -16,6 +16,7 @@ import '../commands/registry.dart';
 import '../commands/command_executor.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
+import '../services/install_slug.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/tool_executor.dart';
@@ -1030,7 +1031,7 @@ class _ChatPanelState extends State<ChatPanel> {
         thinkingBudget: modelConfig?.thinkingBudget,
         maxTokens: modelConfig?.maxTokens,
         // tools intentionally omitted — btw is a pure text exchange
-        userId: 'crux-session-$sessionId',
+        userId: '${InstallSlug.slug}-$sessionId',
       );
       var firstTokenEver = true;
       await for (final chunk in stream) {

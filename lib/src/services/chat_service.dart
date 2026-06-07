@@ -9,6 +9,7 @@ import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
+import 'install_slug.dart';
 import 'llm_client.dart';
 import 'provider_service.dart';
 import 'tool_executor.dart';
@@ -305,7 +306,7 @@ class ChatService {
         thinkingBudget: modelConfig?.thinkingBudget,
         maxTokens: modelConfig?.maxTokens,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
-        userId: 'crux-session-$sessionId',
+        userId: '${InstallSlug.slug}-$sessionId',
       );
 
       final chunks = <LlmChunk>[];
