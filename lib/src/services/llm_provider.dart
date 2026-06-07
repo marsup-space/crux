@@ -19,6 +19,7 @@ abstract class LlmProvider {
     int? thinkingBudget,
     int? maxTokens,
     List<Map<String, dynamic>>? tools,
+    String? userId,
   });
 }
 

@@ -59,6 +59,7 @@ class LlmClient {
     int? thinkingBudget,
     int? maxTokens,
     List<Map<String, dynamic>>? tools,
+    String? userId,
   }) {
     final controller = StreamController<LlmChunk>();
     final resolved = resolveProvider(config.type);
@@ -83,6 +84,7 @@ class LlmClient {
           thinkingBudget: thinkingBudget,
           maxTokens: maxTokens,
           tools: tools,
+          userId: userId,
         );
         final body = jsonEncode(bodyMap);
         final bodyBytes = utf8.encode(body);

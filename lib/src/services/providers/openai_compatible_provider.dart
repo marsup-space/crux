@@ -20,6 +20,7 @@ class OpenAICompatibleProvider extends LlmProvider {
     int? thinkingBudget,
     int? maxTokens,
     List<Map<String, dynamic>>? tools,
+    String? userId,
   }) {
     return {
       'model': modelId,
@@ -43,6 +44,7 @@ class OpenAICompatibleProvider extends LlmProvider {
               },
             )
             .toList(),
+      if (userId != null) 'user_id': userId,
     };
   }
 

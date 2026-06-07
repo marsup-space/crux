@@ -305,6 +305,7 @@ class ChatService {
         thinkingBudget: modelConfig?.thinkingBudget,
         maxTokens: modelConfig?.maxTokens,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
+        userId: 'crux-session-$sessionId',
       );
 
       final chunks = <LlmChunk>[];

@@ -41,6 +41,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
     int? thinkingBudget,
     int? maxTokens,
     List<Map<String, dynamic>>? tools,
+    String? userId,
   }) {
     final systemMsg = messages.where((m) => m['role'] == 'system').toList();
     final chatMsgs = messages.where((m) => m['role'] != 'system').toList();

@@ -1030,6 +1030,7 @@ class _ChatPanelState extends State<ChatPanel> {
         thinkingBudget: modelConfig?.thinkingBudget,
         maxTokens: modelConfig?.maxTokens,
         // tools intentionally omitted — btw is a pure text exchange
+        userId: 'crux-session-$sessionId',
       );
       var firstTokenEver = true;
       await for (final chunk in stream) {

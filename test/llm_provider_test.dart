@@ -2,7 +2,9 @@ import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/llm_provider.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
+import 'package:crux/src/services/providers/deepseek_provider.dart';
 import 'package:crux/src/services/providers/minimax_provider.dart';
+import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 
 void main() {
   // Minimal user/system messages used across the test cases.
@@ -193,6 +195,57 @@ void main() {
         expect(provider.mapEffort(''), 'medium');
         expect(provider.mapEffort('extreme'), 'medium');
       });
+    });
+
+    test('ignores userId — not part of Anthropic wire format', () {
+      final body = provider.buildRequestBody(
+        'claude-sonnet-4-6',
+        userMsg,
+        thinkingMode: 'enabled',
+        userId: 'crux-session-42',
+      );
+      expect(body.containsKey('user_id'), isFalse);
+    });
+  });
+
+  group('OpenAICompatibleProvider', () {
+    final provider = OpenAICompatibleProvider();
+
+    test('includes user_id in body when userId is provided', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-pro',
+        userMsg,
+        thinkingMode: 'enabled',
+        userId: 'crux-session-42',
+      );
+      expect(body['user_id'], 'crux-session-42');
+    });
+
+    test('omits user_id when userId is null', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-pro',
+        userMsg,
+        thinkingMode: 'enabled',
+      );
+      expect(body.containsKey('user_id'), isFalse);
+    });
+  });
+
+  group('DeepSeekProvider', () {
+    final provider = DeepSeekProvider();
+
+    test('inherits user_id from OpenAICompatibleProvider', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-pro',
+        userMsg,
+        thinkingMode: 'enabled',
+        userId: 'crux-session-7',
+      );
+      expect(body['user_id'], 'crux-session-7');
+    });
+
+    test('maps effort "high" to wire "xhigh"', () {
+      expect(provider.mapEffort('high'), 'xhigh');
     });
   });
 
