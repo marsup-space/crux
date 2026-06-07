@@ -135,8 +135,9 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
     final plainText = _flattenToPlainText(mdSpans);
 
     final resolvedLinks = <ResponseLink>[];
+    var searchFrom = 0;
     for (final link in parsed.links) {
-      final idx = plainText.indexOf(link.text, link.offset > plainText.length ? 0 : link.offset);
+      final idx = plainText.indexOf(link.text, searchFrom);
       if (idx >= 0) {
         resolvedLinks.add(ResponseLink(
           text: link.text,
@@ -145,6 +146,7 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
           url: link.url,
           anchor: link.anchor,
         ));
+        searchFrom = idx + link.text.length;
       }
     }
 
