@@ -32,6 +32,40 @@ class CommandContext {
   final void Function(String) enterBuiltinWizard;
   final void Function(int, Message, TldrDetail)? triggerTldr;
 
+  /// Re-trigger the chat pipeline for a single turn. When [text] is
+  /// non-null, it's treated as the new user prompt: persisted to the
+  /// DB and prepended to the in-memory cache, then the LLM is called.
+  /// When [text] is omitted, the existing conversation history is
+  /// re-submitted as-is — no new user message is added, the
+  /// in-memory cache is left alone, and the LLM is called with
+  /// whatever the persisted wire-format history currently ends on.
+  /// The omitted form is used by `/continue` to round-trip a
+  /// trailing tool result cleanly without injecting an artificial
+  /// user turn. Used by `/continue` and `/retry` so they don't have
+  /// to drive the text controller or the internal state machine
+  /// directly. Implementations should be no-ops (and surface a
+  /// toast) when the session is already responding.
+  final Future<void> Function({String? text}) sendTurn;
+
+  /// Return the most recent user-role message in the current session,
+  /// or `null` if no such message exists. The implementation must
+  /// return the real DB id for the message (not the in-memory
+  /// placeholder id), because the executor uses it as the boundary
+  /// for [deleteMessagesFrom] (in `/retry`) and to decide whether
+  /// the last round is still in progress (in `/continue`). Async
+  /// because the implementation may need to re-read the DB to get
+  /// the real id.
+  final Future<Message?> Function() findLastUserMessage;
+
+  /// Wipe every persisted message in the current session whose id is
+  /// `>=` [fromId] and reload the in-memory message cache so the UI
+  /// reflects the deletion. Used by `/retry` to discard the last
+  /// round (user prompt + AI response + tool calls) before
+  /// re-sending. The [fromId] is the id of the last user message,
+  /// which itself is removed so the retry can re-add it as a fresh
+  /// attempt.
+  final Future<void> Function(int fromId) deleteMessagesFrom;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -51,6 +85,9 @@ class CommandContext {
     required this.resolveAuxiliaryModel,
     required this.enterBuiltinWizard,
     this.triggerTldr,
+    required this.sendTurn,
+    required this.findLastUserMessage,
+    required this.deleteMessagesFrom,
   });
 }
 
@@ -75,6 +112,12 @@ class CommandExecutor {
         await executeThink(parts, ctx);
       case '/tldr':
         await executeTldr(parts, ctx);
+      case '/continue':
+      case '/继续':
+        await executeContinue(ctx);
+      case '/retry':
+      case '/重试':
+        await executeRetry(ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':
@@ -276,6 +319,107 @@ class CommandExecutor {
     if (ctx.triggerTldr != null) {
       ctx.triggerTldr!(ctx.currentSessionId!, lastAi, detail);
     }
+  }
+
+  /// `/continue` (alias `/继续`) — resubmit the current conversation
+  /// context to the LLM so it can keep generating.
+  ///
+  /// What "resubmit the context" means depends on what the last
+  /// persisted segment looks like, because the LLM APIs require the
+  /// trailing turn to satisfy a role-alternation rule:
+  ///
+  /// - If the last segment is a `tool` result, the wire-format
+  ///   conversation already ends on a valid trailing turn (a `tool`
+  ///   role on the OpenAI wire, or a `user` turn carrying
+  ///   `tool_result` blocks on the Anthropic wire). Resubmit as-is —
+  ///   no nudge, no extra user message — and the LLM picks up from
+  ///   the in-flight tool flow.
+  /// - If the last segment is a bare `user` message (e.g. the AI
+  ///   was interrupted before producing any output), resubmitting
+  ///   as-is ends on `user`, which the API also accepts; the LLM
+  ///   will simply respond to the user's question again. No nudge
+  ///   needed.
+  /// - If the last segment is `ai` (round completed normally), the
+  ///   wire format ends on `assistant`, which the API rejects. We
+  ///   append a tiny "请继续" user turn so alternation is valid and
+  ///   the LLM sees a clear "keep going" intent.
+  /// - Anything else (e.g. a half-written `tool_call` that the AI
+  ///   was interrupted mid-emit) falls through to the nudge case —
+  ///   safe, even if it's a slightly weird prompt.
+  ///
+  /// In all cases the executor refuses to run while the AI is
+  /// already responding, since launching a second concurrent turn
+  /// against the same session would race the in-flight stream.
+  Future<void> executeContinue(CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final sessionId = ctx.currentSessionId!;
+    final rt = ctx.runtime(sessionId);
+    if (rt.isResponding) {
+      ctx.showToast('AI is already responding');
+      return;
+    }
+    final lastRole =
+        ctx.currentMessages.isEmpty ? null : ctx.currentMessages.last.role;
+    switch (lastRole) {
+      case 'tool':
+      case 'user':
+        // Wire format already ends on a valid trailing turn;
+        // resubmit the existing context verbatim. The LLM
+        // continues from where it left off (or re-responds to
+        // the user question, in the bare-user case).
+        await ctx.sendTurn();
+      case 'ai':
+      case 'tool_call':
+      case null:
+        // Round finished (or never started) on a role the API
+        // won't accept as the trailing turn; append a small
+        // "please continue" nudge so the LLM keeps elaborating.
+        await ctx.sendTurn(text: '请继续。');
+      default:
+        // Future-proof: any new role falls back to the nudge
+        // path. Same as the `ai` case above.
+        await ctx.sendTurn(text: '请继续。');
+    }
+  }
+
+  /// `/retry` (alias `/重试`) — re-send the last user prompt from
+  /// scratch, discarding whatever the previous round produced.
+  ///
+  /// "Discards" means: delete every persisted message from the last
+  /// user message onwards (the user message itself, the AI response,
+  /// any tool calls and tool results), reload the in-memory message
+  /// cache so the UI reflects the wipe, and then re-trigger the
+  /// chat pipeline with the same user text. The user gets a single
+  /// fresh attempt and the conversation anchor stays put.
+  ///
+  /// Like `/continue`, this is only valid when the session is not
+  /// currently responding — otherwise we'd race with the in-flight
+  /// stream. The command is also rejected when there is no user
+  /// message to retry.
+  Future<void> executeRetry(CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final sessionId = ctx.currentSessionId!;
+    final rt = ctx.runtime(sessionId);
+    if (rt.isResponding) {
+      ctx.showToast('Cannot retry while AI is responding');
+      return;
+    }
+    final lastUser = await ctx.findLastUserMessage();
+    if (lastUser == null) {
+      ctx.showToast('Nothing to retry — no user message yet');
+      return;
+    }
+    // Wipe the last round and reload the cache before re-sending so
+    // the chat panel doesn't briefly show a duplicate of the old
+    // user message while the new turn kicks off.
+    await ctx.deleteMessagesFrom(lastUser.id);
+    await ctx.sendTurn(text: lastUser.content);
   }
 
   // ─────────────────────────────────────────────────────────────────────
