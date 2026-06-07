@@ -66,6 +66,22 @@ class CommandContext {
   /// attempt.
   final Future<void> Function(int fromId) deleteMessagesFrom;
 
+  /// Drive a `/btw` turn. The chat panel implementation is
+  /// responsible for (a) rendering a transient boxed bubble for
+  /// the user prompt and AI response, (b) calling the LLM with the
+  /// persisted history + the in-memory btw chain + the new prompt
+  /// (and *no* tools, since btw is a pure text side-question), and
+  /// (c) appending the resulting `(userText, aiText)` pair to the
+  /// session's in-memory btw chain so the next `/btw` sees it as
+  /// context. Must be a no-op (with a toast) when the session is
+  /// already responding, and must not persist anything to the DB.
+  final Future<void> Function(String prompt) sendBtwTurn;
+
+  /// Drop the in-memory `/btw` chain for [sessionId]. Called by the
+  /// chat panel when the user issues any non-`/btw` input, so the
+  /// btw context is guaranteed to never leak into a "real" turn.
+  final void Function(int sessionId) clearBtwTurns;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -88,6 +104,8 @@ class CommandContext {
     required this.sendTurn,
     required this.findLastUserMessage,
     required this.deleteMessagesFrom,
+    required this.sendBtwTurn,
+    required this.clearBtwTurns,
   });
 }
 
@@ -118,6 +136,8 @@ class CommandExecutor {
       case '/retry':
       case '/重试':
         await executeRetry(ctx);
+      case '/btw':
+        await executeBtw(parts, ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':
@@ -419,7 +439,54 @@ class CommandExecutor {
     // the chat panel doesn't briefly show a duplicate of the old
     // user message while the new turn kicks off.
     await ctx.deleteMessagesFrom(lastUser.id);
+    // Retry is the explicit signal that the user wants a fresh
+    // attempt at the *real* conversation — any in-memory `/btw`
+    // scratch space from before the failed attempt is also no
+    // longer relevant. Drop it so the retry's LLM call (and the
+    // stream of any subsequent turns) starts from a clean slate.
+    ctx.clearBtwTurns(sessionId);
     await ctx.sendTurn(text: lastUser.content);
+  }
+
+  /// `/btw <prompt>` — fire a one-shot, ephemeral AI response.
+  ///
+  /// The AI's reply is rendered in a dim, bordered bubble and lives
+  /// only in [SessionController.btwBuffer]. Nothing is written to the
+  /// database, and the chain evaporates on the user's next non-`/btw`
+  /// input (or session switch, or `/retry`). Consecutive `/btw` calls
+  /// chain: the next `/btw` sees every prior btw round (in this
+  /// session) as context for the LLM call, so a user can ask a
+  /// follow-up like "/btw what about edge cases?" and the model has
+  /// the previous answer to draw on.
+  ///
+  /// The executor only handles prompt validation and the
+  /// "is the AI already responding" guard; the actual streaming,
+  /// rendering, and buffer mutation live in
+  /// [CommandContext.sendBtwTurn].
+  Future<void> executeBtw(List<String> parts, CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final sessionId = ctx.currentSessionId!;
+    final rt = ctx.runtime(sessionId);
+    if (rt.isResponding) {
+      ctx.showToast('AI is already responding');
+      return;
+    }
+    if (parts.length < 2 || parts[1].trim().isEmpty) {
+      ctx.showToast('Usage: /btw <prompt>');
+      return;
+    }
+    // Re-join the rest of the line (instead of just parts[1]) so
+    // prompts can contain spaces verbatim, e.g.
+    //   /btw how do I rename a file in bash?
+    final prompt = parts.skip(1).join(' ').trim();
+    if (prompt.isEmpty) {
+      ctx.showToast('Usage: /btw <prompt>');
+      return;
+    }
+    await ctx.sendBtwTurn(prompt);
   }
 
   // ─────────────────────────────────────────────────────────────────────
