@@ -201,7 +201,21 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _switchSession(int id) async {
+    // Stop metrics timer for the old session (if any).
+    final oldId = _sessionController.currentSessionId;
+    if (oldId != null && oldId != id) {
+      _streamingController.stopMetricsTimer(oldId);
+    }
+
     final error = await _sessionController.switchSession(id);
+
+    // If the new session is actively streaming, start its metrics timer
+    // so the toolbar shows live tok/s, TTFT, etc.
+    final rt = _sessionController.runtime(id);
+    if (rt.isResponding) {
+      _streamingController.startMetricsTimer(id);
+    }
+
     _streamingController.stopContextAnimation();
     scrollController.scrollToBottom();
     if (error != null) {
@@ -683,13 +697,35 @@ class _ChatPanelState extends State<ChatPanel> {
 
     textController.clear();
 
-    if (sessionId == null) return;
+    await _sendTurn(text: text);
+  }
 
+  /// Drive a single chat turn. When [text] is non-null, [text] is
+  /// used as the new user prompt and is persisted to the DB and
+  /// prepended to the in-memory cache. When [text] is `null`, the
+  /// existing conversation history is re-submitted as-is — no new
+  /// user message is added, the in-memory cache is left alone, and
+  /// the LLM is called with whatever the persisted wire-format
+  /// history currently ends on (so a trailing tool result round-
+  /// trips cleanly without an artificial user turn being injected).
+  /// Used by `_sendMessage` (text != null) and by `/continue` /
+  /// `/retry` (text may be null for continue-on-tool-result).
+  /// No-ops silently when there is no current session or the
+  /// session is already responding.
+  Future<void> _sendTurn({String? text}) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
+    if (rt.isResponding) return;
+
     _streamingController.clearStreamingFor(sessionId);
 
     final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
-    final userTokens = estimateTokens(text);
+    // When continuing, the "turn base" is the existing persisted
+    // history alone (no new user message to add). When submitting
+    // fresh text, include the new message's estimated token cost
+    // so the context bar reflects the in-flight turn.
+    final userTokens = text == null ? 0 : estimateTokens(text);
     final turnBase =
         _sessionController.computeBaseContext(sessionId) +
         userTokens +
@@ -713,19 +749,24 @@ class _ChatPanelState extends State<ChatPanel> {
     rt.roundStreaming = false;
 
     _streamingController.startMetricsTimer(sessionId);
-    final userMsg = Message(
-      id: -1,
-      sessionId: sessionId,
-      role: 'user',
-      content: text,
-    );
-    _sessionController.messageCache[sessionId] = [
-      ...?_sessionController.messageCache[sessionId],
-      userMsg,
-    ];
-    setState(() {});
+    if (text != null) {
+      final userMsg = Message(
+        id: -1,
+        sessionId: sessionId,
+        role: 'user',
+        content: text,
+      );
+      _sessionController.messageCache[sessionId] = [
+        ...?_sessionController.messageCache[sessionId],
+        userMsg,
+      ];
+      setState(() {});
 
-    _maybeKickOffTitleEarly(sessionId);
+      // Only kick off the auxiliary title generator for genuinely
+      // new user input; a continuation shouldn't change the session
+      // title.
+      _maybeKickOffTitleEarly(sessionId);
+    }
 
     _chatService.sendMessage(
       sessionId: sessionId,
@@ -808,6 +849,43 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  /// Return the most recent user-role message in the current
+  /// session, or `null` if there isn't one.
+  ///
+  /// Reloads from the DB rather than reading the in-memory cache
+  /// because the cache holds a `Message` with `id: -1` for any user
+  /// message that was just submitted and whose turn hasn't reached
+  /// `onComplete` yet. The executor then uses this id as the lower
+  /// bound for [SessionStore.deleteMessagesFrom] (called by `/retry`)
+  /// and to decide whether the last round is still "in progress" vs.
+  /// already finished (called by `/continue`). Both decisions need
+  /// the real DB id — using a placeholder would either delete every
+  /// message in the session (`id >= -1`) or silently mis-classify an
+  /// interrupted turn as a finished one.
+  Future<Message?> _findLastUserMessage() async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return null;
+    final messages = await _store.getMessages(sessionId);
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role == 'user') return messages[i];
+    }
+    return null;
+  }
+
+  /// Delete every persisted message in the current session from
+  /// [fromId] onwards (the boundary message itself included) and
+  /// reload the in-memory cache so the UI reflects the wipe before
+  /// the next action runs. The [fromId] is typically the id of the
+  /// last user message — `/retry` calls this with that id so the
+  /// user message can be re-persisted as a fresh attempt.
+  Future<void> _deleteMessagesFrom(int fromId) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
+    await _store.deleteMessagesFrom(sessionId, fromId);
+    await _sessionController.loadMessages(sessionId);
+    setState(() {});
+  }
+
   Future<void> _executeCommand(String text) async {
     final ctx = CommandContext(
       store: _store,
@@ -834,6 +912,9 @@ class _ChatPanelState extends State<ChatPanel> {
           _overlayController.enterBuiltinWizard(name);
         });
       },
+      sendTurn: _sendTurn,
+      findLastUserMessage: _findLastUserMessage,
+      deleteMessagesFrom: _deleteMessagesFrom,
     );
     await _commandExecutor.execute(text, ctx);
     setState(() {});

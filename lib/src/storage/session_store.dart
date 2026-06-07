@@ -265,6 +265,26 @@ class SessionStore {
         .write(db.MessagesCompanion(tldr: Value(tldr)));
   }
 
+  /// Delete every message in [sessionId] whose id is `>=` [fromId].
+  /// Used by `/retry` to wipe the last "round" (the user prompt plus
+  /// the AI response, tool calls, and tool results that came after
+  /// it) so a fresh attempt can be made. The `parts` table cascades
+  /// on `messageId`, so a plain DELETE here is enough to clean up
+  /// attachment rows too.
+  Future<int> deleteMessagesFrom(int sessionId, int fromId) async {
+    final deleted = await (_db.delete(
+      _db.messages,
+    )..where(
+        (t) =>
+            t.sessionId.equals(sessionId) & t.id.isBiggerOrEqualValue(fromId),
+      ))
+        .go();
+    if (deleted > 0) {
+      await _touchSession(sessionId);
+    }
+    return deleted;
+  }
+
   Session _rowToSession(db.Session row) {
     return Session(
       id: row.id,

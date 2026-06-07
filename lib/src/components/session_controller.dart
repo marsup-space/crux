@@ -156,15 +156,17 @@ class SessionController {
     final base = computeBaseContext(id);
     rt.contextTargetTokens = base;
     rt.contextDisplayTokens = base.toDouble();
-    rt.ttftMs = 0;
-    rt.ttftReceived = false;
-    rt.tokPerSec = 0;
-    rt.streamingDurationMs = 0;
-    rt.cumulativeGenMs = 0.0;
-    rt.cumulativeCompletionTokens = 0;
-    rt.roundFirstTokenTime = null;
-    rt.roundStreaming = false;
-    rt.isResponding = false;
+
+    if (!rt.isResponding) {
+      rt.ttftMs = 0;
+      rt.ttftReceived = false;
+      rt.tokPerSec = 0;
+      rt.streamingDurationMs = 0;
+      rt.cumulativeGenMs = 0.0;
+      rt.cumulativeCompletionTokens = 0;
+      rt.roundFirstTokenTime = null;
+      rt.roundStreaming = false;
+    }
 
     return null;
   }
