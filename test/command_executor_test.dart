@@ -59,6 +59,8 @@ void main() {
       required Future<void> Function({String? text}) sendTurnImpl,
       Future<Message?> Function()? findLastUserMessageImpl,
       Future<void> Function(int)? deleteMessagesFromImpl,
+      Future<void> Function(String prompt)? sendBtwTurnImpl,
+      void Function(int sessionId)? clearBtwTurnsImpl,
     }) {
       return CommandContext(
         store: store,
@@ -76,13 +78,15 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-        resolveAuxiliaryModel: () {},
+        resolveAuxiliaryModel: () => {},
         enterBuiltinWizard: (_) {},
         sendTurn: sendTurnImpl,
         findLastUserMessage: findLastUserMessageImpl ??
             () async => null,
         deleteMessagesFrom: deleteMessagesFromImpl ??
             (_) async {},
+        sendBtwTurn: sendBtwTurnImpl ?? (_) async {},
+        clearBtwTurns: clearBtwTurnsImpl ?? (_) {},
       );
     }
 
@@ -357,6 +361,8 @@ void main() {
             deleteMessagesFrom: (fromId) async {
               events.add('deleteMessagesFrom:$fromId');
             },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
           ),
         );
 
@@ -402,6 +408,8 @@ void main() {
             deleteMessagesFrom: (fromId) async {
               deleteCalls++;
             },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
           ),
         );
 
@@ -442,6 +450,8 @@ void main() {
             deleteMessagesFrom: (fromId) async {
               deleteCalls++;
             },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
           ),
         );
 
@@ -492,12 +502,234 @@ void main() {
             deleteMessagesFrom: (fromId) async {
               deleteFromId = fromId;
             },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
           ),
         );
 
         expect(sendTurnCalls, equals(1));
         expect(lastTextSent, equals(userText));
         expect(deleteFromId, equals(userMsg.id));
+      },
+    );
+  });
+
+  group('CommandExecutor — /btw', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_btw_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase();
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test(
+      'drives sendBtwTurn with the full prompt text',
+      () async {
+        // `/btw how do I rename a file in bash?` should be
+        // forwarded to sendBtwTurn as a single string. The
+        // executor re-joins parts[1..] with spaces (rather than
+        // passing just parts[1]) so prompts that contain spaces
+        // round-trip verbatim.
+        String? capturedPrompt;
+        var sendCalls = 0;
+        await CommandExecutor().execute(
+          '/btw how do I rename a file in bash?',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: const <Message>[],
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {},
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            resolveAuxiliaryModel: () {},
+            enterBuiltinWizard: (_) {},
+            sendTurn: ({String? text}) async {},
+            findLastUserMessage: () async => null,
+            deleteMessagesFrom: (_) async {},
+            sendBtwTurn: (prompt) async {
+              capturedPrompt = prompt;
+              sendCalls++;
+            },
+            clearBtwTurns: (_) {},
+          ),
+        );
+
+        expect(sendCalls, equals(1),
+            reason: 'should drive exactly one btw turn');
+        expect(capturedPrompt, equals('how do I rename a file in bash?'),
+            reason: 'prompt must round-trip with internal spaces intact');
+      },
+    );
+
+    test(
+      'shows a usage toast when called without a prompt',
+      () async {
+        // Bare `/btw` and `/btw ` (with trailing space, trimmed to
+        // empty) should both surface a usage toast and never call
+        // sendBtwTurn.
+        for (final invocation in <String>['/btw', '/btw ', '/btw   ']) {
+          var sendCalls = 0;
+          String? lastToast;
+          await CommandExecutor().execute(
+            invocation,
+            CommandContext(
+              store: store,
+              providerService: providerService,
+              providerServiceReady: false,
+              currentSession: session,
+              currentSessionId: session.id,
+              sessions: [session],
+              currentMessages: const <Message>[],
+              projectPath: tempDir.path,
+              refresh: () {},
+              showToast: (message, {ToastMode? mode}) {
+                lastToast = message;
+              },
+              switchSession: (_) async {},
+              initSessions: () async {},
+              createNewSession: () async {},
+              runtime: (id) => runtime,
+              persistThinkingLevel: (_) {},
+              resolveAuxiliaryModel: () {},
+              enterBuiltinWizard: (_) {},
+              sendTurn: ({String? text}) async {},
+              findLastUserMessage: () async => null,
+              deleteMessagesFrom: (_) async {},
+              sendBtwTurn: (_) async {
+                sendCalls++;
+              },
+              clearBtwTurns: (_) {},
+            ),
+          );
+
+          expect(sendCalls, equals(0),
+              reason: 'must not fire a btw turn with no prompt '
+                  '(input: "$invocation")');
+          expect(lastToast, isNotNull,
+              reason: 'should surface a usage toast');
+          expect(lastToast, contains('Usage'),
+              reason: 'toast should explain the correct usage');
+        }
+      },
+    );
+
+    test(
+      'is a no-op when the AI is already responding',
+      () async {
+        // A second concurrent turn would race the in-flight
+        // stream (either a normal turn or a prior btw), so /btw
+        // must bail out and surface a toast.
+        runtime.isResponding = true;
+
+        var sendCalls = 0;
+        String? lastToast;
+        await CommandExecutor().execute(
+          '/btw hello?',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: const <Message>[],
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {
+              lastToast = message;
+            },
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            resolveAuxiliaryModel: () {},
+            enterBuiltinWizard: (_) {},
+            sendTurn: ({String? text}) async {},
+            findLastUserMessage: () async => null,
+            deleteMessagesFrom: (_) async {},
+            sendBtwTurn: (_) async {
+              sendCalls++;
+            },
+            clearBtwTurns: (_) {},
+          ),
+        );
+
+        expect(sendCalls, equals(0),
+            reason: 'must not drive a btw turn while one is in flight');
+        expect(lastToast, isNotNull);
+      },
+    );
+
+    test(
+      'rejects with a toast when there is no active session',
+      () async {
+        // The CommandContext's currentSessionId is null (we
+        // construct it that way). The executor should bail out
+        // with a toast rather than calling sendBtwTurn.
+        var sendCalls = 0;
+        String? lastToast;
+        await CommandExecutor().execute(
+          '/btw hi',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            currentSession: Session(id: 0, title: 'New Session'),
+            currentSessionId: null,
+            sessions: const <Session>[],
+            currentMessages: const <Message>[],
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {
+              lastToast = message;
+            },
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            resolveAuxiliaryModel: () {},
+            enterBuiltinWizard: (_) {},
+            sendTurn: ({String? text}) async {},
+            findLastUserMessage: () async => null,
+            deleteMessagesFrom: (_) async {},
+            sendBtwTurn: (_) async {
+              sendCalls++;
+            },
+            clearBtwTurns: (_) {},
+          ),
+        );
+
+        expect(sendCalls, equals(0));
+        expect(lastToast, isNotNull);
       },
     );
   });
