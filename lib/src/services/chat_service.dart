@@ -236,8 +236,20 @@ class ChatService {
     final apiMessages = _buildApiMessages(history, wireFamily);
     final toolDefs = _toolExecutor.getApiToolDefinitions();
 
-    final fullTextBuffer = StringBuffer();
-    final fullReasoningBuffer = StringBuffer();
+    // Per-round text/reasoning accumulators, hoisted out of the agentic
+    // loop so the post-loop persist (just below the `while (true)`)
+    // can read the final round's content. Inside the loop, these are
+    // cleared at the end of every tool round (both Anthropic and
+    // OpenAI branches), so by the time we break out of the loop they
+    // hold exactly the last round's text/reasoning — the "final
+    // answer" content. This avoids the prior bug where an accumulating
+    // buffer concatenated every round into the final `ai` row, which
+    // caused earlier rounds' text to appear twice in the next request
+    // (once in their own `tool_call` assistant message, once in the
+    // concatenated `ai` message) — wasting tokens and invalidating
+    // the server-side prompt-cache (KV) prefix on every turn.
+    final roundTextBuffer = StringBuffer();
+    final roundReasoningBuffer = StringBuffer();
     int promptTokens = 0;
     int completionTokens = 0;
     int promptCacheHitTokens = 0;
@@ -296,8 +308,6 @@ class ChatService {
       );
 
       final chunks = <LlmChunk>[];
-      final roundTextBuffer = StringBuffer();
-      final roundReasoningBuffer = StringBuffer();
 
       final useLerp = modelConfig?.streamLerp ?? false;
       String lerpPendingText = '';
@@ -330,7 +340,6 @@ class ChatService {
               if (take > 0) {
                 final emit = lerpPendingText.substring(0, take);
                 lerpPendingText = lerpPendingText.substring(take);
-                fullTextBuffer.write(emit);
                 onDelta(emit);
                 remaining -= take;
               }
@@ -341,7 +350,6 @@ class ChatService {
               if (take > 0) {
                 final emit = lerpPendingReasoning.substring(0, take);
                 lerpPendingReasoning = lerpPendingReasoning.substring(take);
-                fullReasoningBuffer.write(emit);
                 onReasoning(emit);
               }
             }
@@ -409,7 +417,6 @@ class ChatService {
                 lerpPendingText += chunk.textDelta!;
                 ensureLerpTimer();
               } else {
-                fullTextBuffer.write(chunk.textDelta);
                 onDelta(chunk.textDelta!);
               }
             }
@@ -419,7 +426,6 @@ class ChatService {
                 lerpPendingReasoning += chunk.reasoningContent!;
                 ensureLerpTimer();
               } else {
-                fullReasoningBuffer.write(chunk.reasoningContent);
                 onReasoning(chunk.reasoningContent!);
               }
             }
@@ -605,8 +611,8 @@ class ChatService {
       }
     }
 
-    final content = fullTextBuffer.toString();
-    final reasoningContent = fullReasoningBuffer.toString();
+    final content = roundTextBuffer.toString();
+    final reasoningContent = roundReasoningBuffer.toString();
     final cost = _estimateCost(
       provider,
       modelId,
