@@ -5,6 +5,7 @@ export 'src/models/part.dart';
 export 'src/storage/storage.dart';
 export 'src/components/ui/bg_progress_bar.dart';
 export 'src/components/ui/button.dart';
+export 'src/components/ui/multi_button.dart';
 export 'src/components/ui/glossy_model_button.dart';
 export 'src/components/ui/toast.dart';
 export 'src/components/ui/modal_panel.dart';

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-/// Outcome of a [openUrl] call. We surface this rather than throwing
+/// Outcome of an [openUrl] call. We surface this rather than throwing
 /// because the caller (the chat panel) wants to decide whether to
 /// surface a toast on failure — and a missing browser tool is not a
 /// programming error.
@@ -41,7 +41,7 @@ UrlLaunchResult openUrl(String url) {
   // browser process can outlive our TUI without any issue, and
   // blocking on a slow OS call would freeze the chat.
   try {
-    final helper = _helperForPlatform();
+    final helper = _urlHelperForPlatform();
     if (helper == null) {
       return UrlLaunchResult.failed;
     }
@@ -56,30 +56,98 @@ UrlLaunchResult openUrl(String url) {
   }
 }
 
+/// Outcome of an [openDirectory] call. Same shape conceptually as
+/// [UrlLaunchResult] so the call site can show a single toast for
+/// either kind of failure.
+enum OpenDirectoryResult {
+  /// The OS-level helper was invoked with a directory the platform
+  /// should be able to open.
+  launched,
+
+  /// [path] does not exist or is not a directory.
+  notFound,
+
+  /// The platform-specific helper binary (`xdg-open`, `open`, ...)
+  /// could not be found on `$PATH`, or `Process.start` itself failed.
+  failed,
+}
+
+/// Opens [path] in the system file explorer (Finder on macOS, the
+/// default file manager on Linux, Explorer on Windows). Returns an
+/// [OpenDirectoryResult] describing what happened.
+///
+/// The path must exist and be a directory — missing or non-directory
+/// paths are reported as [OpenDirectoryResult.notFound] rather than
+/// thrown, so the caller (e.g. the project path button) can show a
+/// toast explaining the failure without crashing the TUI.
+OpenDirectoryResult openDirectory(String path) {
+  final dir = Directory(path);
+  if (!dir.existsSync()) {
+    return OpenDirectoryResult.notFound;
+  }
+
+  try {
+    final helper = _fileManagerForPlatform();
+    if (helper == null) {
+      return OpenDirectoryResult.failed;
+    }
+    Process.start(
+      helper.executable,
+      [...helper.args, dir.absolute.path],
+      mode: ProcessStartMode.detached,
+    );
+    return OpenDirectoryResult.launched;
+  } catch (_) {
+    return OpenDirectoryResult.failed;
+  }
+}
+
 class _Helper {
   final String executable;
   final List<String> args;
-  const _Helper(this.executable, this.args);
+  const _Helper({required this.executable, required this.args});
 }
 
 /// Returns the platform-specific "open a URL" helper, or null if the
 /// current platform has no known helper.
-_Helper? _helperForPlatform() {
+_Helper? _urlHelperForPlatform() {
   if (Platform.isMacOS) {
-    return const _Helper('open', []);
+    return const _Helper(executable: 'open', args: []);
   }
   if (Platform.isLinux) {
     // `xdg-open` is the de-facto standard on every mainstream desktop
     // distribution. If a user is on a headless box without it, the
     // `Process.start` will throw and we will fall through to
     // [UrlLaunchResult.failed].
-    return const _Helper('xdg-open', []);
+    return const _Helper(executable: 'xdg-open', args: []);
   }
   if (Platform.isWindows) {
     // `start` is a cmd.exe builtin, not a real binary, so we have to
     // go through `cmd /c`. The empty title argument (`""`) keeps
     // `start` from interpreting the URL as a window title.
-    return const _Helper('cmd', ['/c', 'start', '""']);
+    return const _Helper(executable: 'cmd', args: ['/c', 'start', '""']);
+  }
+  return null;
+}
+
+/// Returns the platform-specific "open a directory in the file
+/// manager" helper. Today every mainstream desktop uses the same
+/// binary as URL launching, but we keep a separate function so the
+/// two concerns can diverge later (e.g. switch Linux to `dbus-send`
+/// to target a specific file manager) without touching [openUrl].
+_Helper? _fileManagerForPlatform() {
+  if (Platform.isMacOS) {
+    return const _Helper(executable: 'open', args: []);
+  }
+  if (Platform.isLinux) {
+    return const _Helper(executable: 'xdg-open', args: []);
+  }
+  if (Platform.isWindows) {
+    // `explorer` is the only binary that reliably opens a folder
+    // window in a fresh process; passing the path as a single arg
+    // works regardless of spaces in the path because
+    // `Process.start` quotes it for us.
+    return const _Helper(executable: 'explorer', args: []);
   }
   return null;
 }

@@ -153,6 +153,46 @@ class _ChatPanelState extends State<ChatPanel> {
     _toastKey.currentState?.show(message, mode: mode);
   }
 
+  /// Open the current project directory in the system file explorer.
+  /// Wired to the `open` segment of the project path [MultiButton] in
+  /// the side panel. Surfaces failures as toasts because the only
+  /// legitimate failure modes are "directory no longer exists" and
+  /// "no file manager on $PATH" — both worth telling the user about,
+  /// neither worth crashing the TUI for.
+  void _openProjectInExplorer() {
+    final result = openDirectory(Directory.current.path);
+    switch (result) {
+      case OpenDirectoryResult.launched:
+        return;
+      case OpenDirectoryResult.notFound:
+        _showToast(
+          'Directory not found: ${Directory.current.path}',
+          mode: ToastMode.error,
+        );
+      case OpenDirectoryResult.failed:
+        _showToast(
+          "Couldn't open file manager for ${Directory.current.path}",
+          mode: ToastMode.error,
+        );
+    }
+  }
+
+  /// Seed the chat input with `/project ` and move the caret to the
+  /// end so the user can type a new project path and submit. Wired to
+  /// the `switch` segment of the project path [MultiButton] in the
+  /// side panel. Routing through the slash command (rather than
+  /// driving the switch logic directly here) keeps the directory
+  /// validation, toast-on-missing-directory, and session reload logic
+  /// in [CommandExecutor.executeProject] as a single source of truth,
+  /// so typing `/project …` and clicking the button do exactly the
+  /// same thing.
+  void _switchProject() {
+    textController.text = '/project ';
+    textController.selection = TextSelection.collapsed(
+      offset: textController.text.length,
+    );
+  }
+
   static int get _maxVisibleItems => 6;
 
   Future<void> _initSessions() async {
@@ -995,6 +1035,8 @@ class _ChatPanelState extends State<ChatPanel> {
                       _overlayController.showSessionManager = true;
                     });
                   },
+                  onOpenProject: _openProjectInExplorer,
+                  onSwitchProject: _switchProject,
                 ),
               ),
             ],

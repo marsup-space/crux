@@ -4,18 +4,42 @@ import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import 'ui/multi_button.dart';
 
+/// Right-hand side panel showing the active and historical sessions,
+/// plus a [MultiButton] pinned to the bottom that exposes the current
+/// project path as two actions: `open` (reveal in the system file
+/// explorer) and `switch` (seed the chat input with `/project `).
+///
+/// The panel is intentionally thin: it does not know how to open a
+/// directory or how to drive the slash command pipeline. It just
+/// surfaces the click events to its parent (the chat panel) via
+/// [onOpenProject] and [onSwitchProject] callbacks. This keeps the
+/// TUI widget tree decoupled from the chat panel's command state
+/// machine, which is much easier to test in isolation.
 class ExtraInfoPanel extends StatefulComponent {
   final List<Session> sessions;
   final int currentSessionId;
   final void Function(int) onSwitchSession;
   final VoidCallback? onSessionTitleTap;
 
+  /// Invoked when the user clicks the `open` segment of the project
+  /// path button. Should open the project directory in the system
+  /// file explorer and surface any failure as a toast.
+  final VoidCallback? onOpenProject;
+
+  /// Invoked when the user clicks the `switch` segment of the project
+  /// path button. Should populate the chat input with `/project ` so
+  /// the user can type a new project path and submit it.
+  final VoidCallback? onSwitchProject;
+
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
     required this.onSwitchSession,
     this.onSessionTitleTap,
+    this.onOpenProject,
+    this.onSwitchProject,
   });
 
   @override
@@ -232,6 +256,11 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         ? '~${cwd.substring(home.length)}'
         : cwd;
 
+    // The bottom path uses a [MultiButton] rather than a plain
+    // [Text] so the user can both *see* the current project and
+    // *act* on it without leaving the panel. Idle shows the path;
+    // hover splits the same horizontal space into `open | switch`
+    // segments, each clickable.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -241,7 +270,21 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             children: topChildren,
           ),
         ),
-        Text(displayPath, style: TextStyle(color: CruxTheme.onSurfaceVariant)),
+        MultiButton(
+          label: displayPath,
+          color: CruxTheme.onSurfaceVariant,
+          hoverColor: CruxTheme.foreground,
+          segments: [
+            MultiButtonSegment(
+              label: 'open',
+              onPressed: panel.onOpenProject,
+            ),
+            MultiButtonSegment(
+              label: 'switch',
+              onPressed: panel.onSwitchProject,
+            ),
+          ],
+        ),
       ],
     );
   }
