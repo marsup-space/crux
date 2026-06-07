@@ -257,6 +257,14 @@ class ChatService {
     int promptCacheMissTokens = 0;
     int reasoningTokens = 0;
 
+    // Per-round thinking metrics. Reset at the top of each loop
+    // iteration so every tool_call message gets its own thinking
+    // duration and token count rather than inheriting stale values
+    // from a prior round.
+    int roundReasoningTokens = 0;
+    double roundThinkingDurationMs = 0;
+    DateTime? roundFirstContentTime;
+
     var firstTokenEver = true;
 
     // Resolve the per-turn round-trip cap from provider/model TOML config.
@@ -294,6 +302,12 @@ class ChatService {
       // start emitting and while tools run.
       runtime.roundStreaming = false;
       runtime.roundFirstTokenTime = null;
+
+      // Reset per-round thinking metrics so every tool_call message
+      // gets its own duration and token count.
+      roundReasoningTokens = 0;
+      roundThinkingDurationMs = 0;
+      roundFirstContentTime = null;
 
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
@@ -415,6 +429,15 @@ class ChatService {
             }
             if (chunk.textDelta != null) {
               roundTextBuffer.write(chunk.textDelta);
+              // Track when the first content (non-reasoning) delta
+              // arrives in this round — the thinking duration is the
+              // gap between the first delta (reasoning) and the first
+              // content delta. If the round has no content delta at
+              // all (e.g. reasoning → tool_use), we fall back to the
+              // round-end time below.
+              if (roundFirstContentTime == null) {
+                roundFirstContentTime = DateTime.now();
+              }
               if (useLerp) {
                 lerpPendingText += chunk.textDelta!;
                 ensureLerpTimer();
@@ -480,6 +503,24 @@ class ChatService {
             1000.0;
         runtime.cumulativeGenMs += roundMs;
       }
+
+      // Compute per-round thinking duration: the wall-clock time
+      // between the first delta of this round (reasoning start) and
+      // either the first content delta or the end of the round (for
+      // tool_call rounds that have no content text). This gives each
+      // tool_call message its own accurate thinking duration rather
+      // than the cumulative `runtime.thinkingDurationMs`.
+      if (runtime.roundStreaming && runtime.roundFirstTokenTime != null) {
+        final reasoningEnd = roundFirstContentTime ?? DateTime.now();
+        roundThinkingDurationMs = reasoningEnd
+                .difference(runtime.roundFirstTokenTime!)
+                .inMicroseconds /
+            1000.0;
+      }
+      // Capture per-round reasoning tokens before the final round
+      // overwrites the cumulative value.
+      roundReasoningTokens = reasoningTokens;
+
       runtime.roundStreaming = false;
       runtime.roundFirstTokenTime = null;
 
@@ -525,6 +566,13 @@ class ChatService {
         role: 'tool_call',
         content: roundText,
         reasoningContent: roundReasoning,
+        reasoningTokens: roundReasoningTokens,
+        thinkingDurationMs: roundReasoning.isNotEmpty
+            ? roundThinkingDurationMs.round()
+            : 0,
+        reasoningEffort: runtime.thinkingMode == 'disabled'
+            ? null
+            : runtime.reasoningEffort ?? 'normal',
         toolCalls: toolCallData,
       );
 

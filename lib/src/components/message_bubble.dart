@@ -128,10 +128,14 @@ class MessageBubble extends StatelessComponent {
 
     String thinkingSummary = '';
     if (hasReasoning && reasoningCollapsed) {
+      final secs = message.thinkingDurationMs > 0
+          ? (message.thinkingDurationMs / 1000.0).toStringAsFixed(1)
+          : '?';
       final tokens = message.reasoningTokens > 0
           ? message.reasoningTokens.toString()
           : '~${estimateTokens(message.reasoningContent)}';
-      thinkingSummary = '$tokens tokens';
+      final effort = message.reasoningEffort ?? 'normal';
+      thinkingSummary = '${secs}s, $tokens tokens [$effort]';
     }
 
     final children = <Component>[];
