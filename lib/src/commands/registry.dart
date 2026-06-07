@@ -54,17 +54,29 @@ class CommandRegistry extends ChangeNotifier {
     return _debugEnabled;
   }
 
-  /// Returns commands whose name starts with the given prefix.
+  /// Returns commands whose name (or any alias) starts with the given
+  /// prefix. The primary [SlashCommand.name] is always what shows up
+  /// in the suggestion list — the alias is only used as a way to
+  /// discover the command (e.g. typing `/继续` reveals `/continue`).
   List<SlashCommand> filterCommands(String prefix) {
     final list = all;
     if (prefix.isEmpty) return list;
-    return list.where((cmd) => cmd.name.startsWith(prefix)).toList();
+    return list
+        .where(
+          (cmd) => cmd.allNames.any((n) => n.startsWith(prefix)),
+        )
+        .toList();
   }
 
-  /// Returns the SlashCommand matching the exact given name, or null if not found.
+  /// Returns the SlashCommand matching the exact given name, or any
+  /// of its aliases, or null if not found. When the lookup hits an
+  /// alias, the same [SlashCommand] instance is returned (i.e. the
+  /// caller does not need to care which name the user typed).
   SlashCommand? findCommand(String name) {
     for (final cmd in all) {
-      if (cmd.name == name) return cmd;
+      for (final n in cmd.allNames) {
+        if (n == name) return cmd;
+      }
     }
     return null;
   }
@@ -244,6 +256,36 @@ const List<SlashCommand> _baseCommands = [
     name: '/debug',
     description: 'Toggle debug commands on/off',
     availableDuringResponse: true,
+  ),
+  // Resubmit the current context so the LLM continues generating.
+  // The Chinese alias `/继续` is the natural form for Chinese-speaking
+  // users; the English name is the canonical one shown in the
+  // suggestion overlay. `availableDuringResponse: false` because
+  // running it mid-stream would race with the active chat service
+  // call.
+  //
+  // The executor is smart about what to send back: if the last
+  // segment in the history is a `tool` result (or a `user` turn
+  // that the API accepts as a trailing turn), it round-trips the
+  // history verbatim — no synthetic user nudge — so an interrupted
+  // tool flow picks up cleanly. Only when the last segment is `ai`
+  // (round finished) does it append a small "请继续" user turn to
+  // satisfy the LLM APIs' role-alternation rule.
+  SlashCommand(
+    name: '/continue',
+    description: '继续生成 (resubmit context so the LLM keeps generating)',
+    aliases: ['/继续'],
+  ),
+  // Re-send the last user input, discarding whatever the previous
+  // round produced (the AI response, any tool calls, etc.). Best used
+  // after a turn has properly finished but the answer was
+  // unsatisfactory; also useful for recovering from an interrupted
+  // generation. Alias `/重试` matches the semantics of a typical
+  // "retry last request" affordance in chat UIs.
+  SlashCommand(
+    name: '/retry',
+    description: '重试 (re-send the last user input from scratch)',
+    aliases: ['/重试'],
   ),
 ];
 

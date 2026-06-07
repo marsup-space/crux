@@ -100,6 +100,8 @@ void main() {
       expect(offNames, contains('/tldr'));
       expect(offNames, contains('/project'));
       expect(offNames, contains('/debug'));
+      expect(offNames, contains('/continue'));
+      expect(offNames, contains('/retry'));
 
       // Debug on
       CommandRegistry.instance.enableDebug();
@@ -113,6 +115,65 @@ void main() {
       final names = CommandRegistry.instance.all.map((c) => c.name).toList();
       expect(names, isNot(contains('/config')));
       expect(names, isNot(contains('/quit')));
+    });
+  });
+
+  group('Aliases', () {
+    setUp(() {
+      CommandRegistry.instance.disableDebug();
+    });
+
+    test('/continue exposes /继续 as a Chinese alias', () {
+      final cmd = findCommand('/continue');
+      expect(cmd, isNotNull);
+      expect(cmd!.name, equals('/continue'));
+      expect(cmd.aliases, contains('/继续'));
+    });
+
+    test('/retry exposes /重试 as a Chinese alias', () {
+      final cmd = findCommand('/retry');
+      expect(cmd, isNotNull);
+      expect(cmd!.name, equals('/retry'));
+      expect(cmd.aliases, contains('/重试'));
+    });
+
+    test('SlashCommand.allNames includes the primary name and aliases', () {
+      final cmd = findCommand('/continue')!;
+      expect(cmd.allNames.toList(), equals(['/continue', '/继续']));
+    });
+
+    test('findCommand resolves an alias back to the same SlashCommand', () {
+      final primary = findCommand('/continue');
+      final byAlias = findCommand('/继续');
+      expect(byAlias, isNotNull);
+      expect(byAlias, same(primary));
+    });
+
+    test('findCommand resolves /重试 back to /retry', () {
+      final primary = findCommand('/retry');
+      final byAlias = findCommand('/重试');
+      expect(byAlias, isNotNull);
+      expect(byAlias, same(primary));
+    });
+
+    test('filterCommands matches by alias prefix', () {
+      // Typing /继续 should reveal the /continue command so users can
+      // discover the canonical English name from the Chinese alias.
+      final hits = filterCommands('/继');
+      final names = hits.map((c) => c.name).toList();
+      expect(names, contains('/continue'));
+    });
+
+    test('/continue and /retry are not available during an active response', () {
+      // The whole point of these commands is to act on a round that
+      // has finished (or errored out). Sending them mid-stream would
+      // race with the in-flight chat service call.
+      final cont = findCommand('/continue');
+      final retry = findCommand('/retry');
+      expect(cont, isNotNull);
+      expect(retry, isNotNull);
+      expect(cont!.availableDuringResponse, isFalse);
+      expect(retry!.availableDuringResponse, isFalse);
     });
   });
 
