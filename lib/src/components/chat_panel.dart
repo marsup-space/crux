@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
 import '../utils/cjk_word_boundary.dart';
@@ -68,6 +69,7 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _metricsHovered = false;
   String? _highlightText;
   int? _highlightMessageId;
+  int _lastContentWidth = 120;
 
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
@@ -989,6 +991,7 @@ class _ChatPanelState extends State<ChatPanel> {
   Component build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        _lastContentWidth = constraints.maxWidth.toInt();
         final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
 
         if (showInfoPanel) {
@@ -1578,8 +1581,15 @@ class _ChatPanelState extends State<ChatPanel> {
       }
       idx = charPos;
     }
-    final lineCount = '\n'.allMatches(content.substring(0, idx)).length;
-    return lineCount.toDouble();
+    final textBeforeExcerpt = content.substring(0, idx);
+    final maxWidth = _lastContentWidth - 4;
+    final config = TextLayoutConfig(
+      softWrap: true,
+      overflow: TextOverflow.clip,
+      maxWidth: maxWidth - 4,
+    );
+    final result = TextLayoutEngine.layout(textBeforeExcerpt, config);
+    return result.actualHeight.toDouble();
   }
 
   void _clearHighlightAfterDelay() {
