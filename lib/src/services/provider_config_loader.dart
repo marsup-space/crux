@@ -266,6 +266,15 @@ class ProviderConfigLoader {
       quota = _parseUsageQuotaConfig(quotaRaw as Map<String, dynamic>);
     }
 
+    // --- Optional provider-level round-trip cap (default_max_rounds) ---
+    // 0 or absent = unbounded. Negative values are rejected at load time
+    // with a clear error rather than silently ignored.
+    final defaultMaxRounds = _optionalNonNegativeInt(
+      map,
+      'default_max_rounds',
+      fieldLabel: 'Provider "$name"',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -273,6 +282,7 @@ class ProviderConfigLoader {
       endpointUrl: endpointUrl,
       models: List.unmodifiable(models),
       quota: quota,
+      defaultMaxRounds: defaultMaxRounds,
     );
   }
 
@@ -297,6 +307,16 @@ class ProviderConfigLoader {
 
     final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
 
+    // Optional per-model round-trip cap. 0 or absent = unbounded (falls
+    // back to the provider-level default_max_rounds, or unbounded if
+    // that's also unset). Negative values are rejected with a clear
+    // load error.
+    final maxRounds = _optionalNonNegativeInt(
+      map,
+      'max_rounds',
+      fieldLabel: 'Model "$id"',
+    );
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -307,6 +327,7 @@ class ProviderConfigLoader {
       thinkingBudget: thinkingBudget,
       maxTokens: maxTokens,
       streamLerp: streamLerp,
+      maxRounds: maxRounds,
     );
   }
 
@@ -412,6 +433,33 @@ class ProviderConfigLoader {
     if (v is! bool) {
       throw FormatException(
         'Field "$key" must be a boolean if present, got ${v.runtimeType}',
+      );
+    }
+    return v;
+  }
+
+  /// Optional non-negative integer accessor. Used for round-trip caps
+  /// where `0` is a meaningful value ("no cap", same as absent) but
+  /// negatives are always a user error.
+  ///
+  /// [fieldLabel] appears in the error message so the user knows which
+  /// `[[models]]` entry or which provider file is misconfigured.
+  int? _optionalNonNegativeInt(
+    Map<String, dynamic> map,
+    String key, {
+    required String fieldLabel,
+  }) {
+    final v = map[key];
+    if (v == null) return null;
+    if (v is! int) {
+      throw FormatException(
+        '$fieldLabel: field "$key" must be an integer if present, '
+        'got ${v.runtimeType}',
+      );
+    }
+    if (v < 0) {
+      throw FormatException(
+        '$fieldLabel: field "$key" must be >= 0 (0 means unbounded), got $v',
       );
     }
     return v;

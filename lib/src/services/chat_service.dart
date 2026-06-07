@@ -35,13 +35,6 @@ class ChatService {
   final Set<int> _activeSessions = {};
   final Set<int> _cancelRequested = {};
 
-  /// Maximum number of model→tool→model round-trips allowed in a single
-  /// user turn. Prevents an agentic loop from running unbounded if the
-  /// model keeps calling tools without producing a final answer. 50 is
-  /// generous enough for genuine multi-step tasks (build, refactor, debug)
-  /// while still bounding worst-case cost and latency.
-  static const int _maxStepsPerTurn = 50;
-
   ChatService(
     this._store,
     this._providerService,
@@ -177,9 +170,19 @@ class ChatService {
     }
   }
 
+  /// Run a single chat turn for [sessionId].
+  ///
+  /// [userContent] is the new user prompt for this turn. Pass `null`
+  /// to skip the user-message persist and re-submit the existing
+  /// history as-is — used by `/continue` when the conversation
+  /// already ends on a role that the LLM API will accept as a
+  /// trailing turn (a `tool` result, or a `user` message that's
+  /// already a valid final turn). When `null`, no new user message
+  /// is appended; the LLM is called with the wire-format history
+  /// as it stands. When non-null, the user turn is persisted and
+  /// the LLM is called with the new message appended.
   Future<void> sendMessage({
     required int sessionId,
-    required String userContent,
     required Session session,
     required SessionRuntimeState runtime,
     required void Function(String delta) onDelta,
@@ -188,8 +191,11 @@ class ChatService {
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
     void Function(int toolResultTokens)? onToolRound,
+    String? userContent,
   }) async {
-    await _store.addMessage(sessionId, role: 'user', content: userContent);
+    if (userContent != null) {
+      await _store.addMessage(sessionId, role: 'user', content: userContent);
+    }
 
     await _store.update(sessionId, status: SessionStatus.running);
     session.status = SessionStatus.running;
@@ -239,14 +245,23 @@ class ChatService {
     int reasoningTokens = 0;
 
     var firstTokenEver = true;
+
+    // Resolve the per-turn round-trip cap from provider/model TOML config.
+    // Precedence: model-level max_rounds → provider default_max_rounds
+    // → null (unbounded, the default). When set, the agentic loop bails
+    // out after that many model→tool→model round-trips and surfaces a
+    // soft "step limit reached" signal to the UI.
+    final maxRounds = provider.effectiveMaxRoundsFor(modelConfig!);
     var stepCount = 0;
     var stepLimitReached = false;
 
     while (true) {
-      stepCount++;
-      if (stepCount > _maxStepsPerTurn) {
-        stepLimitReached = true;
-        break;
+      if (maxRounds != null) {
+        stepCount++;
+        if (stepCount > maxRounds) {
+          stepLimitReached = true;
+          break;
+        }
       }
 
       if (_cancelRequested.contains(sessionId)) {
@@ -651,12 +666,14 @@ class ChatService {
 
     if (stepLimitReached) {
       // Soft signal to the user (toast in the UI) that the agent loop
-      // stopped because of the per-turn step cap. The session is left
-      // in `done` state with whatever text + tool history was generated
-      // up to this point, so the user can read it and send another
-      // message to continue. This is not an error — it's a safety brake.
+      // stopped because of the per-turn step cap (configured in the
+      // provider's TOML: `default_max_rounds` or per-model `max_rounds`).
+      // The session is left in `done` state with whatever text + tool
+      // history was generated up to this point, so the user can read
+      // it and send another message to continue. This is not an error
+      // — it's a safety brake configured by the provider.
       onError(
-        'Step limit reached ($_maxStepsPerTurn tool rounds). '
+        'Step limit reached ($maxRounds tool rounds). '
         'Send another message to continue.',
       );
     }

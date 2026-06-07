@@ -92,6 +92,16 @@ class ModelConfig {
 
   final bool streamLerp;
 
+  /// Optional per-turn round-trip cap for the agentic tool loop.
+  ///
+  /// When `null`, falls back to [ProviderConfig.defaultMaxRounds]. When
+  /// that is also `null`, the loop is unbounded (no cap). When set to a
+  /// positive integer, the loop bails out after that many
+  /// model→tool→model round-trips in a single user turn and surfaces a
+  /// soft "step limit reached" signal to the UI. `0` is treated the same
+  /// as `null` (unbounded).
+  final int? maxRounds;
+
   const ModelConfig({
     required this.id,
     required this.name,
@@ -102,6 +112,7 @@ class ModelConfig {
     this.thinkingBudget,
     this.maxTokens,
     this.streamLerp = false,
+    this.maxRounds,
   });
 
   /// The composite key used throughout Crux: `providerName/modelId`.
@@ -110,7 +121,8 @@ class ModelConfig {
   @override
   String toString() =>
       'ModelConfig($id, name=$name, ctx=$contextSize, '
-      'img=$imageSupport, effort=$reasoningEffort, think=$thinking)';
+      'img=$imageSupport, effort=$reasoningEffort, think=$thinking, '
+      'maxRounds=$maxRounds)';
 }
 
 /// Usage quota tier — maps a time window label to a token/request budget.
@@ -212,6 +224,12 @@ class ProviderConfig {
   /// Optional coding-plan quota configuration.
   final UsageQuotaConfig? quota;
 
+  /// Provider-level default cap on model→tool→model round-trips per
+  /// user turn. Used when a [[models]] entry's [ModelConfig.maxRounds]
+  /// is `null`. `null` (or `0`) means unbounded — the agentic loop is
+  /// not interrupted by a step cap.
+  final int? defaultMaxRounds;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -219,6 +237,7 @@ class ProviderConfig {
     required this.endpointUrl,
     required this.models,
     this.quota,
+    this.defaultMaxRounds,
   });
 
   /// Convenience: look up a model by its [ModelConfig.id].
@@ -243,8 +262,23 @@ class ProviderConfig {
   /// Whether any model under this provider supports image inputs.
   bool hasImageSupport() => models.any((m) => m.imageSupport);
 
+  /// Resolve the effective per-turn round-trip cap for a specific model.
+  ///
+  /// Precedence: [ModelConfig.maxRounds] (per-model override) →
+  /// [defaultMaxRounds] (provider-level) → `null` (unbounded).
+  ///
+  /// Returns `null` if neither is set, or if the resolved value is `0`
+  /// (treated as "no cap"). Returns a positive integer otherwise.
+  int? effectiveMaxRoundsFor(ModelConfig model) {
+    final fromModel = model.maxRounds;
+    if (fromModel != null && fromModel > 0) return fromModel;
+    if (defaultMaxRounds != null && defaultMaxRounds! > 0) return defaultMaxRounds;
+    return null;
+  }
+
   @override
   String toString() =>
       'ProviderConfig($name, type=$type, wire=$wireFamily, '
-      'endpoint=$endpointUrl, models=${models.length}, quota=$quota)';
+      'endpoint=$endpointUrl, models=${models.length}, quota=$quota, '
+      'defaultMaxRounds=$defaultMaxRounds)';
 }
