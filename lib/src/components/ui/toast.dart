@@ -1,164 +1,368 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import 'button.dart';
 
-/// A toast notification that auto-closes after a duration.
+/// The kind of toast notification, which controls the default duration
+/// and the icon shown in the left gutter.
+enum ToastMode {
+  /// Informational toast (default 3 s).
+  info,
+
+  /// Error toast (default 5 s).
+  error,
+
+  /// Quick status-change toast (default 2 s).
+  status,
+}
+
+/// Keywords that hint at which [ToastMode] to use when none is supplied
+/// explicitly to [ToastHubState.show]. Matched case-insensitively as
+/// substrings of the message. The mode key order in this map is the
+/// precedence order: `error` beats `status` beats `info`.
+const Map<ToastMode, List<String>> _toastKeywords = {
+  ToastMode.error: [
+    // English
+    'error', 'err', 'failed', 'failure', 'fail', 'crash', 'crashed',
+    'broken', 'denied', 'refused', 'cannot', "can't", 'exception',
+    'fatal', 'invalid', 'missing', 'timeout', 'timed out', 'unable',
+    'wrong', 'unsupported', 'unauthorized', 'forbidden', 'not found',
+    // Chinese
+    '错误', '失败', '异常', '出错', '不行', '崩溃', '无法', '无效',
+    '拒绝', '找不到', '不允许', '不支持', '超时', '致命',
+    '权限不足', '权限被拒绝', '无权限', '未授权', '未找到',
+    '出错了', '发生错误', '出现异常',
+  ],
+  ToastMode.status: [
+    // English
+    'done', 'ok', 'okay', 'saved', 'copied', 'loaded', 'ready',
+    'complete', 'completed', 'finished', 'success', 'succeeded',
+    '✓', '✔', '✅',
+    // Chinese
+    '完成', '好了', '成功', '加载', '就绪', '完毕', '已保存', '已加载',
+    '已复制', '已就绪', '完成啦', '搞定',
+  ],
+  ToastMode.info: [
+    // English (the catch-all; matched last so error/status win when both apply)
+    'info', 'information', 'note', 'notice', 'fyi', 'til', 'btw',
+    'hint', 'tip', 'reminder',
+    // Chinese
+    '提示', '通知', '注意', '提醒', '信息', '提示一下', '请注意',
+  ],
+};
+
+/// Returns the [ToastMode] best matching the given [message], or
+/// [ToastMode.info] as a neutral fallback. Matched case-insensitively
+/// against the keyword table above. The first matching mode wins, in
+/// the precedence order: error → status → info, so more "urgent" modes
+/// take precedence.
+ToastMode detectToastMode(String message) {
+  final lower = message.toLowerCase();
+  for (final entry in _toastKeywords.entries) {
+    for (final kw in entry.value) {
+      if (kw.isEmpty) continue;
+      if (lower.contains(kw.toLowerCase())) return entry.key;
+    }
+  }
+  return ToastMode.info;
+}
+
+// ---------------------------------------------------------------------------
+// ToastHub
+// ---------------------------------------------------------------------------
+
+/// A widget that manages a queue of toasts and renders them as overlays.
 ///
-/// The countdown pauses when the mouse hovers over the toast
-/// and resumes (from remaining time) when the mouse exits.
+/// Call [ToastHubState.show] to enqueue a new toast.  When a toast is
+/// currently visible its countdown is displayed on the right; additional
+/// queued toasts are shown as a green "+N" badge next to the countdown.
+/// Hovering the mouse over the toast pauses the countdown.
 ///
 /// Example:
 /// ```dart
-/// Toast(
-///   message: 'Model switched to openai/gpt-4o',
-///   onDismissed: () => hideToast(),
-/// )
+/// final toastKey = GlobalKey<ToastHubState>();
+/// // in build:
+/// ToastHub(key: toastKey),
+/// // later:
+/// toastKey.currentState?.show('Something happened');           // auto mode
+/// toastKey.currentState?.show('Loaded!', mode: ToastMode.status);
 /// ```
-class Toast extends StatefulComponent {
-  /// The message text to display.
-  final String message;
-
-  /// Callback invoked when the toast auto-closes.
-  final VoidCallback? onDismissed;
-
-  /// How long the toast stays visible before auto-closing.
-  final Duration duration;
-
-  /// Text style for the message.
-  final TextStyle? style;
-
-  /// Background color of the toast.
-  final Color bgColor;
-
-  /// Border color of the toast.
-  final Color borderColor;
-
-  /// Padding inside the toast.
-  final EdgeInsets padding;
-
-  const Toast({
-    super.key,
-    required this.message,
-    this.onDismissed,
-    this.duration = const Duration(seconds: 2),
-    this.style,
-    this.bgColor = CruxTheme.toastBackground,
-    this.borderColor = CruxTheme.toastBorder,
-    this.padding = const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-  });
+class ToastHub extends StatefulComponent {
+  const ToastHub({super.key});
 
   @override
-  State<Toast> createState() => _ToastState();
+  State<ToastHub> createState() => ToastHubState();
 }
 
-class _ToastState extends State<Toast> {
-  Timer? _timer;
-  DateTime? _timerStartedAt;
-  Duration _remaining = const Duration(seconds: 2);
+class ToastHubState extends State<ToastHub> {
+  /// Singleton for uncaught-error routing. Set on [initState], cleared
+  /// on [dispose]. Always null-check before calling — it's only live
+  /// while a [ToastHub] is mounted in the tree.
+  static ToastHubState? get globalInstance => _globalInstance;
+  static ToastHubState? _globalInstance;
+
+  final List<_ToastItem> _queue = [];
+  _ToastItem? _current;
+
+  Timer? _dismissTimer;
+  Timer? _tickTimer;
+  Duration _remaining = Duration.zero;
   bool _hovered = false;
 
   @override
   void initState() {
     super.initState();
-    _remaining = component.duration;
-    _startTimer();
+    _globalInstance = this;
   }
 
-  @override
-  void didUpdateComponent(Toast oldComponent) {
-    super.didUpdateComponent(oldComponent);
-    if (oldComponent.duration != component.duration) {
-      _remaining = component.duration;
-      _restartTimer();
+  /// Enqueue a toast.
+  ///
+  /// [message] is the text to display.
+  /// [mode] controls the icon and default duration. When omitted (the
+  /// default), [detectToastMode] is run on the message to pick a mode
+  /// based on keyword heuristics — falling back to [ToastMode.info].
+  ///   - [ToastMode.info]  → 3 s
+  ///   - [ToastMode.error] → 5 s
+  ///   - [ToastMode.status] → 2 s
+  /// [duration] overrides the mode-default duration.
+  void show(
+    String message, {
+    ToastMode? mode,
+    Duration? duration,
+  }) {
+    final effectiveMode = mode ?? detectToastMode(message);
+    final effectiveDuration = duration ?? _defaultDuration(effectiveMode);
+    final item = _ToastItem(
+      message: message,
+      mode: effectiveMode,
+      duration: effectiveDuration,
+    );
+
+    if (_current == null) {
+      _current = item;
+      _remaining = item.duration;
+      _startTimers();
+    } else {
+      _queue.add(item);
     }
+    setState(() {});
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  /// Dismiss the current toast immediately and show the next queued one.
+  void dismiss() {
+    _stopTimers();
+    _advance();
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    _timerStartedAt = DateTime.now();
-    _timer = Timer(_remaining, _dismiss);
-  }
+  // -- internals -----------------------------------------------------------
 
-  void _restartTimer() {
-    _timer?.cancel();
-    _timerStartedAt = DateTime.now();
-    _timer = Timer(_remaining, _dismiss);
-  }
+  static Duration _defaultDuration(ToastMode mode) => switch (mode) {
+        ToastMode.info => const Duration(seconds: 3),
+        ToastMode.error => const Duration(seconds: 5),
+        ToastMode.status => const Duration(seconds: 2),
+      };
 
-  void _pauseTimer() {
-    if (_timerStartedAt != null) {
-      final elapsed = DateTime.now().difference(_timerStartedAt!);
-      _remaining = component.duration - elapsed;
-      if (_remaining.isNegative) {
-        _remaining = Duration.zero;
+  void _startTimers() {
+    _stopTimers();
+    _dismissTimer = Timer(_remaining, _onDismiss);
+    _tickTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (!_hovered) {
+        _remaining -= const Duration(milliseconds: 50);
+        if (_remaining.isNegative) _remaining = Duration.zero;
+        setState(() {});
       }
-    }
-    _timer?.cancel();
+    });
   }
 
-  void _resumeTimer() {
+  void _stopTimers() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    _tickTimer?.cancel();
+    _tickTimer = null;
+  }
+
+  void _pauseTimers() {
+    // _remaining is already up-to-date from the last tick.
+    _stopTimers();
+  }
+
+  void _resumeTimers() {
     if (_remaining <= Duration.zero) {
-      _dismiss();
+      _onDismiss();
       return;
     }
-    _startTimer();
+    _startTimers();
   }
 
-  void _dismiss() {
-    _timer?.cancel();
-    component.onDismissed?.call();
+  void _onDismiss() {
+    _stopTimers();
+    _advance();
   }
+
+  void _advance() {
+    if (_queue.isNotEmpty) {
+      _current = _queue.removeAt(0);
+      _remaining = _current!.duration;
+      _startTimers();
+    } else {
+      _current = null;
+      _remaining = Duration.zero;
+    }
+    setState(() {});
+  }
+
+  // -- hover ---------------------------------------------------------------
 
   void _onHoverEnter() {
     _hovered = true;
-    _pauseTimer();
+    _pauseTimers();
   }
 
   void _onHoverExit() {
     _hovered = false;
-    _resumeTimer();
+    _resumeTimers();
   }
 
   @override
+  void dispose() {
+    _globalInstance = null;
+    _stopTimers();
+    super.dispose();
+  }
+
+  // -- build ---------------------------------------------------------------
+
+  @override
   Component build(BuildContext context) {
-    final toast = component;
-    final effectiveStyle = TextStyle(
-      color: CruxTheme.toastText,
-      fontWeight: FontWeight.bold,
-    ).merge(toast.style);
+    final cur = _current;
+    if (cur == null) return const SizedBox();
+
+    final mode = cur.mode;
+    final (
+      Color bgColor,
+      Color borderColor,
+      Color textColor,
+      Color iconColor,
+      String icon,
+    ) = switch (mode) {
+      ToastMode.info => (
+          CruxTheme.toastBgInfo,
+          CruxTheme.toastBorderInfo,
+          CruxTheme.toastTextInfo,
+          CruxTheme.toastTextInfo,
+          '\u26A1', // ⚡
+        ),
+      ToastMode.error => (
+          CruxTheme.toastBgError,
+          CruxTheme.toastBorderError,
+          CruxTheme.toastTextError,
+          CruxTheme.toastTextError,
+          '\u2716', // ✖
+        ),
+      ToastMode.status => (
+          CruxTheme.toastBgStatus,
+          CruxTheme.toastBorderStatus,
+          CruxTheme.toastTextStatus,
+          CruxTheme.toastTextStatus,
+          '\u2714', // ✔
+        ),
+    };
+
+    final queueCount = _queue.length;
+    final remainingSecs =
+        (_remaining.inMilliseconds / 1000.0).clamp(0.0, cur.duration.inMilliseconds / 1000.0);
+    final countdown = remainingSecs.toStringAsFixed(2);
+    final isError = mode == ToastMode.error;
 
     return MouseRegion(
       onEnter: (_) => _onHoverEnter(),
       onExit: (_) => _onHoverExit(),
       opaque: false,
       child: Container(
-        color: toast.bgColor,
-        padding: toast.padding,
+        decoration: BoxDecoration(
+          color: bgColor,
+          border: BoxBorder(
+            top: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
+            right: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
+            bottom: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
+            left: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Divider(color: toast.borderColor, height: 1),
+            // ── main row: icon + message + countdown + queue badge + close ──
             Row(
               children: [
-                Text(' ⚡ ', style: TextStyle(color: CruxTheme.toastText)),
-                Expanded(child: Text(toast.message, style: effectiveStyle)),
+                Text(' $icon ', style: TextStyle(color: iconColor)),
+                Expanded(
+                  child: Text(
+                    cur.message,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
                 if (_hovered)
                   Text(
-                    ' (paused)',
+                    '(paused) ',
                     style: TextStyle(color: CruxTheme.hintText),
                   ),
+                Text(
+                  countdown,
+                  style: TextStyle(color: CruxTheme.hintText),
+                ),
+                if (queueCount > 0)
+                  Text(
+                    ' +$queueCount',
+                    style: TextStyle(color: CruxTheme.successColor),
+                  ),
+                Text(' ', style: TextStyle(color: textColor)),
+                Button(
+                  label: '\u2715 ',
+                  onPressed: _onDismiss,
+                  color: CruxTheme.hintText,
+                  hoverColor: textColor,
+                  bgColor: bgColor,
+                  hoverBgColor: bgColor,
+                  padding: const EdgeInsets.all(0),
+                ),
               ],
             ),
-            Divider(color: toast.borderColor, height: 1),
+            // ── copy row: only for error toasts ──
+            if (isError)
+              Button(
+                label: '\u2398 Copy error',
+                onPressed: () => ClipboardManager.copy(cur.message),
+                color: CruxTheme.hintText,
+                hoverColor: textColor,
+                bgColor: bgColor,
+                hoverBgColor: bgColor,
+                padding: EdgeInsets.zero,
+              ),
           ],
         ),
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// _ToastItem
+// ---------------------------------------------------------------------------
+
+class _ToastItem {
+  final String message;
+  final ToastMode mode;
+  final Duration duration;
+
+  const _ToastItem({
+    required this.message,
+    required this.mode,
+    required this.duration,
+  });
 }

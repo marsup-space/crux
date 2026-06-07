@@ -281,20 +281,43 @@ void main() {
   group('Toast', () {
     test('renders message text', () async {
       await testNocterm('toast renders', (tester) async {
-        var dismissed = false;
+        final toastKey = GlobalKey<ToastHubState>();
         await tester.pumpComponent(
           Container(
             width: 80,
             height: 24,
-            child: Toast(
-              message: 'Model switched',
-              onDismissed: () => dismissed = true,
-              duration: const Duration(seconds: 5),
-            ),
+            child: ToastHub(key: toastKey),
           ),
         );
+        // No toast visible yet.
+        expect(tester.terminalState, isNot(containsText('Model switched')));
+
+        // Enqueue a toast and re-render.
+        toastKey.currentState?.show('Model switched');
+        await tester.pump();
         expect(tester.terminalState, containsText('Model switched'));
-        expect(dismissed, isFalse);
+      });
+    });
+
+    test('renders error and status toasts with the right mode', () async {
+      await testNocterm('toast modes render', (tester) async {
+        final toastKey = GlobalKey<ToastHubState>();
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 24,
+            child: ToastHub(key: toastKey),
+          ),
+        );
+        toastKey.currentState?.show('something failed', mode: ToastMode.error);
+        await tester.pump();
+        expect(tester.terminalState, containsText('something failed'));
+
+        // Wait for the 5 s error toast to elapse so we can show the next one.
+        await tester.pump(const Duration(seconds: 6));
+        toastKey.currentState?.show('all good', mode: ToastMode.status);
+        await tester.pump();
+        expect(tester.terminalState, containsText('all good'));
       });
     });
   });

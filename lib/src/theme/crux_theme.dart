@@ -128,6 +128,19 @@ class CruxTheme {
   static const toastBorder = outline;
   static const toastText = yellow;
 
+  // Per-mode colour coding so each toast mode is visually distinct.
+  static const toastBgError = Color(0x3D2020);
+  static const toastBorderError = Color(0xFF4444);
+  static const toastTextError = Color(0xFF8888);
+
+  static const toastBgStatus = Color(0x1E3D20);
+  static const toastBorderStatus = Color(0x44CC44);
+  static const toastTextStatus = Color(0x66EE66);
+
+  static const toastBgInfo = surfaceVariant;
+  static const toastBorderInfo = outline;
+  static const toastTextInfo = yellow;
+
   static const deleteWarning = red;
   static const deleteBackground = Color(0x44475A);
   static const confirmText = foreground;

@@ -1,7 +1,98 @@
+import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
 
-/// Registry of all available slash commands.
-const List<SlashCommand> slashCommands = [
+/// Mutable registry of all available slash commands.
+///
+/// The base list is always present. Debug commands are dynamically
+/// registered or unregistered by the `/debug` command.
+class CommandRegistry extends ChangeNotifier {
+  CommandRegistry._() {
+    _base.addAll(_baseCommands);
+  }
+
+  static final CommandRegistry instance = CommandRegistry._();
+
+  final List<SlashCommand> _base = [];
+  final List<SlashCommand> _debug = [];
+  bool _debugEnabled = false;
+
+  /// Whether debug commands are currently registered.
+  bool get debugEnabled => _debugEnabled;
+
+  /// All currently registered commands (base + debug if enabled).
+  List<SlashCommand> get all => _debugEnabled
+      ? <SlashCommand>[..._base, ..._debug]
+      : List<SlashCommand>.unmodifiable(_base);
+
+  /// Backwards-compatible view of the currently registered commands.
+  List<SlashCommand> get slashCommands => all;
+
+  /// Enable debug mode and register the debug command set.
+  void enableDebug() {
+    if (_debugEnabled) return;
+    _debug
+      ..clear()
+      ..addAll(_debugCommands);
+    _debugEnabled = true;
+    notifyListeners();
+  }
+
+  /// Disable debug mode and unregister the debug command set.
+  void disableDebug() {
+    if (!_debugEnabled) return;
+    _debugEnabled = false;
+    notifyListeners();
+  }
+
+  /// Toggle debug mode. Returns the new state (true = enabled).
+  bool toggleDebug() {
+    if (_debugEnabled) {
+      disableDebug();
+    } else {
+      enableDebug();
+    }
+    return _debugEnabled;
+  }
+
+  /// Returns commands whose name starts with the given prefix.
+  List<SlashCommand> filterCommands(String prefix) {
+    final list = all;
+    if (prefix.isEmpty) return list;
+    return list.where((cmd) => cmd.name.startsWith(prefix)).toList();
+  }
+
+  /// Returns the SlashCommand matching the exact given name, or null if not found.
+  SlashCommand? findCommand(String name) {
+    for (final cmd in all) {
+      if (cmd.name == name) return cmd;
+    }
+    return null;
+  }
+
+  /// Filters suggestions by a prefix string.
+  List<CommandSuggestion> filterSuggestions(
+    List<CommandSuggestion> suggestions,
+    String prefix,
+  ) {
+    if (prefix.isEmpty) return suggestions;
+    return suggestions.where((s) => s.value.startsWith(prefix)).toList();
+  }
+}
+
+// Re-export the singleton helpers so call sites can use them as before.
+List<SlashCommand> get slashCommands => CommandRegistry.instance.all;
+List<SlashCommand> filterCommands(String prefix) =>
+    CommandRegistry.instance.filterCommands(prefix);
+SlashCommand? findCommand(String name) =>
+    CommandRegistry.instance.findCommand(name);
+List<CommandSuggestion> filterSuggestions(
+  List<CommandSuggestion> suggestions,
+  String prefix,
+) =>
+    CommandRegistry.instance.filterSuggestions(suggestions, prefix);
+
+/// Base command set — always present.
+const List<SlashCommand> _baseCommands = [
   SlashCommand(
     name: '/model',
     description: 'Switch the AI model',
@@ -9,7 +100,11 @@ const List<SlashCommand> slashCommands = [
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
-  SlashCommand(name: '/new', description: 'Create a new session', availableDuringResponse: true),
+  SlashCommand(
+    name: '/new',
+    description: 'Create a new session',
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/session',
     description: 'Switch to a session',
@@ -52,31 +147,6 @@ const List<SlashCommand> slashCommands = [
     availableDuringResponse: true,
   ),
   SlashCommand(
-    name: '/config',
-    description: 'View or edit configuration',
-    params: ['key', 'value'],
-    suggestionsPerParam: [
-      [
-        CommandSuggestion(
-          value: 'model',
-          description: 'Default model configuration',
-        ),
-        CommandSuggestion(value: 'theme', description: 'UI theme settings'),
-        CommandSuggestion(value: 'api', description: 'API endpoint settings'),
-        CommandSuggestion(
-          value: 'output',
-          description: 'Output format settings',
-        ),
-      ],
-      [
-        CommandSuggestion(
-          value: 'default',
-          description: 'Reset to default value',
-        ),
-      ],
-    ],
-  ),
-  SlashCommand(
     name: '/theme',
     description: 'Change the UI theme',
     params: ['name'],
@@ -93,7 +163,6 @@ const List<SlashCommand> slashCommands = [
     ],
     availableDuringResponse: true,
   ),
-  SlashCommand(name: '/quit', description: 'Exit the application', availableDuringResponse: true),
   SlashCommand(
     name: '/history',
     description: 'Show conversation history',
@@ -171,27 +240,52 @@ const List<SlashCommand> slashCommands = [
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
+  SlashCommand(
+    name: '/debug',
+    description: 'Toggle debug commands on/off',
+    availableDuringResponse: true,
+  ),
 ];
 
-/// Returns commands whose name starts with the given prefix.
-List<SlashCommand> filterCommands(String prefix) {
-  if (prefix.isEmpty) return slashCommands;
-  return slashCommands.where((cmd) => cmd.name.startsWith(prefix)).toList();
-}
-
-/// Returns the SlashCommand matching the exact given name, or null if not found.
-SlashCommand? findCommand(String name) {
-  for (final cmd in slashCommands) {
-    if (cmd.name == name) return cmd;
-  }
-  return null;
-}
-
-/// Filters suggestions by a prefix string.
-List<CommandSuggestion> filterSuggestions(
-  List<CommandSuggestion> suggestions,
-  String prefix,
-) {
-  if (prefix.isEmpty) return suggestions;
-  return suggestions.where((s) => s.value.startsWith(prefix)).toList();
-}
+/// Debug command set — only registered when debug mode is on.
+const List<SlashCommand> _debugCommands = [
+  SlashCommand(
+    name: '/d-state',
+    description: '[debug] Dump current session state',
+  ),
+  SlashCommand(
+    name: '/d-messages',
+    description: '[debug] Dump all messages in current session',
+  ),
+  SlashCommand(
+    name: '/d-context',
+    description: '[debug] Dump context window info and token estimates',
+  ),
+  SlashCommand(
+    name: '/d-runtime',
+    description: '[debug] Dump runtime state (TTFT, tok/s, etc.)',
+  ),
+  SlashCommand(
+    name: '/d-providers',
+    description: '[debug] List all loaded providers and models',
+  ),
+  SlashCommand(
+    name: '/d-tools',
+    description: '[debug] List all registered tools',
+  ),
+  SlashCommand(
+    name: '/d-paths',
+    description: '[debug] Print relevant file paths (DB, providers, project)',
+  ),
+  SlashCommand(
+    name: '/d-env',
+    description: '[debug] Print environment info (Dart version, platform)',
+  ),
+  SlashCommand(
+    name: '/d-toast',
+    description:
+        '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
+    params: ['message'],
+    availableDuringResponse: true,
+  ),
+];

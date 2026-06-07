@@ -252,6 +252,10 @@ class ProviderService {
     await _persistAuthKeys();
   }
 
+  /// Returns the last-used model composite key, or null if none has been
+  /// set in this session (or persisted in `auth.json`).
+  String? get lastUsedModel => _lastUsedModel;
+
   /// Returns the auxiliary model composite key, or null if not set.
   String? get auxiliaryModel => _auxiliaryModel;
 

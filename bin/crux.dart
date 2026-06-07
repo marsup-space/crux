@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
@@ -89,6 +90,29 @@ void main(List<String> args) async {
     if (r.action == SeedAction.unchanged) continue;
     stderr.writeln('  ${r.action.name}: ${r.fileName}');
   }
+
+  // Wire uncaught errors to the toast hub so the user sees them as
+  // red error toasts rather than silent failures. The hub's static
+  // instance is only live while the chat panel is mounted, so we
+  // null-check before calling it.
+  //
+  // We use `Isolate.current.addErrorListener` because `dart:ui`'s
+  // `PlatformDispatcher` is a Flutter API and we're a pure Dart CLI app.
+  Isolate.current.addErrorListener(
+    RawReceivePort((dynamic message) {
+      // The error listener delivers a two-element list: [error, stack].
+      if (message is List<dynamic> && message.length == 2) {
+        final Object error = message[0];
+        final StackTrace stack = message[1] as StackTrace;
+        final inst = ToastHubState.globalInstance;
+        if (inst != null) {
+          final msg = error is String ? error : '$error';
+          inst.show('Internal error: $msg', mode: ToastMode.error);
+        }
+        stderr.writeln('FATAL: $error\n$stack');
+      }
+    }).sendPort,
+  );
 
   await runApp(
     _CruxApp(
