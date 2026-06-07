@@ -63,6 +63,15 @@ class SessionRuntimeState {
 
   bool isGeneratingTldr;
 
+  /// True while the in-flight stream is a `/btw` round (a one-shot,
+  /// ephemeral side-question) rather than a normal chat turn. The
+  /// chat panel uses this flag to render the boxed `BtwBubble`
+  /// variant instead of the regular `StreamingBubble`, and to
+  /// suppress tldr/title/auxiliary side-effects that only make sense
+  /// for "real" turns. Set by `_sendBtwTurn` when the btw LLM call
+  /// starts; cleared when it ends.
+  bool btwMode;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -82,6 +91,7 @@ class SessionRuntimeState {
     this.reasoningEffort = 'normal',
     this.cacheHitPct,
     this.isGeneratingTldr = false,
+    this.btwMode = false,
   });
 
   double get thinkingDurationMs {
@@ -112,6 +122,7 @@ class SessionRuntimeState {
     roundFirstTokenTime = null;
     roundStreaming = false;
     isResponding = false;
+    btwMode = false;
     cancelTimers();
   }
 
