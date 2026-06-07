@@ -7,6 +7,18 @@ import '../services/provider_service.dart';
 import '../storage/session_store.dart';
 import '../utils/token_estimate.dart';
 
+/// One `/btw` round: the user's ephemeral prompt and the AI's ephemeral
+/// reply. Both strings live only in memory (and only in [SessionController];
+/// the chat service never sees them) and are wiped on the next non-`/btw`
+/// user input, and on `/retry`. They survive session switches (each
+/// session has its own independent chain). They are never persisted
+/// to the database.
+class BtwTurn {
+  final String userText;
+  final String aiText;
+  const BtwTurn({required this.userText, required this.aiText});
+}
+
 class SessionController {
   final SessionStore _store;
   final ProviderService _providerService;
@@ -18,6 +30,67 @@ class SessionController {
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
+
+  /// Per-session chain of `/btw` rounds that the user has issued since
+  /// the last "real" turn. Kept in memory only — never written to disk
+  /// (so a process restart drops them cleanly) and never mixed into the
+  /// persisted history. Used by the chat panel to (a) re-feed prior
+  /// btw rounds into the LLM context for the *next* btw call, and
+  /// (b) render the boxed btw UI without going through the regular
+  /// message bubble machinery.
+  final Map<int, List<BtwTurn>> btwBuffer = {};
+
+  /// Read-only view of the in-memory btw chain for [sessionId]. Returns
+  /// an empty list when the session has never seen a `/btw`, or when
+  /// the chain has just been cleared.
+  List<BtwTurn> btwTurnsFor(int sessionId) =>
+      List.unmodifiable(btwBuffer[sessionId] ?? const <BtwTurn>[]);
+
+  /// Append a completed btw round (user prompt + AI response) to the
+  /// in-memory chain for [sessionId]. Caller is the chat panel's
+  /// btw stream completion handler.
+  void appendBtwTurn(int sessionId, BtwTurn turn) {
+    btwBuffer.putIfAbsent(sessionId, () => <BtwTurn>[]).add(turn);
+  }
+
+  /// Append a "pending" btw round to the in-memory chain — a pair
+  /// whose `aiText` is still empty because the LLM has not
+  /// finished responding. Used by the chat panel at the start of
+  /// `_sendBtwTurn` so the user's prompt is rendered as a
+  /// `BtwBubble.user` immediately, before the first delta arrives.
+  /// The chat panel then calls [updateLastBtwTurnAiText] as the
+  /// stream progresses so the AI side of the bubble updates in
+  /// place without a list mutation (which would force a re-render
+  /// of every prior turn as well).
+  void appendPendingBtwTurn(int sessionId, String userText) {
+    btwBuffer
+        .putIfAbsent(sessionId, () => <BtwTurn>[])
+        .add(BtwTurn(userText: userText, aiText: ''));
+  }
+
+  /// Update the AI-side text of the *last* btw turn in [sessionId]'s
+  /// chain. Called by the chat panel as the LLM streams, so the
+  /// `BtwBubble.ai` for the in-flight round updates in place rather
+  /// than being re-created. No-op when the chain is empty (which
+  /// would mean the chat panel and the controller are out of sync).
+  void updateLastBtwTurnAiText(int sessionId, String aiText) {
+    final list = btwBuffer[sessionId];
+    if (list == null || list.isEmpty) return;
+    final last = list.last;
+    list[list.length - 1] = BtwTurn(userText: last.userText, aiText: aiText);
+  }
+
+  /// Drop every accumulated btw round for [sessionId] and leave an
+  /// empty chain in its place. Called whenever the user issues a
+  /// non-`/btw` input or runs `/retry` — i.e. the conditions under
+  /// which a subsequent LLM call must NOT see the prior btw
+  /// context. The chat panel triggers this through the explicit
+  /// `clearBtwTurnsOnNextRealTurn` path used by `_sendMessage`
+  /// and `/retry`. Note that `switchSession` does NOT clear —
+  /// each session keeps its own chain across navigation.
+  void clearBtwTurnsFor(int sessionId) {
+    btwBuffer[sessionId] = <BtwTurn>[];
+  }
 
   SessionController({
     required SessionStore store,
@@ -150,6 +223,18 @@ class SessionController {
       session.status = SessionStatus.idle;
     }
 
+    // The in-memory `/btw` chain is *per session* and is NOT
+    // cleared on session switch. Each session has its own
+    // independent chain (keyed by session id), so navigating
+    // between sessions doesn't leak one session's scratch space
+    // into another's. The chain also survives a session switch:
+    // when the user navigates back to a session that has a
+    // pending chain, the renderer picks it up from
+    // [btwTurnsFor] and the user sees the same boxed bubbles
+    // they left behind. The chain is only dropped on a non-`/btw`
+    // real turn (see the chat panel's `_sendMessage`) or when
+    // the session itself is deleted (see [deleteSession]).
+
     currentSessionId = id;
     await loadMessages(id);
     final rt = runtime(id);
@@ -176,6 +261,10 @@ class SessionController {
     await _store.deleteSession(sessionId);
     _runtimeStates.remove(sessionId);
     messageCache.remove(sessionId);
+    // Drop the deleted session's btw chain alongside its other
+    // in-memory state so we don't leak entries for a session that
+    // no longer exists. Other sessions' chains are untouched.
+    btwBuffer.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
 
     if (wasCurrent) {
@@ -284,5 +373,6 @@ class SessionController {
     for (final rt in _runtimeStates.values) {
       rt.cancelTimers();
     }
+    btwBuffer.clear();
   }
 }
