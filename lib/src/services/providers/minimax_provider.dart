@@ -1,5 +1,5 @@
 import '../../models/provider_config.dart';
-import '../llm_provider.dart';
+import '../providers/anthropic_compatible_provider.dart';
 
 /// Provider for the MiniMax Anthropic-compatible endpoint.
 ///
@@ -46,12 +46,12 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
     final chatMsgs = messages.where((m) => m['role'] != 'system').toList();
     final body = <String, dynamic>{
       'model': modelId,
-      'messages': chatMsgs,
+      'messages': injectCacheBreakpoints(chatMsgs),
       'max_tokens': maxTokens ?? 16384,
       'stream': true,
     };
     if (systemMsg.isNotEmpty) {
-      body['system'] = systemMsg.map((m) => m['content']).join('\n');
+      body['system'] = buildCachedSystemBlocks(systemMsg);
     }
 
     if (thinkingMode == 'disabled') {
@@ -78,15 +78,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
     }
 
     if (tools != null && tools.isNotEmpty) {
-      body['tools'] = tools
-          .map(
-            (t) => ({
-              'name': t['name'],
-              'description': t['description'],
-              'input_schema': t['parameters'] as Map<String, dynamic>,
-            }),
-          )
-          .toList();
+      body['tools'] = buildCachedTools(tools);
     }
     return body;
   }

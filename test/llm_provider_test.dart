@@ -1,6 +1,7 @@
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/llm_provider.dart';
+import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/minimax_provider.dart';
 
 void main() {
@@ -81,17 +82,97 @@ void main() {
     });
 
     group('system message handling', () {
-      test('promotes a system message to the top-level `system` field', () {
+      test('promotes a system message to the top-level `system` array with cache_control', () {
         final body = provider.buildRequestBody(
           'claude-sonnet-4-6',
           systemAndUser,
           thinkingMode: 'enabled',
           reasoningEffort: 'normal',
         );
-        expect(body['system'], 'be brief');
+        final system = body['system'] as List;
+        expect(system, hasLength(1));
+        expect(system.first['type'], 'text');
+        expect(system.first['text'], 'be brief');
+        expect(system.first['cache_control'], {'type': 'ephemeral'});
         final chat = body['messages'] as List;
         expect(chat, hasLength(1));
         expect(chat.first['role'], 'user');
+      });
+    });
+
+    group('prompt cache breakpoints', () {
+      test('adds cache_control to the last tool definition', () {
+        final tools = [
+          {
+            'name': 'read',
+            'description': 'Read a file',
+            'parameters': {'type': 'object'},
+          },
+          {
+            'name': 'write',
+            'description': 'Write a file',
+            'parameters': {'type': 'object'},
+          },
+        ];
+        final body = provider.buildRequestBody(
+          'claude-sonnet-4-6',
+          userMsg,
+          thinkingMode: 'enabled',
+          tools: tools,
+        );
+        final toolsList = body['tools'] as List;
+        expect(toolsList, hasLength(2));
+        expect(toolsList.first.containsKey('cache_control'), isFalse);
+        expect(toolsList.last['cache_control'], {'type': 'ephemeral'});
+      });
+
+      test('adds cache_control to the last message content block (string)', () {
+        final body = provider.buildRequestBody(
+          'claude-sonnet-4-6',
+          userMsg,
+          thinkingMode: 'enabled',
+        );
+        final chat = body['messages'] as List;
+        expect(chat, hasLength(1));
+        final content = chat.first['content'] as List;
+        expect(content, hasLength(1));
+        expect(content.first['type'], 'text');
+        expect(content.first['text'], 'hi');
+        expect(content.first['cache_control'], {'type': 'ephemeral'});
+      });
+
+      test('adds cache_control to the last block of array content', () {
+        final messages = [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'tool_result', 'tool_use_id': 't1', 'content': 'ok'},
+              {'type': 'tool_result', 'tool_use_id': 't2', 'content': 'done'},
+            ],
+          },
+        ];
+        final body = provider.buildRequestBody(
+          'claude-sonnet-4-6',
+          messages,
+          thinkingMode: 'enabled',
+        );
+        final chat = body['messages'] as List;
+        final content = chat.first['content'] as List;
+        expect(content, hasLength(2));
+        expect(content.first.containsKey('cache_control'), isFalse);
+        expect(content.last['cache_control'], {'type': 'ephemeral'});
+      });
+
+      test('does not mutate the original messages list', () {
+        final original = [
+          {'role': 'user', 'content': 'hi'},
+        ];
+        provider.buildRequestBody(
+          'claude-sonnet-4-6',
+          original,
+          thinkingMode: 'enabled',
+        );
+        expect(original.first['content'], 'hi');
       });
     });
 
@@ -212,6 +293,33 @@ void main() {
           reason: 'effort=$effort should map to wire $expected',
         );
       }
+    });
+
+    test('inherits cache_control on system, tools, and messages', () {
+      final tools = [
+        {
+          'name': 'bash',
+          'description': 'Run a command',
+          'parameters': {'type': 'object'},
+        },
+      ];
+      final body = provider.buildRequestBody(
+        'MiniMax-M3',
+        systemAndUser,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'high',
+        tools: tools,
+      );
+      // System: array with cache_control on last block
+      final system = body['system'] as List;
+      expect(system.last['cache_control'], {'type': 'ephemeral'});
+      // Tools: cache_control on last tool
+      final toolsList = body['tools'] as List;
+      expect(toolsList.last['cache_control'], {'type': 'ephemeral'});
+      // Messages: cache_control on last content block
+      final chat = body['messages'] as List;
+      final content = chat.last['content'] as List;
+      expect(content.last['cache_control'], {'type': 'ephemeral'});
     });
   });
 }

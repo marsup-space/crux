@@ -3,7 +3,9 @@ import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/provider_config_loader.dart';
 import 'package:crux/src/services/llm_provider.dart';
+import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
+import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 
 void main() {
   group('WireFamily', () {

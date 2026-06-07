@@ -1,4 +1,4 @@
-import '../llm_provider.dart';
+import '../providers/openai_compatible_provider.dart';
 
 class DeepSeekProvider extends OpenAICompatibleProvider {
   @override
