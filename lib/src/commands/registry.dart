@@ -287,6 +287,19 @@ const List<SlashCommand> _baseCommands = [
     description: '重试 (re-send the last user input from scratch)',
     aliases: ['/重试'],
   ),
+  // Ephemeral side-question: ask the model a quick question without
+  // polluting the real conversation. The AI's reply is rendered in a
+  // boxed, dim bubble and lives only in memory. Consecutive `/btw`
+  // calls chain (each one sees the prior btw turns as context). The
+  // whole chain evaporates the moment the user sends a non-`/btw`
+  // message or switches sessions — nothing is ever persisted.
+  // `availableDuringResponse: false` so it never races with the
+  // main model's in-flight stream.
+  SlashCommand(
+    name: '/btw',
+    description:
+        'Ephemeral side-question — not saved, discarded on next real turn',
+  ),
 ];
 
 /// Debug command set — only registered when debug mode is on.
