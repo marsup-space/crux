@@ -2032,11 +2032,25 @@ class _ChatPanelState extends State<ChatPanel> {
     textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
+  String _displayEff(String effort) {
+    switch (effort) {
+      case 'normal':
+        return 'med';
+      case 'high':
+        return 'high';
+      case 'max':
+        return 'max';
+      case 'low':
+        return 'low';
+      default:
+        return effort;
+    }
+  }
+
   String _thinkingLabel(SessionRuntimeState rt) {
     final effort = rt.thinkingMode == 'disabled'
-        ? 'off'
-        : rt.reasoningEffort ?? 'normal';
-    return '\u{F0EB} ${effort.padRight(4)}';
+ ? 'off' : _displayEff(rt.reasoningEffort ?? 'normal');
+   return '\ \{F0EB} ${effort.padRight(4)}';
   }
 
   String _cacheHitLabel(SessionRuntimeState? rt, Session session) {
