@@ -336,4 +336,117 @@ void main() {
       expect(stillThere!.archivedAt, isNotNull);
     });
   });
+
+  group('cleanOffloadedContent (direct)', () {
+    test('returns the sum of byte_size across all rows deleted', () async {
+      final session = await store.create(model: 'test/test');
+      await store.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_1',
+        toolName: 'write',
+        byteSize: 100,
+        lineCount: 1,
+        content: 'x' * 100,
+      );
+      await store.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_2',
+        toolName: 'write',
+        byteSize: 250,
+        lineCount: 1,
+        content: 'y' * 250,
+      );
+      await store.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_3',
+        toolName: 'edit',
+        byteSize: 50,
+        lineCount: 1,
+        content: 'z' * 50,
+      );
+
+      final freed = await store.cleanOffloadedContent(session.id);
+      expect(freed, 100 + 250 + 50); // 400
+    });
+
+    test('removes every row for the session', () async {
+      final session = await store.create(model: 'test/test');
+      for (final id in ['a', 'b', 'c']) {
+        await store.saveOffloadedContent(
+          sessionId: session.id,
+          callId: id,
+          toolName: 'write',
+          byteSize: 10,
+          lineCount: 1,
+          content: 'x' * 10,
+        );
+      }
+
+      await store.cleanOffloadedContent(session.id);
+
+      for (final id in ['a', 'b', 'c']) {
+        expect(
+          await store.getOffloadedContent(session.id, id),
+          isNull,
+          reason: 'row $id should be gone after clean',
+        );
+      }
+    });
+
+    test('does not touch other sessions rows', () async {
+      final sessionA = await store.create(model: 'test/test');
+      final sessionB = await store.create(model: 'test/test');
+      await store.saveOffloadedContent(
+        sessionId: sessionA.id,
+        callId: 'a_only',
+        toolName: 'write',
+        byteSize: 10,
+        lineCount: 1,
+        content: 'x' * 10,
+      );
+      await store.saveOffloadedContent(
+        sessionId: sessionB.id,
+        callId: 'b_only',
+        toolName: 'write',
+        byteSize: 20,
+        lineCount: 1,
+        content: 'y' * 20,
+      );
+
+      // Clean only session A. Session B's row must survive.
+      final freed = await store.cleanOffloadedContent(sessionA.id);
+      expect(freed, 10);
+      expect(
+        await store.getOffloadedContent(sessionA.id, 'a_only'),
+        isNull,
+      );
+      expect(
+        await store.getOffloadedContent(sessionB.id, 'b_only'),
+        'y' * 20,
+      );
+    });
+
+    test('returns 0 for a session with no offloaded rows', () async {
+      final session = await store.create(model: 'test/test');
+      final freed = await store.cleanOffloadedContent(session.id);
+      expect(freed, 0);
+    });
+
+    test('is idempotent — second call returns 0', () async {
+      final session = await store.create(model: 'test/test');
+      await store.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'once',
+        toolName: 'write',
+        byteSize: 5,
+        lineCount: 1,
+        content: 'hello',
+      );
+
+      final first = await store.cleanOffloadedContent(session.id);
+      expect(first, 5);
+      final second = await store.cleanOffloadedContent(session.id);
+      expect(second, 0);
+    });
+  });
 }
