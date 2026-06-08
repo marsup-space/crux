@@ -45,6 +45,35 @@ class LlmChunk {
   });
 }
 
+LlmChunk? contentBlockDeltaToChunk(
+  Map<String, dynamic> json,
+  Map<int, ({String callId, String name})> toolBlocks,
+) {
+  final delta = json['delta'] as Map<String, dynamic>?;
+  if (delta == null) return null;
+  final deltaType = delta['type'] as String?;
+  if (deltaType == 'thinking_delta') {
+    return LlmChunk(reasoningContent: delta['thinking'] as String?);
+  }
+  if (deltaType == 'text_delta') {
+    return LlmChunk(textDelta: delta['text'] as String?);
+  }
+  if (deltaType == 'input_json_delta') {
+    final partialJson = delta['partial_json'] as String? ?? '';
+    final index = json['index'] as int? ?? 0;
+    final block = toolBlocks[index];
+    return LlmChunk(
+      toolUse: ToolUseChunk(
+        index: index,
+        callId: block?.callId ?? '',
+        name: block?.name ?? '',
+        inputDelta: partialJson,
+      ),
+    );
+  }
+  return null;
+}
+
 class LlmClient {
   final HttpClient _httpClient = HttpClient();
 
@@ -303,30 +332,8 @@ class LlmClient {
           }
 
           if (eventType == 'content_block_delta') {
-            final delta = json['delta'] as Map<String, dynamic>?;
-            if (delta != null) {
-              final deltaType = delta['type'] as String?;
-              if (deltaType == 'thinking_delta') {
-                controller.add(
-                  LlmChunk(reasoningContent: delta['thinking'] as String?),
-                );
-              } else if (deltaType == 'text_delta') {
-                controller.add(LlmChunk(textDelta: delta['text'] as String?));
-              } else if (deltaType == 'input_json_delta') {
-                final partialJson = delta['partial_json'] as String? ?? '';
-                final index = json['index'] as int? ?? 0;
-                final block = toolBlocks[index];
-                controller.add(
-                  LlmChunk(
-                    toolUse: ToolUseChunk(
-                      callId: block?.callId ?? '',
-                      name: block?.name ?? '',
-                      inputDelta: partialJson,
-                    ),
-                  ),
-                );
-              }
-            }
+            final chunk = contentBlockDeltaToChunk(json, toolBlocks);
+            if (chunk != null) controller.add(chunk);
           }
 
           if (eventType == 'message_delta') {

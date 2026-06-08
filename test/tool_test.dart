@@ -3,9 +3,16 @@ import 'package:test/test.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
+import 'package:crux/src/services/llm_client.dart';
+import 'package:crux/src/services/tool_executor.dart';
 import 'package:crux/src/tools/bash_tool.dart';
+import 'package:crux/src/tools/cmd_tool.dart';
+import 'package:crux/src/tools/glob_tool.dart';
+import 'package:crux/src/tools/grep_tool.dart';
+import 'package:crux/src/tools/powershell_tool.dart';
 import 'package:crux/src/tools/read_tool.dart';
 import 'package:crux/src/tools/edit_tool.dart';
+import 'package:path/path.dart' as p;
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
@@ -14,24 +21,25 @@ import 'package:crux/src/utils/token_estimate.dart';
 void main() {
   group('resolvePath', () {
     test('returns absolute path unchanged', () {
-      expect(
-        resolvePath('/home/user/file.txt', '/home/user'),
-        '/home/user/file.txt',
-      );
+      final absolute = Platform.isWindows
+          ? r'C:\home\user\file.txt'
+          : '/home/user/file.txt';
+      final cwd = Platform.isWindows ? r'C:\home\user' : '/home/user';
+      expect(resolvePath(absolute, cwd), absolute);
     });
 
     test('resolves relative path against working directory', () {
-      expect(
-        resolvePath('src/main.dart', '/home/user/project'),
-        '/home/user/project/src/main.dart',
-      );
+      final cwd = Platform.isWindows ? r'C:\home\user\project' : '/home/user/project';
+      final result = resolvePath('src/main.dart', cwd);
+      expect(p.basename(result), 'main.dart');
+      expect(p.dirname(result), p.join(cwd, 'src'));
     });
 
     test('resolves dot-relative path', () {
-      expect(
-        resolvePath('./lib/app.dart', '/home/user/project'),
-        '/home/user/project/./lib/app.dart',
-      );
+      final cwd = Platform.isWindows ? r'C:\home\user\project' : '/home/user/project';
+      final result = resolvePath('./lib/app.dart', cwd);
+      expect(p.basename(result), 'app.dart');
+      expect(p.dirname(result), endsWith(p.join('lib')));
     });
   });
 
@@ -74,12 +82,12 @@ void main() {
       final tracker = FileReadTracker();
       final registry = ToolRegistry();
       registry.registerDefaults(tracker);
-      expect(registry.all.length, 7);
       final names = registry.all.map((t) => t.name).toList();
+      final expectedShell = Platform.isWindows ? 'cmd' : 'bash';
       expect(
         names,
         containsAll([
-          'bash',
+          expectedShell,
           'read',
           'write',
           'edit',
@@ -88,6 +96,14 @@ void main() {
           'webfetch',
         ]),
       );
+      if (Platform.isWindows) {
+        expect(names, contains('powershell'));
+        expect(registry.all.length, 8);
+      } else {
+        expect(names, isNot(contains('powershell')));
+        expect(names, isNot(contains('cmd')));
+        expect(registry.all.length, 7);
+      }
     });
   });
 
@@ -361,7 +377,7 @@ void main() {
       }, ctx);
       expect(result.output, contains('hello_crux_test'));
       expect(result.metadata['exitCode'], 0);
-    });
+    }, skip: Platform.isWindows);
 
     test('appends exit code suffix when command fails', () async {
       final tool = BashTool();
@@ -377,7 +393,7 @@ void main() {
       }, ctx);
       expect(result.metadata['exitCode'], 7);
       expect(result.output.trimRight().endsWith('[exit code: 7]'), isTrue);
-    });
+    }, skip: Platform.isWindows);
 
     test(
       'places exit code suffix AFTER truncation marker, not inside kept lines',
@@ -411,7 +427,107 @@ void main() {
         final exitIdx = result.output.lastIndexOf('[exit code: 3]');
         expect(truncIdx, lessThan(exitIdx));
       },
+      skip: Platform.isWindows,
     );
+  });
+
+  group('CmdTool execute (Windows)', () {
+    test('executes a simple cmd command', () async {
+      final tool = CmdTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      final result = await tool.execute({
+        'command': 'echo hello_crux_test',
+        'description': 'Test echo command',
+      }, ctx);
+      expect(result.output.toLowerCase(), contains('hello_crux_test'));
+      expect(result.metadata['exitCode'], 0);
+    }, skip: !Platform.isWindows);
+
+    test('handles quoted slashes in arguments (regression for session 13 hang)',
+        () async {
+      final tool = CmdTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+      );
+      final result = await tool.execute({
+        'command': r'echo "fix /continue"',
+      }, ctx);
+      expect(
+        result.output.contains("'/continue' is outside repository"),
+        isFalse,
+        reason: 'should not leak git-style pathspec errors',
+      );
+      expect(result.output.toLowerCase(), contains('fix /continue'));
+    }, skip: !Platform.isWindows);
+
+    test('handles multi-line commands with quoted slashes (session 13 commit)',
+        () async {
+      final tool = CmdTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: r'C:\Projects\crux',
+      );
+      final result = await tool.execute({
+        'command': r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
+      }, ctx);
+      expect(
+        result.output.contains("'/continue' is outside repository"),
+        isFalse,
+      );
+      expect(result.output.toLowerCase(), contains('fix(commands)'));
+      expect(result.output.toLowerCase(), contains('second line'));
+    }, skip: !Platform.isWindows);
+
+    test('cleans up temp .bat file after execution', () async {
+      final tool = CmdTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      await tool.execute({'command': 'echo cleanup_test'}, ctx);
+      await Future.delayed(const Duration(milliseconds: 100));
+      final leaked = Directory(Directory.systemTemp.path)
+          .listSync()
+          .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
+          .toList();
+      expect(leaked, isEmpty);
+    }, skip: !Platform.isWindows);
+
+    test('returns error for missing command', () async {
+      final tool = CmdTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      final result = await tool.execute({}, ctx);
+      expect(result.output, contains('Missing required parameter'));
+    });
+
+    test('PowerShellTool has correct name and schema', () {
+      final tool = PowerShellTool();
+      expect(tool.name, 'powershell');
+      expect(tool.parametersSchema['required'], contains('command'));
+    });
+
+    test('CmdTool has correct name and schema', () {
+      final tool = CmdTool();
+      expect(tool.name, 'cmd');
+      expect(tool.parametersSchema['required'], contains('command'));
+    });
   });
 
   group('ReadTool execute', () {
@@ -720,6 +836,191 @@ void main() {
         {'name': 'write', 'description': 'Writes a file', 'parameters': {}},
       ];
       expect(estimateToolDefsTokens(two), greaterThan(estimateToolDefsTokens(one)));
+    });
+  });
+
+  group('contentBlockDeltaToChunk (Anthropic multi-call regression)', () {
+    test('preserves block index in input_json_delta', () {
+      final toolBlocks = <int, ({String callId, String name})>{
+        0: (callId: 'call_a', name: 'grep'),
+        1: (callId: 'call_b', name: 'read'),
+      };
+
+      final grepDelta = contentBlockDeltaToChunk(
+        {
+          'index': 0,
+          'delta': {
+            'type': 'input_json_delta',
+            'partial_json': '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
+          },
+        },
+        toolBlocks,
+      );
+      expect(grepDelta, isNotNull);
+      expect(grepDelta!.toolUse, isNotNull);
+      expect(grepDelta.toolUse!.index, 0, reason: 'index must be propagated');
+      expect(grepDelta.toolUse!.callId, 'call_a');
+      expect(grepDelta.toolUse!.name, 'grep');
+      expect(
+        grepDelta.toolUse!.inputDelta,
+        '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
+      );
+
+      final readDelta = contentBlockDeltaToChunk(
+        {
+          'index': 1,
+          'delta': {
+            'type': 'input_json_delta',
+            'partial_json': '{"filePath": "c:\\\\Projects\\\\crux"}',
+          },
+        },
+        toolBlocks,
+      );
+      expect(readDelta!.toolUse!.index, 1);
+      expect(readDelta.toolUse!.callId, 'call_b');
+      expect(readDelta.toolUse!.name, 'read');
+    });
+
+    test('end-to-end: parallel deltas do not get concatenated', () {
+      final toolBlocks = <int, ({String callId, String name})>{
+        0: (callId: 'call_grep', name: 'grep'),
+        1: (callId: 'call_read', name: 'read'),
+      };
+      final deltas = [
+        contentBlockDeltaToChunk(
+          {
+            'index': 0,
+            'delta': {
+              'type': 'input_json_delta',
+              'partial_json': '{"pattern": "TODO", "path": "lib"}',
+            },
+          },
+          toolBlocks,
+        )!,
+        contentBlockDeltaToChunk(
+          {
+            'index': 1,
+            'delta': {
+              'type': 'input_json_delta',
+              'partial_json': '{"filePath": "lib/foo.dart"}',
+            },
+          },
+          toolBlocks,
+        )!,
+      ];
+      final calls = ToolExecutor.parseToolUseFromChunks(deltas);
+      expect(calls.length, 2);
+      final grepCall = calls.firstWhere((c) => c.name == 'grep');
+      expect(grepCall.input['pattern'], 'TODO');
+      expect(grepCall.input['path'], 'lib');
+      expect(grepCall.parseError, isNull);
+      final readCall = calls.firstWhere((c) => c.name == 'read');
+      expect(readCall.input['filePath'], 'lib/foo.dart');
+      expect(readCall.parseError, isNull);
+    });
+  });
+
+  group('GrepTool with file path (regression for session 12 hang)', () {
+    test('treats a file path as single-file grep, not directory listing', () async {
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+      );
+      final result = await GrepTool().execute({
+        'pattern': r'filterCommands|isCommandAvailable|filterSuggestions',
+        'path': r'c:\Projects\crux\lib\src\components\chat_panel.dart',
+        'context': 3,
+      }, ctx);
+      expect(result.output, isNot(contains('Directory listing failed')));
+      expect(result.output, isNot(contains('FileSystemException')));
+      expect(result.output.toLowerCase(), contains('filtercommands'));
+    });
+
+    test('does not throw on directory paths either (sanity)', () async {
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+      );
+      final result = await GrepTool().execute({
+        'pattern': 'Platform.isWindows',
+        'path': r'c:\Projects\crux\lib\src\tools',
+      }, ctx);
+      expect(result.output, contains('Platform.isWindows'));
+    });
+  });
+
+  group('parseToolUseFromChunks (multi-call regression)', () {
+    test('keeps parallel tool calls separate by index', () {
+      final chunks = <LlmChunk>[
+        const LlmChunk(
+          toolUse: ToolUseChunk(
+            index: 0,
+            callId: 'call_a',
+            name: 'grep',
+            inputDelta: '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
+          ),
+        ),
+        const LlmChunk(
+          toolUse: ToolUseChunk(
+            index: 1,
+            callId: 'call_b',
+            name: 'read',
+            inputDelta: '{"filePath": "c:\\\\Projects\\\\crux"}',
+          ),
+        ),
+      ];
+      final calls = ToolExecutor.parseToolUseFromChunks(chunks);
+      expect(calls.length, 2);
+
+      final grepCall = calls.firstWhere((c) => c.name == 'grep');
+      expect(grepCall.callId, 'call_a');
+      expect(grepCall.input['pattern'], '/continue');
+      expect(grepCall.input['path'], r'c:\Projects\crux');
+      expect(grepCall.parseError, isNull);
+
+      final readCall = calls.firstWhere((c) => c.name == 'read');
+      expect(readCall.callId, 'call_b');
+      expect(readCall.input['filePath'], r'c:\Projects\crux');
+      expect(readCall.parseError, isNull);
+    });
+
+    test('streams partial JSON across multiple deltas per call', () {
+      final chunks = <LlmChunk>[
+        const LlmChunk(
+          toolUse: ToolUseChunk(
+            index: 0,
+            callId: 'call_a',
+            name: 'cmd',
+            inputDelta: '{"command":',
+          ),
+        ),
+        const LlmChunk(
+          toolUse: ToolUseChunk(
+            index: 0,
+            callId: 'call_a',
+            name: 'cmd',
+            inputDelta: '"dir"}',
+          ),
+        ),
+        const LlmChunk(
+          toolUse: ToolUseChunk(
+            index: 1,
+            callId: 'call_b',
+            name: 'grep',
+            inputDelta: '{"pattern": "TODO"}',
+          ),
+        ),
+      ];
+      final calls = ToolExecutor.parseToolUseFromChunks(chunks);
+      expect(calls.length, 2);
+      final cmdCall = calls.firstWhere((c) => c.name == 'cmd');
+      expect(cmdCall.input['command'], 'dir');
+      final grepCall = calls.firstWhere((c) => c.name == 'grep');
+      expect(grepCall.input['pattern'], 'TODO');
     });
   });
 }
