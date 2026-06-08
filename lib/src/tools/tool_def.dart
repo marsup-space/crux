@@ -1,3 +1,5 @@
+import 'package:path/path.dart' as p;
+
 class AbortSignal {
   bool _aborted = false;
 
@@ -45,16 +47,15 @@ class ToolResult {
 }
 
 String resolvePath(String filePath, String workingDirectory) {
-  if (filePath.startsWith('/')) return filePath;
-  return '$workingDirectory/$filePath';
+  if (p.isAbsolute(filePath)) return p.normalize(filePath);
+  return p.normalize(p.join(workingDirectory, filePath));
 }
 
 String relativePath(String absolutePath, String workingDirectory) {
-  if (absolutePath.startsWith('$workingDirectory/')) {
-    return absolutePath.substring(workingDirectory.length + 1);
-  }
-  if (absolutePath == workingDirectory) return '.';
-  return absolutePath;
+  if (p.equals(absolutePath, workingDirectory)) return '.';
+  final rel = p.relative(absolutePath, from: workingDirectory);
+  if (rel.startsWith('..') || p.isAbsolute(rel)) return absolutePath;
+  return rel;
 }
 
 abstract class ToolDef {

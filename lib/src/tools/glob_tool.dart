@@ -1,5 +1,8 @@
 import 'dart:io';
 
+import 'package:glob/glob.dart';
+import 'package:glob/list_local_fs.dart';
+
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -49,12 +52,24 @@ class GlobTool extends ToolDef {
       return ToolResult.error('Missing required parameter: pattern');
     }
 
-    final cmdArgs = <String>[];
-    cmdArgs.add('--files');
-    cmdArgs.add('--glob');
-    cmdArgs.add(pattern);
-    cmdArgs.add('--sort=modified');
-    cmdArgs.add(path);
+    if (Platform.isWindows) {
+      return _executeDart(pattern, path, ctx);
+    }
+    return _executeRipgrep(pattern, path, ctx);
+  }
+
+  Future<ToolResult> _executeRipgrep(
+    String pattern,
+    String path,
+    ToolContext ctx,
+  ) async {
+    final cmdArgs = <String>[
+      '--files',
+      '--glob',
+      pattern,
+      '--sort=modified',
+      path,
+    ];
 
     try {
       final result = await Process.run('rg', cmdArgs);
@@ -99,5 +114,67 @@ class GlobTool extends ToolDef {
         'ripgrep not available: $e. Install ripgrep or use bash tool.',
       );
     }
+  }
+
+  Future<ToolResult> _executeDart(
+    String pattern,
+    String path,
+    ToolContext ctx,
+  ) async {
+    try {
+      final glob = Glob(_normalizePattern(pattern), recursive: true);
+      final root = Directory(path);
+      if (!await root.exists()) {
+        return ToolResult.error('Directory not found: $path');
+      }
+      final entities = glob.listSync(root: path, followLinks: false);
+      final files = <FileSystemEntity>[];
+      for (final entity in entities) {
+        if (entity is File) files.add(entity);
+      }
+      files.sort((a, b) {
+        final am = a.statSync().modified;
+        final bm = b.statSync().modified;
+        return bm.compareTo(am);
+      });
+
+      if (files.isEmpty) {
+        return ToolResult(
+          title: 'Glob: $pattern',
+          output: 'No files found matching pattern',
+        );
+      }
+
+      final relative = files
+          .map((f) => relativePath(f.path, ctx.workingDirectory))
+          .toList();
+      if (relative.length > 100) {
+        final kept = relative.take(100).join('\n');
+        return ToolResult(
+          title: 'Glob: $pattern',
+          output: kept + '\n... and ${relative.length - 100} more',
+          truncated: true,
+        );
+      }
+      return ToolResult(
+        title: 'Glob: $pattern',
+        output: relative.join('\n'),
+      );
+    } catch (e) {
+      return ToolResult.error('glob failed: $e');
+    }
+  }
+
+  String _normalizePattern(String pattern) {
+    var p = pattern.replaceAll('\\', '/');
+    if (Platform.isWindows && !p.contains('/') && !p.contains('*')) {
+      p = '**/$p';
+    }
+    if (Platform.isWindows &&
+        p.startsWith('**/') &&
+        p.substring(3).contains('/')) {
+      p = p.substring(3);
+    }
+    return p;
   }
 }

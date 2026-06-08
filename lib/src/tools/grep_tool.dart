@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:glob/glob.dart';
+
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -48,7 +50,10 @@ class GrepTool extends ToolDef {
         'type': 'integer',
         'description': 'Context lines around each match',
       },
-      'headLimit': {'type': 'integer', 'description': 'Max results to return'},
+      'headLimit': {
+        'type': 'integer',
+        'description': 'Max results to return',
+      },
     },
     'required': ['pattern'],
   };
@@ -69,6 +74,37 @@ class GrepTool extends ToolDef {
       return ToolResult.error('Missing required parameter: pattern');
     }
 
+    if (Platform.isWindows) {
+      return _executeDart(
+        pattern: pattern,
+        root: path,
+        ctx: ctx,
+        include: include,
+        caseInsensitive: caseInsensitive,
+        context: context,
+        headLimit: headLimit,
+      );
+    }
+    return _executeRipgrep(
+      pattern: pattern,
+      path: path,
+      ctx: ctx,
+      include: include,
+      caseInsensitive: caseInsensitive,
+      context: context,
+      headLimit: headLimit,
+    );
+  }
+
+  Future<ToolResult> _executeRipgrep({
+    required String pattern,
+    required String path,
+    required ToolContext ctx,
+    String? include,
+    bool caseInsensitive = false,
+    int? context,
+    int? headLimit,
+  }) async {
     final cmdArgs = <String>[];
     cmdArgs.add('--line-number');
     cmdArgs.add('--with-filename');
@@ -131,6 +167,116 @@ class GrepTool extends ToolDef {
     }
   }
 
+  Future<ToolResult> _executeDart({
+    required String pattern,
+    required String root,
+    required ToolContext ctx,
+    String? include,
+    bool caseInsensitive = false,
+    int? context,
+    int? headLimit,
+  }) async {
+    try {
+      final RegExp regex;
+      try {
+        regex = RegExp(pattern, caseSensitive: !caseInsensitive);
+      } catch (e) {
+        return ToolResult.error('Invalid regex: $e');
+      }
+
+      final includeGlob = include != null
+          ? Glob(include.replaceAll('\\', '/'), recursive: true)
+          : null;
+
+      final rootType = FileSystemEntity.typeSync(root);
+      if (rootType == FileSystemEntityType.notFound) {
+        return ToolResult.error(
+            'Path not found: ${relativePath(root, ctx.workingDirectory)}');
+      }
+
+      final Iterable<FileSystemEntity> entries;
+      if (rootType == FileSystemEntityType.directory) {
+        entries = Directory(root).listSync(recursive: true, followLinks: false)
+          ..sort((a, b) => a.path.compareTo(b.path));
+      } else {
+        entries = [File(root)];
+      }
+
+      final lines = <String>[];
+      var totalMatches = 0;
+      var truncated = false;
+
+      outer:
+      for (final entry in entries) {
+        if (entry is! File) continue;
+        if (includeGlob != null &&
+            !includeGlob.matches(entry.path.replaceAll('\\', '/'))) {
+          continue;
+        }
+        String content;
+        try {
+          content = entry.readAsStringSync();
+        } on FileSystemException {
+          continue;
+        } on FormatException {
+          continue;
+        }
+        final relPath = relativePath(entry.path, ctx.workingDirectory);
+        final entryLines = content.split('\n');
+        for (var i = 0; i < entryLines.length; i++) {
+          if (!regex.hasMatch(entryLines[i])) continue;
+          if (context != null && context > 0) {
+            final start = (i - context).clamp(0, entryLines.length);
+            final end = (i + context + 1).clamp(0, entryLines.length);
+            for (var j = start; j < end; j++) {
+              lines.add('$relPath-${j + 1}-$j-$j:${entryLines[j]}');
+            }
+          } else {
+            lines.add('$relPath-${i + 1}:${entryLines[i]}');
+          }
+          totalMatches++;
+          if (lines.length >= _maxMatches) {
+            truncated = true;
+            break outer;
+          }
+        }
+      }
+
+      if (totalMatches == 0) {
+        return ToolResult(
+          title: 'Grep: $pattern',
+          output: 'No matches found',
+          truncated: false,
+          metadata: {'totalMatches': 0, 'truncated': false},
+        );
+      }
+
+      final kept = lines.map((line) {
+        if (line.length > _maxLineLength) {
+          return '${line.substring(0, _maxLineLength)}...';
+        }
+        return line;
+      }).join('\n');
+
+      final header = truncated
+          ? 'Found at least $totalMatches matches (showing first $_maxMatches)\n'
+          : '';
+      final footer = truncated
+          ? '\n\n(Results truncated: showing $_maxMatches matches. '
+              'Consider a more specific path or pattern.)'
+          : '';
+
+      return ToolResult(
+        title: 'Grep: $pattern',
+        output: '$header$kept$footer',
+        truncated: truncated,
+        metadata: {'totalMatches': totalMatches, 'truncated': truncated},
+      );
+    } catch (e) {
+      return ToolResult.error('grep failed: $e');
+    }
+  }
+
   ToolResult _applyLimits(String output, String pattern) {
     final lines = output.split('\n');
     final totalMatches = lines.length;
@@ -152,11 +298,6 @@ class GrepTool extends ToolDef {
             '${totalMatches - _maxMatches} hidden). '
             'Consider using a more specific path or pattern.)'
         : '';
-
-    // TODO: Claude Code approach — persist full output to disk when exceeding
-    // a size threshold (e.g. 20KB) and return a preview (2KB) with the file
-    // path, so the model can page through results via head_limit + offset.
-    // Also add an `offset` parameter for pagination instead of just truncating.
 
     return ToolResult(
       title: 'Grep: $pattern',
