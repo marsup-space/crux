@@ -207,6 +207,12 @@ void main() {
       );
       expect(body.containsKey('user_id'), isFalse);
     });
+
+    test('default reasoningPresets map normal → normal', () {
+      final presets = provider.reasoningPresets;
+      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+      expect(normal.displayLabel, 'normal');
+    });
   });
 
   group('OpenAICompatibleProvider', () {
@@ -250,48 +256,50 @@ void main() {
     });
   });
 
-  group('MiniMaxProvider (adaptive thinking quirk)', () {
+  group('MiniMaxProvider (normal→adaptive, high/max→enabled)', () {
     final provider = MiniMaxProvider();
 
-    test('emits thinking: {type: adaptive} with no budget_tokens', () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'enabled',
-        reasoningEffort: 'high',
-      );
-      expect(body['thinking'], {'type': 'adaptive'});
-      // AI SDK unit test contract: budget_tokens is intentionally absent
-      // for adaptive thinking.
-      expect(body['thinking'].containsKey('budget_tokens'), isFalse);
-    });
-
-    test('emits output_config.effort for the active preset', () {
+    test('normal effort emits thinking: {type: adaptive} with no budget_tokens',
+        () {
       final body = provider.buildRequestBody(
         'MiniMax-M3',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'normal',
       );
+      expect(body['thinking'], {'type': 'adaptive'});
+      // AI SDK unit test contract: budget_tokens is intentionally absent
+      // for adaptive thinking.
+      expect(body['thinking'].containsKey('budget_tokens'), isFalse);
       expect(body['output_config'], {'effort': 'medium'});
     });
 
-    test('passes "high" and "max" through verbatim', () {
-      final high = provider.buildRequestBody(
+    test('high effort emits thinking: {type: enabled} with budget_tokens', () {
+      final body = provider.buildRequestBody(
         'MiniMax-M3',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'high',
       );
-      expect(high['output_config'], {'effort': 'high'});
+      expect(body['thinking'], {
+        'type': 'enabled',
+        'budget_tokens': 10000,
+      });
+      expect(body['output_config'], {'effort': 'high'});
+    });
 
-      final max = provider.buildRequestBody(
+    test('max effort emits thinking: {type: enabled} with budget_tokens', () {
+      final body = provider.buildRequestBody(
         'MiniMax-M3',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'max',
       );
-      expect(max['output_config'], {'effort': 'max'});
+      expect(body['thinking'], {
+        'type': 'enabled',
+        'budget_tokens': 10000,
+      });
+      expect(body['output_config'], {'effort': 'max'});
     });
 
     test('thinking = disabled omits the thinking and output_config fields', () {
@@ -305,11 +313,7 @@ void main() {
       expect(body.containsKey('output_config'), isFalse);
     });
 
-    test('falls back to enabled + budget_tokens when thinkingBudget is set',
-        () {
-      // The MiniMax model line currently advertises adaptive thinking, but
-      // a future non-adaptive model can opt into the legacy shape by
-      // passing a non-null thinkingBudget. Verify the fallback works.
+    test('uses provided thinkingBudget instead of the 10000 default', () {
       final body = provider.buildRequestBody(
         'MiniMax-M3',
         userMsg,
@@ -341,11 +345,26 @@ void main() {
           reasoningEffort: effort,
         );
         final expected = base.mapEffort(effort);
+        // All efforts always produce output_config.effort.
         expect(
           body['output_config'],
           {'effort': expected},
           reason: 'effort=$effort should map to wire $expected',
         );
+        // normal → adaptive, others → enabled + budget.
+        if (effort == 'normal') {
+          expect(
+            body['thinking'],
+            {'type': 'adaptive'},
+            reason: 'effort=normal should use adaptive thinking',
+          );
+        } else {
+          expect(
+            body['thinking']['type'],
+            'enabled',
+            reason: 'effort=$effort should use enabled thinking',
+          );
+        }
       }
     });
 
@@ -374,6 +393,14 @@ void main() {
       final chat = body['messages'] as List;
       final content = chat.last['content'] as List;
       expect(content.last['cache_control'], {'type': 'ephemeral'});
+    });
+
+    test('reasoningPresets map normal → adaptive', () {
+      final presets = provider.reasoningPresets;
+      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+      expect(normal.displayLabel, 'adaptive');
+      final high = presets.firstWhere((p) => p.internalValue == 'high');
+      expect(high.displayLabel, 'high');
     });
   });
 

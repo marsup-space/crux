@@ -18,6 +18,7 @@ import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
+import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
@@ -1660,6 +1661,7 @@ class _ChatPanelState extends State<ChatPanel> {
           pairedResult: pairedResult,
           toolRegistry: _toolRegistry,
           highlightText: msg.id == _highlightMessageId ? _highlightText : null,
+          reasoningPresets: _currentReasoningPresets(),
         ),
       );
 
@@ -2032,16 +2034,22 @@ class _ChatPanelState extends State<ChatPanel> {
     textController.selection = TextSelection.collapsed(offset: newText.length);
   }
 
-  /// Map internal reasoning effort values to user-facing display names.
-  /// The internal value 'normal' maps to 'adaptive' to reflect the
-  /// MiniMax thinking type that gets emitted for this preset.
+  /// Resolve the display label for an internal reasoning effort value,
+  /// using the current session's provider's [reasoningPresets].
+  List<ReasoningPreset> _currentReasoningPresets() {
+    final modelKey = _sessionController.currentSession.model;
+    final slashIdx = modelKey.indexOf('/');
+    final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
+    final llm = _providerService.llmProviderByName(providerName);
+    return llm?.reasoningPresets ?? const [];
+  }
+
   String _displayEffort(String effort) {
-    switch (effort) {
-      case 'normal':
-        return 'adaptive';
-      default:
-        return effort;
+    final presets = _currentReasoningPresets();
+    for (final p in presets) {
+      if (p.internalValue == effort) return p.displayLabel;
     }
+    return effort; // unknown effort: show raw value
   }
 
   String _thinkingLabel(SessionRuntimeState rt) {
