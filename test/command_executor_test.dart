@@ -247,7 +247,7 @@ void main() {
       },
     );
 
-    test(
+        test(
       'also works for the Chinese alias /继续',
       () async {
         // Make sure the dispatch table in `execute()` routes the
@@ -276,6 +276,59 @@ void main() {
 
         expect(sendTurnCalls, equals(1));
         expect(lastTextSent, equals('请继续。'));
+      },
+    );
+
+    test(
+      'is a no-op with a toast when the session is empty',
+      () async {
+        // A brand-new, empty session has no prior context for the
+        // LLM to continue from. The executor must reject this up
+        // front (with a toast) instead of firing a synthetic
+        // "请继续。" user turn against an empty history — there is
+        // nothing meaningful to send, and on most LLM APIs the
+        // resulting call (a single user turn with no system
+        // prompt context) would just confuse the model.
+        var sendTurnCalls = 0;
+        String? lastToast;
+        await CommandExecutor().execute(
+          '/continue',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: const <Message>[],
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {
+              lastToast = message;
+            },
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            resolveAuxiliaryModel: () {},
+            sendTurn: ({String? text}) async {
+              sendTurnCalls++;
+            },
+            findLastUserMessage: () async => null,
+            deleteMessagesFrom: (_) async {},
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
+          ),
+        );
+
+        expect(sendTurnCalls, equals(0),
+            reason: 'must not drive a turn when there is nothing '
+                'to continue');
+        expect(lastToast, isNotNull,
+            reason: 'should surface a toast explaining the rejection');
+        expect(lastToast, contains('empty'),
+            reason: 'toast should mention the session is empty');
       },
     );
   });

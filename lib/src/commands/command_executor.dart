@@ -386,7 +386,7 @@ class CommandExecutor {
     }
   }
 
-  /// `/continue` (alias `/继续`) — resubmit the current conversation
+    /// `/continue` (alias `/继续`) — resubmit the current conversation
   /// context to the LLM so it can keep generating.
   ///
   /// What "resubmit the context" means depends on what the last
@@ -412,6 +412,11 @@ class CommandExecutor {
   ///   was interrupted mid-emit) falls through to the nudge case —
   ///   safe, even if it's a slightly weird prompt.
   ///
+  /// A brand-new, empty session has no context to continue and is
+  /// rejected up front with a toast — firing a synthetic "请继续。"
+  /// turn in that case would just be a meaningless LLM call. This
+  /// mirrors how `/retry` rejects an empty session.
+  ///
   /// In all cases the executor refuses to run while the AI is
   /// already responding, since launching a second concurrent turn
   /// against the same session would race the in-flight stream.
@@ -426,8 +431,15 @@ class CommandExecutor {
       ctx.showToast('AI is already responding');
       return;
     }
-    final lastRole =
-        ctx.currentMessages.isEmpty ? null : ctx.currentMessages.last.role;
+    // Empty session → nothing to continue. Reject up front so we
+    // don't send a synthetic "请继续。" turn to the LLM with no
+    // surrounding context (which would either be a no-op or, worse,
+    // a confusing user message in a fresh session).
+    if (ctx.currentMessages.isEmpty) {
+      ctx.showToast('Nothing to continue — session is empty');
+      return;
+    }
+    final lastRole = ctx.currentMessages.last.role;
     switch (lastRole) {
       case 'tool':
       case 'user':
@@ -438,10 +450,9 @@ class CommandExecutor {
         await ctx.sendTurn();
       case 'ai':
       case 'tool_call':
-      case null:
-        // Round finished (or never started) on a role the API
-        // won't accept as the trailing turn; append a small
-        // "please continue" nudge so the LLM keeps elaborating.
+        // Round finished on a role the API won't accept as the
+        // trailing turn; append a small "please continue" nudge
+        // so the LLM keeps elaborating.
         await ctx.sendTurn(text: '请继续。');
       default:
         // Future-proof: any new role falls back to the nudge
