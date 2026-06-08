@@ -174,9 +174,7 @@ class SessionController {
                 args: call.input,
                 resultOutput: '',
                 excludeArgsFromEstimate:
-                    largePayloadTools.contains(call.name)
-                        ? largePayloadExcludedArgs[call.name]
-                        : null,
+                    _chatService.offloadableArgsForTool(call.name),
               );
             }
           case 'tool':

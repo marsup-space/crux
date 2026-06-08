@@ -8,7 +8,10 @@ import 'matchers/whitespace_matcher.dart';
 import 'matchers/indentation_matcher.dart';
 import 'tool_def.dart';
 
-class EditTool extends ToolDef {
+class EditTool extends ToolDef implements LargePayloadTool {
+  @override
+  List<String> get offloadableArgs => ['oldString', 'newString'];
+
   @override
   String get name => 'edit';
 

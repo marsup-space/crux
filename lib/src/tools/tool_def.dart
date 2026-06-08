@@ -75,6 +75,18 @@ abstract class ToolDef {
   }
 }
 
+/// Marker interface: tool has arguments whose values may be too large
+/// to carry in the conversation log. Implementations declare which
+/// top-level argument keys are eligible for offload; the chat
+/// service does the actual compression at the persist boundary.
+///
+/// Order is significant: callers that walk [offloadableArgs] should
+/// do so in declaration order so the persisted JSON has deterministic
+/// key ordering (cache stability).
+abstract class LargePayloadTool implements ToolDef {
+  List<String> get offloadableArgs;
+}
+
 class GuardResult {
   final String header;
   final String content;

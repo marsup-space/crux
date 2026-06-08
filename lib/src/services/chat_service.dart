@@ -603,9 +603,9 @@ class ChatService {
             toolName: call.name,
             args: call.input,
             resultOutput: result.output,
-            excludeArgsFromEstimate: largePayloadTools.contains(call.name)
-                ? largePayloadExcludedArgs[call.name]
-                : null,
+            excludeArgsFromEstimate: offloadableArgsFor(
+              _toolExecutor.lookupTool(call.name),
+            ),
           );
           await _store.addMessage(
             sessionId,
@@ -644,9 +644,9 @@ class ChatService {
             toolName: call.name,
             args: call.input,
             resultOutput: result.output,
-            excludeArgsFromEstimate: largePayloadTools.contains(call.name)
-                ? largePayloadExcludedArgs[call.name]
-                : null,
+            excludeArgsFromEstimate: offloadableArgsFor(
+              _toolExecutor.lookupTool(call.name),
+            ),
           );
           await _store.addMessage(
             sessionId,
@@ -867,6 +867,17 @@ class ChatService {
     return (cacheMissTokens * rate.input) +
         (promptCacheHitTokens * rate.cacheHit) +
         (completionTokens * rate.output);
+  }
+
+  /// Argument keys whose values should be excluded from the
+  /// per-round token-count estimate for the given tool [name], or
+  /// `null` if the tool is unknown or has no offloadable args.
+  /// Exposed so the session controller (which computes the base
+  /// context from persisted messages) can ask the chat service —
+  /// which owns the tool registry — without taking on a direct
+  /// registry dependency.
+  Set<String>? offloadableArgsForTool(String name) {
+    return offloadableArgsFor(_toolExecutor.lookupTool(name));
   }
 
   void dispose() {

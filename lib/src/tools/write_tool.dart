@@ -4,7 +4,10 @@ import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
-class WriteTool extends ToolDef {
+class WriteTool extends ToolDef implements LargePayloadTool {
+  @override
+  List<String> get offloadableArgs => ['content'];
+
   @override
   String get name => 'write';
 

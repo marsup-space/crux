@@ -12,6 +12,7 @@ import 'package:crux/src/tools/grep_tool.dart';
 import 'package:crux/src/tools/powershell_tool.dart';
 import 'package:crux/src/tools/read_tool.dart';
 import 'package:crux/src/tools/edit_tool.dart';
+import 'package:crux/src/tools/write_tool.dart';
 import 'package:path/path.dart' as p;
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
@@ -1021,6 +1022,67 @@ void main() {
       expect(cmdCall.input['command'], 'dir');
       final grepCall = calls.firstWhere((c) => c.name == 'grep');
       expect(grepCall.input['pattern'], 'TODO');
+    });
+  });
+
+  group('LargePayloadTool', () {
+    test('WriteTool implements LargePayloadTool with content as offloadable', () {
+      final tool = WriteTool();
+      expect(tool, isA<LargePayloadTool>());
+      expect((tool as LargePayloadTool).offloadableArgs, ['content']);
+    });
+
+    test('EditTool implements LargePayloadTool with oldString and newString', () {
+      final tool = EditTool();
+      expect(tool, isA<LargePayloadTool>());
+      expect(
+        (tool as LargePayloadTool).offloadableArgs,
+        ['oldString', 'newString'],
+      );
+    });
+
+    test('ReadTool does not implement LargePayloadTool', () {
+      final tool = ReadTool();
+      expect(tool, isNot(isA<LargePayloadTool>()));
+    });
+
+    test('BashTool does not implement LargePayloadTool', () {
+      final tool = BashTool();
+      expect(tool, isNot(isA<LargePayloadTool>()));
+    });
+  });
+
+  group('offloadableArgsFor', () {
+    test('returns the offloadable args set for a LargePayloadTool', () {
+      final tool = WriteTool();
+      expect(offloadableArgsFor(tool), {'content'});
+    });
+
+    test('returns the offloadable args set for EditTool', () {
+      final tool = EditTool();
+      expect(offloadableArgsFor(tool), {'oldString', 'newString'});
+    });
+
+    test('returns null for a non-LargePayloadTool', () {
+      final tool = ReadTool();
+      expect(offloadableArgsFor(tool), isNull);
+    });
+
+    test('returns null for a null tool', () {
+      expect(offloadableArgsFor(null), isNull);
+    });
+
+    test('preserves declaration order in the returned set', () {
+      // EditTool declares ['oldString', 'newString']; the order matters
+      // for cache-stable persisted JSON, so the interface contract
+      // requires List<String> (not Set<String>). The helper converts
+      // to a set for the existing excludeArgsFromEstimate contract;
+      // the ordering discipline lives in the implementation.
+      final tool = EditTool();
+      final list = (tool as LargePayloadTool).offloadableArgs;
+      expect(list, isA<List<String>>());
+      expect(list.first, 'oldString');
+      expect(list.last, 'newString');
     });
   });
 }

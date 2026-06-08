@@ -1,12 +1,17 @@
 import 'dart:convert';
 
+import '../tools/tool_def.dart';
+
 const _cjkRanges = [(0x4E00, 0x9FFF), (0x3400, 0x4DBF), (0xF900, 0xFAFF)];
 
-const largePayloadTools = {'edit', 'write'};
-const largePayloadExcludedArgs = {
-  'edit': {'oldString', 'newString'},
-  'write': {'content'},
-};
+/// Returns the argument keys whose values should be excluded from the
+/// per-round token-count estimate, or `null` if the tool has no
+/// offloadable args. Accepts a nullable [tool] because callers
+/// frequently have a name (not a `ToolDef`) at hand; the lookup
+/// failure path is the same as "tool has no offloadable args."
+Set<String>? offloadableArgsFor(ToolDef? tool) {
+  return tool is LargePayloadTool ? tool.offloadableArgs.toSet() : null;
+}
 
 bool _isCJK(int codeUnit) {
   for (final range in _cjkRanges) {
