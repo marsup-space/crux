@@ -1,12 +1,16 @@
-import 'tool_def.dart';
+import 'dart:io';
+
 import 'bash_tool.dart';
-import 'read_tool.dart';
-import 'write_tool.dart';
+import 'cmd_tool.dart';
 import 'edit_tool.dart';
-import 'grep_tool.dart';
-import 'glob_tool.dart';
-import 'webfetch_tool.dart';
 import 'file_read_tracker.dart';
+import 'glob_tool.dart';
+import 'grep_tool.dart';
+import 'powershell_tool.dart';
+import 'read_tool.dart';
+import 'tool_def.dart';
+import 'webfetch_tool.dart';
+import 'write_tool.dart';
 
 class ToolRegistry {
   final Map<String, ToolDef> _tools = {};
@@ -32,7 +36,12 @@ class ToolRegistry {
   }
 
   void registerDefaults(FileReadTracker tracker) {
-    register(BashTool());
+    if (Platform.isWindows) {
+      register(CmdTool());
+      register(PowerShellTool());
+    } else {
+      register(BashTool());
+    }
     register(ReadTool());
     register(WriteTool(tracker: tracker));
     register(EditTool(tracker: tracker));
