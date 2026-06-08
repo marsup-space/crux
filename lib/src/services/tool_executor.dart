@@ -1,9 +1,18 @@
 import 'dart:convert';
 
 import '../models/provider_config.dart';
+import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import 'llm_client.dart';
+
+/// Minimum byte size (utf-8) before a LargePayloadTool's argument
+/// is off-loaded to the `offloaded_content` table and replaced in
+/// the conversation log with a stand-in pointer. 2 KB is a
+/// reasonable default: small enough to skip trivial content,
+/// large enough to catch the common case (a typical source-file
+/// edit is well over 2 KB).
+const int offloadThresholdBytes = 2048;
 
 class ToolCall {
   final String callId;
@@ -27,8 +36,9 @@ class _ToolCallAccum {
 
 class ToolExecutor {
   final ToolRegistry _registry;
+  final SessionStore _store;
 
-  ToolExecutor(this._registry);
+  ToolExecutor(this._registry, this._store);
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
@@ -41,6 +51,55 @@ class ToolExecutor {
       return ToolResult.error('Unknown tool: ${call.name}');
     }
     return tool.execute(call.input, ctx);
+  }
+
+  /// Return a [ToolCall] whose `input` map is safe to persist into
+  /// the conversation log. If [call] is for a [LargePayloadTool]
+  /// and any of its declared offloadable args exceeds
+  /// [offloadThresholdBytes] bytes (utf-8), the full value is
+  /// written to `offloaded_content` keyed by `(sessionId, callId)`
+  /// and replaced in the returned call's input with a stand-in
+  /// pointer `[N lines, B bytes; recall: <callId>]`.
+  ///
+  /// The original [call] is left unchanged so the tool itself
+  /// still receives the full content when it runs.
+  Future<ToolCall> compressCallForPersistence(
+    ToolCall call,
+    int sessionId,
+  ) async {
+    final tool = _registry.lookup(call.name);
+    if (tool is! LargePayloadTool) return call;
+
+    var modified = false;
+    var newInput = call.input;
+    for (final argKey in tool.offloadableArgs) {
+      final value = newInput[argKey];
+      if (value is! String) continue;
+      final bytes = utf8.encode(value);
+      if (bytes.length < offloadThresholdBytes) continue;
+
+      final lineCount = '\n'.allMatches(value).length + 1;
+      await _store.saveOffloadedContent(
+        sessionId: sessionId,
+        callId: call.callId,
+        toolName: call.name,
+        byteSize: bytes.length,
+        lineCount: lineCount,
+        content: value,
+      );
+      newInput = Map<String, dynamic>.from(newInput);
+      newInput[argKey] =
+          '[$lineCount lines, ${_formatBytes(bytes.length)}; recall: ${call.callId}]';
+      modified = true;
+    }
+
+    if (!modified) return call;
+    return ToolCall(
+      callId: call.callId,
+      name: call.name,
+      input: newInput,
+      parseError: call.parseError,
+    );
   }
 
   Map<String, dynamic> formatToolResultForApi(
@@ -165,4 +224,12 @@ class ToolExecutor {
     }
     return null;
   }
+}
+
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '${bytes}B';
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)}KB';
+  }
+  return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
 }

@@ -2737,6 +2737,477 @@ class FileReadStateCompanion extends UpdateCompanion<FileReadStateData> {
   }
 }
 
+class $OffloadedContentTable extends OffloadedContent
+    with TableInfo<$OffloadedContentTable, OffloadedContentData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OffloadedContentTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<int> sessionId = GeneratedColumn<int>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES sessions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _callIdMeta = const VerificationMeta('callId');
+  @override
+  late final GeneratedColumn<String> callId = GeneratedColumn<String>(
+    'call_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _toolNameMeta = const VerificationMeta(
+    'toolName',
+  );
+  @override
+  late final GeneratedColumn<String> toolName = GeneratedColumn<String>(
+    'tool_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _byteSizeMeta = const VerificationMeta(
+    'byteSize',
+  );
+  @override
+  late final GeneratedColumn<int> byteSize = GeneratedColumn<int>(
+    'byte_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lineCountMeta = const VerificationMeta(
+    'lineCount',
+  );
+  @override
+  late final GeneratedColumn<int> lineCount = GeneratedColumn<int>(
+    'line_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    sessionId,
+    callId,
+    toolName,
+    byteSize,
+    lineCount,
+    content,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'offloaded_content';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OffloadedContentData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('call_id')) {
+      context.handle(
+        _callIdMeta,
+        callId.isAcceptableOrUnknown(data['call_id']!, _callIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_callIdMeta);
+    }
+    if (data.containsKey('tool_name')) {
+      context.handle(
+        _toolNameMeta,
+        toolName.isAcceptableOrUnknown(data['tool_name']!, _toolNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_toolNameMeta);
+    }
+    if (data.containsKey('byte_size')) {
+      context.handle(
+        _byteSizeMeta,
+        byteSize.isAcceptableOrUnknown(data['byte_size']!, _byteSizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_byteSizeMeta);
+    }
+    if (data.containsKey('line_count')) {
+      context.handle(
+        _lineCountMeta,
+        lineCount.isAcceptableOrUnknown(data['line_count']!, _lineCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lineCountMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {sessionId, callId};
+  @override
+  OffloadedContentData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OffloadedContentData(
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}session_id'],
+      )!,
+      callId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}call_id'],
+      )!,
+      toolName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_name'],
+      )!,
+      byteSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}byte_size'],
+      )!,
+      lineCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}line_count'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $OffloadedContentTable createAlias(String alias) {
+    return $OffloadedContentTable(attachedDatabase, alias);
+  }
+}
+
+class OffloadedContentData extends DataClass
+    implements Insertable<OffloadedContentData> {
+  final int sessionId;
+  final String callId;
+  final String toolName;
+  final int byteSize;
+  final int lineCount;
+  final String content;
+  final int createdAt;
+  const OffloadedContentData({
+    required this.sessionId,
+    required this.callId,
+    required this.toolName,
+    required this.byteSize,
+    required this.lineCount,
+    required this.content,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['session_id'] = Variable<int>(sessionId);
+    map['call_id'] = Variable<String>(callId);
+    map['tool_name'] = Variable<String>(toolName);
+    map['byte_size'] = Variable<int>(byteSize);
+    map['line_count'] = Variable<int>(lineCount);
+    map['content'] = Variable<String>(content);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  OffloadedContentCompanion toCompanion(bool nullToAbsent) {
+    return OffloadedContentCompanion(
+      sessionId: Value(sessionId),
+      callId: Value(callId),
+      toolName: Value(toolName),
+      byteSize: Value(byteSize),
+      lineCount: Value(lineCount),
+      content: Value(content),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory OffloadedContentData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OffloadedContentData(
+      sessionId: serializer.fromJson<int>(json['sessionId']),
+      callId: serializer.fromJson<String>(json['callId']),
+      toolName: serializer.fromJson<String>(json['toolName']),
+      byteSize: serializer.fromJson<int>(json['byteSize']),
+      lineCount: serializer.fromJson<int>(json['lineCount']),
+      content: serializer.fromJson<String>(json['content']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'sessionId': serializer.toJson<int>(sessionId),
+      'callId': serializer.toJson<String>(callId),
+      'toolName': serializer.toJson<String>(toolName),
+      'byteSize': serializer.toJson<int>(byteSize),
+      'lineCount': serializer.toJson<int>(lineCount),
+      'content': serializer.toJson<String>(content),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  OffloadedContentData copyWith({
+    int? sessionId,
+    String? callId,
+    String? toolName,
+    int? byteSize,
+    int? lineCount,
+    String? content,
+    int? createdAt,
+  }) => OffloadedContentData(
+    sessionId: sessionId ?? this.sessionId,
+    callId: callId ?? this.callId,
+    toolName: toolName ?? this.toolName,
+    byteSize: byteSize ?? this.byteSize,
+    lineCount: lineCount ?? this.lineCount,
+    content: content ?? this.content,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  OffloadedContentData copyWithCompanion(OffloadedContentCompanion data) {
+    return OffloadedContentData(
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      callId: data.callId.present ? data.callId.value : this.callId,
+      toolName: data.toolName.present ? data.toolName.value : this.toolName,
+      byteSize: data.byteSize.present ? data.byteSize.value : this.byteSize,
+      lineCount: data.lineCount.present ? data.lineCount.value : this.lineCount,
+      content: data.content.present ? data.content.value : this.content,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OffloadedContentData(')
+          ..write('sessionId: $sessionId, ')
+          ..write('callId: $callId, ')
+          ..write('toolName: $toolName, ')
+          ..write('byteSize: $byteSize, ')
+          ..write('lineCount: $lineCount, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    sessionId,
+    callId,
+    toolName,
+    byteSize,
+    lineCount,
+    content,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OffloadedContentData &&
+          other.sessionId == this.sessionId &&
+          other.callId == this.callId &&
+          other.toolName == this.toolName &&
+          other.byteSize == this.byteSize &&
+          other.lineCount == this.lineCount &&
+          other.content == this.content &&
+          other.createdAt == this.createdAt);
+}
+
+class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
+  final Value<int> sessionId;
+  final Value<String> callId;
+  final Value<String> toolName;
+  final Value<int> byteSize;
+  final Value<int> lineCount;
+  final Value<String> content;
+  final Value<int> createdAt;
+  final Value<int> rowid;
+  const OffloadedContentCompanion({
+    this.sessionId = const Value.absent(),
+    this.callId = const Value.absent(),
+    this.toolName = const Value.absent(),
+    this.byteSize = const Value.absent(),
+    this.lineCount = const Value.absent(),
+    this.content = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OffloadedContentCompanion.insert({
+    required int sessionId,
+    required String callId,
+    required String toolName,
+    required int byteSize,
+    required int lineCount,
+    required String content,
+    required int createdAt,
+    this.rowid = const Value.absent(),
+  }) : sessionId = Value(sessionId),
+       callId = Value(callId),
+       toolName = Value(toolName),
+       byteSize = Value(byteSize),
+       lineCount = Value(lineCount),
+       content = Value(content),
+       createdAt = Value(createdAt);
+  static Insertable<OffloadedContentData> custom({
+    Expression<int>? sessionId,
+    Expression<String>? callId,
+    Expression<String>? toolName,
+    Expression<int>? byteSize,
+    Expression<int>? lineCount,
+    Expression<String>? content,
+    Expression<int>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (sessionId != null) 'session_id': sessionId,
+      if (callId != null) 'call_id': callId,
+      if (toolName != null) 'tool_name': toolName,
+      if (byteSize != null) 'byte_size': byteSize,
+      if (lineCount != null) 'line_count': lineCount,
+      if (content != null) 'content': content,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OffloadedContentCompanion copyWith({
+    Value<int>? sessionId,
+    Value<String>? callId,
+    Value<String>? toolName,
+    Value<int>? byteSize,
+    Value<int>? lineCount,
+    Value<String>? content,
+    Value<int>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return OffloadedContentCompanion(
+      sessionId: sessionId ?? this.sessionId,
+      callId: callId ?? this.callId,
+      toolName: toolName ?? this.toolName,
+      byteSize: byteSize ?? this.byteSize,
+      lineCount: lineCount ?? this.lineCount,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (sessionId.present) {
+      map['session_id'] = Variable<int>(sessionId.value);
+    }
+    if (callId.present) {
+      map['call_id'] = Variable<String>(callId.value);
+    }
+    if (toolName.present) {
+      map['tool_name'] = Variable<String>(toolName.value);
+    }
+    if (byteSize.present) {
+      map['byte_size'] = Variable<int>(byteSize.value);
+    }
+    if (lineCount.present) {
+      map['line_count'] = Variable<int>(lineCount.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OffloadedContentCompanion(')
+          ..write('sessionId: $sessionId, ')
+          ..write('callId: $callId, ')
+          ..write('toolName: $toolName, ')
+          ..write('byteSize: $byteSize, ')
+          ..write('lineCount: $lineCount, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
@@ -2744,6 +3215,9 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   late final $MessagesTable messages = $MessagesTable(this);
   late final $PartsTable parts = $PartsTable(this);
   late final $FileReadStateTable fileReadState = $FileReadStateTable(this);
+  late final $OffloadedContentTable offloadedContent = $OffloadedContentTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2753,6 +3227,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     messages,
     parts,
     fileReadState,
+    offloadedContent,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -2783,6 +3258,13 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('file_read_state', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'sessions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('offloaded_content', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -2889,6 +3371,30 @@ final class $$SessionsTableReferences
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_fileReadStateRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$OffloadedContentTable, List<OffloadedContentData>>
+  _offloadedContentRefsTable(_$CruxDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.offloadedContent,
+        aliasName: $_aliasNameGenerator(
+          db.sessions.id,
+          db.offloadedContent.sessionId,
+        ),
+      );
+
+  $$OffloadedContentTableProcessedTableManager get offloadedContentRefs {
+    final manager = $$OffloadedContentTableTableManager(
+      $_db,
+      $_db.offloadedContent,
+    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _offloadedContentRefsTable($_db),
+    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3071,6 +3577,31 @@ class $$SessionsTableFilterComposer
           }) => $$FileReadStateTableFilterComposer(
             $db: $db,
             $table: $db.fileReadState,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> offloadedContentRefs(
+    Expression<bool> Function($$OffloadedContentTableFilterComposer f) f,
+  ) {
+    final $$OffloadedContentTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.offloadedContent,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OffloadedContentTableFilterComposer(
+            $db: $db,
+            $table: $db.offloadedContent,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3346,6 +3877,31 @@ class $$SessionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> offloadedContentRefs<T extends Object>(
+    Expression<T> Function($$OffloadedContentTableAnnotationComposer a) f,
+  ) {
+    final $$OffloadedContentTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.offloadedContent,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OffloadedContentTableAnnotationComposer(
+            $db: $db,
+            $table: $db.offloadedContent,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$SessionsTableTableManager
@@ -3365,6 +3921,7 @@ class $$SessionsTableTableManager
             bool messagesRefs,
             bool partsRefs,
             bool fileReadStateRefs,
+            bool offloadedContentRefs,
           })
         > {
   $$SessionsTableTableManager(_$CruxDatabase db, $SessionsTable table)
@@ -3479,6 +4036,7 @@ class $$SessionsTableTableManager
                 messagesRefs = false,
                 partsRefs = false,
                 fileReadStateRefs = false,
+                offloadedContentRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -3486,6 +4044,7 @@ class $$SessionsTableTableManager
                     if (messagesRefs) db.messages,
                     if (partsRefs) db.parts,
                     if (fileReadStateRefs) db.fileReadState,
+                    if (offloadedContentRefs) db.offloadedContent,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -3553,6 +4112,27 @@ class $$SessionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (offloadedContentRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          OffloadedContentData
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._offloadedContentRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).offloadedContentRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -3577,6 +4157,7 @@ typedef $$SessionsTableProcessedTableManager =
         bool messagesRefs,
         bool partsRefs,
         bool fileReadStateRefs,
+        bool offloadedContentRefs,
       })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -4929,6 +5510,376 @@ typedef $$FileReadStateTableProcessedTableManager =
       FileReadStateData,
       PrefetchHooks Function({bool sessionId})
     >;
+typedef $$OffloadedContentTableCreateCompanionBuilder =
+    OffloadedContentCompanion Function({
+      required int sessionId,
+      required String callId,
+      required String toolName,
+      required int byteSize,
+      required int lineCount,
+      required String content,
+      required int createdAt,
+      Value<int> rowid,
+    });
+typedef $$OffloadedContentTableUpdateCompanionBuilder =
+    OffloadedContentCompanion Function({
+      Value<int> sessionId,
+      Value<String> callId,
+      Value<String> toolName,
+      Value<int> byteSize,
+      Value<int> lineCount,
+      Value<String> content,
+      Value<int> createdAt,
+      Value<int> rowid,
+    });
+
+final class $$OffloadedContentTableReferences
+    extends
+        BaseReferences<
+          _$CruxDatabase,
+          $OffloadedContentTable,
+          OffloadedContentData
+        > {
+  $$OffloadedContentTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $SessionsTable _sessionIdTable(_$CruxDatabase db) =>
+      db.sessions.createAlias(
+        $_aliasNameGenerator(db.offloadedContent.sessionId, db.sessions.id),
+      );
+
+  $$SessionsTableProcessedTableManager get sessionId {
+    final $_column = $_itemColumn<int>('session_id')!;
+
+    final manager = $$SessionsTableTableManager(
+      $_db,
+      $_db.sessions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$OffloadedContentTableFilterComposer
+    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
+  $$OffloadedContentTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get callId => $composableBuilder(
+    column: $table.callId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolName => $composableBuilder(
+    column: $table.toolName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get byteSize => $composableBuilder(
+    column: $table.byteSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lineCount => $composableBuilder(
+    column: $table.lineCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$SessionsTableFilterComposer get sessionId {
+    final $$SessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OffloadedContentTableOrderingComposer
+    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
+  $$OffloadedContentTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get callId => $composableBuilder(
+    column: $table.callId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toolName => $composableBuilder(
+    column: $table.toolName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get byteSize => $composableBuilder(
+    column: $table.byteSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lineCount => $composableBuilder(
+    column: $table.lineCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$SessionsTableOrderingComposer get sessionId {
+    final $$SessionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OffloadedContentTableAnnotationComposer
+    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
+  $$OffloadedContentTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get callId =>
+      $composableBuilder(column: $table.callId, builder: (column) => column);
+
+  GeneratedColumn<String> get toolName =>
+      $composableBuilder(column: $table.toolName, builder: (column) => column);
+
+  GeneratedColumn<int> get byteSize =>
+      $composableBuilder(column: $table.byteSize, builder: (column) => column);
+
+  GeneratedColumn<int> get lineCount =>
+      $composableBuilder(column: $table.lineCount, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$SessionsTableAnnotationComposer get sessionId {
+    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OffloadedContentTableTableManager
+    extends
+        RootTableManager<
+          _$CruxDatabase,
+          $OffloadedContentTable,
+          OffloadedContentData,
+          $$OffloadedContentTableFilterComposer,
+          $$OffloadedContentTableOrderingComposer,
+          $$OffloadedContentTableAnnotationComposer,
+          $$OffloadedContentTableCreateCompanionBuilder,
+          $$OffloadedContentTableUpdateCompanionBuilder,
+          (OffloadedContentData, $$OffloadedContentTableReferences),
+          OffloadedContentData,
+          PrefetchHooks Function({bool sessionId})
+        > {
+  $$OffloadedContentTableTableManager(
+    _$CruxDatabase db,
+    $OffloadedContentTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OffloadedContentTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OffloadedContentTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OffloadedContentTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> sessionId = const Value.absent(),
+                Value<String> callId = const Value.absent(),
+                Value<String> toolName = const Value.absent(),
+                Value<int> byteSize = const Value.absent(),
+                Value<int> lineCount = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OffloadedContentCompanion(
+                sessionId: sessionId,
+                callId: callId,
+                toolName: toolName,
+                byteSize: byteSize,
+                lineCount: lineCount,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int sessionId,
+                required String callId,
+                required String toolName,
+                required int byteSize,
+                required int lineCount,
+                required String content,
+                required int createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => OffloadedContentCompanion.insert(
+                sessionId: sessionId,
+                callId: callId,
+                toolName: toolName,
+                byteSize: byteSize,
+                lineCount: lineCount,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$OffloadedContentTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({sessionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (sessionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable:
+                                    $$OffloadedContentTableReferences
+                                        ._sessionIdTable(db),
+                                referencedColumn:
+                                    $$OffloadedContentTableReferences
+                                        ._sessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$OffloadedContentTableProcessedTableManager =
+    ProcessedTableManager<
+      _$CruxDatabase,
+      $OffloadedContentTable,
+      OffloadedContentData,
+      $$OffloadedContentTableFilterComposer,
+      $$OffloadedContentTableOrderingComposer,
+      $$OffloadedContentTableAnnotationComposer,
+      $$OffloadedContentTableCreateCompanionBuilder,
+      $$OffloadedContentTableUpdateCompanionBuilder,
+      (OffloadedContentData, $$OffloadedContentTableReferences),
+      OffloadedContentData,
+      PrefetchHooks Function({bool sessionId})
+    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -4941,4 +5892,6 @@ class $CruxDatabaseManager {
       $$PartsTableTableManager(_db, _db.parts);
   $$FileReadStateTableTableManager get fileReadState =>
       $$FileReadStateTableTableManager(_db, _db.fileReadState);
+  $$OffloadedContentTableTableManager get offloadedContent =>
+      $$OffloadedContentTableTableManager(_db, _db.offloadedContent);
 }

@@ -8,9 +8,11 @@ import 'glob_tool.dart';
 import 'grep_tool.dart';
 import 'powershell_tool.dart';
 import 'read_tool.dart';
+import 'recall_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
 import 'write_tool.dart';
+import '../storage/session_store.dart';
 
 class ToolRegistry {
   final Map<String, ToolDef> _tools = {};
@@ -35,7 +37,7 @@ class ToolRegistry {
         .toList();
   }
 
-  void registerDefaults(FileReadTracker tracker) {
+  void registerDefaults(FileReadTracker tracker, SessionStore store) {
     if (Platform.isWindows) {
       register(CmdTool());
       register(PowerShellTool());
@@ -48,5 +50,6 @@ class ToolRegistry {
     register(GrepTool());
     register(GlobTool());
     register(WebFetchTool());
+    register(RecallTool(store));
   }
 }

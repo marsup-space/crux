@@ -171,7 +171,7 @@ class ChatService {
     }
   }
 
-  /// Run a single chat turn for [sessionId].
+    /// Run a single chat turn for [sessionId].
   ///
   /// [userContent] is the new user prompt for this turn. Pass `null`
   /// to skip the user-message persist and re-submit the existing
@@ -192,6 +192,7 @@ class ChatService {
     required void Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
     void Function(int toolResultTokens)? onToolRound,
+    void Function(ToolUseChunk chunk)? onToolUse,
     String? userContent,
   }) async {
     if (userContent != null) {
@@ -388,7 +389,7 @@ class ChatService {
 
           chunks.add(chunk);
 
-          // First delta of the current round (text, reasoning, or
+                    // First delta of the current round (text, reasoning, or
           // tool_use): mark the start of active generation for this
           // round. The metrics timer uses roundFirstTokenTime to
           // compute the live tok/s denominator. The cumulative
@@ -404,10 +405,24 @@ class ChatService {
               runtime.roundFirstTokenTime = now;
               runtime.roundStreaming = true;
             }
-            if (chunk.toolUse != null && chunk.toolUse!.inputDelta.isNotEmpty) {
-              runtime.cumulativeCompletionTokens += estimateTokens(
-                chunk.toolUse!.inputDelta,
-              );
+            if (chunk.toolUse != null) {
+              if (chunk.toolUse!.inputDelta.isNotEmpty) {
+                runtime.cumulativeCompletionTokens += estimateTokens(
+                  chunk.toolUse!.inputDelta,
+                );
+              }
+              // Forward the raw delta to the chat panel so the live
+              // streaming bubble can show a per-tool "ToolName (~Nt)"
+              // row that materializes as the JSON arguments stream
+              // in. The chat panel folds this into
+              // [StreamingController] state and re-renders. We fire
+              // on *every* tool_use delta — including the very first
+              // one that may carry only the call id and name with no
+              // input yet (OpenAI splits id/name into one delta and
+              // arguments into a later one) — so the row appears the
+              // moment the LLM starts streaming a tool call rather
+              // than after the full JSON has been received and parsed.
+              onToolUse?.call(chunk.toolUse!);
             }
             if (firstTokenEver &&
                 (chunk.textDelta != null || chunk.reasoningContent != null)) {
@@ -445,7 +460,7 @@ class ChatService {
                 onDelta(chunk.textDelta!);
               }
             }
-            if (chunk.reasoningContent != null) {
+                  if (chunk.reasoningContent != null) {
               roundReasoningBuffer.write(chunk.reasoningContent);
               if (useLerp) {
                 lerpPendingReasoning += chunk.reasoningContent!;
@@ -454,7 +469,18 @@ class ChatService {
                 onReasoning(chunk.reasoningContent!);
               }
             }
-            if (!useLerp && (chunk.textDelta != null || chunk.reasoningContent != null)) {
+            if ((!useLerp &&
+                    (chunk.textDelta != null ||
+                        chunk.reasoningContent != null)) ||
+                chunk.toolUse != null) {
+              // Repaint trigger for the chat panel. Text/reasoning
+              // deltas are gated on `!useLerp` because the lerp
+              // timer's 60fps tick is the repaint source in that
+              // mode (see `ensureLerpTimer`). Tool-use deltas always
+              // fire immediately so the in-progress tool call row
+              // appears in the live bubble the moment the LLM
+              // starts streaming one — the lerp timer is not
+              // running at that point (no pending text).
               onChunk();
             }
           }
@@ -551,7 +577,20 @@ class ChatService {
       final roundText = roundTextBuffer.toString();
       final roundReasoning = roundReasoningBuffer.toString();
 
-      final toolCallData = toolCalls
+      // Compress any LargePayloadTool calls before persisting. The
+      // returned calls have their large args replaced with a
+      // stand-in pointer; the full bytes are written to
+      // offloaded_content. The original `toolCalls` list is
+      // unchanged, so the actual tool executions below still
+      // receive the full content.
+      final compressedToolCalls = <ToolCall>[];
+      for (final call in toolCalls) {
+        compressedToolCalls.add(
+          await _toolExecutor.compressCallForPersistence(call, sessionId),
+        );
+      }
+
+      final toolCallData = compressedToolCalls
           .map(
             (call) => ToolCallData(
               callId: call.callId,

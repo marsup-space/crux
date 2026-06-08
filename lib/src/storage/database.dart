@@ -11,12 +11,18 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState])
+@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState, OffloadedContent])
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
+  /// In-memory constructor for tests. Lets each test get a fresh,
+  /// isolated database without touching the user's on-disk data
+  /// dir, which is shared with other test files and would
+  /// otherwise race on parallel test runs (`database is locked`).
+  CruxDatabase.forTesting(QueryExecutor executor) : super(executor);
+
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -52,6 +58,9 @@ class CruxDatabase extends _$CruxDatabase {
         await m.addColumn(sessions, sessions.ttftMs);
         await m.addColumn(sessions, sessions.tokPerSec);
         await m.addColumn(sessions, sessions.promptCacheHitTokens);
+      }
+      if (from < 10) {
+        await m.createTable(offloadedContent);
       }
     },
   );

@@ -110,8 +110,8 @@ class _ChatPanelState extends State<ChatPanel> {
     _store = SessionStore(db);
     final tracker = FileReadTracker();
     final registry = ToolRegistry();
-    registry.registerDefaults(tracker);
-    final toolExecutor = ToolExecutor(registry);
+    registry.registerDefaults(tracker, _store);
+    final toolExecutor = ToolExecutor(registry, _store);
     _toolRegistry = registry;
     _chatService = ChatService(
       _store,
@@ -833,7 +833,7 @@ class _ChatPanelState extends State<ChatPanel> {
         }
         setState(() {});
       },
-      onToolRound: (int toolResultTokens) {
+            onToolRound: (int toolResultTokens) {
         final streamingTokens = estimateTokens(
           _streamingController.streamingContentFor(sessionId) +
               _streamingController.streamingReasoningFor(sessionId),
@@ -843,6 +843,19 @@ class _ChatPanelState extends State<ChatPanel> {
         rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
         rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
         _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
+      },
+      onToolUse: (ToolUseChunk chunk) {
+        // Fold the raw tool_use delta into the streaming controller's
+        // per-session, per-index in-progress tool call state. The
+        // [StreamingController] is the source of truth for the live
+        // streaming bubble — it re-emits a stable snapshot of the
+        // in-flight call (id, name, accumulated JSON) so the bubble
+        // can render a per-tool "ToolName (~Nt)" row that materializes
+        // as the LLM streams the arguments. `onChunk` is what
+        // actually triggers a `setState`; we just update the
+        // controller's state here. The row is cleared by `onToolRound`
+        // (round end) and `onComplete` (turn end).
+        _streamingController.updateStreamingToolCall(sessionId, chunk);
       },
       onComplete: (response) async {
         _streamingController.clearStreamingFor(sessionId);
@@ -1755,7 +1768,7 @@ class _ChatPanelState extends State<ChatPanel> {
             streaming: true,
           ),
         );
-      } else {
+            } else {
         items.add(
           StreamingBubble(
             streamingContent: _streamingController.streamingContentFor(
@@ -1764,6 +1777,16 @@ class _ChatPanelState extends State<ChatPanel> {
             streamingReasoning: _streamingController.streamingReasoningFor(
               _sessionController.currentSessionId ?? 0,
             ),
+            // Live tool-call state. The controller folds each
+            // `ToolUseChunk` from `onToolUse` into a per-index
+            // accumulator; the bubble renders one row per call
+            // (in declared order) so the user sees parallel calls
+            // materialize as the LLM streams them. Cleared on
+            // round end (`onToolRound`) and turn end (`onComplete`).
+            streamingToolCalls: _streamingController.streamingToolCallsFor(
+              _sessionController.currentSessionId ?? 0,
+            ),
+            toolRegistry: _toolRegistry,
             runtimeState: rt,
           ),
         );

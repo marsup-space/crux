@@ -18,6 +18,7 @@ import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
 import 'package:crux/src/utils/token_estimate.dart';
+import 'package:crux/src/storage/storage.dart';
 
 void main() {
   group('resolvePath', () {
@@ -79,10 +80,10 @@ void main() {
       expect(apiTools[0]['parameters'], isNotNull);
     });
 
-    test('registerDefaults registers all 7 tools', () {
+    test('registerDefaults registers all 8 tools', () {
       final tracker = FileReadTracker();
       final registry = ToolRegistry();
-      registry.registerDefaults(tracker);
+      registry.registerDefaults(tracker, SessionStore(CruxDatabase()));
       final names = registry.all.map((t) => t.name).toList();
       final expectedShell = Platform.isWindows ? 'cmd' : 'bash';
       expect(
@@ -95,15 +96,16 @@ void main() {
           'grep',
           'glob',
           'webfetch',
+          'recall',
         ]),
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 8);
+        expect(registry.all.length, 9);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 7);
+        expect(registry.all.length, 8);
       }
     });
   });

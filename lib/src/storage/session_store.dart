@@ -103,6 +103,11 @@ class SessionStore {
         updatedAt: Value(nowMs),
       ),
     );
+    // Free the off-loaded bytes tied to this session. The session
+    // itself survives archive (just hidden from the sidebar), so a
+    // future unarchive can still read the message history; only the
+    // recallable bytes are dropped.
+    await cleanOffloadedContent(id);
   }
 
   Future<void> unarchiveSession(int id) async {
@@ -205,6 +210,15 @@ class SessionStore {
   }
 
   Future<void> deleteSession(int id) async {
+    // Manual deletes in FK-cascade order. The schema declares
+    // `onDelete: KeyAction.cascade` on the child rows, but the
+    // connection does not enable `PRAGMA foreign_keys = ON` —
+    // so the cascade is advisory, not enforced. Doing the
+    // deletes explicitly keeps cleanup correct without changing
+    // the connection setup.
+    await (_db.delete(_db.offloadedContent)
+          ..where((t) => t.sessionId.equals(id)))
+        .go();
     await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
     await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
     await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
@@ -455,5 +469,68 @@ class SessionStore {
       toolCallId: row.toolCallId,
       tldr: row.tldr,
     );
+  }
+
+  /// Persist the full bytes of a large tool-call argument that has
+  /// been off-loaded from the conversation log. The persisted
+  /// tool_call's argument is replaced with a stand-in pointer;
+  /// this row is the recovery target for the `recall` tool.
+  Future<void> saveOffloadedContent({
+    required int sessionId,
+    required String callId,
+    required String toolName,
+    required int byteSize,
+    required int lineCount,
+    required String content,
+  }) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.into(_db.offloadedContent).insert(
+      db.OffloadedContentCompanion.insert(
+        sessionId: sessionId,
+        callId: callId,
+        toolName: toolName,
+        byteSize: byteSize,
+        lineCount: lineCount,
+        content: content,
+        createdAt: nowMs,
+      ),
+      mode: InsertMode.insertOrReplace,
+    );
+  }
+
+  /// Return the full content for a previously off-loaded
+  /// `(sessionId, callId)` pair, or `null` if the row is gone
+  /// (cleaned by `/archive` → `cleanOffloadedContent`, or by a
+  /// future `/compact`).
+  Future<String?> getOffloadedContent(int sessionId, String callId) async {
+    final row = await (_db.select(_db.offloadedContent)
+          ..where(
+            (t) => t.sessionId.equals(sessionId) & t.callId.equals(callId),
+          ))
+        .getSingleOrNull();
+    return row?.content;
+  }
+
+  /// Delete every off-loaded-content row for [sessionId]. Returns
+  /// the number of bytes freed (sum of `byte_size` over the deleted
+  /// rows, or 0 if nothing was off-loaded). Called from
+  /// `archiveSession` today; will be called from `/compact` once
+  /// that lands.
+  ///
+  /// Note: the FK already cascades on session delete, so this
+  /// method is only useful when the session *itself* survives
+  /// (i.e. archive, future compact) — the cascading path handles
+  /// the "session is gone" case automatically.
+  Future<int> cleanOffloadedContent(int sessionId) async {
+    final sumRow = await (_db.selectOnly(_db.offloadedContent)
+          ..addColumns([_db.offloadedContent.byteSize.sum()])
+          ..where(_db.offloadedContent.sessionId.equals(sessionId)))
+        .map((row) => row.read(_db.offloadedContent.byteSize.sum()) ?? 0)
+        .getSingleOrNull();
+    final bytesFreed = sumRow ?? 0;
+    await (_db.delete(_db.offloadedContent)
+          ..where((t) => t.sessionId.equals(sessionId)))
+        .go();
+    return bytesFreed;
   }
 }

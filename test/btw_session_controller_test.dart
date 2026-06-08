@@ -45,7 +45,7 @@ void main() {
     // We construct real instances because the constructor
     // signatures require them; both are cheap to build.
     final toolRegistry = ToolRegistry()
-      ..registerDefaults(FileReadTracker());
+      ..registerDefaults(FileReadTracker(), store);
     return SessionController(
       store: store,
       providerService: providerService,
@@ -53,7 +53,7 @@ void main() {
         store,
         providerService,
         LlmClient(),
-        ToolExecutor(toolRegistry),
+        ToolExecutor(toolRegistry, store),
       ),
       refresh: () {},
     );

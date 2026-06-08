@@ -35,9 +35,20 @@ class WriteTool extends ToolDef implements LargePayloadTool {
     'type': 'object',
     'properties': {
       'filePath': {'type': 'string', 'description': 'Path to file'},
-      'content': {'type': 'string', 'description': 'Content to write'},
+      'content': {
+        'type': 'string',
+        'description': 'Content to write',
+      },
+      'intent': {
+        'type': 'string',
+        'description':
+            'What this file is for / why you are writing it. Survives '
+            'argument compression as semantic context for future turns; '
+            'the actual content may be off-loaded and replaced with a '
+            'stand-in pointer.',
+      },
     },
-    'required': ['filePath', 'content'],
+    'required': ['filePath', 'content', 'intent'],
   };
 
   final FileReadTracker? tracker;

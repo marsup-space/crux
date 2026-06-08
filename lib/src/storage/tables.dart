@@ -67,3 +67,28 @@ class Parts extends Table {
   TextColumn get data => text().withDefault(const Constant('{}'))();
   IntColumn get createdAt => integer()();
 }
+
+/// Off-loaded large tool-call argument values. When a [LargePayloadTool]
+/// call's argument (e.g. `write.content`, `edit.oldString/newString`)
+/// exceeds the offload threshold, the full bytes are written here and
+/// the persisted tool_call's argument is replaced with a stand-in
+/// pointer (`[N lines, B bytes; recall: <callId>]`). The LLM can
+/// recover the full bytes on demand via the `recall` tool.
+///
+/// Lifetime is bound to the session: `ON DELETE CASCADE` on the FK
+/// to `sessions` ensures the bytes die with the session (whether by
+/// explicit delete, or — once `/compact` exists — by a future
+/// `cleanOffloadedContent` call from `archiveSession`).
+class OffloadedContent extends Table {
+  IntColumn get sessionId =>
+      integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
+  TextColumn get callId => text()();
+  TextColumn get toolName => text()();
+  IntColumn get byteSize => integer()();
+  IntColumn get lineCount => integer()();
+  TextColumn get content => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {sessionId, callId};
+}
