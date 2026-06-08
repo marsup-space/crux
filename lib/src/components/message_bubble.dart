@@ -3,19 +3,11 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/message.dart';
+import '../services/llm_provider.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
-
-String _displayEffort(String effort) {
-  switch (effort) {
-    case 'normal':
-      return 'adaptive';
-    default:
-      return effort;
-  }
-}
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -23,6 +15,7 @@ class MessageBubble extends StatelessComponent {
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
   final String? highlightText;
+  final List<ReasoningPreset> reasoningPresets;
 
   const MessageBubble({
     required this.message,
@@ -30,7 +23,15 @@ class MessageBubble extends StatelessComponent {
     this.pairedResult,
     this.toolRegistry,
     this.highlightText,
+    this.reasoningPresets = const [],
   });
+
+  String _displayEffort(String effort) {
+    for (final p in reasoningPresets) {
+      if (p.internalValue == effort) return p.displayLabel;
+    }
+    return effort;
+  }
 
   @override
   Component build(BuildContext context) {

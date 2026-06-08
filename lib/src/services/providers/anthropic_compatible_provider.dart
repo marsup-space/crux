@@ -12,6 +12,14 @@ class AnthropicCompatibleProvider extends LlmProvider {
   AuthStyle get authStyle => AuthStyle.anthropicApiKey;
 
   @override
+  List<ReasoningPreset> get reasoningPresets => const [
+        ReasoningPreset(internalValue: 'low', displayLabel: 'low'),
+        ReasoningPreset(internalValue: 'normal', displayLabel: 'normal'),
+        ReasoningPreset(internalValue: 'high', displayLabel: 'high'),
+        ReasoningPreset(internalValue: 'max', displayLabel: 'max'),
+      ];
+
+  @override
   Map<String, dynamic> buildRequestBody(
     String modelId,
     List<Map<String, dynamic>> messages, {

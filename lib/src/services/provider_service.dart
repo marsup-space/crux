@@ -141,6 +141,14 @@ class ProviderService {
   /// Look up a provider by name. Returns `null` if not found.
   ProviderConfig? providerByName(String name) => _loader.providerByName(name);
 
+  /// Resolve the [LlmProvider] implementation backing the named provider,
+  /// based on its TOML `type`. Returns `null` if the provider is unknown.
+  LlmProvider? llmProviderByName(String name) {
+    final cfg = _loader.providerByName(name);
+    if (cfg == null) return null;
+    return resolveProvider(cfg.type).provider;
+  }
+
   /// Look up a model by its composite key `"provider/modelId"`.
   ModelConfig? modelByCompositeKey(String key) =>
       _loader.modelByCompositeKey(key);

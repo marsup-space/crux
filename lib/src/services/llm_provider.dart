@@ -4,12 +4,26 @@ import 'providers/deepseek_provider.dart';
 import 'providers/minimax_provider.dart';
 import 'providers/openai_compatible_provider.dart';
 
+/// Maps an internal reasoning-effort value (e.g. `'normal'`) to a
+/// provider-specific user-facing label (e.g. `'adaptive'` for OpenAI).
+class ReasoningPreset {
+  final String internalValue;
+  final String displayLabel;
+
+  const ReasoningPreset({required this.internalValue, required this.displayLabel});
+}
+
 abstract class LlmProvider {
   String get name;
 
   WireFamily get wire;
 
   AuthStyle get authStyle;
+
+  /// Reasoning effort levels this provider's models can be steered to,
+  /// with their user-facing display labels. Empty for providers that
+  /// do not support adjustable reasoning effort.
+  List<ReasoningPreset> get reasoningPresets => const [];
 
   Map<String, dynamic> buildRequestBody(
     String modelId,
