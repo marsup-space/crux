@@ -117,5 +117,11 @@ abstract class LargePayloadTool implements ToolDef {
 class GuardResult {
   final String header;
 
-  const GuardResult({required this.header});
+  /// Full current contents of the file the agent was about to
+  /// overwrite. Surfaced to the LLM via [ToolResult.output] so it
+  /// can re-read the file (or diff against its own plan) before
+  /// deciding whether to proceed with the write.
+  final String content;
+
+  const GuardResult({required this.header, required this.content});
 }

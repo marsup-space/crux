@@ -1,6 +1,37 @@
 import 'dart:async';
+import '../services/llm_client.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
+
+/// Snapshot of an in-progress tool call as it streams in from the
+/// LLM. The LLM emits `tool_use` chunks one at a time, each carrying
+/// a delta of the input JSON. We accumulate the JSON per call index
+/// so the streaming bubble can render a live preview without
+/// requiring the full call to have arrived.
+///
+/// The accumulated JSON is intentionally kept as a raw string
+/// (rather than a parsed `Map`) because the input is rarely
+/// well-formed until the close braces land — `jsonDecode` would
+/// throw on every intermediate chunk. Consumers that want a richer
+/// preview (e.g. extracting the key arg of `read` / `bash`) should
+/// pass the raw JSON to [ToolDef.streamingLabel] which knows how to
+/// degrade gracefully on partial input.
+class StreamingToolCall {
+  final String callId;
+  final String name;
+  final String accumulatedInputJson;
+
+  const StreamingToolCall({
+    required this.callId,
+    required this.name,
+    required this.accumulatedInputJson,
+  });
+
+  /// Rough token-count of the in-flight input. Cheap to compute
+  /// (no JSON parsing) and good enough for "this is growing"
+  /// preview labels.
+  int get estimatedInputTokens => estimateTokens(accumulatedInputJson);
+}
 
 class StreamingController {
   final SessionController _sessionController;
@@ -8,6 +39,14 @@ class StreamingController {
 
   final Map<int, String> _streamingContent = {};
   final Map<int, String> _streamingReasoning = {};
+
+  /// Per-session, per-tool-call-index accumulator for streaming
+  /// `tool_use` chunks. Keyed first by session id, then by the
+  /// `index` field the LLM emits on the chunk (parallel calls
+  /// share a session but live at different indices). Cleared on
+  /// round end and turn end via [clearStreamingFor].
+  final Map<int, Map<int, StreamingToolCall>> _streamingToolCalls = {};
+
   bool contextBarHovered = false;
 
   String streamingContentFor(int sessionId) =>
@@ -25,9 +64,51 @@ class StreamingController {
         (_streamingReasoning[sessionId] ?? '') + delta;
   }
 
+  /// Fold a [ToolUseChunk] from the LLM into the per-session,
+  /// per-index in-progress tool call. The first chunk for a given
+  /// index seeds the call (id, name) and the input accumulator;
+  /// subsequent chunks append to the input. The bubble pulls the
+  /// accumulated snapshot via [streamingToolCallsFor].
+  ///
+  /// Note: we don't trigger a refresh here — `onChunk` (the
+  /// `text_delta` handler) is what calls `setState`, so the
+  /// controller's update piggybacks on the existing render tick.
+  void updateStreamingToolCall(int sessionId, ToolUseChunk chunk) {
+    final perSession = _streamingToolCalls.putIfAbsent(
+      sessionId,
+      () => <int, StreamingToolCall>{},
+    );
+    final existing = perSession[chunk.index];
+    if (existing == null) {
+      perSession[chunk.index] = StreamingToolCall(
+        callId: chunk.callId,
+        name: chunk.name,
+        accumulatedInputJson: chunk.inputDelta,
+      );
+    } else {
+      perSession[chunk.index] = StreamingToolCall(
+        callId: existing.callId,
+        name: existing.name,
+        accumulatedInputJson: existing.accumulatedInputJson + chunk.inputDelta,
+      );
+    }
+  }
+
+  /// Snapshot of in-progress tool calls for a session, in the
+  /// order the LLM declared them (i.e. by chunk index). Empty
+  /// if the round hasn't emitted any `tool_use` deltas yet, or
+  /// if [clearStreamingFor] has been called since the last round.
+  List<StreamingToolCall> streamingToolCallsFor(int sessionId) {
+    final perSession = _streamingToolCalls[sessionId];
+    if (perSession == null || perSession.isEmpty) return const [];
+    final keys = perSession.keys.toList()..sort();
+    return [for (final k in keys) perSession[k]!];
+  }
+
   void clearStreamingFor(int sessionId) {
     _streamingContent.remove(sessionId);
     _streamingReasoning.remove(sessionId);
+    _streamingToolCalls.remove(sessionId);
   }
 
   final Map<int, Timer> _metricsTimers = {};

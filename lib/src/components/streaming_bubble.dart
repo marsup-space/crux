@@ -2,6 +2,8 @@ import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
 import '../models/session_runtime_state.dart';
+import '../tools/registry.dart';
+import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
 
 class StreamingBubble extends StatelessComponent {
@@ -9,10 +11,26 @@ class StreamingBubble extends StatelessComponent {
   final String streamingReasoning;
   final SessionRuntimeState? runtimeState;
 
+  /// In-progress tool calls, in declared order. Each entry is a
+  /// snapshot of one call's id, name, and the (possibly-partial)
+  /// input JSON the LLM has emitted so far. We render one row per
+  /// call so the user sees parallel calls materialize as they
+  /// stream, instead of having to wait for the round to end.
+  final List<StreamingToolCall> streamingToolCalls;
+
+  /// Optional registry used to look up the [ToolDef] for each
+  /// streaming call, so we can ask it for a richer streaming
+  /// preview label (e.g. `Bash ls -la` instead of `Bash (~12 t)`).
+  /// When null — or the tool isn't registered — we fall back to
+  /// the default capitalized-name + token-budget label.
+  final ToolRegistry? toolRegistry;
+
   const StreamingBubble({
     required this.streamingContent,
     required this.streamingReasoning,
     this.runtimeState,
+    this.streamingToolCalls = const [],
+    this.toolRegistry,
   });
 
   @override
@@ -73,6 +91,58 @@ class StreamingBubble extends StatelessComponent {
       ),
     );
 
+    if (streamingToolCalls.isNotEmpty) {
+      children.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: streamingToolCalls
+                .map((tc) => _buildStreamingToolCallRow(tc))
+                .toList(),
+          ),
+        ),
+      );
+    }
+
     return Column(children: children);
+  }
+
+  /// Render a single in-flight tool call as a `ToolName: <label>`
+  /// row, matching the look of [MessageBubble._buildCollapsedToolCall]
+  /// but with no result yet. The label comes from
+  /// [ToolDef.streamingLabel] when we can resolve the tool, or
+  /// the default `Name (~Nt t)` format otherwise.
+  Component _buildStreamingToolCallRow(StreamingToolCall tc) {
+    final tool = toolRegistry?.lookup(tc.name);
+    final label = tool?.streamingLabel(
+          accumulatedInputJson: tc.accumulatedInputJson,
+          estimatedInputTokens: tc.estimatedInputTokens,
+        ) ??
+        '${_capitalize(tc.name)} (~${tc.estimatedInputTokens} t)';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          ' ${_capitalize(tc.name)}: ',
+          style: TextStyle(
+            color: CruxTheme.toolPrefix,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(color: CruxTheme.onSurfaceDim),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
   }
 }
