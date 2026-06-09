@@ -2281,7 +2281,6 @@ class _ChatPanelState extends State<ChatPanel> {
               maxLines: null,
               style: TextStyle(color: CruxTheme.foreground),
               placeholder: placeholder,
-              onSubmitted: (_) => _sendMessage(),
               onKeyEvent: _handleInputKeyEvent,
               wordBoundaryProvider: cjkWordBoundaryProvider,
             ),

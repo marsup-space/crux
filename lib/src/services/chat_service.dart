@@ -274,6 +274,7 @@ class ChatService {
     int roundReasoningTokens = 0;
     double roundThinkingDurationMs = 0;
     DateTime? roundFirstContentTime;
+    DateTime? roundFirstDeltaTime;
 
     var firstTokenEver = true;
 
@@ -318,6 +319,7 @@ class ChatService {
       roundReasoningTokens = 0;
       roundThinkingDurationMs = 0;
       roundFirstContentTime = null;
+      roundFirstDeltaTime = null;
 
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
@@ -413,6 +415,7 @@ class ChatService {
               final now = DateTime.now();
               runtime.roundFirstTokenTime = now;
               runtime.roundStreaming = true;
+              roundFirstDeltaTime = now;
             }
             if (chunk.toolUse != null) {
               if (chunk.toolUse!.inputDelta.isNotEmpty) {
@@ -545,10 +548,13 @@ class ChatService {
       // tool_call rounds that have no content text). This gives each
       // tool_call message its own accurate thinking duration rather
       // than the cumulative `runtime.thinkingDurationMs`.
-      if (runtime.roundStreaming && runtime.roundFirstTokenTime != null) {
+      // Uses the local `roundFirstDeltaTime` instead of
+      // `runtime.roundFirstTokenTime` to avoid relying on shared
+      // mutable state that may be reset by other code paths.
+      if (roundFirstDeltaTime != null) {
         final reasoningEnd = roundFirstContentTime ?? DateTime.now();
         roundThinkingDurationMs = reasoningEnd
-                .difference(runtime.roundFirstTokenTime!)
+                .difference(roundFirstDeltaTime!)
                 .inMicroseconds /
             1000.0;
       }
@@ -740,7 +746,7 @@ class ChatService {
     );
 
     final thinkingMs = reasoningContent.isNotEmpty
-        ? runtime.thinkingDurationMs.round()
+        ? roundThinkingDurationMs.round()
         : 0;
 
     await _store.addMessage(
