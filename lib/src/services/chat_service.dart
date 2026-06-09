@@ -287,6 +287,9 @@ class ChatService {
     double roundThinkingDurationMs = 0;
     DateTime? roundFirstContentTime;
     DateTime? roundFirstDeltaTime;
+    DateTime? roundFirstReasoningTime;
+    DateTime? roundLastReasoningTime;
+    DateTime? roundLastDeltaTime;
 
     var firstTokenEver = true;
 
@@ -332,6 +335,9 @@ class ChatService {
       roundThinkingDurationMs = 0;
       roundFirstContentTime = null;
       roundFirstDeltaTime = null;
+      roundFirstReasoningTime = null;
+      roundLastReasoningTime = null;
+      roundLastDeltaTime = null;
 
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
@@ -423,12 +429,17 @@ class ChatService {
           if (chunk.textDelta != null ||
               chunk.reasoningContent != null ||
               chunk.toolUse != null) {
+            final now = DateTime.now();
             if (!runtime.roundStreaming) {
-              final now = DateTime.now();
               runtime.roundFirstTokenTime = now;
               runtime.roundStreaming = true;
               roundFirstDeltaTime = now;
             }
+            // Always track the last delta time so we can compute
+            // reasoning duration from stream boundaries when the LLM
+            // reports reasoningTokens but doesn't stream reasoning
+            // content separately.
+            roundLastDeltaTime = now;
             if (chunk.toolUse != null) {
               if (chunk.toolUse!.inputDelta.isNotEmpty) {
                 runtime.cumulativeCompletionTokens += estimateTokens(
@@ -469,14 +480,11 @@ class ChatService {
             if (chunk.textDelta != null) {
               roundTextBuffer.write(chunk.textDelta);
               // Track when the first content (non-reasoning) delta
-              // arrives in this round — the thinking duration is the
-              // gap between the first delta (reasoning) and the first
-              // content delta. If the round has no content delta at
-              // all (e.g. reasoning → tool_use), we fall back to the
-              // round-end time below.
-              if (roundFirstContentTime == null) {
-                roundFirstContentTime = DateTime.now();
-              }
+              // arrives in this round — used as the reasoning-end
+              // boundary in the fallback duration calculation when
+              // the LLM reports reasoningTokens but doesn't stream
+              // reasoning content separately.
+              roundFirstContentTime ??= now;
               if (useLerp) {
                 lerpPendingText += chunk.textDelta!;
                 ensureLerpTimer();
@@ -486,6 +494,13 @@ class ChatService {
             }
                   if (chunk.reasoningContent != null) {
               roundReasoningBuffer.write(chunk.reasoningContent);
+              // Track the first and last reasoning delta timestamps so
+              // we can compute the actual reasoning stream duration.
+              // This works even when the LLM doesn't report a
+              // thinking_duration field — we measure wall-clock time
+              // from first reasoning token to last reasoning token.
+              roundFirstReasoningTime ??= now;
+              roundLastReasoningTime = now;
               if (useLerp) {
                 lerpPendingReasoning += chunk.reasoningContent!;
                 ensureLerpTimer();
@@ -554,19 +569,34 @@ class ChatService {
         runtime.cumulativeGenMs += roundMs;
       }
 
-      // Compute per-round thinking duration: the wall-clock time
-      // between the first delta of this round (reasoning start) and
-      // either the first content delta or the end of the round (for
-      // tool_call rounds that have no content text). This gives each
-      // tool_call message its own accurate thinking duration rather
-      // than the cumulative `runtime.thinkingDurationMs`.
-      // Uses the local `roundFirstDeltaTime` instead of
-      // `runtime.roundFirstTokenTime` to avoid relying on shared
-      // mutable state that may be reset by other code paths.
-      if (roundFirstDeltaTime != null) {
-        final reasoningEnd = roundFirstContentTime ?? DateTime.now();
+      // Compute per-round thinking duration from the wall-clock time
+      // between the first and last reasoning tokens in the stream.
+      // This works even when the LLM doesn't report a duration field —
+      // we measure it directly from when reasoning deltas arrive.
+      //
+      // Three cases:
+      // 1. Reasoning content was streamed: use first→last reasoning
+      //    delta timestamps for an accurate measurement.
+      // 2. No reasoning content streamed, but reasoningTokens > 0:
+      //    the LLM did think but didn't stream the reasoning (e.g.
+      //    some OpenAI-compatible providers). Fall back to the
+      //    wall-clock time from the first delta to either the first
+      //    content delta or the last delta of the round.
+      // 3. No reasoning at all: duration stays 0.
+      if (roundFirstReasoningTime != null && roundLastReasoningTime != null) {
+        // Case 1: we saw reasoning content in the stream.
+        roundThinkingDurationMs = roundLastReasoningTime
+                .difference(roundFirstReasoningTime)
+                .inMicroseconds /
+            1000.0;
+      } else if (reasoningTokens > 0 && roundFirstDeltaTime != null) {
+        // Case 2: the LLM reports reasoning tokens but didn't stream
+        // reasoning content. Use stream boundaries as an approximation:
+        // from the first delta of any kind to either the first content
+        // delta (if there is one) or the last delta of the round.
+        final reasoningEnd = roundFirstContentTime ?? roundLastDeltaTime ?? DateTime.now();
         roundThinkingDurationMs = reasoningEnd
-                .difference(roundFirstDeltaTime!)
+                .difference(roundFirstDeltaTime)
                 .inMicroseconds /
             1000.0;
       }
@@ -633,7 +663,7 @@ class ChatService {
         content: roundText,
         reasoningContent: roundReasoning,
         reasoningTokens: roundReasoningTokens,
-        thinkingDurationMs: roundReasoning.isNotEmpty
+        thinkingDurationMs: (roundReasoning.isNotEmpty || roundReasoningTokens > 0)
             ? roundThinkingDurationMs.round()
             : 0,
         reasoningEffort: runtime.thinkingMode == 'disabled'
@@ -757,7 +787,7 @@ class ChatService {
       promptCacheHitTokens: promptCacheHitTokens,
     );
 
-    final thinkingMs = reasoningContent.isNotEmpty
+    final thinkingMs = (reasoningContent.isNotEmpty || reasoningTokens > 0)
         ? roundThinkingDurationMs.round()
         : 0;
 
