@@ -40,6 +40,7 @@ import 'session_management_panel.dart';
 import 'annotated_scrollbar.dart';
 import 'btw_bubble.dart';
 import 'message_bubble.dart';
+import 'queued_messages_bubble.dart';
 import 'streaming_bubble.dart';
 import 'tldr_bubble.dart';
 
@@ -721,7 +722,17 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    if (isResponding) return;
+    // When the agent is streaming, queue the user's message
+    // instead of ignoring it. The message will be inserted at
+    // the next safe boundary (after a tool round or after the
+    // final response). The user can see and discard queued
+    // messages in the QueuedMessagesBubble.
+    if (isResponding && sessionId != null) {
+      _sessionController.enqueueMessage(sessionId, text);
+      textController.clear();
+      setState(() {});
+      return;
+    }
 
     // Sending a "real" (non-`/btw`) message is the explicit
     // signal that the in-memory btw chain must be discarded:
@@ -857,6 +868,12 @@ class _ChatPanelState extends State<ChatPanel> {
         // (round end) and `onComplete` (turn end).
         _streamingController.updateStreamingToolCall(sessionId, chunk);
       },
+      // Queue drain callback: the chat service calls this at every
+      // safe insertion boundary (after each tool round, and after the
+      // final response). If the user queued messages while the agent
+      // was streaming, this returns the merged content string which
+      // the chat service injects into the API messages and the store.
+      onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
       onComplete: (response) async {
         _streamingController.clearStreamingFor(sessionId);
         _streamingController.stopMetricsTimer(sessionId);
@@ -892,6 +909,28 @@ class _ChatPanelState extends State<ChatPanel> {
         );
         if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
           _maybeGenerateTldr(sessionId, lastAiMsg);
+        }
+        // If the user queued a message during the final response
+        // (drained by the chat service's onQueueDrain callback at
+        // the end of the turn), persist it and kick off a new turn
+        // so the queued message reaches the LLM without the user
+        // having to re-submit.
+        if (response.queuedMessage != null &&
+            response.queuedMessage!.isNotEmpty) {
+          // Persist the queued message to the store and update
+          // the in-memory cache so it appears in the UI before
+          // the next turn starts.
+          await _store.addMessage(
+            sessionId,
+            role: 'user',
+            content: response.queuedMessage!,
+          );
+          final updatedMsgs = await _store.getMessages(sessionId);
+          _sessionController.messageCache[sessionId] = updatedMsgs;
+          setState(() {});
+          // Start a new turn with null userContent — the message
+          // is already in the history.
+          await _sendTurn(text: null);
         }
       },
       onError: (error) {
@@ -1793,6 +1832,26 @@ class _ChatPanelState extends State<ChatPanel> {
       }
     }
 
+    // Render queued messages when the agent is streaming. The
+    // bubble shows each queued message with a discard button.
+    // Messages are inserted into the conversation at the next
+    // safe boundary (after a tool round or final response).
+    if (sessionId != null && isStreaming) {
+      final queue = _sessionController.messageQueueFor(sessionId);
+      if (queue.isNotEmpty) {
+        items.add(SizedBox(height: 1));
+        items.add(
+          QueuedMessagesBubble(
+            messages: queue.messages,
+            onDiscard: (queueId) {
+              _sessionController.discardQueuedMessage(sessionId, queueId);
+              setState(() {});
+            },
+          ),
+        );
+      }
+    }
+
     final markers = List.generate(userItemIndices.length, (i) {
       return ScrollbarMarker(
         itemIndex: userItemIndices[i],
@@ -2064,7 +2123,11 @@ class _ChatPanelState extends State<ChatPanel> {
     final slashIdx = modelKey.indexOf('/');
     final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
     final llm = _providerService.llmProviderByName(providerName);
-    return llm?.reasoningPresets ?? const [];
+    if (llm == null) return const [];
+    // Pass the modelId so providers like MiniMax can vary the
+    // display by model (M3 shows `normal` as `adaptive`; M2.x
+    // does not, because M2.x doesn't support adaptive thinking).
+    return llm.reasoningPresetsFor(modelKey);
   }
 
   String _displayEffort(String effort) {
@@ -2200,6 +2263,12 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildInputRow({required bool isStreaming}) {
+    // When the agent is streaming, the user's message will be queued
+    // and inserted at the next safe boundary. Change the placeholder
+    // to communicate this.
+    final placeholder = isStreaming
+        ? 'Queue a message...'
+        : 'Type a message...';
     return Container(
       padding: EdgeInsets.all(1),
       child: Row(
@@ -2211,7 +2280,7 @@ class _ChatPanelState extends State<ChatPanel> {
               focused: !_overlayController.showSessionManager,
               maxLines: null,
               style: TextStyle(color: CruxTheme.foreground),
-              placeholder: 'Type a message...',
+              placeholder: placeholder,
               onSubmitted: (_) => _sendMessage(),
               onKeyEvent: _handleInputKeyEvent,
               wordBoundaryProvider: cjkWordBoundaryProvider,

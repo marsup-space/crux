@@ -36,12 +36,15 @@ abstract class LlmProvider {
 
   AuthStyle get authStyle;
 
-  /// Reasoning presets offered by this provider. The UI cycle button,
-  /// `/think` command, and message bubbles all consume this list.
-  /// Subclasses override to customize the display mapping (e.g. MiniMax
-  /// renames `normal` to `adaptive`).
-  List<ReasoningPreset> get reasoningPresets => const [
+  /// Reasoning presets offered by this provider for a given model.
+  /// The UI cycle button, `/think` command, and message bubbles all
+  /// consume this list. Subclasses override to customize the display
+  /// mapping per model (e.g. MiniMax shows `normal` as `adaptive`
+  /// only on M3 — M2.x shows it as `normal` because it doesn't
+  /// support adaptive thinking).
+  List<ReasoningPreset> reasoningPresetsFor(String modelId) => const [
         ReasoningPreset(internalValue: 'off', displayLabel: 'off'),
+        ReasoningPreset(internalValue: 'low', displayLabel: 'low'),
         ReasoningPreset(internalValue: 'normal', displayLabel: 'normal'),
         ReasoningPreset(internalValue: 'high', displayLabel: 'high'),
         ReasoningPreset(internalValue: 'max', displayLabel: 'max'),

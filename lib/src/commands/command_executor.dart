@@ -319,6 +319,11 @@ class CommandExecutor {
         rt.reasoningEffort = null;
         ctx.persistThinkingLevel(rt);
         ctx.showToast('Thinking mode: off', mode: ToastMode.status);
+      case 'low':
+        rt.thinkingMode = 'enabled';
+        rt.reasoningEffort = 'low';
+        ctx.persistThinkingLevel(rt);
+        ctx.showToast('Thinking mode: low', mode: ToastMode.status);
       case 'normal':
         rt.thinkingMode = 'enabled';
         rt.reasoningEffort = 'normal';
@@ -342,8 +347,8 @@ class CommandExecutor {
             ? 'off'
             : displayEffort(rt.reasoningEffort ?? 'normal');
         final levels = isMinimax
-            ? '<off|adaptive|high|max>'
-            : '<off|normal|high|max>';
+            ? '<off|low|adaptive|high|max>'
+            : '<off|low|normal|high|max>';
         ctx.showToast(
           'Usage: /think $levels (current: $current)',
         );

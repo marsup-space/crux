@@ -20,11 +20,19 @@ class ChatResponse {
   final int promptCacheHitTokens;
   final int promptCacheMissTokens;
 
+  /// If non-null, the user queued a message during streaming that
+  /// should be sent as a new turn immediately after this response
+  /// completes. The caller (ChatPanel) uses this to auto-kick off
+  /// a new `_sendTurn` so the queued message reaches the LLM
+  /// without the user having to re-submit.
+  final String? queuedMessage;
+
   const ChatResponse({
     this.promptTokens = 0,
     this.completionTokens = 0,
     this.promptCacheHitTokens = 0,
     this.promptCacheMissTokens = 0,
+    this.queuedMessage,
   });
 }
 
@@ -193,6 +201,7 @@ class ChatService {
     required void Function(String error) onError,
     void Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
+    String? Function()? onQueueDrain,
     String? userContent,
   }) async {
     if (userContent != null) {
@@ -657,6 +666,16 @@ class ChatService {
         roundTextBuffer.clear();
         roundReasoningBuffer.clear();
         onToolRound?.call(roundResultTokens);
+
+        // After the tool round completes, check if the user queued
+        // any messages while the agent was streaming. If so, inject
+        // the drained content as a user message into both the API
+        // message list and the store so the next LLM round sees it.
+        final queuedContent = onQueueDrain?.call();
+        if (queuedContent != null) {
+          await _store.addMessage(sessionId, role: 'user', content: queuedContent);
+          apiMessages.add({'role': 'user', 'content': queuedContent});
+        }
       } else {
         final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
           toolCalls,
@@ -697,6 +716,16 @@ class ChatService {
         roundTextBuffer.clear();
         roundReasoningBuffer.clear();
         onToolRound?.call(roundResultTokens);
+
+        // After the tool round completes, check if the user queued
+        // any messages while the agent was streaming. If so, inject
+        // the drained content as a user message into both the API
+        // message list and the store so the next LLM round sees it.
+        final queuedContent = onQueueDrain?.call();
+        if (queuedContent != null) {
+          await _store.addMessage(sessionId, role: 'user', content: queuedContent);
+          apiMessages.add({'role': 'user', 'content': queuedContent});
+        }
       }
     }
 
@@ -773,12 +802,18 @@ class ChatService {
       );
     }
 
+    // After the final response, drain any remaining queued messages.
+    // The caller's onComplete handler can use this to start a new
+    // turn if the queue had messages.
+    final finalQueuedContent = onQueueDrain?.call();
+
     onComplete(
       ChatResponse(
         promptTokens: promptTokens,
         completionTokens: completionTokens,
         promptCacheHitTokens: promptCacheHitTokens,
         promptCacheMissTokens: promptCacheMissTokens,
+        queuedMessage: finalQueuedContent,
       ),
     );
   }

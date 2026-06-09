@@ -208,8 +208,10 @@ void main() {
       expect(body.containsKey('user_id'), isFalse);
     });
 
-    test('default reasoningPresets map normal → normal', () {
-      final presets = provider.reasoningPresets;
+    test('inherits base reasoningPresets (off, low, normal, high, max)', () {
+      final presets = provider.reasoningPresetsFor('claude-sonnet-4-6');
+      final low = presets.firstWhere((p) => p.internalValue == 'low');
+      expect(low.displayLabel, 'low');
       final normal = presets.firstWhere((p) => p.internalValue == 'normal');
       expect(normal.displayLabel, 'normal');
     });
@@ -217,6 +219,14 @@ void main() {
 
   group('OpenAICompatibleProvider', () {
     final provider = OpenAICompatibleProvider();
+
+    test('reasoningPresets inherit from base (normal → normal, not adaptive)', () {
+      final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
+      final low = presets.firstWhere((p) => p.internalValue == 'low');
+      expect(low.displayLabel, 'low');
+      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+      expect(normal.displayLabel, 'normal');
+    });
 
     test('includes user_id in body when userId is provided', () {
       final body = provider.buildRequestBody(
@@ -241,6 +251,14 @@ void main() {
   group('DeepSeekProvider', () {
     final provider = DeepSeekProvider();
 
+    test('reasoningPresets inherit from base (normal → normal, not adaptive)', () {
+      final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
+      final low = presets.firstWhere((p) => p.internalValue == 'low');
+      expect(low.displayLabel, 'low');
+      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+      expect(normal.displayLabel, 'normal');
+    });
+
     test('inherits user_id from OpenAICompatibleProvider', () {
       final body = provider.buildRequestBody(
         'deepseek-v4-pro',
@@ -256,116 +274,215 @@ void main() {
     });
   });
 
-  group('MiniMaxProvider (normal→adaptive, high/max→enabled)', () {
+  group('MiniMaxProvider', () {
     final provider = MiniMaxProvider();
 
-    test('normal effort emits thinking: {type: adaptive} with no budget_tokens',
-        () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'enabled',
-        reasoningEffort: 'normal',
-      );
-      expect(body['thinking'], {'type': 'adaptive'});
-      // AI SDK unit test contract: budget_tokens is intentionally absent
-      // for adaptive thinking.
-      expect(body['thinking'].containsKey('budget_tokens'), isFalse);
-      expect(body['output_config'], {'effort': 'medium'});
-    });
-
-    test('high effort emits thinking: {type: enabled} with budget_tokens', () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'enabled',
-        reasoningEffort: 'high',
-      );
-      expect(body['thinking'], {
-        'type': 'enabled',
-        'budget_tokens': 10000,
+    group('M3 model — adaptive thinking, can disable', () {
+      test('normal effort emits thinking: {type: adaptive} with no budget_tokens',
+          () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'normal',
+        );
+        expect(body['thinking'], {'type': 'adaptive'});
+        // AI SDK unit test contract: budget_tokens is intentionally
+        // absent for adaptive thinking.
+        expect(body['thinking'].containsKey('budget_tokens'), isFalse);
+        expect(body['output_config'], {'effort': 'medium'});
       });
-      expect(body['output_config'], {'effort': 'high'});
-    });
 
-    test('max effort emits thinking: {type: enabled} with budget_tokens', () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'enabled',
-        reasoningEffort: 'max',
-      );
-      expect(body['thinking'], {
-        'type': 'enabled',
-        'budget_tokens': 10000,
+      test('low effort emits thinking: {type: enabled} with budget_tokens',
+          () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'low',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'low'});
       });
-      expect(body['output_config'], {'effort': 'max'});
+
+      test('high effort emits thinking: {type: enabled} with budget_tokens', () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'high',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'high'});
+      });
+
+      test('max effort emits thinking: {type: enabled} with budget_tokens', () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'max',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'max'});
+      });
+
+      test('thinking = disabled omits the thinking and output_config fields',
+          () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'disabled',
+          reasoningEffort: 'high',
+        );
+        expect(body.containsKey('thinking'), isFalse);
+        expect(body.containsKey('output_config'), isFalse);
+      });
+
+      test('uses provided thinkingBudget instead of the 10000 default', () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M3',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'high',
+          thinkingBudget: 8000,
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 8000,
+        });
+      });
+
+      test('reuses the base mapEffort — single source of truth for the mapping',
+          () {
+        // Sanity: M3's wire-shape behavior should be driven by the
+        // shared helper, not a duplicated switch. We invoke both
+        // implementations and assert they agree on the full preset grid.
+        final base = AnthropicCompatibleProvider();
+        for (final effort in ['low', 'normal', 'medium', 'high', 'max', null]) {
+          final body = provider.buildRequestBody(
+            'MiniMax-M3',
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: effort,
+          );
+          final expected = base.mapEffort(effort);
+          // All efforts always produce output_config.effort.
+          expect(
+            body['output_config'],
+            {'effort': expected},
+            reason: 'effort=$effort should map to wire $expected',
+          );
+          // normal → adaptive, others → enabled + budget.
+          if (effort == 'normal') {
+            expect(
+              body['thinking'],
+              {'type': 'adaptive'},
+              reason: 'effort=normal should use adaptive thinking',
+            );
+          } else {
+            expect(
+              body['thinking']['type'],
+              'enabled',
+              reason: 'effort=$effort should use enabled thinking',
+            );
+          }
+        }
+      });
     });
 
-    test('thinking = disabled omits the thinking and output_config fields', () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'disabled',
-        reasoningEffort: 'high',
-      );
-      expect(body.containsKey('thinking'), isFalse);
-      expect(body.containsKey('output_config'), isFalse);
-    });
+    group('M2.x model — thinking always on, no adaptive, cannot disable', () {
+      test('normal effort emits thinking: {type: enabled} (NOT adaptive)',
+          () {
+        // M2.x has no adaptive mode — the model would reject or
+        // ignore `{type: "adaptive"}`. Fall back to enabled +
+        // budget, like the other budget-driven presets.
+        final body = provider.buildRequestBody(
+          'MiniMax-M2.7',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'normal',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'medium'});
+      });
 
-    test('uses provided thinkingBudget instead of the 10000 default', () {
-      final body = provider.buildRequestBody(
-        'MiniMax-M3',
-        userMsg,
-        thinkingMode: 'enabled',
-        reasoningEffort: 'high',
-        thinkingBudget: 8000,
-      );
-      expect(body['thinking'], {
-        'type': 'enabled',
-        'budget_tokens': 8000,
+      test('high effort emits thinking: {type: enabled} with budget_tokens',
+          () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M2.5',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'high',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'high'});
+      });
+
+      test('max effort emits thinking: {type: enabled} with budget_tokens',
+          () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M2',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'max',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'max'});
+      });
+
+      test('thinking = disabled is IGNORED — M2.x always emits enabled', () {
+        // Per the MiniMax docs: "对于 M2.x 模型，thinking 无法关闭；
+        // 即使传入 `thinking: {type: 'disabled'}`，thinking 仍会保持
+        // 开启." We must not honour the user's off toggle for M2.x.
+        final body = provider.buildRequestBody(
+          'MiniMax-M2.7',
+          userMsg,
+          thinkingMode: 'disabled',
+          reasoningEffort: 'high',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 10000,
+        });
+        expect(body['output_config'], {'effort': 'high'});
+      });
+
+      test('uses provided thinkingBudget for M2.x', () {
+        final body = provider.buildRequestBody(
+          'MiniMax-M2.1-highspeed',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'high',
+          thinkingBudget: 8000,
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+          'budget_tokens': 8000,
+        });
       });
     });
 
     test('uses bearer auth (vs the base class\'s anthropicApiKey)', () {
       expect(provider.authStyle, AuthStyle.bearer);
-    });
-
-    test('reuses the base mapEffort — single source of truth for the mapping',
-        () {
-      // Sanity: MiniMax's wire-shape behavior should be driven by the
-      // shared helper, not a duplicated switch. We invoke both
-      // implementations and assert they agree on the full preset grid.
-      final base = AnthropicCompatibleProvider();
-      for (final effort in ['low', 'normal', 'medium', 'high', 'max', null]) {
-        final body = provider.buildRequestBody(
-          'MiniMax-M3',
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: effort,
-        );
-        final expected = base.mapEffort(effort);
-        // All efforts always produce output_config.effort.
-        expect(
-          body['output_config'],
-          {'effort': expected},
-          reason: 'effort=$effort should map to wire $expected',
-        );
-        // normal → adaptive, others → enabled + budget.
-        if (effort == 'normal') {
-          expect(
-            body['thinking'],
-            {'type': 'adaptive'},
-            reason: 'effort=normal should use adaptive thinking',
-          );
-        } else {
-          expect(
-            body['thinking']['type'],
-            'enabled',
-            reason: 'effort=$effort should use enabled thinking',
-          );
-        }
-      }
     });
 
     test('inherits cache_control on system, tools, and messages', () {
@@ -395,12 +512,60 @@ void main() {
       expect(content.last['cache_control'], {'type': 'ephemeral'});
     });
 
-    test('reasoningPresets map normal → adaptive', () {
-      final presets = provider.reasoningPresets;
+    test('reasoningPresetsFor M3 maps normal → adaptive, others stay identity',
+        () {
+      // Adaptive is an M3-only feature. The UI shows the
+      // `adaptive` label (renamed from `normal`) only when the
+      // active model is M3.
+      final presets = provider.reasoningPresetsFor('MiniMax-M3');
+      final low = presets.firstWhere((p) => p.internalValue == 'low');
+      expect(low.displayLabel, 'low');
       final normal = presets.firstWhere((p) => p.internalValue == 'normal');
       expect(normal.displayLabel, 'adaptive');
       final high = presets.firstWhere((p) => p.internalValue == 'high');
       expect(high.displayLabel, 'high');
+    });
+
+    test('reasoningPresetsFor M2.x shows normal → normal (no adaptive label)',
+        () {
+      // M2.x doesn't support adaptive thinking, so the rename
+      // would be misleading. Show `normal` as `normal` and let
+      // the wire format (enabled + budget) do the work.
+      for (final modelId in [
+        'MiniMax-M2',
+        'MiniMax-M2.1',
+        'MiniMax-M2.1-highspeed',
+        'MiniMax-M2.5',
+        'MiniMax-M2.5-highspeed',
+        'MiniMax-M2.7',
+        'MiniMax-M2.7-highspeed',
+      ]) {
+        final presets = provider.reasoningPresetsFor(modelId);
+        final low = presets.firstWhere((p) => p.internalValue == 'low');
+        expect(
+          low.displayLabel,
+          'low',
+          reason: '$modelId: low should be identity',
+        );
+        final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+        expect(
+          normal.displayLabel,
+          'normal',
+          reason: '$modelId: normal should NOT be relabeled "adaptive"',
+        );
+        final high = presets.firstWhere((p) => p.internalValue == 'high');
+        expect(
+          high.displayLabel,
+          'high',
+          reason: '$modelId: high should be identity',
+        );
+        final max = presets.firstWhere((p) => p.internalValue == 'max');
+        expect(
+          max.displayLabel,
+          'max',
+          reason: '$modelId: max should be identity',
+        );
+      }
     });
   });
 

@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../models/message.dart';
+import '../models/message_queue.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
@@ -40,6 +41,57 @@ class SessionController {
   /// (b) render the boxed btw UI without going through the regular
   /// message bubble machinery.
   final Map<int, List<BtwTurn>> btwBuffer = {};
+
+  /// Per-session message queue. When the agent is streaming (running
+  /// an agentic loop with tool calls), new user messages are enqueued
+  /// here instead of being sent immediately. The queue is drained at
+  /// the next safe insertion point (after a tool round completes, or
+  /// after the final response). Multiple queued messages are merged
+  /// into a single user turn with a system prefix.
+  final Map<int, MessageQueue> _messageQueues = {};
+
+  /// Read-only view of the message queue for [sessionId]. Returns an
+  /// empty queue (not stored) when the session has never queued a
+  /// message.
+  MessageQueue messageQueueFor(int sessionId) {
+    return _messageQueues.putIfAbsent(
+      sessionId,
+      () => MessageQueue(sessionId: sessionId),
+    );
+  }
+
+  /// Enqueue a user message for [sessionId]. Returns the queue id
+  /// for the new message (used for discarding). Creates the queue
+  /// if this is the first queued message for the session.
+  int enqueueMessage(int sessionId, String content) {
+    final queue = _messageQueues.putIfAbsent(
+      sessionId,
+      () => MessageQueue(sessionId: sessionId),
+    );
+    return queue.enqueue(content);
+  }
+
+  /// Discard a queued message by its queue id. Returns true if found.
+  bool discardQueuedMessage(int sessionId, int queueId) {
+    final queue = _messageQueues[sessionId];
+    if (queue == null) return false;
+    return queue.discard(queueId);
+  }
+
+  /// Drain the message queue for [sessionId], returning the merged
+  /// user message string (with the system prefix), or null if the
+  /// queue is empty. Clears the queue after draining.
+  String? drainMessageQueue(int sessionId) {
+    final queue = _messageQueues[sessionId];
+    if (queue == null || queue.isEmpty) return null;
+    final result = queue.drain();
+    return result.isEmpty ? null : result;
+  }
+
+  /// Clear the message queue for [sessionId] without draining.
+  void clearMessageQueue(int sessionId) {
+    _messageQueues[sessionId]?.clear();
+  }
 
   /// Read-only view of the in-memory btw chain for [sessionId]. Returns
   /// an empty list when the session has never seen a `/btw`, or when
@@ -272,6 +324,8 @@ class SessionController {
     // in-memory state so we don't leak entries for a session that
     // no longer exists. Other sessions' chains are untouched.
     btwBuffer.remove(sessionId);
+    // Also drop the deleted session's message queue.
+    _messageQueues.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
     archivedCount = await _store.archivedCount(
       projectPath: Directory.current.path,
@@ -384,5 +438,6 @@ class SessionController {
       rt.cancelTimers();
     }
     btwBuffer.clear();
+    _messageQueues.clear();
   }
 }

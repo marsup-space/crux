@@ -168,4 +168,16 @@ class CruxTheme {
   static const btwBorder = Color(0x44475A);
   static const btwUserPrefix = Color(0x6272A4);
   static const btwAiPrefix = Color(0xBD93F9);
+
+  // Queued messages display. Visually similar to the btw chain
+  // (boxed, dim) but with a warm accent to signal "pending action"
+  // rather than "ephemeral side-channel". The prefix uses yellow
+  // (same as responsePrefix) so the user reads it as "input going
+  // to the agent" rather than a completed message.
+  static const queueBackground = Color(0x21222C);
+  static const queueBorder = Color(0x44475A);
+  static const queuePrefix = Color(0xF1FA8C);
+  static const queueText = Color(0xCCD0DA);
+  static const queueDiscardText = Color(0xFF5555);
+  static const queueDiscardHoverText = Color(0xFF8888);
 }
