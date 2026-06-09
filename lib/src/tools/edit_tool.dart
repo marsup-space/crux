@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
@@ -114,10 +116,12 @@ class EditTool extends ToolDef implements LargePayloadTool {
       }
     }
 
-    final content = await file.readAsString();
+    final bytes = await file.readAsBytes();
+    final meta = readFileWithMetadata(bytes);
+    final content = meta.content;
 
     if (oldString.isEmpty) {
-      await file.writeAsString(newString);
+      await _writePreservingEncoding(file, newString, meta);
       if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
       return ToolResult(
         title: 'Edit file: $resolved',
@@ -141,7 +145,8 @@ class EditTool extends ToolDef implements LargePayloadTool {
       replaceAll,
       matchResult.matchLength,
     );
-    await file.writeAsString(newContent);
+    final normalized = normalizeToLineEnding(newContent, meta.lineEnding);
+    await _writePreservingEncoding(file, normalized, meta);
 
     if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
 
@@ -184,6 +189,20 @@ class EditTool extends ToolDef implements LargePayloadTool {
     }
     final pos = positions.first;
     return content.substring(0, pos) + newString + content.substring(pos + len);
+  }
+
+  Future<void> _writePreservingEncoding(
+    File file,
+    String text,
+    FileReadResult meta,
+  ) async {
+    final body = normalizeToLineEnding(text, meta.lineEnding);
+    final encoded = utf8.encode(body);
+    if (meta.encoding == 'utf-8-bom') {
+      await file.writeAsBytes(<int>[0xEF, 0xBB, 0xBF, ...encoded]);
+    } else {
+      await file.writeAsBytes(encoded);
+    }
   }
 
   Future<int> _mtimeMs(File file) async {

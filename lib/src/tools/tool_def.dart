@@ -116,6 +116,7 @@ abstract class LargePayloadTool implements ToolDef {
 
 class GuardResult {
   final String header;
+  final String content;
 
-  const GuardResult({required this.header});
+  const GuardResult({required this.header, required this.content});
 }

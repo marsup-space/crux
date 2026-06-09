@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:test/test.dart';
 import 'package:crux/src/tools/tool_def.dart';
@@ -6,6 +7,7 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/services/tool_executor.dart';
 import 'package:crux/src/tools/bash_tool.dart';
+import 'package:path/path.dart' as p;
 import 'package:crux/src/tools/cmd_tool.dart';
 import 'package:crux/src/tools/glob_tool.dart';
 import 'package:crux/src/tools/grep_tool.dart';
@@ -173,28 +175,34 @@ void main() {
       },
     );
 
-    test('checkWriteGuard returns guard for unread file', () async {
+    test(
+        'checkWriteGuard reads file for the agent and signals "you can write now"',
+        () async {
       final file = File('${tempDir.path}/unread.txt');
       await file.writeAsString('content here');
       final guard = tracker.checkWriteGuard(file.path);
       expect(guard, isNotNull);
-      expect(guard!.header, contains('not yet read'));
-      expect(guard!.content, 'content here');
+      expect(guard!.header, contains('We just read the file for you'));
+      expect(guard.header, contains('you can call edit/write again now'));
+      expect(guard.content, 'content here');
     });
 
-    test('checkWriteGuard returns guard for modified file', () async {
+    test(
+        'checkWriteGuard reads file for the agent when file is modified, '
+        'with a clear "pattern must match this version" hint', () async {
       final file = File('${tempDir.path}/modified.txt');
       await file.writeAsString('original');
       tracker.recordRead(
         file.path,
         file.statSync().modified.millisecondsSinceEpoch,
       );
-      await Future.delayed(Duration(milliseconds: 100));
-      await file.writeAsString('updated');
+      await Future.delayed(const Duration(milliseconds: 1500));
+      await file.writeAsString('updated completely different content here');
       final guard = tracker.checkWriteGuard(file.path);
       expect(guard, isNotNull);
-      expect(guard!.header, contains('modified since'));
-      expect(guard!.content, 'updated');
+      expect(guard!.header, contains('We re-read it for you'));
+      expect(guard.header, contains('retry your edit'));
+      expect(guard.content, 'updated completely different content here');
     });
 
     test('toMap and loadFromMap preserve state', () {
@@ -713,6 +721,128 @@ void main() {
           'url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com',
         ),
       );
+    });
+  });
+
+  group('EditTool + WriteTool auto-detect encoding/line ending', () {
+    test(
+        'EditTool preserves UTF-8 BOM when file has it (agent edit does not strip it)',
+        () async {
+      // Session 70/72 pain: agents edit, file loses BOM, downstream tools
+      // (or other Windows editors) complain. Now EditTool reads bytes,
+      // detects BOM, re-writes with BOM intact.
+      final tempDir = await Directory.systemTemp.createTemp('crux_bom_');
+      final filePath = p.join(tempDir.path, 'sample.dart');
+      final bom = <int>[0xEF, 0xBB, 0xBF];
+      final originalBytes = <int>[
+        ...bom,
+        ...utf8.encode('hello\r\nworld\r\n'),
+      ];
+      await File(filePath).writeAsBytes(originalBytes);
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await EditTool().execute({
+        'filePath': filePath,
+        'oldString': 'hello\nworld',
+        'newString': 'goodbye\nworld',
+      }, ctx);
+      final after = await File(filePath).readAsBytes();
+      expect(after[0], 0xEF,
+          reason: 'BOM byte 1 must be preserved');
+      expect(after[1], 0xBB,
+          reason: 'BOM byte 2 must be preserved');
+      expect(after[2], 0xBF,
+          reason: 'BOM byte 3 must be preserved');
+      final content = utf8.decode(after.sublist(3));
+      expect(content, contains('goodbye\r\nworld'),
+          reason: 'CRLF must be preserved (file was CRLF)');
+      expect(content, isNot(contains('goodbye\nworld')),
+          reason: 'should not have LF-only after the edit');
+      await tempDir.delete(recursive: true);
+    });
+
+    test(
+        'EditTool does NOT introduce BOM when editing a non-BOM file',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp('crux_nobom_');
+      final filePath = p.join(tempDir.path, 'sample.dart');
+      await File(filePath).writeAsString('hello\nworld\n');
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await EditTool().execute({
+        'filePath': filePath,
+        'oldString': 'hello\nworld',
+        'newString': 'goodbye\nworld',
+      }, ctx);
+      final after = await File(filePath).readAsBytes();
+      expect(after.length >= 1, isTrue);
+      expect(after[0] != 0xEF || after.length < 3 || after[1] != 0xBB || after[2] != 0xBF,
+          isTrue,
+          reason: 'BOM must NOT be added to a non-BOM file');
+      await tempDir.delete(recursive: true);
+    });
+
+    test(
+        'WriteTool preserves UTF-8 BOM when overwriting a BOM file',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp('crux_wbom_');
+      final filePath = p.join(tempDir.path, 'sample.dart');
+      await File(filePath).writeAsBytes(<int>[
+        0xEF, 0xBB, 0xBF,
+        ...utf8.encode('old content\r\n'),
+      ]);
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await WriteTool().execute({
+        'filePath': filePath,
+        'content': 'new content\n',
+        'intent': 'test',
+      }, ctx);
+      final after = await File(filePath).readAsBytes();
+      expect(after[0], 0xEF);
+      expect(after[1], 0xBB);
+      expect(after[2], 0xBF);
+      final content = utf8.decode(after.sublist(3));
+      expect(content, equals('new content\r\n'),
+          reason: 'WriteTool should preserve CRLF and add it even though '
+              'agent provided LF');
+      await tempDir.delete(recursive: true);
+    });
+
+    test(
+        'WriteTool preserves CRLF when overwriting a CRLF file, '
+        'normalizing agent\'s LF input to match',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp('crux_wcrlf_');
+      final filePath = p.join(tempDir.path, 'sample.txt');
+      await File(filePath).writeAsString('line1\r\nline2\r\nline3\r\n');
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      final result = await WriteTool().execute({
+        'filePath': filePath,
+        'content': 'line1\nline2\nline3\n',
+        'intent': 'test',
+      }, ctx);
+      final after = await File(filePath).readAsString();
+      expect(after, equals('line1\r\nline2\r\nline3\r\n'),
+          reason: 'CRLF must be preserved when overwriting CRLF file');
+      await tempDir.delete(recursive: true);
     });
   });
 

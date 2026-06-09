@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
@@ -86,7 +88,24 @@ class WriteTool extends ToolDef implements LargePayloadTool {
       parentDir.createSync(recursive: true);
     }
 
-    await file.writeAsString(content);
+    FileReadResult meta;
+    if (file.existsSync()) {
+      meta = readFileWithMetadata(file.readAsBytesSync());
+    } else {
+      meta = const FileReadResult(
+        content: '',
+        encoding: 'utf-8',
+        lineEnding: 'lf',
+        byteLength: 0,
+      );
+    }
+    final body = normalizeToLineEnding(content, meta.lineEnding);
+    final encoded = utf8.encode(body);
+    if (meta.encoding == 'utf-8-bom') {
+      await file.writeAsBytes(<int>[0xEF, 0xBB, 0xBF, ...encoded]);
+    } else {
+      await file.writeAsBytes(encoded);
+    }
 
     if (tracker != null) {
       tracker!.recordRead(resolved, await _mtimeMs(file));

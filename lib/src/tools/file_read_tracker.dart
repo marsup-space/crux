@@ -22,7 +22,10 @@ class FileReadTracker {
       final content = file.readAsStringSync();
       recordRead(filePath, currentMtime);
       return GuardResult(
-        header: 'File not yet read, here is the current content:',
+        header:
+            'We just read the file for you (saved you a round trip). The '
+            'content is below; you can call edit/write again now without '
+            'having to call read first.',
         content: content,
       );
     }
@@ -32,7 +35,10 @@ class FileReadTracker {
       final content = file.readAsStringSync();
       recordRead(filePath, currentMtime);
       return GuardResult(
-        header: 'File modified since last read, here is the new content:',
+        header:
+            'The file changed since you last read it. We re-read it for you '
+            '(saved a round trip). The new content is below; retry your edit '
+            'with a pattern that matches this version.',
         content: content,
       );
     }
