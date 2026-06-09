@@ -4,13 +4,29 @@ import 'providers/deepseek_provider.dart';
 import 'providers/minimax_provider.dart';
 import 'providers/openai_compatible_provider.dart';
 
-/// Maps an internal reasoning-effort value (e.g. `'normal'`) to a
-/// provider-specific user-facing label (e.g. `'adaptive'` for OpenAI).
+/// A reasoning preset exposed to the user in the UI and `/think` command.
+///
+/// Each preset has an [internalValue] (stored in the database, passed to
+/// `buildRequestBody`) and a [displayLabel] (shown in buttons, toasts,
+/// message bubbles). Providers can override the default mapping — e.g.
+/// MiniMax maps `normal` to `adaptive` because it emits
+/// `{type: "adaptive"}` for that effort level.
 class ReasoningPreset {
   final String internalValue;
   final String displayLabel;
 
-  const ReasoningPreset({required this.internalValue, required this.displayLabel});
+  const ReasoningPreset({
+    required this.internalValue,
+    required this.displayLabel,
+  });
+
+  /// Convenience: when display label equals internal value.
+  const ReasoningPreset.same(String value)
+      : internalValue = value,
+        displayLabel = value;
+
+  @override
+  String toString() => 'ReasoningPreset($internalValue → $displayLabel)';
 }
 
 abstract class LlmProvider {
@@ -20,10 +36,16 @@ abstract class LlmProvider {
 
   AuthStyle get authStyle;
 
-  /// Reasoning effort levels this provider's models can be steered to,
-  /// with their user-facing display labels. Empty for providers that
-  /// do not support adjustable reasoning effort.
-  List<ReasoningPreset> get reasoningPresets => const [];
+  /// Reasoning presets offered by this provider. The UI cycle button,
+  /// `/think` command, and message bubbles all consume this list.
+  /// Subclasses override to customize the display mapping (e.g. MiniMax
+  /// renames `normal` to `adaptive`).
+  List<ReasoningPreset> get reasoningPresets => const [
+        ReasoningPreset(internalValue: 'off', displayLabel: 'off'),
+        ReasoningPreset(internalValue: 'normal', displayLabel: 'normal'),
+        ReasoningPreset(internalValue: 'high', displayLabel: 'high'),
+        ReasoningPreset(internalValue: 'max', displayLabel: 'max'),
+      ];
 
   Map<String, dynamic> buildRequestBody(
     String modelId,

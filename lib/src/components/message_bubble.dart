@@ -15,7 +15,12 @@ class MessageBubble extends StatelessComponent {
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
   final String? highlightText;
-  final List<ReasoningPreset> reasoningPresets;
+
+  /// Reasoning presets from the session's provider, used to map
+  /// internal effort values to display labels (e.g. `normal` →
+  /// `adaptive` for MiniMax). If null, a default identity mapping
+  /// is used.
+  final List<ReasoningPreset>? reasoningPresets;
 
   const MessageBubble({
     required this.message,
@@ -23,14 +28,17 @@ class MessageBubble extends StatelessComponent {
     this.pairedResult,
     this.toolRegistry,
     this.highlightText,
-    this.reasoningPresets = const [],
+    this.reasoningPresets,
   });
 
   String _displayEffort(String effort) {
-    for (final p in reasoningPresets) {
-      if (p.internalValue == effort) return p.displayLabel;
+    final presets = reasoningPresets;
+    if (presets != null) {
+      for (final p in presets) {
+        if (p.internalValue == effort) return p.displayLabel;
+      }
     }
-    return effort;
+    return effort; // null presets or no match: show internal value
   }
 
   @override

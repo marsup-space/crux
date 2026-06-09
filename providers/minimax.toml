@@ -6,7 +6,8 @@
 # The custom `type = "minimax"` value is registered in
 # `llm_provider.dart`'s resolveProvider() — it dispatches to a MiniMax-
 # specific LlmProvider that extends AnthropicCompatibleProvider with:
-#   - thinking: {"type": "adaptive"} instead of {"type": "enabled"}
+#   - normal effort: thinking: {"type": "adaptive"} (model decides)
+#   - high/max effort: thinking: {"type": "enabled", "budget_tokens": N}
 #   - auth: Bearer token instead of x-api-key
 
 type = "minimax"

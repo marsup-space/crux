@@ -201,14 +201,18 @@ const List<SlashCommand> _baseCommands = [
   ),
   SlashCommand(
     name: '/think',
-    description: 'Toggle thinking mode (off/normal/high/max)',
+    description: 'Toggle thinking mode (off|normal|adaptive|high|max)',
     params: ['effort'],
     suggestionsPerParam: [
       [
         CommandSuggestion(value: 'off', description: 'Disable thinking mode'),
         CommandSuggestion(
           value: 'normal',
-          description: 'Normal reasoning effort (default)',
+          description: 'Normal reasoning effort',
+        ),
+        CommandSuggestion(
+          value: 'adaptive',
+          description: 'Adaptive reasoning (minimax only)',
         ),
         CommandSuggestion(value: 'high', description: 'High reasoning effort'),
         CommandSuggestion(

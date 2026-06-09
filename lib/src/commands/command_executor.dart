@@ -302,7 +302,18 @@ class CommandExecutor {
     if (ctx.currentSessionId == null) return;
     final rt = ctx.runtime(ctx.currentSessionId!);
     final effort = parts.length > 1 ? parts[1] : '';
-    switch (effort) {
+    // Map user-facing 'adaptive' to internal 'normal'. Only minimax
+    // uses adaptive thinking for the normal preset; for other providers
+    // 'normal' stays 'normal'. Accept both 'adaptive' and 'normal'
+    // as valid input for the same internal value.
+    final isMinimax = ctx.currentSession.model.startsWith('minimax/');
+    final internalEffort = (effort == 'adaptive' && isMinimax) ? 'normal' : effort;
+    // Map internal values to display names for toasts.
+    final displayEffort = (String e) {
+      if (e == 'normal' && isMinimax) return 'adaptive';
+      return e;
+    };
+    switch (internalEffort) {
       case 'off':
         rt.thinkingMode = 'disabled';
         rt.reasoningEffort = null;
@@ -312,7 +323,10 @@ class CommandExecutor {
         rt.thinkingMode = 'enabled';
         rt.reasoningEffort = 'normal';
         ctx.persistThinkingLevel(rt);
-        ctx.showToast('Thinking mode: normal', mode: ToastMode.status);
+        ctx.showToast(
+          'Thinking mode: ${displayEffort('normal')}',
+          mode: ToastMode.status,
+        );
       case 'high':
         rt.thinkingMode = 'enabled';
         rt.reasoningEffort = 'high';
@@ -326,9 +340,12 @@ class CommandExecutor {
       default:
         final current = rt.thinkingMode == 'disabled'
             ? 'off'
-            : rt.reasoningEffort ?? 'normal';
+            : displayEffort(rt.reasoningEffort ?? 'normal');
+        final levels = isMinimax
+            ? '<off|adaptive|high|max>'
+            : '<off|normal|high|max>';
         ctx.showToast(
-          'Usage: /think <off|normal|high|max> (current: $current)',
+          'Usage: /think $levels (current: $current)',
         );
     }
   }
