@@ -57,7 +57,10 @@ class ChatService {
     _cancelRequested.add(sessionId);
   }
 
-  Future<String?> generateSessionTitle(int sessionId) async {
+  Future<String?> generateSessionTitle(
+    int sessionId, {
+    String? userContent,
+  }) async {
     final auxKey = _providerService.auxiliaryModel;
     if (auxKey == null || auxKey == 'none') {
       print(
@@ -74,12 +77,21 @@ class ChatService {
     final apiKey = _providerService.getApiKey(providerName);
     if (provider == null || apiKey == null || apiKey.isEmpty) return null;
 
-    final messages = await _store.getMessages(sessionId);
-    final userMessage = messages.firstWhere(
-      (m) => m.role == 'user',
-      orElse: () => messages.first,
-    );
-    if (userMessage.content.trim().isEmpty) return null;
+    // Use the provided userContent directly when available (e.g. when
+    // generating the title early, before the message has been persisted).
+    // Otherwise fall back to reading from the store.
+    String userText;
+    if (userContent != null && userContent.trim().isNotEmpty) {
+      userText = userContent;
+    } else {
+      final messages = await _store.getMessages(sessionId);
+      final userMessage = messages.firstWhere(
+        (m) => m.role == 'user',
+        orElse: () => messages.first,
+      );
+      if (userMessage.content.trim().isEmpty) return null;
+      userText = userMessage.content;
+    }
 
     final client = LlmClient();
     try {
@@ -90,7 +102,7 @@ class ChatService {
         modelId: modelId,
         messages: <Map<String, dynamic>>[
           <String, dynamic>{'role': 'system', 'content': titleSystemPrompt},
-          <String, dynamic>{'role': 'user', 'content': userMessage.content},
+          <String, dynamic>{'role': 'user', 'content': userText},
         ],
         thinkingMode: 'disabled',
         reasoningEffort: null,

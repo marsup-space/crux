@@ -698,10 +698,10 @@ class _ChatPanelState extends State<ChatPanel> {
   /// message, but only when the auxiliary model is configured AND is on a
   /// different provider/model than the main chat. In all other cases the
   /// post-response `onComplete` hook handles it.
-  void _maybeKickOffTitleEarly(int sessionId) {
+  void _maybeKickOffTitleEarly(int sessionId, String userContent) {
     if (_sessionController.currentSession.title != 'New Session') return;
     if (_shouldDeferTitleToAfterResponse()) return;
-    _sessionController.generateTitle(sessionId);
+    _sessionController.generateTitle(sessionId, userContent: userContent);
   }
 
   Future<void> _sendMessage() async {
@@ -815,7 +815,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Only kick off the auxiliary title generator for genuinely
       // new user input; a continuation shouldn't change the session
       // title.
-      _maybeKickOffTitleEarly(sessionId);
+      _maybeKickOffTitleEarly(sessionId, text);
     }
 
     _chatService.sendMessage(

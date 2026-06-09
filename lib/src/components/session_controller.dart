@@ -371,7 +371,7 @@ class SessionController {
   /// can see which model is working in the background.
   bool get isGeneratingTitle => _isGeneratingTitle;
 
-  Future<void> generateTitle(int sessionId) async {
+  Future<void> generateTitle(int sessionId, {String? userContent}) async {
     if (_isGeneratingTitle) return;
     final auxKey = _providerService.auxiliaryModel;
     if (auxKey == null || auxKey == 'none') return;
@@ -385,7 +385,10 @@ class SessionController {
     _isGeneratingTitle = true;
     _refresh();
     try {
-      final title = await _chatService.generateSessionTitle(sessionId);
+      final title = await _chatService.generateSessionTitle(
+        sessionId,
+        userContent: userContent,
+      );
       if (title == null) return;
       final session = findSession(sessionId);
       if (session == null || session.title != 'New Session') return;
