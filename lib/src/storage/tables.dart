@@ -47,6 +47,14 @@ class Messages extends Table {
   TextColumn get tldr => text().withDefault(const Constant(''))();
   TextColumn get error => text().nullable()();
   IntColumn get parentMsgId => integer().nullable()();
+
+  /// Total round-trip token cost of the tool_call's args *before*
+  /// compression. Set by the chat service when a LargePayloadTool's
+  /// large args were off-loaded. Null for non-tool-call messages
+  /// and for tool_call messages whose args were small enough to
+  /// keep in full. The chat bubble uses this to render the
+  /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
+  IntColumn get preCompressTokens => integer().nullable()();
   IntColumn get createdAt => integer()();
 }
 

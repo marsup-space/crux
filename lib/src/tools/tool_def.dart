@@ -58,6 +58,28 @@ String relativePath(String absolutePath, String workingDirectory) {
   return rel;
 }
 
+/// Structured result of [ToolDef.collapsedSummary] so the bubble
+/// can render the pre-compression / post-compression token
+/// comparison when the tool_call's large args were off-loaded.
+///
+/// The [text] is the human-readable line (e.g. "1 replacement,
+/// 41→87 lines"). It does NOT include the token count — the
+/// bubble appends `~Nt` so it can compare pre vs post when
+/// compression happened.
+///
+/// [tokens] is the round-trip cost as it appears in the
+/// conversation log NOW (i.e. post-compression if the call was
+/// compressed). For a `read` or `bash` call (no compression),
+/// this is the only meaningful value; for a compressed `write`
+/// or `edit`, the bubble will show it next to a strikethrough
+/// pre-compression value pulled from the message metadata.
+class CollapsedSummary {
+  final String text;
+  final int tokens;
+
+  const CollapsedSummary({required this.text, required this.tokens});
+}
+
 abstract class ToolDef {
   String get name;
   String get description;
@@ -65,13 +87,19 @@ abstract class ToolDef {
 
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx);
 
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final lines = '\n'.allMatches(result.output).length + 1;
     final size = result.output.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$lines lines, $sizeStr';
+    return CollapsedSummary(
+      text: '$lines lines, $sizeStr',
+      tokens: 0,
+    );
   }
 
   /// Live preview label for an in-progress tool call. Called from

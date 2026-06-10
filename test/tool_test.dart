@@ -1217,4 +1217,105 @@ void main() {
       expect(list.last, 'newString');
     });
   });
+
+  group('CollapsedSummary', () {
+    test('WriteTool returns text + tokens separately', () {
+      final tool = WriteTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'content': 'a' * 5000,
+          'intent': '...',
+        },
+        ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
+      );
+      expect(summary, isA<CollapsedSummary>());
+      // 'a' * 5000 = 1 long line, 4.9KB. Text is the metric
+      // line WITHOUT the token count — the bubble appends `~Nt`
+      // and decides whether to add a strikethrough pre-cost.
+      expect(summary.text, '1 lines, 4.9KB');
+      expect(summary.text, isNot(contains('~')));
+      expect(summary.tokens, greaterThan(0));
+    });
+
+    test('EditTool returns count + line-diff + tokens', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'a' * 2000,
+          'newString': 'b' * 2000,
+          'intent': '...',
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+      );
+      // 'a' * 2000 = 1 line, 'b' * 2000 = 1 line. So 1→1, not 2001.
+      expect(summary.text, '1 replacement, 1→1 lines');
+      expect(summary.tokens, greaterThan(0));
+    });
+
+    test('ReadTool returns lines + size + tokens', () {
+      final tool = ReadTool();
+      final summary = tool.collapsedSummary(
+        {'filePath': 'foo.py'},
+        ToolResult(title: 'Read', output: 'x' * 2000),
+      );
+      expect(summary.text, '1 lines, 2.0KB');
+      expect(summary.tokens, greaterThan(0));
+    });
+
+    test('BashTool includes command preview in the text', () {
+      final tool = BashTool();
+      final summary = tool.collapsedSummary(
+        {'command': 'ls -la /tmp'},
+        ToolResult(title: 'Bash', output: 'foo\nbar\n', metadata: {'exitCode': 0}),
+      );
+      expect(summary.text, contains('ls -la /tmp'));
+      expect(summary.text, contains('lines'));
+      expect(summary.tokens, greaterThan(0));
+    });
+
+    test('EditTool shows "all" when replaceAll is true', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'foo',
+          'newString': 'bar',
+          'replaceAll': true,
+          'intent': '...',
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 5 occurrences'),
+      );
+      expect(summary.text, startsWith('all replacement'));
+    });
+
+    test('BashTool shows [exit N] suffix for non-zero exit codes', () {
+      final tool = BashTool();
+      final summary = tool.collapsedSummary(
+        {'command': 'false'},
+        ToolResult(
+          title: 'Bash',
+          output: '',
+          metadata: {'exitCode': 1},
+        ),
+      );
+      expect(summary.text, contains('[exit 1]'));
+    });
+
+    test('GrepTool appends [truncated] suffix when result was truncated', () {
+      final tool = GrepTool();
+      final summary = tool.collapsedSummary(
+        {'pattern': 'TODO'},
+        ToolResult(
+          title: 'Grep',
+          output: 'matches...',
+          truncated: true,
+          metadata: {'totalMatches': 500},
+        ),
+      );
+      expect(summary.text, contains('[truncated]'));
+      expect(summary.text, contains('500 matches'));
+    });
+  });
 }

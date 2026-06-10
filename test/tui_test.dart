@@ -7,8 +7,23 @@ import 'package:crux/src/components/ui/button.dart';
 import 'package:crux/src/components/ui/toast.dart';
 import 'package:crux/src/components/command_overlay.dart';
 import 'package:crux/src/components/message_bubble.dart';
+import 'package:crux/src/tools/bash_tool.dart';
+import 'package:crux/src/tools/registry.dart';
+import 'package:crux/src/tools/write_tool.dart';
 
 import 'package:crux/src/components/ui/highlighted_markdown_text.dart';
+
+ToolRegistry _registryWithWriteTool() {
+  final r = ToolRegistry();
+  r.register(WriteTool());
+  return r;
+}
+
+ToolRegistry _registryWithBashTool() {
+  final r = ToolRegistry();
+  r.register(BashTool());
+  return r;
+}
 
 void main() {
   group('HighlightedMarkdownText', () {
@@ -438,6 +453,104 @@ void main() {
         );
         expect(tester.terminalState, containsText('Hello world'));
       });
+    });
+
+    test('compressed tool_call shows strikethrough pre + post cost',
+        () async {
+      await testNocterm(
+        'compressed tool call bubble shows ~~pre~~, compressed: ~post',
+        (tester) async {
+          final message = Message(
+            id: 1,
+            sessionId: 1,
+            role: 'tool_call',
+            content: '',
+            toolCalls: [
+              ToolCallData(
+                callId: 'call_1',
+                name: 'write',
+                input: {
+                  'filePath': 'foo.py',
+                  'intent': 'add auth',
+                  // The stand-in pointer the chat service would
+                  // have written after compression. The bubble
+                  // doesn't parse this — it just shows the metrics.
+                  'content': '[5000 lines, 173KB; recall: call_1]',
+                },
+              ),
+            ],
+            preCompressTokens: 5000,
+          );
+          await tester.pumpComponent(
+            Container(
+              width: 120,
+              height: 10,
+              child: MessageBubble(
+                message: message,
+                toolRegistry: _registryWithWriteTool(),
+                pairedResult: Message(
+                  id: 2,
+                  sessionId: 1,
+                  role: 'tool',
+                  content: 'Wrote 173KB to foo.py',
+                  toolCallId: 'call_1',
+                ),
+              ),
+            ),
+          );
+          final visual = tester.renderToString();
+          // Strikethrough pre cost is shown.
+          expect(visual, contains('~~5000 t~~'));
+          // Post cost is shown with the "compressed:" prefix.
+          expect(visual, contains('compressed:'));
+        },
+      );
+    });
+
+    test('uncompressed tool_call shows just ~post cost (no strikethrough)',
+        () async {
+      await testNocterm(
+        'uncompressed tool call bubble shows only ~post',
+        (tester) async {
+          final message = Message(
+            id: 1,
+            sessionId: 1,
+            role: 'tool_call',
+            content: '',
+            toolCalls: [
+              ToolCallData(
+                callId: 'call_2',
+                name: 'bash',
+                input: {'command': 'ls', 'description': 'list'},
+              ),
+            ],
+            // preCompressTokens is null = no compression happened
+          );
+          await tester.pumpComponent(
+            Container(
+              width: 120,
+              height: 10,
+              child: MessageBubble(
+                message: message,
+                toolRegistry: _registryWithBashTool(),
+                pairedResult: Message(
+                  id: 2,
+                  sessionId: 1,
+                  role: 'tool',
+                  content: 'foo\nbar',
+                  toolCallId: 'call_2',
+                ),
+              ),
+            ),
+          );
+          final visual = tester.renderToString();
+          // No strikethrough, no "compressed:" prefix.
+          expect(visual, isNot(contains('~~')));
+          expect(visual, isNot(contains('compressed:')));
+          // A tilde-prefixed token count is still shown.
+          expect(visual, contains('~'));
+        },
+      );
     });
   });
 

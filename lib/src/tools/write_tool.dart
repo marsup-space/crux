@@ -14,7 +14,10 @@ class WriteTool extends ToolDef implements LargePayloadTool {
   String get name => 'write';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final content = args['content'] as String? ?? '';
     final lines = '\n'.allMatches(content).length + 1;
     final size = content.length;
@@ -26,7 +29,10 @@ class WriteTool extends ToolDef implements LargePayloadTool {
       args: args,
       resultOutput: content,
     );
-    return '$lines lines, $sizeStr, ~${tokens}t written';
+    return CollapsedSummary(
+      text: '$lines lines, $sizeStr',
+      tokens: tokens,
+    );
   }
 
   @override

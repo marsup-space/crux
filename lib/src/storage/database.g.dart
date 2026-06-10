@@ -1280,6 +1280,17 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _preCompressTokensMeta = const VerificationMeta(
+    'preCompressTokens',
+  );
+  @override
+  late final GeneratedColumn<int> preCompressTokens = GeneratedColumn<int>(
+    'pre_compress_tokens',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1310,6 +1321,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     tldr,
     error,
     parentMsgId,
+    preCompressTokens,
     createdAt,
   ];
   @override
@@ -1445,6 +1457,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('pre_compress_tokens')) {
+      context.handle(
+        _preCompressTokensMeta,
+        preCompressTokens.isAcceptableOrUnknown(
+          data['pre_compress_tokens']!,
+          _preCompressTokensMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1530,6 +1551,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}parent_msg_id'],
       ),
+      preCompressTokens: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pre_compress_tokens'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1561,6 +1586,14 @@ class Message extends DataClass implements Insertable<Message> {
   final String tldr;
   final String? error;
   final int? parentMsgId;
+
+  /// Total round-trip token cost of the tool_call's args *before*
+  /// compression. Set by the chat service when a LargePayloadTool's
+  /// large args were off-loaded. Null for non-tool-call messages
+  /// and for tool_call messages whose args were small enough to
+  /// keep in full. The chat bubble uses this to render the
+  /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
+  final int? preCompressTokens;
   final int createdAt;
   const Message({
     required this.id,
@@ -1580,6 +1613,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.tldr,
     this.error,
     this.parentMsgId,
+    this.preCompressTokens,
     required this.createdAt,
   });
   @override
@@ -1607,6 +1641,9 @@ class Message extends DataClass implements Insertable<Message> {
     }
     if (!nullToAbsent || parentMsgId != null) {
       map['parent_msg_id'] = Variable<int>(parentMsgId);
+    }
+    if (!nullToAbsent || preCompressTokens != null) {
+      map['pre_compress_tokens'] = Variable<int>(preCompressTokens);
     }
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -1637,6 +1674,9 @@ class Message extends DataClass implements Insertable<Message> {
       parentMsgId: parentMsgId == null && nullToAbsent
           ? const Value.absent()
           : Value(parentMsgId),
+      preCompressTokens: preCompressTokens == null && nullToAbsent
+          ? const Value.absent()
+          : Value(preCompressTokens),
       createdAt: Value(createdAt),
     );
   }
@@ -1664,6 +1704,7 @@ class Message extends DataClass implements Insertable<Message> {
       tldr: serializer.fromJson<String>(json['tldr']),
       error: serializer.fromJson<String?>(json['error']),
       parentMsgId: serializer.fromJson<int?>(json['parentMsgId']),
+      preCompressTokens: serializer.fromJson<int?>(json['preCompressTokens']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -1688,6 +1729,7 @@ class Message extends DataClass implements Insertable<Message> {
       'tldr': serializer.toJson<String>(tldr),
       'error': serializer.toJson<String?>(error),
       'parentMsgId': serializer.toJson<int?>(parentMsgId),
+      'preCompressTokens': serializer.toJson<int?>(preCompressTokens),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -1710,6 +1752,7 @@ class Message extends DataClass implements Insertable<Message> {
     String? tldr,
     Value<String?> error = const Value.absent(),
     Value<int?> parentMsgId = const Value.absent(),
+    Value<int?> preCompressTokens = const Value.absent(),
     int? createdAt,
   }) => Message(
     id: id ?? this.id,
@@ -1731,6 +1774,9 @@ class Message extends DataClass implements Insertable<Message> {
     tldr: tldr ?? this.tldr,
     error: error.present ? error.value : this.error,
     parentMsgId: parentMsgId.present ? parentMsgId.value : this.parentMsgId,
+    preCompressTokens: preCompressTokens.present
+        ? preCompressTokens.value
+        : this.preCompressTokens,
     createdAt: createdAt ?? this.createdAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -1764,6 +1810,9 @@ class Message extends DataClass implements Insertable<Message> {
       parentMsgId: data.parentMsgId.present
           ? data.parentMsgId.value
           : this.parentMsgId,
+      preCompressTokens: data.preCompressTokens.present
+          ? data.preCompressTokens.value
+          : this.preCompressTokens,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1788,6 +1837,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
+          ..write('preCompressTokens: $preCompressTokens, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -1812,6 +1862,7 @@ class Message extends DataClass implements Insertable<Message> {
     tldr,
     error,
     parentMsgId,
+    preCompressTokens,
     createdAt,
   );
   @override
@@ -1835,6 +1886,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.tldr == this.tldr &&
           other.error == this.error &&
           other.parentMsgId == this.parentMsgId &&
+          other.preCompressTokens == this.preCompressTokens &&
           other.createdAt == this.createdAt);
 }
 
@@ -1856,6 +1908,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> tldr;
   final Value<String?> error;
   final Value<int?> parentMsgId;
+  final Value<int?> preCompressTokens;
   final Value<int> createdAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -1875,6 +1928,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
+    this.preCompressTokens = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -1895,6 +1949,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
+    this.preCompressTokens = const Value.absent(),
     required int createdAt,
   }) : sessionId = Value(sessionId),
        role = Value(role),
@@ -1917,6 +1972,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? tldr,
     Expression<String>? error,
     Expression<int>? parentMsgId,
+    Expression<int>? preCompressTokens,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -1938,6 +1994,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (tldr != null) 'tldr': tldr,
       if (error != null) 'error': error,
       if (parentMsgId != null) 'parent_msg_id': parentMsgId,
+      if (preCompressTokens != null) 'pre_compress_tokens': preCompressTokens,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -1960,6 +2017,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? tldr,
     Value<String?>? error,
     Value<int?>? parentMsgId,
+    Value<int?>? preCompressTokens,
     Value<int>? createdAt,
   }) {
     return MessagesCompanion(
@@ -1980,6 +2038,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       tldr: tldr ?? this.tldr,
       error: error ?? this.error,
       parentMsgId: parentMsgId ?? this.parentMsgId,
+      preCompressTokens: preCompressTokens ?? this.preCompressTokens,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -2038,6 +2097,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (parentMsgId.present) {
       map['parent_msg_id'] = Variable<int>(parentMsgId.value);
     }
+    if (preCompressTokens.present) {
+      map['pre_compress_tokens'] = Variable<int>(preCompressTokens.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -2064,6 +2126,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
+          ..write('preCompressTokens: $preCompressTokens, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -4179,6 +4242,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
+      Value<int?> preCompressTokens,
       required int createdAt,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -4200,6 +4264,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
+      Value<int?> preCompressTokens,
       Value<int> createdAt,
     });
 
@@ -4330,6 +4395,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get parentMsgId => $composableBuilder(
     column: $table.parentMsgId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get preCompressTokens => $composableBuilder(
+    column: $table.preCompressTokens,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4476,6 +4546,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get preCompressTokens => $composableBuilder(
+    column: $table.preCompressTokens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4571,6 +4646,11 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<int> get parentMsgId => $composableBuilder(
     column: $table.parentMsgId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get preCompressTokens => $composableBuilder(
+    column: $table.preCompressTokens,
     builder: (column) => column,
   );
 
@@ -4671,6 +4751,7 @@ class $$MessagesTableTableManager
                 Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
+                Value<int?> preCompressTokens = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -4690,6 +4771,7 @@ class $$MessagesTableTableManager
                 tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
+                preCompressTokens: preCompressTokens,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -4711,6 +4793,7 @@ class $$MessagesTableTableManager
                 Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
+                Value<int?> preCompressTokens = const Value.absent(),
                 required int createdAt,
               }) => MessagesCompanion.insert(
                 id: id,
@@ -4730,6 +4813,7 @@ class $$MessagesTableTableManager
                 tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
+                preCompressTokens: preCompressTokens,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0

@@ -106,7 +106,10 @@ abstract class ShellBase extends ToolDef {
   }
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final command = args['command'] as String? ?? '';
     final preview = command.length > 30
         ? '${command.substring(0, 27)}...'
@@ -123,7 +126,10 @@ abstract class ShellBase extends ToolDef {
       args: args,
       resultOutput: result.output,
     );
-    return '$preview: $lines lines, $sizeStr, ~${tokens}t$suffix';
+    return CollapsedSummary(
+      text: '$preview: $lines lines, $sizeStr$suffix',
+      tokens: tokens,
+    );
   }
 
   @override

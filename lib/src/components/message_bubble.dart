@@ -256,13 +256,17 @@ class MessageBubble extends StatelessComponent {
   Component _buildCollapsedToolCall(ToolCallData tc) {
     final tool = toolRegistry?.lookup(tc.name);
     final keyArg = _keyArg(tc);
-    String resultText = '';
+    CollapsedSummary? summary;
+    String? fallbackText;
     if (tool != null && pairedResult != null) {
       final result = ToolResult(title: '', output: pairedResult!.content);
-      resultText = tool.collapsedSummary(tc.input, result);
+      summary = tool.collapsedSummary(tc.input, result);
     } else if (pairedResult != null) {
-      resultText = _resultMetrics(pairedResult!.content);
+      fallbackText = _resultMetrics(pairedResult!.content);
     }
+
+    final preCompress = message.preCompressTokens;
+    final isCompressed = preCompress != null && preCompress > 0;
 
     final children = <Text>[
       Text(
@@ -279,9 +283,28 @@ class MessageBubble extends StatelessComponent {
         style: TextStyle(color: CruxTheme.foreground),
       ));
     }
-    if (resultText.isNotEmpty) {
+    if (summary != null) {
       children.add(Text(
-        resultText,
+        '${summary.text}, ',
+        style: TextStyle(color: CruxTheme.onSurfaceDim),
+      ));
+      if (isCompressed) {
+        // Compressed: strikethrough pre cost + actual post cost.
+        // Format: "~~{pre}t~~, compressed: ~{post}t"
+        children.add(Text(
+          '~~$preCompress t~~, compressed: ~${summary.tokens} t',
+          style: TextStyle(color: CruxTheme.onSurfaceDim),
+        ));
+      } else {
+        // Uncompressed: just the post cost.
+        children.add(Text(
+          '~${summary.tokens} t',
+          style: TextStyle(color: CruxTheme.onSurfaceDim),
+        ));
+      }
+    } else if (fallbackText != null && fallbackText.isNotEmpty) {
+      children.add(Text(
+        fallbackText,
         style: TextStyle(color: CruxTheme.onSurfaceDim),
       ));
     }

@@ -641,7 +641,23 @@ class ChatService {
       // unchanged, so the actual tool executions below still
       // receive the full content.
       final compressedToolCalls = <ToolCall>[];
+      var preCompressTokens = 0;
       for (final call in toolCalls) {
+        // Sum the round-trip cost of each LargePayloadTool call
+        // as it was *before* compression. The chat bubble uses
+        // this to render the pre/post comparison (e.g.
+        // "~~5000t~~, compressed: 15t"). Non-LargePayloadTool
+        // calls are skipped — they aren't offload candidates, so
+        // there's no pre-vs-post distinction to make.
+        final tool = _toolExecutor.lookupTool(call.name);
+        if (tool is LargePayloadTool) {
+          preCompressTokens += estimateToolRoundTripTokens(
+            toolName: call.name,
+            args: call.input,
+            resultOutput: '', // result not yet known at compression time
+            excludeArgsFromEstimate: offloadableArgsFor(tool),
+          );
+        }
         compressedToolCalls.add(
           await _toolExecutor.compressCallForPersistence(call, sessionId),
         );
@@ -670,6 +686,7 @@ class ChatService {
             ? null
             : runtime.reasoningEffort ?? 'normal',
         toolCalls: toolCallData,
+        preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
       );
 
       if (wireFamily == WireFamily.anthropicCompatible) {

@@ -18,7 +18,10 @@ class EditTool extends ToolDef implements LargePayloadTool {
   String get name => 'edit';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final oldString = args['oldString'] as String? ?? '';
     final newString = args['newString'] as String? ?? '';
     final replaceAll = (args['replaceAll'] as bool?) ?? false;
@@ -31,7 +34,10 @@ class EditTool extends ToolDef implements LargePayloadTool {
       resultOutput: result.output,
       excludeArgsFromEstimate: {'oldString', 'newString'},
     );
-    return '$count replacement, $oldLines→$newLines lines, ~${tokens}t';
+    return CollapsedSummary(
+      text: '$count replacement, $oldLines→$newLines lines',
+      tokens: tokens,
+    );
   }
 
   @override

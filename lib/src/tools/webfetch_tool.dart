@@ -9,7 +9,11 @@ class WebFetchTool extends ToolDef {
   String get name => 'webfetch';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  @override
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final url = args['url'] as String? ?? '';
     final lines = '\n'.allMatches(result.output).length + 1;
     final size = result.output.length;
@@ -21,7 +25,10 @@ class WebFetchTool extends ToolDef {
       args: args,
       resultOutput: result.output,
     );
-    return '$url: $lines lines, $sizeStr, ~${tokens}t';
+    return CollapsedSummary(
+      text: '$url: $lines lines, $sizeStr',
+      tokens: tokens,
+    );
   }
 
   @override
