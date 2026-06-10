@@ -79,9 +79,10 @@ class ToolExecutor {
       if (bytes.length < offloadThresholdBytes) continue;
 
       final lineCount = '\n'.allMatches(value).length + 1;
+      final compositeKey = '${call.callId}_$argKey';
       await _store.saveOffloadedContent(
         sessionId: sessionId,
-        callId: call.callId,
+        callId: compositeKey,
         toolName: call.name,
         byteSize: bytes.length,
         lineCount: lineCount,
@@ -89,7 +90,7 @@ class ToolExecutor {
       );
       newInput = Map<String, dynamic>.from(newInput);
       newInput[argKey] =
-          '[$lineCount lines, ${_formatBytes(bytes.length)}; recall: ${call.callId}]';
+          '[$lineCount lines, ${_formatBytes(bytes.length)}; recall: $compositeKey]';
       modified = true;
     }
 
