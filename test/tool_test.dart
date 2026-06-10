@@ -1219,7 +1219,7 @@ void main() {
   });
 
   group('CollapsedSummary', () {
-    test('WriteTool returns text + tokens separately', () {
+    test('WriteTool returns text + args-only + total tokens', () {
       final tool = WriteTool();
       final summary = tool.collapsedSummary(
         {
@@ -1230,15 +1230,20 @@ void main() {
         ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
       );
       expect(summary, isA<CollapsedSummary>());
-      // 'a' * 5000 = 1 long line, 4.9KB. Text is the metric
-      // line WITHOUT the token count — the bubble appends `~Nt`
-      // and decides whether to add a strikethrough pre-cost.
       expect(summary.text, '1 lines, 4.9KB');
       expect(summary.text, isNot(contains('~')));
-      expect(summary.tokens, greaterThan(0));
+      // For `write`, the content is both an arg and the
+      // "result" of the operation. The two numbers differ
+      // because argsTokens treats content as an arg while
+      // totalTokens treats it as the result output (different
+      // exclusion semantics in the call site). The important
+      // invariant: both are nonzero and the total accounts
+      // for the actual round-trip cost.
+      expect(summary.argsTokens, greaterThan(0));
+      expect(summary.totalTokens, greaterThan(0));
     });
 
-    test('EditTool returns count + line-diff + tokens', () {
+    test('EditTool args-only excludes the offloadable args', () {
       final tool = EditTool();
       final summary = tool.collapsedSummary(
         {
@@ -1249,19 +1254,29 @@ void main() {
         },
         ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
       );
-      // 'a' * 2000 = 1 line, 'b' * 2000 = 1 line. So 1→1, not 2001.
       expect(summary.text, '1 replacement, 1→1 lines');
-      expect(summary.tokens, greaterThan(0));
+      // args-only is small: the 2000-char oldString + newString
+      // are offloadable and excluded, so what's left is just
+      // the tool name + the small args (filePath, intent) +
+      // Anthropic overhead. The key assertion: the args-only
+      // number is dramatically smaller than the 2000-char
+      // content would have been.
+      expect(summary.argsTokens, lessThan(50));
+      expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
     });
 
-    test('ReadTool returns lines + size + tokens', () {
+    test('ReadTool returns lines + size, args-only == total (not offloadable)',
+        () {
       final tool = ReadTool();
       final summary = tool.collapsedSummary(
         {'filePath': 'foo.py'},
         ToolResult(title: 'Read', output: 'x' * 2000),
       );
       expect(summary.text, '1 lines, 2.0KB');
-      expect(summary.tokens, greaterThan(0));
+      // Read isn't a LargePayloadTool, so args-only and total
+      // are identical — there's no compression distinction to
+      // make, and the bubble just shows the single number.
+      expect(summary.argsTokens, summary.totalTokens);
     });
 
     test('BashTool includes command preview in the text', () {
@@ -1272,7 +1287,8 @@ void main() {
       );
       expect(summary.text, contains('ls -la /tmp'));
       expect(summary.text, contains('lines'));
-      expect(summary.tokens, greaterThan(0));
+      expect(summary.argsTokens, greaterThan(0));
+      expect(summary.totalTokens, summary.argsTokens);
     });
 
     test('EditTool shows "all" when replaceAll is true', () {

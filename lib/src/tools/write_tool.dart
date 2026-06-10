@@ -24,14 +24,27 @@ class WriteTool extends ToolDef implements LargePayloadTool {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateToolRoundTripTokens(
+    // Total cost = args (with the *as-persisted* content, which
+    // may be a stand-in if offload happened) + the tool's result.
+    final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: content,
     );
+    // Args-only cost is what the strikethrough compares against.
+    // We compute it on the *as-passed* args, which is the same
+    // thing the chat service's preCompressTokens calculation
+    // uses (it also runs at the compress boundary, so the args
+    // are still full there).
+    final argsTokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: '',
+    );
     return CollapsedSummary(
       text: '$lines lines, $sizeStr',
-      tokens: tokens,
+      argsTokens: argsTokens,
+      totalTokens: totalTokens,
     );
   }
 

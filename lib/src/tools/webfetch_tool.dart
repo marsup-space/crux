@@ -20,14 +20,15 @@ class WebFetchTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateToolRoundTripTokens(
+    final costTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
     return CollapsedSummary(
       text: '$url: $lines lines, $sizeStr',
-      tokens: tokens,
+      argsTokens: costTokens,
+      totalTokens: costTokens,
     );
   }
 

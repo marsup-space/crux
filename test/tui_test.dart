@@ -458,7 +458,7 @@ void main() {
     test('compressed tool_call shows strikethrough pre + post cost',
         () async {
       await testNocterm(
-        'compressed tool call bubble shows ~~pre~~, compressed: ~post',
+        'compressed tool call bubble shows pre (struck) + compressed post',
         (tester) async {
           final message = Message(
             id: 1,
@@ -499,10 +499,14 @@ void main() {
             ),
           );
           final visual = tester.renderToString();
-          // Strikethrough pre cost is shown.
-          expect(visual, contains('~~5000 t~~'));
-          // Post cost is shown with the "compressed:" prefix.
+          // Pre cost is shown as plain text (the strikethrough is
+          // a real SGR decoration on the cell, not a `~~` marker).
+          expect(visual, contains('5000 t'));
+          // The "compressed:" separator is present.
           expect(visual, contains('compressed:'));
+          // No literal `~~` markers — the strike is rendered
+          // via TextDecoration, not text.
+          expect(visual, isNot(contains('~~')));
         },
       );
     });
@@ -544,8 +548,7 @@ void main() {
             ),
           );
           final visual = tester.renderToString();
-          // No strikethrough, no "compressed:" prefix.
-          expect(visual, isNot(contains('~~')));
+          // No "compressed:" prefix on uncompressed calls.
           expect(visual, isNot(contains('compressed:')));
           // A tilde-prefixed token count is still shown.
           expect(visual, contains('~'));

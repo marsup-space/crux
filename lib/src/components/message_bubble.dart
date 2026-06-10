@@ -289,16 +289,29 @@ class MessageBubble extends StatelessComponent {
         style: TextStyle(color: CruxTheme.onSurfaceDim),
       ));
       if (isCompressed) {
-        // Compressed: strikethrough pre cost + actual post cost.
-        // Format: "~~{pre}t~~, compressed: ~{post}t"
+        // Compressed: real SGR strikethrough on the pre cost
+        // (not a '~~' marker — nocterm's markdown component is
+        // the only place '~~' is honored; plain Text widgets
+        // need TextDecoration.lineThrough). Both numbers are
+        // args-only so the comparison is honest.
+        final postPart = summary.argsTokens == summary.totalTokens
+            ? '~${summary.argsTokens} t'
+            : '~${summary.argsTokens} t args, ${summary.totalTokens} t total';
         children.add(Text(
-          '~~$preCompress t~~, compressed: ~${summary.tokens} t',
+          '$preCompress t',
+          style: TextStyle(
+            color: CruxTheme.onSurfaceDim,
+            decoration: TextDecoration.lineThrough,
+          ),
+        ));
+        children.add(Text(
+          ', compressed: $postPart',
           style: TextStyle(color: CruxTheme.onSurfaceDim),
         ));
       } else {
         // Uncompressed: just the post cost.
         children.add(Text(
-          '~${summary.tokens} t',
+          '~${summary.totalTokens} t',
           style: TextStyle(color: CruxTheme.onSurfaceDim),
         ));
       }

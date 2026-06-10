@@ -20,14 +20,16 @@ class ReadTool extends ToolDef {
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateToolRoundTripTokens(
+    final total = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
+    // `read` isn't a LargePayloadTool, so args-only == total.
     return CollapsedSummary(
       text: '$lines lines, $sizeStr',
-      tokens: tokens,
+      argsTokens: total,
+      totalTokens: total,
     );
   }
 

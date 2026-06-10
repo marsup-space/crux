@@ -19,7 +19,7 @@ class GrepTool extends ToolDef {
   ) {
     final pattern = args['pattern'] as String? ?? '';
     final total = result.metadata['totalMatches'] as int? ?? 0;
-    final tokens = estimateToolRoundTripTokens(
+    final costTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
@@ -27,7 +27,8 @@ class GrepTool extends ToolDef {
     final suffix = result.truncated ? ' [truncated]' : '';
     return CollapsedSummary(
       text: '"$pattern": $total matches$suffix',
-      tokens: tokens,
+      argsTokens: costTokens,
+      totalTokens: costTokens,
     );
   }
 

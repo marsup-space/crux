@@ -28,15 +28,28 @@ class EditTool extends ToolDef implements LargePayloadTool {
     final count = replaceAll ? 'all' : '1';
     final oldLines = '\n'.allMatches(oldString).length + 1;
     final newLines = '\n'.allMatches(newString).length + 1;
-    final tokens = estimateToolRoundTripTokens(
+    // Total cost = the small non-offloadable args + the result.
+    // The oldString/newString are excluded because they're
+    // offloadable — when persisted, they're stand-ins, not the
+    // full strings. The display shows "args-only" anyway, so
+    // the offloadable args don't contribute to either side.
+    final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
       excludeArgsFromEstimate: {'oldString', 'newString'},
     );
+    // Args-only: same calc but with empty result.
+    final argsTokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: '',
+      excludeArgsFromEstimate: {'oldString', 'newString'},
+    );
     return CollapsedSummary(
       text: '$count replacement, $oldLines→$newLines lines',
-      tokens: tokens,
+      argsTokens: argsTokens,
+      totalTokens: totalTokens,
     );
   }
 

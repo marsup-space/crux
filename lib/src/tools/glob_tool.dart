@@ -17,14 +17,15 @@ class GlobTool extends ToolDef {
   ) {
     final pattern = args['pattern'] as String? ?? '';
     final count = '\n'.allMatches(result.output).length + 1;
-    final tokens = estimateToolRoundTripTokens(
+    final costTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
     return CollapsedSummary(
       text: '"$pattern": $count items',
-      tokens: tokens,
+      argsTokens: costTokens,
+      totalTokens: costTokens,
     );
   }
 

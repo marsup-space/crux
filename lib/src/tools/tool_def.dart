@@ -62,22 +62,33 @@ String relativePath(String absolutePath, String workingDirectory) {
 /// can render the pre-compression / post-compression token
 /// comparison when the tool_call's large args were off-loaded.
 ///
-/// The [text] is the human-readable line (e.g. "1 replacement,
-/// 41→87 lines"). It does NOT include the token count — the
-/// bubble appends `~Nt` so it can compare pre vs post when
-/// compression happened.
+/// The split between [argsTokens] and [totalTokens] exists
+/// because the *strikethrough* number must be apples-to-apples
+/// with the *post-compression* number. The result of the tool
+/// is unknown at compression time (it runs *after* the args are
+/// off-loaded), so the pre-compression number is args-only —
+/// "this is what the args would have cost if we hadn't
+/// off-loaded them." The post-compression number shown next to
+/// the "compressed:" prefix is also args-only, so the
+/// comparison is honest: bigger strikethrough = bigger saving.
 ///
-/// [tokens] is the round-trip cost as it appears in the
-/// conversation log NOW (i.e. post-compression if the call was
-/// compressed). For a `read` or `bash` call (no compression),
-/// this is the only meaningful value; for a compressed `write`
-/// or `edit`, the bubble will show it next to a strikethrough
-/// pre-compression value pulled from the message metadata.
+/// [totalTokens] is the full round-trip cost (args + result)
+/// and is what an uncompressed tool_call displays as its
+/// single `~Nt` value. When the call was compressed, the
+/// bubble shows `~~{pre}t~~, compressed: ~{post}t` — the
+/// strikethrough is the args saving, and the result is
+/// shown separately by including [totalTokens] in the line
+/// if it differs materially from [argsTokens].
 class CollapsedSummary {
   final String text;
-  final int tokens;
+  final int argsTokens;
+  final int totalTokens;
 
-  const CollapsedSummary({required this.text, required this.tokens});
+  const CollapsedSummary({
+    required this.text,
+    required this.argsTokens,
+    required this.totalTokens,
+  });
 }
 
 abstract class ToolDef {
@@ -98,7 +109,8 @@ abstract class ToolDef {
         : '${size}B';
     return CollapsedSummary(
       text: '$lines lines, $sizeStr',
-      tokens: 0,
+      argsTokens: 0,
+      totalTokens: 0,
     );
   }
 
