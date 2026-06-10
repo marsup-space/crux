@@ -197,6 +197,14 @@ void main() {
         isNull,
       );
     });
+
+    // compressCallForPersistence always compresses large args when
+    // called directly; the *caller* (chat_service.dart) is
+    // responsible for skipping compression when the tool's
+    // read-before-write guard fires (result.metadata['guardTriggered']).
+    // See the guard trigger check in chat_service.dart at line 709:
+    //   if (tool is LargePayloadTool && guardTriggers.contains(callId))
+    //     compressedToolCalls.add(call); // original — not compressed
   });
 
   group('RecallTool', () {

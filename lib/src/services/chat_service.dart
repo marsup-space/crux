@@ -634,27 +634,89 @@ class ChatService {
       final roundText = roundTextBuffer.toString();
       final roundReasoning = roundReasoningBuffer.toString();
 
-      // Compress any LargePayloadTool calls before persisting. The
-      // returned calls have their large args replaced with a
-      // stand-in pointer; the full bytes are written to
-      // offloaded_content. The original `toolCalls` list is
-      // unchanged, so the actual tool executions below still
-      // receive the full content.
+      // ── Execute EVERY tool BEFORE compressing any of them ──
+      //
+      // We must know whether the read-before-write guard fired on
+      // any LargePayloadTool call *before* deciding which args to
+      // offload.  When the guard fires the LLM needs the original
+      // args to re-evaluate its edit/write against the actual file
+      // content — compressing them to stand-ins would force an
+      // extra `recall` round-trip on the very next turn.
+      //
+      // The wire-format assistant message uses the original
+      // toolCalls (line 694 / 747), so the LLM receives the full
+      // args in the *current* turn regardless of compression.
+      // Compression only affects what the *next* turn sees when
+      // the history is rebuilt from the DB.
+
+      // Execute tools + record guard triggers.
+      final guardTriggers = <String>{};
+      final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
+        toolCalls,
+        roundText,
+        wireFamily,
+      );
+      apiMessages.add(assistantMsg);
+      final callResults = <String, ToolResult>{};
+      var roundResultTokens = 0;
+      {
+        final isAnthropic = wireFamily == WireFamily.anthropicCompatible;
+        final content = isAnthropic ? <Map<String, dynamic>>[] : null;
+        for (final call in toolCalls) {
+          final ctx = ToolContext(
+            sessionId: sessionId,
+            messageId: -1,
+            abort: AbortSignal(),
+            workingDirectory: session.projectPath,
+          );
+          final result = await _toolExecutor.executeTool(call, ctx);
+          callResults[call.callId] = result;
+          if (result.metadata['guardTriggered'] == true) {
+            guardTriggers.add(call.callId);
+          }
+          if (isAnthropic) {
+            content!.add({
+              'type': 'tool_result',
+              'tool_use_id': call.callId,
+              'content': result.output,
+            });
+          } else {
+            apiMessages.add({
+              'role': 'tool',
+              'tool_call_id': call.callId,
+              'content': result.output,
+            });
+          }
+          roundResultTokens += estimateToolRoundTripTokens(
+            toolName: call.name,
+            args: call.input,
+            resultOutput: result.output,
+            excludeArgsFromEstimate: offloadableArgsFor(
+              _toolExecutor.lookupTool(call.name),
+            ),
+          );
+        }
+        if (isAnthropic) {
+          apiMessages.add({'role': 'user', 'content': content});
+        }
+      }
+
+      // ── Compress (skip calls where the guard fired) ──
       final compressedToolCalls = <ToolCall>[];
       var preCompressTokens = 0;
       for (final call in toolCalls) {
-        // Sum the round-trip cost of each LargePayloadTool call
-        // as it was *before* compression. The chat bubble uses
-        // this to render the pre/post comparison (e.g.
-        // "~~5000t~~, compressed: 15t"). Non-LargePayloadTool
-        // calls are skipped — they aren't offload candidates, so
-        // there's no pre-vs-post distinction to make.
         final tool = _toolExecutor.lookupTool(call.name);
+        if (tool is LargePayloadTool && guardTriggers.contains(call.callId)) {
+          // Guard fired — keep the original args so the LLM can
+          // re-evaluate its edit/write without an extra recall.
+          compressedToolCalls.add(call);
+          continue;
+        }
         if (tool is LargePayloadTool) {
           preCompressTokens += estimateToolRoundTripTokens(
             toolName: call.name,
             args: call.input,
-            resultOutput: '', // result not yet known at compression time
+            resultOutput: '',
             excludeArgsFromEstimate: offloadableArgsFor(tool),
           );
         }
@@ -673,6 +735,7 @@ class ChatService {
           )
           .toList();
 
+      // ── Persist (tool_call first, then tool_results) ──
       await _store.addMessage(
         sessionId,
         role: 'tool_call',
@@ -689,98 +752,19 @@ class ChatService {
         preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
       );
 
-      if (wireFamily == WireFamily.anthropicCompatible) {
-        final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
-          toolCalls,
-          roundText,
-          wireFamily,
+      for (final call in toolCalls) {
+        final result = callResults[call.callId]!;
+        await _store.addMessage(
+          sessionId,
+          role: 'tool',
+          content: result.output,
+          toolCallId: call.callId,
         );
-        apiMessages.add(assistantMsg);
+      }
 
-        final content = <Map<String, dynamic>>[];
-        var roundResultTokens = 0;
-        for (final call in toolCalls) {
-          final ctx = ToolContext(
-            sessionId: sessionId,
-            messageId: -1,
-            abort: AbortSignal(),
-            workingDirectory: session.projectPath,
-          );
-          final result = await _toolExecutor.executeTool(call, ctx);
-          content.add({
-            'type': 'tool_result',
-            'tool_use_id': call.callId,
-            'content': result.output,
-          });
-          roundResultTokens += estimateToolRoundTripTokens(
-            toolName: call.name,
-            args: call.input,
-            resultOutput: result.output,
-            excludeArgsFromEstimate: offloadableArgsFor(
-              _toolExecutor.lookupTool(call.name),
-            ),
-          );
-          await _store.addMessage(
-            sessionId,
-            role: 'tool',
-            content: result.output,
-            toolCallId: call.callId,
-          );
-        }
-        apiMessages.add({'role': 'user', 'content': content});
-        roundTextBuffer.clear();
-        roundReasoningBuffer.clear();
-        onToolRound?.call(roundResultTokens);
-
-        // After the tool round completes, check if the user queued
-        // any messages while the agent was streaming. If so, inject
-        // the drained content as a user message into both the API
-        // message list and the store so the next LLM round sees it.
-        final queuedContent = onQueueDrain?.call();
-        if (queuedContent != null) {
-          await _store.addMessage(sessionId, role: 'user', content: queuedContent);
-          apiMessages.add({'role': 'user', 'content': queuedContent});
-        }
-      } else {
-        final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
-          toolCalls,
-          roundText,
-          wireFamily,
-        );
-        apiMessages.add(assistantMsg);
-
-        var roundResultTokens = 0;
-        for (final call in toolCalls) {
-          final ctx = ToolContext(
-            sessionId: sessionId,
-            messageId: -1,
-            abort: AbortSignal(),
-            workingDirectory: session.projectPath,
-          );
-          final result = await _toolExecutor.executeTool(call, ctx);
-          apiMessages.add({
-            'role': 'tool',
-            'tool_call_id': call.callId,
-            'content': result.output,
-          });
-          roundResultTokens += estimateToolRoundTripTokens(
-            toolName: call.name,
-            args: call.input,
-            resultOutput: result.output,
-            excludeArgsFromEstimate: offloadableArgsFor(
-              _toolExecutor.lookupTool(call.name),
-            ),
-          );
-          await _store.addMessage(
-            sessionId,
-            role: 'tool',
-            content: result.output,
-            toolCallId: call.callId,
-          );
-        }
-        roundTextBuffer.clear();
-        roundReasoningBuffer.clear();
-        onToolRound?.call(roundResultTokens);
+      roundTextBuffer.clear();
+      roundReasoningBuffer.clear();
+      onToolRound?.call(roundResultTokens);
 
         // After the tool round completes, check if the user queued
         // any messages while the agent was streaming. If so, inject
@@ -792,7 +776,6 @@ class ChatService {
           apiMessages.add({'role': 'user', 'content': queuedContent});
         }
       }
-    }
 
     final content = roundTextBuffer.toString();
     final reasoningContent = roundReasoningBuffer.toString();
