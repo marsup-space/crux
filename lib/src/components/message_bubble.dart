@@ -268,11 +268,22 @@ class MessageBubble extends StatelessComponent {
     final keyArg = _keyArg(tc);
     CollapsedSummary? summary;
     String? fallbackText;
-    if (tool != null && pairedResult != null) {
-      final result = ToolResult(title: '', output: pairedResult!.content);
+    final resultContent = pairedResult?.content ?? '';
+    final isGuard = resultContent.startsWith('[GUARD]');
+    final isAutoRead = resultContent.startsWith('[AUTOREAD]');
+    if (isGuard || isAutoRead) {
+      final label = isGuard ? 'guard triggered (auto read)' : 'auto read';
+      final tokens = estimateTokens(resultContent);
+      summary = CollapsedSummary(
+        text: label,
+        argsTokens: tokens,
+        totalTokens: tokens,
+      );
+    } else if (tool != null && pairedResult != null) {
+      final result = ToolResult(title: '', output: resultContent);
       summary = tool.collapsedSummary(tc.input, result);
     } else if (pairedResult != null) {
-      fallbackText = _resultMetrics(pairedResult!.content);
+      fallbackText = _resultMetrics(resultContent);
     }
 
     final preCompress = message.preCompressTokens;
@@ -322,7 +333,7 @@ class MessageBubble extends StatelessComponent {
         );
         children.add(
           Text(
-            ', compressed: $postPart',
+            ' → $postPart',
             style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
         );

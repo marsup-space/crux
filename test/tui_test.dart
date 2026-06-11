@@ -502,10 +502,7 @@ void main() {
           // Pre cost is shown as plain text (the strikethrough is
           // a real SGR decoration on the cell, not a `~~` marker).
           expect(visual, contains('5000 t'));
-          // The "compressed:" separator is present.
-          expect(visual, contains('compressed:'));
-          // No literal `~~` markers — the strike is rendered
-          // via TextDecoration, not text.
+          expect(visual, contains('→'));
           expect(visual, isNot(contains('~~')));
         },
       );
@@ -548,8 +545,8 @@ void main() {
             ),
           );
           final visual = tester.renderToString();
-          // No "compressed:" prefix on uncompressed calls.
           expect(visual, isNot(contains('compressed:')));
+          expect(visual, isNot(contains('→')));
           // A tilde-prefixed token count is still shown.
           expect(visual, contains('~'));
         },

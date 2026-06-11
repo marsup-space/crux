@@ -180,8 +180,8 @@ void main() {
       await file.writeAsString('content here');
       final guard = tracker.checkWriteGuard(file.path);
       expect(guard, isNotNull);
-      expect(guard!.header, contains('We just read the file for you'));
-      expect(guard.header, contains('you can call edit/write again now'));
+      expect(guard!.header, contains('[GUARD]'));
+      expect(guard.header, contains('not read before write'));
       expect(guard.content, 'content here');
     });
 
@@ -1422,7 +1422,7 @@ void main() {
 
       expect(result.title, contains('Auto-read:'));
       expect(result.output, contains('not found'));
-      expect(result.output, contains('saved you a round trip'));
+      expect(result.output, contains('saved a round trip'));
       expect(result.output, contains('alpha\nbeta\ngamma\n'));
       expect(result.metadata['autoRead'], isTrue);
     });
@@ -1592,7 +1592,8 @@ void main() {
         'newString': 'new',
       }, _ctx());
 
-      expect(result.output, contains('We just read the file'));
+      expect(result.output, contains('[GUARD]'));
+      expect(result.output, contains('not read before write'));
       expect(result.output, contains('existing content'));
       expect(result.metadata['guardTriggered'], isTrue);
     });
@@ -1613,7 +1614,8 @@ void main() {
         'newString': 'version 2',
       }, _ctx());
 
-      expect(result.output, contains('We just read the file'));
+      expect(result.output, contains('[GUARD]'));
+      expect(result.output, contains('We re-read it'));
       expect(result.output, contains('version 2'));
       expect(result.metadata['guardTriggered'], isTrue);
     });

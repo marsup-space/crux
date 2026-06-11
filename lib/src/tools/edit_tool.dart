@@ -256,8 +256,8 @@ class EditTool extends ToolDef implements LargePayloadTool {
   ToolResult _autoReadResult(String filePath, String reason, String content) {
     return ToolResult(
       title: 'Auto-read: $relativePath(filePath, '')',
-      output: '$reason\n\n'
-          'We read the file for you (saved you a round trip). '
+      output: '[AUTOREAD] $reason\n\n'
+          'We re-read the file for you (saved a round trip). '
           'The current content is below; you can call edit again '
           'now without having to call read first.\n\n'
           '$content',
