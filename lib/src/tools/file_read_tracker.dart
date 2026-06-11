@@ -23,9 +23,10 @@ class FileReadTracker {
       recordRead(filePath, currentMtime);
       return GuardResult(
         header:
-            '[GUARD] File was not read before write. We re-read it for you '
-            '(saved a round trip). The content is below; you can call '
-            'edit/write again now without having to call read first.',
+            '[GUARD] No changes were made — file was not read before write. '
+            'We re-read it for you (saved a round trip). The content is '
+            'below; you can call edit/write again now without having to '
+            'call read first.',
         content: content,
       );
     }
@@ -36,9 +37,10 @@ class FileReadTracker {
       recordRead(filePath, currentMtime);
       return GuardResult(
         header:
-            '[GUARD] File was modified since last read. We re-read it for '
-            'you (saved a round trip). The new content is below; retry '
-            'your edit with a pattern that matches this version.',
+            '[GUARD] No changes were made — file was modified since last '
+            'read. We re-read it for you (saved a round trip). The new '
+            'content is below; retry your edit with a pattern that matches '
+            'this version.',
         content: content,
       );
     }
