@@ -1340,4 +1340,326 @@ void main() {
       expect(summary.text, contains('500 matches'));
     });
   });
+
+  group('EditTool', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_edit_full_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ToolContext _ctx() => ToolContext(
+      sessionId: 1,
+      messageId: 1,
+      abort: AbortSignal(),
+      workingDirectory: tempDir.path,
+    );
+
+    Future<File> _file(String name, String content) async {
+      final f = File('${tempDir.path}/$name');
+      await f.writeAsString(content);
+      return f;
+    }
+
+    // ── Happy path ──
+
+    test('exact match replaces single line and writes correctly', () async {
+      await _file('test.txt', 'hello\nworld\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'hello',
+        'newString': 'hi',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'hi\nworld\n');
+    });
+
+    test('exact multi-line match replaces block', () async {
+      await _file('test.txt', 'alpha\nbeta\ngamma\ndelta\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'beta\ngamma',
+        'newString': 'middle',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'alpha\nmiddle\ndelta\n');
+    });
+
+    test('replaceAll replaces every occurrence', () async {
+      await _file('test.txt', 'foo bar foo bar foo');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'foo',
+        'newString': 'baz',
+        'replaceAll': true,
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 3 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'baz bar baz bar baz');
+    });
+
+    // ── Auto-read on mismatch ──
+
+    test('oldString not found returns auto-read with file content', () async {
+      final content = 'alpha\nbeta\ngamma\n';
+      await _file('test.txt', content);
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'nonexistent',
+        'newString': 'replacement',
+      }, _ctx());
+
+      expect(result.title, contains('Auto-read:'));
+      expect(result.output, contains('not found'));
+      expect(result.output, contains('saved you a round trip'));
+      expect(result.output, contains('alpha\nbeta\ngamma\n'));
+      expect(result.metadata['autoRead'], isTrue);
+    });
+
+    test('multiple exact matches without replaceAll returns auto-read',
+        () async {
+      await _file('test.txt', 'dup\nunique\ndup\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'dup',
+        'newString': 'replaced',
+      }, _ctx());
+
+      expect(result.metadata['autoRead'], isTrue);
+    });
+
+    test('disproportionate match returns auto-read', () async {
+      // Multi-line oldString against content with large whitespace
+      // gaps between the matching words. WhitespaceMatcher
+      // collapses the gaps but the matched span in the original
+      // includes all the blank lines — much larger than oldString.
+      await _file('test.txt', 'a\n\n\n\n\n\n\n\nb\n\n\n\n\nc\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'a\nb\nc',
+        'newString': 'replaced',
+      }, _ctx());
+
+      // The matched span includes ~8 blank lines, far exceeding
+      // oldString's length. Should trigger disproportionate guard.
+      expect(result.metadata['autoRead'], isTrue);
+    });
+
+    test('no-match returns auto-read correctly', () async {
+      await _file('test.txt', 'line one\nline two\nline three\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'xxxyyy',
+        'newString': 'y',
+      }, _ctx());
+
+      expect(result.metadata['autoRead'], isTrue);
+    });
+
+    // ── Fuzzy matching (still works for real cases) ──
+
+    test('indentation-flexible match succeeds for single line', () async {
+      // File uses 8-space indent, agent provides no indent.
+      // IndentationMatcher strips leading whitespace and matches.
+      await _file('test.txt', '        alpha\n    beta\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'alpha',
+        'newString': 'replaced',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          '        replaced\n    beta\n');
+    });
+
+    test('exact multi-line match preserves indentation', () async {
+      // Both file and oldString use the same 4-space indent.
+      // ExactMatcher handles this without going through
+      // IndentationMatcher's match-length issue.
+      await _file('test.txt', '    alpha\n    beta\n    gamma\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': '    alpha\n    beta',
+        'newString': '    replacement',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          '    replacement\n    gamma\n');
+    });
+
+    test('whitespace-normalized single-line match succeeds (tabs vs spaces)',
+        () async {
+      await _file('test.txt', 'prefix\tfoo\tbar\tsuffix');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'foo bar',
+        'newString': 'baz qux',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'prefix\tbaz qux\tsuffix');
+    });
+
+    // ── Validation ──
+
+    test('oldString equals newString returns error', () async {
+      await _file('test.txt', 'hello\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'hello',
+        'newString': 'hello',
+      }, _ctx());
+
+      expect(result.output,
+          contains('oldString and newString must be different'));
+    });
+
+    test('missing filePath returns error', () async {
+      final result = await EditTool().execute({
+        'oldString': 'x',
+        'newString': 'y',
+      }, _ctx());
+
+      expect(result.output, contains('Missing required parameter: filePath'));
+    });
+
+    test('missing oldString returns error', () async {
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'newString': 'y',
+      }, _ctx());
+
+      expect(result.output, contains('Missing required parameter: oldString'));
+    });
+
+    test('missing newString returns error', () async {
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'x',
+      }, _ctx());
+
+      expect(result.output,
+          contains('Missing required parameter: newString'));
+    });
+
+    test('file not found returns error', () async {
+      final result = await EditTool().execute({
+        'filePath': 'nonexistent.txt',
+        'oldString': 'x',
+        'newString': 'y',
+      }, _ctx());
+
+      expect(result.output, contains('File not found'));
+    });
+
+    test('empty oldString on existing file creates the file', () async {
+      await _file('test.txt', 'hello\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': '',
+        'newString': 'new content',
+      }, _ctx());
+
+      expect(result.output, contains('Created file'));
+    });
+
+    // ── Read-before-write guard ──
+
+    test('read-before-write guard triggers when file was never read',
+        () async {
+      final tracker = FileReadTracker();
+      final tool = EditTool(tracker: tracker);
+      final filePath = '${tempDir.path}/guarded.txt';
+      await File(filePath).writeAsString('existing content\n');
+
+      final result = await tool.execute({
+        'filePath': filePath,
+        'oldString': 'existing content',
+        'newString': 'new',
+      }, _ctx());
+
+      expect(result.output, contains('We just read the file'));
+      expect(result.output, contains('existing content'));
+      expect(result.metadata['guardTriggered'], isTrue);
+    });
+
+    test('read-before-write guard triggers when file was modified since read',
+        () async {
+      final tracker = FileReadTracker();
+      final tool = EditTool(tracker: tracker);
+      final filePath = '${tempDir.path}/modified.txt';
+      await File(filePath).writeAsString('version 1');
+      tracker.recordRead(filePath,
+          DateTime.now().subtract(const Duration(seconds: 10)).millisecondsSinceEpoch);
+
+      await File(filePath).writeAsString('version 2');
+      final result = await tool.execute({
+        'filePath': filePath,
+        'oldString': 'version 1',
+        'newString': 'version 2',
+      }, _ctx());
+
+      expect(result.output, contains('We just read the file'));
+      expect(result.output, contains('version 2'));
+      expect(result.metadata['guardTriggered'], isTrue);
+    });
+
+    // ── Match positions are correct ──
+
+    test('match position does not corrupt surrounding content', () async {
+      final content = 'line zero\nline one\nline two\nline three\n';
+      await _file('test.txt', content);
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'line one',
+        'newString': 'REPLACED',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'line zero\nREPLACED\nline two\nline three\n');
+    });
+
+    test('mid-line exact match replaces only the matched span', () async {
+      await _file('test.txt', 'prefix old middle suffix\n');
+      final result = await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'old middle',
+        'newString': 'new center',
+      }, _ctx());
+
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(await File('${tempDir.path}/test.txt').readAsString(),
+          'prefix new center suffix\n');
+    });
+
+    // ── File not changed on failed edit ──
+
+    test('file is unchanged when auto-read fires (no write happened)',
+        () async {
+      final original = 'alpha\nbeta\ngamma\n';
+      await _file('test.txt', original);
+      await EditTool().execute({
+        'filePath': 'test.txt',
+        'oldString': 'nonexistent',
+        'newString': 'replacement',
+      }, _ctx());
+
+      expect(await File('${tempDir.path}/test.txt').readAsString(), original);
+    });
+  });
 }
