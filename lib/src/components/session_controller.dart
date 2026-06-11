@@ -242,10 +242,10 @@ class SessionController {
   }
 
   Future<void> initSessions() async {
-    // Auto-archive sessions not updated in the last 5 days.
+    // Auto-archive sessions not updated in the last 3 days.
     await _store.autoArchive(
       projectPath: Directory.current.path,
-      olderThan: const Duration(days: 5),
+      olderThan: const Duration(days: 3),
     );
     sessions = await _store.list(projectPath: Directory.current.path);
     archivedCount = await _store.archivedCount(

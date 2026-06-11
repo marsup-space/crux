@@ -9,7 +9,7 @@ import 'ui/multi_button.dart';
 /// Time-based grouping for sessions in the sidebar.
 enum _SessionGroup {
   yesterday('Yesterday'),
-  fiveDays('5 Days'),
+  threeDays('3 Days'),
   archived('Archived');
 
   const _SessionGroup(this.label);
@@ -24,9 +24,9 @@ enum _SessionGroup {
 /// Sessions are grouped by recency:
 /// - **Today** — no label, just the sessions at the top
 /// - **Yesterday** — sessions from the previous calendar day
-/// - **5 Days** — sessions from 2–5 days ago
+/// - **3 Days** — sessions from 2–3 days ago
 ///
-/// Sessions older than 5 days are auto-archived by
+/// Sessions older than 3 days are auto-archived by
 /// [SessionController.initSessions] and don't appear in the list.
 /// An "Archived" hint row at the bottom shows the count and reminds
 /// the user about `/unarchive`.
@@ -90,28 +90,28 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// Layout:
   /// - Today's sessions first, **no header label**
   /// - "Yesterday" header + yesterday's sessions
-  /// - "5 Days" header + sessions from 2–5 days ago
+  /// - "3 Days" header + sessions from 2–3 days ago
   /// - "N archived /unarchive #id" hint
   static List<Object> _buildRows(List<Session> sorted, int archivedCount) {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-    final fiveDaysAgo = todayStart.subtract(const Duration(days: 5));
+    final threeDaysAgo = todayStart.subtract(const Duration(days: 3));
 
     // Bucket sessions into groups.
     final today = <Session>[];
     final yesterday = <Session>[];
-    final fiveDays = <Session>[];
+    final threeDays = <Session>[];
 
     for (final s in sorted) {
       if (!s.updatedAt.isBefore(todayStart)) {
         today.add(s);
       } else if (!s.updatedAt.isBefore(yesterdayStart)) {
         yesterday.add(s);
-      } else if (!s.updatedAt.isBefore(fiveDaysAgo)) {
-        fiveDays.add(s);
+      } else if (!s.updatedAt.isBefore(threeDaysAgo)) {
+        threeDays.add(s);
       }
-      // Older than 5 days: already auto-archived by
+      // Older than 3 days: already auto-archived by
       // SessionController.initSessions; shouldn't appear here.
     }
 
@@ -122,9 +122,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       rows.add(_SessionGroup.yesterday);
       rows.addAll(yesterday);
     }
-    if (fiveDays.isNotEmpty) {
-      rows.add(_SessionGroup.fiveDays);
-      rows.addAll(fiveDays);
+    if (threeDays.isNotEmpty) {
+      rows.add(_SessionGroup.threeDays);
+      rows.addAll(threeDays);
     }
     if (archivedCount > 0) {
       rows.add(_SessionGroup.archived);
@@ -323,7 +323,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     );
   }
 
-  /// Build a group header row (Yesterday / 5 Days / Archived).
+  /// Build a group header row (Yesterday / 3 Days / Archived).
   Component _buildGroupHeader(_SessionGroup group) {
     if (group == _SessionGroup.archived) {
       final count = component.archivedCount;
