@@ -148,19 +148,28 @@ class EditTool extends ToolDef implements LargePayloadTool {
 
     final matchResult = _findMatch(content, oldString, replaceAll);
     if (matchResult == null) {
-      return ToolResult.error('oldString not found in content');
+      return _autoReadResult(
+        resolved,
+        'The oldString was not found in the file.',
+        content,
+      );
     }
     if (matchResult.error != null) {
-      return ToolResult.error(matchResult.error!);
+      return _autoReadResult(
+        resolved,
+        '${matchResult.error}',
+        content,
+      );
     }
     final matchLen = matchResult.matchLength ?? oldString.length;
     if (_isDisproportionateMatch(oldString, matchLen)) {
-      return ToolResult.error(
-        'Refusing replacement because the matched span is much larger '
-        'than oldString (matched ${matchLen} chars, oldString has '
-        '${oldString.length} chars). This usually means the oldString '
-        'was too vague and matched a much larger block than intended. '
-        'Re-read the file and provide a more complete oldString.',
+      return _autoReadResult(
+        resolved,
+        'Refusing replacement because the matched span ($matchLen chars) '
+        'is much larger than oldString (${oldString.length} chars). '
+        'The oldString was too vague and matched a much larger block '
+        'than intended.',
+        content,
       );
     }
 
@@ -239,6 +248,21 @@ class EditTool extends ToolDef implements LargePayloadTool {
   Future<int> _mtimeMs(File file) async {
     final stat = await file.stat();
     return stat.modified.millisecondsSinceEpoch;
+  }
+
+  /// When the oldString can't be matched, return the file content
+  /// so the agent can immediately retry without a manual `read`
+  /// round-trip. Same pattern as the read-before-write guard.
+  ToolResult _autoReadResult(String filePath, String reason, String content) {
+    return ToolResult(
+      title: 'Auto-read: $relativePath(filePath, '')',
+      output: '$reason\n\n'
+          'We read the file for you (saved you a round trip). '
+          'The current content is below; you can call edit again '
+          'now without having to call read first.\n\n'
+          '$content',
+      metadata: {'autoRead': true},
+    );
   }
 
   bool _isMidWhitespaceRun(String content, int pos) {
