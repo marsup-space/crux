@@ -217,6 +217,7 @@ class ChatService {
     void Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
     String? Function()? onQueueDrain,
+    void Function(AbortSignal)? onAbortSignal,
     String? userContent,
   }) async {
     if (userContent != null) {
@@ -371,6 +372,17 @@ class ChatService {
         void ensureLerpTimer() {
           if (lerpTimer != null) return;
           lerpTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+            // Stop emitting if the stream was cancelled.
+            if (_cancelRequested.contains(sessionId)) {
+              lerpTimer?.cancel();
+              lerpTimer = null;
+              if (lerpDrainCompleter != null &&
+                  !lerpDrainCompleter!.isCompleted) {
+                lerpDrainCompleter!.complete();
+              }
+              return;
+            }
+
             final totalPending =
                 lerpPendingText.length + lerpPendingReasoning.length;
             if (totalPending == 0) {
@@ -415,6 +427,15 @@ class ChatService {
         }
 
         await for (final chunk in stream) {
+          // Check if the caller requested a cancel. Without this,
+          // the stream keeps consuming chunks until the LLM finishes
+          // naturally, even after cancelStream() was called. Breaking
+          // here lets the interrupt take effect on the very next chunk.
+          if (_cancelRequested.contains(sessionId)) {
+            lerpTimer?.cancel();
+            break;
+          }
+
           if (chunk.error != null) {
             lerpTimer?.cancel();
             runtime.pauseStreamingTimer();
@@ -565,6 +586,20 @@ class ChatService {
         return;
       }
 
+      // If the stream was cancelled mid-chunk, exit the agentic loop
+      // immediately — don't process partial chunks, execute tools, or
+      // call onComplete. The caller (_interruptResponse in ChatPanel)
+      // has already handled cleanup.
+      if (_cancelRequested.contains(sessionId)) {
+        runtime.pauseStreamingTimer();
+        runtime.isResponding = false;
+        await _store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        _activeSessions.remove(sessionId);
+        _cancelRequested.remove(sessionId);
+        return;
+      }
+
       lerpStreamDone = true;
 
       // Round stream finished. Fold this round's wall-clock generation
@@ -643,6 +678,19 @@ class ChatService {
 
       if (finishReason != 'tool_use') break;
 
+      // Check for cancel before executing tools — the user may have
+      // interrupted after the LLM finished streaming but before tools
+      // started executing.
+      if (_cancelRequested.contains(sessionId)) {
+        runtime.pauseStreamingTimer();
+        runtime.isResponding = false;
+        await _store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        _activeSessions.remove(sessionId);
+        _cancelRequested.remove(sessionId);
+        return;
+      }
+
       final toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       if (toolCalls.isEmpty) break;
 
@@ -681,10 +729,24 @@ class ChatService {
         final isAnthropic = wireFamily == WireFamily.anthropicCompatible;
         final content = isAnthropic ? <Map<String, dynamic>>[] : null;
         for (final call in toolCalls) {
+          // Check for cancel between tool executions — the user may have
+          // interrupted while tools are running.
+          if (_cancelRequested.contains(sessionId)) {
+            runtime.pauseStreamingTimer();
+            runtime.isResponding = false;
+            await _store.update(sessionId, status: SessionStatus.idle);
+            session.status = SessionStatus.idle;
+            _activeSessions.remove(sessionId);
+            _cancelRequested.remove(sessionId);
+            return;
+          }
+
+          final abortSignal = AbortSignal(sessionId: sessionId);
+          onAbortSignal?.call(abortSignal);
           final ctx = ToolContext(
             sessionId: sessionId,
             messageId: -1,
-            abort: AbortSignal(),
+            abort: abortSignal,
             workingDirectory: session.projectPath,
           );
           final result = await _toolExecutor.executeTool(call, ctx);

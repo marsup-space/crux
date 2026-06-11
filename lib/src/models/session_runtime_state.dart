@@ -72,6 +72,14 @@ class SessionRuntimeState {
   /// starts; cleared when it ends.
   bool btwMode;
 
+  /// True when the current (or most recent) streaming response was
+  /// interrupted by the user pressing ESC twice. The chat panel uses
+  /// this flag to (a) show an interruption indicator in the AI message,
+  /// and (b) prepend a system message on the next user input so the
+  /// LLM knows its previous response was cut off. Cleared when a new
+  /// turn starts (`_sendTurn`).
+  bool interrupted;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -92,6 +100,7 @@ class SessionRuntimeState {
     this.cacheHitPct,
     this.isGeneratingTldr = false,
     this.btwMode = false,
+    this.interrupted = false,
   });
 
   double get thinkingDurationMs {
@@ -123,6 +132,7 @@ class SessionRuntimeState {
     roundStreaming = false;
     isResponding = false;
     btwMode = false;
+    interrupted = false;
     cancelTimers();
   }
 

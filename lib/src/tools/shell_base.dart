@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,28 +19,233 @@ class ShellInvocation {
   });
 }
 
+/// Global registry of all running shell processes, keyed by session ID.
+/// When the user interrupts a session, all registered processes for that
+/// session are killed (including their process groups) so background
+/// children don't survive.
+class ShellProcessRegistry {
+  static final ShellProcessRegistry instance = ShellProcessRegistry._();
+  ShellProcessRegistry._();
+
+  final Map<int, Set<_TrackedProcess>> _processes = {};
+
+  /// Register a running [process] for [sessionId]. Returns the same
+  /// [process] for convenience.
+  Process register(int sessionId, Process process) {
+    _processes.putIfAbsent(sessionId, () => {}).add(
+      _TrackedProcess(process),
+    );
+    return process;
+  }
+
+  /// Unregister a [process] from [sessionId] (e.g. when it exits
+  /// normally).
+  void unregister(int sessionId, Process process) {
+    _processes[sessionId]?.removeWhere((t) => t.process == process);
+    if (_processes[sessionId]?.isEmpty ?? false) {
+      _processes.remove(sessionId);
+    }
+  }
+
+  /// Kill all processes for [sessionId], including their process groups.
+  /// Called when the user interrupts a response.
+  void killAll(int sessionId) {
+    final tracked = _processes.remove(sessionId);
+    if (tracked == null) return;
+    for (final t in tracked) {
+      _killProcessGroup(t.process);
+    }
+  }
+
+  /// Kill a process and its entire process group.
+  static void _killProcessGroup(Process process) {
+    try {
+      if (Platform.isWindows) {
+        process.kill();
+      } else {
+        // Send SIGTERM to the process group so child processes are
+        // also killed (e.g. a shell pipeline, background jobs).
+        // We use the shell `kill` command with negative PGID because
+        // Dart's Process.killPid may not support negative PIDs.
+        final pgid = _getPgid(process.pid);
+        if (pgid != null) {
+          Process.runSync('kill', ['-TERM', '--', '-$pgid']);
+        }
+        // Also kill the process itself as a fallback.
+        process.kill();
+      }
+    } catch (_) {
+      try {
+        process.kill(ProcessSignal.sigkill);
+      } catch (_) {}
+    }
+  }
+
+  /// Get the process group ID for [pid] using `ps`.
+  static int? _getPgid(int pid) {
+    if (Platform.isWindows) return null;
+    try {
+      final result = Process.runSync(
+        'ps',
+        ['-o', 'pgid=', '-p', '$pid'],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+      final output = (result.stdout as String).trim();
+      if (output.isNotEmpty) {
+        return int.tryParse(output);
+      }
+    } catch (_) {}
+    return null;
+  }
+}
+
+class _TrackedProcess {
+  final Process process;
+  _TrackedProcess(this.process);
+}
+
 abstract class ShellBase extends ToolDef {
   ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'});
 
-  Future<ProcessResult> _run(String command, Duration timeout, {String encoding = 'utf8'}) async {
+  /// Run a shell command using [Process.start] so it can be killed
+  /// via the [abort] signal. The process is registered in the global
+  /// [ShellProcessRegistry] so that an interrupt can kill it and all
+  /// its children (including background processes) even if the abort
+  /// signal hasn't been polled yet.
+  Future<ProcessResult> _run(
+    String command,
+    Duration timeout, {
+    String encoding = 'utf8',
+    AbortSignal? abort,
+  }) async {
     final invocation = resolveInvocation(command, encoding: encoding);
+    final sessionId = abort?.sessionId;
+    Process? process;
     try {
-      return await Process.run(
+      process = await Process.start(
         invocation.executable,
         invocation.args,
         runInShell: true,
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      ).timeout(
-        timeout,
-        onTimeout: () => ProcessResult(
-          -1,
-          -1,
-          '',
-          'Command timed out after ${timeout.inMilliseconds}ms',
-        ),
+        mode: ProcessStartMode.normal,
       );
+
+      // Register the process so it can be killed by the global
+      // interrupt handler even if the abort signal check hasn't
+      // fired yet.
+      if (sessionId != null) {
+        ShellProcessRegistry.instance.register(sessionId, process);
+      }
+
+      // Set up abort watcher: when the abort signal fires, kill the
+      // process group. We use a polling check because AbortSignal is
+      // synchronous (no stream/listener API).
+      Timer? abortCheckTimer;
+      Completer<void>? abortCompleter;
+      if (abort != null) {
+        abortCompleter = Completer<void>();
+        abortCheckTimer = Timer.periodic(
+          const Duration(milliseconds: 50),
+          (_) {
+            if (abort.isAborted) {
+              abortCheckTimer?.cancel();
+              ShellProcessRegistry._killProcessGroup(process!);
+              if (!abortCompleter!.isCompleted) {
+                abortCompleter.complete();
+              }
+            }
+          },
+        );
+      }
+
+      // Collect stdout and stderr.
+      final stdoutBuf = StringBuffer();
+      final stderrBuf = StringBuffer();
+      final stdoutFuture = process.stdout
+          .transform(utf8.decoder)
+          .forEach(stdoutBuf.write);
+      final stderrFuture = process.stderr
+          .transform(utf8.decoder)
+          .forEach(stderrBuf.write);
+
+      // Wait for the process to finish, with timeout and abort.
+      final exitCodeFuture = process.exitCode;
+
+      int exitCode;
+      try {
+        // Race: process completion vs timeout vs abort.
+        final results = await Future.any<List<dynamic>>([
+          exitCodeFuture.then((code) => [code]),
+          Future.delayed(timeout, () => [-1]),
+          if (abortCompleter != null)
+            abortCompleter.future.then((_) => [-2]),
+        ]);
+
+        exitCode = results[0] as int;
+
+        if (exitCode == -1) {
+          // Timeout — kill the process group.
+          ShellProcessRegistry._killProcessGroup(process);
+        }
+
+        // For abort, the abort watcher already killed the process.
+
+        // Wait for stdout/stderr to drain. For timeout/abort, the
+        // process is dead so the streams will close quickly. Use a
+        // short timeout so we don't hang on misbehaving processes.
+        if (exitCode == -1 || exitCode == -2) {
+          try {
+            exitCode = await process.exitCode
+                .timeout(const Duration(seconds: 2));
+          } catch (_) {
+            exitCode = -1;
+          }
+        }
+        // Always wait for output streams to finish, with a timeout.
+        try {
+          await Future.wait([stdoutFuture, stderrFuture])
+              .timeout(const Duration(seconds: 2));
+        } catch (_) {
+          // Streams may not close cleanly after kill; that's OK.
+        }
+
+        if (results[0] == -1) {
+          return ProcessResult(
+            process.pid,
+            exitCode,
+            stdoutBuf.toString(),
+            'Command timed out after ${timeout.inMilliseconds}ms\n${stderrBuf.toString()}',
+          );
+        }
+
+        if (results[0] == -2) {
+          return ProcessResult(
+            process.pid,
+            exitCode,
+            stdoutBuf.toString(),
+            '[interrupted by user]${stderrBuf.toString().isNotEmpty ? '\n${stderrBuf.toString()}' : ''}',
+          );
+        }
+      } finally {
+        abortCheckTimer?.cancel();
+      }
+
+      return ProcessResult(
+        process.pid,
+        exitCode,
+        stdoutBuf.toString(),
+        stderrBuf.toString(),
+      );
+    } catch (e) {
+      if (process != null && sessionId != null) {
+        ShellProcessRegistry._killProcessGroup(process);
+      }
+      rethrow;
     } finally {
+      // Unregister from the registry on any exit (normal, error, or abort).
+      if (process != null && sessionId != null) {
+        ShellProcessRegistry.instance.unregister(sessionId, process);
+      }
       for (final path in invocation.cleanupPaths) {
         try {
           File(path).deleteSync();
@@ -59,7 +265,12 @@ abstract class ShellBase extends ToolDef {
     }
 
     try {
-      final result = await _run(command, Duration(milliseconds: timeoutMs), encoding: encoding);
+      final result = await _run(
+        command,
+        Duration(milliseconds: timeoutMs),
+        encoding: encoding,
+        abort: ctx.abort,
+      );
 
       final combined = StringBuffer();
       final stderr = result.stderr as String;

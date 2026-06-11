@@ -23,6 +23,8 @@ import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../tools/registry.dart';
+import '../tools/shell_base.dart';
+import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/token_estimate.dart';
 import 'overlay_controller.dart';
@@ -72,6 +74,32 @@ class _ChatPanelState extends State<ChatPanel> {
   late final CommandExecutor _commandExecutor;
 
   bool _providerServiceReady = false;
+
+  /// Timestamp of the last ESC key press while the agent was streaming.
+  /// Used to detect double-ESC within 1 second as an interrupt signal.
+  DateTime? _lastEscPressTime;
+
+  /// True briefly after the first ESC press while streaming, so the
+  /// UI can show a "Press ESC again to interrupt" hint. Cleared
+  /// after 1 second or when the second ESC arrives.
+  bool _escInterruptHint = false;
+
+  /// Per-session cancellation flags for btw turns. When the user
+  /// interrupts a btw stream, the flag is set to true so the
+  /// `await for` loop in `_sendBtwTurn` breaks out immediately.
+  final Map<int, bool> _btwCancelFlags = {};
+
+  /// Set of session IDs that have been interrupted by the user. Used
+  /// to prevent the `onComplete` / `onError` callbacks from running
+  /// after an interrupt, since `_interruptResponse` already handled
+  /// all cleanup. Entries are removed when `_sendTurn` starts a new
+  /// turn for that session.
+  final Set<int> _interruptedSessions = {};
+
+  /// Per-session abort signals for currently running tool executions.
+  /// When the user interrupts, `_interruptResponse` calls `abort()` on
+  /// each signal, which kills any running subprocesses (bash, cmd, etc.).
+  final Map<int, List<AbortSignal>> _activeAbortSignals = {};
 
   final _toastKey = GlobalKey<ToastHubState>();
   bool _metricsHovered = false;
@@ -421,6 +449,47 @@ class _ChatPanelState extends State<ChatPanel> {
     if (_overlayController.showSessionManager) return true;
 
     if (_overlayController.overlayMode == OverlayMode.off) {
+      // Double-ESC interrupt: when the agent is streaming, pressing
+      // ESC twice within 1 second interrupts the response. The first
+      // ESC press is recorded; if a second ESC arrives within 1s, the
+      // response is interrupted. A single ESC press (or one followed by
+      // any other key) is ignored — it does not clear the input or
+      // interfere with normal typing.
+      if (event.logicalKey == LogicalKey.escape) {
+        final sessionId = _sessionController.currentSessionId;
+        final isStreaming =
+            sessionId != null && _sessionController.runtime(sessionId).isResponding;
+        if (isStreaming) {
+          final now = DateTime.now();
+          if (_lastEscPressTime != null &&
+              now.difference(_lastEscPressTime!).inMilliseconds < 1000) {
+            _lastEscPressTime = null;
+            _escInterruptHint = false;
+            _interruptResponse();
+          } else {
+            _lastEscPressTime = now;
+            _escInterruptHint = true;
+            // Auto-clear the hint after 1 second if no second ESC.
+            Future.delayed(const Duration(seconds: 1), () {
+              if (mounted && _escInterruptHint) {
+                _escInterruptHint = false;
+                setState(() {});
+              }
+            });
+            setState(() {});
+          }
+          return true;
+        }
+        // Not streaming: ignore ESC (don't consume it).
+        return false;
+      } else {
+        // Any non-ESC key resets the double-ESC tracker so a stray
+        // ESC followed by typing doesn't accidentally trigger an
+        // interrupt on the next ESC. Also clear the interrupt hint.
+        _lastEscPressTime = null;
+        _escInterruptHint = false;
+      }
+
       final isEnter =
           event.logicalKey == LogicalKey.enter ||
           event.logicalKey == LogicalKey.numpadEnter;
@@ -791,7 +860,28 @@ class _ChatPanelState extends State<ChatPanel> {
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
 
+    // Guard: if the chat service still considers this session active
+    // (e.g. after a recent interrupt that hasn't fully propagated),
+    // wait briefly for it to clear. This prevents a race where a
+    // new turn starts before the old one has fully exited.
+    if (_chatService.isStreaming(sessionId)) {
+      // Wait up to 500ms for the old stream to finish cancelling.
+      for (var i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 50));
+        if (!_chatService.isStreaming(sessionId)) break;
+      }
+      // If still streaming after 500ms, bail out — the cancel
+      // should have propagated by now.
+      if (_chatService.isStreaming(sessionId)) return;
+    }
+
     _streamingController.clearStreamingFor(sessionId);
+
+    // Clear the interrupted session flag — we're starting a fresh turn,
+    // so any previous interrupt is no longer relevant for callback guards.
+    // The rt.interrupted flag is handled separately below (for injecting
+    // the system message into the LLM context).
+    _interruptedSessions.remove(sessionId);
 
     final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
     // When continuing, the "turn base" is the existing persisted
@@ -823,6 +913,25 @@ class _ChatPanelState extends State<ChatPanel> {
 
     _streamingController.startMetricsTimer(sessionId);
     if (text != null) {
+      // If the previous response was interrupted, inject a system
+      // message before the user's new input so the LLM knows its
+      // prior response was cut off. This gives the model context
+      // about why the conversation shifted direction and allows it
+      // to respond appropriately (e.g. not repeating the interrupted
+      // content, or acknowledging the interruption).
+      if (rt.interrupted) {
+        rt.interrupted = false;
+        const interruptionNotice =
+            'Your response was interrupted by user. The user is now '
+            'sending a new message. Do not repeat or continue the '
+            'interrupted response unless the user explicitly asks.';
+        await _store.addMessage(
+          sessionId,
+          role: 'system',
+          content: interruptionNotice,
+        );
+      }
+
       final userMsg = Message(
         id: -1,
         sessionId: sessionId,
@@ -847,15 +956,18 @@ class _ChatPanelState extends State<ChatPanel> {
       session: _sessionController.currentSession,
       runtime: rt,
       onDelta: (delta) {
+        if (_interruptedSessions.contains(sessionId)) return;
         if (_streamingController.streamingContentFor(sessionId).isEmpty) {
           rt.contentStartTime = DateTime.now();
         }
         _streamingController.appendStreamingContent(sessionId, delta);
       },
       onReasoning: (reasoning) {
+        if (_interruptedSessions.contains(sessionId)) return;
         _streamingController.appendStreamingReasoning(sessionId, reasoning);
       },
       onChunk: () {
+        if (_interruptedSessions.contains(sessionId)) return;
         final streamingTokens = estimateTokens(
           _streamingController.streamingContentFor(sessionId) +
               _streamingController.streamingReasoningFor(sessionId),
@@ -868,6 +980,7 @@ class _ChatPanelState extends State<ChatPanel> {
         setState(() {});
       },
       onToolRound: (int toolResultTokens) {
+        if (_interruptedSessions.contains(sessionId)) return;
         final streamingTokens = estimateTokens(
           _streamingController.streamingContentFor(sessionId) +
               _streamingController.streamingReasoningFor(sessionId),
@@ -879,6 +992,7 @@ class _ChatPanelState extends State<ChatPanel> {
         _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
       },
       onToolUse: (ToolUseChunk chunk) {
+        if (_interruptedSessions.contains(sessionId)) return;
         // Fold the raw tool_use delta into the streaming controller's
         // per-session, per-index in-progress tool call state. The
         // [StreamingController] is the source of truth for the live
@@ -897,9 +1011,23 @@ class _ChatPanelState extends State<ChatPanel> {
       // was streaming, this returns the merged content string which
       // the chat service injects into the API messages and the store.
       onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
+      onAbortSignal: (signal) {
+        _activeAbortSignals.putIfAbsent(sessionId, () => []).add(signal);
+      },
       onComplete: (response) async {
+        // If the user interrupted this session's response, _interruptResponse
+        // already handled all cleanup (persisting partial content, resetting
+        // state, clearing the queue). Skip the normal completion logic to
+        // avoid persisting duplicate messages or clobbering the interrupt
+        // handler's work.
+        if (_interruptedSessions.contains(sessionId)) {
+          _interruptedSessions.remove(sessionId);
+          _activeAbortSignals.remove(sessionId);
+          return;
+        }
         _streamingController.clearStreamingFor(sessionId);
         _streamingController.stopMetricsTimer(sessionId);
+        _activeAbortSignals.remove(sessionId);
         rt.turnBaseTokens = 0;
         rt.accumulatedToolTokens = 0;
         final msgs = await _store.getMessages(sessionId);
@@ -957,6 +1085,12 @@ class _ChatPanelState extends State<ChatPanel> {
         }
       },
       onError: (error) {
+        // If the user interrupted, the error from the cancelled stream
+        // is expected — skip showing it as a toast.
+        if (_interruptedSessions.contains(sessionId)) {
+          _activeAbortSignals.remove(sessionId);
+          return;
+        }
         _streamingController.stopMetricsTimer(sessionId);
         _toastKey.currentState?.show(error, mode: ToastMode.error);
       },
@@ -1101,6 +1235,11 @@ class _ChatPanelState extends State<ChatPanel> {
       );
       var firstTokenEver = true;
       await for (final chunk in stream) {
+        // Check if the user interrupted this btw turn.
+        if (_btwCancelFlags[sessionId] == true) {
+          _btwCancelFlags.remove(sessionId);
+          break;
+        }
         if (chunk.error != null) {
           streamError = chunk.error;
           break;
@@ -1149,6 +1288,14 @@ class _ChatPanelState extends State<ChatPanel> {
       }
     } finally {
       llmClient.dispose();
+    }
+
+    // If the user interrupted this btw turn, _interruptResponse already
+    // handled all cleanup (clearing streaming state, resetting rt flags,
+    // cleaning up the btw chain). Skip the normal post-stream cleanup
+    // to avoid clobbering the interrupt handler's work.
+    if (rt.interrupted && !rt.isResponding) {
+      return;
     }
 
     // Btw is meant to be lightweight, so we don't fold the
@@ -1206,6 +1353,141 @@ class _ChatPanelState extends State<ChatPanel> {
     // Touch responseText in a comment to keep dart:io lints
     // happy when build flags strip unused locals.
     assert(responseText.isNotEmpty || streamError == null);
+    setState(() {});
+  }
+
+  /// Interrupt the currently streaming response. This:
+  /// 1. Cancels the LLM stream via ChatService.cancelStream()
+  /// 2. Clears all streaming content (reasoning, body, tool calls)
+  /// 3. Marks the session runtime as interrupted
+  /// 4. Persists whatever partial content was generated as an AI message
+  ///    with an interruption indicator
+  /// 5. Resets the responding state so the user can send a new message
+  void _interruptResponse() {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
+    final rt = _sessionController.runtime(sessionId);
+    if (!rt.isResponding) return;
+
+    // Determine if this is a btw turn or a regular chat turn.
+    final isBtw = rt.btwMode;
+
+    // 1. Cancel the stream. For regular chat, ChatService.cancelStream()
+    //    sets a flag that the agentic loop checks on each iteration.
+    //    For btw, we set a flag that the `await for` loop in
+    //    `_sendBtwTurn` checks on each chunk.
+    //    Also abort any running tool processes (bash, cmd, etc.) so
+    //    they don't continue executing after the user interrupted.
+    if (isBtw) {
+      _btwCancelFlags[sessionId] = true;
+    } else {
+      _chatService.cancelStream(sessionId);
+    }
+
+    // Abort any running tool processes (bash, cmd, powershell, etc.)
+    // so they stop immediately instead of running to completion.
+    // This also kills background children via process group SIGTERM.
+    ShellProcessRegistry.instance.killAll(sessionId);
+    final signals = _activeAbortSignals.remove(sessionId);
+    if (signals != null) {
+      for (final signal in signals) {
+        signal.abort();
+      }
+    }
+
+    // 2. Capture whatever was streamed so far so we can persist it.
+    final partialContent = _streamingController.streamingContentFor(sessionId);
+    final partialReasoning = _streamingController.streamingReasoningFor(sessionId);
+
+    // 3. Clear streaming state immediately so the UI updates.
+    _streamingController.clearStreamingFor(sessionId);
+    _streamingController.stopMetricsTimer(sessionId);
+    _streamingController.stopContextAnimation();
+
+    // 4. Reset the responding state and mark as interrupted.
+    rt.isResponding = false;
+    rt.btwMode = false;
+    rt.interrupted = true;
+    rt.roundStreaming = false;
+    rt.roundFirstTokenTime = null;
+    rt.pauseStreamingTimer();
+    rt.cancelTimers();
+
+    // Mark this session as interrupted so the onComplete / onError
+    // callbacks in _sendTurn know to skip their work (we already
+    // handled cleanup here).
+    _interruptedSessions.add(sessionId);
+
+    // Recompute context tracking from persisted messages rather than
+    // zeroing — the context bar should reflect the actual token count
+    // including the partial AI message we just persisted.
+    final baseTokens = _sessionController.computeBaseContext(sessionId);
+    rt.contextTargetTokens = baseTokens;
+    rt.contextDisplayTokens = baseTokens.toDouble();
+
+    if (isBtw) {
+      // For btw: clean up the in-memory chain. Drop the pending
+      // (prompt, '') pair that was pushed at the start of the turn
+      // since the AI response was interrupted and never completed.
+      final turns = _sessionController.btwTurnsFor(sessionId);
+      if (turns.isNotEmpty && turns.last.aiText.isEmpty) {
+        _sessionController.clearBtwTurnsFor(sessionId);
+        // Restore any prior completed turns.
+        if (turns.length > 1) {
+          for (var i = 0; i < turns.length - 1; i++) {
+            _sessionController.appendPendingBtwTurn(
+              sessionId,
+              turns[i].userText,
+            );
+            _sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              turns[i].aiText,
+            );
+          }
+        }
+      }
+    } else {
+      // For regular chat: persist the partial AI message (if any
+      // content was generated) with an interruption indicator.
+      if (partialContent.isNotEmpty || partialReasoning.isNotEmpty) {
+        final interruptedContent = partialContent.isNotEmpty
+            ? '$partialContent\n\n*[Response interrupted by user]*'
+            : '*[Response interrupted by user]*';
+
+        _store.addMessage(
+          sessionId,
+          role: 'ai',
+          content: interruptedContent,
+          reasoningContent: partialReasoning,
+        ).then((_) {
+          _sessionController.loadMessages(sessionId).then((_) => setState(() {}));
+        });
+      }
+
+      // Drain any queued messages back into the input field so the user
+      // can edit and re-send them. Each queued message is joined with
+      // newlines, and any existing text in the input is appended after.
+      final queue = _sessionController.messageQueueFor(sessionId);
+      if (queue.isNotEmpty) {
+        final queuedTexts = queue.messages.map((m) => m.content).join('\n');
+        final currentInput = textController.text;
+        final newInput = currentInput.isEmpty
+            ? queuedTexts
+            : '$queuedTexts\n$currentInput';
+        textController.text = newInput;
+        textController.selection = TextSelection.collapsed(
+          offset: newInput.length,
+        );
+        _sessionController.clearMessageQueue(sessionId);
+      }
+
+      // Update session status.
+      final session = _sessionController.currentSession;
+      _store.update(sessionId, status: SessionStatus.idle);
+      session.status = SessionStatus.idle;
+    }
+
+    _showToast('Response interrupted', mode: ToastMode.status);
     setState(() {});
   }
 
@@ -2207,12 +2489,22 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildInputRow({required bool isStreaming}) {
+    final sessionId = _sessionController.currentSessionId;
+    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
+    final wasInterrupted = rt?.interrupted ?? false;
+
     // When the agent is streaming, the user's message will be queued
-    // and inserted at the next safe boundary. Change the placeholder
-    // to communicate this.
+    // and inserted at the next safe boundary. Show both the queue hint
+    // and the ESC interrupt shortcut. After the first ESC press, show
+    // a more urgent interrupt hint. When the response was interrupted,
+    // hint that the user can send a new message.
     final placeholder = isStreaming
-        ? 'Queue a message...'
-        : 'Type a message...';
+        ? _escInterruptHint
+            ? 'Press ESC again to interrupt...'
+            : 'Enter message to queue, ESC×2 to interrupt'
+        : wasInterrupted
+            ? 'Response was interrupted. Type a new message...'
+            : 'Type a message...';
     return Container(
       padding: EdgeInsets.all(1),
       child: Row(

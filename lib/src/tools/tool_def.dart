@@ -1,9 +1,12 @@
 import 'package:path/path.dart' as p;
 
 class AbortSignal {
+  final int? sessionId;
   bool _aborted = false;
 
   bool get isAborted => _aborted;
+
+  AbortSignal({this.sessionId});
 
   void abort() {
     _aborted = true;
