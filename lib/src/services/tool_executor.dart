@@ -90,7 +90,7 @@ class ToolExecutor {
       );
       newInput = Map<String, dynamic>.from(newInput);
       newInput[argKey] =
-          '[$lineCount lines, ${_formatBytes(bytes.length)}; recall: $compositeKey]';
+          '[$lineCount lines, ${_formatBytes(bytes.length)}]';
       modified = true;
     }
 

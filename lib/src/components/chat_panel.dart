@@ -117,7 +117,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _store = SessionStore(db);
     final tracker = FileReadTracker();
     final registry = ToolRegistry();
-    registry.registerDefaults(tracker, _store);
+    registry.registerDefaults(tracker);
     final toolExecutor = ToolExecutor(registry, _store);
     _toolRegistry = registry;
     _chatService = ChatService(
@@ -1667,6 +1667,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final isStreaming = rt?.isResponding ?? false;
 
     children.add(_buildToolbar());
+    children.add(const SizedBox(height: 1));
     children.add(Divider(color: CruxTheme.of(context).divider, height: 1));
     children.add(_buildInputRow(isStreaming: isStreaming));
 
@@ -1741,10 +1742,6 @@ class _ChatPanelState extends State<ChatPanel> {
           reasoningPresets: _currentReasoningPresets(),
         ),
       );
-
-      if (msg.role == 'user') {
-        items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
-      }
 
       if (msg.role == 'ai' && msg.id > 0 && rt != null) {
         final hasTldr = msg.tldr.isNotEmpty;

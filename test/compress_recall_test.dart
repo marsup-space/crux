@@ -15,7 +15,6 @@ import 'package:test/test.dart';
 
 import 'package:crux/src/services/tool_executor.dart';
 import 'package:crux/src/storage/storage.dart';
-import 'package:crux/src/tools/recall_tool.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/tool_def.dart';
@@ -33,7 +32,7 @@ void main() {
     // test files don't race on the user's on-disk data dir.
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     store = SessionStore(db);
-    registry = ToolRegistry()..registerDefaults(FileReadTracker(), store);
+    registry = ToolRegistry()..registerDefaults(FileReadTracker());
     executor = ToolExecutor(registry, store);
   });
 
@@ -70,11 +69,11 @@ void main() {
       expect(compressed.input['intent'], '...');
       final standIn = compressed.input['content'] as String;
       expect(standIn, isNot(equals(largeContent)));
-      expect(standIn, contains('recall: call_abc_content'));
+      expect(standIn, contains(']'));
       // 'x' * 5000 = one long line, so the line count is 1, not 5000.
       // The byte count is the interesting number: ~4.9KB, over the
       // 2KB threshold which is what triggered the offload.
-      expect(standIn, matches(RegExp(r'^\[\d+ lines, [\d.]+KB; recall: call_abc_content\]$')));
+      expect(standIn, matches(RegExp(r'^\[\d+ lines, [\d.]+KB\]$')));
       expect(standIn, isNot(contains('5000 lines')));
 
       // Full content is recoverable via the composite key.
@@ -125,8 +124,8 @@ void main() {
         session.id,
       );
 
-      expect(compressed.input['oldString'], contains('recall: call_edit_oldString'));
-      expect(compressed.input['newString'], contains('recall: call_edit_newString'));
+      expect(compressed.input['oldString'], contains('lines'));
+      expect(compressed.input['newString'], contains('lines'));
       expect(compressed.input['filePath'], 'foo.py');
 
       // Both args are independently recoverable via their composite
@@ -205,98 +204,6 @@ void main() {
     // See the guard trigger check in chat_service.dart at line 709:
     //   if (tool is LargePayloadTool && guardTriggers.contains(callId))
     //     compressedToolCalls.add(call); // original — not compressed
-  });
-
-  group('RecallTool', () {
-    test('returns the full content for a known (sessionId, callId)', () async {
-      final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
-        sessionId: session.id,
-        callId: 'call_x',
-        toolName: 'write',
-        byteSize: 11,
-        lineCount: 1,
-        content: 'hello world',
-      );
-
-      final tool = RecallTool(store);
-      final result = await tool.execute(
-        {'callId': 'call_x'},
-        ToolContext(
-          sessionId: session.id,
-          messageId: -1,
-          abort: AbortSignal(),
-          workingDirectory: tempDir.path,
-        ),
-      );
-
-      expect(result.output, 'hello world');
-      expect(result.metadata['source'], 'offloaded');
-      expect(result.metadata['callId'], 'call_x');
-    });
-
-    test('returns a fallback message for a missing callId', () async {
-      final session = await store.create(model: 'test/test');
-      final tool = RecallTool(store);
-      final result = await tool.execute(
-        {'callId': 'nonexistent'},
-        ToolContext(
-          sessionId: session.id,
-          messageId: -1,
-          abort: AbortSignal(),
-          workingDirectory: tempDir.path,
-        ),
-      );
-
-      expect(result.title, contains('not found'));
-      expect(result.output, contains('No off-loaded content'));
-      expect(result.output, contains('read tool'));
-    });
-
-    test('returns an error for a missing callId arg', () async {
-      final session = await store.create(model: 'test/test');
-      final tool = RecallTool(store);
-      final result = await tool.execute(
-        <String, dynamic>{},
-        ToolContext(
-          sessionId: session.id,
-          messageId: -1,
-          abort: AbortSignal(),
-          workingDirectory: tempDir.path,
-        ),
-      );
-      expect(result.title, 'Error');
-      expect(result.output, contains('Missing required parameter: callId'));
-    });
-
-    test('returns a fallback for a callId cleaned by cleanOffloadedContent',
-        () async {
-      final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
-        sessionId: session.id,
-        callId: 'call_y',
-        toolName: 'write',
-        byteSize: 5,
-        lineCount: 1,
-        content: 'abcde',
-      );
-
-      // Simulate archive -> cleanOffloadedContent flow.
-      final bytesFreed = await store.cleanOffloadedContent(session.id);
-      expect(bytesFreed, 5);
-
-      final tool = RecallTool(store);
-      final result = await tool.execute(
-        {'callId': 'call_y'},
-        ToolContext(
-          sessionId: session.id,
-          messageId: -1,
-          abort: AbortSignal(),
-          workingDirectory: tempDir.path,
-        ),
-      );
-      expect(result.output, contains('No off-loaded content'));
-    });
   });
 
   group('session lifecycle', () {
