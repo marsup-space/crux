@@ -1576,7 +1576,6 @@ class _ChatPanelState extends State<ChatPanel> {
     final isStreaming = rt?.isResponding ?? false;
 
     children.add(_buildToolbar());
-    children.add(const SizedBox(height: 1));
     children.add(Divider(color: CruxTheme.of(context).divider, height: 1));
     children.add(_buildInputRow(isStreaming: isStreaming));
 

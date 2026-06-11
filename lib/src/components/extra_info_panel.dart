@@ -291,6 +291,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 1),
         header,
         Divider(color: CruxTheme.of(context).outline, height: 1),
         Expanded(
@@ -306,7 +307,6 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             },
           ),
         ),
-        Divider(color: CruxTheme.of(context).outline, height: 1),
         MultiButton(
           label: displayPath,
           color: CruxTheme.of(context).onSurfaceVariant,
@@ -319,6 +319,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             ),
           ],
         ),
+        const SizedBox(height: 1),
       ],
     );
   }
