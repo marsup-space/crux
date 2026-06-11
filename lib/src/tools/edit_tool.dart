@@ -153,6 +153,16 @@ class EditTool extends ToolDef implements LargePayloadTool {
     if (matchResult.error != null) {
       return ToolResult.error(matchResult.error!);
     }
+    final matchLen = matchResult.matchLength ?? oldString.length;
+    if (_isDisproportionateMatch(oldString, matchLen)) {
+      return ToolResult.error(
+        'Refusing replacement because the matched span is much larger '
+        'than oldString (matched ${matchLen} chars, oldString has '
+        '${oldString.length} chars). This usually means the oldString '
+        'was too vague and matched a much larger block than intended. '
+        'Re-read the file and provide a more complete oldString.',
+      );
+    }
 
     final newContent = _applyReplacements(
       content,
@@ -178,6 +188,10 @@ class EditTool extends ToolDef implements LargePayloadTool {
     for (final matcher in _matchers) {
       final result = matcher.findMatches(content, oldString, replaceAll);
       if (result != null && result.error == null) {
+        if (matcher is ExactMatcher) {
+          final pos = result.positions.first;
+          if (_isMidWhitespaceRun(content, pos)) continue;
+        }
         return result;
       }
       if (result != null && result.error != null && matcher is ExactMatcher) {
@@ -225,5 +239,37 @@ class EditTool extends ToolDef implements LargePayloadTool {
   Future<int> _mtimeMs(File file) async {
     final stat = await file.stat();
     return stat.modified.millisecondsSinceEpoch;
+  }
+
+  bool _isMidWhitespaceRun(String content, int pos) {
+    if (pos <= 0) return false;
+    if (pos >= content.length) return false;
+    final at = content[pos];
+    final prev = content[pos - 1];
+    final atIsWs = at == ' ' || at == '\t';
+    final prevIsWs = prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r';
+    return atIsWs && prevIsWs;
+  }
+
+  /// Reject matches where the span is much larger than oldString.
+  /// A fuzzy matcher (Whitespace/Indentation) can collapse a large
+  /// block to a short candidate — the replacement would then nuke
+  /// far more of the file than intended.  Ported from OpenCode's
+  /// `isDisproportionateMatch()`.
+  bool _isDisproportionateMatch(String oldString, int matchLen) {
+    final oldLines = '\n'.allMatches(oldString).length + 1;
+    // matchLen is chars, not lines — for single-line oldString we
+    // can't meaningfully compare line counts, so trust the single
+    // line width. That's what the fuzzy matchers are for.
+    if (oldLines == 1) return false;
+    // For multi-line, the matched span must not blow up in line
+    // count relative to the oldString.
+    final matchLines =
+        matchLen.clamp(0, oldLines * 2); // approximate
+    if (matchLines >= oldLines + 3 && matchLines >= oldLines * 2) {
+      return true;
+    }
+    return matchLen > (oldString.length + 500).clamp(0, double.infinity) &&
+        matchLen > oldString.length * 4;
   }
 }
