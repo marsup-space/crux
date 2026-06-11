@@ -42,7 +42,7 @@ class ToolRegistry {
     } else {
       register(BashTool());
     }
-    register(ReadTool());
+    register(ReadTool(tracker: tracker));
     register(WriteTool(tracker: tracker));
     register(EditTool(tracker: tracker));
     register(GrepTool());

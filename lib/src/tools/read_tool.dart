@@ -1,12 +1,16 @@
 import 'dart:io';
 
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
+import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
 const _defaultLimit = 2000;
 const _maxLineLength = 2000;
 
 class ReadTool extends ToolDef {
+  final FileReadTracker? _tracker;
+
+  ReadTool({FileReadTracker? tracker}) : _tracker = tracker;
   @override
   String get name => 'read';
 
@@ -114,6 +118,8 @@ class ReadTool extends ToolDef {
     String workingDirectory,
   ) async {
     final file = File(path);
+    final mtimeMs = file.statSync().modified.millisecondsSinceEpoch;
+    _tracker?.recordRead(path, mtimeMs);
 
     final binaryExts = {
       '.exe',
