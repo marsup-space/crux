@@ -9,10 +9,10 @@ import 'package:crux/src/utils/windows_vt.dart';
 const _version = 'v0.1.0';
 
 void main(List<String> args) async {
-  // Enable ANSI/VT escape processing on the Windows stdout console BEFORE
-  // anything writes an escape sequence. Without this, the legacy Windows
-  // console drops `\x1B[...` codes and the splash + TUI render as a
-  // blank screen. No-op on non-Windows and when stdout is redirected.
+  // Configure the Windows stdout console for VT processing and delayed
+  // end-of-line wrapping BEFORE anything writes an escape sequence. Classic
+  // conhost otherwise double-advances Nocterm's full-width rows and scrolls
+  // the first frame away. No-op elsewhere and when stdout is redirected.
   enableWindowsVt();
 
   for (final arg in args) {
