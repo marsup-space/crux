@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
@@ -18,15 +19,17 @@ class ShellInvocation {
 }
 
 abstract class ShellBase extends ToolDef {
-  ShellInvocation resolveInvocation(String command);
+  ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'});
 
-  Future<ProcessResult> _run(String command, Duration timeout) async {
-    final invocation = resolveInvocation(command);
+  Future<ProcessResult> _run(String command, Duration timeout, {String encoding = 'utf8'}) async {
+    final invocation = resolveInvocation(command, encoding: encoding);
     try {
       return await Process.run(
         invocation.executable,
         invocation.args,
         runInShell: true,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
       ).timeout(
         timeout,
         onTimeout: () => ProcessResult(
@@ -49,13 +52,14 @@ abstract class ShellBase extends ToolDef {
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final command = args['command'] as String?;
     final timeoutMs = (args['timeout'] as int?) ?? 120000;
+    final encoding = (args['encoding'] as String?) ?? 'utf8';
 
     if (command == null || command.isEmpty) {
       return ToolResult.error('Missing required parameter: command');
     }
 
     try {
-      final result = await _run(command, Duration(milliseconds: timeoutMs));
+      final result = await _run(command, Duration(milliseconds: timeoutMs), encoding: encoding);
 
       final combined = StringBuffer();
       final stderr = result.stderr as String;
@@ -142,6 +146,12 @@ abstract class ShellBase extends ToolDef {
       'timeout': {
         'type': 'integer',
         'description': 'Timeout in milliseconds (default 120000)',
+      },
+      'encoding': {
+        'type': 'string',
+        'description': 'Output encoding (default utf8). '
+            'Also sets shell code page: for cmd, maps to chcp; '
+            'for powershell, sets [Console]::OutputEncoding.',
       },
     },
     'required': ['command'],
