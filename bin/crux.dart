@@ -40,6 +40,12 @@ void main(List<String> args) async {
     }
   }
 
+  // Resolve bundled resources before changing Directory.current to the
+  // project being opened. Package-root lookup also keeps source checkouts
+  // working when `dart run` is invoked from outside the repository.
+  final builtInDir = await resolveBundledDirectory('providers');
+  final builtInThemesDir = await resolveBundledDirectory('themes');
+
   if (args.isNotEmpty && !args.first.startsWith('-')) {
     final target = p.normalize(p.absolute(args.first));
     final dir = Directory(target);
@@ -54,9 +60,7 @@ void main(List<String> args) async {
   // - built-in: next to the executable (portable install), else ./providers/
   //   (development). May not exist; the seeder is a no-op in that case.
   // - user: per-user XDG config dir. Always writable; created if missing.
-  final builtInDir = _resolveBuiltInProvidersDir();
   final userDir = _resolveUserProvidersDir();
-  final builtInThemesDir = _resolveBuiltInThemesDir();
   final userThemesDir = _resolveUserThemesDir();
   final themeConfigFile = File(
     p.join(_resolveUserConfigDir().path, 'config.toml'),
@@ -337,50 +341,7 @@ Future<void> _showSplashLoading(Future<void> loading) async {
   }
 }
 
-// ── Dir resolution (unchanged) ────────────────────────────────────────
-
-/// Find the built-in provider examples directory.
-///
-/// Search order:
-/// 1. `<exe-dir>/providers/` — portable install next to the binary.
-/// 2. `./providers/` — development / running from the project root.
-///
-/// May return a non-existent directory; callers must check
-/// [Directory.existsSync] before using it.
-Directory _resolveBuiltInProvidersDir() {
-  try {
-    final exePath = Platform.resolvedExecutable;
-    final exeDir = p.dirname(exePath);
-    final sibling = Directory(p.join(exeDir, 'providers'));
-    if (sibling.existsSync()) return sibling;
-  } catch (_) {
-    // `Platform.resolvedExecutable` may throw in some contexts; fall
-    // through to the CWD-based resolution.
-  }
-  return Directory(p.normalize(p.absolute('providers')));
-}
-
-Directory _resolveBuiltInThemesDir() {
-  try {
-    final sibling = Directory(
-      p.join(p.dirname(Platform.resolvedExecutable), 'themes'),
-    );
-    if (sibling.existsSync()) return sibling;
-  } catch (_) {}
-
-  try {
-    if (Platform.script.scheme == 'file') {
-      final repository = Directory(
-        p.normalize(
-          p.join(p.dirname(Platform.script.toFilePath()), '..', 'themes'),
-        ),
-      );
-      if (repository.existsSync()) return repository;
-    }
-  } catch (_) {}
-
-  return Directory(p.normalize(p.absolute('themes')));
-}
+// ── User directory resolution ─────────────────────────────────────────
 
 /// Find the per-user provider config directory.
 ///

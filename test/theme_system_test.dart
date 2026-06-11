@@ -9,11 +9,39 @@ import 'package:crux/src/theme/theme_config_store.dart';
 import 'package:crux/src/theme/theme_controller.dart';
 import 'package:crux/src/theme/theme_loader.dart';
 import 'package:crux/src/theme/theme_registry.dart';
+import 'package:crux/src/utils/bundled_directory.dart';
 
 void main() {
   final bundledThemes = Directory(p.join(Directory.current.path, 'themes'));
 
   group('bundled themes', () {
+    test('resolves from the package root outside the checkout cwd', () async {
+      final unrelatedDirectory = await Directory.systemTemp.createTemp(
+        'crux_theme_cwd_',
+      );
+      addTearDown(() => unrelatedDirectory.delete(recursive: true));
+
+      final resolved = await resolveBundledDirectory(
+        'themes',
+        executablePath: p.join(unrelatedDirectory.path, 'dart'),
+        scriptUri: Uri.file(
+          p.join(unrelatedDirectory.path, 'bin', 'wrapper.dart'),
+        ),
+        launchDirectory: unrelatedDirectory.path,
+        packageUriResolver: (_) async =>
+            Uri.file(p.join(Directory.current.path, 'lib', 'crux.dart')),
+      );
+
+      expect(p.equals(resolved.path, bundledThemes.path), isTrue);
+      final registry = await ThemeLoader(
+        bundledDirectory: resolved,
+        userDirectory: Directory(
+          p.join(unrelatedDirectory.path, 'user-themes'),
+        ),
+      ).load();
+      expect(registry.availableIds.take(8), curatedThemeIds);
+    });
+
     test('all curated themes and the example parse completely', () async {
       for (final id in curatedThemeIds) {
         final theme = await ThemeLoader.loadFile(
