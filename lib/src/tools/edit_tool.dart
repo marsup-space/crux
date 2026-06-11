@@ -282,18 +282,23 @@ class EditTool extends ToolDef implements LargePayloadTool {
   /// `isDisproportionateMatch()`.
   bool _isDisproportionateMatch(String oldString, int matchLen) {
     final oldLines = '\n'.allMatches(oldString).length + 1;
-    // matchLen is chars, not lines — for single-line oldString we
-    // can't meaningfully compare line counts, so trust the single
-    // line width. That's what the fuzzy matchers are for.
+    // For single-line oldString we can't meaningfully compare line
+    // counts — whitespace normalization is the whole point of the
+    // fuzzy matchers.
     if (oldLines == 1) return false;
-    // For multi-line, the matched span must not blow up in line
-    // count relative to the oldString.
-    final matchLines =
-        matchLen.clamp(0, oldLines * 2); // approximate
-    if (matchLines >= oldLines + 3 && matchLines >= oldLines * 2) {
+    // Estimate how many lines the match span covers, using the
+    // oldString's own average line length as a rough ruler.
+    final avgLineLen = oldString.length / oldLines;
+    final matchLines = (matchLen / avgLineLen).round();
+    // Reject when the match spans 3x the lines of oldString AND
+    // adds at least 5 extra lines — a clear sign that whitespace
+    // normalization collapsed a much larger block than intended.
+    if (matchLines >= oldLines * 3 && matchLines >= oldLines + 5) {
       return true;
     }
-    return matchLen > (oldString.length + 500).clamp(0, double.infinity) &&
-        matchLen > oldString.length * 4;
+    // Fallback: also reject when the raw character span is
+    // massively out of proportion to oldString.
+    return matchLen > oldString.length * 4 &&
+        matchLen > oldString.length + 500;
   }
 }
