@@ -121,6 +121,7 @@ void main(List<String> args) async {
       if (message is List<dynamic> && message.length == 2) {
         final Object error = message[0];
         final StackTrace stack = message[1] as StackTrace;
+        _writeStartupError(error, stack);
         final inst = ToastHubState.globalInstance;
         if (inst != null) {
           final msg = error is String ? error : '$error';
@@ -130,6 +131,10 @@ void main(List<String> args) async {
       }
     }).sendPort,
   );
+
+  NoctermError.onError = (details) {
+    _writeStartupError(details.exception, details.stack);
+  };
 
   await runApp(
     _CruxApp(
@@ -373,6 +378,23 @@ Directory _resolveUserConfigDir() {
   return Directory(p.join(configHome, 'crux'));
 }
 
+void _writeStartupError(Object error, StackTrace? stack) {
+  try {
+    final file = File(
+      p.join(_resolveUserConfigDir().path, 'startup-error.log'),
+    );
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(
+      '${DateTime.now().toIso8601String()}\n$error\n'
+      '${stack ?? StackTrace.empty}\n\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  } catch (_) {
+    // Diagnostics must never become another startup failure.
+  }
+}
+
 // ── --doctor and ChatPanel (unchanged) ────────────────────────────────
 
 Future<void> _runDoctor() async {
@@ -443,11 +465,24 @@ class _CruxAppState extends State<_CruxApp> {
       data: theme.toTuiThemeData(),
       child: CruxTheme(
         data: theme,
-        child: ChatPanel(
-          userProvidersDir: component.userProvidersDir,
-          builtInProvidersDir: component.builtInProvidersDir,
-          themeController: component.themeController,
-          startupWarnings: component.startupWarnings,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ChatPanel(
+              userProvidersDir: component.userProvidersDir,
+              builtInProvidersDir: component.builtInProvidersDir,
+              themeController: component.themeController,
+              startupWarnings: component.startupWarnings,
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Text(
+                ' CRUX ROOT PROBE ',
+                style: TextStyle(fontWeight: FontWeight.bold, reverse: true),
+              ),
+            ),
+          ],
         ),
       ),
     );
