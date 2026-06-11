@@ -6,6 +6,7 @@ import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/provider_service.dart';
 import '../storage/session_store.dart';
+import '../utils/user_data_directory.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
@@ -859,11 +860,7 @@ class CommandExecutor {
   }
 
   Future<void> executeDebugPaths(CommandContext ctx) async {
-    final xdgData = Platform.environment['XDG_DATA_HOME'];
-    final home = Platform.environment['HOME'] ?? '.';
-    final dataDir = xdgData != null && xdgData.isNotEmpty
-        ? p.join(xdgData, 'crux')
-        : p.join(home, '.local', 'share', 'crux');
+    final dataDir = resolveUserDataDirectory();
     final buf = StringBuffer();
     buf.writeln('Paths:');
     buf.writeln('  projectPath:    ${ctx.projectPath}');

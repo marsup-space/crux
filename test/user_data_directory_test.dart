@@ -4,14 +4,55 @@ import 'package:test/test.dart';
 import 'package:crux/src/utils/user_data_directory.dart';
 
 void main() {
-  test('Windows uses LOCALAPPDATA without requiring HOME', () {
+  test('Windows uses LOCALAPPDATA when no legacy directory exists', () {
     final result = resolveUserDataDirectory(
       environment: const {'LOCALAPPDATA': r'C:\Users\tester\AppData\Local'},
       isWindows: true,
       systemTempPath: r'C:\Temp',
+      directoryExists: (_) => false,
     );
 
     expect(result, p.join(r'C:\Users\tester\AppData\Local', 'crux'));
+  });
+
+  test('Windows preserves a legacy HOME data directory', () {
+    final legacyDirectory = p.join(
+      r'C:\Users\tester',
+      '.local',
+      'share',
+      'crux',
+    );
+
+    final result = resolveUserDataDirectory(
+      environment: const {
+        'HOME': r'C:\Users\tester',
+        'LOCALAPPDATA': r'C:\Users\tester\AppData\Local',
+      },
+      isWindows: true,
+      directoryExists: (path) => path == legacyDirectory,
+    );
+
+    expect(result, legacyDirectory);
+  });
+
+  test('Windows finds legacy data through USERPROFILE without HOME', () {
+    final legacyDirectory = p.join(
+      r'C:\Users\tester',
+      '.local',
+      'share',
+      'crux',
+    );
+
+    final result = resolveUserDataDirectory(
+      environment: const {
+        'USERPROFILE': r'C:\Users\tester',
+        'LOCALAPPDATA': r'C:\Users\tester\AppData\Local',
+      },
+      isWindows: true,
+      directoryExists: (path) => path == legacyDirectory,
+    );
+
+    expect(result, legacyDirectory);
   });
 
   test('Windows falls back through APPDATA, USERPROFILE, and temp', () {
@@ -20,6 +61,7 @@ void main() {
         environment: const {'APPDATA': r'C:\Users\tester\AppData\Roaming'},
         isWindows: true,
         systemTempPath: r'C:\Temp',
+        directoryExists: (_) => false,
       ),
       p.join(r'C:\Users\tester\AppData\Roaming', 'crux'),
     );
@@ -28,6 +70,7 @@ void main() {
         environment: const {'USERPROFILE': r'C:\Users\tester'},
         isWindows: true,
         systemTempPath: r'C:\Temp',
+        directoryExists: (_) => false,
       ),
       p.join(r'C:\Users\tester', 'crux'),
     );
@@ -36,6 +79,7 @@ void main() {
         environment: const {},
         isWindows: true,
         systemTempPath: r'C:\Temp',
+        directoryExists: (_) => false,
       ),
       p.join(r'C:\Temp', 'crux'),
     );

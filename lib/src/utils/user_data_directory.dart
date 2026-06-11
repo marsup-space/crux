@@ -6,15 +6,30 @@ String resolveUserDataDirectory({
   Map<String, String>? environment,
   bool? isWindows,
   String? systemTempPath,
+  bool Function(String path)? directoryExists,
 }) {
   final env = environment ?? Platform.environment;
   final windows = isWindows ?? Platform.isWindows;
 
   if (windows) {
+    final exists =
+        directoryExists ?? (String path) => Directory(path).existsSync();
+    final legacyHomes = <String>{};
+    for (final variableName in const ['HOME', 'USERPROFILE']) {
+      final home = _nonEmpty(env[variableName]);
+      if (home != null) legacyHomes.add(home);
+    }
+    for (final home in legacyHomes) {
+      final legacyDirectory = p.join(home, '.local', 'share', 'crux');
+      if (exists(legacyDirectory)) {
+        return legacyDirectory;
+      }
+    }
+
     final dataHome =
-        env['LOCALAPPDATA'] ??
-        env['APPDATA'] ??
-        env['USERPROFILE'] ??
+        _nonEmpty(env['LOCALAPPDATA']) ??
+        _nonEmpty(env['APPDATA']) ??
+        _nonEmpty(env['USERPROFILE']) ??
         systemTempPath ??
         Directory.systemTemp.path;
     return p.join(dataHome, 'crux');
@@ -31,4 +46,8 @@ String resolveUserDataDirectory({
   }
 
   return p.join(systemTempPath ?? Directory.systemTemp.path, 'crux');
+}
+
+String? _nonEmpty(String? value) {
+  return value == null || value.isEmpty ? null : value;
 }

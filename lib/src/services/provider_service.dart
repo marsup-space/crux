@@ -99,8 +99,9 @@ class ProviderService {
   int _tldrThreshold = 5000;
 
   /// Path to the auth.json file for persistent key storage.
-  /// Uses `%LOCALAPPDATA%\crux\auth.json` on Windows and follows XDG
-  /// conventions on Unix-like platforms.
+  /// Uses the legacy `HOME\.local\share\crux` directory on Windows when it
+  /// exists; otherwise uses `%LOCALAPPDATA%\crux`. Unix-like platforms follow
+  /// XDG conventions.
   late final String authJsonPath;
 
   ProviderService({
