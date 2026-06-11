@@ -439,9 +439,8 @@ class _CruxAppState extends State<_CruxApp> {
   @override
   Component build(BuildContext context) {
     final theme = component.themeController.activeTheme;
-    return NoctermApp(
-      title: 'Crux',
-      theme: theme.toTuiThemeData(),
+    return TuiTheme(
+      data: theme.toTuiThemeData(),
       child: CruxTheme(
         data: theme,
         child: ChatPanel(
