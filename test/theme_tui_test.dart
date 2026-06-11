@@ -56,8 +56,8 @@ void main() {
       await HighlightService.initialize();
       await testNocterm('$id theme cells', (tester) async {
         await tester.pumpComponent(
-          TuiTheme(
-            data: theme.toTuiThemeData(),
+          NoctermApp(
+            theme: theme.toTuiThemeData(),
             child: CruxTheme(data: theme, child: const _ThemeProbe()),
           ),
         );

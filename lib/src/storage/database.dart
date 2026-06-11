@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/open.dart';
 
 import '../models/session.dart';
+import '../utils/user_data_directory.dart';
 import 'tables.dart';
 
 part 'database.g.dart';
@@ -86,11 +87,7 @@ LazyDatabase _openConnection() {
 }
 
 String _getDatabaseDirectory() {
-  final xdgDataHome = Platform.environment['XDG_DATA_HOME'];
-  if (xdgDataHome != null && xdgDataHome.isNotEmpty) {
-    return p.join(xdgDataHome, 'crux');
-  }
-  return p.join(Platform.environment['HOME'] ?? '.', '.local', 'share', 'crux');
+  return resolveUserDataDirectory();
 }
 
 DynamicLibrary _openLinuxSqlite() {
