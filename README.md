@@ -43,7 +43,7 @@
 - 🧠 **推理模式** — 支持思考模式（Thinking Mode），可调节推理深度
 - 🔌 **Provider 插件** — 灵活接入任意 API 兼容的模型供应商
 - 💰 **用量统计** — 实时 Token 计数和成本估算
-- 🎨 **Dracula 主题** — 精心调校的暗色终端配色
+- 🎨 **完整主题系统** — 8 个内置明暗主题，并支持 TOML 自定义主题
 
 ### 快速开始
 
@@ -56,6 +56,16 @@ dart run bin/crux.dart /path/to/your/project
 ```
 
 首次启动会展示启动动画，并自动初始化数据库和语法高亮服务。
+
+### 主题
+
+使用 `/theme <name>` 即时切换并持久化主题。内置主题：
+
+- 暗色：`dracula`、`onedarkpro`、`catppuccin`、`synthwave84`
+- 亮色：`cobalt2`、`flexoki`、`rosepine`、`github`
+
+自定义主题放在 `~/.config/crux/themes/`。首次启动会生成完整的
+`example.theme.toml` 模板；复制并重命名后即可编辑。
 
 ### 配置 Provider
 
@@ -119,6 +129,7 @@ crux/
 │   │   ├── tools/        # Agent 工具
 │   │   └── utils/        # 工具函数
 ├── providers/            # 内置 Provider 配置
+├── themes/               # 内置 TOML 主题
 ├── docs/                 # 设计文档
 └── test/                 # 测试
 ```
@@ -148,7 +159,7 @@ MIT
 - 🧠 **Thinking mode** — Adjustable reasoning depth
 - 🔌 **Pluggable providers** — Connect any API-compatible LLM provider
 - 💰 **Usage tracking** — Real-time token counting and cost estimation
-- 🎨 **Dracula theme** — Carefully tuned dark terminal color scheme
+- 🎨 **Full theme system** — Eight bundled dark/light themes plus custom TOML themes
 
 ### Quick Start
 
@@ -178,6 +189,16 @@ dart run bin/crux.dart /path/to/your/project
 | `/project` | Switch project directory |
 | `/btw` | Ephemeral side-question — never persisted, dropped on next real turn |
 | `/quit` | Exit |
+
+### Themes
+
+Use `/theme <name>` to switch immediately and persist the selection.
+
+- Dark: `dracula`, `onedarkpro`, `catppuccin`, `synthwave84`
+- Light: `cobalt2`, `flexoki`, `rosepine`, `github`
+
+Place complete custom themes in `~/.config/crux/themes/`. Crux seeds an
+`example.theme.toml` template on first launch.
 
 ### Tech Stack
 

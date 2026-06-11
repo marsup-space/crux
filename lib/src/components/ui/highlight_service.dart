@@ -76,41 +76,44 @@ class HighlightService {
   }
 }
 
-const _scopeColorMap = <String, Color>{
-  'keyword': CruxTheme.highlightKeyword,
-  'storage': CruxTheme.highlightStorage,
-  'entity.name.function': CruxTheme.highlightFunction,
-  'entity.name.type': CruxTheme.highlightType,
-  'entity.name.class': CruxTheme.highlightType,
-  'support.function': CruxTheme.highlightFunction,
-  'support.class': CruxTheme.highlightType,
-  'string': CruxTheme.highlightString,
-  'string.quoted': CruxTheme.highlightString,
-  'string.template': CruxTheme.highlightString,
-  'comment': CruxTheme.highlightComment,
-  'constant': CruxTheme.highlightConstant,
-  'constant.numeric': CruxTheme.highlightNumeric,
-  'variable': CruxTheme.highlightVariable,
-  'variable.parameter': CruxTheme.highlightVariable,
-  'tag': CruxTheme.highlightTag,
-  'attribute.name': CruxTheme.highlightAttribute,
-  'punctuation': CruxTheme.highlightPunctuation,
-  'punctuation.definition': CruxTheme.highlightPunctuation,
-  'meta': CruxTheme.highlightMeta,
-  'heading': CruxTheme.highlightType,
-  'emphasis': CruxTheme.highlightFunction,
-  'strong': CruxTheme.highlightFunction,
+Map<String, Color> _scopeColorMap(CruxThemeData theme) => {
+  'keyword': theme.highlightKeyword,
+  'keyword.operator': theme.syntaxOperator,
+  'operator': theme.syntaxOperator,
+  'storage': theme.highlightStorage,
+  'entity.name.function': theme.highlightFunction,
+  'entity.name.type': theme.highlightType,
+  'entity.name.class': theme.highlightType,
+  'support.function': theme.highlightFunction,
+  'support.class': theme.highlightType,
+  'string': theme.highlightString,
+  'string.quoted': theme.highlightString,
+  'string.template': theme.highlightString,
+  'comment': theme.highlightComment,
+  'constant': theme.highlightConstant,
+  'constant.numeric': theme.highlightNumeric,
+  'variable': theme.highlightVariable,
+  'variable.parameter': theme.highlightVariable,
+  'tag': theme.highlightTag,
+  'attribute.name': theme.highlightAttribute,
+  'punctuation': theme.highlightPunctuation,
+  'punctuation.definition': theme.highlightPunctuation,
+  'meta': theme.highlightMeta,
+  'heading': theme.highlightType,
+  'emphasis': theme.highlightFunction,
+  'strong': theme.highlightFunction,
 };
 
-Color colorForScopes(List<String> scopes) {
+Color colorForScopes(List<String> scopes, CruxThemeData theme) {
+  final colors = _scopeColorMap(theme);
   for (final scope in scopes) {
     for (final fallback in _scopeFallbacks(scope)) {
-      if (_scopeColorMap.containsKey(fallback)) {
-        return _scopeColorMap[fallback]!;
+      if (colors.containsKey(fallback)) {
+        return colors[fallback]!;
       }
     }
   }
-  return CruxTheme.highlightDefault;
+  return theme.highlightDefault;
 }
 
 List<String> _scopeFallbacks(String scope) {
@@ -122,14 +125,18 @@ List<String> _scopeFallbacks(String scope) {
   return fallbacks.reversed.toList();
 }
 
-List<InlineSpan> highlightCode(String code, String language) {
+List<InlineSpan> highlightCode(
+  String code,
+  String language,
+  CruxThemeData theme,
+) {
   final service = HighlightService.instance;
   final tm.Highlighter? highlighter = service?.highlighterFor(language);
   if (highlighter == null) {
     return [
       TextSpan(
         text: code,
-        style: const TextStyle(color: CruxTheme.highlightDefault),
+        style: TextStyle(color: theme.highlightDefault),
       ),
     ];
   }
@@ -141,7 +148,7 @@ List<InlineSpan> highlightCode(String code, String language) {
     return [
       TextSpan(
         text: code,
-        style: const TextStyle(color: CruxTheme.highlightDefault),
+        style: TextStyle(color: theme.highlightDefault),
       ),
     ];
   }
@@ -152,13 +159,13 @@ List<InlineSpan> highlightCode(String code, String language) {
       spans.add(
         TextSpan(
           text: code.substring(lastEnd, token.start),
-          style: const TextStyle(color: CruxTheme.highlightDefault),
+          style: TextStyle(color: theme.highlightDefault),
         ),
       );
     }
 
     final tokenText = token.text(code);
-    final color = colorForScopes(token.scopes);
+    final color = colorForScopes(token.scopes, theme);
     final tmStyle = service?.styleForScopes(token.scopes);
     final fontWeight = tmStyle?.bold == true
         ? FontWeight.bold
@@ -184,7 +191,7 @@ List<InlineSpan> highlightCode(String code, String language) {
     spans.add(
       TextSpan(
         text: code.substring(lastEnd),
-        style: const TextStyle(color: CruxTheme.highlightDefault),
+        style: TextStyle(color: theme.highlightDefault),
       ),
     );
   }

@@ -15,8 +15,8 @@ import '../../theme/crux_theme.dart';
 ///   value: 0.48,
 ///   width: 20,
 ///   label: '125073 / 262144',
-///   fillColor: CruxTheme.progressFill,
-///   emptyColor: CruxTheme.progressEmpty,
+///   fillColor: CruxTheme.of(context).progressFill,
+///   emptyColor: CruxTheme.of(context).progressEmpty,
 /// )
 /// ```
 class BgProgressBar extends StatelessComponent {
@@ -30,31 +30,36 @@ class BgProgressBar extends StatelessComponent {
   final String? label;
 
   /// Background color for the filled portion.
-  final Color fillColor;
+  final Color? fillColor;
 
   /// Background color for the empty portion.
-  final Color emptyColor;
+  final Color? emptyColor;
 
   /// Foreground color for label text on filled background.
-  final Color labelFillFg;
+  final Color? labelFillFg;
 
   /// Foreground color for label text on empty background.
-  final Color labelEmptyFg;
+  final Color? labelEmptyFg;
 
   const BgProgressBar({
     super.key,
     required this.value,
     required this.width,
     this.label,
-    this.fillColor = CruxTheme.progressFill,
-    this.emptyColor = CruxTheme.progressEmpty,
-    this.labelFillFg = CruxTheme.progressLabelFill,
-    this.labelEmptyFg = CruxTheme.progressLabelEmpty,
+    this.fillColor,
+    this.emptyColor,
+    this.labelFillFg,
+    this.labelEmptyFg,
   });
 
   @override
   Component build(BuildContext context) {
     final clamped = value.clamp(0.0, 1.0);
+    final theme = CruxTheme.of(context);
+    final resolvedFillColor = fillColor ?? theme.progressFill;
+    final resolvedEmptyColor = emptyColor ?? theme.progressEmpty;
+    final resolvedLabelFillFg = labelFillFg ?? theme.progressLabelFill;
+    final resolvedLabelEmptyFg = labelEmptyFg ?? theme.progressLabelEmpty;
     final filledCount = (clamped * width).floor();
     final labelText = label ?? '';
     final labelLen = labelText.length;
@@ -65,12 +70,12 @@ class BgProgressBar extends StatelessComponent {
     final cells = <Component>[];
     for (int i = 0; i < width; i++) {
       final isFilled = i < filledCount;
-      final bg = isFilled ? fillColor : emptyColor;
+      final bg = isFilled ? resolvedFillColor : resolvedEmptyColor;
 
       // Check if this cell position holds a label character
       final labelIndex = i - labelStart;
       if (labelLen > 0 && labelIndex >= 0 && labelIndex < labelLen) {
-        final fg = isFilled ? labelFillFg : labelEmptyFg;
+        final fg = isFilled ? resolvedLabelFillFg : resolvedLabelEmptyFg;
         cells.add(
           Text(
             labelText[labelIndex],

@@ -15,7 +15,6 @@ void main(List<String> args) async {
   // blank screen. No-op on non-Windows and when stdout is redirected.
   enableWindowsVt();
 
-
   for (final arg in args) {
     if (arg == '--help' || arg == '-h') {
       stdout.writeln('Usage: crux [path]');
@@ -57,6 +56,11 @@ void main(List<String> args) async {
   // - user: per-user XDG config dir. Always writable; created if missing.
   final builtInDir = _resolveBuiltInProvidersDir();
   final userDir = _resolveUserProvidersDir();
+  final builtInThemesDir = _resolveBuiltInThemesDir();
+  final userThemesDir = _resolveUserThemesDir();
+  final themeConfigFile = File(
+    p.join(_resolveUserConfigDir().path, 'config.toml'),
+  );
 
   // Run the splash and the loading work in the same isolate. The splash
   // runs as a Future that takes a `loadingDone` callback; it renders the
@@ -82,13 +86,22 @@ void main(List<String> args) async {
   final results = await _runSplashAndLoading(
     builtInDir: builtInDir,
     userDir: userDir,
+    builtInThemesDir: builtInThemesDir,
+    userThemesDir: userThemesDir,
+    themeConfigFile: themeConfigFile,
   );
 
   // Log seeder changes after the splash is done, so the stderr lines
   // don't interleave with the logo frames.
-  for (final r in results) {
+  for (final r in results.providerSeedResults) {
     if (r.action == SeedAction.unchanged) continue;
     stderr.writeln('  ${r.action.name}: ${r.fileName}');
+  }
+  for (final entry in results.themeController.registry.loadErrors.entries) {
+    stderr.writeln('  theme warning: ${entry.key}: ${entry.value}');
+  }
+  if (results.themeController.startupWarning case final warning?) {
+    stderr.writeln('  theme warning: $warning');
   }
 
   // Wire uncaught errors to the toast hub so the user sees them as
@@ -118,12 +131,20 @@ void main(List<String> args) async {
     _CruxApp(
       userProvidersDir: userDir.path,
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
+      themeController: results.themeController,
+      startupWarnings: [
+        ...results.themeController.registry.loadErrors.entries.map(
+          (entry) => 'Theme ${p.basename(entry.key)}: ${entry.value}',
+        ),
+        if (results.themeController.startupWarning != null)
+          results.themeController.startupWarning!,
+      ],
     ),
   );
 }
 
 /// Run the splash animation and the loading work concurrently in the
-/// current isolate. Returns the seeder results.
+/// current isolate. Returns provider seeding and initialized theme state.
 ///
 /// The animation always runs for at least 504ms (the sweep). If loading
 /// finishes during the sweep, the sweep bails out and we run a 400ms
@@ -132,14 +153,23 @@ void main(List<String> args) async {
 ///
 /// Total wall time is `max(loading_time, 904ms)` when loading < 504ms,
 /// or just `loading_time` when loading >= 504ms.
-Future<List<SeedResult>> _runSplashAndLoading({
+Future<_LoadingResults> _runSplashAndLoading({
   required Directory builtInDir,
   required Directory userDir,
+  required Directory builtInThemesDir,
+  required Directory userThemesDir,
+  required File themeConfigFile,
 }) async {
   // Start the loading work as a Future. It's mostly I/O (file reads,
   // SHA computation, and HighlightService's grammar compile) so it
   // cooperates with the splash's `Future.delayed` between frames.
-  final loadingFuture = _doLoading(builtInDir, userDir);
+  final loadingFuture = _doLoading(
+    builtInDir,
+    userDir,
+    builtInThemesDir,
+    userThemesDir,
+    themeConfigFile,
+  );
 
   // Run the splash, with a callback that lets it know when loading is
   // done so it can bail out early.
@@ -151,13 +181,40 @@ Future<List<SeedResult>> _runSplashAndLoading({
 }
 
 /// All the warmup work the app needs before the UI appears.
-Future<List<SeedResult>> _doLoading(Directory builtInDir, Directory userDir) async {
-  final results = await seedExampleProviders(
+class _LoadingResults {
+  final List<SeedResult> providerSeedResults;
+  final ThemeController themeController;
+
+  const _LoadingResults({
+    required this.providerSeedResults,
+    required this.themeController,
+  });
+}
+
+Future<_LoadingResults> _doLoading(
+  Directory builtInDir,
+  Directory userDir,
+  Directory builtInThemesDir,
+  Directory userThemesDir,
+  File themeConfigFile,
+) async {
+  final providerSeedResults = await seedExampleProviders(
     builtInDir: builtInDir,
     userDir: userDir,
   );
+  final themeRegistry = await ThemeLoader(
+    bundledDirectory: builtInThemesDir,
+    userDirectory: userThemesDir,
+  ).load();
+  final themeController = await ThemeController.create(
+    registry: themeRegistry,
+    configStore: ThemeConfigStore(themeConfigFile),
+  );
   await HighlightService.initialize();
-  return results;
+  return _LoadingResults(
+    providerSeedResults: providerSeedResults,
+    themeController: themeController,
+  );
 }
 
 // ── Splash renderer ──────────────────────────────────────────────────
@@ -303,6 +360,28 @@ Directory _resolveBuiltInProvidersDir() {
   return Directory(p.normalize(p.absolute('providers')));
 }
 
+Directory _resolveBuiltInThemesDir() {
+  try {
+    final sibling = Directory(
+      p.join(p.dirname(Platform.resolvedExecutable), 'themes'),
+    );
+    if (sibling.existsSync()) return sibling;
+  } catch (_) {}
+
+  try {
+    if (Platform.script.scheme == 'file') {
+      final repository = Directory(
+        p.normalize(
+          p.join(p.dirname(Platform.script.toFilePath()), '..', 'themes'),
+        ),
+      );
+      if (repository.existsSync()) return repository;
+    }
+  } catch (_) {}
+
+  return Directory(p.normalize(p.absolute('themes')));
+}
+
 /// Find the per-user provider config directory.
 ///
 /// Follows XDG:
@@ -311,6 +390,14 @@ Directory _resolveBuiltInProvidersDir() {
 /// - Windows: `%LOCALAPPDATA%\crux\providers\`
 ///   (falls back to `%APPDATA%\crux\providers\`)
 Directory _resolveUserProvidersDir() {
+  return Directory(p.join(_resolveUserConfigDir().path, 'providers'));
+}
+
+Directory _resolveUserThemesDir() {
+  return Directory(p.join(_resolveUserConfigDir().path, 'themes'));
+}
+
+Directory _resolveUserConfigDir() {
   String configHome;
   if (Platform.isWindows) {
     configHome =
@@ -322,7 +409,7 @@ Directory _resolveUserProvidersDir() {
         Platform.environment['XDG_CONFIG_HOME'] ??
         p.join(Platform.environment['HOME'] ?? '.', '.config');
   }
-  return Directory(p.join(configHome, 'crux', 'providers'));
+  return Directory(p.join(configHome, 'crux'));
 }
 
 // ── --doctor and ChatPanel (unchanged) ────────────────────────────────
@@ -355,19 +442,54 @@ Future<void> _runDoctor() async {
   }
 }
 
-class _CruxApp extends StatelessComponent {
+class _CruxApp extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
+  final ThemeController themeController;
+  final List<String> startupWarnings;
+
   const _CruxApp({
     required this.userProvidersDir,
     this.builtInProvidersDir,
+    required this.themeController,
+    this.startupWarnings = const [],
   });
 
   @override
+  State<_CruxApp> createState() => _CruxAppState();
+}
+
+class _CruxAppState extends State<_CruxApp> {
+  @override
+  void initState() {
+    super.initState();
+    component.themeController.addListener(_handleThemeChanged);
+  }
+
+  void _handleThemeChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    component.themeController.removeListener(_handleThemeChanged);
+    component.themeController.dispose();
+    super.dispose();
+  }
+
+  @override
   Component build(BuildContext context) {
-    return ChatPanel(
-      userProvidersDir: userProvidersDir,
-      builtInProvidersDir: builtInProvidersDir,
+    final theme = component.themeController.activeTheme;
+    return NoctermApp(
+      title: 'Crux',
+      theme: theme.toTuiThemeData(),
+      child: CruxTheme(
+        data: theme,
+        child: ChatPanel(
+          userProvidersDir: component.userProvidersDir,
+          builtInProvidersDir: component.builtInProvidersDir,
+          themeController: component.themeController,
+          startupWarnings: component.startupWarnings,
+        ),
+      ),
     );
   }
 }

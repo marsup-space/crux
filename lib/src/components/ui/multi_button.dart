@@ -75,31 +75,31 @@ class MultiButton extends StatefulComponent {
   final List<MultiButtonSegment> segments;
 
   /// Text color in the normal (non-hovered) state.
-  final Color color;
+  final Color? color;
 
   /// Text color of the *active* (mouse-over) segment when hovered.
-  final Color hoverColor;
+  final Color? hoverColor;
 
   /// Text color of segments that are not under the cursor while the
   /// button is hovered.
-  final Color dimHoverColor;
+  final Color? dimHoverColor;
 
   /// Color used for segments whose [MultiButtonSegment.onPressed] is
   /// `null`. Renders last in the visual hierarchy so the user can
   /// tell which actions are unavailable without trying to click.
-  final Color disabledColor;
+  final Color? disabledColor;
 
   /// Color of the `|` separators that join segments on hover.
-  final Color separatorColor;
+  final Color? separatorColor;
 
   /// Background color in the normal state.
-  final Color bgColor;
+  final Color? bgColor;
 
   /// Background color when hovered (applied to the whole button).
-  final Color hoverBgColor;
+  final Color? hoverBgColor;
 
   /// Background color of the segment currently under the cursor.
-  final Color hoverSegmentBgColor;
+  final Color? hoverSegmentBgColor;
 
   /// Padding inside the button. The horizontal component is added to
   /// the label width when computing the minimum button width, so the
@@ -113,29 +113,32 @@ class MultiButton extends StatefulComponent {
   final bool focused;
 
   /// Text color when keyboard-focused (and not hovered).
-  final Color focusColor;
+  final Color? focusColor;
 
   /// Background color when keyboard-focused (and not hovered).
-  final Color focusBgColor;
+  final Color? focusBgColor;
 
   const MultiButton({
     super.key,
     required this.label,
     required this.segments,
-    this.color = CruxTheme.buttonTextDisabled,
-    this.hoverColor = CruxTheme.buttonTextHover,
-    this.dimHoverColor = CruxTheme.buttonTextDisabled,
-    this.disabledColor = CruxTheme.onSurfaceDim,
-    this.separatorColor = CruxTheme.onSurfaceDim,
-    this.bgColor = CruxTheme.buttonBackground,
-    this.hoverBgColor = CruxTheme.buttonBackgroundHover,
-    this.hoverSegmentBgColor = CruxTheme.surfaceVariant,
+    this.color,
+    this.hoverColor,
+    this.dimHoverColor,
+    this.disabledColor,
+    this.separatorColor,
+    this.bgColor,
+    this.hoverBgColor,
+    this.hoverSegmentBgColor,
     this.padding = const EdgeInsets.symmetric(horizontal: 1),
     this.style,
     this.focused = false,
-    this.focusColor = CruxTheme.buttonTextFocused,
-    this.focusBgColor = CruxTheme.buttonBackgroundFocused,
-  }) : assert(segments.length >= 1, 'MultiButton requires at least one segment');
+    this.focusColor,
+    this.focusBgColor,
+  }) : assert(
+         segments.length >= 1,
+         'MultiButton requires at least one segment',
+       );
 
   @override
   State<MultiButton> createState() => _MultiButtonState();
@@ -178,6 +181,17 @@ class _MultiButtonState extends State<MultiButton> {
   @override
   Component build(BuildContext context) {
     final btn = component;
+    final theme = CruxTheme.of(context);
+    final color = btn.color ?? theme.buttonTextDisabled;
+    final hoverColor = btn.hoverColor ?? theme.buttonTextHover;
+    final dimHoverColor = btn.dimHoverColor ?? theme.buttonTextDisabled;
+    final disabledColor = btn.disabledColor ?? theme.onSurfaceDim;
+    final separatorColor = btn.separatorColor ?? theme.onSurfaceDim;
+    final bgColor = btn.bgColor ?? theme.buttonBackground;
+    final hoverBgColor = btn.hoverBgColor ?? theme.buttonBackgroundHover;
+    final hoverSegmentBgColor = btn.hoverSegmentBgColor ?? theme.surfaceVariant;
+    final focusColor = btn.focusColor ?? theme.buttonTextFocused;
+    final focusBgColor = btn.focusBgColor ?? theme.buttonBackgroundFocused;
     final minWidth = _labelWidth;
 
     // Decide which child to render, but always wrap it in a
@@ -189,8 +203,8 @@ class _MultiButtonState extends State<MultiButton> {
       // Idle state: render the single label. We pick the same color
       // triplet as [Button] so a MultiButton sitting next to a regular
       // Button reads as the same family.
-      final fg = btn.focused ? btn.focusColor : btn.color;
-      final bg = btn.focused ? btn.focusBgColor : btn.bgColor;
+      final fg = btn.focused ? focusColor : color;
+      final bg = btn.focused ? focusBgColor : bgColor;
       final style = TextStyle(
         color: fg,
         fontWeight: btn.focused ? FontWeight.bold : null,
@@ -213,7 +227,7 @@ class _MultiButtonState extends State<MultiButton> {
           children.add(
             Text(
               ' │ ',
-              style: TextStyle(color: btn.separatorColor).merge(btn.style),
+              style: TextStyle(color: separatorColor).merge(btn.style),
             ),
           );
         }
@@ -223,22 +237,20 @@ class _MultiButtonState extends State<MultiButton> {
         final Color fg;
         final FontWeight? weight;
         if (!hasAction) {
-          fg = btn.disabledColor;
+          fg = disabledColor;
           weight = null;
         } else if (isActive) {
-          fg = btn.hoverColor;
+          fg = hoverColor;
           weight = FontWeight.bold;
         } else {
-          fg = btn.dimHoverColor;
+          fg = dimHoverColor;
           weight = null;
         }
         // The active segment gets its own background "pill" so the
         // user can see which sub-button they are about to press.
         // The pill stops at the segment edges, so neighbouring
         // segments remain at the regular hover background.
-        final segmentBg = (isActive && hasAction)
-            ? btn.hoverSegmentBgColor
-            : null;
+        final segmentBg = (isActive && hasAction) ? hoverSegmentBgColor : null;
 
         children.add(
           MouseRegion(
@@ -259,9 +271,10 @@ class _MultiButtonState extends State<MultiButton> {
                 padding: btn.padding,
                 child: Text(
                   segment.label,
-                  style: TextStyle(color: fg, fontWeight: weight).merge(
-                    btn.style,
-                  ),
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: weight,
+                  ).merge(btn.style),
                 ),
               ),
             ),
@@ -270,7 +283,7 @@ class _MultiButtonState extends State<MultiButton> {
       }
 
       visible = Container(
-        decoration: BoxDecoration(color: btn.hoverBgColor),
+        decoration: BoxDecoration(color: hoverBgColor),
         padding: btn.padding,
         child: Row(mainAxisSize: MainAxisSize.min, children: children),
       );

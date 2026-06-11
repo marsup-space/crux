@@ -398,10 +398,10 @@ class _WizardOverlayState extends State<WizardOverlay> {
       final isActive = i == _currentStep;
       final isPast = i < _currentStep;
       final dotColor = isActive
-          ? CruxTheme.buttonTextFocused
+          ? CruxTheme.of(context).buttonTextFocused
           : isPast
-          ? CruxTheme.wizardTitle
-          : CruxTheme.wizardTextDim;
+          ? CruxTheme.of(context).wizardTitle
+          : CruxTheme.of(context).wizardTextDim;
       final dotChar = isActive
           ? '●'
           : isPast
@@ -413,7 +413,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
           Text(
             '─',
             style: TextStyle(
-              color: isPast ? CruxTheme.wizardTitle : CruxTheme.wizardTextDim,
+              color: isPast
+                  ? CruxTheme.of(context).wizardTitle
+                  : CruxTheme.of(context).wizardTextDim,
             ),
           ),
         );
@@ -421,9 +423,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
     }
 
     // ── Footer: buttons with shortcut hints aligned below ──
-    final focusedBtnColor = CruxTheme.buttonTextFocused;
-    final focusedBtnBgColor = CruxTheme.buttonBackgroundFocused;
-    final shortcutStyle = const TextStyle(color: CruxTheme.hintText);
+    final focusedBtnColor = CruxTheme.of(context).buttonTextFocused;
+    final focusedBtnBgColor = CruxTheme.of(context).buttonBackgroundFocused;
+    final shortcutStyle = TextStyle(color: CruxTheme.of(context).hintText);
 
     // ── Build the wizard layout ──
     // Two sibling Focusables following nocterm's focus_demo pattern:
@@ -438,12 +440,12 @@ class _WizardOverlayState extends State<WizardOverlay> {
     // direct child of Column/Flex).
     return Container(
       decoration: BoxDecoration(
-        color: CruxTheme.wizardOverlayBg,
+        color: CruxTheme.of(context).wizardOverlayBg,
         border: BoxBorder(
-          top: const BorderSide(color: CruxTheme.outline),
-          right: const BorderSide(color: CruxTheme.outline),
-          bottom: const BorderSide(color: CruxTheme.outline),
-          left: const BorderSide(color: CruxTheme.outline),
+          top: BorderSide(color: CruxTheme.of(context).outline),
+          right: BorderSide(color: CruxTheme.of(context).outline),
+          bottom: BorderSide(color: CruxTheme.of(context).outline),
+          left: BorderSide(color: CruxTheme.of(context).outline),
         ),
       ),
       padding: const EdgeInsets.all(1),
@@ -455,23 +457,23 @@ class _WizardOverlayState extends State<WizardOverlay> {
             children: [
               Text(
                 'Step ${_currentStep + 1}/${steps.length}: ',
-                style: const TextStyle(color: CruxTheme.wizardTextDim),
+                style: TextStyle(color: CruxTheme.of(context).wizardTextDim),
               ),
               Text(
                 step.title,
-                style: const TextStyle(
-                  color: CruxTheme.wizardTitle,
+                style: TextStyle(
+                  color: CruxTheme.of(context).wizardTitle,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
           Row(children: indicators),
-          const Divider(color: CruxTheme.outline, height: 1),
+          Divider(color: CruxTheme.of(context).outline, height: 1),
 
           Expanded(child: step.contentBuilder()),
 
-          const Divider(color: CruxTheme.outline, height: 1),
+          Divider(color: CruxTheme.of(context).outline, height: 1),
 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -501,12 +503,14 @@ class _WizardOverlayState extends State<WizardOverlay> {
                             focused: focused,
                             color: focused
                                 ? focusedBtnColor
-                                : CruxTheme.foreground,
-                            hoverColor: CruxTheme.buttonTextFocused,
+                                : CruxTheme.of(context).foreground,
+                            hoverColor: CruxTheme.of(context).buttonTextFocused,
                             bgColor: focused
                                 ? focusedBtnBgColor
-                                : CruxTheme.buttonBackground,
-                            hoverBgColor: CruxTheme.buttonBackgroundHover,
+                                : CruxTheme.of(context).buttonBackground,
+                            hoverBgColor: CruxTheme.of(
+                              context,
+                            ).buttonBackgroundHover,
                           );
                         },
                       ),
@@ -546,19 +550,19 @@ class _WizardOverlayState extends State<WizardOverlay> {
                               color: focused
                                   ? focusedBtnColor
                                   : isValid
-                                  ? CruxTheme.buttonTextFocused
-                                  : CruxTheme.wizardTextDim,
+                                  ? CruxTheme.of(context).buttonTextFocused
+                                  : CruxTheme.of(context).wizardTextDim,
                               hoverColor: isValid
-                                  ? CruxTheme.buttonTextFocused
-                                  : CruxTheme.wizardTextDim,
+                                  ? CruxTheme.of(context).buttonTextFocused
+                                  : CruxTheme.of(context).wizardTextDim,
                               bgColor: focused
                                   ? focusedBtnBgColor
                                   : isValid
-                                  ? CruxTheme.buttonBackground
-                                  : CruxTheme.wizardOverlayBg,
+                                  ? CruxTheme.of(context).buttonBackground
+                                  : CruxTheme.of(context).wizardOverlayBg,
                               hoverBgColor: isValid
-                                  ? CruxTheme.buttonBackgroundHover
-                                  : CruxTheme.wizardOverlayBg,
+                                  ? CruxTheme.of(context).buttonBackgroundHover
+                                  : CruxTheme.of(context).wizardOverlayBg,
                             );
                           },
                         ),
@@ -591,12 +595,16 @@ class _WizardOverlayState extends State<WizardOverlay> {
                               focused: focused,
                               color: focused
                                   ? focusedBtnColor
-                                  : CruxTheme.wizardTextDim,
-                              hoverColor: CruxTheme.wizardMarkerSelected,
+                                  : CruxTheme.of(context).wizardTextDim,
+                              hoverColor: CruxTheme.of(
+                                context,
+                              ).wizardMarkerSelected,
                               bgColor: focused
                                   ? focusedBtnBgColor
-                                  : CruxTheme.buttonBackground,
-                              hoverBgColor: CruxTheme.buttonBackgroundHover,
+                                  : CruxTheme.of(context).buttonBackground,
+                              hoverBgColor: CruxTheme.of(
+                                context,
+                              ).buttonBackgroundHover,
                             );
                           },
                         ),

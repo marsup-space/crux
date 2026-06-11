@@ -39,10 +39,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   String? _lastData;
   HighlightMarkdownStyleSheet? _lastStyleSheet;
   String? _lastHighlightText;
+  String? _lastThemeId;
 
-  List<InlineSpan> _parseMarkdown({int? maxWidth}) {
+  List<InlineSpan> _parseMarkdown(CruxThemeData theme, {int? maxWidth}) {
     final effectiveStyleSheet =
-        component.styleSheet ?? HighlightMarkdownStyleSheet.terminalDark();
+        component.styleSheet ?? HighlightMarkdownStyleSheet.fromTheme(theme);
     final document = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
       encodeHtml: false,
@@ -51,6 +52,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
 
     final visitor = _HighlightMarkdownVisitor(
       effectiveStyleSheet,
+      theme: theme,
       maxWidth: maxWidth,
     );
     return visitor.visitNodes(nodes);
@@ -58,6 +60,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
 
   @override
   Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.maxWidth.isFinite
@@ -67,15 +70,17 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         final highlight = component.highlightText;
         if (component.data != _lastData ||
             component.styleSheet != _lastStyleSheet ||
+            theme.id != _lastThemeId ||
             maxWidth != _lastMaxWidth ||
             highlight != _lastHighlightText) {
           _lastData = component.data;
           _lastStyleSheet = component.styleSheet;
           _lastMaxWidth = maxWidth;
           _lastHighlightText = highlight;
-          _spans = _parseMarkdown(maxWidth: maxWidth);
+          _lastThemeId = theme.id;
+          _spans = _parseMarkdown(theme, maxWidth: maxWidth);
           if (highlight != null && highlight.isNotEmpty) {
-            _spans = _applyHighlight(_spans, highlight);
+            _spans = _applyHighlight(_spans, highlight, theme);
           }
         }
 
@@ -91,12 +96,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   }
 }
 
-const _highlightStyle = TextStyle(
-  backgroundColor: Color(0xF1FA8C),
-  fontWeight: FontWeight.bold,
-);
-
-List<InlineSpan> _applyHighlight(List<InlineSpan> spans, String search) {
+List<InlineSpan> _applyHighlight(
+  List<InlineSpan> spans,
+  String search,
+  CruxThemeData theme,
+) {
   final flat = _flattenSpans(spans);
   final plainText = flat.map((e) => e.$1).join();
 
@@ -112,14 +116,16 @@ List<InlineSpan> _applyHighlight(List<InlineSpan> spans, String search) {
     if (spanEnd <= index || spanStart >= end) {
       result.add(span);
     } else {
-      final before = index > spanStart ? span.$1.substring(0, index - spanStart) : '';
+      final before = index > spanStart
+          ? span.$1.substring(0, index - spanStart)
+          : '';
       final match = span.$1.substring(
         index.clamp(spanStart, spanEnd) - spanStart,
         end.clamp(spanStart, spanEnd) - spanStart,
       );
       final after = end < spanEnd ? span.$1.substring(end - spanStart) : '';
       if (before.isNotEmpty) result.add((before, span.$2));
-      result.add((match, _mergedWithHighlight(span.$2)));
+      result.add((match, _mergedWithHighlight(span.$2, theme)));
       if (after.isNotEmpty) result.add((after, span.$2));
     }
     pos = spanEnd;
@@ -143,9 +149,15 @@ List<InlineSpan> _applyHighlight(List<InlineSpan> spans, String search) {
   return _wordOverlapRange(plainText, search);
 }
 
-String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+String _norm(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 
-(int, int)? _recoverRange(String text, String normText, int normStart, int normLen) {
+(int, int)? _recoverRange(
+  String text,
+  String normText,
+  int normStart,
+  int normLen,
+) {
   int charPos = 0;
   int normPos = 0;
   int start = -1;
@@ -155,7 +167,9 @@ String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()
     charPos++;
     if (ch == ' ' || ch == '\n' || ch == '\t') {
       while (charPos < text.length &&
-          (text[charPos] == ' ' || text[charPos] == '\n' || text[charPos] == '\t')) {
+          (text[charPos] == ' ' ||
+              text[charPos] == '\n' ||
+              text[charPos] == '\t')) {
         charPos++;
       }
     }
@@ -169,7 +183,9 @@ String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()
     charPos++;
     if (ch == ' ' || ch == '\n' || ch == '\t') {
       while (charPos < text.length &&
-          (text[charPos] == ' ' || text[charPos] == '\n' || text[charPos] == '\t')) {
+          (text[charPos] == ' ' ||
+              text[charPos] == '\n' ||
+              text[charPos] == '\t')) {
         charPos++;
       }
     }
@@ -180,7 +196,9 @@ String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()
 }
 
 (int, int)? _wordOverlapRange(String plainText, String search) {
-  final excerptWords = _norm(search).split(' ').where((w) => w.length > 2).toList();
+  final excerptWords = _norm(
+    search,
+  ).split(' ').where((w) => w.length > 2).toList();
   if (excerptWords.isEmpty) return null;
 
   final windowSize = search.length * 2;
@@ -213,11 +231,11 @@ String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()
   return null;
 }
 
-TextStyle? _mergedWithHighlight(TextStyle? base) {
+TextStyle? _mergedWithHighlight(TextStyle? base, CruxThemeData theme) {
   return TextStyle(
-    color: base?.color ?? _highlightStyle.color,
-    backgroundColor: _highlightStyle.backgroundColor,
-    fontWeight: _highlightStyle.fontWeight,
+    color: theme.onColor(theme.selection),
+    backgroundColor: theme.selection,
+    fontWeight: FontWeight.bold,
     fontStyle: base?.fontStyle,
     decoration: base?.decoration,
   );
@@ -266,71 +284,57 @@ class HighlightMarkdownStyleSheet {
     this.codeBlockHeaderStyle,
   });
 
-  factory HighlightMarkdownStyleSheet.terminalDark() {
-    return _buildTerminalDark(CruxTheme.foreground);
+  factory HighlightMarkdownStyleSheet.terminalDark(CruxThemeData theme) {
+    return HighlightMarkdownStyleSheet.fromTheme(theme);
   }
 
-  factory HighlightMarkdownStyleSheet.thinking() {
-    return _buildTerminalDark(CruxTheme.thinkingPrefix);
+  factory HighlightMarkdownStyleSheet.thinking(CruxThemeData theme) {
+    return _build(theme, theme.thinkingExpandedText);
   }
 
-  static HighlightMarkdownStyleSheet _buildTerminalDark(Color baseColor) {
+  factory HighlightMarkdownStyleSheet.fromTheme(CruxThemeData theme) {
+    return _build(theme, theme.markdownText);
+  }
+
+  static HighlightMarkdownStyleSheet _build(
+    CruxThemeData theme,
+    Color baseColor,
+  ) {
     return HighlightMarkdownStyleSheet(
       paragraphStyle: TextStyle(color: baseColor),
-      h1Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      h2Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      h3Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      h4Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      h5Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      h6Style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
-      boldStyle: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ),
+      h1Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH1),
+      h2Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH2),
+      h3Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH3),
+      h4Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH4),
+      h5Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH5),
+      h6Style: TextStyle(fontWeight: FontWeight.bold, color: theme.mdH6),
+      boldStyle: TextStyle(fontWeight: FontWeight.bold, color: theme.mdBold),
       italicStyle: TextStyle(
         fontStyle: FontStyle.italic,
-        color: baseColor,
+        color: theme.mdItalic,
       ),
       strikethroughStyle: TextStyle(
         decoration: TextDecoration.lineThrough,
-        color: baseColor,
+        color: theme.mdStrikethrough,
       ),
       codeStyle: TextStyle(
-        color: baseColor,
-        backgroundColor: CruxTheme.mdInlineCodeBg,
+        color: theme.mdInlineCode,
+        backgroundColor: theme.mdInlineCodeBg,
       ),
       codeBlockStyle: TextStyle(
-        color: baseColor,
-        backgroundColor: CruxTheme.codeBlockBackground,
+        color: theme.mdCodeBlockText,
+        backgroundColor: theme.codeBlockBackground,
       ),
       blockquoteStyle: TextStyle(
-        color: baseColor,
+        color: theme.mdBlockquote,
         fontStyle: FontStyle.italic,
       ),
       linkStyle: TextStyle(
-        color: baseColor,
+        color: theme.mdLink,
         decoration: TextDecoration.underline,
       ),
-      codeBlockBackground: CruxTheme.codeBlockBackground,
-      codeBlockHeaderStyle: TextStyle(color: baseColor),
+      codeBlockBackground: theme.codeBlockBackground,
+      codeBlockHeaderStyle: TextStyle(color: theme.codeBlockHeader),
     );
   }
 
@@ -355,9 +359,14 @@ class HighlightMarkdownStyleSheet {
 }
 
 class _HighlightMarkdownVisitor {
-  _HighlightMarkdownVisitor(this.styleSheet, {this.maxWidth});
+  _HighlightMarkdownVisitor(
+    this.styleSheet, {
+    required this.theme,
+    this.maxWidth,
+  });
 
   final HighlightMarkdownStyleSheet styleSheet;
+  final CruxThemeData theme;
   final int? maxWidth;
   int _listDepth = 0;
 
@@ -534,7 +543,7 @@ class _HighlightMarkdownVisitor {
         final width = maxWidth ?? 40;
         return TextSpan(
           text: styleSheet.horizontalRule * width + '\n\n',
-          style: const TextStyle(color: CruxTheme.outline),
+          style: TextStyle(color: theme.outline),
         );
       case 'br':
         return const TextSpan(text: '\n');
@@ -559,16 +568,15 @@ class _HighlightMarkdownVisitor {
       }
     }
 
-    final bgColor =
-        styleSheet.codeBlockBackground ?? CruxTheme.codeBlockBackground;
+    final bgColor = styleSheet.codeBlockBackground ?? theme.codeBlockBackground;
     final headerStyle =
         styleSheet.codeBlockHeaderStyle ??
-        const TextStyle(color: CruxTheme.codeBlockHeader);
+        TextStyle(color: theme.codeBlockHeader);
     final codeStyle =
         styleSheet.codeBlockStyle ??
-        const TextStyle(
-          color: CruxTheme.mdCodeBlockText,
-          backgroundColor: CruxTheme.codeBlockBackground,
+        TextStyle(
+          color: theme.mdCodeBlockText,
+          backgroundColor: theme.codeBlockBackground,
         );
 
     final width = maxWidth ?? 80;
@@ -596,13 +604,13 @@ class _HighlightMarkdownVisitor {
           text: '│ ',
           style: TextStyle(
             backgroundColor: bgColor,
-            color: CruxTheme.codeBlockGutter,
+            color: theme.codeBlockGutter,
           ),
         ),
       );
 
       if (language != null && language.isNotEmpty) {
-        final highlighted = highlightCode(line, language);
+        final highlighted = highlightCode(line, language, theme);
         for (final span in highlighted) {
           if (span is TextSpan) {
             spans.add(

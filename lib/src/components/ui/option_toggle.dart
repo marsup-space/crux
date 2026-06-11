@@ -35,28 +35,28 @@ class OptionToggle extends StatefulComponent {
   final bool focused;
 
   /// Border color when [focused] is true.
-  final Color focusedBorderColor;
+  final Color? focusedBorderColor;
 
   /// Border color when [focused] is false.
-  final Color unfocusedBorderColor;
+  final Color? unfocusedBorderColor;
 
   /// Background color of the selected option.
-  final Color selectedBgColor;
+  final Color? selectedBgColor;
 
   /// Background color of an unselected option.
-  final Color unselectedBgColor;
+  final Color? unselectedBgColor;
 
   /// Background color when hovering over an unselected option.
-  final Color hoverBgColor;
+  final Color? hoverBgColor;
 
   /// Text color of the selected option.
-  final Color selectedTextColor;
+  final Color? selectedTextColor;
 
   /// Text color of an unselected option.
-  final Color unselectedTextColor;
+  final Color? unselectedTextColor;
 
   /// Text color when hovering.
-  final Color hoverTextColor;
+  final Color? hoverTextColor;
 
   const OptionToggle({
     super.key,
@@ -64,14 +64,14 @@ class OptionToggle extends StatefulComponent {
     required this.selectedIndex,
     required this.onChanged,
     required this.focused,
-    this.focusedBorderColor = CruxTheme.buttonTextFocused,
-    this.unfocusedBorderColor = CruxTheme.outline,
-    this.selectedBgColor = CruxTheme.wizardRowBgSelected,
-    this.unselectedBgColor = CruxTheme.buttonBackground,
-    this.hoverBgColor = CruxTheme.surfaceVariant,
-    this.selectedTextColor = CruxTheme.buttonTextFocused,
-    this.unselectedTextColor = CruxTheme.buttonTextDisabled,
-    this.hoverTextColor = CruxTheme.foreground,
+    this.focusedBorderColor,
+    this.unfocusedBorderColor,
+    this.selectedBgColor,
+    this.unselectedBgColor,
+    this.hoverBgColor,
+    this.selectedTextColor,
+    this.unselectedTextColor,
+    this.hoverTextColor,
   });
 
   @override
@@ -84,6 +84,14 @@ class _OptionToggleState extends State<OptionToggle> {
   @override
   Component build(BuildContext context) {
     final comp = component;
+    final theme = CruxTheme.of(context);
+    final selectedBgColor = comp.selectedBgColor ?? theme.wizardRowBgSelected;
+    final unselectedBgColor = comp.unselectedBgColor ?? theme.buttonBackground;
+    final hoverBgColor = comp.hoverBgColor ?? theme.surfaceVariant;
+    final selectedTextColor = comp.selectedTextColor ?? theme.buttonTextFocused;
+    final unselectedTextColor =
+        comp.unselectedTextColor ?? theme.buttonTextDisabled;
+    final hoverTextColor = comp.hoverTextColor ?? theme.foreground;
     final children = <Component>[];
 
     for (int i = 0; i < comp.options.length; i++) {
@@ -92,20 +100,20 @@ class _OptionToggleState extends State<OptionToggle> {
 
       Color bgColor;
       if (isSelected) {
-        bgColor = comp.selectedBgColor;
+        bgColor = selectedBgColor;
       } else if (isHovered) {
-        bgColor = comp.hoverBgColor;
+        bgColor = hoverBgColor;
       } else {
-        bgColor = comp.unselectedBgColor;
+        bgColor = unselectedBgColor;
       }
 
       Color textColor;
       if (isSelected) {
-        textColor = comp.selectedTextColor;
+        textColor = selectedTextColor;
       } else if (isHovered) {
-        textColor = comp.hoverTextColor;
+        textColor = hoverTextColor;
       } else {
-        textColor = comp.unselectedTextColor;
+        textColor = unselectedTextColor;
       }
 
       children.add(
@@ -132,19 +140,17 @@ class _OptionToggleState extends State<OptionToggle> {
       );
 
       if (i < comp.options.length - 1) {
-        children.add(
-          const Text(' │ ', style: TextStyle(color: CruxTheme.outline)),
-        );
+        children.add(Text(' │ ', style: TextStyle(color: theme.outline)));
       }
     }
 
     final borderColor = comp.focused
-        ? comp.focusedBorderColor
-        : comp.unfocusedBorderColor;
+        ? comp.focusedBorderColor ?? theme.buttonTextFocused
+        : comp.unfocusedBorderColor ?? theme.outline;
 
     return Container(
       decoration: BoxDecoration(
-        color: comp.unselectedBgColor,
+        color: unselectedBgColor,
         border: BoxBorder(
           top: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
           right: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),

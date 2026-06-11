@@ -44,7 +44,7 @@ class _ModalPanelState extends State<ModalPanel> {
         children: [
           Positioned.fill(
             child: ModalBarrier(
-              color: CruxTheme.wizardOverlayBg,
+              color: CruxTheme.of(context).wizardOverlayBg,
               dismissible: false,
               obscure: true,
             ),
@@ -56,12 +56,12 @@ class _ModalPanelState extends State<ModalPanel> {
             bottom: 1,
             child: Container(
               decoration: BoxDecoration(
-                color: CruxTheme.wizardOverlayBg,
+                color: CruxTheme.of(context).wizardOverlayBg,
                 border: BoxBorder(
-                  top: const BorderSide(color: CruxTheme.outline),
-                  right: const BorderSide(color: CruxTheme.outline),
-                  bottom: const BorderSide(color: CruxTheme.outline),
-                  left: const BorderSide(color: CruxTheme.outline),
+                  top: BorderSide(color: CruxTheme.of(context).outline),
+                  right: BorderSide(color: CruxTheme.of(context).outline),
+                  bottom: BorderSide(color: CruxTheme.of(context).outline),
+                  left: BorderSide(color: CruxTheme.of(context).outline),
                 ),
               ),
               padding: const EdgeInsets.all(1),
@@ -72,22 +72,22 @@ class _ModalPanelState extends State<ModalPanel> {
                     children: [
                       Text(
                         component.title,
-                        style: const TextStyle(
-                          color: CruxTheme.wizardTitle,
+                        style: TextStyle(
+                          color: CruxTheme.of(context).wizardTitle,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const Spacer(),
                       Text(
                         'Esc close',
-                        style: const TextStyle(color: CruxTheme.hintText),
+                        style: TextStyle(color: CruxTheme.of(context).hintText),
                       ),
                     ],
                   ),
-                  const Divider(color: CruxTheme.outline, height: 1),
+                  Divider(color: CruxTheme.of(context).outline, height: 1),
                   Expanded(child: component.contentBuilder(context)),
                   if (component.shortcuts.isNotEmpty) ...[
-                    const Divider(color: CruxTheme.outline, height: 1),
+                    Divider(color: CruxTheme.of(context).outline, height: 1),
                     _buildShortcutsFooter(),
                   ],
                 ],
@@ -104,14 +104,14 @@ class _ModalPanelState extends State<ModalPanel> {
     for (int i = 0; i < component.shortcuts.length; i++) {
       if (i > 0) {
         items.add(
-          Text('  ', style: const TextStyle(color: CruxTheme.hintText)),
+          Text('  ', style: TextStyle(color: CruxTheme.of(context).hintText)),
         );
       }
       final s = component.shortcuts[i];
       items.add(
         Text(
           '${s.keyHint} ${s.label}',
-          style: const TextStyle(color: CruxTheme.onSurfaceVariant),
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
         ),
       );
     }

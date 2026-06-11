@@ -4,6 +4,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
+import '../theme/theme_controller.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
 import '../utils/url_launcher.dart';
@@ -47,10 +48,15 @@ import 'tldr_bubble.dart';
 class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
+  final ThemeController themeController;
+  final List<String> startupWarnings;
+
   const ChatPanel({
     super.key,
     required this.userProvidersDir,
     this.builtInProvidersDir,
+    required this.themeController,
+    this.startupWarnings = const [],
   });
 
   @override
@@ -146,6 +152,12 @@ class _ChatPanelState extends State<ChatPanel> {
         _providerServiceReady = true;
         _sessionController.resolveAuxiliaryModel();
       });
+    });
+    Future<void>.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      for (final warning in component.startupWarnings) {
+        _showToast(warning, mode: ToastMode.error);
+      }
     });
   }
 
@@ -273,7 +285,8 @@ class _ChatPanelState extends State<ChatPanel> {
         (!command.hasSuggestionsForParam(0) &&
             commandName != '/model' &&
             commandName != '/auxiliary' &&
-            commandName != '/provider')) {
+            commandName != '/provider' &&
+            commandName != '/theme')) {
       _overlayController.setOverlayOff();
       setState(() {});
       return;
@@ -303,7 +316,8 @@ class _ChatPanelState extends State<ChatPanel> {
     if (!command.hasSuggestionsForParam(paramIndex) &&
         !(commandName == '/model' && paramIndex == 0) &&
         !(commandName == '/auxiliary' && paramIndex == 0) &&
-        !(commandName == '/provider' && paramIndex == 0)) {
+        !(commandName == '/provider' && paramIndex == 0) &&
+        !(commandName == '/theme' && paramIndex == 0)) {
       _overlayController.setOverlayOff();
       setState(() {});
       return;
@@ -354,6 +368,15 @@ class _ChatPanelState extends State<ChatPanel> {
       } else {
         suggestions = [];
       }
+    } else if (commandName == '/theme' && paramIndex == 0) {
+      suggestions = component.themeController.registry.themes
+          .map(
+            (theme) => CommandSuggestion(
+              value: theme.id,
+              description: '${theme.name} (${theme.brightness.name})',
+            ),
+          )
+          .toList();
     } else if (commandName == '/model' && paramIndex == 0) {
       if (_providerServiceReady) {
         suggestions = _providerService
@@ -400,9 +423,11 @@ class _ChatPanelState extends State<ChatPanel> {
     if (_overlayController.showSessionManager) return true;
 
     if (_overlayController.overlayMode == OverlayMode.off) {
-      final isEnter = event.logicalKey == LogicalKey.enter ||
+      final isEnter =
+          event.logicalKey == LogicalKey.enter ||
           event.logicalKey == LogicalKey.numpadEnter;
-      final isModifiedEnter = isEnter &&
+      final isModifiedEnter =
+          isEnter &&
           (event.isShiftPressed ||
               event.isControlPressed ||
               event.isAltPressed);
@@ -844,7 +869,7 @@ class _ChatPanelState extends State<ChatPanel> {
         }
         setState(() {});
       },
-            onToolRound: (int toolResultTokens) {
+      onToolRound: (int toolResultTokens) {
         final streamingTokens = estimateTokens(
           _streamingController.streamingContentFor(sessionId) +
               _streamingController.streamingReasoningFor(sessionId),
@@ -967,10 +992,12 @@ class _ChatPanelState extends State<ChatPanel> {
     final session = _sessionController.currentSession;
     final compositeKey = session.model;
     final slashIndex = compositeKey.indexOf('/');
-    final providerName =
-        slashIndex > 0 ? compositeKey.substring(0, slashIndex) : '';
-    final modelId =
-        slashIndex > 0 ? compositeKey.substring(slashIndex + 1) : compositeKey;
+    final providerName = slashIndex > 0
+        ? compositeKey.substring(0, slashIndex)
+        : '';
+    final modelId = slashIndex > 0
+        ? compositeKey.substring(slashIndex + 1)
+        : compositeKey;
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
     if (provider == null || apiKey == null || apiKey.isEmpty) {
@@ -1017,10 +1044,7 @@ class _ChatPanelState extends State<ChatPanel> {
         'content': t.aiText.isEmpty ? null : t.aiText,
       });
     }
-    apiMessages.add({
-      'role': 'user',
-      'content': btwRenderUserMessage(prompt),
-    });
+    apiMessages.add({'role': 'user', 'content': btwRenderUserMessage(prompt)});
 
     // Same response-state plumbing as the regular chat turn, so
     // the metrics timer / tok/s / TTFT display in the toolbar
@@ -1345,6 +1369,7 @@ class _ChatPanelState extends State<ChatPanel> {
       triggerTldr: (sessionId, aiMsg, detail) {
         _maybeGenerateTldr(sessionId, aiMsg, force: true, detail: detail);
       },
+      themeController: component.themeController,
       sendTurn: _sendTurn,
       findLastUserMessage: _findLastUserMessage,
       deleteMessagesFrom: _deleteMessagesFrom,
@@ -1381,7 +1406,10 @@ class _ChatPanelState extends State<ChatPanel> {
 
     if (!hasAuxModel) {
       if (force) {
-        _showToast('No auxiliary model — set one with /auxiliary', mode: ToastMode.error);
+        _showToast(
+          'No auxiliary model — set one with /auxiliary',
+          mode: ToastMode.error,
+        );
       }
       setState(() {});
       return;
@@ -1509,7 +1537,11 @@ class _ChatPanelState extends State<ChatPanel> {
           final mainContent = Row(
             children: [
               Expanded(child: _buildMainInterface()),
-              VerticalDivider(width: 1, thickness: 1, color: CruxTheme.divider),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: CruxTheme.of(context).divider,
+              ),
               SizedBox(
                 width: _infoPanelWidth,
                 child: ExtraInfoPanel(
@@ -1616,12 +1648,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
     // Toast hub always present — manages its own queue and visibility.
     overlays.add(
-      Positioned(
-        bottom: 0,
-        left: 0,
-        right: 0,
-        child: ToastHub(key: _toastKey),
-      ),
+      Positioned(bottom: 0, left: 0, right: 0, child: ToastHub(key: _toastKey)),
     );
 
     // Wrap the message list with its floating overlays in a Stack
@@ -1630,10 +1657,7 @@ class _ChatPanelState extends State<ChatPanel> {
       Expanded(
         child: Stack(
           fit: StackFit.expand,
-          children: [
-            _buildMessageList(),
-            ...overlays,
-          ],
+          children: [_buildMessageList(), ...overlays],
         ),
       ),
     );
@@ -1643,7 +1667,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final isStreaming = rt?.isResponding ?? false;
 
     children.add(_buildToolbar());
-    children.add(Divider(color: CruxTheme.divider, height: 1));
+    children.add(Divider(color: CruxTheme.of(context).divider, height: 1));
     children.add(_buildInputRow(isStreaming: isStreaming));
 
     return Column(children: children);
@@ -1672,13 +1696,14 @@ class _ChatPanelState extends State<ChatPanel> {
       // [SessionController.btwBuffer]). Show the chain rather
       // than the empty-state placeholder in that case so the
       // user doesn't lose their scratch space to a blank panel.
-      final hasBtwTurns = sessionId != null &&
+      final hasBtwTurns =
+          sessionId != null &&
           _sessionController.btwTurnsFor(sessionId).isNotEmpty;
       if (!hasBtwTurns) {
         return Center(
           child: Text(
             'No messages yet.',
-            style: TextStyle(color: CruxTheme.onSurfaceDim),
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
         );
       }
@@ -1718,7 +1743,7 @@ class _ChatPanelState extends State<ChatPanel> {
       );
 
       if (msg.role == 'user') {
-        items.add(Divider(color: CruxTheme.divider, height: 1));
+        items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
       }
 
       if (msg.role == 'ai' && msg.id > 0 && rt != null) {
@@ -1728,7 +1753,7 @@ class _ChatPanelState extends State<ChatPanel> {
           final aiMessageItemIndex = items.length - 1;
           final aiMessageId = msg.id;
           final aiMessageContent = msg.content;
-          items.add(Divider(color: CruxTheme.divider, height: 1));
+          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
           items.add(
             TldrBubble(
               tldrText: msg.tldr,
@@ -1746,12 +1771,12 @@ class _ChatPanelState extends State<ChatPanel> {
               ),
             ),
           );
-          items.add(Divider(color: CruxTheme.divider, height: 1));
+          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
         } else {
-          final nextIsUser = i + 1 < messages.length &&
-              messages[i + 1].role == 'user';
+          final nextIsUser =
+              i + 1 < messages.length && messages[i + 1].role == 'user';
           if (nextIsUser) {
-            items.add(Divider(color: CruxTheme.divider, height: 1));
+            items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
           }
         }
       }
@@ -1807,7 +1832,7 @@ class _ChatPanelState extends State<ChatPanel> {
             streaming: true,
           ),
         );
-            } else {
+      } else {
         items.add(
           StreamingBubble(
             streamingContent: _streamingController.streamingContentFor(
@@ -1855,7 +1880,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final markers = List.generate(userItemIndices.length, (i) {
       return ScrollbarMarker(
         itemIndex: userItemIndices[i],
-        color: CruxTheme.userPrefix,
+        color: CruxTheme.of(context).userPrefix,
         label: userItemLabels[i],
       );
     });
@@ -1870,7 +1895,7 @@ class _ChatPanelState extends State<ChatPanel> {
         controller: scrollController,
         thumbVisibility: true,
         markers: markers,
-        tooltipBackgroundColor: CruxTheme.overlayBackground,
+        tooltipBackgroundColor: CruxTheme.of(context).overlayBackground,
         child: ListView.builder(
           controller: scrollController,
           padding: EdgeInsets.all(1),
@@ -1896,10 +1921,10 @@ class _ChatPanelState extends State<ChatPanel> {
         : Button(
             label: modelLabel,
             onPressed: _onModelButtonPressed,
-            color: CruxTheme.onSurfaceVariant,
-            hoverColor: CruxTheme.buttonTextHover,
-            bgColor: CruxTheme.buttonBackground,
-            hoverBgColor: CruxTheme.buttonBackgroundHover,
+            color: CruxTheme.of(context).onSurfaceVariant,
+            hoverColor: CruxTheme.of(context).buttonTextHover,
+            bgColor: CruxTheme.of(context).buttonBackground,
+            hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           );
 
@@ -1965,22 +1990,27 @@ class _ChatPanelState extends State<ChatPanel> {
               if (_modelSupportsImages(_sessionController.currentSession.model))
                 Text(
                   '\u{F06E}',
-                  style: TextStyle(color: CruxTheme.onSurfaceVariant),
+                  style: TextStyle(
+                    color: CruxTheme.of(context).onSurfaceVariant,
+                  ),
                 ),
               if (showThinking)
                 Button(
                   label: thinkingLabel!,
                   onPressed: () => _cycleThinkingLevel(rt!),
                   color: rt!.thinkingMode == 'disabled'
-                      ? CruxTheme.thinkingLabelDisabled
-                      : CruxTheme.onSurfaceVariant,
-                  hoverColor: CruxTheme.buttonTextHover,
-                  bgColor: CruxTheme.buttonBackground,
-                  hoverBgColor: CruxTheme.buttonBackgroundHover,
+                      ? CruxTheme.of(context).thinkingLabelDisabled
+                      : CruxTheme.of(context).onSurfaceVariant,
+                  hoverColor: CruxTheme.of(context).buttonTextHover,
+                  bgColor: CruxTheme.of(context).buttonBackground,
+                  hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
                   padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 ),
               if (showContext) ...[
-                Text('  ', style: TextStyle(color: CruxTheme.divider)),
+                Text(
+                  '  ',
+                  style: TextStyle(color: CruxTheme.of(context).divider),
+                ),
                 _buildContextBar(),
               ],
               if (showTokPerSec || showTtft)
@@ -1991,7 +2021,12 @@ class _ChatPanelState extends State<ChatPanel> {
                   child: Row(
                     children: [
                       if (showTokPerSec) ...[
-                        Text('  ', style: TextStyle(color: CruxTheme.divider)),
+                        Text(
+                          '  ',
+                          style: TextStyle(
+                            color: CruxTheme.of(context).divider,
+                          ),
+                        ),
                         Text(
                           _metricsHovered
                               ? _cacheHitLabel(
@@ -2001,19 +2036,24 @@ class _ChatPanelState extends State<ChatPanel> {
                               : tokText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
-                                ? CruxTheme.metricsActive
-                                : CruxTheme.metricsIdle,
+                                ? CruxTheme.of(context).metricsActive
+                                : CruxTheme.of(context).metricsIdle,
                           ),
                         ),
                       ],
                       if (showTtft) ...[
-                        Text(' ', style: TextStyle(color: CruxTheme.divider)),
+                        Text(
+                          ' ',
+                          style: TextStyle(
+                            color: CruxTheme.of(context).divider,
+                          ),
+                        ),
                         Text(
                           ttftText,
                           style: TextStyle(
                             color: rt?.isResponding ?? false
-                                ? CruxTheme.metricsActive
-                                : CruxTheme.metricsIdle,
+                                ? CruxTheme.of(context).metricsActive
+                                : CruxTheme.of(context).metricsIdle,
                           ),
                         ),
                       ],
@@ -2037,8 +2077,7 @@ class _ChatPanelState extends State<ChatPanel> {
     // summary — so the user gets the same visual feedback as for the
     // main model during a chat response.
     final isAuxBusy =
-        _sessionController.isGeneratingTitle ||
-        (rt?.isGeneratingTldr ?? false);
+        _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
     return GlossyModelButton(
       label: '\u{F013} ${_sessionController.auxiliaryModelShortName}',
       isAnimating: isAuxBusy,
@@ -2079,15 +2118,15 @@ class _ChatPanelState extends State<ChatPanel> {
       width: 20,
       label: labelText,
       fillColor: _streamingController.contextBarHovered
-          ? CruxTheme.metricsActive
-          : CruxTheme.progressFill,
-      emptyColor: CruxTheme.progressEmpty,
+          ? CruxTheme.of(context).metricsActive
+          : CruxTheme.of(context).progressFill,
+      emptyColor: CruxTheme.of(context).progressEmpty,
       labelFillFg: _streamingController.contextBarHovered
-          ? CruxTheme.outlineDim
-          : CruxTheme.buttonBackground,
+          ? CruxTheme.of(context).outlineDim
+          : CruxTheme.of(context).buttonBackground,
       labelEmptyFg: _streamingController.contextBarHovered
-          ? CruxTheme.metricsActive
-          : CruxTheme.progressLabelEmpty,
+          ? CruxTheme.of(context).metricsActive
+          : CruxTheme.of(context).progressLabelEmpty,
     );
 
     return MouseRegion(
@@ -2273,13 +2312,16 @@ class _ChatPanelState extends State<ChatPanel> {
       padding: EdgeInsets.all(1),
       child: Row(
         children: [
-          Text('> ', style: TextStyle(color: CruxTheme.onSurfaceDim)),
+          Text(
+            '> ',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
           Expanded(
             child: TextField(
               controller: textController,
               focused: !_overlayController.showSessionManager,
               maxLines: null,
-              style: TextStyle(color: CruxTheme.foreground),
+              style: TextStyle(color: CruxTheme.of(context).foreground),
               placeholder: placeholder,
               onKeyEvent: _handleInputKeyEvent,
               wordBoundaryProvider: cjkWordBoundaryProvider,

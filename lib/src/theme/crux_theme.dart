@@ -1,183 +1,364 @@
 import 'package:nocterm/nocterm.dart';
 
-class CruxTheme {
-  static const background = Color(0x282A36);
-  static const currentLine = Color(0x44475A);
-  static const foreground = Color(0xF8F8F2);
-  static const comment = Color(0x6272A4);
-  static const cyan = Color(0x8BE9FD);
-  static const green = Color(0x50FA7B);
-  static const orange = Color(0xFFB86C);
-  static const pink = Color(0xFF79C6);
-  static const purple = Color(0xBD93F9);
-  static const red = Color(0xFF5555);
-  static const yellow = Color(0xF1FA8C);
+/// A complete, resolved Crux color palette.
+///
+/// Theme files define the compact semantic fields below. Component-specific
+/// colors are derived so custom themes do not need to duplicate every visual
+/// role used by the application.
+class CruxThemeData {
+  final String id;
+  final String name;
+  final Brightness brightness;
 
-  static const surface = Color(0x44475A);
-  static const surfaceVariant = Color(0x343746);
-  static const surfaceBright = Color(0x5A5E72);
+  final Color background;
+  final Color surface;
+  final Color surfaceVariant;
+  final Color primary;
+  final Color onPrimary;
+  final Color secondary;
+  final Color onSecondary;
+  final Color accent;
+  final Color error;
+  final Color onError;
+  final Color warning;
+  final Color onWarning;
+  final Color success;
+  final Color onSuccess;
+  final Color info;
+  final Color text;
+  final Color textMuted;
+  final Color border;
+  final Color borderActive;
+  final Color borderSubtle;
+  final Color selection;
+  final Color selectedText;
 
-  static const onSurface = Color(0xF8F8F2);
-  static const onSurfaceVariant = Color(0xCCD0DA);
-  static const onSurfaceDim = Color(0x6272A4);
+  final Color markdownText;
+  final Color markdownHeading;
+  final Color markdownLink;
+  final Color markdownCode;
+  final Color markdownBlockQuote;
+  final Color markdownEmphasis;
+  final Color markdownStrong;
+  final Color markdownRule;
+  final Color markdownList;
+  final Color markdownCodeBlock;
 
-  static const outline = Color(0x6272A4);
-  static const outlineVariant = Color(0x44475A);
-  static const outlineDim = Color(0x343746);
-  static const outlineBright = Color(0x7A7F9A);
+  final Color syntaxDefault;
+  final Color syntaxComment;
+  final Color syntaxKeyword;
+  final Color syntaxStorage;
+  final Color syntaxFunction;
+  final Color syntaxType;
+  final Color syntaxString;
+  final Color syntaxConstant;
+  final Color syntaxNumber;
+  final Color syntaxVariable;
+  final Color syntaxTag;
+  final Color syntaxAttribute;
+  final Color syntaxOperator;
+  final Color syntaxPunctuation;
+  final Color syntaxMeta;
 
-  static const selectionColor = Color(0x645484);
+  const CruxThemeData({
+    required this.id,
+    required this.name,
+    required this.brightness,
+    required this.background,
+    required this.surface,
+    required this.surfaceVariant,
+    required this.primary,
+    required this.onPrimary,
+    required this.secondary,
+    required this.onSecondary,
+    required this.accent,
+    required this.error,
+    required this.onError,
+    required this.warning,
+    required this.onWarning,
+    required this.success,
+    required this.onSuccess,
+    required this.info,
+    required this.text,
+    required this.textMuted,
+    required this.border,
+    required this.borderActive,
+    required this.borderSubtle,
+    required this.selection,
+    required this.selectedText,
+    required this.markdownText,
+    required this.markdownHeading,
+    required this.markdownLink,
+    required this.markdownCode,
+    required this.markdownBlockQuote,
+    required this.markdownEmphasis,
+    required this.markdownStrong,
+    required this.markdownRule,
+    required this.markdownList,
+    required this.markdownCodeBlock,
+    required this.syntaxDefault,
+    required this.syntaxComment,
+    required this.syntaxKeyword,
+    required this.syntaxStorage,
+    required this.syntaxFunction,
+    required this.syntaxType,
+    required this.syntaxString,
+    required this.syntaxConstant,
+    required this.syntaxNumber,
+    required this.syntaxVariable,
+    required this.syntaxTag,
+    required this.syntaxAttribute,
+    required this.syntaxOperator,
+    required this.syntaxPunctuation,
+    required this.syntaxMeta,
+  });
 
-  static const buttonBackground = Color(0x44475A);
-  static const buttonBackgroundHover = Color(0x5A5E72);
-  static const buttonBackgroundFocused = Color(0x5A5E72);
-  static const buttonBackgroundDisabled = Color(0x343746);
-  static const buttonText = foreground;
-  static const buttonTextHover = cyan;
-  static const buttonTextFocused = cyan;
-  static const buttonTextDisabled = comment;
+  Color mix(Color target, double amount) =>
+      Color.lerp(background, target, amount)!;
 
-  static const overlayBackground = Color(0x21222C);
-  static const overlayBorder = outline;
-  static const overlaySurface = surface;
+  Color onColor(Color color) {
+    final luminance =
+        (0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue) / 255;
+    return luminance > 0.55 ? const Color(0x111111) : const Color(0xFFFFFF);
+  }
 
-  static const divider = outlineVariant;
-  static const dividerDim = outlineDim;
+  TuiThemeData toTuiThemeData() => TuiThemeData(
+    brightness: brightness,
+    background: background,
+    onBackground: text,
+    surface: surface,
+    onSurface: text,
+    primary: primary,
+    onPrimary: onPrimary,
+    secondary: secondary,
+    onSecondary: onSecondary,
+    error: error,
+    onError: onError,
+    success: success,
+    onSuccess: onSuccess,
+    warning: warning,
+    onWarning: onWarning,
+    outline: border,
+    outlineVariant: borderSubtle,
+    selectionColor: selection,
+  );
 
-  static const inputPrompt = comment;
-  static const inputText = foreground;
+  // Application roles derived from semantic tokens.
+  Color get foreground => text;
+  Color get comment => textMuted;
+  Color get cyan => accent;
+  Color get green => success;
+  Color get orange => info;
+  Color get pink => secondary;
+  Color get purple => primary;
+  Color get red => error;
+  Color get yellow => warning;
+  Color get currentLine => surfaceVariant;
+  Color get surfaceBright => Color.lerp(surfaceVariant, text, 0.16)!;
+  Color get onSurface => text;
+  Color get onSurfaceVariant => Color.lerp(textMuted, text, 0.45)!;
+  Color get onSurfaceDim => textMuted;
+  Color get outline => border;
+  Color get outlineVariant => borderSubtle;
+  Color get outlineDim => Color.lerp(background, borderSubtle, 0.75)!;
+  Color get outlineBright => borderActive;
+  Color get selectionColor => selection;
 
-  static const aiPrefix = purple;
-  static const userPrefix = cyan;
-  static const responsePrefix = yellow;
-  static const thinkPrefix = Color(0xBD93F9);
-  static const toolPrefix = comment;
-  static const thinkingPrefix = comment;
-  static const thinkingCollapsedText = comment;
-  static const thinkingExpandedText = Color(0x6272A4);
-  static const thinkingLabelDisabled = Color(0x44475A);
+  Color get buttonBackground => surface;
+  Color get buttonBackgroundHover => surfaceVariant;
+  Color get buttonBackgroundFocused => surfaceVariant;
+  Color get buttonBackgroundDisabled => mix(surface, 0.55);
+  Color get buttonText => text;
+  Color get buttonTextHover => accent;
+  Color get buttonTextFocused => accent;
+  Color get buttonTextDisabled => textMuted;
 
-  static const sessionPrefixRunning = green;
-  static const sessionPrefixActive = cyan;
-  static const sessionPrefixIdle = comment;
-  static const sessionPrefixDone = pink;
-  static const sessionPrefixNeedsAction = yellow;
-  static const sessionPrefixError = red;
+  Color get overlayBackground => surface;
+  Color get overlayBorder => border;
+  Color get overlaySurface => surfaceVariant;
+  Color get divider => borderSubtle;
+  Color get dividerDim => outlineDim;
+  Color get inputPrompt => textMuted;
+  Color get inputText => text;
 
-  static const toolbarSpacer = comment;
-  static const metricsActive = Color(0x8BE9FD);
-  static const metricsIdle = comment;
+  Color get aiPrefix => secondary;
+  Color get userPrefix => accent;
+  Color get responsePrefix => warning;
+  Color get thinkPrefix => secondary;
+  Color get toolPrefix => textMuted;
+  Color get thinkingPrefix => textMuted;
+  Color get thinkingCollapsedText => textMuted;
+  Color get thinkingExpandedText => textMuted;
+  Color get thinkingLabelDisabled => borderSubtle;
 
-  static const wizardTitle = pink;
-  static const wizardHeader = purple;
-  static const wizardDivider = outline;
-  static const wizardOverlayBg = Color(0x21222C);
-  static const wizardRowBgDefault = Color(0x21222C);
-  static const wizardRowBgSelected = surfaceVariant;
-  static const wizardRowBgHover = surface;
-  static const wizardMarkerSelected = yellow;
-  static const wizardMarkerUnselected = comment;
-  static const wizardTextSelected = cyan;
-  static const wizardTextUnselected = foreground;
-  static const wizardTextDim = comment;
+  Color get sessionPrefixRunning => success;
+  Color get sessionPrefixActive => accent;
+  Color get sessionPrefixIdle => textMuted;
+  Color get sessionPrefixDone => secondary;
+  Color get sessionPrefixNeedsAction => warning;
+  Color get sessionPrefixError => error;
+  Color get toolbarSpacer => textMuted;
+  Color get metricsActive => accent;
+  Color get metricsIdle => textMuted;
 
-  static const codeBlockBackground = Color(0x282A36);
-  static const codeBlockHeader = comment;
-  static const codeBlockGutter = Color(0x6272A4);
-  static const codeBlockBorder = outline;
+  Color get wizardTitle => secondary;
+  Color get wizardHeader => primary;
+  Color get wizardDivider => border;
+  Color get wizardOverlayBg => surface;
+  Color get wizardRowBgDefault => surface;
+  Color get wizardRowBgSelected => surfaceVariant;
+  Color get wizardRowBgHover => surfaceVariant;
+  Color get wizardMarkerSelected => warning;
+  Color get wizardMarkerUnselected => textMuted;
+  Color get wizardTextSelected => accent;
+  Color get wizardTextUnselected => text;
+  Color get wizardTextDim => textMuted;
 
-  static const highlightKeyword = pink;
-  static const highlightStorage = pink;
-  static const highlightFunction = yellow;
-  static const highlightType = cyan;
-  static const highlightString = orange;
-  static const highlightComment = comment;
-  static const highlightConstant = purple;
-  static const highlightNumeric = green;
-  static const highlightVariable = cyan;
-  static const highlightTag = green;
-  static const highlightAttribute = cyan;
-  static const highlightPunctuation = foreground;
-  static const highlightMeta = foreground;
-  static const highlightDefault = foreground;
+  Color get codeBlockBackground => surface;
+  Color get codeBlockHeader => textMuted;
+  Color get codeBlockGutter => border;
+  Color get codeBlockBorder => border;
 
-  static const mdH1 = pink;
-  static const mdH2 = purple;
-  static const mdH3 = green;
-  static const mdH4 = foreground;
-  static const mdH5 = foreground;
-  static const mdH6 = foreground;
-  static const mdBold = foreground;
-  static const mdItalic = foreground;
-  static const mdStrikethrough = foreground;
-  static const mdInlineCode = orange;
-  static const mdInlineCodeBg = surfaceVariant;
-  static const mdCodeBlockText = foreground;
-  static const mdBlockquote = comment;
-  static const mdLink = cyan;
-  static const mdListBullet = foreground;
+  Color get highlightKeyword => syntaxKeyword;
+  Color get highlightStorage => syntaxStorage;
+  Color get highlightFunction => syntaxFunction;
+  Color get highlightType => syntaxType;
+  Color get highlightString => syntaxString;
+  Color get highlightComment => syntaxComment;
+  Color get highlightConstant => syntaxConstant;
+  Color get highlightNumeric => syntaxNumber;
+  Color get highlightVariable => syntaxVariable;
+  Color get highlightTag => syntaxTag;
+  Color get highlightAttribute => syntaxAttribute;
+  Color get highlightPunctuation => syntaxPunctuation;
+  Color get highlightMeta => syntaxMeta;
+  Color get highlightDefault => syntaxDefault;
 
-  static const progressFill = purple;
-  static const progressEmpty = surfaceVariant;
-  static const progressLabelFill = foreground;
-  static const progressLabelEmpty = comment;
-  static const progressLabelFillHover = Color(0x8BE9FD);
-  static const progressLabelEmptyHover = foreground;
+  Color get mdH1 => markdownHeading;
+  Color get mdH2 => markdownHeading;
+  Color get mdH3 => markdownHeading;
+  Color get mdH4 => markdownHeading;
+  Color get mdH5 => markdownHeading;
+  Color get mdH6 => markdownHeading;
+  Color get mdBold => markdownStrong;
+  Color get mdItalic => markdownEmphasis;
+  Color get mdStrikethrough => markdownText;
+  Color get mdInlineCode => markdownCode;
+  Color get mdInlineCodeBg => surfaceVariant;
+  Color get mdCodeBlockText => markdownCodeBlock;
+  Color get mdBlockquote => markdownBlockQuote;
+  Color get mdLink => markdownLink;
+  Color get mdListBullet => markdownList;
 
-  static const toastBackground = surfaceVariant;
-  static const toastBorder = outline;
-  static const toastText = yellow;
+  Color get progressFill => primary;
+  Color get progressEmpty => surfaceVariant;
+  Color get progressLabelFill => onPrimary;
+  Color get progressLabelEmpty => textMuted;
+  Color get progressLabelFillHover => accent;
+  Color get progressLabelEmptyHover => text;
 
-  // Per-mode colour coding so each toast mode is visually distinct.
-  static const toastBgError = Color(0x3D2020);
-  static const toastBorderError = Color(0xFF4444);
-  static const toastTextError = Color(0xFF8888);
+  Color get toastBackground => surfaceVariant;
+  Color get toastBorder => border;
+  Color get toastText => warning;
+  Color get toastBgError => Color.lerp(background, error, 0.20)!;
+  Color get toastBorderError => error;
+  Color get toastTextError => error;
+  Color get toastBgStatus => Color.lerp(background, success, 0.18)!;
+  Color get toastBorderStatus => success;
+  Color get toastTextStatus => success;
+  Color get toastBgInfo => surfaceVariant;
+  Color get toastBorderInfo => border;
+  Color get toastTextInfo => info;
 
-  static const toastBgStatus = Color(0x1E3D20);
-  static const toastBorderStatus = Color(0x44CC44);
-  static const toastTextStatus = Color(0x66EE66);
+  Color get deleteWarning => error;
+  Color get deleteBackground => surface;
+  Color get confirmText => text;
+  Color get hintText => textMuted;
+  Color get errorColor => error;
+  Color get successColor => success;
+  Color get warningColor => warning;
+  Color get tldrPrefix => warning;
+  Color get tldrBody => text;
+  Color get tldrLink => markdownLink;
+  Color get tldrLinkHoverFg => selectedText;
+  Color get tldrHint => textMuted;
 
-  static const toastBgInfo = surfaceVariant;
-  static const toastBorderInfo = outline;
-  static const toastTextInfo = yellow;
+  Color get btwBackground => surface;
+  Color get btwBorder => borderSubtle;
+  Color get btwUserPrefix => textMuted;
+  Color get btwAiPrefix => secondary;
+  Color get queueBackground => surface;
+  Color get queueBorder => borderSubtle;
+  Color get queuePrefix => warning;
+  Color get queueText => onSurfaceVariant;
+  Color get queueDiscardText => error;
+  Color get queueDiscardHoverText => Color.lerp(error, text, 0.25)!;
 
-  static const deleteWarning = red;
-  static const deleteBackground = Color(0x44475A);
-  static const confirmText = foreground;
-  static const hintText = comment;
+  static const draculaFallback = CruxThemeData(
+    id: 'dracula',
+    name: 'Dracula',
+    brightness: Brightness.dark,
+    background: Color(0x282A36),
+    surface: Color(0x21222C),
+    surfaceVariant: Color(0x44475A),
+    primary: Color(0xBD93F9),
+    onPrimary: Color(0x111111),
+    secondary: Color(0xFF79C6),
+    onSecondary: Color(0x111111),
+    accent: Color(0x8BE9FD),
+    error: Color(0xFF5555),
+    onError: Color(0x111111),
+    warning: Color(0xF1FA8C),
+    onWarning: Color(0x111111),
+    success: Color(0x50FA7B),
+    onSuccess: Color(0x111111),
+    info: Color(0xFFB86C),
+    text: Color(0xF8F8F2),
+    textMuted: Color(0x6272A4),
+    border: Color(0x44475A),
+    borderActive: Color(0xBD93F9),
+    borderSubtle: Color(0x191A21),
+    selection: Color(0xBD93F9),
+    selectedText: Color(0x282A36),
+    markdownText: Color(0xF8F8F2),
+    markdownHeading: Color(0xBD93F9),
+    markdownLink: Color(0x8BE9FD),
+    markdownCode: Color(0x50FA7B),
+    markdownBlockQuote: Color(0x6272A4),
+    markdownEmphasis: Color(0xF1FA8C),
+    markdownStrong: Color(0xFFB86C),
+    markdownRule: Color(0x6272A4),
+    markdownList: Color(0xBD93F9),
+    markdownCodeBlock: Color(0xF8F8F2),
+    syntaxDefault: Color(0xF8F8F2),
+    syntaxComment: Color(0x6272A4),
+    syntaxKeyword: Color(0xFF79C6),
+    syntaxStorage: Color(0xFF79C6),
+    syntaxFunction: Color(0x50FA7B),
+    syntaxType: Color(0x8BE9FD),
+    syntaxString: Color(0xF1FA8C),
+    syntaxConstant: Color(0xBD93F9),
+    syntaxNumber: Color(0xBD93F9),
+    syntaxVariable: Color(0xF8F8F2),
+    syntaxTag: Color(0x8BE9FD),
+    syntaxAttribute: Color(0xF8F8F2),
+    syntaxOperator: Color(0xFF79C6),
+    syntaxPunctuation: Color(0xF8F8F2),
+    syntaxMeta: Color(0xF8F8F2),
+  );
+}
 
-  static const errorColor = red;
-  static const successColor = green;
-  static const warningColor = yellow;
+/// Provides the active [CruxThemeData] to the TUI.
+class CruxTheme extends InheritedComponent {
+  final CruxThemeData data;
 
-  static const primary = purple;
-  static const secondary = pink;
+  CruxTheme({super.key, required this.data, required super.child});
 
-  static const tldrPrefix = Color(0xF1FA8C);
-  static const tldrBody = Color(0xF8F8F2);
-  static const tldrLink = Color(0x8BE9FD);
-  static const tldrLinkHoverFg = Color(0x282A36);
-  static const tldrHint = Color(0x6272A4);
+  static CruxThemeData of(BuildContext context) {
+    final theme = context.dependOnInheritedComponentOfExactType<CruxTheme>();
+    return theme?.data ?? CruxThemeData.draculaFallback;
+  }
 
-  // `/btw` ephemeral chain. Picked to read as visually distinct
-  // from regular conversation (which uses cyan/yellow prefixes on
-  // the base background) without screaming for attention — btw
-  // chains live in the same scroll and the user wants to read them
-  // like any other turn, just clearly demarcated.
-  static const btwBackground = Color(0x21222C);
-  static const btwBorder = Color(0x44475A);
-  static const btwUserPrefix = Color(0x6272A4);
-  static const btwAiPrefix = Color(0xBD93F9);
-
-  // Queued messages display. Visually similar to the btw chain
-  // (boxed, dim) but with a warm accent to signal "pending action"
-  // rather than "ephemeral side-channel". The prefix uses yellow
-  // (same as responsePrefix) so the user reads it as "input going
-  // to the agent" rather than a completed message.
-  static const queueBackground = Color(0x21222C);
-  static const queueBorder = Color(0x44475A);
-  static const queuePrefix = Color(0xF1FA8C);
-  static const queueText = Color(0xCCD0DA);
-  static const queueDiscardText = Color(0xFF5555);
-  static const queueDiscardHoverText = Color(0xFF8888);
+  @override
+  bool updateShouldNotify(CruxTheme oldComponent) => data != oldComponent.data;
 }

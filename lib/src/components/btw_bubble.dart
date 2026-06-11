@@ -20,27 +20,22 @@ class BtwBubble extends StatelessComponent {
   /// Construct a user-prompt variant of the btw bubble. The
   /// `streaming` flag is always false — user bubbles are always
   /// fully formed the moment they're rendered.
-  const BtwBubble.user({
-    super.key,
-    required this.content,
-  })  : isUser = true,
-        streaming = false;
+  const BtwBubble.user({super.key, required this.content})
+    : isUser = true,
+      streaming = false;
 
   /// Construct an AI-response variant of the btw bubble. Pass
   /// `streaming: true` for the live "btw ..." bubble shown while
   /// the LLM is still emitting deltas; the final rendered bubble
   /// is `BtwBubble.ai` with `streaming: false` (the default).
-  const BtwBubble.ai({
-    super.key,
-    required this.content,
-    this.streaming = false,
-  }) : isUser = false;
+  const BtwBubble.ai({super.key, required this.content, this.streaming = false})
+    : isUser = false;
 
   @override
   Component build(BuildContext context) {
     final prefixColor = isUser
-        ? CruxTheme.btwUserPrefix
-        : CruxTheme.btwAiPrefix;
+        ? CruxTheme.of(context).btwUserPrefix
+        : CruxTheme.of(context).btwAiPrefix;
     final prefix = isUser
         ? ' btw > '
         : (streaming && content.isEmpty ? ' btw ... ' : ' btw ✦ ');
@@ -48,22 +43,22 @@ class BtwBubble extends StatelessComponent {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       decoration: BoxDecoration(
-        color: CruxTheme.btwBackground,
+        color: CruxTheme.of(context).btwBackground,
         border: BoxBorder(
           top: BorderSide(
-            color: CruxTheme.btwBorder,
+            color: CruxTheme.of(context).btwBorder,
             style: BoxBorderStyle.rounded,
           ),
           right: BorderSide(
-            color: CruxTheme.btwBorder,
+            color: CruxTheme.of(context).btwBorder,
             style: BoxBorderStyle.rounded,
           ),
           bottom: BorderSide(
-            color: CruxTheme.btwBorder,
+            color: CruxTheme.of(context).btwBorder,
             style: BoxBorderStyle.rounded,
           ),
           left: BorderSide(
-            color: CruxTheme.btwBorder,
+            color: CruxTheme.of(context).btwBorder,
             style: BoxBorderStyle.rounded,
           ),
         ),
@@ -79,16 +74,13 @@ class BtwBubble extends StatelessComponent {
           children: [
             Text(
               prefix,
-              style: TextStyle(
-                color: prefixColor,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: prefixColor, fontWeight: FontWeight.bold),
             ),
             Expanded(
               child: isUser
                   ? Text(
                       content,
-                      style: TextStyle(color: CruxTheme.foreground),
+                      style: TextStyle(color: CruxTheme.of(context).foreground),
                     )
                   : HighlightedMarkdownText(content),
             ),

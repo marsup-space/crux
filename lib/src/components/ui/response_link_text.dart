@@ -18,11 +18,11 @@ class ResponseLink {
     this.anchor,
   });
 
-  bool containsIndex(int index) =>
-      index >= offset && index < offset + length;
+  bool containsIndex(int index) => index >= offset && index < offset + length;
 
   @override
-  String toString() => 'ResponseLink("$text" @$offset:$length'
+  String toString() =>
+      'ResponseLink("$text" @$offset:$length'
       '${url != null ? " url=$url" : ""}'
       '${anchor != null ? " anchor=$anchor" : ""})';
 }
@@ -70,13 +70,15 @@ _ParsedTldr _parseTldrRefs(String tldrText) {
       }
       final linkOffset = buffer.length;
       buffer.write(' [R$refIndex]');
-      links.add(ResponseLink(
-        text: '[R$refIndex]',
-        offset: linkOffset + 1,
-        length: '[R$refIndex]'.length,
-        url: null,
-        anchor: excerpt,
-      ));
+      links.add(
+        ResponseLink(
+          text: '[R$refIndex]',
+          offset: linkOffset + 1,
+          length: '[R$refIndex]'.length,
+          url: null,
+          anchor: excerpt,
+        ),
+      );
     }
     cursor = match.end;
   }
@@ -109,8 +111,6 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
   ResponseLink? _hoveredLink;
   final GlobalKey _richTextKey = GlobalKey();
 
-  _ParsedTldr? _lastParsed;
-  List<InlineSpan>? _lastSpans;
   List<ResponseLink>? _lastLinks;
 
   RenderParagraph? get _renderParagraph {
@@ -124,14 +124,14 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
     return null;
   }
 
-  (List<InlineSpan>, List<ResponseLink>) _buildSpans() {
+  (List<InlineSpan>, List<ResponseLink>) _buildSpans(CruxThemeData theme) {
     final parsed = _parseTldrRefs(component.markdownText);
     if (parsed.links.isEmpty) {
-      final spans = _parseMarkdown(parsed.displayText);
+      final spans = _parseMarkdown(parsed.displayText, theme);
       return (spans, parsed.links);
     }
 
-    final mdSpans = _parseMarkdown(parsed.displayText);
+    final mdSpans = _parseMarkdown(parsed.displayText, theme);
     final plainText = _flattenToPlainText(mdSpans);
 
     final resolvedLinks = <ResponseLink>[];
@@ -139,50 +139,52 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
     for (final link in parsed.links) {
       final idx = plainText.indexOf(link.text, searchFrom);
       if (idx >= 0) {
-        resolvedLinks.add(ResponseLink(
-          text: link.text,
-          offset: idx,
-          length: link.text.length,
-          url: link.url,
-          anchor: link.anchor,
-        ));
+        resolvedLinks.add(
+          ResponseLink(
+            text: link.text,
+            offset: idx,
+            length: link.text.length,
+            url: link.url,
+            anchor: link.anchor,
+          ),
+        );
         searchFrom = idx + link.text.length;
       }
     }
 
-    final styledSpans = _applyLinkStyles(mdSpans, resolvedLinks);
+    final styledSpans = _applyLinkStyles(mdSpans, resolvedLinks, theme);
     return (styledSpans, resolvedLinks);
   }
 
-  List<InlineSpan> _parseMarkdown(String text) {
-    final styleSheet = HighlightMarkdownStyleSheet.terminalDark();
+  List<InlineSpan> _parseMarkdown(String text, CruxThemeData theme) {
+    final styleSheet = HighlightMarkdownStyleSheet.fromTheme(theme);
     final document = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
       encodeHtml: false,
     );
     final nodes = document.parse(text);
-    final visitor = _TldrMarkdownVisitor(styleSheet);
+    final visitor = _TldrMarkdownVisitor(styleSheet, theme);
     return visitor.visitNodes(nodes);
   }
 
   List<InlineSpan> _applyLinkStyles(
     List<InlineSpan> spans,
     List<ResponseLink> links,
+    CruxThemeData theme,
   ) {
     if (links.isEmpty) return spans;
 
     final flat = _flattenSpans(spans);
-    final plainText = flat.map((e) => e.$1).join();
-
-    final linkStyle = component.linkStyle ?? TextStyle(
-      color: CruxTheme.tldrLink,
-      decoration: TextDecoration.underline,
-    );
-    final linkHoverStyle = component.linkHoverStyle ?? TextStyle(
-      color: CruxTheme.tldrLinkHoverFg,
-      backgroundColor: CruxTheme.tldrLink,
-      fontWeight: FontWeight.bold,
-    );
+    final linkStyle =
+        component.linkStyle ??
+        TextStyle(color: theme.tldrLink, decoration: TextDecoration.underline);
+    final linkHoverStyle =
+        component.linkHoverStyle ??
+        TextStyle(
+          color: theme.onColor(theme.tldrLink),
+          backgroundColor: theme.tldrLink,
+          fontWeight: FontWeight.bold,
+        );
 
     final result = <_FlatSpan>[];
     int pos = 0;
@@ -215,7 +217,8 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
             ? span.$1.substring(linkEnd - spanStart)
             : '';
 
-        final isHovered = _hoveredLink != null &&
+        final isHovered =
+            _hoveredLink != null &&
             _hoveredLink!.offset == overlappingLink.offset &&
             _hoveredLink!.length == overlappingLink.length;
         final style = isHovered
@@ -244,8 +247,8 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
 
   @override
   Component build(BuildContext context) {
-    final (spans, links) = _buildSpans();
-    _lastSpans = spans;
+    final theme = CruxTheme.of(context);
+    final (spans, links) = _buildSpans(theme);
     _lastLinks = links;
 
     return GestureDetector(
@@ -325,6 +328,7 @@ String _flattenToPlainText(List<InlineSpan> spans) {
       }
     }
   }
+
   for (final span in spans) {
     walk(span);
   }
@@ -346,6 +350,7 @@ List<_FlatSpan> _flattenSpans(List<InlineSpan> spans) {
       }
     }
   }
+
   for (final span in spans) {
     walk(span, null);
   }
@@ -365,9 +370,10 @@ TextStyle? _mergeSpanStyles(TextStyle? parent, TextStyle? child) {
 }
 
 class _TldrMarkdownVisitor {
-  _TldrMarkdownVisitor(this.styleSheet);
+  _TldrMarkdownVisitor(this.styleSheet, this.theme);
 
   final HighlightMarkdownStyleSheet styleSheet;
+  final CruxThemeData theme;
   int _listDepth = 0;
 
   List<InlineSpan> visitNodes(List<md.Node> nodes) {
@@ -465,19 +471,13 @@ class _TldrMarkdownVisitor {
           style: styleSheet.strikethroughStyle,
         );
       case 'code':
-        return TextSpan(
-          text: element.textContent,
-          style: styleSheet.codeStyle,
-        );
+        return TextSpan(text: element.textContent, style: styleSheet.codeStyle);
       case 'pre':
         return TextSpan(text: element.textContent);
       case 'blockquote':
         return TextSpan(
           children: [
-            TextSpan(
-              text: '│ ',
-              style: styleSheet.blockquoteStyle,
-            ),
+            TextSpan(text: '│ ', style: styleSheet.blockquoteStyle),
             ...visitChildren(element),
           ],
         );
@@ -490,13 +490,15 @@ class _TldrMarkdownVisitor {
         _listDepth++;
         final spans = <InlineSpan>[];
         for (final child in element.children ?? <md.Node>[]) {
-          spans.add(TextSpan(
-            children: [
-              TextSpan(text: '  ' * (_listDepth - 1) + '• '),
-              ...visitChildren(child as md.Element),
-              const TextSpan(text: '\n'),
-            ],
-          ));
+          spans.add(
+            TextSpan(
+              children: [
+                TextSpan(text: '  ' * (_listDepth - 1) + '• '),
+                ...visitChildren(child as md.Element),
+                const TextSpan(text: '\n'),
+              ],
+            ),
+          );
         }
         _listDepth--;
         return TextSpan(children: spans);
@@ -505,13 +507,15 @@ class _TldrMarkdownVisitor {
         final spans = <InlineSpan>[];
         var i = 1;
         for (final child in element.children ?? <md.Node>[]) {
-          spans.add(TextSpan(
-            children: [
-              TextSpan(text: '  ' * (_listDepth - 1) + '$i. '),
-              ...visitChildren(child as md.Element),
-              const TextSpan(text: '\n'),
-            ],
-          ));
+          spans.add(
+            TextSpan(
+              children: [
+                TextSpan(text: '  ' * (_listDepth - 1) + '$i. '),
+                ...visitChildren(child as md.Element),
+                const TextSpan(text: '\n'),
+              ],
+            ),
+          );
           i++;
         }
         _listDepth--;
@@ -521,7 +525,7 @@ class _TldrMarkdownVisitor {
       case 'hr':
         return TextSpan(
           text: '${'─' * 40}\n',
-          style: TextStyle(color: CruxTheme.divider),
+          style: TextStyle(color: theme.divider),
         );
       case 'img':
         final alt = element.attributes['alt'] ?? '';
@@ -575,6 +579,7 @@ class _TldrMarkdownVisitor {
         }
       }
     }
+
     collectRows(table);
 
     if (rows.isEmpty) return const TextSpan(text: '');
@@ -591,10 +596,12 @@ class _TldrMarkdownVisitor {
     for (var r = 0; r < rows.length; r++) {
       if (r == 1) {
         final sep = colWidths.map((w) => '─' * (w + 2)).join('┼');
-        spans.add(TextSpan(
-          text: '$sep\n',
-          style: TextStyle(color: CruxTheme.divider),
-        ));
+        spans.add(
+          TextSpan(
+            text: '$sep\n',
+            style: TextStyle(color: theme.divider),
+          ),
+        );
       }
       final cells = <String>[];
       for (var c = 0; c < maxCols; c++) {

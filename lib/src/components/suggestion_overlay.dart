@@ -23,6 +23,7 @@ class SuggestionOverlay extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
     final visibleSuggestions = suggestions
         .skip(scrollOffset)
         .take(maxVisible)
@@ -39,7 +40,7 @@ class SuggestionOverlay extends StatelessComponent {
             Text(
               headerLabel,
               style: TextStyle(
-                color: CruxTheme.wizardTitle,
+                color: CruxTheme.of(context).wizardTitle,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -47,7 +48,7 @@ class SuggestionOverlay extends StatelessComponent {
         ),
       ),
     );
-    rows.add(Divider(color: CruxTheme.outline, height: 1));
+    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
 
     // Suggestion rows
     for (int i = 0; i < visibleSuggestions.length; i++) {
@@ -62,17 +63,17 @@ class SuggestionOverlay extends StatelessComponent {
           child: GestureDetector(
             onTap: () => onTap?.call(actualIndex),
             behavior: HitTestBehavior.opaque,
-            child: _buildSuggestionRow(suggestion, isSelected),
+            child: _buildSuggestionRow(suggestion, isSelected, theme),
           ),
         ),
       );
     }
 
-    rows.insert(0, Divider(color: CruxTheme.outline, height: 1));
-    rows.add(Divider(color: CruxTheme.outline, height: 1));
+    rows.insert(0, Divider(color: CruxTheme.of(context).outline, height: 1));
+    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
 
     return Container(
-      decoration: BoxDecoration(color: CruxTheme.wizardOverlayBg),
+      decoration: BoxDecoration(color: CruxTheme.of(context).wizardOverlayBg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
@@ -80,10 +81,14 @@ class SuggestionOverlay extends StatelessComponent {
     );
   }
 
-  Component _buildSuggestionRow(CommandSuggestion suggestion, bool isSelected) {
+  Component _buildSuggestionRow(
+    CommandSuggestion suggestion,
+    bool isSelected,
+    CruxThemeData theme,
+  ) {
     return Container(
       decoration: isSelected
-          ? BoxDecoration(color: CruxTheme.wizardRowBgSelected)
+          ? BoxDecoration(color: theme.wizardRowBgSelected)
           : null,
       padding: EdgeInsets.symmetric(horizontal: 1),
       child: Row(
@@ -92,16 +97,16 @@ class SuggestionOverlay extends StatelessComponent {
             isSelected ? '> ' : '  ',
             style: TextStyle(
               color: isSelected
-                  ? CruxTheme.wizardMarkerSelected
-                  : CruxTheme.wizardMarkerUnselected,
+                  ? theme.wizardMarkerSelected
+                  : theme.wizardMarkerUnselected,
             ),
           ),
           Text(
             suggestion.value,
             style: TextStyle(
               color: isSelected
-                  ? CruxTheme.wizardTextSelected
-                  : CruxTheme.wizardTextUnselected,
+                  ? theme.wizardTextSelected
+                  : theme.wizardTextUnselected,
               fontWeight: isSelected ? FontWeight.bold : null,
             ),
           ),
@@ -111,8 +116,8 @@ class SuggestionOverlay extends StatelessComponent {
               suggestion.description ?? '',
               style: TextStyle(
                 color: isSelected
-                    ? CruxTheme.wizardTextUnselected
-                    : CruxTheme.wizardTextDim,
+                    ? theme.wizardTextUnselected
+                    : theme.wizardTextDim,
               ),
             ),
           ),

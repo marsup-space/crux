@@ -21,16 +21,16 @@ class Button extends StatefulComponent {
   final VoidCallback? onPressed;
 
   /// Text color in the normal (non-hovered) state.
-  final Color color;
+  final Color? color;
 
   /// Text color when the button is hovered.
-  final Color hoverColor;
+  final Color? hoverColor;
 
   /// Background color in the normal state.
-  final Color bgColor;
+  final Color? bgColor;
 
   /// Background color when hovered.
-  final Color hoverBgColor;
+  final Color? hoverBgColor;
 
   /// Padding inside the button.
   final EdgeInsets padding;
@@ -42,22 +42,22 @@ class Button extends StatefulComponent {
   final bool focused;
 
   /// Text color when keyboard-focused.
-  final Color focusColor;
+  final Color? focusColor;
 
   /// Background color when keyboard-focused.
-  final Color focusBgColor;
+  final Color? focusBgColor;
 
   const Button({
     super.key,
     required this.label,
     this.onPressed,
-    this.color = CruxTheme.buttonTextDisabled,
-    this.hoverColor = CruxTheme.buttonTextHover,
-    this.bgColor = CruxTheme.buttonBackground,
-    this.hoverBgColor = CruxTheme.buttonBackgroundHover,
+    this.color,
+    this.hoverColor,
+    this.bgColor,
+    this.hoverBgColor,
     this.focused = false,
-    this.focusColor = CruxTheme.buttonTextFocused,
-    this.focusBgColor = CruxTheme.buttonBackgroundFocused,
+    this.focusColor,
+    this.focusBgColor,
     this.padding = const EdgeInsets.symmetric(horizontal: 1),
     this.style,
   });
@@ -72,16 +72,17 @@ class _ButtonState extends State<Button> {
   @override
   Component build(BuildContext context) {
     final btn = component;
+    final theme = CruxTheme.of(context);
     final activeColor = _hovered
-        ? btn.hoverColor
+        ? btn.hoverColor ?? theme.buttonTextHover
         : btn.focused
-        ? btn.focusColor
-        : btn.color;
+        ? btn.focusColor ?? theme.buttonTextFocused
+        : btn.color ?? theme.buttonTextDisabled;
     final activeBgColor = _hovered
-        ? btn.hoverBgColor
+        ? btn.hoverBgColor ?? theme.buttonBackgroundHover
         : btn.focused
-        ? btn.focusBgColor
-        : btn.bgColor;
+        ? btn.focusBgColor ?? theme.buttonBackgroundFocused
+        : btn.bgColor ?? theme.buttonBackground;
 
     final effectiveStyle = TextStyle(
       color: activeColor,

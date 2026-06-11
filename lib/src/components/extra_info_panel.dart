@@ -73,8 +73,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   static const double _animStep = 0.3;
   static const Duration _animInterval = Duration(milliseconds: 50);
 
-  static const Color _prefixDim = CruxTheme.onSurfaceDim;
-  static const Color _prefixBright = CruxTheme.sessionPrefixRunning;
+  Color get _prefixDim => CruxTheme.of(context).onSurfaceDim;
+  Color get _prefixBright => CruxTheme.of(context).sessionPrefixRunning;
 
   /// Flattened row items for the list view. Each item is either a
   /// [_SessionGroup] header or a [Session] row. This avoids nested
@@ -92,10 +92,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// - "Yesterday" header + yesterday's sessions
   /// - "5 Days" header + sessions from 2–5 days ago
   /// - "N archived /unarchive #id" hint
-  static List<Object> _buildRows(
-    List<Session> sorted,
-    int archivedCount,
-  ) {
+  static List<Object> _buildRows(List<Session> sorted, int archivedCount) {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
@@ -202,37 +199,38 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   }
 
   Color _prefixColor(SessionStatus status, bool isCurrent) {
-    if (isCurrent) return CruxTheme.sessionPrefixActive;
+    if (isCurrent) return CruxTheme.of(context).sessionPrefixActive;
     switch (status) {
       case SessionStatus.idle:
-        return CruxTheme.sessionPrefixIdle;
+        return CruxTheme.of(context).sessionPrefixIdle;
       case SessionStatus.running:
         return Color.lerp(_prefixDim, _prefixBright, _fadeIntensity())!;
       case SessionStatus.needUserAction:
-        return CruxTheme.sessionPrefixNeedsAction;
+        return CruxTheme.of(context).sessionPrefixNeedsAction;
       case SessionStatus.done:
-        return CruxTheme.sessionPrefixDone;
+        return CruxTheme.of(context).sessionPrefixDone;
     }
   }
 
   Color _titleColor(SessionStatus status, bool isCurrent, bool isHovered) {
-    if (isCurrent || isHovered) return CruxTheme.sessionPrefixActive;
+    if (isCurrent || isHovered)
+      return CruxTheme.of(context).sessionPrefixActive;
     switch (status) {
       case SessionStatus.idle:
-        return CruxTheme.sessionPrefixIdle;
+        return CruxTheme.of(context).sessionPrefixIdle;
       case SessionStatus.running:
-        return CruxTheme.sessionPrefixRunning;
+        return CruxTheme.of(context).sessionPrefixRunning;
       case SessionStatus.needUserAction:
-        return CruxTheme.sessionPrefixNeedsAction;
+        return CruxTheme.of(context).sessionPrefixNeedsAction;
       case SessionStatus.done:
-        return CruxTheme.sessionPrefixDone;
+        return CruxTheme.of(context).sessionPrefixDone;
     }
   }
 
   Color _bgColor(bool isCurrent, bool isHovered) {
-    if (isCurrent) return CruxTheme.wizardRowBgSelected;
-    if (isHovered) return CruxTheme.wizardRowBgSelected;
-    return CruxTheme.buttonBackground;
+    if (isCurrent) return CruxTheme.of(context).wizardRowBgSelected;
+    if (isHovered) return CruxTheme.of(context).wizardRowBgSelected;
+    return CruxTheme.of(context).buttonBackground;
   }
 
   String _truncate(String text, int maxLen) {
@@ -255,8 +253,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         child: Container(
           decoration: BoxDecoration(
             color: _titleHovered
-                ? CruxTheme.wizardRowBgSelected
-                : CruxTheme.buttonBackground,
+                ? CruxTheme.of(context).wizardRowBgSelected
+                : CruxTheme.of(context).buttonBackground,
           ),
           child: Row(
             children: [
@@ -264,8 +262,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 'Sessions',
                 style: TextStyle(
                   color: _titleHovered
-                      ? CruxTheme.wizardTextSelected
-                      : CruxTheme.wizardTitle,
+                      ? CruxTheme.of(context).wizardTextSelected
+                      : CruxTheme.of(context).wizardTitle,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -274,8 +272,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                   ' ⚙',
                   style: TextStyle(
                     color: _titleHovered
-                        ? CruxTheme.buttonTextFocused
-                        : CruxTheme.outline,
+                        ? CruxTheme.of(context).buttonTextFocused
+                        : CruxTheme.of(context).outline,
                   ),
                 ),
             ],
@@ -294,7 +292,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         header,
-        Divider(color: CruxTheme.outline, height: 1),
+        Divider(color: CruxTheme.of(context).outline, height: 1),
         Expanded(
           child: ListView.builder(
             lazy: true,
@@ -308,16 +306,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             },
           ),
         ),
-        Divider(color: CruxTheme.outline, height: 1),
+        Divider(color: CruxTheme.of(context).outline, height: 1),
         MultiButton(
           label: displayPath,
-          color: CruxTheme.onSurfaceVariant,
-          hoverColor: CruxTheme.foreground,
+          color: CruxTheme.of(context).onSurfaceVariant,
+          hoverColor: CruxTheme.of(context).foreground,
           segments: [
-            MultiButtonSegment(
-              label: 'open',
-              onPressed: panel.onOpenProject,
-            ),
+            MultiButtonSegment(label: 'open', onPressed: panel.onOpenProject),
             MultiButtonSegment(
               label: 'switch',
               onPressed: panel.onSwitchProject,
@@ -339,13 +334,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             Text(
               '$count archived',
               style: TextStyle(
-                color: CruxTheme.onSurfaceDim,
+                color: CruxTheme.of(context).onSurfaceDim,
                 fontWeight: FontWeight.bold,
               ),
             ),
             Text(
               ' /unarchive #id',
-              style: TextStyle(color: CruxTheme.hintText),
+              style: TextStyle(color: CruxTheme.of(context).hintText),
             ),
           ],
         ),
@@ -356,7 +351,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       child: Text(
         group.label,
         style: TextStyle(
-          color: CruxTheme.onSurfaceDim,
+          color: CruxTheme.of(context).onSurfaceDim,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -392,9 +387,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 ' $title',
                 style: TextStyle(
                   color: _titleColor(session.status, isCurrent, isHovered),
-                  fontWeight: isCurrent || isHovered
-                      ? FontWeight.bold
-                      : null,
+                  fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
                 ),
               ),
             ],

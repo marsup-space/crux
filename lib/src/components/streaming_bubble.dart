@@ -42,7 +42,7 @@ class StreamingBubble extends StatelessComponent {
     if (hasReasoning) {
       children.add(
         Tint(
-          color: CruxTheme.thinkingExpandedText.withOpacity(0.5),
+          color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
@@ -51,14 +51,16 @@ class StreamingBubble extends StatelessComponent {
                 Text(
                   ' Think: ',
                   style: TextStyle(
-                    color: CruxTheme.thinkPrefix,
+                    color: CruxTheme.of(context).thinkPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Expanded(
                   child: HighlightedMarkdownText(
                     streamingReasoning,
-                    styleSheet: HighlightMarkdownStyleSheet.thinking(),
+                    styleSheet: HighlightMarkdownStyleSheet.thinking(
+                      CruxTheme.of(context),
+                    ),
                   ),
                 ),
               ],
@@ -77,13 +79,16 @@ class StreamingBubble extends StatelessComponent {
             Text(
               ' Crux: ',
               style: TextStyle(
-                color: CruxTheme.responsePrefix,
+                color: CruxTheme.of(context).responsePrefix,
                 fontWeight: FontWeight.bold,
               ),
             ),
             Expanded(
               child: streamingContent.isEmpty
-                  ? Text('...', style: TextStyle(color: CruxTheme.foreground))
+                  ? Text(
+                      '...',
+                      style: TextStyle(color: CruxTheme.of(context).foreground),
+                    )
                   : HighlightedMarkdownText(streamingContent),
             ),
           ],
@@ -98,7 +103,7 @@ class StreamingBubble extends StatelessComponent {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: streamingToolCalls
-                .map((tc) => _buildStreamingToolCallRow(tc))
+                .map((tc) => _buildStreamingToolCallRow(tc, context))
                 .toList(),
           ),
         ),
@@ -113,9 +118,13 @@ class StreamingBubble extends StatelessComponent {
   /// but with no result yet. The label comes from
   /// [ToolDef.streamingLabel] when we can resolve the tool, or
   /// the default `Name (~Nt t)` format otherwise.
-  Component _buildStreamingToolCallRow(StreamingToolCall tc) {
+  Component _buildStreamingToolCallRow(
+    StreamingToolCall tc,
+    BuildContext context,
+  ) {
     final tool = toolRegistry?.lookup(tc.name);
-    final label = tool?.streamingLabel(
+    final label =
+        tool?.streamingLabel(
           accumulatedInputJson: tc.accumulatedInputJson,
           estimatedInputTokens: tc.estimatedInputTokens,
         ) ??
@@ -127,14 +136,14 @@ class StreamingBubble extends StatelessComponent {
         Text(
           ' ${_capitalize(tc.name)}: ',
           style: TextStyle(
-            color: CruxTheme.toolPrefix,
+            color: CruxTheme.of(context).toolPrefix,
             fontWeight: FontWeight.bold,
           ),
         ),
         Expanded(
           child: Text(
             label,
-            style: TextStyle(color: CruxTheme.onSurfaceDim),
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
         ),
       ],

@@ -29,11 +29,6 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
   static const double _bandWidth = 8.0;
   static const int _fadeTicks = 20; // ~1.2s at 60ms per tick
 
-  static const Color _baseBg = CruxTheme.buttonBackground;
-  static const Color _peakBg = CruxTheme.progressFill;
-  static const Color _baseFg = CruxTheme.onSurfaceVariant;
-  static const Color _flashFg = CruxTheme.foreground;
-
   @override
   void initState() {
     super.initState();
@@ -43,13 +38,13 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
   }
 
   @override
-  void didUpdateComponent(GlossyModelButton old) {
-    super.didUpdateComponent(old);
-    if (component.isAnimating && !old.isAnimating) {
+  void didUpdateComponent(GlossyModelButton oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    if (component.isAnimating && !oldComponent.isAnimating) {
       _isFadingOut = false;
       _fadeIntensity = 1.0;
       _startAnimation();
-    } else if (!component.isAnimating && old.isAnimating) {
+    } else if (!component.isAnimating && oldComponent.isAnimating) {
       // Start fade-out instead of immediately stopping
       _isFadingOut = true;
       _fadeIntensity = 1.0;
@@ -103,11 +98,16 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
   @override
   Component build(BuildContext context) {
     final btn = component;
+    final theme = CruxTheme.of(context);
+    final baseBg = theme.buttonBackground;
+    final peakBg = theme.progressFill;
+    final baseFg = theme.onSurfaceVariant;
+    final flashFg = theme.foreground;
 
     if (!btn.isAnimating && !_isFadingOut) {
       // Static mode with hover support
-      final bgColor = _hovered ? CruxTheme.buttonBackgroundHover : _baseBg;
-      final fg = _hovered ? CruxTheme.buttonTextHover : _baseFg;
+      final bgColor = _hovered ? theme.buttonBackgroundHover : baseBg;
+      final fg = _hovered ? theme.buttonTextHover : baseFg;
 
       return MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
@@ -152,12 +152,12 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
       }
 
       final bgBrightness = sweepEase * _fadeIntensity;
-      final bg = Color.lerp(_baseBg, _peakBg, bgBrightness)!;
+      final bg = Color.lerp(baseBg, peakBg, bgBrightness)!;
 
       if (sweepPos >= 0 && sweepPos < labelLength) {
         // Label character — also has foreground with pulse flash
         final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
-        final fg = Color.lerp(_baseFg, _flashFg, fgBrightness)!;
+        final fg = Color.lerp(baseFg, flashFg, fgBrightness)!;
 
         cells.add(
           Text(

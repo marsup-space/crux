@@ -24,34 +24,28 @@ class QueuedMessagesBubble extends StatelessComponent {
     final rows = <Component>[];
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
-      rows.add(
-        _QueuedMessageRow(
-          message: msg,
-          index: i,
-          onDiscard: onDiscard,
-        ),
-      );
+      rows.add(_QueuedMessageRow(message: msg, index: i, onDiscard: onDiscard));
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       decoration: BoxDecoration(
-        color: CruxTheme.queueBackground,
+        color: CruxTheme.of(context).queueBackground,
         border: BoxBorder(
           top: BorderSide(
-            color: CruxTheme.queueBorder,
+            color: CruxTheme.of(context).queueBorder,
             style: BoxBorderStyle.rounded,
           ),
           right: BorderSide(
-            color: CruxTheme.queueBorder,
+            color: CruxTheme.of(context).queueBorder,
             style: BoxBorderStyle.rounded,
           ),
           bottom: BorderSide(
-            color: CruxTheme.queueBorder,
+            color: CruxTheme.of(context).queueBorder,
             style: BoxBorderStyle.rounded,
           ),
           left: BorderSide(
-            color: CruxTheme.queueBorder,
+            color: CruxTheme.of(context).queueBorder,
             style: BoxBorderStyle.rounded,
           ),
         ),
@@ -67,13 +61,13 @@ class QueuedMessagesBubble extends StatelessComponent {
                 Text(
                   ' ⏳ Queued: ',
                   style: TextStyle(
-                    color: CruxTheme.queuePrefix,
+                    color: CruxTheme.of(context).queuePrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
                   '${messages.length} message${messages.length > 1 ? 's' : ''}',
-                  style: TextStyle(color: CruxTheme.queueText),
+                  style: TextStyle(color: CruxTheme.of(context).queueText),
                 ),
               ],
             ),
@@ -112,12 +106,12 @@ class _QueuedMessageRowState extends State<_QueuedMessageRow> {
       children: [
         Text(
           '   ${component.index + 1}. ',
-          style: TextStyle(color: CruxTheme.queueText),
+          style: TextStyle(color: CruxTheme.of(context).queueText),
         ),
         Expanded(
           child: Text(
             msg.content.replaceAll('\n', ' '),
-            style: TextStyle(color: CruxTheme.queueText),
+            style: TextStyle(color: CruxTheme.of(context).queueText),
             maxLines: 2,
             overflow: TextOverflow.clip,
           ),
@@ -133,8 +127,8 @@ class _QueuedMessageRowState extends State<_QueuedMessageRow> {
               ' ×',
               style: TextStyle(
                 color: _discardHovered
-                    ? CruxTheme.queueDiscardHoverText
-                    : CruxTheme.queueDiscardText,
+                    ? CruxTheme.of(context).queueDiscardHoverText
+                    : CruxTheme.of(context).queueDiscardText,
                 fontWeight: FontWeight.bold,
               ),
             ),

@@ -125,11 +125,7 @@ class ToastHubState extends State<ToastHub> {
   ///   - [ToastMode.error] → 5 s
   ///   - [ToastMode.status] → 2 s
   /// [duration] overrides the mode-default duration.
-  void show(
-    String message, {
-    ToastMode? mode,
-    Duration? duration,
-  }) {
+  void show(String message, {ToastMode? mode, Duration? duration}) {
     final effectiveMode = mode ?? detectToastMode(message);
     final effectiveDuration = duration ?? _defaultDuration(effectiveMode);
     final item = _ToastItem(
@@ -157,10 +153,10 @@ class ToastHubState extends State<ToastHub> {
   // -- internals -----------------------------------------------------------
 
   static Duration _defaultDuration(ToastMode mode) => switch (mode) {
-        ToastMode.info => const Duration(seconds: 3),
-        ToastMode.error => const Duration(seconds: 5),
-        ToastMode.status => const Duration(seconds: 2),
-      };
+    ToastMode.info => const Duration(seconds: 3),
+    ToastMode.error => const Duration(seconds: 5),
+    ToastMode.status => const Duration(seconds: 2),
+  };
 
   void _startTimers() {
     _stopTimers();
@@ -246,31 +242,33 @@ class ToastHubState extends State<ToastHub> {
       String icon,
     ) = switch (mode) {
       ToastMode.info => (
-          CruxTheme.toastBgInfo,
-          CruxTheme.toastBorderInfo,
-          CruxTheme.toastTextInfo,
-          CruxTheme.toastTextInfo,
-          '\u26A1', // ⚡
-        ),
+        CruxTheme.of(context).toastBgInfo,
+        CruxTheme.of(context).toastBorderInfo,
+        CruxTheme.of(context).toastTextInfo,
+        CruxTheme.of(context).toastTextInfo,
+        '\u26A1', // ⚡
+      ),
       ToastMode.error => (
-          CruxTheme.toastBgError,
-          CruxTheme.toastBorderError,
-          CruxTheme.toastTextError,
-          CruxTheme.toastTextError,
-          '\u2716', // ✖
-        ),
+        CruxTheme.of(context).toastBgError,
+        CruxTheme.of(context).toastBorderError,
+        CruxTheme.of(context).toastTextError,
+        CruxTheme.of(context).toastTextError,
+        '\u2716', // ✖
+      ),
       ToastMode.status => (
-          CruxTheme.toastBgStatus,
-          CruxTheme.toastBorderStatus,
-          CruxTheme.toastTextStatus,
-          CruxTheme.toastTextStatus,
-          '\u2714', // ✔
-        ),
+        CruxTheme.of(context).toastBgStatus,
+        CruxTheme.of(context).toastBorderStatus,
+        CruxTheme.of(context).toastTextStatus,
+        CruxTheme.of(context).toastTextStatus,
+        '\u2714', // ✔
+      ),
     };
 
     final queueCount = _queue.length;
-    final remainingSecs =
-        (_remaining.inMilliseconds / 1000.0).clamp(0.0, cur.duration.inMilliseconds / 1000.0);
+    final remainingSecs = (_remaining.inMilliseconds / 1000.0).clamp(
+      0.0,
+      cur.duration.inMilliseconds / 1000.0,
+    );
     final countdown = remainingSecs.toStringAsFixed(2);
     final isError = mode == ToastMode.error;
 
@@ -283,8 +281,14 @@ class ToastHubState extends State<ToastHub> {
           color: bgColor,
           border: BoxBorder(
             top: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
-            right: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
-            bottom: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
+            right: BorderSide(
+              color: borderColor,
+              style: BoxBorderStyle.rounded,
+            ),
+            bottom: BorderSide(
+              color: borderColor,
+              style: BoxBorderStyle.rounded,
+            ),
             left: BorderSide(color: borderColor, style: BoxBorderStyle.rounded),
           ),
         ),
@@ -310,22 +314,22 @@ class ToastHubState extends State<ToastHub> {
                 if (_hovered)
                   Text(
                     '(paused) ',
-                    style: TextStyle(color: CruxTheme.hintText),
+                    style: TextStyle(color: CruxTheme.of(context).hintText),
                   ),
                 Text(
                   countdown,
-                  style: TextStyle(color: CruxTheme.hintText),
+                  style: TextStyle(color: CruxTheme.of(context).hintText),
                 ),
                 if (queueCount > 0)
                   Text(
                     ' +$queueCount',
-                    style: TextStyle(color: CruxTheme.successColor),
+                    style: TextStyle(color: CruxTheme.of(context).successColor),
                   ),
                 Text(' ', style: TextStyle(color: textColor)),
                 Button(
                   label: '\u2715 ',
                   onPressed: _onDismiss,
-                  color: CruxTheme.hintText,
+                  color: CruxTheme.of(context).hintText,
                   hoverColor: textColor,
                   bgColor: bgColor,
                   hoverBgColor: bgColor,
@@ -338,7 +342,7 @@ class ToastHubState extends State<ToastHub> {
               Button(
                 label: '\u2398 Copy error',
                 onPressed: () => ClipboardManager.copy(cur.message),
-                color: CruxTheme.hintText,
+                color: CruxTheme.of(context).hintText,
                 hoverColor: textColor,
                 bgColor: bgColor,
                 hoverBgColor: bgColor,

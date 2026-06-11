@@ -62,9 +62,7 @@ class CommandRegistry extends ChangeNotifier {
     final list = all;
     if (prefix.isEmpty) return list;
     return list
-        .where(
-          (cmd) => cmd.allNames.any((n) => n.startsWith(prefix)),
-        )
+        .where((cmd) => cmd.allNames.any((n) => n.startsWith(prefix)))
         .toList();
   }
 
@@ -100,8 +98,7 @@ SlashCommand? findCommand(String name) =>
 List<CommandSuggestion> filterSuggestions(
   List<CommandSuggestion> suggestions,
   String prefix,
-) =>
-    CommandRegistry.instance.filterSuggestions(suggestions, prefix);
+) => CommandRegistry.instance.filterSuggestions(suggestions, prefix);
 
 /// Base command set — always present.
 const List<SlashCommand> _baseCommands = [
@@ -162,17 +159,6 @@ const List<SlashCommand> _baseCommands = [
     name: '/theme',
     description: 'Change the UI theme',
     params: ['name'],
-    suggestionsPerParam: [
-      [
-        CommandSuggestion(value: 'dark', description: 'Dark color scheme'),
-        CommandSuggestion(value: 'light', description: 'Light color scheme'),
-        CommandSuggestion(
-          value: 'monokai',
-          description: 'Monokai-inspired theme',
-        ),
-        CommandSuggestion(value: 'dracula', description: 'Dracula theme'),
-      ],
-    ],
     availableDuringResponse: true,
   ),
   SlashCommand(
@@ -206,10 +192,7 @@ const List<SlashCommand> _baseCommands = [
     suggestionsPerParam: [
       [
         CommandSuggestion(value: 'off', description: 'Disable thinking mode'),
-        CommandSuggestion(
-          value: 'low',
-          description: 'Low reasoning effort',
-        ),
+        CommandSuggestion(value: 'low', description: 'Low reasoning effort'),
         CommandSuggestion(
           value: 'normal',
           description: 'Normal reasoning effort',

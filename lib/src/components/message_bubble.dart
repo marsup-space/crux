@@ -72,14 +72,14 @@ class MessageBubble extends StatelessComponent {
                 Text(
                   ' Think: ',
                   style: TextStyle(
-                    color: CruxTheme.thinkPrefix,
+                    color: CruxTheme.of(context).thinkPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Expanded(
                   child: Text(
                     thinkingSummary,
-                    style: TextStyle(color: CruxTheme.thinkPrefix),
+                    style: TextStyle(color: CruxTheme.of(context).thinkPrefix),
                   ),
                 ),
               ],
@@ -87,7 +87,7 @@ class MessageBubble extends StatelessComponent {
           ),
         if (hasReasoning && !reasoningCollapsed)
           Tint(
-            color: CruxTheme.thinkingExpandedText.withOpacity(0.5),
+            color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
               child: Row(
@@ -96,14 +96,16 @@ class MessageBubble extends StatelessComponent {
                   Text(
                     ' Think: ',
                     style: TextStyle(
-                      color: CruxTheme.thinkPrefix,
+                      color: CruxTheme.of(context).thinkPrefix,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Expanded(
                     child: HighlightedMarkdownText(
                       message.reasoningContent,
-                      styleSheet: HighlightMarkdownStyleSheet.thinking(),
+                      styleSheet: HighlightMarkdownStyleSheet.thinking(
+                        CruxTheme.of(context),
+                      ),
                     ),
                   ),
                 ],
@@ -118,7 +120,9 @@ class MessageBubble extends StatelessComponent {
               Text(
                 isUser ? ' You: ' : ' Crux: ',
                 style: TextStyle(
-                  color: isUser ? CruxTheme.userPrefix : CruxTheme.responsePrefix,
+                  color: isUser
+                      ? CruxTheme.of(context).userPrefix
+                      : CruxTheme.of(context).responsePrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -126,7 +130,9 @@ class MessageBubble extends StatelessComponent {
                 child: isUser
                     ? Text(
                         message.content,
-                        style: TextStyle(color: CruxTheme.foreground),
+                        style: TextStyle(
+                          color: CruxTheme.of(context).foreground,
+                        ),
                       )
                     : HighlightedMarkdownText(
                         message.content,
@@ -168,14 +174,14 @@ class MessageBubble extends StatelessComponent {
               Text(
                 ' Think: ',
                 style: TextStyle(
-                  color: CruxTheme.thinkPrefix,
+                  color: CruxTheme.of(context).thinkPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Expanded(
                 child: Text(
                   thinkingSummary,
-                  style: TextStyle(color: CruxTheme.thinkPrefix),
+                  style: TextStyle(color: CruxTheme.of(context).thinkPrefix),
                 ),
               ),
             ],
@@ -185,7 +191,7 @@ class MessageBubble extends StatelessComponent {
     } else if (hasReasoning) {
       children.add(
         Tint(
-          color: CruxTheme.thinkingExpandedText.withOpacity(0.5),
+          color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
@@ -194,14 +200,16 @@ class MessageBubble extends StatelessComponent {
                 Text(
                   ' Think: ',
                   style: TextStyle(
-                    color: CruxTheme.thinkPrefix,
+                    color: CruxTheme.of(context).thinkPrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Expanded(
                   child: HighlightedMarkdownText(
                     message.reasoningContent,
-                    styleSheet: HighlightMarkdownStyleSheet.thinking(),
+                    styleSheet: HighlightMarkdownStyleSheet.thinking(
+                      CruxTheme.of(context),
+                    ),
                   ),
                 ),
               ],
@@ -221,7 +229,7 @@ class MessageBubble extends StatelessComponent {
               Text(
                 ' Crux: ',
                 style: TextStyle(
-                  color: CruxTheme.responsePrefix,
+                  color: CruxTheme.of(context).responsePrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -244,7 +252,9 @@ class MessageBubble extends StatelessComponent {
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: calls.map((tc) => _buildCollapsedToolCall(tc)).toList(),
+            children: calls
+                .map((tc) => _buildCollapsedToolCall(tc, context))
+                .toList(),
           ),
         ),
       );
@@ -253,7 +263,7 @@ class MessageBubble extends StatelessComponent {
     return Column(children: children);
   }
 
-  Component _buildCollapsedToolCall(ToolCallData tc) {
+  Component _buildCollapsedToolCall(ToolCallData tc, BuildContext context) {
     final tool = toolRegistry?.lookup(tc.name);
     final keyArg = _keyArg(tc);
     String resultText = '';
@@ -268,22 +278,26 @@ class MessageBubble extends StatelessComponent {
       Text(
         ' ${_capitalize(tc.name)}: ',
         style: TextStyle(
-          color: CruxTheme.toolPrefix,
+          color: CruxTheme.of(context).toolPrefix,
           fontWeight: FontWeight.bold,
         ),
       ),
     ];
     if (keyArg.isNotEmpty) {
-      children.add(Text(
-        '$keyArg ',
-        style: TextStyle(color: CruxTheme.foreground),
-      ));
+      children.add(
+        Text(
+          '$keyArg ',
+          style: TextStyle(color: CruxTheme.of(context).foreground),
+        ),
+      );
     }
     if (resultText.isNotEmpty) {
-      children.add(Text(
-        resultText,
-        style: TextStyle(color: CruxTheme.onSurfaceDim),
-      ));
+      children.add(
+        Text(
+          resultText,
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+        ),
+      );
     }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,7 +311,15 @@ class MessageBubble extends StatelessComponent {
   }
 
   String _keyArg(ToolCallData tc) {
-    const priorityKeys = ['file_path', 'path', 'filePath', 'command', 'query', 'url', 'directory'];
+    const priorityKeys = [
+      'file_path',
+      'path',
+      'filePath',
+      'command',
+      'query',
+      'url',
+      'directory',
+    ];
     for (final key in priorityKeys) {
       if (tc.input.containsKey(key)) {
         final value = tc.input[key].toString();

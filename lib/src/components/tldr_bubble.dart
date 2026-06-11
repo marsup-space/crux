@@ -35,13 +35,13 @@ class TldrBubble extends StatelessComponent {
               Text(
                 ' TLDR: ',
                 style: TextStyle(
-                  color: CruxTheme.tldrPrefix,
+                  color: CruxTheme.of(context).tldrPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 'generating...',
-                style: TextStyle(color: CruxTheme.tldrHint),
+                style: TextStyle(color: CruxTheme.of(context).tldrHint),
               ),
             ],
           ),
@@ -57,7 +57,7 @@ class TldrBubble extends StatelessComponent {
               Text(
                 ' TLDR: ',
                 style: TextStyle(
-                  color: CruxTheme.tldrPrefix,
+                  color: CruxTheme.of(context).tldrPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -65,10 +65,8 @@ class TldrBubble extends StatelessComponent {
                 child: ResponseLinkText(
                   markdownText: tldrText,
                   onLinkTap: onHeadingTap != null
-                      ? (link) => onHeadingTap!(
-                            link.anchor ?? link.text,
-                            link.url,
-                          )
+                      ? (link) =>
+                            onHeadingTap!(link.anchor ?? link.text, link.url)
                       : null,
                 ),
               ),
@@ -86,11 +84,11 @@ class TldrBubble extends StatelessComponent {
               Text(
                 ' TLDR: ',
                 style: TextStyle(
-                  color: CruxTheme.tldrPrefix,
+                  color: CruxTheme.of(context).tldrPrefix,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Expanded(child: _buildHeadingsFallback()),
+              Expanded(child: _buildHeadingsFallback(context)),
             ],
           ),
         ),
@@ -100,13 +98,15 @@ class TldrBubble extends StatelessComponent {
     return Column(children: children);
   }
 
-  Component _buildHeadingsFallback() {
+  Component _buildHeadingsFallback(BuildContext context) {
     if (headings.isEmpty) {
       final hint = hasAuxiliaryModel
           ? 'no sections'
           : 'no sections (set /auxiliary for summaries)';
       return Column(
-        children: [Text(hint, style: TextStyle(color: CruxTheme.tldrHint))],
+        children: [
+          Text(hint, style: TextStyle(color: CruxTheme.of(context).tldrHint)),
+        ],
       );
     }
 
@@ -116,8 +116,16 @@ class TldrBubble extends StatelessComponent {
       rows.add(
         Row(
           children: [
-            Text('$indent• ', style: TextStyle(color: CruxTheme.tldrBody)),
-            Expanded(child: Text(h.text, style: TextStyle(color: CruxTheme.tldrBody))),
+            Text(
+              '$indent• ',
+              style: TextStyle(color: CruxTheme.of(context).tldrBody),
+            ),
+            Expanded(
+              child: Text(
+                h.text,
+                style: TextStyle(color: CruxTheme.of(context).tldrBody),
+              ),
+            ),
           ],
         ),
       );
@@ -127,7 +135,7 @@ class TldrBubble extends StatelessComponent {
       rows.add(
         Text(
           '  (set /auxiliary for summaries)',
-          style: TextStyle(color: CruxTheme.tldrHint),
+          style: TextStyle(color: CruxTheme.of(context).tldrHint),
         ),
       );
     }

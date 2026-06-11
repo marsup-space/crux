@@ -8,6 +8,7 @@ import '../services/provider_service.dart';
 import '../storage/session_store.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
+import '../theme/theme_controller.dart';
 
 // Signature for the toast callback used by commands.
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
@@ -30,6 +31,7 @@ class CommandContext {
   final void Function(SessionRuntimeState) persistThinkingLevel;
   final void Function() resolveAuxiliaryModel;
   final void Function(int, Message, TldrDetail)? triggerTldr;
+  final ThemeController? themeController;
 
   /// Re-trigger the chat pipeline for a single turn. When [text] is
   /// non-null, it's treated as the new user prompt: persisted to the
@@ -99,6 +101,7 @@ class CommandContext {
     required this.persistThinkingLevel,
     required this.resolveAuxiliaryModel,
     this.triggerTldr,
+    this.themeController,
     required this.sendTurn,
     required this.findLastUserMessage,
     required this.deleteMessagesFrom,
@@ -124,6 +127,8 @@ class CommandExecutor {
         await executeNew(ctx);
       case '/provider':
         await executeProvider(parts, ctx);
+      case '/theme':
+        await executeTheme(parts, ctx);
       case '/think':
         await executeThink(parts, ctx);
       case '/tldr':
@@ -164,11 +169,48 @@ class CommandExecutor {
         await executeDebugToast(parts, ctx);
       default:
         if (command != null) {
-          ctx.showToast('$commandName — not yet implemented', mode: ToastMode.error);
+          ctx.showToast(
+            '$commandName — not yet implemented',
+            mode: ToastMode.error,
+          );
         } else {
           ctx.showToast('Unknown command: $commandName', mode: ToastMode.error);
         }
     }
+  }
+
+  Future<void> executeTheme(List<String> parts, CommandContext ctx) async {
+    final controller = ctx.themeController;
+    if (controller == null) {
+      ctx.showToast('Theme service is unavailable', mode: ToastMode.error);
+      return;
+    }
+
+    final id = parts.length > 1 ? parts[1].trim() : '';
+    if (id.isEmpty) {
+      ctx.showToast(
+        'Current theme: ${controller.activeId}. Usage: /theme <name>',
+      );
+      return;
+    }
+
+    final result = await controller.switchTheme(id);
+    if (!result.found) {
+      ctx.showToast(
+        'Unknown theme "$id". Available: ${controller.availableIds.join(", ")}',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    if (!result.persisted) {
+      ctx.showToast(
+        'Theme switched to $id, but config could not be saved',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+    ctx.showToast('Theme switched to $id', mode: ToastMode.status);
   }
 
   Future<void> executeModel(List<String> parts, CommandContext ctx) async {
@@ -203,7 +245,10 @@ class CommandExecutor {
       } else {
         await ctx.providerService.setAuxiliaryModel(modelKey);
         ctx.resolveAuxiliaryModel();
-        ctx.showToast('Auxiliary model set to $modelKey', mode: ToastMode.status);
+        ctx.showToast(
+          'Auxiliary model set to $modelKey',
+          mode: ToastMode.status,
+        );
       }
     } else {
       ctx.showToast('Usage: /auxiliary <name>');
@@ -307,7 +352,9 @@ class CommandExecutor {
     // 'normal' stays 'normal'. Accept both 'adaptive' and 'normal'
     // as valid input for the same internal value.
     final isMinimax = ctx.currentSession.model.startsWith('minimax/');
-    final internalEffort = (effort == 'adaptive' && isMinimax) ? 'normal' : effort;
+    final internalEffort = (effort == 'adaptive' && isMinimax)
+        ? 'normal'
+        : effort;
     // Map internal values to display names for toasts.
     final displayEffort = (String e) {
       if (e == 'normal' && isMinimax) return 'adaptive';
@@ -349,9 +396,7 @@ class CommandExecutor {
         final levels = isMinimax
             ? '<off|low|adaptive|high|max>'
             : '<off|low|normal|high|max>';
-        ctx.showToast(
-          'Usage: /think $levels (current: $current)',
-        );
+        ctx.showToast('Usage: /think $levels (current: $current)');
     }
   }
 
@@ -408,7 +453,7 @@ class CommandExecutor {
     }
   }
 
-    /// `/continue` (alias `/继续`) — resubmit the current conversation
+  /// `/continue` (alias `/继续`) — resubmit the current conversation
   /// context to the LLM so it can keep generating.
   ///
   /// What "resubmit the context" means depends on what the last
@@ -606,10 +651,7 @@ class CommandExecutor {
         }
         await ctx.store.unarchiveSession(id);
         await ctx.initSessions();
-        ctx.showToast(
-          'Unarchived "${session.title}"',
-          mode: ToastMode.status,
-        );
+        ctx.showToast('Unarchived "${session.title}"', mode: ToastMode.status);
       } else {
         ctx.showToast('Usage: /unarchive #<id>');
       }
@@ -642,9 +684,11 @@ class CommandExecutor {
     final registry = CommandRegistry.instance;
     final on = registry.toggleDebug();
     if (on) {
-      final count =
-          registry.all.where((c) => c.name.startsWith('/d-')).length;
-      ctx.showToast('Debug mode ON — $count debug commands registered', mode: ToastMode.status);
+      final count = registry.all.where((c) => c.name.startsWith('/d-')).length;
+      ctx.showToast(
+        'Debug mode ON — $count debug commands registered',
+        mode: ToastMode.status,
+      );
     } else {
       ctx.showToast('Debug mode OFF', mode: ToastMode.status);
     }
@@ -677,9 +721,7 @@ class CommandExecutor {
     buf.writeln('  reasoningEffort: ${s.reasoningEffort ?? "—"}');
     buf.writeln('  createdAt:       ${s.createdAt.toIso8601String()}');
     buf.writeln('  updatedAt:       ${s.updatedAt.toIso8601String()}');
-    buf.writeln(
-      '  archivedAt:      ${s.archivedAt?.toIso8601String() ?? "—"}',
-    );
+    buf.writeln('  archivedAt:      ${s.archivedAt?.toIso8601String() ?? "—"}');
     buf.writeln('  messageCount:    ${ctx.currentMessages.length}');
     ctx.showToast(buf.toString().trimRight());
   }
@@ -745,13 +787,21 @@ class CommandExecutor {
     buf.writeln('  roundStreaming:            ${rt.roundStreaming}');
     buf.writeln('  ttftMs:                    ${rt.ttftMs.toStringAsFixed(1)}');
     buf.writeln('  ttftReceived:              ${rt.ttftReceived}');
-    buf.writeln('  tokPerSec:                 ${rt.tokPerSec.toStringAsFixed(2)}');
-    buf.writeln('  tokCount:                  ${rt.tokCount.toStringAsFixed(0)}');
+    buf.writeln(
+      '  tokPerSec:                 ${rt.tokPerSec.toStringAsFixed(2)}',
+    );
+    buf.writeln(
+      '  tokCount:                  ${rt.tokCount.toStringAsFixed(0)}',
+    );
     buf.writeln(
       '  streamingDurationMs:       ${rt.streamingDurationMs.toStringAsFixed(1)}',
     );
-    buf.writeln('  cumulativeGenMs:           ${rt.cumulativeGenMs.toStringAsFixed(1)}');
-    buf.writeln('  cumulativeCompletionTokens: ${rt.cumulativeCompletionTokens}');
+    buf.writeln(
+      '  cumulativeGenMs:           ${rt.cumulativeGenMs.toStringAsFixed(1)}',
+    );
+    buf.writeln(
+      '  cumulativeCompletionTokens: ${rt.cumulativeCompletionTokens}',
+    );
     buf.writeln(
       '  responseStartTime:         ${rt.responseStartTime?.toIso8601String() ?? "—"}',
     );
@@ -791,7 +841,9 @@ class CommandExecutor {
       final think = entry.model.thinking ? ', think' : '';
       buf.writeln('  ${entry.compositeKey}  ($ctxStr ctx$img$think)');
     }
-    buf.writeln('Auxiliary model: ${ctx.providerService.auxiliaryModel ?? "—"}');
+    buf.writeln(
+      'Auxiliary model: ${ctx.providerService.auxiliaryModel ?? "—"}',
+    );
     buf.writeln('Last used model: ${ctx.providerService.lastUsedModel ?? "—"}');
     buf.writeln('Tldr threshold:  ${ctx.providerService.tldrThreshold}');
     ctx.showToast(buf.toString().trimRight());

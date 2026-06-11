@@ -21,6 +21,7 @@ class CommandOverlay extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
     final visibleCommands = commands
         .skip(scrollOffset)
         .take(maxVisible)
@@ -28,7 +29,7 @@ class CommandOverlay extends StatelessComponent {
 
     final rows = <Component>[];
 
-    rows.add(Divider(color: CruxTheme.outline, height: 1));
+    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
 
     // Header row
     rows.add(
@@ -39,7 +40,7 @@ class CommandOverlay extends StatelessComponent {
             Text(
               'Commands',
               style: TextStyle(
-                color: CruxTheme.wizardTitle,
+                color: CruxTheme.of(context).wizardTitle,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -47,7 +48,7 @@ class CommandOverlay extends StatelessComponent {
         ),
       ),
     );
-    rows.add(Divider(color: CruxTheme.outline, height: 1));
+    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
 
     // Command rows
     for (int i = 0; i < visibleCommands.length; i++) {
@@ -62,16 +63,16 @@ class CommandOverlay extends StatelessComponent {
           child: GestureDetector(
             onTap: () => onTap?.call(actualIndex),
             behavior: HitTestBehavior.opaque,
-            child: _buildCommandRow(cmd, isSelected),
+            child: _buildCommandRow(cmd, isSelected, theme),
           ),
         ),
       );
     }
 
-    rows.add(Divider(color: CruxTheme.outline, height: 1));
+    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
 
     return Container(
-      decoration: BoxDecoration(color: CruxTheme.wizardOverlayBg),
+      decoration: BoxDecoration(color: CruxTheme.of(context).wizardOverlayBg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
@@ -79,10 +80,14 @@ class CommandOverlay extends StatelessComponent {
     );
   }
 
-  Component _buildCommandRow(SlashCommand cmd, bool isSelected) {
+  Component _buildCommandRow(
+    SlashCommand cmd,
+    bool isSelected,
+    CruxThemeData theme,
+  ) {
     return Container(
       decoration: isSelected
-          ? BoxDecoration(color: CruxTheme.wizardRowBgSelected)
+          ? BoxDecoration(color: theme.wizardRowBgSelected)
           : null,
       padding: EdgeInsets.symmetric(horizontal: 1),
       child: Row(
@@ -91,16 +96,16 @@ class CommandOverlay extends StatelessComponent {
             isSelected ? '> ' : '  ',
             style: TextStyle(
               color: isSelected
-                  ? CruxTheme.wizardMarkerSelected
-                  : CruxTheme.wizardMarkerUnselected,
+                  ? theme.wizardMarkerSelected
+                  : theme.wizardMarkerUnselected,
             ),
           ),
           Text(
             cmd.displayName,
             style: TextStyle(
               color: isSelected
-                  ? CruxTheme.wizardTextSelected
-                  : CruxTheme.wizardTextUnselected,
+                  ? theme.wizardTextSelected
+                  : theme.wizardTextUnselected,
               fontWeight: isSelected ? FontWeight.bold : null,
             ),
           ),
@@ -110,8 +115,8 @@ class CommandOverlay extends StatelessComponent {
               cmd.description,
               style: TextStyle(
                 color: isSelected
-                    ? CruxTheme.wizardTextUnselected
-                    : CruxTheme.wizardTextDim,
+                    ? theme.wizardTextUnselected
+                    : theme.wizardTextDim,
               ),
             ),
           ),
