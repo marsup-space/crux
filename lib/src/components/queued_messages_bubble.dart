@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/message_queue.dart';
+import '../utils/terminal_symbols.dart';
 
 /// Displays the list of queued messages that will be inserted into
 /// the conversation at the next agent boundary. Each message shows
@@ -59,7 +60,7 @@ class QueuedMessagesBubble extends StatelessComponent {
             Row(
               children: [
                 Text(
-                  ' ⏳ Queued: ',
+                  ' ${terminalSymbol('⏳', '>')} Queued: ',
                   style: TextStyle(
                     color: CruxTheme.of(context).queuePrefix,
                     fontWeight: FontWeight.bold,
@@ -124,7 +125,7 @@ class _QueuedMessageRowState extends State<_QueuedMessageRow> {
             onTap: () => component.onDiscard(msg.id),
             behavior: HitTestBehavior.opaque,
             child: Text(
-              ' ×',
+              ' ${terminalSymbol('×', 'x')}',
               style: TextStyle(
                 color: _discardHovered
                     ? CruxTheme.of(context).queueDiscardHoverText

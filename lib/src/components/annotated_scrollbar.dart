@@ -6,6 +6,8 @@ import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
+import '../utils/terminal_symbols.dart';
+
 // Rounded-border glyphs used by the hover tooltip. These match the
 // `_BorderCharacters.rounded` set in nocterm's `decorated_box.dart`
 // (BoxBorderStyle.rounded), so the visual output is identical to what
@@ -474,7 +476,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
       canvas.drawText(
         offset + Offset(scrollbarX, yInt.toDouble()),
-        '◆',
+        terminalSymbol('◆', '*'),
         style: TextStyle(color: markerColor),
       );
     }

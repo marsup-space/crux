@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import '../utils/terminal_symbols.dart';
 import 'ui/modal_panel.dart';
 
 class SessionManagementPanel extends StatefulComponent {
@@ -122,13 +123,13 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   String _statusIcon(SessionStatus status) {
     switch (status) {
       case SessionStatus.idle:
-        return '·';
+        return terminalSymbol('·', '.');
       case SessionStatus.running:
-        return '▶';
+        return terminalSymbol('▶', '>');
       case SessionStatus.needUserAction:
         return '?';
       case SessionStatus.done:
-        return '✦';
+        return terminalSymbol('✦', '*');
     }
   }
 
@@ -336,7 +337,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               ? CruxTheme.of(context).foreground
               : CruxTheme.of(context).onSurfaceVariant;
 
-          final prefix = isSelected ? '▸ ' : '  ';
+          final prefix = isSelected ? '${terminalSymbol('▸', '>')} ' : '  ';
           final icon = _statusIcon(s.status);
           final iconColor = _statusColor(s.status);
           final titleDisplay = s.title.length > 30

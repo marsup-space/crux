@@ -6,6 +6,7 @@ import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/provider_service.dart';
 import '../storage/session_store.dart';
+import '../utils/terminal_symbols.dart';
 import '../utils/user_data_directory.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
@@ -335,13 +336,19 @@ class CommandExecutor {
 
     if (arg == 'remove' || arg == '--remove' || arg == 'rm') {
       await ctx.providerService.removeApiKey(name);
-      ctx.showToast('✓ Removed API key for $name', mode: ToastMode.status);
+      ctx.showToast(
+        '${terminalSymbol('✓', '+')} Removed API key for $name',
+        mode: ToastMode.status,
+      );
       return;
     }
 
     // /provider <name> <key> — persist.
     await ctx.providerService.setApiKey(name, arg);
-    ctx.showToast('✓ Saved API key for $name', mode: ToastMode.status);
+    ctx.showToast(
+      '${terminalSymbol('✓', '+')} Saved API key for $name',
+      mode: ToastMode.status,
+    );
   }
 
   Future<void> executeThink(List<String> parts, CommandContext ctx) async {

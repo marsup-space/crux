@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/terminal_symbols.dart';
 import 'button.dart';
 
 /// The kind of toast notification, which controls the default duration
@@ -246,21 +247,21 @@ class ToastHubState extends State<ToastHub> {
         CruxTheme.of(context).toastBorderInfo,
         CruxTheme.of(context).toastTextInfo,
         CruxTheme.of(context).toastTextInfo,
-        '\u26A1', // ⚡
+        terminalSymbol('\u26A1', 'i'), // ⚡
       ),
       ToastMode.error => (
         CruxTheme.of(context).toastBgError,
         CruxTheme.of(context).toastBorderError,
         CruxTheme.of(context).toastTextError,
         CruxTheme.of(context).toastTextError,
-        '\u2716', // ✖
+        terminalSymbol('\u2716', 'X'), // ✖
       ),
       ToastMode.status => (
         CruxTheme.of(context).toastBgStatus,
         CruxTheme.of(context).toastBorderStatus,
         CruxTheme.of(context).toastTextStatus,
         CruxTheme.of(context).toastTextStatus,
-        '\u2714', // ✔
+        terminalSymbol('\u2714', '+'), // ✔
       ),
     };
 
@@ -327,7 +328,7 @@ class ToastHubState extends State<ToastHub> {
                   ),
                 Text(' ', style: TextStyle(color: textColor)),
                 Button(
-                  label: '\u2715 ',
+                  label: '${terminalSymbol('\u2715', 'x')} ',
                   onPressed: _onDismiss,
                   color: CruxTheme.of(context).hintText,
                   hoverColor: textColor,

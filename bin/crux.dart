@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
 import 'package:crux/src/utils/windows_vt.dart';
+import 'package:crux/src/utils/terminal_symbols.dart';
 
 const _version = 'v0.1.0';
 
@@ -385,15 +386,21 @@ Future<void> _runDoctor() async {
   try {
     stdout.writeln('[1/2] Migrating database to current schema...');
     await db.customSelect('PRAGMA schema_version').get();
-    stdout.writeln('  ✓ Schema is up to date (v${db.schemaVersion})');
+    stdout.writeln(
+      '  ${terminalSymbol('✓', '+')} Schema is up to date (v${db.schemaVersion})',
+    );
 
     stdout.writeln();
     stdout.writeln('[2/2] Purging sessions not bound to a project path...');
     final count = await store.deleteByProjectPath('');
     if (count > 0) {
-      stdout.writeln('  ✓ Deleted $count orphaned session(s)');
+      stdout.writeln(
+        '  ${terminalSymbol('✓', '+')} Deleted $count orphaned session(s)',
+      );
     } else {
-      stdout.writeln('  ✓ No orphaned sessions found');
+      stdout.writeln(
+        '  ${terminalSymbol('✓', '+')} No orphaned sessions found',
+      );
     }
 
     stdout.writeln();
