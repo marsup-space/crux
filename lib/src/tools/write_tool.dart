@@ -62,11 +62,7 @@ class WriteTool extends ToolDef implements LargePayloadTool {
       },
       'intent': {
         'type': 'string',
-        'description':
-            'What this file is for / why you are writing it. Survives '
-            'argument compression as semantic context for future turns; '
-            'the actual content may be off-loaded and replaced with a '
-            'stand-in pointer.',
+        'description': 'What this file is for / why you are writing it.',
       },
     },
     'required': ['filePath', 'content', 'intent'],

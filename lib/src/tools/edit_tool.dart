@@ -79,11 +79,7 @@ class EditTool extends ToolDef implements LargePayloadTool {
       },
       'intent': {
         'type': 'string',
-        'description':
-            'What this edit accomplishes. Survives argument compression '
-            'as semantic context for future turns; the oldString and '
-            'newString values may be off-loaded and replaced with a '
-            'stand-in pointer.',
+        'description': 'What this edit accomplishes.',
       },
     },
     'required': ['filePath', 'oldString', 'newString', 'intent'],
