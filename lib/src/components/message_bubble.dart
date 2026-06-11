@@ -272,7 +272,7 @@ class MessageBubble extends StatelessComponent {
     final isGuard = resultContent.startsWith('[GUARD]');
     final isAutoRead = resultContent.startsWith('[AUTOREAD]');
     if (isGuard || isAutoRead) {
-      final label = isGuard ? 'guard triggered (auto read)' : 'auto read';
+      final label = isGuard ? 'guard triggered (auto read)' : _autoReadLabel(resultContent);
       final tokens = estimateTokens(resultContent);
       summary = CollapsedSummary(
         text: label,
@@ -289,74 +289,66 @@ class MessageBubble extends StatelessComponent {
     final preCompress = message.preCompressTokens;
     final isCompressed = preCompress != null && preCompress > 0;
 
-    final children = <Text>[
-      Text(
-        ' ${_capitalize(tc.name)}: ',
-        style: TextStyle(
-          color: CruxTheme.of(context).toolPrefix,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ];
+    // Build body as TextSpans — everything after the prefix.
+    final bodySpans = <TextSpan>[];
     if (keyArg.isNotEmpty) {
-      children.add(
-        Text(
-          '$keyArg ',
-          style: TextStyle(color: CruxTheme.of(context).foreground),
-        ),
-      );
+      bodySpans.add(TextSpan(
+        text: '$keyArg ',
+        style: TextStyle(color: CruxTheme.of(context).foreground),
+      ));
     }
     if (summary != null) {
-      children.add(
-        Text(
-          '${summary.text}, ',
-          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
-        ),
-      );
-      if (isCompressed) {
-        // Compressed: real SGR strikethrough on the pre cost
-        // (not a '~~' marker — nocterm's markdown component is
-        // the only place '~~' is honored; plain Text widgets
-        // need TextDecoration.lineThrough). Both numbers are
-        // args-only so the comparison is honest.
-        final postPart = summary.argsTokens == summary.totalTokens
-            ? '~${summary.argsTokens} t'
-            : '~${summary.argsTokens} t args, ${summary.totalTokens} t total';
-        children.add(
-          Text(
-            '$preCompress t',
+      bodySpans.add(TextSpan(
+        text: '${summary.text}, ',
+        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+      ));
+      if (isCompressed && !isGuard && !isAutoRead) {
+        final hasSavings = summary.argsTokens < preCompress;
+        if (hasSavings) {
+          bodySpans.add(TextSpan(
+            text: '$preCompress t',
             style: TextStyle(
               color: CruxTheme.of(context).onSurfaceDim,
               decoration: TextDecoration.lineThrough,
             ),
-          ),
-        );
-        children.add(
-          Text(
-            ' → $postPart',
+          ));
+          bodySpans.add(TextSpan(
+            text: ' → ~${summary.argsTokens} t',
             style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
-          ),
-        );
+          ));
+        } else {
+          bodySpans.add(TextSpan(
+            text: '~${summary.totalTokens} t',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ));
+        }
       } else {
-        // Uncompressed: just the post cost.
-        children.add(
-          Text(
-            '~${summary.totalTokens} t',
-            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
-          ),
-        );
+        bodySpans.add(TextSpan(
+          text: '~${summary.totalTokens} t',
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+        ));
       }
     } else if (fallbackText != null && fallbackText.isNotEmpty) {
-      children.add(
-        Text(
-          fallbackText,
-          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
-        ),
-      );
+      bodySpans.add(TextSpan(
+        text: fallbackText,
+        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+      ));
     }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
+      children: [
+        Text(
+          ' ${_capitalize(tc.name)}: ',
+          style: TextStyle(
+            color: CruxTheme.of(context).toolPrefix,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Expanded(
+          child: RichText(text: TextSpan(children: bodySpans)),
+        ),
+      ],
     );
   }
 
@@ -388,6 +380,18 @@ class MessageBubble extends StatelessComponent {
       return _truncateArg(tc.input.values.first, 40);
     }
     return '';
+  }
+
+  String _autoReadLabel(String content) {
+    const prefix = '[AUTOREAD] No changes were made';
+    if (!content.startsWith(prefix)) return 'auto read';
+    final rest = content.substring(prefix.length);
+    final dash = rest.indexOf('\u2014'); // em-dash
+    if (dash == -1) return 'auto read';
+    final reason = rest.substring(dash + 1);
+    final newline = reason.indexOf('\n');
+    final trimmed = (newline == -1 ? reason : reason.substring(0, newline)).trim();
+    return trimmed.isEmpty ? 'auto read' : trimmed;
   }
 
   String _resultMetrics(String content) {
