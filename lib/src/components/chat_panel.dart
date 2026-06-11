@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
@@ -9,7 +8,6 @@ import '../utils/cjk_word_boundary.dart';
 import '../utils/markdown_headings.dart';
 import '../utils/url_launcher.dart';
 import '../models/message.dart';
-import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../models/slash_command.dart';
@@ -1031,7 +1029,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final history = await _store.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = <Map<String, dynamic>>[
-      ..._buildBtwApiMessages(history, wireFamily),
+      ...ChatService.buildApiMessages(history, wireFamily),
     ];
     final priorBtw = _sessionController.btwTurnsFor(sessionId);
     for (final t in priorBtw) {
@@ -1211,97 +1209,6 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  /// Local copy of the wire-format message builder used by
-  /// [ChatService]. Kept private to the chat panel because btw
-  /// is a one-off context builder and we don't want to widen the
-  /// chat service's API for a single caller. The translation is
-  /// identical: it walks the persisted history and emits the
-  /// per-wire-family `tool_call` / `tool_result` blocks. The
-  /// output is concatenated with the in-memory btw chain (each
-  /// turn wrapped in [btwRenderUserMessage] so the model sees
-  /// the same framing on every prior btw question) and the new
-  /// user prompt (also wrapped in [btwRenderUserMessage]) to
-  /// form the full LLM call for the btw round.
-  List<Map<String, dynamic>> _buildBtwApiMessages(
-    List<Message> history,
-    WireFamily wireFamily,
-  ) {
-    final result = <Map<String, dynamic>>[];
-    for (final m in history) {
-      switch (m.role) {
-        case 'user':
-          result.add({'role': 'user', 'content': m.content});
-        case 'system':
-          result.add({'role': 'system', 'content': m.content});
-        case 'ai':
-          result.add({
-            'role': 'assistant',
-            'content': m.content.isEmpty ? null : m.content,
-          });
-        case 'tool_call':
-          if (wireFamily == WireFamily.anthropicCompatible) {
-            final content = <Map<String, dynamic>>[];
-            if (m.content.isNotEmpty) {
-              content.add({'type': 'text', 'text': m.content});
-            }
-            for (final call in m.toolCalls) {
-              content.add({
-                'type': 'tool_use',
-                'id': call.callId,
-                'name': call.name,
-                'input': call.input,
-              });
-            }
-            result.add({'role': 'assistant', 'content': content});
-          } else {
-            final toolCalls = m.toolCalls
-                .map(
-                  (call) => {
-                    'id': call.callId,
-                    'type': 'function',
-                    'function': {
-                      'name': call.name,
-                      'arguments': jsonEncode(call.input),
-                    },
-                  },
-                )
-                .toList();
-            result.add({
-              'role': 'assistant',
-              'content': m.content.isNotEmpty ? m.content : null,
-              'tool_calls': toolCalls,
-            });
-          }
-        case 'tool':
-          if (wireFamily == WireFamily.anthropicCompatible) {
-            final last = result.isNotEmpty ? result.last : null;
-            final toolResult = {
-              'type': 'tool_result',
-              'tool_use_id': m.toolCallId,
-              'content': m.content,
-            };
-            if (last != null &&
-                last['role'] == 'user' &&
-                last['content'] is List) {
-              (last['content'] as List<dynamic>).add(toolResult);
-            } else {
-              result.add({
-                'role': 'user',
-                'content': [toolResult],
-              });
-            }
-          } else {
-            result.add({
-              'role': 'tool',
-              'tool_call_id': m.toolCallId,
-              'content': m.content,
-            });
-          }
-      }
-    }
-    return result;
-  }
-
   /// Return the most recent user-role message in the current
   /// session, or `null` if there isn't one.
   ///
@@ -1438,6 +1345,7 @@ class _ChatPanelState extends State<ChatPanel> {
               role: msgs[i].role,
               content: msgs[i].content,
               reasoningContent: msgs[i].reasoningContent,
+              reasoningSignature: msgs[i].reasoningSignature,
               reasoningTokens: msgs[i].reasoningTokens,
               thinkingDurationMs: msgs[i].thinkingDurationMs,
               reasoningEffort: msgs[i].reasoningEffort,
@@ -1478,6 +1386,7 @@ class _ChatPanelState extends State<ChatPanel> {
               role: msgs[i].role,
               content: msgs[i].content,
               reasoningContent: msgs[i].reasoningContent,
+              reasoningSignature: msgs[i].reasoningSignature,
               reasoningTokens: msgs[i].reasoningTokens,
               thinkingDurationMs: msgs[i].thinkingDurationMs,
               reasoningEffort: msgs[i].reasoningEffort,

@@ -130,10 +130,19 @@ class ToolExecutor {
   Map<String, dynamic> formatAssistantToolCallsMessage(
     List<ToolCall> calls,
     String textContent,
-    WireFamily wireFamily,
-  ) {
+    WireFamily wireFamily, {
+    String reasoningContent = '',
+    String reasoningSignature = '',
+  }) {
     if (wireFamily == WireFamily.anthropicCompatible) {
       final content = <Map<String, dynamic>>[];
+      if (reasoningContent.isNotEmpty && reasoningSignature.isNotEmpty) {
+        content.add({
+          'type': 'thinking',
+          'thinking': reasoningContent,
+          'signature': reasoningSignature,
+        });
+      }
       if (textContent.isNotEmpty) {
         content.add({'type': 'text', 'text': textContent});
       }

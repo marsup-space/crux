@@ -22,6 +22,7 @@ class ToolUseChunk {
 class LlmChunk {
   final String? textDelta;
   final String? reasoningContent;
+  final String? reasoningSignatureDelta;
   final String? finishReason;
   final int? promptTokens;
   final int? completionTokens;
@@ -34,6 +35,7 @@ class LlmChunk {
   const LlmChunk({
     this.textDelta,
     this.reasoningContent,
+    this.reasoningSignatureDelta,
     this.finishReason,
     this.promptTokens,
     this.completionTokens,
@@ -54,6 +56,9 @@ LlmChunk? contentBlockDeltaToChunk(
   final deltaType = delta['type'] as String?;
   if (deltaType == 'thinking_delta') {
     return LlmChunk(reasoningContent: delta['thinking'] as String?);
+  }
+  if (deltaType == 'signature_delta') {
+    return LlmChunk(reasoningSignatureDelta: delta['signature'] as String?);
   }
   if (deltaType == 'text_delta') {
     return LlmChunk(textDelta: delta['text'] as String?);
@@ -131,7 +136,11 @@ class LlmClient {
         }
 
         if (wireFamily == WireFamily.anthropicCompatible) {
-          await _handleAnthropicStream(response, controller, anthropicToolBlocks);
+          await _handleAnthropicStream(
+            response,
+            controller,
+            anthropicToolBlocks,
+          );
         } else {
           await _handleOpenAiStream(response, controller);
         }
@@ -228,18 +237,7 @@ class LlmClient {
 
           if (json.containsKey('usage') && json['usage'] != null) {
             final usage = json['usage'] as Map<String, dynamic>;
-            final completionDetails =
-                usage['completion_tokens_details'] as Map<String, dynamic>?;
-            controller.add(
-              LlmChunk(
-                promptTokens: usage['prompt_tokens'] as int?,
-                completionTokens: usage['completion_tokens'] as int?,
-                promptCacheHitTokens: usage['prompt_cache_hit_tokens'] as int?,
-                promptCacheMissTokens:
-                    usage['prompt_cache_miss_tokens'] as int?,
-                reasoningTokens: completionDetails?['reasoning_tokens'] as int?,
-              ),
-            );
+            controller.add(openAiUsageToChunk(usage));
           }
         } catch (_) {
           continue;
@@ -260,19 +258,13 @@ class LlmClient {
     String? eventType;
 
     // Accumulated usage, populated incrementally as SSE events arrive.
-    // Anthropic's streaming API reports *cumulative* usage: message_start
-    // sets input_tokens and the cache_* fields (which stay constant), and
-    // message_delta updates output_tokens (which grows as the model
-    // generates). Critically, message_delta may emit explicit 0 values for
-    // the cache fields — we must NOT overwrite the values from
-    // message_start. We mirror the behavior of Claude Code's
-    // `updateUsage` and the AI SDK's anthropic-language-model stream
-    // handler: only adopt cache_*_tokens from a later event when the
-    // value is non-null and non-zero.
-    int inputTokens = 0;
-    int outputTokens = 0;
-    int cacheReadInputTokens = 0;
-    int cacheCreationInputTokens = 0;
+    // Usage arrives incrementally. Standard Anthropic responses usually put
+    // input/cache counts in message_start and output_tokens in message_delta.
+    // MiniMax may revise all of them in message_delta, including changing
+    // input_tokens from 0 to the final uncached count. The accumulator accepts
+    // those revisions while retaining an earlier positive cache count when a
+    // compatible endpoint emits a placeholder zero at the end.
+    final usageAccumulator = AnthropicUsageAccumulator();
 
     await for (final chunk in response) {
       buffer += utf8.decode(chunk, allowMalformed: true);
@@ -321,12 +313,7 @@ class LlmClient {
             if (message != null) {
               final usage = message['usage'] as Map<String, dynamic>?;
               if (usage != null) {
-                final inT = usage['input_tokens'] as int?;
-                if (inT != null) inputTokens = inT;
-                final cr = usage['cache_read_input_tokens'] as int?;
-                if (cr != null) cacheReadInputTokens = cr;
-                final cc = usage['cache_creation_input_tokens'] as int?;
-                if (cc != null) cacheCreationInputTokens = cc;
+                usageAccumulator.apply(usage);
               }
             }
           }
@@ -340,17 +327,7 @@ class LlmClient {
             final delta = json['delta'] as Map<String, dynamic>?;
             final usage = json['usage'] as Map<String, dynamic>?;
             if (usage != null) {
-              // output_tokens is cumulative and only ever grows; safe to
-              // overwrite directly.
-              final outT = usage['output_tokens'] as int?;
-              if (outT != null) outputTokens = outT;
-              // Cache fields may be reported as 0 in message_delta even
-              // when they were set in message_start. Only adopt a
-              // non-zero value, otherwise keep what message_start gave us.
-              final cr = usage['cache_read_input_tokens'] as int?;
-              if (cr != null && cr > 0) cacheReadInputTokens = cr;
-              final cc = usage['cache_creation_input_tokens'] as int?;
-              if (cc != null && cc > 0) cacheCreationInputTokens = cc;
+              usageAccumulator.apply(usage, isFinal: true);
             }
             // Emit a single final usage chunk with all accumulated
             // totals. This is the AI SDK's pattern: usage is buffered
@@ -358,14 +335,8 @@ class LlmClient {
             // message_delta, so downstream consumers can't see partial
             // / zeroed values.
             controller.add(
-              LlmChunk(
+              usageAccumulator.toChunk(
                 finishReason: delta?['stop_reason'] as String?,
-                promptTokens: inputTokens +
-                    cacheCreationInputTokens +
-                    cacheReadInputTokens,
-                promptCacheHitTokens: cacheReadInputTokens,
-                promptCacheMissTokens: cacheCreationInputTokens,
-                completionTokens: outputTokens,
               ),
             );
           }
@@ -425,5 +396,67 @@ class LlmClient {
 
   void dispose() {
     _httpClient.close();
+  }
+}
+
+LlmChunk openAiUsageToChunk(Map<String, dynamic> usage) {
+  final promptTokens = usage['prompt_tokens'] as int?;
+  final completionDetails =
+      usage['completion_tokens_details'] as Map<String, dynamic>?;
+  final promptDetails = usage['prompt_tokens_details'] as Map<String, dynamic>?;
+  final cacheHitTokens =
+      usage['prompt_cache_hit_tokens'] as int? ??
+      promptDetails?['cached_tokens'] as int?;
+  final explicitMiss = usage['prompt_cache_miss_tokens'] as int?;
+  final cacheMissTokens =
+      explicitMiss ??
+      (promptTokens != null
+          ? (promptTokens - (cacheHitTokens ?? 0)).clamp(0, promptTokens)
+          : null);
+
+  return LlmChunk(
+    promptTokens: promptTokens,
+    completionTokens: usage['completion_tokens'] as int?,
+    promptCacheHitTokens: cacheHitTokens,
+    promptCacheMissTokens: cacheMissTokens,
+    reasoningTokens: completionDetails?['reasoning_tokens'] as int?,
+  );
+}
+
+class AnthropicUsageAccumulator {
+  int inputTokens = 0;
+  int outputTokens = 0;
+  int cacheReadInputTokens = 0;
+  int cacheCreationInputTokens = 0;
+
+  void apply(Map<String, dynamic> usage, {bool isFinal = false}) {
+    final input = usage['input_tokens'] as int?;
+    if (input != null) inputTokens = input;
+
+    final output = usage['output_tokens'] as int?;
+    if (output != null) outputTokens = output;
+
+    final cacheRead = usage['cache_read_input_tokens'] as int?;
+    if (cacheRead != null &&
+        (!isFinal || cacheRead > 0 || cacheReadInputTokens == 0)) {
+      cacheReadInputTokens = cacheRead;
+    }
+
+    final cacheCreation = usage['cache_creation_input_tokens'] as int?;
+    if (cacheCreation != null &&
+        (!isFinal || cacheCreation > 0 || cacheCreationInputTokens == 0)) {
+      cacheCreationInputTokens = cacheCreation;
+    }
+  }
+
+  LlmChunk toChunk({String? finishReason}) {
+    final cacheMissTokens = inputTokens + cacheCreationInputTokens;
+    return LlmChunk(
+      finishReason: finishReason,
+      promptTokens: cacheMissTokens + cacheReadInputTokens,
+      promptCacheHitTokens: cacheReadInputTokens,
+      promptCacheMissTokens: cacheMissTokens,
+      completionTokens: outputTokens,
+    );
   }
 }

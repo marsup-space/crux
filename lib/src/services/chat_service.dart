@@ -121,7 +121,10 @@ class ChatService {
         print('[auxiliary] stream error: $streamError');
         return null;
       }
-      final title = buffer.toString().trim().replaceAll(RegExp(r'[\r\n]+'), ' ');
+      final title = buffer.toString().trim().replaceAll(
+        RegExp(r'[\r\n]+'),
+        ' ',
+      );
       if (title.isEmpty || title.length > 80) return null;
       print('[auxiliary] generated title: $title');
       return title;
@@ -191,7 +194,7 @@ class ChatService {
     }
   }
 
-    /// Run a single chat turn for [sessionId].
+  /// Run a single chat turn for [sessionId].
   ///
   /// [userContent] is the new user prompt for this turn. Pass `null`
   /// to skip the user-message persist and re-submit the existing
@@ -256,7 +259,7 @@ class ChatService {
 
     final history = await _store.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
-    final apiMessages = _buildApiMessages(history, wireFamily);
+    final apiMessages = buildApiMessages(history, wireFamily);
     final toolDefs = _toolExecutor.getApiToolDefinitions();
 
     // Per-round text/reasoning accumulators, hoisted out of the agentic
@@ -273,6 +276,7 @@ class ChatService {
     // the server-side prompt-cache (KV) prefix on every turn.
     final roundTextBuffer = StringBuffer();
     final roundReasoningBuffer = StringBuffer();
+    final roundReasoningSignatureBuffer = StringBuffer();
     int promptTokens = 0;
     int completionTokens = 0;
     int promptCacheHitTokens = 0;
@@ -332,6 +336,7 @@ class ChatService {
       // Reset per-round thinking metrics so every tool_call message
       // gets its own duration and token count.
       roundReasoningTokens = 0;
+      roundReasoningSignatureBuffer.clear();
       roundThinkingDurationMs = 0;
       roundFirstContentTime = null;
       roundFirstDeltaTime = null;
@@ -363,13 +368,15 @@ class ChatService {
       Completer<void>? lerpDrainCompleter;
 
       try {
-
         void ensureLerpTimer() {
           if (lerpTimer != null) return;
           lerpTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-            final totalPending = lerpPendingText.length + lerpPendingReasoning.length;
+            final totalPending =
+                lerpPendingText.length + lerpPendingReasoning.length;
             if (totalPending == 0) {
-              if (lerpStreamDone && lerpDrainCompleter != null && !lerpDrainCompleter!.isCompleted) {
+              if (lerpStreamDone &&
+                  lerpDrainCompleter != null &&
+                  !lerpDrainCompleter!.isCompleted) {
                 lerpDrainCompleter!.complete();
               }
               return;
@@ -377,7 +384,10 @@ class ChatService {
 
             final alpha = lerpStreamDone ? 0.03 : 0.016;
             final minCount = lerpStreamDone ? 2 : 1;
-            final count = (totalPending * alpha).ceil().clamp(minCount, totalPending);
+            final count = (totalPending * alpha).ceil().clamp(
+              minCount,
+              totalPending,
+            );
 
             var remaining = count;
 
@@ -418,7 +428,11 @@ class ChatService {
 
           chunks.add(chunk);
 
-                    // First delta of the current round (text, reasoning, or
+          if (chunk.reasoningSignatureDelta != null) {
+            roundReasoningSignatureBuffer.write(chunk.reasoningSignatureDelta);
+          }
+
+          // First delta of the current round (text, reasoning, or
           // tool_use): mark the start of active generation for this
           // round. The metrics timer uses roundFirstTokenTime to
           // compute the live tok/s denominator. The cumulative
@@ -492,7 +506,7 @@ class ChatService {
                 onDelta(chunk.textDelta!);
               }
             }
-                  if (chunk.reasoningContent != null) {
+            if (chunk.reasoningContent != null) {
               roundReasoningBuffer.write(chunk.reasoningContent);
               // Track the first and last reasoning delta timestamps so
               // we can compute the actual reasoning stream duration.
@@ -560,9 +574,9 @@ class ChatService {
       // BEFORE the lerp drain so the denominator reflects only the
       // LLM's actual generation time, not the visual lerp animation
       // (up to 10s of post-stream UI smoothing).
-      if (runtime.roundStreaming &&
-          runtime.roundFirstTokenTime != null) {
-        final roundMs = DateTime.now()
+      if (runtime.roundStreaming && runtime.roundFirstTokenTime != null) {
+        final roundMs =
+            DateTime.now()
                 .difference(runtime.roundFirstTokenTime!)
                 .inMicroseconds /
             1000.0;
@@ -585,7 +599,8 @@ class ChatService {
       // 3. No reasoning at all: duration stays 0.
       if (roundFirstReasoningTime != null && roundLastReasoningTime != null) {
         // Case 1: we saw reasoning content in the stream.
-        roundThinkingDurationMs = roundLastReasoningTime
+        roundThinkingDurationMs =
+            roundLastReasoningTime
                 .difference(roundFirstReasoningTime)
                 .inMicroseconds /
             1000.0;
@@ -594,10 +609,10 @@ class ChatService {
         // reasoning content. Use stream boundaries as an approximation:
         // from the first delta of any kind to either the first content
         // delta (if there is one) or the last delta of the round.
-        final reasoningEnd = roundFirstContentTime ?? roundLastDeltaTime ?? DateTime.now();
-        roundThinkingDurationMs = reasoningEnd
-                .difference(roundFirstDeltaTime)
-                .inMicroseconds /
+        final reasoningEnd =
+            roundFirstContentTime ?? roundLastDeltaTime ?? DateTime.now();
+        roundThinkingDurationMs =
+            reasoningEnd.difference(roundFirstDeltaTime).inMicroseconds /
             1000.0;
       }
       // Capture per-round reasoning tokens before the final round
@@ -633,6 +648,7 @@ class ChatService {
 
       final roundText = roundTextBuffer.toString();
       final roundReasoning = roundReasoningBuffer.toString();
+      final roundReasoningSignature = roundReasoningSignatureBuffer.toString();
 
       // ── Execute EVERY tool BEFORE compressing any of them ──
       //
@@ -655,6 +671,8 @@ class ChatService {
         toolCalls,
         roundText,
         wireFamily,
+        reasoningContent: roundReasoning,
+        reasoningSignature: roundReasoningSignature,
       );
       apiMessages.add(assistantMsg);
       final callResults = <String, ToolResult>{};
@@ -747,8 +765,10 @@ class ChatService {
         role: 'tool_call',
         content: roundText,
         reasoningContent: roundReasoning,
+        reasoningSignature: roundReasoningSignature,
         reasoningTokens: roundReasoningTokens,
-        thinkingDurationMs: (roundReasoning.isNotEmpty || roundReasoningTokens > 0)
+        thinkingDurationMs:
+            (roundReasoning.isNotEmpty || roundReasoningTokens > 0)
             ? roundThinkingDurationMs.round()
             : 0,
         reasoningEffort: runtime.thinkingMode == 'disabled'
@@ -772,19 +792,24 @@ class ChatService {
       roundReasoningBuffer.clear();
       onToolRound?.call(roundResultTokens);
 
-        // After the tool round completes, check if the user queued
-        // any messages while the agent was streaming. If so, inject
-        // the drained content as a user message into both the API
-        // message list and the store so the next LLM round sees it.
-        final queuedContent = onQueueDrain?.call();
-        if (queuedContent != null) {
-          await _store.addMessage(sessionId, role: 'user', content: queuedContent);
-          apiMessages.add({'role': 'user', 'content': queuedContent});
-        }
+      // After the tool round completes, check if the user queued
+      // any messages while the agent was streaming. If so, inject
+      // the drained content as a user message into both the API
+      // message list and the store so the next LLM round sees it.
+      final queuedContent = onQueueDrain?.call();
+      if (queuedContent != null) {
+        await _store.addMessage(
+          sessionId,
+          role: 'user',
+          content: queuedContent,
+        );
+        apiMessages.add({'role': 'user', 'content': queuedContent});
       }
+    }
 
     final content = roundTextBuffer.toString();
     final reasoningContent = roundReasoningBuffer.toString();
+    final reasoningSignature = roundReasoningSignatureBuffer.toString();
     final cost = _estimateCost(
       provider,
       modelId,
@@ -802,6 +827,7 @@ class ChatService {
       role: 'ai',
       content: content,
       reasoningContent: reasoningContent,
+      reasoningSignature: reasoningSignature,
       reasoningTokens: reasoningTokens,
       thinkingDurationMs: thinkingMs,
       reasoningEffort: runtime.thinkingMode == 'disabled'
@@ -822,8 +848,7 @@ class ChatService {
       contextTokens: promptTokens + completionTokens - reasoningTokens,
       ttftMs: session.ttftMs > 0 ? session.ttftMs : runtime.ttftMs,
       tokPerSec: runtime.tokPerSec,
-      promptCacheHitTokens:
-          session.promptCacheHitTokens + promptCacheHitTokens,
+      promptCacheHitTokens: session.promptCacheHitTokens + promptCacheHitTokens,
     );
 
     session.status = SessionStatus.done;
@@ -872,7 +897,7 @@ class ChatService {
     );
   }
 
-  List<Map<String, dynamic>> _buildApiMessages(
+  static List<Map<String, dynamic>> buildApiMessages(
     List<Message> history,
     WireFamily wireFamily,
   ) {
@@ -885,13 +910,37 @@ class ChatService {
         case 'system':
           result.add({'role': 'system', 'content': m.content});
         case 'ai':
-          result.add({
-            'role': 'assistant',
-            'content': m.content.isEmpty ? null : m.content,
-          });
+          if (wireFamily == WireFamily.anthropicCompatible &&
+              m.reasoningContent.isNotEmpty &&
+              m.reasoningSignature.isNotEmpty) {
+            result.add({
+              'role': 'assistant',
+              'content': [
+                {
+                  'type': 'thinking',
+                  'thinking': m.reasoningContent,
+                  'signature': m.reasoningSignature,
+                },
+                if (m.content.isNotEmpty) {'type': 'text', 'text': m.content},
+              ],
+            });
+          } else {
+            result.add({
+              'role': 'assistant',
+              'content': m.content.isEmpty ? null : m.content,
+            });
+          }
         case 'tool_call':
           if (wireFamily == WireFamily.anthropicCompatible) {
             final content = <Map<String, dynamic>>[];
+            if (m.reasoningContent.isNotEmpty &&
+                m.reasoningSignature.isNotEmpty) {
+              content.add({
+                'type': 'thinking',
+                'thinking': m.reasoningContent,
+                'signature': m.reasoningSignature,
+              });
+            }
             if (m.content.isNotEmpty) {
               content.add({'type': 'text', 'text': m.content});
             }

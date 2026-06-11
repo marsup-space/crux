@@ -34,6 +34,7 @@ class Messages extends Table {
   TextColumn get role => text()();
   TextColumn get content => text().withDefault(const Constant(''))();
   TextColumn get reasoningContent => text().withDefault(const Constant(''))();
+  TextColumn get reasoningSignature => text().withDefault(const Constant(''))();
   IntColumn get reasoningTokens => integer().withDefault(const Constant(0))();
   IntColumn get thinkingDurationMs =>
       integer().withDefault(const Constant(0))();

@@ -1148,6 +1148,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _reasoningSignatureMeta =
+      const VerificationMeta('reasoningSignature');
+  @override
+  late final GeneratedColumn<String> reasoningSignature =
+      GeneratedColumn<String>(
+        'reasoning_signature',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
   static const VerificationMeta _reasoningTokensMeta = const VerificationMeta(
     'reasoningTokens',
   );
@@ -1309,6 +1321,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     role,
     content,
     reasoningContent,
+    reasoningSignature,
     reasoningTokens,
     thinkingDurationMs,
     reasoningEffort,
@@ -1367,6 +1380,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         reasoningContent.isAcceptableOrUnknown(
           data['reasoning_content']!,
           _reasoningContentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reasoning_signature')) {
+      context.handle(
+        _reasoningSignatureMeta,
+        reasoningSignature.isAcceptableOrUnknown(
+          data['reasoning_signature']!,
+          _reasoningSignatureMeta,
         ),
       );
     }
@@ -1503,6 +1525,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_content'],
       )!,
+      reasoningSignature: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_signature'],
+      )!,
       reasoningTokens: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}reasoning_tokens'],
@@ -1574,6 +1600,7 @@ class Message extends DataClass implements Insertable<Message> {
   final String role;
   final String content;
   final String reasoningContent;
+  final String reasoningSignature;
   final int reasoningTokens;
   final int thinkingDurationMs;
   final String? reasoningEffort;
@@ -1601,6 +1628,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.role,
     required this.content,
     required this.reasoningContent,
+    required this.reasoningSignature,
     required this.reasoningTokens,
     required this.thinkingDurationMs,
     this.reasoningEffort,
@@ -1624,6 +1652,7 @@ class Message extends DataClass implements Insertable<Message> {
     map['role'] = Variable<String>(role);
     map['content'] = Variable<String>(content);
     map['reasoning_content'] = Variable<String>(reasoningContent);
+    map['reasoning_signature'] = Variable<String>(reasoningSignature);
     map['reasoning_tokens'] = Variable<int>(reasoningTokens);
     map['thinking_duration_ms'] = Variable<int>(thinkingDurationMs);
     if (!nullToAbsent || reasoningEffort != null) {
@@ -1656,6 +1685,7 @@ class Message extends DataClass implements Insertable<Message> {
       role: Value(role),
       content: Value(content),
       reasoningContent: Value(reasoningContent),
+      reasoningSignature: Value(reasoningSignature),
       reasoningTokens: Value(reasoningTokens),
       thinkingDurationMs: Value(thinkingDurationMs),
       reasoningEffort: reasoningEffort == null && nullToAbsent
@@ -1692,6 +1722,9 @@ class Message extends DataClass implements Insertable<Message> {
       role: serializer.fromJson<String>(json['role']),
       content: serializer.fromJson<String>(json['content']),
       reasoningContent: serializer.fromJson<String>(json['reasoningContent']),
+      reasoningSignature: serializer.fromJson<String>(
+        json['reasoningSignature'],
+      ),
       reasoningTokens: serializer.fromJson<int>(json['reasoningTokens']),
       thinkingDurationMs: serializer.fromJson<int>(json['thinkingDurationMs']),
       reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
@@ -1717,6 +1750,7 @@ class Message extends DataClass implements Insertable<Message> {
       'role': serializer.toJson<String>(role),
       'content': serializer.toJson<String>(content),
       'reasoningContent': serializer.toJson<String>(reasoningContent),
+      'reasoningSignature': serializer.toJson<String>(reasoningSignature),
       'reasoningTokens': serializer.toJson<int>(reasoningTokens),
       'thinkingDurationMs': serializer.toJson<int>(thinkingDurationMs),
       'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
@@ -1740,6 +1774,7 @@ class Message extends DataClass implements Insertable<Message> {
     String? role,
     String? content,
     String? reasoningContent,
+    String? reasoningSignature,
     int? reasoningTokens,
     int? thinkingDurationMs,
     Value<String?> reasoningEffort = const Value.absent(),
@@ -1760,6 +1795,7 @@ class Message extends DataClass implements Insertable<Message> {
     role: role ?? this.role,
     content: content ?? this.content,
     reasoningContent: reasoningContent ?? this.reasoningContent,
+    reasoningSignature: reasoningSignature ?? this.reasoningSignature,
     reasoningTokens: reasoningTokens ?? this.reasoningTokens,
     thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
     reasoningEffort: reasoningEffort.present
@@ -1788,6 +1824,9 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningContent: data.reasoningContent.present
           ? data.reasoningContent.value
           : this.reasoningContent,
+      reasoningSignature: data.reasoningSignature.present
+          ? data.reasoningSignature.value
+          : this.reasoningSignature,
       reasoningTokens: data.reasoningTokens.present
           ? data.reasoningTokens.value
           : this.reasoningTokens,
@@ -1825,6 +1864,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('role: $role, ')
           ..write('content: $content, ')
           ..write('reasoningContent: $reasoningContent, ')
+          ..write('reasoningSignature: $reasoningSignature, ')
           ..write('reasoningTokens: $reasoningTokens, ')
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('reasoningEffort: $reasoningEffort, ')
@@ -1850,6 +1890,7 @@ class Message extends DataClass implements Insertable<Message> {
     role,
     content,
     reasoningContent,
+    reasoningSignature,
     reasoningTokens,
     thinkingDurationMs,
     reasoningEffort,
@@ -1874,6 +1915,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.role == this.role &&
           other.content == this.content &&
           other.reasoningContent == this.reasoningContent &&
+          other.reasoningSignature == this.reasoningSignature &&
           other.reasoningTokens == this.reasoningTokens &&
           other.thinkingDurationMs == this.thinkingDurationMs &&
           other.reasoningEffort == this.reasoningEffort &&
@@ -1896,6 +1938,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> role;
   final Value<String> content;
   final Value<String> reasoningContent;
+  final Value<String> reasoningSignature;
   final Value<int> reasoningTokens;
   final Value<int> thinkingDurationMs;
   final Value<String?> reasoningEffort;
@@ -1916,6 +1959,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.role = const Value.absent(),
     this.content = const Value.absent(),
     this.reasoningContent = const Value.absent(),
+    this.reasoningSignature = const Value.absent(),
     this.reasoningTokens = const Value.absent(),
     this.thinkingDurationMs = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
@@ -1937,6 +1981,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required String role,
     this.content = const Value.absent(),
     this.reasoningContent = const Value.absent(),
+    this.reasoningSignature = const Value.absent(),
     this.reasoningTokens = const Value.absent(),
     this.thinkingDurationMs = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
@@ -1960,6 +2005,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? role,
     Expression<String>? content,
     Expression<String>? reasoningContent,
+    Expression<String>? reasoningSignature,
     Expression<int>? reasoningTokens,
     Expression<int>? thinkingDurationMs,
     Expression<String>? reasoningEffort,
@@ -1981,6 +2027,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (role != null) 'role': role,
       if (content != null) 'content': content,
       if (reasoningContent != null) 'reasoning_content': reasoningContent,
+      if (reasoningSignature != null) 'reasoning_signature': reasoningSignature,
       if (reasoningTokens != null) 'reasoning_tokens': reasoningTokens,
       if (thinkingDurationMs != null)
         'thinking_duration_ms': thinkingDurationMs,
@@ -2005,6 +2052,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? role,
     Value<String>? content,
     Value<String>? reasoningContent,
+    Value<String>? reasoningSignature,
     Value<int>? reasoningTokens,
     Value<int>? thinkingDurationMs,
     Value<String?>? reasoningEffort,
@@ -2026,6 +2074,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       role: role ?? this.role,
       content: content ?? this.content,
       reasoningContent: reasoningContent ?? this.reasoningContent,
+      reasoningSignature: reasoningSignature ?? this.reasoningSignature,
       reasoningTokens: reasoningTokens ?? this.reasoningTokens,
       thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
@@ -2060,6 +2109,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     }
     if (reasoningContent.present) {
       map['reasoning_content'] = Variable<String>(reasoningContent.value);
+    }
+    if (reasoningSignature.present) {
+      map['reasoning_signature'] = Variable<String>(reasoningSignature.value);
     }
     if (reasoningTokens.present) {
       map['reasoning_tokens'] = Variable<int>(reasoningTokens.value);
@@ -2114,6 +2166,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('role: $role, ')
           ..write('content: $content, ')
           ..write('reasoningContent: $reasoningContent, ')
+          ..write('reasoningSignature: $reasoningSignature, ')
           ..write('reasoningTokens: $reasoningTokens, ')
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('reasoningEffort: $reasoningEffort, ')
@@ -4230,6 +4283,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required String role,
       Value<String> content,
       Value<String> reasoningContent,
+      Value<String> reasoningSignature,
       Value<int> reasoningTokens,
       Value<int> thinkingDurationMs,
       Value<String?> reasoningEffort,
@@ -4252,6 +4306,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> role,
       Value<String> content,
       Value<String> reasoningContent,
+      Value<String> reasoningSignature,
       Value<int> reasoningTokens,
       Value<int> thinkingDurationMs,
       Value<String?> reasoningEffort,
@@ -4335,6 +4390,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get reasoningContent => $composableBuilder(
     column: $table.reasoningContent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningSignature => $composableBuilder(
+    column: $table.reasoningSignature,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4486,6 +4546,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reasoningSignature => $composableBuilder(
+    column: $table.reasoningSignature,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get reasoningTokens => $composableBuilder(
     column: $table.reasoningTokens,
     builder: (column) => ColumnOrderings(column),
@@ -4600,6 +4665,11 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get reasoningContent => $composableBuilder(
     column: $table.reasoningContent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reasoningSignature => $composableBuilder(
+    column: $table.reasoningSignature,
     builder: (column) => column,
   );
 
@@ -4739,6 +4809,7 @@ class $$MessagesTableTableManager
                 Value<String> role = const Value.absent(),
                 Value<String> content = const Value.absent(),
                 Value<String> reasoningContent = const Value.absent(),
+                Value<String> reasoningSignature = const Value.absent(),
                 Value<int> reasoningTokens = const Value.absent(),
                 Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
@@ -4759,6 +4830,7 @@ class $$MessagesTableTableManager
                 role: role,
                 content: content,
                 reasoningContent: reasoningContent,
+                reasoningSignature: reasoningSignature,
                 reasoningTokens: reasoningTokens,
                 thinkingDurationMs: thinkingDurationMs,
                 reasoningEffort: reasoningEffort,
@@ -4781,6 +4853,7 @@ class $$MessagesTableTableManager
                 required String role,
                 Value<String> content = const Value.absent(),
                 Value<String> reasoningContent = const Value.absent(),
+                Value<String> reasoningSignature = const Value.absent(),
                 Value<int> reasoningTokens = const Value.absent(),
                 Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
@@ -4801,6 +4874,7 @@ class $$MessagesTableTableManager
                 role: role,
                 content: content,
                 reasoningContent: reasoningContent,
+                reasoningSignature: reasoningSignature,
                 reasoningTokens: reasoningTokens,
                 thinkingDurationMs: thinkingDurationMs,
                 reasoningEffort: reasoningEffort,

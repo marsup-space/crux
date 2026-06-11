@@ -30,6 +30,7 @@ class Message {
   final String role;
   final String content;
   final String reasoningContent;
+  final String reasoningSignature;
   final int reasoningTokens;
   final int thinkingDurationMs;
   final String? reasoningEffort;
@@ -51,6 +52,7 @@ class Message {
     required this.role,
     required this.content,
     this.reasoningContent = '',
+    this.reasoningSignature = '',
     this.reasoningTokens = 0,
     this.thinkingDurationMs = 0,
     this.reasoningEffort,
