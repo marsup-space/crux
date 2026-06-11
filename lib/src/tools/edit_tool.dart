@@ -28,23 +28,25 @@ class EditTool extends ToolDef implements LargePayloadTool {
     final count = replaceAll ? 'all' : '1';
     final oldLines = '\n'.allMatches(oldString).length + 1;
     final newLines = '\n'.allMatches(newString).length + 1;
-    // Total cost = the small non-offloadable args + the result.
-    // The oldString/newString are excluded because they're
-    // offloadable — when persisted, they're stand-ins, not the
-    // full strings. The display shows "args-only" anyway, so
-    // the offloadable args don't contribute to either side.
+    // Total cost = the full round-trip including the args as they
+    // are NOW (stand-ins if compressed, full content if not) +
+    // the result. The args are *not* excluded — the strikethrough
+    // comparison is honest: both pre and post include the args,
+    // and the difference is whether the args are full (pre) or
+    // stand-ins (post).
     final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
-      excludeArgsFromEstimate: {'oldString', 'newString'},
     );
-    // Args-only: same calc but with empty result.
+    // Args-only: same as total but with empty result. The
+    // strikethrough pre is also args-only (chat_service computes
+    // it at compression time with resultOutput: ''), so this is
+    // the apples-to-apples comparison.
     final argsTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: '',
-      excludeArgsFromEstimate: {'oldString', 'newString'},
     );
     return CollapsedSummary(
       text: '$count replacement, $oldLines→$newLines lines',

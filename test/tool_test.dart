@@ -1250,7 +1250,7 @@ void main() {
       expect(summary.totalTokens, greaterThan(0));
     });
 
-    test('EditTool args-only excludes the offloadable args', () {
+    test('EditTool args-only includes the large args (stand-ins or full)', () {
       final tool = EditTool();
       final summary = tool.collapsedSummary(
         {
@@ -1262,13 +1262,13 @@ void main() {
         ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
       );
       expect(summary.text, '1 replacement, 1→1 lines');
-      // args-only is small: the 2000-char oldString + newString
-      // are offloadable and excluded, so what's left is just
-      // the tool name + the small args (filePath, intent) +
-      // Anthropic overhead. The key assertion: the args-only
-      // number is dramatically smaller than the 2000-char
-      // content would have been.
-      expect(summary.argsTokens, lessThan(50));
+      // Both pre (from chat_service) and post (from collapsedSummary)
+      // include the oldString/newString. The strikethrough comparison
+      // is honest: pre counts the full strings, post counts the
+      // stand-ins. The difference is the saving from offload.
+      // Here the args are 2000 chars each, so the token count
+      // reflects the actual (full or stand-in) arg values.
+      expect(summary.argsTokens, greaterThan(500));
       expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
     });
 

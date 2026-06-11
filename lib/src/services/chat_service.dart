@@ -713,11 +713,17 @@ class ChatService {
           continue;
         }
         if (tool is LargePayloadTool) {
+          // Include the OFFLOADABLE args in the pre-number. The
+          // strikethrough is meant to show what compression SAVES —
+          // if we exclude oldString/newString from the estimate,
+          // both numbers look the same and the user sees zero
+          // benefit. The post number (from collapsedSummary) also
+          // includes the args (which are now stand-ins), so the
+          // comparison is honest: big strikethrough = big saving.
           preCompressTokens += estimateToolRoundTripTokens(
             toolName: call.name,
             args: call.input,
             resultOutput: '',
-            excludeArgsFromEstimate: offloadableArgsFor(tool),
           );
         }
         compressedToolCalls.add(
