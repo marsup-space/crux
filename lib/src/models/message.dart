@@ -40,6 +40,7 @@ class Message {
   final String? error;
   final int? parentMsgId;
   final DateTime createdAt;
+  final int? preCompressTokens;
   final List<ToolCallData> toolCalls;
   final String toolCallId;
   final String tldr;
@@ -59,6 +60,7 @@ class Message {
     this.tokensOut = 0,
     this.error,
     this.parentMsgId,
+    this.preCompressTokens,
     DateTime? createdAt,
     this.toolCalls = const [],
     this.toolCallId = '',

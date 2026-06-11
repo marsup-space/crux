@@ -18,20 +18,39 @@ class EditTool extends ToolDef implements LargePayloadTool {
   String get name => 'edit';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final oldString = args['oldString'] as String? ?? '';
     final newString = args['newString'] as String? ?? '';
     final replaceAll = (args['replaceAll'] as bool?) ?? false;
     final count = replaceAll ? 'all' : '1';
     final oldLines = '\n'.allMatches(oldString).length + 1;
     final newLines = '\n'.allMatches(newString).length + 1;
-    final tokens = estimateToolRoundTripTokens(
+    // Total cost = the small non-offloadable args + the result.
+    // The oldString/newString are excluded because they're
+    // offloadable — when persisted, they're stand-ins, not the
+    // full strings. The display shows "args-only" anyway, so
+    // the offloadable args don't contribute to either side.
+    final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
       excludeArgsFromEstimate: {'oldString', 'newString'},
     );
-    return '$count replacement, $oldLines→$newLines lines, ~${tokens}t';
+    // Args-only: same calc but with empty result.
+    final argsTokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: '',
+      excludeArgsFromEstimate: {'oldString', 'newString'},
+    );
+    return CollapsedSummary(
+      text: '$count replacement, $oldLines→$newLines lines',
+      argsTokens: argsTokens,
+      totalTokens: totalTokens,
+    );
   }
 
   @override

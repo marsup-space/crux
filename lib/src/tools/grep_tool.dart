@@ -13,16 +13,23 @@ class GrepTool extends ToolDef {
   String get name => 'grep';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final pattern = args['pattern'] as String? ?? '';
     final total = result.metadata['totalMatches'] as int? ?? 0;
-    final tokens = estimateToolRoundTripTokens(
+    final costTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
     final suffix = result.truncated ? ' [truncated]' : '';
-    return '"$pattern": $total matches, ~${tokens}t$suffix';
+    return CollapsedSummary(
+      text: '"$pattern": $total matches$suffix',
+      argsTokens: costTokens,
+      totalTokens: costTokens,
+    );
   }
 
   @override

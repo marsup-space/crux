@@ -22,7 +22,7 @@ class CruxDatabase extends _$CruxDatabase {
   CruxDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -61,6 +61,10 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 10) {
         await m.createTable(offloadedContent);
+      }
+      if (from < 11) {
+        await m.addColumn(messages, messages.preCompressTokens);
+        // ignore: invalid_use_of_protected_member
       }
     },
   );

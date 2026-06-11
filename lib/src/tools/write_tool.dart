@@ -14,19 +14,38 @@ class WriteTool extends ToolDef implements LargePayloadTool {
   String get name => 'write';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final content = args['content'] as String? ?? '';
     final lines = '\n'.allMatches(content).length + 1;
     final size = content.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateToolRoundTripTokens(
+    // Total cost = args (with the *as-persisted* content, which
+    // may be a stand-in if offload happened) + the tool's result.
+    final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: content,
     );
-    return '$lines lines, $sizeStr, ~${tokens}t written';
+    // Args-only cost is what the strikethrough compares against.
+    // We compute it on the *as-passed* args, which is the same
+    // thing the chat service's preCompressTokens calculation
+    // uses (it also runs at the compress boundary, so the args
+    // are still full there).
+    final argsTokens = estimateToolRoundTripTokens(
+      toolName: name,
+      args: args,
+      resultOutput: '',
+    );
+    return CollapsedSummary(
+      text: '$lines lines, $sizeStr',
+      argsTokens: argsTokens,
+      totalTokens: totalTokens,
+    );
   }
 
   @override

@@ -58,6 +58,39 @@ String relativePath(String absolutePath, String workingDirectory) {
   return rel;
 }
 
+/// Structured result of [ToolDef.collapsedSummary] so the bubble
+/// can render the pre-compression / post-compression token
+/// comparison when the tool_call's large args were off-loaded.
+///
+/// The split between [argsTokens] and [totalTokens] exists
+/// because the *strikethrough* number must be apples-to-apples
+/// with the *post-compression* number. The result of the tool
+/// is unknown at compression time (it runs *after* the args are
+/// off-loaded), so the pre-compression number is args-only —
+/// "this is what the args would have cost if we hadn't
+/// off-loaded them." The post-compression number shown next to
+/// the "compressed:" prefix is also args-only, so the
+/// comparison is honest: bigger strikethrough = bigger saving.
+///
+/// [totalTokens] is the full round-trip cost (args + result)
+/// and is what an uncompressed tool_call displays as its
+/// single `~Nt` value. When the call was compressed, the
+/// bubble shows `~~{pre}t~~, compressed: ~{post}t` — the
+/// strikethrough is the args saving, and the result is
+/// shown separately by including [totalTokens] in the line
+/// if it differs materially from [argsTokens].
+class CollapsedSummary {
+  final String text;
+  final int argsTokens;
+  final int totalTokens;
+
+  const CollapsedSummary({
+    required this.text,
+    required this.argsTokens,
+    required this.totalTokens,
+  });
+}
+
 abstract class ToolDef {
   String get name;
   String get description;
@@ -65,13 +98,20 @@ abstract class ToolDef {
 
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx);
 
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final lines = '\n'.allMatches(result.output).length + 1;
     final size = result.output.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    return '$lines lines, $sizeStr';
+    return CollapsedSummary(
+      text: '$lines lines, $sizeStr',
+      argsTokens: 0,
+      totalTokens: 0,
+    );
   }
 
   /// Live preview label for an in-progress tool call. Called from

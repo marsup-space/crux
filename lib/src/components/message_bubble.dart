@@ -266,13 +266,17 @@ class MessageBubble extends StatelessComponent {
   Component _buildCollapsedToolCall(ToolCallData tc, BuildContext context) {
     final tool = toolRegistry?.lookup(tc.name);
     final keyArg = _keyArg(tc);
-    String resultText = '';
+    CollapsedSummary? summary;
+    String? fallbackText;
     if (tool != null && pairedResult != null) {
       final result = ToolResult(title: '', output: pairedResult!.content);
-      resultText = tool.collapsedSummary(tc.input, result);
+      summary = tool.collapsedSummary(tc.input, result);
     } else if (pairedResult != null) {
-      resultText = _resultMetrics(pairedResult!.content);
+      fallbackText = _resultMetrics(pairedResult!.content);
     }
+
+    final preCompress = message.preCompressTokens;
+    final isCompressed = preCompress != null && preCompress > 0;
 
     final children = <Text>[
       Text(
@@ -291,10 +295,50 @@ class MessageBubble extends StatelessComponent {
         ),
       );
     }
-    if (resultText.isNotEmpty) {
+    if (summary != null) {
       children.add(
         Text(
-          resultText,
+          '${summary.text}, ',
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+        ),
+      );
+      if (isCompressed) {
+        // Compressed: real SGR strikethrough on the pre cost
+        // (not a '~~' marker — nocterm's markdown component is
+        // the only place '~~' is honored; plain Text widgets
+        // need TextDecoration.lineThrough). Both numbers are
+        // args-only so the comparison is honest.
+        final postPart = summary.argsTokens == summary.totalTokens
+            ? '~${summary.argsTokens} t'
+            : '~${summary.argsTokens} t args, ${summary.totalTokens} t total';
+        children.add(
+          Text(
+            '$preCompress t',
+            style: TextStyle(
+              color: CruxTheme.of(context).onSurfaceDim,
+              decoration: TextDecoration.lineThrough,
+            ),
+          ),
+        );
+        children.add(
+          Text(
+            ', compressed: $postPart',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
+        );
+      } else {
+        // Uncompressed: just the post cost.
+        children.add(
+          Text(
+            '~${summary.totalTokens} t',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
+        );
+      }
+    } else if (fallbackText != null && fallbackText.isNotEmpty) {
+      children.add(
+        Text(
+          fallbackText,
           style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
         ),
       );

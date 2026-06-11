@@ -258,6 +258,7 @@ class SessionStore {
     List<ToolCallData> toolCalls = const [],
     String toolCallId = '',
     String tldr = '',
+    int? preCompressTokens,
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -281,6 +282,7 @@ class SessionStore {
             toolCalls: Value(Message.encodeToolCalls(toolCalls)),
             toolCallId: Value(toolCallId),
             tldr: Value(tldr),
+            preCompressTokens: Value(preCompressTokens),
           ),
         );
 
@@ -300,6 +302,7 @@ class SessionStore {
       tokensIn: tokensIn,
       tokensOut: tokensOut,
       error: error,
+      preCompressTokens: preCompressTokens,
       createdAt: now,
       toolCalls: toolCalls,
       toolCallId: toolCallId,
@@ -464,6 +467,7 @@ class SessionStore {
       tokensOut: row.tokensOut,
       error: row.error,
       parentMsgId: row.parentMsgId,
+      preCompressTokens: row.preCompressTokens,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       toolCalls: Message.parseToolCallsJson(row.toolCalls),
       toolCallId: row.toolCallId,

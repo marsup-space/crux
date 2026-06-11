@@ -11,18 +11,26 @@ class ReadTool extends ToolDef {
   String get name => 'read';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final lines = '\n'.allMatches(result.output).length + 1;
     final size = result.output.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
         : '${size}B';
-    final tokens = estimateToolRoundTripTokens(
+    final total = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
-    return '$lines lines, $sizeStr, ~${tokens}t';
+    // `read` isn't a LargePayloadTool, so args-only == total.
+    return CollapsedSummary(
+      text: '$lines lines, $sizeStr',
+      argsTokens: total,
+      totalTokens: total,
+    );
   }
 
   @override

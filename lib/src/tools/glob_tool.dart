@@ -11,15 +11,22 @@ class GlobTool extends ToolDef {
   String get name => 'glob';
 
   @override
-  String collapsedSummary(Map<String, dynamic> args, ToolResult result) {
+  CollapsedSummary collapsedSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
     final pattern = args['pattern'] as String? ?? '';
     final count = '\n'.allMatches(result.output).length + 1;
-    final tokens = estimateToolRoundTripTokens(
+    final costTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: result.output,
     );
-    return '"$pattern": $count items, ~${tokens}t';
+    return CollapsedSummary(
+      text: '"$pattern": $count items',
+      argsTokens: costTokens,
+      totalTokens: costTokens,
+    );
   }
 
   @override

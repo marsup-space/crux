@@ -70,15 +70,15 @@ void main() {
       expect(compressed.input['intent'], '...');
       final standIn = compressed.input['content'] as String;
       expect(standIn, isNot(equals(largeContent)));
-      expect(standIn, contains('recall: call_abc'));
+      expect(standIn, contains('recall: call_abc_content'));
       // 'x' * 5000 = one long line, so the line count is 1, not 5000.
       // The byte count is the interesting number: ~4.9KB, over the
       // 2KB threshold which is what triggered the offload.
-      expect(standIn, matches(RegExp(r'^\[\d+ lines, [\d.]+KB; recall: call_abc\]$')));
+      expect(standIn, matches(RegExp(r'^\[\d+ lines, [\d.]+KB; recall: call_abc_content\]$')));
       expect(standIn, isNot(contains('5000 lines')));
 
-      // Full content is recoverable via the recall tool.
-      final recovered = await store.getOffloadedContent(session.id, 'call_abc');
+      // Full content is recoverable via the composite key.
+      final recovered = await store.getOffloadedContent(session.id, 'call_abc_content');
       expect(recovered, largeContent);
     });
 
@@ -125,18 +125,24 @@ void main() {
         session.id,
       );
 
-      expect(compressed.input['oldString'], contains('recall: call_edit'));
-      expect(compressed.input['newString'], contains('recall: call_edit'));
+      expect(compressed.input['oldString'], contains('recall: call_edit_oldString'));
+      expect(compressed.input['newString'], contains('recall: call_edit_newString'));
       expect(compressed.input['filePath'], 'foo.py');
 
-      // Only one offloaded_content row per (session, callId) — the
-      // second insert replaces the first because the primary key
-      // is (session_id, call_id). The latest write wins.
-      final recovered = await store.getOffloadedContent(
+      // Both args are independently recoverable via their composite
+      // keys (callId + '_' + argKey). No overwriting because the
+      // offloaded_content PK is (session_id, call_id) and the
+      // composite key includes the arg name.
+      final recoveredOld = await store.getOffloadedContent(
         session.id,
-        'call_edit',
+        'call_edit_oldString',
       );
-      expect(recovered, newString);
+      final recoveredNew = await store.getOffloadedContent(
+        session.id,
+        'call_edit_newString',
+      );
+      expect(recoveredOld, oldString);
+      expect(recoveredNew, newString);
     });
 
     test('non-LargePayloadTool call is returned unchanged', () async {
@@ -191,6 +197,14 @@ void main() {
         isNull,
       );
     });
+
+    // compressCallForPersistence always compresses large args when
+    // called directly; the *caller* (chat_service.dart) is
+    // responsible for skipping compression when the tool's
+    // read-before-write guard fires (result.metadata['guardTriggered']).
+    // See the guard trigger check in chat_service.dart at line 709:
+    //   if (tool is LargePayloadTool && guardTriggers.contains(callId))
+    //     compressedToolCalls.add(call); // original — not compressed
   });
 
   group('RecallTool', () {

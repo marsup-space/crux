@@ -15,7 +15,6 @@ import 'package:crux/src/tools/powershell_tool.dart';
 import 'package:crux/src/tools/read_tool.dart';
 import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/write_tool.dart';
-import 'package:path/path.dart' as p;
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
@@ -1055,15 +1054,22 @@ void main() {
 
   group('GrepTool with file path (regression for session 12 hang)', () {
     test('treats a file path as single-file grep, not directory listing', () async {
+      final workingDirectory = Directory.current.absolute.path;
       final ctx = ToolContext(
         sessionId: 1,
         messageId: 1,
         abort: AbortSignal(),
-        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+        workingDirectory: workingDirectory,
       );
       final result = await GrepTool().execute({
         'pattern': r'filterCommands|isCommandAvailable|filterSuggestions',
-        'path': r'c:\Projects\crux\lib\src\components\chat_panel.dart',
+        'path': p.join(
+          workingDirectory,
+          'lib',
+          'src',
+          'components',
+          'chat_panel.dart',
+        ),
         'context': 3,
       }, ctx);
       expect(result.output, isNot(contains('Directory listing failed')));
@@ -1072,15 +1078,16 @@ void main() {
     });
 
     test('does not throw on directory paths either (sanity)', () async {
+      final workingDirectory = Directory.current.absolute.path;
       final ctx = ToolContext(
         sessionId: 1,
         messageId: 1,
         abort: AbortSignal(),
-        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+        workingDirectory: workingDirectory,
       );
       final result = await GrepTool().execute({
         'pattern': 'Platform.isWindows',
-        'path': r'c:\Projects\crux\lib\src\tools',
+        'path': p.join(workingDirectory, 'lib', 'src', 'tools'),
       }, ctx);
       expect(result.output, contains('Platform.isWindows'));
     });
@@ -1215,6 +1222,123 @@ void main() {
       expect(list, isA<List<String>>());
       expect(list.first, 'oldString');
       expect(list.last, 'newString');
+    });
+  });
+
+  group('CollapsedSummary', () {
+    test('WriteTool returns text + args-only + total tokens', () {
+      final tool = WriteTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'content': 'a' * 5000,
+          'intent': '...',
+        },
+        ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
+      );
+      expect(summary, isA<CollapsedSummary>());
+      expect(summary.text, '1 lines, 4.9KB');
+      expect(summary.text, isNot(contains('~')));
+      // For `write`, the content is both an arg and the
+      // "result" of the operation. The two numbers differ
+      // because argsTokens treats content as an arg while
+      // totalTokens treats it as the result output (different
+      // exclusion semantics in the call site). The important
+      // invariant: both are nonzero and the total accounts
+      // for the actual round-trip cost.
+      expect(summary.argsTokens, greaterThan(0));
+      expect(summary.totalTokens, greaterThan(0));
+    });
+
+    test('EditTool args-only excludes the offloadable args', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'a' * 2000,
+          'newString': 'b' * 2000,
+          'intent': '...',
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+      );
+      expect(summary.text, '1 replacement, 1→1 lines');
+      // args-only is small: the 2000-char oldString + newString
+      // are offloadable and excluded, so what's left is just
+      // the tool name + the small args (filePath, intent) +
+      // Anthropic overhead. The key assertion: the args-only
+      // number is dramatically smaller than the 2000-char
+      // content would have been.
+      expect(summary.argsTokens, lessThan(50));
+      expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
+    });
+
+    test('ReadTool returns lines + size, args-only == total (not offloadable)',
+        () {
+      final tool = ReadTool();
+      final summary = tool.collapsedSummary(
+        {'filePath': 'foo.py'},
+        ToolResult(title: 'Read', output: 'x' * 2000),
+      );
+      expect(summary.text, '1 lines, 2.0KB');
+      // Read isn't a LargePayloadTool, so args-only and total
+      // are identical — there's no compression distinction to
+      // make, and the bubble just shows the single number.
+      expect(summary.argsTokens, summary.totalTokens);
+    });
+
+    test('BashTool includes command preview in the text', () {
+      final tool = BashTool();
+      final summary = tool.collapsedSummary(
+        {'command': 'ls -la /tmp'},
+        ToolResult(title: 'Bash', output: 'foo\nbar\n', metadata: {'exitCode': 0}),
+      );
+      expect(summary.text, contains('ls -la /tmp'));
+      expect(summary.text, contains('lines'));
+      expect(summary.argsTokens, greaterThan(0));
+      expect(summary.totalTokens, summary.argsTokens);
+    });
+
+    test('EditTool shows "all" when replaceAll is true', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'foo',
+          'newString': 'bar',
+          'replaceAll': true,
+          'intent': '...',
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 5 occurrences'),
+      );
+      expect(summary.text, startsWith('all replacement'));
+    });
+
+    test('BashTool shows [exit N] suffix for non-zero exit codes', () {
+      final tool = BashTool();
+      final summary = tool.collapsedSummary(
+        {'command': 'false'},
+        ToolResult(
+          title: 'Bash',
+          output: '',
+          metadata: {'exitCode': 1},
+        ),
+      );
+      expect(summary.text, contains('[exit 1]'));
+    });
+
+    test('GrepTool appends [truncated] suffix when result was truncated', () {
+      final tool = GrepTool();
+      final summary = tool.collapsedSummary(
+        {'pattern': 'TODO'},
+        ToolResult(
+          title: 'Grep',
+          output: 'matches...',
+          truncated: true,
+          metadata: {'totalMatches': 500},
+        ),
+      );
+      expect(summary.text, contains('[truncated]'));
+      expect(summary.text, contains('500 matches'));
     });
   });
 }
