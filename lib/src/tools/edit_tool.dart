@@ -92,8 +92,8 @@ class EditTool extends ToolDef implements LargePayloadTool {
   final FileReadTracker? tracker;
   final List<Matcher> _matchers = [
     ExactMatcher(),
-    WhitespaceMatcher(),
     IndentationMatcher(),
+    WhitespaceMatcher(),
   ];
 
   EditTool({this.tracker});
