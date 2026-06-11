@@ -1437,62 +1437,20 @@ class _ChatPanelState extends State<ChatPanel> {
 
   @override
   Component build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        _lastContentWidth = constraints.maxWidth.toInt();
-        final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
-
-        if (showInfoPanel) {
-          final mainContent = Row(
-            children: [
-              Expanded(child: _buildMainInterface()),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: CruxTheme.of(context).divider,
-              ),
-              SizedBox(
-                width: _infoPanelWidth,
-                child: ExtraInfoPanel(
-                  sessions: _sessionController.sessions,
-                  currentSessionId: _sessionController.currentSessionId ?? 0,
-                  onSwitchSession: _switchSession,
-                  archivedCount: _sessionController.archivedCount,
-                  onSessionTitleTap: () {
-                    setState(() {
-                      _overlayController.showSessionManager = true;
-                    });
-                  },
-                  onOpenProject: _openProjectInExplorer,
-                  onSwitchProject: _switchProject,
-                ),
-              ),
-            ],
-          );
-
-          if (_overlayController.showSessionManager) {
-            return Stack(
-              children: [
-                Positioned.fill(child: mainContent),
-                Positioned.fill(child: _buildSessionManager()),
-              ],
-            );
-          }
-
-          return mainContent;
-        }
-
-        if (_overlayController.showSessionManager) {
-          return Stack(
-            children: [
-              Positioned.fill(child: _buildMainInterface()),
-              Positioned.fill(child: _buildSessionManager()),
-            ],
-          );
-        }
-
-        return _buildMainInterface();
-      },
+    final theme = CruxTheme.of(context);
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(1),
+        decoration: BoxDecoration(border: BoxBorder.all(color: theme.success)),
+        child: Text(
+          'CHAT INIT OK',
+          style: TextStyle(
+            color: theme.text,
+            fontWeight: FontWeight.bold,
+            reverse: true,
+          ),
+        ),
+      ),
     );
   }
 
