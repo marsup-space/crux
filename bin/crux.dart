@@ -465,24 +465,21 @@ class _CruxAppState extends State<_CruxApp> {
       data: theme.toTuiThemeData(),
       child: CruxTheme(
         data: theme,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ChatPanel(
-              userProvidersDir: component.userProvidersDir,
-              builtInProvidersDir: component.builtInProvidersDir,
-              themeController: component.themeController,
-              startupWarnings: component.startupWarnings,
+        child: Center(
+          child: Container(
+            padding: EdgeInsets.all(1),
+            decoration: BoxDecoration(
+              border: BoxBorder.all(color: theme.accent),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              child: Text(
-                ' CRUX ROOT PROBE ',
-                style: TextStyle(fontWeight: FontWeight.bold, reverse: true),
+            child: Text(
+              'CRUX STATIC RENDER PROBE',
+              style: TextStyle(
+                color: theme.text,
+                fontWeight: FontWeight.bold,
+                reverse: true,
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
