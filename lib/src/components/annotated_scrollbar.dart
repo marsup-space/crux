@@ -270,6 +270,9 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
         _tooltipBackgroundColor = tooltipBackgroundColor,
         _tooltipBorderColor = tooltipBorderColor;
 
+  @override
+  double get minimumThumbHeight => 2.0;
+
   Color? _tooltipBackgroundColor;
   Color? get tooltipBackgroundColor => _tooltipBackgroundColor;
   set tooltipBackgroundColor(Color? value) {
@@ -428,7 +431,10 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     final totalExtent = ctrl.maxScrollExtent + ctrl.viewportDimension;
 
     final scrollFraction = ctrl.viewportDimension / totalExtent;
-    final thumbHeight = math.max(1.0, trackHeight * scrollFraction);
+    final thumbHeight = math.min(
+      trackHeight,
+      math.max(minimumThumbHeight, trackHeight * scrollFraction),
+    );
     final isReversed = ctrl.isReversed;
     double thumbOffset;
     if (isReversed) {
