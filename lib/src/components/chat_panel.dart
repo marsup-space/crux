@@ -110,8 +110,14 @@ class _ChatPanelState extends State<ChatPanel> {
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  static const int _infoPanelMinWidth = 100;
-  static const double _infoPanelWidth = 28;
+  /// Minimum terminal width (columns) at which the side panel is shown.
+  static const int _infoPanelShowThreshold = 100;
+
+  /// Minimum width (columns) of the side panel itself.
+  static const double _infoPanelWidthMin = 28;
+
+  /// Maximum width (columns) of the side panel itself.
+  static const double _infoPanelWidthMax = 40;
 
   int get _contextMaxTokens {
     if (!_providerServiceReady) return 131072;
@@ -1722,9 +1728,18 @@ class _ChatPanelState extends State<ChatPanel> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _lastContentWidth = constraints.maxWidth.toInt();
-        final showInfoPanel = constraints.maxWidth >= _infoPanelMinWidth;
+        final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
 
         if (showInfoPanel) {
+          // Grow the panel at 30% of the surplus terminal width beyond
+          // _infoPanelShowThreshold, from _infoPanelWidthMin →
+          // _infoPanelWidthMax, then clamp. At terminal width 140
+          // the panel hits its max of 40.
+          final panelWidth = (_infoPanelWidthMin +
+                  0.3 *
+                      (constraints.maxWidth -
+                          _infoPanelShowThreshold))
+              .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
           final mainContent = Row(
             children: [
               Expanded(child: _buildMainInterface()),
@@ -1734,7 +1749,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 color: CruxTheme.of(context).divider,
               ),
               SizedBox(
-                width: _infoPanelWidth,
+                width: panelWidth,
                 child: ExtraInfoPanel(
                   sessions: _sessionController.sessions,
                   currentSessionId: _sessionController.currentSessionId ?? 0,

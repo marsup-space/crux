@@ -10,7 +10,7 @@ import 'matchers/whitespace_matcher.dart';
 import 'matchers/indentation_matcher.dart';
 import 'tool_def.dart';
 
-class EditTool extends ToolDef implements LargePayloadTool {
+class EditTool extends LargePayloadTool {
   @override
   List<String> get offloadableArgs => ['oldString', 'newString'];
 
@@ -57,8 +57,13 @@ class EditTool extends ToolDef implements LargePayloadTool {
 
   @override
   String get description =>
-      'Exact string replacements in files. '
-      'Use replaceAll for renaming across file.';
+      'Replaces exact text in a file. '
+      'Use replaceAll for renaming across file. '
+      'After a successful call, any argument that exceeds the offload '
+      'threshold is moved from the conversation context to the '
+      'offloaded_content table; the result message reports the '
+      'composite key for any offloaded argument so it can be '
+      'referenced on subsequent turns if needed.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -140,9 +145,17 @@ class EditTool extends ToolDef implements LargePayloadTool {
     if (oldString.isEmpty) {
       await _writePreservingEncoding(file, newString, meta);
       if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
-      return ToolResult(
-        title: 'Edit file: $resolved',
-        output: 'Created file with ${newString.length} characters',
+      return _withOffloadNote(
+        args,
+        ctx,
+        ToolResult(
+          title: 'Edit file: $resolved',
+          output: _successMessage(
+            relativePath(resolved, ctx.workingDirectory),
+            'Created file with ${newString.length} characters',
+            args,
+          ),
+        ),
       );
     }
 
@@ -187,9 +200,51 @@ class EditTool extends ToolDef implements LargePayloadTool {
     if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
 
     final count = matchResult.positions.length;
+    return _withOffloadNote(
+      args,
+      ctx,
+      ToolResult(
+        title: 'Edit file: $resolved',
+        output: _successMessage(
+          relativePath(resolved, ctx.workingDirectory),
+          'Replaced $count occurrence(s) of oldString',
+          args,
+        ),
+      ),
+    );
+  }
+
+  /// Build the first line of the success message. When an intent
+  /// was supplied, prefix it so the agent (and the user, on
+  /// re-reading) can correlate the result with the planned action.
+  String _successMessage(
+    String relPath,
+    String body,
+    Map<String, dynamic> args,
+  ) {
+    final intent = args['intent'];
+    if (intent is String && intent.isNotEmpty) {
+      return 'Edit applied to $relPath (intent: \'$intent\'): $body';
+    }
+    return 'Edit applied to $relPath: $body';
+  }
+
+  /// Append the offload note to [result] when at least one of
+  /// this tool's arguments will be off-loaded by the chat
+  /// service. The note tells the agent the offload happened and
+  /// gives it the composite key(s) for future reference, so the
+  /// stand-in pointer it sees in the next turn's history is not a
+  /// surprise.
+  ToolResult _withOffloadNote(
+    Map<String, dynamic> args,
+    ToolContext ctx,
+    ToolResult result,
+  ) {
+    final offloaded = argsToOffload(args);
+    if (offloaded.isEmpty || ctx.callId == null) return result;
     return ToolResult(
-      title: 'Edit file: $resolved',
-      output: 'Replaced $count occurrence(s) of oldString',
+      title: result.title,
+      output: '${result.output}\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded)}',
     );
   }
 

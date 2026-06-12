@@ -747,6 +747,7 @@ class ChatService {
             sessionId: sessionId,
             messageId: -1,
             abort: abortSignal,
+            callId: call.callId,
             workingDirectory: session.projectPath,
           );
           final result = await _toolExecutor.executeTool(call, ctx);

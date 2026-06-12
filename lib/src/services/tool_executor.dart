@@ -6,14 +6,6 @@ import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import 'llm_client.dart';
 
-/// Minimum byte size (utf-8) before a LargePayloadTool's argument
-/// is off-loaded to the `offloaded_content` table and replaced in
-/// the conversation log with a stand-in pointer. 2 KB is a
-/// reasonable default: small enough to skip trivial content,
-/// large enough to catch the common case (a typical source-file
-/// edit is well over 2 KB).
-const int offloadThresholdBytes = 2048;
-
 class ToolCall {
   final String callId;
   final String name;
@@ -58,8 +50,8 @@ class ToolExecutor {
   /// and any of its declared offloadable args exceeds
   /// [offloadThresholdBytes] bytes (utf-8), the full value is
   /// written to `offloaded_content` keyed by `(sessionId, callId)`
-  /// and replaced in the returned call's input with a stand-in
-  /// pointer `[N lines, B bytes; recall: <callId>]`.
+  /// and replaced in the returned call's input with an
+  /// unambiguous stand-in pointer (see [_buildOffloadStandIn]).
   ///
   /// The original [call] is left unchanged so the tool itself
   /// still receives the full content when it runs.
@@ -89,8 +81,12 @@ class ToolExecutor {
         content: value,
       );
       newInput = Map<String, dynamic>.from(newInput);
-      newInput[argKey] =
-          '[$lineCount lines, ${_formatBytes(bytes.length)}]';
+      newInput[argKey] = _buildOffloadStandIn(
+        callId: call.callId,
+        argKey: argKey,
+        lineCount: lineCount,
+        bytes: bytes.length,
+      );
       modified = true;
     }
 
@@ -242,4 +238,38 @@ String _formatBytes(int bytes) {
     return '${(bytes / 1024).toStringAsFixed(1)}KB';
   }
   return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
+}
+
+/// Build the stand-in pointer that replaces a large offloadable
+/// argument in the persisted tool_call.
+///
+/// The pointer is visible to the LLM in the conversation history
+/// (it's the value of the argument on the next turn) and on rare
+/// occasions the LLM has pasted it into a subsequent `edit` /
+/// `write` `oldString` / `newString` / `content`, polluting the
+/// file. The format is therefore designed to NOT look like a
+/// numbered line of source code (the `read` tool prefixes each
+/// line with `N: `, so a stand-in starting with `[\d+` is
+/// visually adjacent to that prefix and gets mis-copied).
+///
+/// Two properties that make the pointer robust against that bug:
+///
+/// 1. It does not start with `[\d+`. It starts with the literal
+///    word `offloaded` so the LLM can recognize it as
+///    meta-content, not as a line of code.
+///
+/// 2. It includes the composite key (`<callId>_<argKey>`) of the
+///    row in `offloaded_content` where the full bytes live, so
+///    the LLM has the information it needs to recover the bytes
+///    via the `recall` tool. (The previous format omitted this
+///    and the LLM had no way to know how to recover.)
+String _buildOffloadStandIn({
+  required String callId,
+  required String argKey,
+  required int lineCount,
+  required int bytes,
+}) {
+  final compositeKey = '${callId}_$argKey';
+  return '[offloaded: $lineCount lines / ${_formatBytes(bytes)}; '
+      'recall via offloaded_content(key="$compositeKey")]';
 }

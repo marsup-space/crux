@@ -17,7 +17,6 @@ import 'package:crux/src/services/tool_executor.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
-import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
   late Directory tempDir;
@@ -69,11 +68,24 @@ void main() {
       expect(compressed.input['intent'], '...');
       final standIn = compressed.input['content'] as String;
       expect(standIn, isNot(equals(largeContent)));
-      expect(standIn, contains(']'));
+      expect(standIn, contains('KB'),
+          reason: 'stand-in reports the byte size');
       // 'x' * 5000 = one long line, so the line count is 1, not 5000.
       // The byte count is the interesting number: ~4.9KB, over the
       // 2KB threshold which is what triggered the offload.
-      expect(standIn, matches(RegExp(r'^\[\d+ lines, [\d.]+KB\]$')));
+      expect(
+        RegExp(r'^\[\d+ lines').hasMatch(standIn),
+        isFalse,
+        reason:
+            'stand-in format must not start with `[<digits> lines` — that '
+            'pattern is visually adjacent to a `read`-tool line prefix '
+            '(`N: <line>`) and the LLM has been observed pasting the '
+            'stand-in into subsequent edits/writes, corrupting files.',
+      );
+      // The new format must include the composite key so the LLM
+      // can name the row when calling the (future) `recall` tool.
+      expect(standIn, contains('call_abc_content'),
+          reason: 'stand-in must reference the offloaded_content key');
       expect(standIn, isNot(contains('5000 lines')));
 
       // Full content is recoverable via the composite key.
@@ -124,8 +136,10 @@ void main() {
         session.id,
       );
 
-      expect(compressed.input['oldString'], contains('lines'));
-      expect(compressed.input['newString'], contains('lines'));
+      expect(compressed.input['oldString'], contains('offloaded'));
+      expect(compressed.input['newString'], contains('offloaded'));
+      expect(compressed.input['oldString'], contains('call_edit_oldString'));
+      expect(compressed.input['newString'], contains('call_edit_newString'));
       expect(compressed.input['filePath'], 'foo.py');
 
       // Both args are independently recoverable via their composite
