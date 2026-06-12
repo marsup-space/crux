@@ -5,14 +5,17 @@
 // verify the executor routes each scenario through the right
 // callback (or rejects it with a toast).
 //
-// Note: drift logs a "database created multiple times" warning
-// because each test re-instantiates CruxDatabase. The warning is
-// harmless here — each instance uses its own NativeDatabase
-// pointing at a fresh in-memory file under the test's temp dir, so
-// there is no shared state to race on. We just ignore the noise.
+// Each test gets its own in-memory database via
+// [CruxDatabase.forTesting] so writes don't collide on the
+// shared on-disk `crux.db`. Drift will still print a
+// "database created multiple times" warning because it counts
+// CruxDatabase instances rather than executors; that's harmless
+// here because each instance is backed by its own
+// NativeDatabase.memory().
 
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
 import 'package:crux/src/commands/command_executor.dart';
@@ -35,7 +38,7 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_exec_test_');
       providerService = ProviderService(userProvidersDir: tempDir.path);
-      final db = CruxDatabase();
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       // A real session id is required so `runtime` and friends have
       // a backing SessionRuntimeState to mutate. The DB is in
@@ -343,7 +346,7 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_retry_test_');
       providerService = ProviderService(userProvidersDir: tempDir.path);
-      final db = CruxDatabase();
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       session = await store.create(
         title: 'Test Session',
@@ -572,7 +575,7 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_btw_test_');
       providerService = ProviderService(userProvidersDir: tempDir.path);
-      final db = CruxDatabase();
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       session = await store.create(
         title: 'Test Session',
@@ -776,5 +779,207 @@ void main() {
         expect(lastToast, isNotNull);
       },
     );
+  });
+
+  group('CommandExecutor — /rename', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_exec_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Old Title',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext({
+      void Function(String, {ToastMode? mode})? showToastImpl,
+      void Function()? refreshImpl,
+    }) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: refreshImpl ?? () {},
+        showToast: showToastImpl ?? (message, {ToastMode? mode}) {},
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () => {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+    }
+
+    test('renames the current session and persists to the DB', () async {
+      // Happy path: `/rename New Title` writes to the DB, mirrors the
+      // change onto the in-memory Session instance, calls refresh
+      // exactly once, and emits a success toast.
+      var refreshes = 0;
+      String? lastToast;
+      await CommandExecutor().execute(
+        '/rename New Title',
+        buildContext(
+          refreshImpl: () => refreshes++,
+          showToastImpl: (m, {mode}) => lastToast = m,
+        ),
+      );
+      expect(refreshes, equals(1));
+      expect(session.title, equals('New Title'));
+      // Verify the DB write actually happened (not just the
+      // in-memory mirror).
+      final reloaded = await store.getById(session.id);
+      expect(reloaded, isNotNull);
+      expect(reloaded!.title, equals('New Title'));
+      expect(lastToast, isNotNull);
+      expect(lastToast, contains('New Title'));
+      expect(lastToast, contains('Old Title'));
+    });
+
+    test('joins multi-word titles with spaces', () async {
+      // The executor must re-join parts[1..] with spaces so titles
+      // containing spaces round-trip verbatim (mirrors /btw's
+      // handling). No quoting should be required.
+      await CommandExecutor().execute(
+        '/rename Ship the parser today',
+        buildContext(),
+      );
+      expect(session.title, equals('Ship the parser today'));
+      final reloaded = await store.getById(session.id);
+      expect(reloaded!.title, equals('Ship the parser today'));
+    });
+
+    test('trims surrounding whitespace from the title', () async {
+      // Leading/trailing whitespace inside the user input should be
+      // stripped before both the DB write and the no-op check.
+      await CommandExecutor().execute(
+        '/rename   Trimmed Title   ',
+        buildContext(),
+      );
+      expect(session.title, equals('Trimmed Title'));
+    });
+
+    test('shows a usage toast when called with no title', () async {
+      // Bare `/rename` and whitespace-only invocations both surface
+      // a usage toast. The DB must not be touched and refresh must
+      // not fire.
+      for (final invocation in <String>['/rename', '/rename  ', '/rename   ']) {
+        var refreshes = 0;
+        String? lastToast;
+        await CommandExecutor().execute(
+          invocation,
+          buildContext(
+            refreshImpl: () => refreshes++,
+            showToastImpl: (m, {mode}) => lastToast = m,
+          ),
+        );
+        expect(session.title, equals('Old Title'),
+            reason: 'title must not change (input: "$invocation")');
+        expect(refreshes, equals(0),
+            reason: 'refresh must not fire on a rejected command');
+        expect(lastToast, isNotNull);
+        expect(lastToast, contains('Usage'));
+      }
+    });
+
+    test('is a no-op when the new title equals the current title', () async {
+      // `/rename Old Title` is a valid invocation but should not
+      // touch the DB or call refresh — emit an informational toast
+      // so the user sees that the command was understood.
+      var refreshes = 0;
+      String? lastToast;
+      await CommandExecutor().execute(
+        '/rename Old Title',
+        buildContext(
+          refreshImpl: () => refreshes++,
+          showToastImpl: (m, {mode}) => lastToast = m,
+        ),
+      );
+      expect(refreshes, equals(0));
+      expect(lastToast, isNotNull);
+      expect(lastToast!.toLowerCase(), contains('unchanged'));
+      // DB unchanged.
+      final reloaded = await store.getById(session.id);
+      expect(reloaded!.title, equals('Old Title'));
+    });
+
+    test('rejects with a toast when there is no active session', () async {
+      // Construct a context with no current session — the executor
+      // should bail out with an error toast, not crash, not touch
+      // the store.
+      var refreshes = 0;
+      String? lastToast;
+      ToastMode? lastMode;
+      await CommandExecutor().execute(
+        '/rename Foo',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: Session(id: 0, title: 'New Session'),
+          currentSessionId: null,
+          sessions: const <Session>[],
+          currentMessages: const <Message>[],
+          projectPath: tempDir.path,
+          refresh: () => refreshes++,
+          showToast: (message, {ToastMode? mode}) {
+            lastToast = message;
+            lastMode = mode;
+          },
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () => {},
+          sendTurn: ({String? text}) async {},
+          findLastUserMessage: () async => null,
+          deleteMessagesFrom: (_) async {},
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+        ),
+      );
+      expect(refreshes, equals(0));
+      expect(lastToast, isNotNull);
+      expect(lastToast, contains('No active session'));
+      expect(lastMode, equals(ToastMode.error));
+    });
+
+    test('alias /重命名 dispatches to the same executor path', () async {
+      // The registry's Chinese alias should hit the same handler.
+      // Use a Chinese title to also exercise non-ASCII input.
+      await CommandExecutor().execute(
+        '/重命名 中文标题',
+        buildContext(),
+      );
+      expect(session.title, equals('中文标题'));
+      final reloaded = await store.getById(session.id);
+      expect(reloaded!.title, equals('中文标题'));
+    });
   });
 }
