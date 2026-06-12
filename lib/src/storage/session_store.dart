@@ -313,6 +313,58 @@ class SessionStore {
     );
   }
 
+  /// Persist a `tool_call` assistant row and all of its matching
+  /// `tool` result rows in a single SQLite transaction.
+  ///
+  /// The agentic loop in [ChatService] used to call [addMessage]
+  /// once for the assistant row and again in a `for` loop for every
+  /// result row. If the process died between those writes (terminal
+  /// closed, OS kill, power loss, an exception thrown from a tool's
+  /// result-handling code), the conversation kept the `tool_call`
+  /// row but lost the matching `tool` rows — an orphan that every
+  /// future replay sent to a strict provider would reject (MiniMax
+  /// surfaces this as `tool call result does not follow tool call`).
+  ///
+  /// Wrapping both writes in [_db.transaction] makes the persist
+  /// step all-or-nothing: SQLite rolls back on any failure and the
+  /// next turn sees either the full round or no round at all.
+  Future<Message> addToolRound(
+    int sessionId, {
+    String roundText = '',
+    String reasoningContent = '',
+    String reasoningSignature = '',
+    int reasoningTokens = 0,
+    int thinkingDurationMs = 0,
+    String? reasoningEffort,
+    required List<ToolCallData> toolCalls,
+    int? preCompressTokens,
+    required List<({String callId, String output})> results,
+  }) {
+    return _db.transaction(() async {
+      final assistant = await addMessage(
+        sessionId,
+        role: 'tool_call',
+        content: roundText,
+        reasoningContent: reasoningContent,
+        reasoningSignature: reasoningSignature,
+        reasoningTokens: reasoningTokens,
+        thinkingDurationMs: thinkingDurationMs,
+        reasoningEffort: reasoningEffort,
+        toolCalls: toolCalls,
+        preCompressTokens: preCompressTokens,
+      );
+      for (final r in results) {
+        await addMessage(
+          sessionId,
+          role: 'tool',
+          content: r.output,
+          toolCallId: r.callId,
+        );
+      }
+      return assistant;
+    });
+  }
+
   Future<List<Message>> getMessages(
     int sessionId, {
     int limit = 1000,

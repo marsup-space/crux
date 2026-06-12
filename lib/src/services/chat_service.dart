@@ -822,11 +822,17 @@ class ChatService {
           )
           .toList();
 
-      // ── Persist (tool_call first, then tool_results) ──
-      await _store.addMessage(
+      // ── Persist (tool_call + tool_results in one transaction) ──
+      // The two writes used to be sequential `_store.addMessage`
+      // calls; closing the terminal between them left the
+      // `tool_call` row stranded without its results, and every
+      // subsequent replay would be rejected by strict providers
+      // (e.g. MiniMax "tool call result does not follow tool
+      // call"). [addToolRound] wraps both writes in a SQLite
+      // transaction so the persist step is all-or-nothing.
+      await _store.addToolRound(
         sessionId,
-        role: 'tool_call',
-        content: roundText,
+        roundText: roundText,
         reasoningContent: roundReasoning,
         reasoningSignature: roundReasoningSignature,
         reasoningTokens: roundReasoningTokens,
@@ -839,17 +845,11 @@ class ChatService {
             : runtime.reasoningEffort ?? 'normal',
         toolCalls: toolCallData,
         preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
+        results: [
+          for (final call in toolCalls)
+            (callId: call.callId, output: callResults[call.callId]!.output),
+        ],
       );
-
-      for (final call in toolCalls) {
-        final result = callResults[call.callId]!;
-        await _store.addMessage(
-          sessionId,
-          role: 'tool',
-          content: result.output,
-          toolCallId: call.callId,
-        );
-      }
 
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();
