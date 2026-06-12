@@ -5,6 +5,7 @@ import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/terminal_symbols.dart';
+import 'ui/fps_counter.dart';
 import 'ui/multi_button.dart';
 
 /// Time-based grouping for sessions in the sidebar.
@@ -289,38 +290,55 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         ? '~${cwd.substring(home.length)}'
         : cwd;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        const SizedBox(height: 1),
-        header,
-        Divider(color: CruxTheme.of(context).outline, height: 1),
-        Expanded(
-          child: ListView.builder(
-            lazy: true,
-            itemCount: rows.length,
-            itemBuilder: (context, index) {
-              final item = rows[index];
-              if (item is _SessionGroup) {
-                return _buildGroupHeader(item);
-              }
-              return _buildSessionRow(item as Session, panel);
-            },
-          ),
-        ),
-        MultiButton(
-          label: displayPath,
-          color: CruxTheme.of(context).onSurfaceVariant,
-          hoverColor: CruxTheme.of(context).foreground,
-          segments: [
-            MultiButtonSegment(label: 'open', onPressed: panel.onOpenProject),
-            MultiButtonSegment(
-              label: 'switch',
-              onPressed: panel.onSwitchProject,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 1),
+            header,
+            Divider(color: CruxTheme.of(context).outline, height: 1),
+            Expanded(
+              child: ListView.builder(
+                lazy: true,
+                itemCount: rows.length,
+                itemBuilder: (context, index) {
+                  final item = rows[index];
+                  if (item is _SessionGroup) {
+                    return _buildGroupHeader(item);
+                  }
+                  return _buildSessionRow(item as Session, panel);
+                },
+              ),
             ),
+            MultiButton(
+              label: displayPath,
+              color: CruxTheme.of(context).onSurfaceVariant,
+              hoverColor: CruxTheme.of(context).foreground,
+              segments: [
+                MultiButtonSegment(
+                    label: 'open', onPressed: panel.onOpenProject),
+                MultiButtonSegment(
+                  label: 'switch',
+                  onPressed: panel.onSwitchProject,
+                ),
+              ],
+            ),
+            const SizedBox(height: 1),
           ],
         ),
-        const SizedBox(height: 1),
+        // FPS readout (debug-only). Anchored to the bottom-right corner
+        // of the side panel; collapses to zero-size when debug mode is
+        // off, so it doesn't reserve any space in the normal layout.
+        // Because it's a child of this panel — which itself only mounts
+        // when the terminal is wide enough to show the side panel — it
+        // inherits the "panel hidden ⇒ counter hidden" behaviour for
+        // free.
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: const FpsCounter(),
+        ),
       ],
     );
   }
