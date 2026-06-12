@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
+import '../utils/terminal_symbols.dart';
 import 'ui/highlighted_markdown_text.dart';
 
 /// One rendered line of a `/btw` chain. Used for both the user's
@@ -38,7 +39,9 @@ class BtwBubble extends StatelessComponent {
         : CruxTheme.of(context).btwAiPrefix;
     final prefix = isUser
         ? ' btw > '
-        : (streaming && content.isEmpty ? ' btw ... ' : ' btw ✦ ');
+        : (streaming && content.isEmpty
+              ? ' btw ... '
+              : ' btw ${terminalSymbol('✦', '*')} ');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),

@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/terminal_symbols.dart';
 import 'button.dart';
 
 /// Index constants for footer button focus tracking.
@@ -403,10 +404,10 @@ class _WizardOverlayState extends State<WizardOverlay> {
           ? CruxTheme.of(context).wizardTitle
           : CruxTheme.of(context).wizardTextDim;
       final dotChar = isActive
-          ? '●'
+          ? terminalSymbol('●', '*')
           : isPast
-          ? '◉'
-          : '○';
+          ? terminalSymbol('◉', '+')
+          : terminalSymbol('○', '.');
       indicators.add(Text(dotChar, style: TextStyle(color: dotColor)));
       if (i < steps.length - 1) {
         indicators.add(
@@ -498,7 +499,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
                         builder: (context) {
                           final focused = Focus.of(context);
                           return Button(
-                            label: focused ? '▸ Back ◂' : ' Back ',
+                            label: focused
+                                ? '${terminalSymbol('▸', '>')} Back ${terminalSymbol('◂', '<')}'
+                                : ' Back ',
                             onPressed: _goBack,
                             focused: focused,
                             color: focused
@@ -543,7 +546,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
                             final focused = Focus.of(context);
                             return Button(
                               label: focused
-                                  ? (isLastStep ? '▸ Confirm ◂' : '▸ Next ◂')
+                                  ? (isLastStep
+                                        ? '${terminalSymbol('▸', '>')} Confirm ${terminalSymbol('◂', '<')}'
+                                        : '${terminalSymbol('▸', '>')} Next ${terminalSymbol('◂', '<')}')
                                   : (isLastStep ? ' Confirm ' : ' Next '),
                               onPressed: isValid ? _goNext : null,
                               focused: focused,
@@ -590,7 +595,9 @@ class _WizardOverlayState extends State<WizardOverlay> {
                           builder: (context) {
                             final focused = Focus.of(context);
                             return Button(
-                              label: focused ? '▸ Cancel ◂' : ' Cancel ',
+                              label: focused
+                                  ? '${terminalSymbol('▸', '>')} Cancel ${terminalSymbol('◂', '<')}'
+                                  : ' Cancel ',
                               onPressed: wizard.onCancel,
                               focused: focused,
                               color: focused

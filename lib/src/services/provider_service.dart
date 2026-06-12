@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../models/provider_config.dart';
+import '../utils/user_data_directory.dart';
 import 'llm_provider.dart';
 import 'provider_config_loader.dart';
 
@@ -37,9 +38,8 @@ class DiscoveredModel {
 /// Manages provider configuration files, API key storage, and model discovery.
 ///
 /// [ProviderService] wraps a [ProviderConfigLoader] for reading/writing TOML
-/// configs, persists API keys in an `auth.json` file following XDG conventions
-/// (`$XDG_DATA_HOME/crux/auth.json` with `0o600` permissions), and can query
-/// remote endpoints to discover available models.
+/// configs, persists API keys in a platform-specific user data directory, and
+/// can query remote endpoints to discover available models.
 ///
 /// Two directories drive config lookup:
 /// - [userProvidersDir] (e.g. `~/.config/crux/providers/`) — writable,
@@ -99,8 +99,9 @@ class ProviderService {
   int _tldrThreshold = 5000;
 
   /// Path to the auth.json file for persistent key storage.
-  /// Follows XDG: `$XDG_DATA_HOME/crux/auth.json`
-  /// (defaults to `~/.local/share/crux/auth.json`).
+  /// Uses the legacy `HOME\.local\share\crux` directory on Windows when it
+  /// exists; otherwise uses `%LOCALAPPDATA%\crux`. Unix-like platforms follow
+  /// XDG conventions.
   late final String authJsonPath;
 
   ProviderService({
@@ -109,13 +110,10 @@ class ProviderService {
   }) : _loader = ProviderConfigLoader.multi(
            providersDirs: [
              Directory(userProvidersDir),
-             if (builtInProvidersDir != null) Directory(builtInProvidersDir!),
+             if (builtInProvidersDir != null) Directory(builtInProvidersDir),
            ],
          ) {
-    final xdgDataHome =
-        Platform.environment['XDG_DATA_HOME'] ??
-        p.join(Platform.environment['HOME']!, '.local', 'share');
-    authJsonPath = p.join(xdgDataHome, 'crux', 'auth.json');
+    authJsonPath = p.join(resolveUserDataDirectory(), 'auth.json');
   }
 
   // ---------------------------------------------------------------------------

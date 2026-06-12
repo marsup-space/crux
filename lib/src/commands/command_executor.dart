@@ -6,6 +6,8 @@ import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/provider_service.dart';
 import '../storage/session_store.dart';
+import '../utils/terminal_symbols.dart';
+import '../utils/user_data_directory.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
@@ -334,13 +336,19 @@ class CommandExecutor {
 
     if (arg == 'remove' || arg == '--remove' || arg == 'rm') {
       await ctx.providerService.removeApiKey(name);
-      ctx.showToast('✓ Removed API key for $name', mode: ToastMode.status);
+      ctx.showToast(
+        '${terminalSymbol('✓', '+')} Removed API key for $name',
+        mode: ToastMode.status,
+      );
       return;
     }
 
     // /provider <name> <key> — persist.
     await ctx.providerService.setApiKey(name, arg);
-    ctx.showToast('✓ Saved API key for $name', mode: ToastMode.status);
+    ctx.showToast(
+      '${terminalSymbol('✓', '+')} Saved API key for $name',
+      mode: ToastMode.status,
+    );
   }
 
   Future<void> executeThink(List<String> parts, CommandContext ctx) async {
@@ -859,11 +867,7 @@ class CommandExecutor {
   }
 
   Future<void> executeDebugPaths(CommandContext ctx) async {
-    final xdgData = Platform.environment['XDG_DATA_HOME'];
-    final home = Platform.environment['HOME'] ?? '.';
-    final dataDir = xdgData != null && xdgData.isNotEmpty
-        ? p.join(xdgData, 'crux')
-        : p.join(home, '.local', 'share', 'crux');
+    final dataDir = resolveUserDataDirectory();
     final buf = StringBuffer();
     buf.writeln('Paths:');
     buf.writeln('  projectPath:    ${ctx.projectPath}');

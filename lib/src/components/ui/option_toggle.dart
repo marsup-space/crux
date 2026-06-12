@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/terminal_symbols.dart';
 
 /// A segmented toggle widget that displays mutually exclusive options
 /// side-by-side in a bordered group.
@@ -128,7 +129,9 @@ class _OptionToggleState extends State<OptionToggle> {
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
               decoration: BoxDecoration(color: bgColor),
               child: Text(
-                isSelected ? '▶ ${comp.options[i]}' : '  ${comp.options[i]}',
+                isSelected
+                    ? '${terminalSymbol('▶', '>')} ${comp.options[i]}'
+                    : '  ${comp.options[i]}',
                 style: TextStyle(
                   color: textColor,
                   fontWeight: isSelected ? FontWeight.bold : null,

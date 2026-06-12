@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import '../utils/terminal_symbols.dart';
 import 'ui/multi_button.dart';
 
 /// Time-based grouping for sessions in the sidebar.
@@ -188,13 +189,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   String _statusPrefix(SessionStatus status) {
     switch (status) {
       case SessionStatus.idle:
-        return '·';
+        return terminalSymbol('·', '.');
       case SessionStatus.running:
-        return '▶';
+        return terminalSymbol('▶', '>');
       case SessionStatus.needUserAction:
         return '?';
       case SessionStatus.done:
-        return '✦';
+        return terminalSymbol('✦', '*');
     }
   }
 

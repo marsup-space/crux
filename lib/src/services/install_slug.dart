@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:path/path.dart' as p;
 
+import '../utils/user_data_directory.dart';
+
 class InstallSlug {
   static String? _cached;
 
@@ -27,13 +29,6 @@ class InstallSlug {
   }
 
   static String _dataDir() {
-    final xdg = Platform.environment['XDG_DATA_HOME'];
-    if (xdg != null && xdg.isNotEmpty) return p.join(xdg, 'crux');
-    return p.join(
-      Platform.environment['HOME'] ?? '.',
-      '.local',
-      'share',
-      'crux',
-    );
+    return resolveUserDataDirectory();
   }
 }
