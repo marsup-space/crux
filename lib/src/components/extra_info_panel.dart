@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/terminal_symbols.dart';
@@ -71,7 +73,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   final Set<int> _hoveredIds = {};
   bool _titleHovered = false;
 
-  static const int _maxTitleLen = 22;
+  /// Floor for the per-row title truncation. Used when the panel is
+  /// narrower than expected (defensive — shouldn't normally trigger).
+  static const int _maxTitleLenFloor = 14;
+
+  /// Ceiling for the per-row title truncation. Caps titles so they
+  /// never outgrow the panel even if it's resized beyond its target.
+  static const int _maxTitleLenCeiling = 40;
   static const double _animStep = 0.3;
   static const Duration _animInterval = Duration(milliseconds: 50);
 
@@ -235,115 +243,146 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return CruxTheme.of(context).buttonBackground;
   }
 
-  String _truncate(String text, int maxLen) {
-    if (text.length <= maxLen) return text;
-    return text.substring(0, maxLen - 1) + '~';
+  /// Truncate [text] so it fits within [maxWidth] terminal columns,
+  /// measuring by display width (not code units) so wide characters
+  /// like CJK glyphs and emoji are accounted for correctly. The
+  /// truncation marker is a trailing `~`. Splits on grapheme clusters
+  /// to avoid breaking surrogate pairs / combining sequences.
+  String _truncateByWidth(String text, int maxWidth) {
+    if (maxWidth <= 0) return '';
+    if (UnicodeWidth.stringWidth(text) <= maxWidth) return text;
+    // Reserve 1 col for the trailing '~'.
+    final budget = maxWidth - 1;
+    final chars = text.characters;
+    int width = 0;
+    int count = 0;
+    for (final c in chars) {
+      final cw = UnicodeWidth.stringWidth(c);
+      if (width + cw > budget) break;
+      width += cw;
+      count++;
+    }
+    return chars.take(count).toString() + '~';
   }
 
   @override
   Component build(BuildContext context) {
-    final panel = component;
-    final rows = _ensureRows;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Scale the per-row title length with the panel's actual width:
+        // reserve 1 col for the status prefix and 1 for the leading space,
+        // then use the rest of the panel for the title itself so no width
+        // is wasted. Clamp so titles never get absurdly short or long at
+        // extreme widths.
+        final maxTitleLen = (constraints.maxWidth - 2)
+            .clamp(_maxTitleLenFloor, _maxTitleLenCeiling)
+            .toInt();
 
-    final header = MouseRegion(
-      onEnter: (_) => setState(() => _titleHovered = true),
-      onExit: (_) => setState(() => _titleHovered = false),
-      opaque: false,
-      child: GestureDetector(
-        onTap: () => component.onSessionTitleTap?.call(),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          decoration: BoxDecoration(
-            color: _titleHovered
-                ? CruxTheme.of(context).wizardRowBgSelected
-                : CruxTheme.of(context).buttonBackground,
-          ),
-          child: Row(
-            children: [
-              Text(
-                'Sessions',
-                style: TextStyle(
-                  color: _titleHovered
-                      ? CruxTheme.of(context).wizardTextSelected
-                      : CruxTheme.of(context).wizardTitle,
-                  fontWeight: FontWeight.bold,
-                ),
+        final panel = component;
+        final rows = _ensureRows;
+
+        final header = MouseRegion(
+          onEnter: (_) => setState(() => _titleHovered = true),
+          onExit: (_) => setState(() => _titleHovered = false),
+          opaque: false,
+          child: GestureDetector(
+            onTap: () => component.onSessionTitleTap?.call(),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _titleHovered
+                    ? CruxTheme.of(context).wizardRowBgSelected
+                    : CruxTheme.of(context).buttonBackground,
               ),
-              if (component.onSessionTitleTap != null)
-                Text(
-                  ' ⚙',
-                  style: TextStyle(
-                    color: _titleHovered
-                        ? CruxTheme.of(context).buttonTextFocused
-                        : CruxTheme.of(context).outline,
+              child: Row(
+                children: [
+                  Text(
+                    'Sessions',
+                    style: TextStyle(
+                      color: _titleHovered
+                          ? CruxTheme.of(context).wizardTextSelected
+                          : CruxTheme.of(context).wizardTitle,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (component.onSessionTitleTap != null)
+                    Text(
+                      ' ⚙',
+                      style: TextStyle(
+                        color: _titleHovered
+                            ? CruxTheme.of(context).buttonTextFocused
+                            : CruxTheme.of(context).outline,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        final home = Platform.environment['HOME'] ?? '';
+        final cwd = Directory.current.path;
+        final displayPath = home.isNotEmpty && cwd.startsWith(home)
+            ? '~${cwd.substring(home.length)}'
+            : cwd;
+
+        return Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 1),
+                header,
+                Divider(color: CruxTheme.of(context).outline, height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    lazy: true,
+                    itemCount: rows.length,
+                    itemBuilder: (context, index) {
+                      final item = rows[index];
+                      if (item is _SessionGroup) {
+                        return _buildGroupHeader(item);
+                      }
+                      return _buildSessionRow(
+                          item as Session, panel, maxTitleLen);
+                    },
                   ),
                 ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final home = Platform.environment['HOME'] ?? '';
-    final cwd = Directory.current.path;
-    final displayPath = home.isNotEmpty && cwd.startsWith(home)
-        ? '~${cwd.substring(home.length)}'
-        : cwd;
-
-    return Stack(
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 1),
-            header,
-            Divider(color: CruxTheme.of(context).outline, height: 1),
-            Expanded(
-              child: ListView.builder(
-                lazy: true,
-                itemCount: rows.length,
-                itemBuilder: (context, index) {
-                  final item = rows[index];
-                  if (item is _SessionGroup) {
-                    return _buildGroupHeader(item);
-                  }
-                  return _buildSessionRow(item as Session, panel);
-                },
-              ),
-            ),
-            MultiButton(
-              label: displayPath,
-              color: CruxTheme.of(context).onSurfaceVariant,
-              hoverColor: CruxTheme.of(context).foreground,
-              segments: [
-                MultiButtonSegment(
-                    label: 'open', onPressed: panel.onOpenProject),
-                MultiButtonSegment(
-                  label: 'switch',
-                  onPressed: panel.onSwitchProject,
+                MultiButton(
+                  label: displayPath,
+                  color: CruxTheme.of(context).onSurfaceVariant,
+                  hoverColor: CruxTheme.of(context).foreground,
+                  segments: [
+                    MultiButtonSegment(
+                        label: 'open', onPressed: panel.onOpenProject),
+                    MultiButtonSegment(
+                      label: 'switch',
+                      onPressed: panel.onSwitchProject,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 1),
               ],
             ),
-            const SizedBox(height: 1),
+            // FPS readout (debug-only). Anchored to the bottom-right corner
+            // of the side panel; collapses to zero-size when debug mode is
+            // off, so it doesn't reserve any space in the normal layout.
+            // Because it's a child of this panel — which itself only mounts
+            // when the terminal is wide enough to show the side panel — it
+            // inherits the "panel hidden ⇒ counter hidden" behaviour for
+            // free.
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: const FpsCounter(),
+            ),
           ],
-        ),
-        // FPS readout (debug-only). Anchored to the bottom-right corner
-        // of the side panel; collapses to zero-size when debug mode is
-        // off, so it doesn't reserve any space in the normal layout.
-        // Because it's a child of this panel — which itself only mounts
-        // when the terminal is wide enough to show the side panel — it
-        // inherits the "panel hidden ⇒ counter hidden" behaviour for
-        // free.
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: const FpsCounter(),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  /// Build a group header row (Yesterday / 3 Days / Archived).
+  /// Build a group header row (Yesterday / 3 Days / Archived).rchived).
   Component _buildGroupHeader(_SessionGroup group) {
     if (group == _SessionGroup.archived) {
       final count = component.archivedCount;
@@ -379,11 +418,12 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   }
 
   /// Build a single session row widget.
-  Component _buildSessionRow(Session session, ExtraInfoPanel panel) {
+  Component _buildSessionRow(
+      Session session, ExtraInfoPanel panel, int maxTitleLen) {
     final isCurrent = session.id == panel.currentSessionId;
     final isHovered = _hoveredIds.contains(session.id);
     final prefix = _statusPrefix(session.status);
-    final title = _truncate(session.title, _maxTitleLen);
+    final title = _truncateByWidth(session.title, maxTitleLen);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIds.add(session.id)),
