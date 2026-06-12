@@ -147,6 +147,9 @@ class CommandExecutor {
         await executeArchive(parts, ctx);
       case '/unarchive':
         await executeUnarchive(parts, ctx);
+      case '/rename':
+      case '/重命名':
+        await executeRename(parts, ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':
@@ -683,9 +686,61 @@ class CommandExecutor {
     }
   }
 
+  /// `/rename <new title>` (alias `/重命名`) — set a new title for the
+  /// current session.
+  ///
+  /// Reuses the same persistence path as the rename overlay in the
+  /// session-management panel (`SessionController.renameSession` →
+  /// `SessionStore.update(title: …)` plus an in-memory `Session.title`
+  /// mirror, then `refresh`): the DB row is updated, the in-memory
+  /// `Session` instance is mutated in place so the sidebar picks up
+  /// the new title on the next redraw, and `refresh` is called so the
+  /// TUI re-renders.
+  ///
+  /// Titles can contain spaces (the executor joins `parts[1..]` with
+  /// spaces, like `/btw`), so e.g. `/rename Ship the parser today`
+  /// works verbatim — no quoting needed. An empty or whitespace-only
+  /// title is rejected with a usage toast; renaming to the current
+  /// title is a no-op with an informational toast so the user sees
+  /// that the command was understood but nothing actually changed.
+  ///
+  /// Safe to invoke during an active response: it touches only the
+  /// session row, not the in-flight chat stream.
+  Future<void> executeRename(List<String> parts, CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    // Re-join parts[1..] so multi-word titles round-trip verbatim.
+    // Re-check the empty case after trimming so a bare `/rename` or
+    // a trailing-whitespace-only invocation both surface the usage
+    // toast rather than silently writing an empty title.
+    final newTitle = parts.skip(1).join(' ').trim();
+    if (newTitle.isEmpty) {
+      ctx.showToast('Usage: /rename <new title>');
+      return;
+    }
+    if (newTitle == ctx.currentSession.title) {
+      ctx.showToast('Title unchanged');
+      return;
+    }
+    final oldTitle = ctx.currentSession.title;
+    await ctx.store.update(ctx.currentSessionId!, title: newTitle);
+    // `currentSession` is the same object held in `ctx.sessions`
+    // (both go through `SessionController.findSession` /
+    // `SessionController.currentSession`), so mutating its `title`
+    // updates the sidebar entry too — no separate lookup needed.
+    ctx.currentSession.title = newTitle;
+    ctx.refresh();
+    ctx.showToast(
+      'Renamed "$oldTitle" → "$newTitle"',
+      mode: ToastMode.status,
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // /debug — toggles registration of debug commands.
-  // ─────────────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
 
   Future<void> executeDebug(List<String> parts, CommandContext ctx) async {
     // Bare `/debug` — toggles registration of the `/d-*` command set.

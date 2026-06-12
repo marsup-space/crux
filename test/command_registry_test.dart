@@ -102,6 +102,7 @@ void main() {
       expect(offNames, contains('/debug'));
       expect(offNames, contains('/continue'));
       expect(offNames, contains('/retry'));
+      expect(offNames, contains('/rename'));
 
       // Debug on
       CommandRegistry.instance.enableDebug();
@@ -135,6 +136,18 @@ void main() {
       expect(cmd, isNotNull);
       expect(cmd!.name, equals('/retry'));
       expect(cmd.aliases, contains('/重试'));
+    });
+
+    test('/rename exposes /重命名 as a Chinese alias and is available mid-stream', () {
+      // /rename only mutates the session row, not the in-flight chat
+      // stream, so it's safe to invoke while the AI is responding.
+      // Mirrors the /continue and /retry alias tests.
+      final cmd = findCommand('/rename');
+      expect(cmd, isNotNull);
+      expect(cmd!.name, equals('/rename'));
+      expect(cmd.aliases, contains('/重命名'));
+      expect(cmd.params, equals(['title']));
+      expect(cmd.availableDuringResponse, isTrue);
     });
 
     test('SlashCommand.allNames includes the primary name and aliases', () {

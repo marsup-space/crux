@@ -305,6 +305,21 @@ const List<SlashCommand> _baseCommands = [
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
+  // Rename the current session. Reuses the same persistence path as
+  // the rename overlay in the session-management panel (Ctrl+R over
+  // a session row), so the title change is reflected both in the
+  // sidebar and in any open chat panel immediately. Multi-word
+  // titles are supported (the executor joins `parts[1..]` with
+  // spaces), so `/rename Ship the parser today` works verbatim.
+  // Available during an active response because it doesn't touch
+  // the in-flight stream.
+  SlashCommand(
+    name: '/rename',
+    description: 'Rename the current session',
+    params: ['title'],
+    aliases: ['/重命名'],
+    availableDuringResponse: true,
+  ),
 ];
 
 /// Debug command set — only registered when debug mode is on.

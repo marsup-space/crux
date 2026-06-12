@@ -95,7 +95,8 @@ dart run bin/crux.dart /path/to/your/project
 | `/auxiliary` | 配置辅助模型 |
 | `/project` | 切换项目目录 |
 | `/btw` | 临时侧问 — 不入对话记录，下次正常消息时丢弃 |
-| `/quit` | 退出 |
+| `/rename` | 重命名当前会话 |
+| `/quit` | 退出 ||
 
 ### 快捷键
 
@@ -188,7 +189,8 @@ dart run bin/crux.dart /path/to/your/project
 | `/auxiliary` | Configure auxiliary model |
 | `/project` | Switch project directory |
 | `/btw` | Ephemeral side-question — never persisted, dropped on next real turn |
-| `/quit` | Exit |
+| `/rename` | Rename the current session |
+| `/quit` | Exit ||
 
 ### Themes
 
