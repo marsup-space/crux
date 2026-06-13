@@ -18,11 +18,13 @@ import 'chat_history.dart';
 import 'chat_input.dart';
 import 'chat_toolbar.dart';
 import 'chat_turn_orchestrator.dart';
+import 'command_overlay.dart';
 import 'extra_info_panel.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'session_management_panel.dart';
 import 'streaming_controller.dart';
+import 'suggestion_overlay.dart';
 import 'ui/toast.dart';
 
 class ChatPanel extends StatefulComponent {
@@ -354,6 +356,81 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  List<Component> _buildOverlays() {
+    final overlay = _overlayController;
+    final overlays = <Component>[];
+
+    if (overlay.overlayMode == OverlayMode.command &&
+        overlay.filteredCommands.isNotEmpty) {
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: (e) {
+              setState(() => overlay.onScrollCommand(e));
+            },
+            opaque: false,
+            child: CommandOverlay(
+              commands: overlay.filteredCommands,
+              selectedIndex: overlay.selectedCommandIndex,
+              scrollOffset: overlay.commandScrollOffset,
+              maxVisible: _maxVisibleItems,
+              onHover: (i) => setState(() => overlay.onHoverCommand(i)),
+              onTap: (i) {
+                overlay.onTapCommand(i);
+                setState(() {});
+              },
+            ),
+          ),
+        ),
+      );
+    } else if (overlay.overlayMode == OverlayMode.parameter &&
+        overlay.filteredSuggestions.isNotEmpty) {
+      final paramLabel = overlay.currentParamIndex <
+              overlay.activeCommand!.params.length
+          ? overlay.activeCommand!.params[overlay.currentParamIndex]
+          : 'value';
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: (e) {
+              setState(() => overlay.onScrollSuggestion(e));
+            },
+            opaque: false,
+            child: SuggestionOverlay(
+              suggestions: overlay.filteredSuggestions,
+              selectedIndex: overlay.selectedSuggestionIndex,
+              scrollOffset: overlay.suggestionScrollOffset,
+              maxVisible: _maxVisibleItems,
+              headerLabel: paramLabel,
+              onHover: (i) => setState(() => overlay.onHoverSuggestion(i)),
+              onTap: (i) {
+                overlay.onTapSuggestion(i);
+                setState(() {});
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    overlays.add(
+      Positioned(
+        bottom: 0,
+        left: 0,
+        right: 0,
+        child: ToastHub(key: _toastKey),
+      ),
+    );
+
+    return overlays;
+  }
+
   @override
   Component build(BuildContext context) {
     return LayoutBuilder(
@@ -365,21 +442,27 @@ class _ChatPanelState extends State<ChatPanel> {
             ? _sessionController.runtime(sessionId)
             : null;
 
+        final overlays = _buildOverlays();
+
         final mainContent = Column(children: [
-          // Chat history
           Expanded(
-            child: ChatHistory(
-              scrollController: scrollController,
-              sessionController: _sessionController,
-              streamingController: _streamingController,
-              turnOrchestrator: _turnOrchestrator,
-              providerService: _providerService,
-              toolRegistry: _toolRegistry,
-              showToast: _showToast,
-              refresh: _refresh,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ChatHistory(
+                  scrollController: scrollController,
+                  sessionController: _sessionController,
+                  streamingController: _streamingController,
+                  turnOrchestrator: _turnOrchestrator,
+                  providerService: _providerService,
+                  toolRegistry: _toolRegistry,
+                  showToast: _showToast,
+                  refresh: _refresh,
+                ),
+                ...overlays,
+              ],
             ),
           ),
-          // Toolbar
           ChatToolbar(
             sessionController: _sessionController,
             streamingController: _streamingController,
@@ -393,7 +476,6 @@ class _ChatPanelState extends State<ChatPanel> {
             onCycleThinking: _cycleThinkingLevel,
           ),
           Divider(color: CruxTheme.of(context).divider, height: 1),
-          // Input
           ChatInput(
             textController: textController,
             overlayController: _overlayController,
@@ -403,7 +485,6 @@ class _ChatPanelState extends State<ChatPanel> {
             providerService: _providerService,
             providerServiceReady: _providerServiceReady,
             themeController: component.themeController,
-            toastKey: _toastKey,
             scrollController: scrollController,
             refresh: _refresh,
             onSendTurn: (text) => _turnOrchestrator.sendMessage(

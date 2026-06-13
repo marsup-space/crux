@@ -6,12 +6,9 @@ import '../theme/theme_controller.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../commands/registry.dart';
 import 'chat_turn_orchestrator.dart';
-import 'command_overlay.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
-import 'suggestion_overlay.dart';
-import 'ui/toast.dart';
 
 /// The chat input box at the bottom of the chat panel.
 ///
@@ -28,7 +25,6 @@ class ChatInput extends StatefulComponent {
   final ProviderService providerService;
   final bool providerServiceReady;
   final ThemeController themeController;
-  final GlobalKey<ToastHubState> toastKey;
   final AutoScrollController scrollController;
   final void Function() refresh;
   final void Function(String text) onSendTurn;
@@ -36,7 +32,6 @@ class ChatInput extends StatefulComponent {
   final Future<void> Function(int sessionId) onSwitchSession;
   final Future<void> Function() onInitSessions;
   final Future<void> Function() onCreateNewSession;
-  final int maxVisibleItems;
 
   const ChatInput({
     super.key,
@@ -48,7 +43,6 @@ class ChatInput extends StatefulComponent {
     required this.providerService,
     required this.providerServiceReady,
     required this.themeController,
-    required this.toastKey,
     required this.scrollController,
     required this.refresh,
     required this.onSendTurn,
@@ -56,7 +50,6 @@ class ChatInput extends StatefulComponent {
     required this.onSwitchSession,
     required this.onInitSessions,
     required this.onCreateNewSession,
-    this.maxVisibleItems = 6,
   });
 
   @override
@@ -505,79 +498,7 @@ class _ChatInputState extends State<ChatInput> {
     final wasInterrupted =
         component.turnOrchestrator.wasInterrupted(sessionId);
 
-    // Build overlay components.
     final overlay = component.overlayController;
-    final overlays = <Component>[];
-
-    if (overlay.overlayMode == OverlayMode.command &&
-        overlay.filteredCommands.isNotEmpty) {
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollCommand(e));
-            },
-            opaque: false,
-            child: CommandOverlay(
-              commands: overlay.filteredCommands,
-              selectedIndex: overlay.selectedCommandIndex,
-              scrollOffset: overlay.commandScrollOffset,
-              maxVisible: component.maxVisibleItems,
-              onHover: (i) => setState(() => overlay.onHoverCommand(i)),
-              onTap: (i) {
-                overlay.onTapCommand(i);
-                component.refresh();
-              },
-            ),
-          ),
-        ),
-      );
-    } else if (overlay.overlayMode == OverlayMode.parameter &&
-        overlay.filteredSuggestions.isNotEmpty) {
-      final paramLabel = overlay.currentParamIndex <
-              overlay.activeCommand!.params.length
-          ? overlay.activeCommand!.params[overlay.currentParamIndex]
-          : 'value';
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollSuggestion(e));
-            },
-            opaque: false,
-            child: SuggestionOverlay(
-              suggestions: overlay.filteredSuggestions,
-              selectedIndex: overlay.selectedSuggestionIndex,
-              scrollOffset: overlay.suggestionScrollOffset,
-              maxVisible: component.maxVisibleItems,
-              headerLabel: paramLabel,
-              onHover: (i) => setState(() => overlay.onHoverSuggestion(i)),
-              onTap: (i) {
-                overlay.onTapSuggestion(i);
-                component.refresh();
-              },
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Toast hub always present.
-    overlays.add(
-      Positioned(
-        bottom: 0,
-        left: 0,
-        right: 0,
-        child: ToastHub(key: component.toastKey),
-      ),
-    );
-
     final placeholder = isStreaming
         ? _escInterruptHint
             ? 'Press ESC again to interrupt...'
@@ -586,36 +507,27 @@ class _ChatInputState extends State<ChatInput> {
             ? 'Response was interrupted. Type a new message...'
             : 'Type a message...';
 
-    return Column(children: [
-      Expanded(
-        child: Stack(
-          fit: StackFit.expand,
-          children: overlays,
-        ),
-      ),
-      // Input row
-      Container(
-        padding: EdgeInsets.all(1),
-        child: Row(
-          children: [
-            Text(
-              '> ',
-              style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+    return Container(
+      padding: EdgeInsets.all(1),
+      child: Row(
+        children: [
+          Text(
+            '> ',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
+          Expanded(
+            child: TextField(
+              controller: component.textController,
+              focused: !overlay.showSessionManager,
+              maxLines: null,
+              style: TextStyle(color: CruxTheme.of(context).foreground),
+              placeholder: placeholder,
+              onKeyEvent: _handleKeyEvent,
+              wordBoundaryProvider: cjkWordBoundaryProvider,
             ),
-            Expanded(
-              child: TextField(
-                controller: component.textController,
-                focused: !overlay.showSessionManager,
-                maxLines: null,
-                style: TextStyle(color: CruxTheme.of(context).foreground),
-                placeholder: placeholder,
-                onKeyEvent: _handleKeyEvent,
-                wordBoundaryProvider: cjkWordBoundaryProvider,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-    ]);
+    );
   }
 }
