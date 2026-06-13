@@ -59,6 +59,7 @@ class _ChatPanelState extends State<ChatPanel> {
   bool _providerServiceReady = false;
 
   final _toastKey = GlobalKey<ToastHubState>();
+  final _chatInputKey = GlobalKey<ChatInputState>();
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
@@ -174,10 +175,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   /// Seed the chat input with `/project ` so the user can switch projects.
   void _switchProject() {
-    textController.text = '/project ';
-    textController.selection = TextSelection.collapsed(
-      offset: textController.text.length,
-    );
+    _chatInputKey.currentState?.stashAndSetCommand('/project ');
   }
 
   Future<void> _initSessions() async {
@@ -190,9 +188,32 @@ class _ChatPanelState extends State<ChatPanel> {
     final oldId = _sessionController.currentSessionId;
     if (oldId != null && oldId != id) {
       _streamingController.stopMetricsTimer(oldId);
+      // Stash the current input text for the old session so it can be
+      // restored when the user switches back. If the user was in command
+      // mode (text starts with '/'), the actual message text is in the
+      // ChatInput's command stash — save that instead.
+      final currentText = textController.text;
+      if (currentText.startsWith('/')) {
+        // In command mode — check if there's stashed text behind the
+        // command and save that to the session stash.
+        final stashed = _chatInputKey.currentState?.commandStashedText;
+        if (stashed != null && stashed.isNotEmpty) {
+          _sessionController.inputTextStash[oldId] = stashed;
+        } else {
+          _sessionController.inputTextStash.remove(oldId);
+        }
+      } else if (currentText.isNotEmpty) {
+        _sessionController.inputTextStash[oldId] = currentText;
+      } else {
+        _sessionController.inputTextStash.remove(oldId);
+      }
     }
 
     final error = await _sessionController.switchSession(id);
+
+    // Restore the input text from the new session's stash (if any).
+    // This must happen after switchSession updates currentSessionId.
+    _chatInputKey.currentState?.loadSessionStash(id);
 
     // If the new session is actively streaming, start its metrics timer.
     final rt = _sessionController.runtime(id);
@@ -233,6 +254,8 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _executeCommand(String text) async {
+    // Command executed — clear any stashed input text from command mode.
+    _chatInputKey.currentState?.clearCommandStash();
     final ctx = CommandContext(
       store: _store,
       providerService: _providerService,
@@ -270,24 +293,15 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onModelButtonPressed() {
-    textController.text = '/model ';
-    textController.selection = TextSelection.collapsed(
-      offset: textController.text.length,
-    );
+    _chatInputKey.currentState?.stashAndSetCommand('/model ');
   }
 
   void _onCompactButtonPressed() {
-    textController.text = '/compact ';
-    textController.selection = TextSelection.collapsed(
-      offset: textController.text.length,
-    );
+    _chatInputKey.currentState?.stashAndSetCommand('/compact ');
   }
 
   void _onAuxiliaryModelButtonPressed() {
-    textController.text = '/auxiliary ';
-    textController.selection = TextSelection.collapsed(
-      offset: textController.text.length,
-    );
+    _chatInputKey.currentState?.stashAndSetCommand('/auxiliary ');
   }
 
   void _cycleThinkingLevel(SessionRuntimeState rt) {
@@ -477,6 +491,7 @@ class _ChatPanelState extends State<ChatPanel> {
           ),
           Divider(color: CruxTheme.of(context).divider, height: 1),
           ChatInput(
+            key: _chatInputKey,
             textController: textController,
             overlayController: _overlayController,
             sessionController: _sessionController,

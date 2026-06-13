@@ -105,7 +105,7 @@ class _TrackedProcess {
   _TrackedProcess(this.process);
 }
 
-abstract class ShellBase extends ToolDef {
+abstract class ShellBase extends ToolDef with IntentionalTool {
   ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'});
 
   /// Run a shell command using [Process.start] so it can be killed
@@ -257,11 +257,15 @@ abstract class ShellBase extends ToolDef {
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final command = args['command'] as String?;
+    final intent = args['intent'] as String?;
     final timeoutMs = (args['timeout'] as int?) ?? 120000;
     final encoding = (args['encoding'] as String?) ?? 'utf8';
 
     if (command == null || command.isEmpty) {
       return ToolResult.error('Missing required parameter: command');
+    }
+    if (intent == null || intent.isEmpty) {
+      return ToolResult.error('Missing required parameter: intent');
     }
 
     try {
@@ -309,7 +313,7 @@ abstract class ShellBase extends ToolDef {
       }
 
       return ToolResult(
-        title: 'Ran: $command',
+        title: 'Ran: $command (intent: \'$intent\')',
         output: output + tail.toString(),
         truncated: truncated,
         outputPath: outputPath,
@@ -325,10 +329,6 @@ abstract class ShellBase extends ToolDef {
     Map<String, dynamic> args,
     ToolResult result,
   ) {
-    final command = args['command'] as String? ?? '';
-    final preview = command.length > 30
-        ? '${command.substring(0, 27)}...'
-        : command;
     final exitCode = result.metadata['exitCode'];
     final suffix = exitCode != null && exitCode != 0 ? ' [exit $exitCode]' : '';
     final lines = '\n'.allMatches(result.output).length + 1;
@@ -343,7 +343,7 @@ abstract class ShellBase extends ToolDef {
     );
     // `bash` isn't a LargePayloadTool, so args-only == total.
     return CollapsedSummary(
-      text: '$preview: $lines lines, $sizeStr$suffix',
+      text: '$lines lines, $sizeStr$suffix',
       argsTokens: total,
       totalTokens: total,
     );
@@ -354,6 +354,10 @@ abstract class ShellBase extends ToolDef {
     'type': 'object',
     'properties': {
       'command': {'type': 'string', 'description': 'Command to execute'},
+      'intent': {
+        'type': 'string',
+        'description': 'What this command accomplishes / why you are running it. Be concise.',
+      },
       'timeout': {
         'type': 'integer',
         'description': 'Timeout in milliseconds (default 120000)',
@@ -365,6 +369,6 @@ abstract class ShellBase extends ToolDef {
             'for powershell, sets [Console]::OutputEncoding.',
       },
     },
-    'required': ['command'],
+    'required': ['command', 'intent'],
   };
 }

@@ -33,6 +33,12 @@ class SessionController {
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
 
+  /// Per-session stashed input text. When the user switches away from a
+  /// session, the current input box content is saved here keyed by session
+  /// id. When they switch back, the stash is restored so they don't lose
+  /// work-in-progress text. Cleared when a session is deleted.
+  final Map<int, String> inputTextStash = {};
+
   /// Per-session chain of `/btw` rounds that the user has issued since
   /// the last "real" turn. Kept in memory only — never written to disk
   /// (so a process restart drops them cleanly) and never mixed into the
@@ -321,6 +327,10 @@ class SessionController {
     await _store.deleteSession(sessionId);
     _runtimeStates.remove(sessionId);
     messageCache.remove(sessionId);
+    // Drop the deleted session's input text stash alongside its other
+    // in-memory state so we don't leak entries for a session that no
+    // longer exists.
+    inputTextStash.remove(sessionId);
     // Drop the deleted session's btw chain alongside its other
     // in-memory state so we don't leak entries for a session that
     // no longer exists. Other sessions' chains are untouched.
@@ -455,6 +465,7 @@ class SessionController {
       rt.cancelTimers();
     }
     btwBuffer.clear();
+    inputTextStash.clear();
     _messageQueues.clear();
   }
 }

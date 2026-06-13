@@ -289,9 +289,21 @@ class MessageBubble extends StatelessComponent {
     final preCompress = message.preCompressTokens;
     final isCompressed = preCompress != null && preCompress > 0;
 
+    // For intentional tools, prefer displaying the intent over the
+    // file path so the user sees *why* the tool was called.
+    final intentLabel = _intentLabel(tc, tool);
+
     // Build body as TextSpans — everything after the prefix.
     final bodySpans = <TextSpan>[];
-    if (keyArg.isNotEmpty) {
+    if (intentLabel != null) {
+      bodySpans.add(TextSpan(
+        text: '$intentLabel ',
+        style: TextStyle(
+          color: CruxTheme.of(context).foreground,
+          fontStyle: FontStyle.italic,
+        ),
+      ));
+    } else if (keyArg.isNotEmpty) {
       bodySpans.add(TextSpan(
         text: '$keyArg ',
         style: TextStyle(color: CruxTheme.of(context).foreground),
@@ -380,6 +392,16 @@ class MessageBubble extends StatelessComponent {
       return _truncateArg(tc.input.values.first, 40);
     }
     return '';
+  }
+
+  /// For tools that implement [IntentionalTool], extract the intent
+  /// string from the call's input args. Returns null if the tool
+  /// is not intentional or no intent was provided.
+  String? _intentLabel(ToolCallData tc, ToolDef? tool) {
+    if (tool is IntentionalTool) {
+      return tool.intentFromArgs(tc.input);
+    }
+    return null;
   }
 
   String _autoReadLabel(String content) {

@@ -10,7 +10,7 @@ import 'matchers/whitespace_matcher.dart';
 import 'matchers/indentation_matcher.dart';
 import 'tool_def.dart';
 
-class EditTool extends LargePayloadTool {
+class EditTool extends LargePayloadTool with IntentionalTool {
   @override
   List<String> get offloadableArgs => ['oldString', 'newString'];
 
@@ -84,7 +84,7 @@ class EditTool extends LargePayloadTool {
       },
       'intent': {
         'type': 'string',
-        'description': 'What this edit accomplishes.',
+        'description': 'What this edit accomplishes. Be concise.',
       },
     },
     'required': ['filePath', 'oldString', 'newString', 'intent'],

@@ -229,6 +229,23 @@ String _formatArgList(List<String> args) {
   return '$head, and `${args.last}`';
 }
 
+/// Mixin for tools whose schema includes an `intent` parameter.
+/// The UI uses this to display the intent (what the tool call is for)
+/// instead of the file path in the collapsed tool-call bubble, giving
+/// the user a more meaningful summary at a glance.
+///
+/// Implemented as a mixin (rather than an abstract class with
+/// `implements ToolDef`) so it can be mixed into tools that already
+/// extend another class (e.g. `WriteTool extends LargePayloadTool`).
+mixin IntentionalTool implements ToolDef {
+  /// Extract the intent string from the tool's input arguments.
+  /// Returns null if no intent was provided.
+  String? intentFromArgs(Map<String, dynamic> args) {
+    final value = args['intent'];
+    return value is String && value.isNotEmpty ? value : null;
+  }
+}
+
 class GuardResult {
   final String header;
 

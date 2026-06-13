@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
 import '../models/session_runtime_state.dart';
+import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
@@ -117,14 +118,24 @@ class StreamingBubble extends StatelessComponent {
   /// row, matching the look of [MessageBubble._buildCollapsedToolCall]
   /// but with no result yet. The label comes from
   /// [ToolDef.streamingLabel] when we can resolve the tool, or
-  /// the default `Name (~Nt t)` format otherwise.
+  /// the default `Name (~Nt t)` format otherwise. For
+  /// [IntentionalTool]s, the intent is shown instead of the
+  /// default streaming label when it can be extracted from the
+  /// partial JSON.
   Component _buildStreamingToolCallRow(
     StreamingToolCall tc,
     BuildContext context,
   ) {
     final tool = toolRegistry?.lookup(tc.name);
-    final label =
-        tool?.streamingLabel(
+
+    // For intentional tools, try to extract the intent from the
+    // partial JSON and display it as the label.
+    String? intentLabel;
+    if (tool is IntentionalTool) {
+      intentLabel = _tryExtractIntent(tc.accumulatedInputJson);
+    }
+
+    final label = intentLabel ?? tool?.streamingLabel(
           accumulatedInputJson: tc.accumulatedInputJson,
           estimatedInputTokens: tc.estimatedInputTokens,
         ) ??
@@ -143,11 +154,34 @@ class StreamingBubble extends StatelessComponent {
         Expanded(
           child: Text(
             label,
-            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+            style: TextStyle(
+              color: intentLabel != null
+                  ? CruxTheme.of(context).foreground
+                  : CruxTheme.of(context).onSurfaceDim,
+              fontStyle: intentLabel != null ? FontStyle.italic : null,
+            ),
           ),
         ),
       ],
     );
+  }
+
+  /// Attempt to extract the `intent` value from a possibly-partial
+  /// JSON string. The LLM streams input JSON incrementally, so we
+  /// can't use `jsonDecode`. Instead, we do a simple regex search
+  /// for `"intent":"..."` or `"intent": "..."`.
+  String? _tryExtractIntent(String partialJson) {
+    final match = RegExp(r'"intent"\s*:\s*"((?:[^"\\]|\\.)*)"')
+        .firstMatch(partialJson);
+    if (match == null) return null;
+    final raw = match.group(1);
+    if (raw == null || raw.isEmpty) return null;
+    // Unescape simple JSON string escapes.
+    return raw
+        .replaceAll(r'\\', '\\')
+        .replaceAll(r'\"', '"')
+        .replaceAll(r'\n', '\n')
+        .replaceAll(r'\t', '\t');
   }
 
   String _capitalize(String s) {

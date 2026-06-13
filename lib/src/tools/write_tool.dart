@@ -6,7 +6,7 @@ import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
-class WriteTool extends LargePayloadTool {
+class WriteTool extends LargePayloadTool with IntentionalTool {
   @override
   List<String> get offloadableArgs => ['content'];
 
@@ -67,7 +67,7 @@ class WriteTool extends LargePayloadTool {
       },
       'intent': {
         'type': 'string',
-        'description': 'What this file is for / why you are writing it.',
+        'description': 'What this file is for / why you are writing it. Be concise.',
       },
       'force': {
         'type': 'boolean',
