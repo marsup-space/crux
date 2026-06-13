@@ -125,59 +125,7 @@ List<String> _scopeFallbacks(String scope) {
   return fallbacks.reversed.toList();
 }
 
-/// Highlight an entire code block without caching.
-/// Used for one-off highlighting where caching isn't needed.
 List<InlineSpan> highlightCode(
-  String code,
-  String language,
-  CruxThemeData theme,
-) {
-  return _highlightCodeUncached(code, language, theme);
-}
-
-/// Cache for code block highlighting results.
-/// Keyed by (language, code_text) so that completed code blocks
-/// don't need to be re-highlighted during streaming.
-final Map<(String, String), List<InlineSpan>> _blockHighlightCache = {};
-
-/// Maximum number of cached block highlights. Prevents unbounded
-/// memory growth during long sessions.
-const _maxBlockCacheSize = 512;
-
-/// Highlight an entire code block as a unit, preserving TextMate's
-/// stateful parsing for correct handling of multiline constructs
-/// (triple-quoted strings, block comments, etc.).
-///
-/// This is the preferred method for code block rendering. It produces
-/// a flat list of InlineSpans that may span multiple lines. The caller
-/// is responsible for splitting them by line for rendering (adding
-/// gutter prefixes, etc.).
-///
-/// Results are cached by (language, code_text) so that completed
-/// code blocks don't need to be re-highlighted during streaming.
-List<InlineSpan> highlightCodeBlock(
-  String code,
-  String language,
-  CruxThemeData theme,
-) {
-  final cacheKey = (language, code);
-  final cached = _blockHighlightCache[cacheKey];
-  if (cached != null) return cached;
-
-  final result = _highlightCodeUncached(code, language, theme);
-
-  // Evict oldest entries if cache is too large.
-  if (_blockHighlightCache.length >= _maxBlockCacheSize) {
-    final keys = _blockHighlightCache.keys.take(_maxBlockCacheSize ~/ 4);
-    for (final k in keys) {
-      _blockHighlightCache.remove(k);
-    }
-  }
-  _blockHighlightCache[cacheKey] = result;
-  return result;
-}
-
-List<InlineSpan> _highlightCodeUncached(
   String code,
   String language,
   CruxThemeData theme,

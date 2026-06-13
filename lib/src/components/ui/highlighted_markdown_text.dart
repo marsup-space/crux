@@ -33,15 +33,6 @@ class HighlightedMarkdownText extends StatefulComponent {
       _HighlightedMarkdownTextState();
 }
 
-/// Cache entry for a top-level markdown block.
-/// Stores the source text and the rendered spans so we can
-/// skip re-visiting unchanged blocks during streaming.
-class _BlockCacheEntry {
-  _BlockCacheEntry(this.sourceText, this.spans);
-  final String sourceText;
-  final List<InlineSpan> spans;
-}
-
 class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   List<InlineSpan> _spans = const [];
   int? _lastMaxWidth;
@@ -49,13 +40,6 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   HighlightMarkdownStyleSheet? _lastStyleSheet;
   String? _lastHighlightText;
   String? _lastThemeId;
-
-  /// Cache of top-level block spans, keyed by block index.
-  /// On incremental updates (streaming append), unchanged blocks
-  /// are served from this cache instead of being re-parsed and
-  /// re-visited. The cache is invalidated when the width changes
-  /// or when the data is not a pure append.
-  List<_BlockCacheEntry>? _blockCache;
 
   List<InlineSpan> _parseMarkdown(CruxThemeData theme, {int? maxWidth}) {
     final effectiveStyleSheet =
@@ -71,112 +55,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
       theme: theme,
       maxWidth: maxWidth,
     );
-
-    // Visit each top-level node individually and build the cache.
-    final result = <InlineSpan>[];
-    final cache = <_BlockCacheEntry>[];
-
-    for (final node in nodes) {
-      final sourceText = _nodeSourceText(node);
-      final span = visitor.visitNode(node);
-      final spans = span != null ? [span] : <InlineSpan>[];
-      cache.add(_BlockCacheEntry(sourceText, spans));
-      result.addAll(spans);
-    }
-
-    // Apply trailing newline trimming to the last span.
-    if (result.isNotEmpty) {
-      result[result.length - 1] =
-          _HighlightMarkdownVisitor._trimTrailingNewlines(result.last);
-    }
-
-    _blockCache = cache;
-    return result;
-  }
-
-  /// Incrementally parse markdown by reusing cached spans for
-  /// unchanged top-level blocks. This is the main performance
-  /// optimization for streaming: instead of re-parsing and
-  /// re-visiting the entire document on every chunk, we only
-  /// re-visit blocks whose source text has changed.
-  ///
-  /// Strategy:
-  /// 1. Parse the full document (markdown parsing is fast and
-  ///    we need the full context for correctness).
-  /// 2. Walk the top-level AST nodes.
-  /// 3. For each node, compute its text content (source text).
-  /// 4. If the source text matches a cached entry at the same
-  ///    index, reuse the cached spans (skipping the expensive
-  ///    visitor walk and code highlighting).
-  /// 5. Otherwise, visit the node and cache the result.
-  /// 6. The last node is always re-visited (it's the one being
-  ///    streamed to).
-  List<InlineSpan> _parseMarkdownIncremental(
-    CruxThemeData theme, {
-    int? maxWidth,
-  }) {
-    final effectiveStyleSheet =
-        component.styleSheet ?? HighlightMarkdownStyleSheet.fromTheme(theme);
-    final document = md.Document(
-      extensionSet: md.ExtensionSet.gitHubFlavored,
-      encodeHtml: false,
-    );
-    final nodes = document.parse(component.data);
-
-    final visitor = _HighlightMarkdownVisitor(
-      effectiveStyleSheet,
-      theme: theme,
-      maxWidth: maxWidth,
-    );
-
-    final result = <InlineSpan>[];
-    final newCache = <_BlockCacheEntry>[];
-    final oldCache = _blockCache;
-
-    for (int i = 0; i < nodes.length; i++) {
-      final node = nodes[i];
-      final sourceText = _nodeSourceText(node);
-
-      // The last node is always the "active" one being streamed to,
-      // so we always re-visit it (its content is changing every frame).
-      final isLastNode = i == nodes.length - 1;
-
-      // Check if we can use the cached version.
-      if (!isLastNode && oldCache != null && i < oldCache.length) {
-        final cached = oldCache[i];
-        if (cached.sourceText == sourceText) {
-          // Cache hit - reuse the cached spans.
-          newCache.add(cached);
-          result.addAll(cached.spans);
-          continue;
-        }
-      }
-
-      // Cache miss or last node - visit the node.
-      final span = visitor.visitNode(node);
-      final spans = span != null ? [span] : <InlineSpan>[];
-      newCache.add(_BlockCacheEntry(sourceText, spans));
-      result.addAll(spans);
-    }
-
-    // Apply trailing newline trimming to the last span, matching
-    // the behavior of visitor.visitNodes.
-    if (result.isNotEmpty) {
-      result[result.length - 1] =
-          _HighlightMarkdownVisitor._trimTrailingNewlines(result.last);
-    }
-
-    _blockCache = newCache;
-    return result;
-  }
-
-  /// Extract the source text of a markdown node for cache comparison.
-  /// This is a rough but effective way to determine if a node's
-  /// content has changed.
-  String _nodeSourceText(md.Node node) {
-    if (node is md.Text) return node.text;
-    if (node is md.Element) return node.textContent;
-    return node.toString();
+    return visitor.visitNodes(nodes);
   }
 
   @override
@@ -189,43 +68,20 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             : null;
 
         final highlight = component.highlightText;
-        final widthChanged = maxWidth != _lastMaxWidth;
-        final styleChanged = component.styleSheet != _lastStyleSheet ||
-            theme.id != _lastThemeId;
-
         if (component.data != _lastData ||
-            styleChanged ||
-            widthChanged ||
+            component.styleSheet != _lastStyleSheet ||
+            theme.id != _lastThemeId ||
+            maxWidth != _lastMaxWidth ||
             highlight != _lastHighlightText) {
-          // Determine if this is an incremental append (streaming).
-          final isIncrementalAppend = !widthChanged &&
-              !styleChanged &&
-              _lastData != null &&
-              _lastData!.isNotEmpty &&
-              component.data.length > _lastData!.length &&
-              component.data.startsWith(_lastData!);
-
-          if (widthChanged) {
-            // Width change invalidates all caches.
-            _blockCache = null;
-          }
-
-          if (isIncrementalAppend && _blockCache != null) {
-            _spans = _parseMarkdownIncremental(theme, maxWidth: maxWidth);
-          } else {
-            _blockCache = null;
-            _spans = _parseMarkdown(theme, maxWidth: maxWidth);
-          }
-
-          if (highlight != null && highlight.isNotEmpty) {
-            _spans = _applyHighlight(_spans, highlight, theme);
-          }
-
           _lastData = component.data;
           _lastStyleSheet = component.styleSheet;
           _lastMaxWidth = maxWidth;
           _lastHighlightText = highlight;
           _lastThemeId = theme.id;
+          _spans = _parseMarkdown(theme, maxWidth: maxWidth);
+          if (highlight != null && highlight.isNotEmpty) {
+            _spans = _applyHighlight(_spans, highlight, theme);
+          }
         }
 
         return RichText(
@@ -730,11 +586,7 @@ class _HighlightMarkdownVisitor {
     final headerLine = '┌─$headerContent${'─' * math.max(0, headerPadding)}';
     final footerLine = '└${'─' * (width - 1)}';
 
-    // Remove only a single trailing newline (markdown parser adds one).
-    final trimmedCode = code.endsWith('\n')
-        ? code.substring(0, code.length - 1)
-        : code;
-    final codeLines = trimmedCode.split('\n');
+    final codeLines = code.replaceAll(RegExp(r'\n$'), '').split('\n');
 
     final spans = <InlineSpan>[];
 
@@ -745,30 +597,21 @@ class _HighlightMarkdownVisitor {
       ),
     );
 
-    if (language != null && language.isNotEmpty) {
-      // Full-block highlighting: highlight the entire code block at once
-      // to preserve TextMate's stateful parsing (multiline strings,
-      // block comments, etc.). Then split the tokens by line for rendering.
-      final highlightedSpans = highlightCodeBlock(
-        trimmedCode,
-        language,
-        theme,
-      );
-      final lineSpans = _splitSpansByLine(highlightedSpans, trimmedCode);
-
-      for (var i = 0; i < codeLines.length; i++) {
-        spans.add(
-          TextSpan(
-            text: '│ ',
-            style: TextStyle(
-              backgroundColor: bgColor,
-              color: theme.codeBlockGutter,
-            ),
+    for (var i = 0; i < codeLines.length; i++) {
+      final line = codeLines[i];
+      spans.add(
+        TextSpan(
+          text: '│ ',
+          style: TextStyle(
+            backgroundColor: bgColor,
+            color: theme.codeBlockGutter,
           ),
-        );
+        ),
+      );
 
-        final lineSpanList = i < lineSpans.length ? lineSpans[i] : const <InlineSpan>[];
-        for (final span in lineSpanList) {
+      if (language != null && language.isNotEmpty) {
+        final highlighted = highlightCode(line, language, theme);
+        for (final span in highlighted) {
           if (span is TextSpan) {
             spans.add(
               TextSpan(
@@ -783,35 +626,16 @@ class _HighlightMarkdownVisitor {
             spans.add(span);
           }
         }
-
-        spans.add(
-          TextSpan(
-            text: '\n',
-            style: TextStyle(backgroundColor: bgColor),
-          ),
-        );
-      }
-    } else {
-      // No language - render without highlighting.
-      for (var i = 0; i < codeLines.length; i++) {
-        final line = codeLines[i];
-        spans.add(
-          TextSpan(
-            text: '│ ',
-            style: TextStyle(
-              backgroundColor: bgColor,
-              color: theme.codeBlockGutter,
-            ),
-          ),
-        );
+      } else {
         spans.add(TextSpan(text: line, style: codeStyle));
-        spans.add(
-          TextSpan(
-            text: '\n',
-            style: TextStyle(backgroundColor: bgColor),
-          ),
-        );
       }
+
+      spans.add(
+        TextSpan(
+          text: '\n',
+          style: TextStyle(backgroundColor: bgColor),
+        ),
+      );
     }
 
     spans.add(
@@ -822,53 +646,6 @@ class _HighlightMarkdownVisitor {
     );
 
     return TextSpan(children: spans);
-  }
-
-  /// Split a flat list of InlineSpans into per-line groups,
-  /// breaking on newline characters within the spans.
-  static List<List<InlineSpan>> _splitSpansByLine(
-    List<InlineSpan> spans,
-    String source,
-  ) {
-    final lines = <List<InlineSpan>>[];
-    var currentLine = <InlineSpan>[];
-
-    for (final span in spans) {
-      if (span is! TextSpan || span.text == null) {
-        currentLine.add(span);
-        continue;
-      }
-
-      final text = span.text!;
-      if (!text.contains('\n')) {
-        currentLine.add(span);
-        continue;
-      }
-
-      // Split this span at newlines.
-      final parts = text.split('\n');
-      for (var i = 0; i < parts.length; i++) {
-        if (i > 0) {
-          // Newline boundary — finish current line, start new one.
-          lines.add(currentLine);
-          currentLine = <InlineSpan>[];
-        }
-        if (parts[i].isNotEmpty) {
-          currentLine.add(TextSpan(text: parts[i], style: span.style));
-        }
-      }
-    }
-
-    if (currentLine.isNotEmpty) {
-      lines.add(currentLine);
-    }
-
-    // Ensure we have at least as many lines as the source.
-    while (lines.length < source.split('\n').length) {
-      lines.add([]);
-    }
-
-    return lines;
   }
 
   List<InlineSpan> visitChildren(md.Element element) {
