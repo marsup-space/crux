@@ -81,6 +81,55 @@ class Message {
     }
   }
 
+  /// Create a copy of this message with optional field overrides.
+  /// Eliminates the repeated manual-copy pattern where callers re-list
+  /// every field just to change one (e.g. updating `tldr`).
+  Message copyWith({
+    int? id,
+    int? sessionId,
+    String? role,
+    String? content,
+    String? reasoningContent,
+    String? reasoningSignature,
+    int? reasoningTokens,
+    int? thinkingDurationMs,
+    String? reasoningEffort,
+    String? model,
+    double? cost,
+    int? tokensIn,
+    int? tokensOut,
+    String? error,
+    int? parentMsgId,
+    DateTime? createdAt,
+    int? preCompressTokens,
+    List<ToolCallData>? toolCalls,
+    String? toolCallId,
+    String? tldr,
+  }) {
+    return Message(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      role: role ?? this.role,
+      content: content ?? this.content,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
+      reasoningSignature: reasoningSignature ?? this.reasoningSignature,
+      reasoningTokens: reasoningTokens ?? this.reasoningTokens,
+      thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+      model: model ?? this.model,
+      cost: cost ?? this.cost,
+      tokensIn: tokensIn ?? this.tokensIn,
+      tokensOut: tokensOut ?? this.tokensOut,
+      error: error ?? this.error,
+      parentMsgId: parentMsgId ?? this.parentMsgId,
+      createdAt: createdAt ?? this.createdAt,
+      preCompressTokens: preCompressTokens ?? this.preCompressTokens,
+      toolCalls: toolCalls ?? this.toolCalls,
+      toolCallId: toolCallId ?? this.toolCallId,
+      tldr: tldr ?? this.tldr,
+    );
+  }
+
   static String encodeToolCalls(List<ToolCallData> calls) {
     if (calls.isEmpty) return '';
     return jsonEncode(calls.map((c) => c.toJson()).toList());
