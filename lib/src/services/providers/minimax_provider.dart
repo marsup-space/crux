@@ -22,10 +22,10 @@ import '../providers/anthropic_compatible_provider.dart';
 ///   `{type: "enabled", budget_tokens: …}` shape; there is no
 ///   adaptive mode for M2.x.
 ///
-/// Because adaptive thinking is an M3-only feature, the UI only
-/// shows the `adaptive` label (renamed from `normal`) when the
-/// current model is M3. M2.x models show `normal` as `normal` —
-/// the same as every other provider.
+/// Display labels are configured via TOML, not hardcoded:
+/// M3's `normal` → `adaptive` rename lives in `minimax.toml` under
+/// the M3 model's `[models.reasoning_labels]` sub-table. M2.x models
+/// have no such override, so `normal` displays as `normal`.
 class MiniMaxProvider extends AnthropicCompatibleProvider {
   @override
   String get name => 'minimax';
@@ -33,41 +33,9 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
   @override
   AuthStyle get authStyle => AuthStyle.bearer;
 
-  @override
-  List<ReasoningPreset> reasoningPresetsFor(String modelId) {
-    if (_isM3(modelId)) {
-      // M3: rename `normal` to `adaptive` so the user can see the
-      // connection between the preset and M3's adaptive-thinking
-      // wire format.
-      return const [
-        ReasoningPreset(internalValue: 'off', displayLabel: 'off'),
-        ReasoningPreset(internalValue: 'low', displayLabel: 'low'),
-        ReasoningPreset(internalValue: 'normal', displayLabel: 'adaptive'),
-        ReasoningPreset(internalValue: 'high', displayLabel: 'high'),
-        ReasoningPreset(internalValue: 'max', displayLabel: 'max'),
-      ];
-    }
-    // M2.x and any other MiniMax model: show `normal` as `normal`,
-    // matching every other provider. M2.x doesn't support
-    // adaptive thinking, so the rename would be misleading.
-    return const [
-      ReasoningPreset(internalValue: 'off', displayLabel: 'off'),
-      ReasoningPreset(internalValue: 'low', displayLabel: 'low'),
-      ReasoningPreset(internalValue: 'normal', displayLabel: 'normal'),
-      ReasoningPreset(internalValue: 'high', displayLabel: 'high'),
-      ReasoningPreset(internalValue: 'max', displayLabel: 'max'),
-    ];
-  }
-
-  /// Returns `true` for MiniMax-M3 models that support adaptive
-  /// thinking. M2.x models have thinking always on and do not
-  /// support the `adaptive` type.
-  static bool _isM3(String modelId) {
-    final lower = modelId.toLowerCase();
-    // Match "minimax-m3" exactly — M2.7, M2.5, M2.1, M2 are NOT M3.
-    // Model IDs come in forms like "MiniMax-M3", "minimax-m3", etc.
-    return lower == 'minimax-m3';
-  }
+  /// No class-level label overrides — all customization is done via
+  /// TOML `[reasoning_labels]` (provider or model level). The base
+  /// class defaults (off/low/normal/high/max) are used as-is.
 
   @override
   Map<String, dynamic> buildRequestBody(
@@ -147,5 +115,17 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
       body['tools'] = buildCachedTools(tools);
     }
     return body;
+  }
+
+  /// Returns `true` for MiniMax-M3 models that support adaptive
+  /// thinking. M2.x models have thinking always on and do not
+  /// support the `adaptive` type.
+  ///
+  /// Note: this is used only for wire-format decisions in
+  /// [buildRequestBody], not for display labels (those are
+  /// configured via TOML `reasoning_labels`).
+  static bool _isM3(String modelId) {
+    final lower = modelId.toLowerCase();
+    return lower == 'minimax-m3';
   }
 }

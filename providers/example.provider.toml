@@ -38,6 +38,14 @@
 #                               `max_rounds` overrides this. 0/absent
 #                               = unbounded.
 #
+#   [reasoning_labels]  (opt)   Provider-level display label overrides
+#                               for reasoning effort levels. Maps internal
+#                               values to user-facing labels. Applies to
+#                               all models unless overridden by model-level
+#                               [models.reasoning_labels].
+#                               Priority: model > provider > class > base.
+#                               e.g.  normal = "adaptive"
+#
 #   [quota]             (opt)   Coding-plan quota section — Crux can
 #                               query `api_url` before expensive calls.
 #
@@ -49,18 +57,34 @@
 #                                 only, not sent to the API.
 #     context_size    (required)  Max context window in tokens.
 #     image_support   (opt, default false)  Accepts image inputs?
-#     thinking        (opt, default false)  Extended thinking / CoT?
+#     thinking        (opt, default true)   Extended thinking / CoT?
+#                             Set `thinking = false` to opt out.
 #     thinking_budget (opt)   Reasoning-token cap (Anthropic-style
 #                             `budget_tokens`; OpenAI ignores it).
-#     reasoning_effort (opt)  "low" | "medium" | "high" | "max".
-#                             Omit if the model has no effort knob.
+#     reasoning_effort (opt, default "normal") "low" | "medium" | "high"
+#                             | "max" | "none". Set to "none" to opt out
+#                             of reasoning-effort controls entirely.
 #     max_tokens      (opt)   Cap on output tokens per request.
 #                             → `max_completion_tokens` (OpenAI) or
 #                             → `max_tokens` (Anthropic).
+#     reasoning_labels (opt, at provider or model level)
+#                             Maps internal effort values to display labels.
+#                             Use to rename presets (e.g. normal = "adaptive")
+#                             or disable them with "disabled" (e.g. high = "disabled").
+#                             Applies at provider level ([reasoning_labels]) or
+#                             per-model ([models.reasoning_labels]); model
+#                             overrides provider.
 #     stream_lerp     (opt, default false)  Smoother stream rendering
 #                                           for some chatty models.
 #     max_rounds      (opt)   Per-model override of round-trip cap.
 #                             0/absent = fall back to default_max_rounds.
+#
+#   [models.reasoning_labels]  (opt)  Model-level display label overrides.
+#                             Same format as provider-level [reasoning_labels]
+#                             but scoped to this model only. Overrides both
+#                             provider-level labels and provider-class defaults.
+#                             Priority: model > provider > class > base.
+#                             e.g.  normal = "adaptive"
 # -----------------------------------------------------------------------------
 
 # Pick the shape that matches your upstream's wire protocol.
@@ -72,24 +96,35 @@ endpoint_url = "https://api.openai.com/v1"
 default_max_rounds = 50
 
 # === Reasoning / thinking model (o-series / Claude-with-thinking style) ===
+# thinking and reasoning_effort are on by default — no need to set them
+# unless you want non-default values.
 [[models]]
 id = "reasoning-flagship"
 name = "Reasoning Flagship"
 context_size = 200000
 image_support = true
-thinking = true
-thinking_budget = 10000      # cap on reasoning tokens
-reasoning_effort = "medium"  # low | medium | high | max
-max_tokens = 16384           # cap on output tokens
+# thinking = true             # default — omit unless opting out
+thinking_budget = 10000       # cap on reasoning tokens
+reasoning_effort = "medium"   # override default "normal" to "medium"
+max_tokens = 16384            # cap on output tokens
 # max_rounds omitted → falls back to default_max_rounds = 50
 
-# === Cheap/fast chat model ===
+# Example: rename "normal" effort to "adaptive" and disable
+# levels this model doesn't support.
+# [models.reasoning_labels]
+# low = "disabled"
+# normal = "adaptive"
+# high = "disabled"
+# max = "disabled"
+
+# === Cheap/fast chat model (no reasoning) ===
 [[models]]
 id = "fast-chat"
 name = "Fast Chat"
 context_size = 128000
 image_support = false
-thinking = false
+thinking = false              # opt out of thinking mode
+reasoning_effort = "none"     # opt out of reasoning-effort controls
 # max_tokens omitted → upstream default
 max_rounds = 15              # tighter cap on the cheap model
 stream_lerp = true           # smoother stream rendering for chatty output

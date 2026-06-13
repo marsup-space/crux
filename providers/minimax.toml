@@ -23,6 +23,12 @@ thinking = true
 thinking_budget = 10000
 stream_lerp = true
 
+[models.reasoning_labels]
+low = "disabled"
+normal = "adaptive"
+high = "disabled"
+max = "disabled"
+
 [[models]]
 id = "MiniMax-M2.7"
 name = "MiniMax M2.7"

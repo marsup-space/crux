@@ -2365,10 +2365,18 @@ class _ChatPanelState extends State<ChatPanel> {
     final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
     final llm = _providerService.llmProviderByName(providerName);
     if (llm == null) return const [];
-    // Pass the modelId so providers like MiniMax can vary the
-    // display by model (M3 shows `normal` as `adaptive`; M2.x
-    // does not, because M2.x doesn't support adaptive thinking).
-    return llm.reasoningPresetsFor(modelKey);
+    // Pass just the model ID (after the '/') so providers like MiniMax
+    // can match on the model name — e.g. _isM3("MiniMax-M3") works but
+    // _isM3("minimax/MiniMax-M3") would not.
+    final modelId = slashIdx > 0 ? modelKey.substring(slashIdx + 1) : modelKey;
+    // Resolve provider-level and model-level label overrides from TOML.
+    final provider = _providerService.providerByName(providerName);
+    final modelConfig = provider?.modelById(modelId);
+    return llm.reasoningPresetsFor(
+      modelId,
+      providerLabels: provider?.reasoningLabels ?? const {},
+      modelLabels: modelConfig?.reasoningLabels ?? const {},
+    );
   }
 
   String _displayEffort(String effort) {
@@ -2399,25 +2407,31 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _cycleThinkingLevel(SessionRuntimeState rt) {
-    final levels = ['off', 'normal', 'high', 'max'];
+    final presets = _currentReasoningPresets();
+    if (presets.isEmpty) return;
+
     final current = rt.thinkingMode == 'disabled'
         ? 'off'
         : rt.reasoningEffort ?? 'normal';
-    final idx = levels.indexOf(current);
-    final next = levels[(idx + 1) % levels.length];
-    switch (next) {
-      case 'off':
-        rt.thinkingMode = 'disabled';
-        rt.reasoningEffort = null;
-      case 'normal':
-        rt.thinkingMode = 'enabled';
-        rt.reasoningEffort = 'normal';
-      case 'high':
-        rt.thinkingMode = 'enabled';
-        rt.reasoningEffort = 'high';
-      case 'max':
-        rt.thinkingMode = 'enabled';
-        rt.reasoningEffort = 'max';
+
+    // Find the current level in the presets and advance to the next.
+    // If the current level isn't in the presets (e.g. it was disabled
+    // after being set), start from the beginning.
+    int idx = -1;
+    for (var i = 0; i < presets.length; i++) {
+      if (presets[i].internalValue == current) {
+        idx = i;
+        break;
+      }
+    }
+
+    final next = presets[(idx + 1) % presets.length];
+    if (next.internalValue == 'off') {
+      rt.thinkingMode = 'disabled';
+      rt.reasoningEffort = null;
+    } else {
+      rt.thinkingMode = 'enabled';
+      rt.reasoningEffort = next.internalValue;
     }
     _sessionController.persistThinkingLevel(rt);
     setState(() {});

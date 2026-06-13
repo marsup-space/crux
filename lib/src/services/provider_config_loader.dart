@@ -275,6 +275,23 @@ class ProviderConfigLoader {
       fieldLabel: 'Provider "$name"',
     );
 
+    // --- Optional provider-level reasoning label overrides ([reasoning_labels]) ---
+    final providerLabelsRaw = map['reasoning_labels'];
+    final Map<String, String> providerReasoningLabels;
+    if (providerLabelsRaw != null) {
+      if (providerLabelsRaw is! Map) {
+        throw FormatException(
+          'Provider "$name": "reasoning_labels" must be a table '
+          '([reasoning_labels]), got ${providerLabelsRaw.runtimeType}',
+        );
+      }
+      providerReasoningLabels = providerLabelsRaw.map(
+        (k, v) => MapEntry(k as String, v as String),
+      );
+    } else {
+      providerReasoningLabels = const {};
+    }
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -282,6 +299,7 @@ class ProviderConfigLoader {
       endpointUrl: endpointUrl,
       models: List.unmodifiable(models),
       quota: quota,
+      reasoningLabels: providerReasoningLabels,
       defaultMaxRounds: defaultMaxRounds,
     );
   }
@@ -292,12 +310,15 @@ class ProviderConfigLoader {
     final displayName = _requireString(map, 'name');
     final contextSize = _requireInt(map, 'context_size');
 
-    // Optional booleans (default false if absent)
+    // Optional booleans (default true for thinking — most modern models
+    // support it; opt out with `thinking = false` in TOML)
     final imageSupport = _optionalBool(map, 'image_support') ?? false;
-    final thinking = _optionalBool(map, 'thinking') ?? false;
+    final thinking = _optionalBool(map, 'thinking') ?? true;
 
-    // Optional reasoning_effort (string → enum)
-    final effortStr = _optionalString(map, 'reasoning_effort');
+    // Optional reasoning_effort (string → enum).
+    // Defaults to "normal" when absent so reasoning levels are available
+    // in the UI unless explicitly omitted via `reasoning_effort = "none"`.
+    final effortStr = _optionalString(map, 'reasoning_effort') ?? 'normal';
     final reasoningEffort = ReasoningEffortParse.fromString(effortStr);
 
     // Optional thinking_budget (int)
@@ -305,7 +326,26 @@ class ProviderConfigLoader {
 
     final maxTokens = _optionalInt(map, 'max_tokens');
 
-    final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
+        final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
+
+    // Optional per-model display label overrides for reasoning effort.
+    // TOML: [models.reasoning_labels]
+    //   normal = "adaptive"
+    final reasoningLabelsRaw = map['reasoning_labels'];
+    final Map<String, String> reasoningLabels;
+    if (reasoningLabelsRaw != null) {
+      if (reasoningLabelsRaw is! Map) {
+        throw FormatException(
+          'Model "$id": "reasoning_labels" must be a table '
+          '([models.reasoning_labels]), got ${reasoningLabelsRaw.runtimeType}',
+        );
+      }
+      reasoningLabels = reasoningLabelsRaw.map(
+        (k, v) => MapEntry(k as String, v as String),
+      );
+    } else {
+      reasoningLabels = const {};
+    }
 
     // Optional per-model round-trip cap. 0 or absent = unbounded (falls
     // back to the provider-level default_max_rounds, or unbounded if
@@ -327,6 +367,7 @@ class ProviderConfigLoader {
       thinkingBudget: thinkingBudget,
       maxTokens: maxTokens,
       streamLerp: streamLerp,
+      reasoningLabels: reasoningLabels,
       maxRounds: maxRounds,
     );
   }

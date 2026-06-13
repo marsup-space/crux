@@ -358,19 +358,49 @@ class CommandExecutor {
     if (ctx.currentSessionId == null) return;
     final rt = ctx.runtime(ctx.currentSessionId!);
     final effort = parts.length > 1 ? parts[1] : '';
-    // Map user-facing 'adaptive' to internal 'normal'. Only minimax
-    // uses adaptive thinking for the normal preset; for other providers
-    // 'normal' stays 'normal'. Accept both 'adaptive' and 'normal'
-    // as valid input for the same internal value.
-    final isMinimax = ctx.currentSession.model.startsWith('minimax/');
-    final internalEffort = (effort == 'adaptive' && isMinimax)
-        ? 'normal'
-        : effort;
-    // Map internal values to display names for toasts.
-    final displayEffort = (String e) {
-      if (e == 'normal' && isMinimax) return 'adaptive';
-      return e;
-    };
+
+    // Resolve the provider's reasoning presets so display labels are
+    // consistent with the chat panel toolbar. Any provider can override
+    // labels — e.g. MiniMax M3 shows "adaptive" instead of "normal".
+    final modelKey = ctx.currentSession.model;
+    final slashIdx = modelKey.indexOf('/');
+    final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
+    final modelId = slashIdx > 0 ? modelKey.substring(slashIdx + 1) : modelKey;
+    final provider = ctx.providerServiceReady
+        ? ctx.providerService.providerByName(providerName)
+        : null;
+    final modelConfig = provider?.modelById(modelId);
+    final llm = ctx.providerServiceReady
+        ? ctx.providerService.llmProviderByName(providerName)
+        : null;
+    final presets = llm?.reasoningPresetsFor(
+      modelId,
+      providerLabels: provider?.reasoningLabels ?? const {},
+      modelLabels: modelConfig?.reasoningLabels ?? const {},
+    ) ?? const [];
+
+    // Map a display label back to its internal value (e.g. "adaptive" →
+    // "normal"). If the user types a display label that differs from
+    // the internal value, resolve it. If they type an internal value
+    // directly, that works too.
+    String resolveInput(String input) {
+      for (final p in presets) {
+        if (p.displayLabel == input) return p.internalValue;
+      }
+      return input;
+    }
+
+    // Map an internal value to its display label using the provider's
+    // presets — same mapping the chat panel toolbar uses.
+    String displayEffort(String internal) {
+      for (final p in presets) {
+        if (p.internalValue == internal) return p.displayLabel;
+      }
+      return internal;
+    }
+
+    final internalEffort = resolveInput(effort);
+
     switch (internalEffort) {
       case 'off':
         rt.thinkingMode = 'disabled';
@@ -404,8 +434,9 @@ class CommandExecutor {
         final current = rt.thinkingMode == 'disabled'
             ? 'off'
             : displayEffort(rt.reasoningEffort ?? 'normal');
-        final levels = isMinimax
-            ? '<off|low|adaptive|high|max>'
+        final levelLabels = presets.map((p) => p.displayLabel).toList();
+        final levels = levelLabels.isNotEmpty
+            ? '<${levelLabels.join('|')}>'
             : '<off|low|normal|high|max>';
         ctx.showToast('Usage: /think $levels (current: $current)');
     }

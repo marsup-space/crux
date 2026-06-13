@@ -11,6 +11,7 @@ name = "Llama 3"
 context_size = 8192
 image_support = false
 thinking = false
+reasoning_effort = "none"
 
 [[models]]
 id = "mistral"
@@ -18,3 +19,4 @@ name = "Mistral"
 context_size = 32000
 image_support = false
 thinking = false
+reasoning_effort = "none"

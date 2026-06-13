@@ -34,8 +34,11 @@ extension ReasoningEffortParse on ReasoningEffort {
   static ReasoningEffort? fromString(String? value) {
     if (value == null) return null;
     switch (value.toLowerCase()) {
+      case 'none':
+        return null;
       case 'low':
         return ReasoningEffort.low;
+      case 'normal': // alias for medium — matches the runtime string used in UI/commands
       case 'medium':
         return ReasoningEffort.medium;
       case 'high':
@@ -70,12 +73,17 @@ class ModelConfig {
   /// support reasoning effort configuration.
   ///
   /// Models like OpenAI o1/o3 allow low/medium/high reasoning trade-offs.
+  /// Defaults to [ReasoningEffort.medium] (exposed as "normal" in the UI)
+  /// so that reasoning levels are
+  /// available in the UI for any model unless explicitly opted out.
   final ReasoningEffort? reasoningEffort;
 
   /// Whether the model supports extended "thinking" / chain-of-thought mode.
   ///
   /// For Anthropic models this maps to the `thinking` parameter; for OpenAI
   /// o-series it corresponds to reasoning mode being active.
+  /// Defaults to `true` so that thinking controls are shown by default —
+  /// set `thinking = false` in the TOML to opt out.
   final bool thinking;
 
   /// Optional thinking budget in tokens when [thinking] is enabled.
@@ -92,6 +100,21 @@ class ModelConfig {
 
   final bool streamLerp;
 
+  /// Per-model display label overrides for reasoning effort levels.
+  ///
+  /// Maps internal effort values to user-facing labels. For example,
+  /// MiniMax M3 maps `normal` to `adaptive` because its API uses
+  /// `{type: "adaptive"}` for that effort level. Any key not present
+  /// falls back to the provider's default (identity mapping — show the
+  /// internal value as-is).
+  ///
+  /// Set in TOML as:
+  /// ```toml
+  /// [models.reasoning_labels]
+  /// normal = "adaptive"
+  /// ```
+  final Map<String, String> reasoningLabels;
+
   /// Optional per-turn round-trip cap for the agentic tool loop.
   ///
   /// When `null`, falls back to [ProviderConfig.defaultMaxRounds]. When
@@ -107,11 +130,12 @@ class ModelConfig {
     required this.name,
     required this.contextSize,
     this.imageSupport = false,
-    this.reasoningEffort,
-    this.thinking = false,
+    this.reasoningEffort = ReasoningEffort.medium,
+    this.thinking = true,
     this.thinkingBudget,
     this.maxTokens,
     this.streamLerp = false,
+    this.reasoningLabels = const {},
     this.maxRounds,
   });
 
@@ -224,6 +248,16 @@ class ProviderConfig {
   /// Optional coding-plan quota configuration.
   final UsageQuotaConfig? quota;
 
+  /// Provider-level display label overrides for reasoning effort levels.
+  ///
+  /// Applies to all models under this provider unless overridden by a
+  /// model-level [ModelConfig.reasoningLabels]. Set in TOML as:
+  /// ```toml
+  /// [reasoning_labels]
+  /// normal = "adaptive"
+  /// ```
+  final Map<String, String> reasoningLabels;
+
   /// Provider-level default cap on model→tool→model round-trips per
   /// user turn. Used when a [[models]] entry's [ModelConfig.maxRounds]
   /// is `null`. `null` (or `0`) means unbounded — the agentic loop is
@@ -237,6 +271,7 @@ class ProviderConfig {
     required this.endpointUrl,
     required this.models,
     this.quota,
+    this.reasoningLabels = const {},
     this.defaultMaxRounds,
   });
 
