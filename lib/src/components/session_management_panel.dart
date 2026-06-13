@@ -132,6 +132,8 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         return '?';
       case SessionStatus.done:
         return terminalSymbol('✦', '*');
+      case SessionStatus.interrupted:
+        return terminalSymbol('✗', 'x');
     }
   }
 
@@ -145,6 +147,8 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         return CruxTheme.of(context).sessionPrefixNeedsAction;
       case SessionStatus.done:
         return CruxTheme.of(context).sessionPrefixDone;
+      case SessionStatus.interrupted:
+        return CruxTheme.of(context).sessionPrefixInterrupted;
     }
   }
 

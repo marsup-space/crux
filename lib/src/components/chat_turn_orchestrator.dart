@@ -622,8 +622,8 @@ class ChatTurnOrchestrator {
 
       // Update session status.
       final session = _sessionController.currentSession;
-      _store.update(sessionId, status: SessionStatus.idle);
-      session.status = SessionStatus.idle;
+      _store.update(sessionId, status: SessionStatus.interrupted);
+      session.status = SessionStatus.interrupted;
     }
 
     _showToast('Response interrupted', mode: ToastMode.status);

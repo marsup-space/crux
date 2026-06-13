@@ -1,4 +1,4 @@
-enum SessionStatus { idle, running, needUserAction, done }
+enum SessionStatus { idle, running, needUserAction, done, interrupted }
 
 class Session {
   final int id;

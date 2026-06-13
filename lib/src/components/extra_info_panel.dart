@@ -218,6 +218,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         return '?';
       case SessionStatus.done:
         return terminalSymbol('✦', '*');
+      case SessionStatus.interrupted:
+        return terminalSymbol('✗', 'x');
     }
   }
 
@@ -232,6 +234,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         return CruxTheme.of(context).sessionPrefixNeedsAction;
       case SessionStatus.done:
         return CruxTheme.of(context).sessionPrefixDone;
+      case SessionStatus.interrupted:
+        return CruxTheme.of(context).sessionPrefixInterrupted;
     }
   }
 
@@ -248,6 +252,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         return CruxTheme.of(context).sessionPrefixNeedsAction;
       case SessionStatus.done:
         return CruxTheme.of(context).sessionPrefixDone;
+      case SessionStatus.interrupted:
+        return CruxTheme.of(context).sessionPrefixInterrupted;
     }
   }
 

@@ -277,7 +277,8 @@ class SessionController {
       return 'Session #$id not found';
     }
 
-    if (session.status == SessionStatus.done) {
+    if (session.status == SessionStatus.done ||
+        session.status == SessionStatus.interrupted) {
       await _store.update(id, status: SessionStatus.idle);
       session.status = SessionStatus.idle;
     }

@@ -196,6 +196,7 @@ class CruxThemeData {
   Color get sessionPrefixIdle => textMuted;
   Color get sessionPrefixDone => secondary;
   Color get sessionPrefixNeedsAction => warning;
+  Color get sessionPrefixInterrupted => error;
   Color get sessionPrefixError => error;
   Color get toolbarSpacer => textMuted;
   Color get metricsActive => accent;
