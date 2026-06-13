@@ -432,6 +432,10 @@ class _CruxAppState extends State<_CruxApp> {
   void initState() {
     super.initState();
     component.themeController.addListener(_handleThemeChanged);
+    // Override nocterm's default 30fps to 60fps for smoother animations
+    // (streaming text, status indicators, context bar, etc.).
+    SchedulerBinding.instance.targetFrameDuration =
+        const Duration(microseconds: 16667);
   }
 
   void _handleThemeChanged() => setState(() {});
