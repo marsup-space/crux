@@ -230,15 +230,15 @@ class ChatService {
         messages: List<Map<String, dynamic>>.from(apiMessages),
         thinkingMode: runtime.thinkingMode,
         reasoningEffort: runtime.reasoningEffort,
-        thinkingBudget: modelConfig?.thinkingBudget,
-        maxTokens: modelConfig?.maxTokens,
+        thinkingBudget: modelConfig.thinkingBudget,
+        maxTokens: modelConfig.maxTokens,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
         userId: '${InstallSlug.slug}-$sessionId',
       );
 
       final chunks = <LlmChunk>[];
 
-      final useLerp = modelConfig?.streamLerp ?? false;
+      final useLerp = modelConfig.streamLerp;
       String lerpPendingText = '';
       String lerpPendingReasoning = '';
       Timer? lerpTimer;
@@ -254,8 +254,8 @@ class ChatService {
               lerpTimer?.cancel();
               lerpTimer = null;
               if (lerpDrainCompleter != null &&
-                  !lerpDrainCompleter!.isCompleted) {
-                lerpDrainCompleter!.complete();
+                  !lerpDrainCompleter.isCompleted) {
+                lerpDrainCompleter.complete();
               }
               return;
             }
@@ -265,8 +265,8 @@ class ChatService {
             if (totalPending == 0) {
               if (lerpStreamDone &&
                   lerpDrainCompleter != null &&
-                  !lerpDrainCompleter!.isCompleted) {
-                lerpDrainCompleter!.complete();
+                  !lerpDrainCompleter.isCompleted) {
+                lerpDrainCompleter.complete();
               }
               return;
             }
@@ -536,11 +536,11 @@ class ChatService {
 
       if (lerpTimer != null) {
         if (lerpPendingText.isEmpty && lerpPendingReasoning.isEmpty) {
-          lerpTimer!.cancel();
+          lerpTimer?.cancel();
           lerpTimer = null;
         } else {
           lerpDrainCompleter = Completer<void>();
-          await lerpDrainCompleter!.future.timeout(
+          await lerpDrainCompleter.future.timeout(
             const Duration(seconds: 10),
             onTimeout: () {},
           );

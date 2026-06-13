@@ -99,7 +99,7 @@ class ChatTurnOrchestrator {
     // When the agent is streaming, queue the user's message
     // instead of ignoring it.
     if (isResponding) {
-      _sessionController.enqueueMessage(sessionId!, trimmed);
+      _sessionController.enqueueMessage(sessionId, trimmed);
       textController.clear();
       _refresh();
       return;

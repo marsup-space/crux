@@ -96,7 +96,7 @@ class GlobTool extends ToolDef {
           final kept = relativeLines.take(100).join('\n');
           return ToolResult(
             title: 'Glob: $pattern',
-            output: kept + '\n... and ${relativeLines.length - 100} more',
+            output: '$kept\n... and ${relativeLines.length - 100} more',
             truncated: true,
           );
         }
@@ -159,7 +159,7 @@ class GlobTool extends ToolDef {
         final kept = relative.take(100).join('\n');
         return ToolResult(
           title: 'Glob: $pattern',
-          output: kept + '\n... and ${relative.length - 100} more',
+          output: '$kept\n... and ${relative.length - 100} more',
           truncated: true,
         );
       }

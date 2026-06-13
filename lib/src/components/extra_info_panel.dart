@@ -236,8 +236,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   }
 
   Color _titleColor(SessionStatus status, bool isCurrent, bool isHovered) {
-    if (isCurrent || isHovered)
+    if (isCurrent || isHovered) {
       return CruxTheme.of(context).sessionPrefixActive;
+    }
     switch (status) {
       case SessionStatus.idle:
         return CruxTheme.of(context).sessionPrefixIdle;
@@ -275,7 +276,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       width += cw;
       count++;
     }
-    return chars.take(count).toString() + '~';
+    return '${chars.take(count)}~';
   }
 
   @override

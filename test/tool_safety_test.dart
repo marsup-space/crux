@@ -414,7 +414,7 @@ void main() {
 
     test('both oldString and newString over the threshold are both listed',
         () async {
-      await writeFile('huge.txt', 'a' * 5000 + 'SENTINEL' + 'b' * 5000);
+      await writeFile('huge.txt', '${'a' * 5000}SENTINEL${'b' * 5000}');
       final oldStr = 'a' * 5000;
       final newStr = 'B' * 5000;
       final result = await EditTool().execute(

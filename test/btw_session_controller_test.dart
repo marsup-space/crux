@@ -17,7 +17,6 @@ import 'package:crux/src/services/chat_service.dart';
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/services/provider_service.dart';
 import 'package:crux/src/services/tool_executor.dart';
-import 'package:crux/src/storage/session_store.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';

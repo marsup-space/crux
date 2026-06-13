@@ -115,7 +115,7 @@ class OverlayController {
       textController.clear();
       executeCommandCallback(selected.name);
     } else {
-      textController.text = selected.name + ' ';
+      textController.text = '${selected.name} ';
       textController.selection = TextSelection.collapsed(
         offset: textController.text.length,
       );
@@ -152,7 +152,7 @@ class OverlayController {
   void onTapSuggestion(int index) {
     final selected = filteredSuggestions[index];
     final trimmed = textController.text.replaceFirst(RegExp(r'^\s+'), '');
-    final commandAndSpace = activeCommand!.name + ' ';
+    final commandAndSpace = '${activeCommand!.name} ';
     final restOfText = trimmed.substring(activeCommand!.name.length + 1);
 
     String prefix;
@@ -174,7 +174,7 @@ class OverlayController {
       textController.clear();
       executeCommandCallback(commandText);
     } else {
-      final newText = prefix + selected.value + ' ';
+      final newText = '$prefix${selected.value} ';
       textController.text = newText;
       textController.selection = TextSelection.collapsed(
         offset: newText.length,

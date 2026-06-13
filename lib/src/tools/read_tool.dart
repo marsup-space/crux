@@ -177,7 +177,7 @@ class ReadTool extends ToolDef {
     }).join('\n');
 
     final header = totalLines > endLine
-        ? '[showing lines ${startLine + 1}-${endLine} of $totalLines]'
+        ? '[showing lines ${startLine + 1}-$endLine of $totalLines]'
         : '';
 
     final output = header.isNotEmpty ? '$header\n$numbered' : numbered;

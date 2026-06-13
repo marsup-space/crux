@@ -1,5 +1,4 @@
 import '../../models/provider_config.dart';
-import '../llm_provider.dart';
 import '../providers/anthropic_compatible_provider.dart';
 
 /// Provider for the MiniMax Anthropic-compatible endpoint.

@@ -111,15 +111,15 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final rt = _sessionController.runtime(sessionId);
     final displayTokens = rt.contextDisplayTokens.round();
     final fillRatio = (displayTokens / component.contextMaxTokens).clamp(0.0, 1.0);
-    final fmtCtx = (int n) {
+    String fmtCtx(int n) {
       final k = n ~/ 1024;
       final kStr = k.toString().replaceAllMapped(
             RegExp(r'\B(?=(\d{3})+(?!\d))'),
             (m) => ',',
           );
       return '${kStr}k';
-    };
-    final fmtNum = (int n) => n.toString().replaceAllMapped(
+    }
+    String fmtNum(int n) => n.toString().replaceAllMapped(
           RegExp(r'\B(?=(\d{3})+(?!\d))'),
           (m) => ',',
         );
@@ -267,7 +267,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 ),
               if (showThinking && nonNullRt != null)
                 Button(
-                  label: thinkingLabel!,
+                  label: thinkingLabel,
                   onPressed: () => component.onCycleThinking(nonNullRt),
                   color: nonNullRt.thinkingMode == 'disabled'
                       ? CruxTheme.of(context).thinkingLabelDisabled

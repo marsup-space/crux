@@ -99,7 +99,7 @@ class AnthropicCompatibleProvider extends LlmProvider {
         },
       ];
     } else if (content is List) {
-      final blocks = (content as List)
+      final blocks = content
           .map((b) => Map<String, dynamic>.from(b as Map))
           .toList();
       if (blocks.isNotEmpty) {

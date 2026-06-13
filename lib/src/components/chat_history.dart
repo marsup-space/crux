@@ -49,7 +49,7 @@ class ChatHistory extends StatefulComponent {
 class _ChatHistoryState extends State<ChatHistory> {
   String? _highlightText;
   int? _highlightMessageId;
-  int _lastContentWidth = 120;
+  final int _lastContentWidth = 120;
 
   @override
   Component build(BuildContext context) {

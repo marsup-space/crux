@@ -1,6 +1,5 @@
 import 'package:test/test.dart';
 import 'package:nocterm/nocterm.dart';
-import 'package:nocterm/nocterm_test.dart';
 import 'package:crux/src/models/slash_command.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/components/ui/button.dart';

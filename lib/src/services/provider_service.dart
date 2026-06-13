@@ -419,7 +419,7 @@ class ProviderService {
       if (_auxiliaryModel != null) 'auxiliaryModel': _auxiliaryModel,
       'tldrThreshold': _tldrThreshold,
     };
-    final content = JsonEncoder.withIndent('  ').convert(data) + '\n';
+    final content = '${JsonEncoder.withIndent('  ').convert(data)}\n';
     final file = File(authJsonPath);
     await file.writeAsString(content);
     try {

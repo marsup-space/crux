@@ -172,7 +172,7 @@ class _ChatInputState extends State<ChatInput> {
             final think = e.model.thinking ? ', think' : '';
             return CommandSuggestion(
               value: e.compositeKey,
-              description: '${e.model.name} (${ctx} ctx$img$think)',
+              description: '${e.model.name} ($ctx ctx$img$think)',
             );
           }),
         ];
@@ -218,7 +218,7 @@ class _ChatInputState extends State<ChatInput> {
           final think = e.model.thinking ? ', think' : '';
           return CommandSuggestion(
             value: e.compositeKey,
-            description: '${e.model.name} (${ctx} ctx$img$think)',
+            description: '${e.model.name} ($ctx ctx$img$think)',
           );
         })
             .toList();

@@ -270,7 +270,6 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
         _tooltipBackgroundColor = tooltipBackgroundColor,
         _tooltipBorderColor = tooltipBorderColor;
 
-  @override
   double get minimumThumbHeight => 2.0;
 
   Color? _tooltipBackgroundColor;

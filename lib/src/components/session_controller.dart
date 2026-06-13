@@ -377,7 +377,6 @@ class SessionController {
     if (auxKey == null || auxKey == 'none') return;
     final slashIndex = auxKey.indexOf('/');
     final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
-    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
     if (provider == null) return;

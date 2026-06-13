@@ -20,7 +20,7 @@ class CruxDatabase extends _$CruxDatabase {
   /// isolated database without touching the user's on-disk data
   /// dir, which is shared with other test files and would
   /// otherwise race on parallel test runs (`database is locked`).
-  CruxDatabase.forTesting(QueryExecutor executor) : super(executor);
+  CruxDatabase.forTesting(super.executor);
 
   @override
   int get schemaVersion => 12;

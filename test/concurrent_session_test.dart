@@ -1,7 +1,6 @@
 import 'package:test/test.dart';
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/models/provider_config.dart';
-import 'package:crux/src/services/llm_provider.dart';
 
 void main() {
   group('StreamingController per-session map isolation', () {

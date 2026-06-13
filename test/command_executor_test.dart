@@ -24,7 +24,6 @@ import 'package:crux/src/models/message.dart';
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/models/session_runtime_state.dart';
 import 'package:crux/src/services/provider_service.dart';
-import 'package:crux/src/storage/session_store.dart';
 import 'package:crux/src/storage/storage.dart';
 
 void main() {
