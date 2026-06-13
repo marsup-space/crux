@@ -254,8 +254,9 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _executeCommand(String text) async {
-    // Command executed — clear any stashed input text from command mode.
-    _chatInputKey.currentState?.clearCommandStash();
+    // Command executed — restore any stashed input text so the user can
+    // continue composing their message.
+    _chatInputKey.currentState?.restoreCommandStash();
     final ctx = CommandContext(
       store: _store,
       providerService: _providerService,

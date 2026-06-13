@@ -128,15 +128,12 @@ class ChatInputState extends State<ChatInput> {
     _commandStashedText = null;
   }
 
-  /// Clear the command stash. Called when a command is executed via the
-  /// overlay controller's direct execution path (which bypasses
-  /// [_sendMessage]).
-  void clearCommandStash() {
-    _commandStashedText = null;
-  }
-
-  /// Restore stashed text into the input box and clear the stash.
-  void _restoreStashedText() {
+  /// Restore the command-stashed text into the input box. Called when a
+  /// command finishes executing (the user's original message should return
+  /// to the input box) and when the user dismisses command mode (ESC,
+  /// backspace-to-empty). If there is no stash, this is a no-op and the
+  /// input stays cleared.
+  void restoreCommandStash() {
     if (_commandStashedText != null && _commandStashedText!.isNotEmpty) {
       component.textController.text = _commandStashedText!;
       component.textController.selection = TextSelection.collapsed(
@@ -144,6 +141,11 @@ class ChatInputState extends State<ChatInput> {
       );
     }
     _commandStashedText = null;
+  }
+
+  /// Restore stashed text into the input box and clear the stash.
+  void _restoreStashedText() {
+    restoreCommandStash();
   }
 
   void _onTextChanged() {
@@ -528,7 +530,8 @@ class ChatInputState extends State<ChatInput> {
           }
           return true;
         }
-        // ESC while in command mode (no overlay): restore stashed text.
+        // ESC while in command mode (no overlay): restore stashed text,
+        // or clear the command text if there's no stash.
         if (inCommandMode) {
           if (_commandStashedText != null) {
             _restoreStashedText();
@@ -621,13 +624,17 @@ class ChatInputState extends State<ChatInput> {
         return true;
       }
       if (event.logicalKey == LogicalKey.enter) {
-        _commandStashedText = null; // command consumed — clear stash
         overlay.onTapCommand(overlay.selectedCommandIndex);
+        // Note: stash restoration is handled by _executeCommand (via
+        // executeCommandCallback) when the command is fully executed.
+        // For commands with params, onTapCommand just sets the text
+        // and the stash is preserved until the command completes.
         component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.escape) {
-        // ESC dismisses command overlay — restore stashed text if any.
+        // ESC dismisses command overlay — restore stashed text if any,
+        // otherwise clear the command text.
         if (_commandStashedText != null) {
           _restoreStashedText();
         } else {
@@ -652,13 +659,17 @@ class ChatInputState extends State<ChatInput> {
         return true;
       }
       if (event.logicalKey == LogicalKey.enter) {
-        _commandStashedText = null; // command consumed — clear stash
         overlay.onTapSuggestion(overlay.selectedSuggestionIndex);
+        // Note: stash restoration is handled by _executeCommand (via
+        // executeCommandCallback) when the command is fully executed.
+        // For multi-param commands, onTapSuggestion just appends the
+        // value and the stash is preserved.
         component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.escape) {
-        // ESC dismisses parameter overlay — restore stashed text if any.
+        // ESC dismisses parameter overlay — restore stashed text if any,
+        // otherwise clear the command text.
         if (_commandStashedText != null) {
           _restoreStashedText();
         } else {
@@ -694,13 +705,15 @@ class ChatInputState extends State<ChatInput> {
       if (isResponding && (cmd == null || !cmd.availableDuringResponse)) {
         return;
       }
-      _commandStashedText = null; // command executed — clear stash
       component.textController.clear();
+      // onExecuteCommand → _executeCommand → restoreCommandStash()
+      // handles restoring the stashed message.
       component.onExecuteCommand(text);
       return;
     }
 
-    // Non-command message sent — also clear any stale stash.
+    // Non-command message sent — clear any stale stash (there shouldn't
+    // be one since we weren't in command mode, but just in case).
     _commandStashedText = null;
     component.onSendTurn(text);
   }
