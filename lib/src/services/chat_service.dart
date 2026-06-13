@@ -9,6 +9,7 @@ import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
+import 'auxiliary_service.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
 import 'provider_service.dart';
@@ -41,6 +42,7 @@ class ChatService {
   final ProviderService _providerService;
   final LlmClient _llmClient;
   final ToolExecutor _toolExecutor;
+  final AuxiliaryService _auxiliaryService;
   final Set<int> _activeSessions = {};
   final Set<int> _cancelRequested = {};
 
@@ -49,7 +51,7 @@ class ChatService {
     this._providerService,
     this._llmClient,
     this._toolExecutor,
-  );
+  ) : _auxiliaryService = AuxiliaryService(_providerService, _store);
 
   bool isStreaming(int sessionId) => _activeSessions.contains(sessionId);
 
@@ -60,139 +62,14 @@ class ChatService {
   Future<String?> generateSessionTitle(
     int sessionId, {
     String? userContent,
-  }) async {
-    final auxKey = _providerService.auxiliaryModel;
-    if (auxKey == null || auxKey == 'none') {
-      print(
-        '[auxiliary] no auxiliary model configured, skipping title generation',
-      );
-      return null;
-    }
-
-    final slashIndex = auxKey.indexOf('/');
-    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
-    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
-
-    final provider = _providerService.providerByName(providerName);
-    final apiKey = _providerService.getApiKey(providerName);
-    if (provider == null || apiKey == null || apiKey.isEmpty) return null;
-
-    // Use the provided userContent directly when available (e.g. when
-    // generating the title early, before the message has been persisted).
-    // Otherwise fall back to reading from the store.
-    String userText;
-    if (userContent != null && userContent.trim().isNotEmpty) {
-      userText = userContent;
-    } else {
-      final messages = await _store.getMessages(sessionId);
-      final userMessage = messages.firstWhere(
-        (m) => m.role == 'user',
-        orElse: () => messages.first,
-      );
-      if (userMessage.content.trim().isEmpty) return null;
-      userText = userMessage.content;
-    }
-
-    final client = LlmClient();
-    try {
-      final stream = client.streamChat(
-        endpointUrl: provider.endpointUrl,
-        config: provider,
-        apiKey: apiKey,
-        modelId: modelId,
-        messages: <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'system', 'content': titleSystemPrompt},
-          <String, dynamic>{'role': 'user', 'content': userText},
-        ],
-        thinkingMode: 'disabled',
-        reasoningEffort: null,
-      );
-
-      final buffer = StringBuffer();
-      String? streamError;
-      await for (final chunk in stream) {
-        if (chunk.error != null) {
-          streamError = chunk.error;
-          break;
-        }
-        if (chunk.textDelta != null) buffer.write(chunk.textDelta);
-      }
-      if (streamError != null) {
-        print('[auxiliary] stream error: $streamError');
-        return null;
-      }
-      final title = buffer.toString().trim().replaceAll(
-        RegExp(r'[\r\n]+'),
-        ' ',
-      );
-      if (title.isEmpty || title.length > 80) return null;
-      print('[auxiliary] generated title: $title');
-      return title;
-    } catch (e) {
-      print('[auxiliary] title generation failed: $e');
-      return null;
-    } finally {
-      client.dispose();
-    }
-  }
+  }) =>
+      _auxiliaryService.generateTitle(sessionId, userContent: userContent);
 
   Future<String?> generateTldr(
     String responseContent, {
     TldrDetail detail = TldrDetail.defaultLevel,
-  }) async {
-    final auxKey = _providerService.auxiliaryModel;
-    if (auxKey == null || auxKey == 'none') return null;
-
-    final slashIndex = auxKey.indexOf('/');
-    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
-    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
-
-    final provider = _providerService.providerByName(providerName);
-    final apiKey = _providerService.getApiKey(providerName);
-    if (provider == null || apiKey == null || apiKey.isEmpty) return null;
-
-    final client = LlmClient();
-    try {
-      final stream = client.streamChat(
-        endpointUrl: provider.endpointUrl,
-        config: provider,
-        apiKey: apiKey,
-        modelId: modelId,
-        messages: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'role': 'system',
-            'content': tldrSystemPromptFor(detail),
-          },
-          <String, dynamic>{'role': 'user', 'content': responseContent},
-        ],
-        thinkingMode: 'disabled',
-        reasoningEffort: null,
-      );
-
-      final buffer = StringBuffer();
-      String? streamError;
-      await for (final chunk in stream) {
-        if (chunk.error != null) {
-          streamError = chunk.error;
-          break;
-        }
-        if (chunk.textDelta != null) buffer.write(chunk.textDelta);
-      }
-      if (streamError != null) {
-        print('[tldr] stream error: $streamError');
-        return null;
-      }
-      final tldr = buffer.toString().trim();
-      if (tldr.isEmpty) return null;
-      print('[tldr] generated: ${tldr.length} chars');
-      return tldr;
-    } catch (e) {
-      print('[tldr] generation failed: $e');
-      return null;
-    } finally {
-      client.dispose();
-    }
-  }
+  }) =>
+      _auxiliaryService.generateTldr(responseContent, detail: detail);
 
   /// Run a single chat turn for [sessionId].
   ///
@@ -1124,5 +1001,6 @@ class ChatService {
     _cancelRequested.clear();
     _activeSessions.clear();
     _llmClient.dispose();
+    _auxiliaryService.dispose();
   }
 }
