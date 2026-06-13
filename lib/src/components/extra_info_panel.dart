@@ -53,6 +53,11 @@ class ExtraInfoPanel extends StatefulComponent {
   /// the user can type a new project path and submit it.
   final VoidCallback? onSwitchProject;
 
+  /// Derives the effective display status for a session, factoring in
+  /// whether it is currently being viewed.  When not provided the raw
+  /// [Session.status] is used as-is.
+  final SessionStatus Function(Session)? statusResolver;
+
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
@@ -61,6 +66,7 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
+    this.statusResolver,
   });
 
   @override
@@ -173,8 +179,15 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     super.dispose();
   }
 
+  /// Resolve the effective display status for [session] using the
+  /// optional [statusResolver] callback.  Falls back to the raw
+  /// [Session.status] when no resolver is provided.
+  SessionStatus _resolveStatus(Session session) {
+    return component.statusResolver?.call(session) ?? session.status;
+  }
+
   bool _hasRunningSession() {
-    return component.sessions.any((s) => s.status == SessionStatus.running);
+    return component.sessions.any((s) => _resolveStatus(s) == SessionStatus.running);
   }
 
   void _startAnimIfNeeded() {
@@ -422,7 +435,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       Session session, ExtraInfoPanel panel, int maxTitleLen) {
     final isCurrent = session.id == panel.currentSessionId;
     final isHovered = _hoveredIds.contains(session.id);
-    final prefix = _statusPrefix(session.status);
+    final status = _resolveStatus(session);
+    final prefix = _statusPrefix(status);
     final title = _truncateByWidth(session.title, maxTitleLen);
 
     return MouseRegion(
@@ -439,14 +453,14 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
               Text(
                 prefix,
                 style: TextStyle(
-                  color: _prefixColor(session.status, isCurrent),
+                  color: _prefixColor(status, isCurrent),
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
               ),
               Text(
                 ' $title',
                 style: TextStyle(
-                  color: _titleColor(session.status, isCurrent, isHovered),
+                  color: _titleColor(status, isCurrent, isHovered),
                   fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
                 ),
               ),

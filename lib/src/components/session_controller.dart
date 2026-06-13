@@ -436,6 +436,20 @@ class SessionController {
     );
   }
 
+  /// Compute the effective display status for [session], taking into
+  /// account whether it is the currently-viewed session.  The
+  /// persisted [SessionStatus.done] means "the agent finished but the
+  /// user hasn't navigated to this session yet."  When the session is
+  /// current, the user is already looking at the response, so `done`
+  /// is downgraded to `idle` — there is nothing "unread" about it.
+  /// All other statuses pass through unchanged.
+  SessionStatus effectiveStatus(Session session) {
+    if (session.id == currentSessionId && session.status == SessionStatus.done) {
+      return SessionStatus.idle;
+    }
+    return session.status;
+  }
+
   void dispose() {
     for (final rt in _runtimeStates.values) {
       rt.cancelTimers();
