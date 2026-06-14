@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
+import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/part.dart';
 
@@ -40,6 +41,7 @@ class MessageStore {
     String toolCallId = '',
     String tldr = '',
     int? preCompressTokens,
+    List<ImageAttachment> images = const [],
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -65,6 +67,7 @@ class MessageStore {
             toolCallId: Value(toolCallId),
             tldr: Value(tldr),
             preCompressTokens: Value(preCompressTokens),
+            images: Value(ImageAttachment.encodeList(images)),
           ),
         );
 
@@ -90,6 +93,7 @@ class MessageStore {
       toolCalls: toolCalls,
       toolCallId: toolCallId,
       tldr: tldr,
+      images: images,
     );
   }
 
@@ -335,6 +339,7 @@ class MessageStore {
       toolCalls: Message.parseToolCallsJson(row.toolCalls),
       toolCallId: row.toolCallId,
       tldr: row.tldr,
+      images: ImageAttachment.decodeList(row.images),
     );
   }
 

@@ -779,7 +779,7 @@ class CommandExecutor {
 
   // ─────────────────────────────────────────────────────────────────────
   // /debug — toggles registration of debug commands.
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   Future<void> executeDebug(List<String> parts, CommandContext ctx) async {
     // Bare `/debug` — toggles registration of the `/d-*` command set.

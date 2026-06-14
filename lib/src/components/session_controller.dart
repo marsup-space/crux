@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/message_queue.dart';
 import '../models/session.dart';
@@ -34,6 +35,11 @@ class SessionController {
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
+
+  /// Per-session pending image attachments. When the user runs `/image`,
+  /// the image is loaded and stored here. When the user sends their next
+  /// message, the pending images are attached to it and cleared.
+  final Map<int, List<ImageAttachment>> pendingImages = {};
 
   /// Per-session stashed input text. When the user switches away from a
   /// session, the current input box content is saved here keyed by session
@@ -99,6 +105,39 @@ class SessionController {
   /// Clear the message queue for [sessionId] without draining.
   void clearMessageQueue(int sessionId) {
     _messageQueues[sessionId]?.clear();
+  }
+
+  /// Add a pending image attachment for [sessionId]. The image will be
+  /// attached to the next user message and then cleared.
+  void addPendingImage(int sessionId, ImageAttachment image) {
+    pendingImages.putIfAbsent(sessionId, () => <ImageAttachment>[]).add(image);
+  }
+
+  /// Remove a single pending image by its 1-based index (the number
+  /// shown in the `[ image N ]` text marker). Returns true if the
+  /// image was found and removed.
+  bool removePendingImage(int sessionId, int oneBasedIndex) {
+    final list = pendingImages[sessionId];
+    if (list == null) return false;
+    if (oneBasedIndex < 1 || oneBasedIndex > list.length) return false;
+    list.removeAt(oneBasedIndex - 1);
+    if (list.isEmpty) pendingImages.remove(sessionId);
+    return true;
+  }
+
+  /// Get the pending images for [sessionId] (read-only).
+  List<ImageAttachment> pendingImagesFor(int sessionId) =>
+      List.unmodifiable(pendingImages[sessionId] ?? const <ImageAttachment>[]);
+
+  /// Drain and clear the pending images for [sessionId], returning them.
+  List<ImageAttachment> drainPendingImages(int sessionId) {
+    final images = pendingImages.remove(sessionId) ?? const <ImageAttachment>[];
+    return images;
+  }
+
+  /// Clear the pending images for [sessionId] without attaching them.
+  void clearPendingImages(int sessionId) {
+    pendingImages.remove(sessionId);
   }
 
   /// Read-only view of the in-memory btw chain for [sessionId]. Returns

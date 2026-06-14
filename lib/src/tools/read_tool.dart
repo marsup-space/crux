@@ -156,8 +156,19 @@ class ReadTool extends ToolDef {
       '.tif',
     };
     if (imageExts.contains(ext.toLowerCase())) {
-      return ToolResult.error(
-        'Image file: ${relativePath(path, workingDirectory)}. Image preview not yet supported in phase 1.',
+      final size = file.lengthSync();
+      final sizeStr = size > 1024 * 1024
+          ? '${(size / (1024 * 1024)).toStringAsFixed(1)} MB'
+          : size > 1024
+              ? '${(size / 1024).toStringAsFixed(1)} KB'
+              : '$size B';
+      return ToolResult(
+        title: 'Image file: $path',
+        output:
+            'Image file: ${relativePath(path, workingDirectory)} ($sizeStr)\n'
+            'Format: ${ext.substring(1).toUpperCase()}\n'
+            'This is an image file. Use /image to attach it to a message '
+            'for models that support image input.',
       );
     }
 

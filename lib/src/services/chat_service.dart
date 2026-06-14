@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
@@ -99,9 +100,15 @@ class ChatService {
     String? Function()? onQueueDrain,
     void Function(AbortSignal)? onAbortSignal,
     String? userContent,
+    List<ImageAttachment> images = const [],
   }) async {
     if (userContent != null) {
-      await _messageStore.addMessage(sessionId, role: 'user', content: userContent);
+      await _messageStore.addMessage(
+        sessionId,
+        role: 'user',
+        content: userContent,
+        images: images,
+      );
     }
 
     await _store.update(sessionId, status: SessionStatus.running);
@@ -877,7 +884,36 @@ class ChatService {
     for (final m in history) {
       switch (m.role) {
         case 'user':
-          result.add({'role': 'user', 'content': m.content});
+          if (m.images.isNotEmpty) {
+            // Multi-modal user message with images.
+            final content = <Map<String, dynamic>>[];
+            for (final img in m.images) {
+              if (wireFamily == WireFamily.anthropicCompatible) {
+                content.add({
+                  'type': 'image',
+                  'source': {
+                    'type': 'base64',
+                    'media_type': img.mediaType,
+                    'data': img.base64Data,
+                  },
+                });
+              } else {
+                content.add({
+                  'type': 'image_url',
+                  'image_url': {
+                    'url':
+                        'data:${img.mediaType};base64,${img.base64Data}',
+                  },
+                });
+              }
+            }
+            if (m.content.isNotEmpty) {
+              content.add({'type': 'text', 'text': m.content});
+            }
+            result.add({'role': 'user', 'content': content});
+          } else {
+            result.add({'role': 'user', 'content': m.content});
+          }
         case 'system':
           result.add({'role': 'system', 'content': m.content});
         case 'ai':

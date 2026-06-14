@@ -56,6 +56,7 @@ class Messages extends Table {
   /// keep in full. The chat bubble uses this to render the
   /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
   IntColumn get preCompressTokens => integer().nullable()();
+  TextColumn get images => text().withDefault(const Constant(''))();
   IntColumn get createdAt => integer()();
 }
 

@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:nocterm/nocterm.dart';
+import '../models/image_attachment.dart';
 import '../models/slash_command.dart';
 import '../services/provider_service.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/clipboard_image.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../commands/registry.dart';
 import 'chat_turn_orchestrator.dart';
@@ -37,6 +41,7 @@ class ChatInput extends StatefulComponent {
   final Future<void> Function(int sessionId) onSwitchSession;
   final Future<void> Function() onInitSessions;
   final Future<void> Function() onCreateNewSession;
+  final void Function(ImageAttachment image)? onAttachClipboardImage;
 
   const ChatInput({
     super.key,
@@ -55,6 +60,7 @@ class ChatInput extends StatefulComponent {
     required this.onSwitchSession,
     required this.onInitSessions,
     required this.onCreateNewSession,
+    this.onAttachClipboardImage,
   });
 
   @override
@@ -378,6 +384,27 @@ class ChatInputState extends State<ChatInput> {
 
     final overlay = component.overlayController;
     if (overlay.showSessionManager) return true;
+
+    // --- Ctrl+V: try clipboard image if current model supports it ---
+    if (event.logicalKey == LogicalKey.keyV && event.isControlPressed &&
+        !event.isShiftPressed && !event.isAltPressed) {
+      final sessionId = component.sessionController.currentSessionId;
+      if (sessionId != null && component.onAttachClipboardImage != null) {
+        // Check if the current model supports images
+        final modelKey = component.sessionController.currentSession.model;
+        final imageKeys = component.providerServiceReady
+            ? component.providerService.imageModelKeys()
+            : <String>{};
+        if (imageKeys.contains(modelKey)) {
+          // Try reading an image from the clipboard asynchronously.
+          // This is best-effort — if no image is on the clipboard,
+          // the text paste falls through to the default handler.
+          _tryClipboardImage(sessionId);
+        }
+      }
+      // Don't consume the event — let the default text paste proceed.
+      // If a clipboard image was found, it's handled asynchronously.
+    }
 
     final tc = component.textController;
     final text = tc.text;
@@ -757,6 +784,126 @@ class ChatInputState extends State<ChatInput> {
     return null;
   }
 
+  /// Insert an `[ image N ]` text marker at the current cursor
+  /// position. The [index] is the 1-based position in the pending
+  /// image list. A space is added after the marker so the user can
+  /// type their message right after it. Used to give the user
+  /// visible feedback in the input box that an image is attached
+  /// (mirroring how opencode renders inline markers in its prompt
+  /// input).
+  void insertImageMarker(int index) {
+    final tc = component.textController;
+    final text = tc.text;
+    final selection = tc.selection;
+    final cursor = selection.extentOffset.clamp(0, text.length);
+    final marker = '[ image $index ] ';
+    final newText = text.replaceRange(cursor, cursor, marker);
+    tc.text = newText;
+    tc.selection = TextSelection.collapsed(offset: cursor + marker.length);
+    setState(() {});
+  }
+
+  /// Attempt to read an image from the system clipboard and add it as
+  /// a pending attachment. Called on Ctrl+V when the current model
+  /// supports images. This is best-effort — if no image is on the
+  /// clipboard, nothing happens (the text paste proceeds normally).
+  Future<void> _tryClipboardImage(int sessionId) async {
+    try {
+      final result = await ClipboardImageReader.readImage();
+      if (result != null) {
+        final image = ImageAttachment.fromBytes(
+          bytes: result.bytes,
+          mediaType: result.mediaType,
+          label: result.label,
+        );
+        component.onAttachClipboardImage?.call(image);
+        final sizeKB = (result.bytes.length / 1024).toStringAsFixed(0);
+        component.turnOrchestrator.showToast(
+          '📎 Clipboard image attached ($sizeKB KB). '
+          'Type your message and press Enter to send.',
+          mode: ToastMode.status,
+        );
+        setState(() {});
+      }
+    } catch (_) {
+      // Clipboard image reading failed — ignore silently.
+      // The text paste from the default handler will proceed.
+    }
+  }
+
+  /// Handle text pasted into the input. If the pasted text is a path
+  /// to a supported image file, attach it as a pending image and
+  /// return `true` to skip the default text insertion (so the user
+  /// doesn't see the raw path — they get an `[ image N ]` marker
+  /// instead). Otherwise return `false` to fall through to the
+  /// default paste behavior.
+  bool _handlePaste(String pastedText, int? sessionId) {
+    if (sessionId == null) return false;
+    final trimmed = pastedText.trim();
+    if (trimmed.isEmpty) return false;
+
+    // Only act if the model supports images.
+    if (component.onAttachClipboardImage == null) return false;
+    if (!component.providerServiceReady) return false;
+    final modelKey = component.sessionController.currentSession.model;
+    final imageKeys = component.providerService.imageModelKeys();
+    if (!imageKeys.contains(modelKey)) return false;
+
+    // Strip surrounding quotes and a leading "file://" prefix that
+    // some file managers include when copying a file as a URI.
+    var candidate = trimmed;
+    if (candidate.startsWith("'") && candidate.endsWith("'") ||
+        candidate.startsWith('"') && candidate.endsWith('"')) {
+      candidate = candidate.substring(1, candidate.length - 1);
+    }
+    if (candidate.startsWith('file://')) {
+      candidate = candidate.substring('file://'.length);
+    }
+
+    // Check the file exists and has a supported image extension.
+    if (!_looksLikeImagePath(candidate)) return false;
+    final file = File(candidate);
+    if (!file.existsSync()) return false;
+
+    // Try to load and attach the image asynchronously. We *consume*
+    // the paste (return true) so the user doesn't see the raw path
+    // appear in the input — instead they'll see the `[ image N ]`
+    // marker that gets inserted.
+    _tryAttachImageFile(file, sessionId);
+    return true;
+  }
+
+  /// Heuristic: does this path look like an image file? Checks the
+  /// extension against [ImageAttachment.extensionMediaTypes]. Cheap
+  /// to run, safe to call on every paste.
+  bool _looksLikeImagePath(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot == -1 || dot == path.length - 1) return false;
+    final ext = path.substring(dot + 1).toLowerCase();
+    return ImageAttachment.isImageExtension(ext);
+  }
+
+  /// Load [file] as an image, attach it as a pending image, and
+  /// insert an `[ image N ]` marker at the cursor. Runs as a
+  /// fire-and-forget Future; surfaces errors as toasts.
+  Future<void> _tryAttachImageFile(File file, int sessionId) async {
+    try {
+      final image = await ImageAttachment.fromFile(file.path);
+      component.onAttachClipboardImage?.call(image);
+      final sizeKB = (file.lengthSync() / 1024).toStringAsFixed(0);
+      component.turnOrchestrator.showToast(
+        '📎 Attached: ${image.label} ($sizeKB KB). '
+        'Type your message and press Enter to send.',
+        mode: ToastMode.status,
+      );
+    } catch (e) {
+      component.turnOrchestrator.showToast(
+        'Failed to attach image: $e',
+        mode: ToastMode.error,
+      );
+    }
+  }
+
   void _sendMessage() {
     final text = component.textController.text.trim();
     if (text.isEmpty) return;
@@ -859,6 +1006,12 @@ class ChatInputState extends State<ChatInput> {
     final wasInterrupted =
         component.turnOrchestrator.wasInterrupted(sessionId);
 
+    // Check for pending image attachments.
+    final pendingImages = sessionId != null
+        ? component.sessionController.pendingImagesFor(sessionId)
+        : <ImageAttachment>[];
+    final hasImages = pendingImages.isNotEmpty;
+
     final overlay = component.overlayController;
     final placeholder = isStreaming
         ? _ctrlCQuitHint
@@ -868,7 +1021,9 @@ class ChatInputState extends State<ChatInput> {
                 : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
             ? 'Response was interrupted. Type a new message...'
-            : 'Type a message...';
+            : hasImages
+                ? 'Type message to send with ${pendingImages.length} image(s)...'
+                : 'Type a message...';
 
     return Container(
       padding: EdgeInsets.all(1),
@@ -878,6 +1033,11 @@ class ChatInputState extends State<ChatInput> {
             '> ',
             style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
+          if (hasImages)
+            Text(
+              '📎${pendingImages.length} ',
+              style: TextStyle(color: CruxTheme.of(context).metricsActive),
+            ),
           Expanded(
             child: TextField(
               controller: component.textController,
@@ -886,6 +1046,7 @@ class ChatInputState extends State<ChatInput> {
               style: TextStyle(color: CruxTheme.of(context).foreground),
               placeholder: placeholder,
               onKeyEvent: _handleKeyEvent,
+              onPaste: (pastedText) => _handlePaste(pastedText, sessionId),
               wordBoundaryProvider: cjkWordBoundaryProvider,
             ),
           ),

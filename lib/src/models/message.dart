@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'image_attachment.dart';
+
 class ToolCallData {
   final String callId;
   final String name;
@@ -45,6 +47,7 @@ class Message {
   final List<ToolCallData> toolCalls;
   final String toolCallId;
   final String tldr;
+  final List<ImageAttachment> images;
 
   Message({
     required this.id,
@@ -67,6 +70,7 @@ class Message {
     this.toolCalls = const [],
     this.toolCallId = '',
     this.tldr = '',
+    this.images = const [],
   }) : createdAt = createdAt ?? DateTime.now();
 
   static List<ToolCallData> parseToolCallsJson(String json) {
@@ -105,6 +109,7 @@ class Message {
     List<ToolCallData>? toolCalls,
     String? toolCallId,
     String? tldr,
+    List<ImageAttachment>? images,
   }) {
     return Message(
       id: id ?? this.id,
@@ -127,6 +132,7 @@ class Message {
       toolCalls: toolCalls ?? this.toolCalls,
       toolCallId: toolCallId ?? this.toolCallId,
       tldr: tldr ?? this.tldr,
+      images: images ?? this.images,
     );
   }
 

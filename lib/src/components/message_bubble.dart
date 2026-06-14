@@ -135,7 +135,11 @@ class MessageBubble extends StatelessComponent {
               Expanded(
                 child: isUser
                     ? Text(
-                        message.content,
+                        message.images.isNotEmpty
+                            ? (message.content.isEmpty
+                                ? '📎 ${message.images.length} image(s)'
+                                : '📎 ${message.images.length} • ${message.content}')
+                            : message.content,
                         style: TextStyle(
                           color: CruxTheme.of(context).foreground,
                         ),

@@ -23,7 +23,7 @@ class CruxDatabase extends _$CruxDatabase {
   CruxDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -75,6 +75,9 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 14) {
         await m.addColumn(offloadedContent, offloadedContent.intent);
+      }
+      if (from < 15) {
+        await m.addColumn(messages, messages.images);
       }
     },
   );

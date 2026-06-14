@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
+import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
@@ -615,14 +616,37 @@ class _ChatPanelState extends State<ChatPanel> {
             themeController: component.themeController,
             scrollController: scrollController,
             refresh: _refresh,
-            onSendTurn: (text) => _turnOrchestrator.sendMessage(
-              text: text,
-              textController: textController,
-            ),
+            onSendTurn: (text) {
+              final sid = _sessionController.currentSessionId;
+              final images = sid != null
+                  ? _sessionController.drainPendingImages(sid)
+                  : <ImageAttachment>[];
+              _turnOrchestrator.sendMessage(
+                text: text,
+                textController: textController,
+                images: images,
+              );
+            },
             onExecuteCommand: _executeCommand,
             onSwitchSession: _switchSession,
             onInitSessions: _initSessions,
             onCreateNewSession: _createNewSession,
+            onAttachClipboardImage: (image) {
+              final sid = _sessionController.currentSessionId;
+              if (sid != null) {
+                _sessionController.addPendingImage(sid, image);
+                // Insert an inline text marker at the cursor so the
+                // user sees where the image is referenced in their
+                // message (mirroring opencode's `[image:filename]`
+                // placeholder pattern). The marker is purely
+                // informational — the actual image data lives in
+                // `pendingImages` and is sent alongside the text.
+                final index =
+                    _sessionController.pendingImagesFor(sid).length;
+                _chatInputKey.currentState?.insertImageMarker(index);
+                _refresh();
+              }
+            },
           ),
         ]);
 

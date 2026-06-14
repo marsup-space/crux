@@ -1303,6 +1303,16 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _imagesMeta = const VerificationMeta('images');
+  @override
+  late final GeneratedColumn<String> images = GeneratedColumn<String>(
+    'images',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1335,6 +1345,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     error,
     parentMsgId,
     preCompressTokens,
+    images,
     createdAt,
   ];
   @override
@@ -1488,6 +1499,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('images')) {
+      context.handle(
+        _imagesMeta,
+        images.isAcceptableOrUnknown(data['images']!, _imagesMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1581,6 +1598,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}pre_compress_tokens'],
       ),
+      images: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}images'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1621,6 +1642,7 @@ class Message extends DataClass implements Insertable<Message> {
   /// keep in full. The chat bubble uses this to render the
   /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
   final int? preCompressTokens;
+  final String images;
   final int createdAt;
   const Message({
     required this.id,
@@ -1642,6 +1664,7 @@ class Message extends DataClass implements Insertable<Message> {
     this.error,
     this.parentMsgId,
     this.preCompressTokens,
+    required this.images,
     required this.createdAt,
   });
   @override
@@ -1674,6 +1697,7 @@ class Message extends DataClass implements Insertable<Message> {
     if (!nullToAbsent || preCompressTokens != null) {
       map['pre_compress_tokens'] = Variable<int>(preCompressTokens);
     }
+    map['images'] = Variable<String>(images);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -1707,6 +1731,7 @@ class Message extends DataClass implements Insertable<Message> {
       preCompressTokens: preCompressTokens == null && nullToAbsent
           ? const Value.absent()
           : Value(preCompressTokens),
+      images: Value(images),
       createdAt: Value(createdAt),
     );
   }
@@ -1738,6 +1763,7 @@ class Message extends DataClass implements Insertable<Message> {
       error: serializer.fromJson<String?>(json['error']),
       parentMsgId: serializer.fromJson<int?>(json['parentMsgId']),
       preCompressTokens: serializer.fromJson<int?>(json['preCompressTokens']),
+      images: serializer.fromJson<String>(json['images']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -1764,6 +1790,7 @@ class Message extends DataClass implements Insertable<Message> {
       'error': serializer.toJson<String?>(error),
       'parentMsgId': serializer.toJson<int?>(parentMsgId),
       'preCompressTokens': serializer.toJson<int?>(preCompressTokens),
+      'images': serializer.toJson<String>(images),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -1788,6 +1815,7 @@ class Message extends DataClass implements Insertable<Message> {
     Value<String?> error = const Value.absent(),
     Value<int?> parentMsgId = const Value.absent(),
     Value<int?> preCompressTokens = const Value.absent(),
+    String? images,
     int? createdAt,
   }) => Message(
     id: id ?? this.id,
@@ -1813,6 +1841,7 @@ class Message extends DataClass implements Insertable<Message> {
     preCompressTokens: preCompressTokens.present
         ? preCompressTokens.value
         : this.preCompressTokens,
+    images: images ?? this.images,
     createdAt: createdAt ?? this.createdAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -1852,6 +1881,7 @@ class Message extends DataClass implements Insertable<Message> {
       preCompressTokens: data.preCompressTokens.present
           ? data.preCompressTokens.value
           : this.preCompressTokens,
+      images: data.images.present ? data.images.value : this.images,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1878,13 +1908,14 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
           ..write('preCompressTokens: $preCompressTokens, ')
+          ..write('images: $images, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     sessionId,
     role,
@@ -1904,8 +1935,9 @@ class Message extends DataClass implements Insertable<Message> {
     error,
     parentMsgId,
     preCompressTokens,
+    images,
     createdAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1929,6 +1961,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.error == this.error &&
           other.parentMsgId == this.parentMsgId &&
           other.preCompressTokens == this.preCompressTokens &&
+          other.images == this.images &&
           other.createdAt == this.createdAt);
 }
 
@@ -1952,6 +1985,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String?> error;
   final Value<int?> parentMsgId;
   final Value<int?> preCompressTokens;
+  final Value<String> images;
   final Value<int> createdAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -1973,6 +2007,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
     this.preCompressTokens = const Value.absent(),
+    this.images = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -1995,6 +2030,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
     this.preCompressTokens = const Value.absent(),
+    this.images = const Value.absent(),
     required int createdAt,
   }) : sessionId = Value(sessionId),
        role = Value(role),
@@ -2019,6 +2055,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? error,
     Expression<int>? parentMsgId,
     Expression<int>? preCompressTokens,
+    Expression<String>? images,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -2042,6 +2079,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (error != null) 'error': error,
       if (parentMsgId != null) 'parent_msg_id': parentMsgId,
       if (preCompressTokens != null) 'pre_compress_tokens': preCompressTokens,
+      if (images != null) 'images': images,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -2066,6 +2104,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String?>? error,
     Value<int?>? parentMsgId,
     Value<int?>? preCompressTokens,
+    Value<String>? images,
     Value<int>? createdAt,
   }) {
     return MessagesCompanion(
@@ -2088,6 +2127,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       error: error ?? this.error,
       parentMsgId: parentMsgId ?? this.parentMsgId,
       preCompressTokens: preCompressTokens ?? this.preCompressTokens,
+      images: images ?? this.images,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -2152,6 +2192,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (preCompressTokens.present) {
       map['pre_compress_tokens'] = Variable<int>(preCompressTokens.value);
     }
+    if (images.present) {
+      map['images'] = Variable<String>(images.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -2180,6 +2223,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
           ..write('preCompressTokens: $preCompressTokens, ')
+          ..write('images: $images, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -4341,6 +4385,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<String?> error,
       Value<int?> parentMsgId,
       Value<int?> preCompressTokens,
+      Value<String> images,
       required int createdAt,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -4364,6 +4409,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String?> error,
       Value<int?> parentMsgId,
       Value<int?> preCompressTokens,
+      Value<String> images,
       Value<int> createdAt,
     });
 
@@ -4504,6 +4550,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get preCompressTokens => $composableBuilder(
     column: $table.preCompressTokens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get images => $composableBuilder(
+    column: $table.images,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4660,6 +4711,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get images => $composableBuilder(
+    column: $table.images,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4768,6 +4824,9 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get images =>
+      $composableBuilder(column: $table.images, builder: (column) => column);
+
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -4867,6 +4926,7 @@ class $$MessagesTableTableManager
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
                 Value<int?> preCompressTokens = const Value.absent(),
+                Value<String> images = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -4888,6 +4948,7 @@ class $$MessagesTableTableManager
                 error: error,
                 parentMsgId: parentMsgId,
                 preCompressTokens: preCompressTokens,
+                images: images,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -4911,6 +4972,7 @@ class $$MessagesTableTableManager
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
                 Value<int?> preCompressTokens = const Value.absent(),
+                Value<String> images = const Value.absent(),
                 required int createdAt,
               }) => MessagesCompanion.insert(
                 id: id,
@@ -4932,6 +4994,7 @@ class $$MessagesTableTableManager
                 error: error,
                 parentMsgId: parentMsgId,
                 preCompressTokens: preCompressTokens,
+                images: images,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0

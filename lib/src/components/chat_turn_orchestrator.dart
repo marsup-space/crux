@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/session.dart';
 import '../services/auxiliary_prompts.dart';
@@ -96,6 +97,7 @@ class ChatTurnOrchestrator {
   Future<void> sendMessage({
     required String text,
     required TextEditingController textController,
+    List<ImageAttachment> images = const [],
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -122,7 +124,7 @@ class ChatTurnOrchestrator {
 
     textController.clear();
 
-    await sendTurn(text: trimmed);
+    await sendTurn(text: trimmed, images: images);
   }
 
   /// Drive a single chat turn. When [text] is non-null, [text] is
@@ -132,7 +134,7 @@ class ChatTurnOrchestrator {
   /// user message is added, the in-memory cache is left alone, and
   /// the LLM is called with whatever the persisted wire-format
   /// history currently ends on.
-  Future<void> sendTurn({String? text}) async {
+  Future<void> sendTurn({String? text, List<ImageAttachment> images = const []}) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
@@ -211,6 +213,7 @@ class ChatTurnOrchestrator {
         sessionId: sessionId,
         role: 'user',
         content: text,
+        images: images,
       );
       _sessionController.messageCache[sessionId] = [
         ...?_sessionController.messageCache[sessionId],
@@ -227,6 +230,7 @@ class ChatTurnOrchestrator {
     _chatService.sendMessage(
       sessionId: sessionId,
       userContent: text,
+      images: images,
       session: _sessionController.currentSession,
       runtime: rt,
       onDelta: (delta) {
