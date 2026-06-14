@@ -254,6 +254,16 @@ class OverlayController {
     );
   }
 
+  /// The currently highlighted file match, or `null` if the
+  /// popover is empty / out of range. Used by the chat input's
+  /// right-arrow handler to drill into directories.
+  FileMatch? get selectedFile {
+    if (selectedFileIndex < 0 || selectedFileIndex >= filteredFiles.length) {
+      return null;
+    }
+    return filteredFiles[selectedFileIndex];
+  }
+
   void onHoverFile(int index) {
     selectedFileIndex = index;
     fileScrollOffset = computeScrollOffset(index, fileScrollOffset, maxVisibleItems);
@@ -294,9 +304,12 @@ class OverlayController {
         atStart ?? _findLastAt(text, cursor);
     if (resolvedStart < 0) return;
 
-    final insertion = selected.kind == FileMatchKind.directory
-        ? '@${selected.relativePath} '
-        : '@${selected.relativePath} ';
+    // Always append a trailing space — whether the user picked a
+    // file or a directory — so the @-mention ends and they can
+    // keep typing prose. To drill *into* a directory the chat
+    // input's right-arrow handler takes a different path (it
+    // appends `/` and keeps the popover open).
+    final insertion = '@${selected.relativePath} ';
 
     // The query runs from resolvedStart to the current cursor; we
     // replace that span in place. The new cursor lands right after

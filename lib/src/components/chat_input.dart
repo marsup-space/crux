@@ -950,6 +950,41 @@ class ChatInputState extends State<ChatInput> {
         component.refresh();
         return true;
       }
+      if (event.logicalKey == LogicalKey.arrowRight) {
+        // Right-arrow drills into the highlighted directory: if
+        // the current selection is a directory, treat it as if the
+        // user had just typed `@<path>/` and re-run the file
+        // browser with that as the new query. This matches the
+        // "open the folder" muscle memory from GUI file pickers.
+        final selected = overlay.selectedFile;
+        if (selected != null && selected.isDirectory) {
+          final mention = _findActiveMention();
+          if (mention != null) {
+            // The relative path for a directory already ends with
+            // a separator (see FileSearcher._walk) — strip it so
+            // the re-built query has exactly one trailing `/`.
+            final path = selected.relativePath;
+            final stripped = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+            final newQuery = '$stripped/';
+            final tc = component.textController;
+            final text = tc.text;
+            final newText = text.replaceRange(
+              mention.atOffset,
+              mention.cursor,
+              '@$newQuery',
+            );
+            tc.text = newText;
+            tc.selection = TextSelection.collapsed(
+              offset: mention.atOffset + 1 + newQuery.length,
+            );
+            // _onTextChanged will fire from the textController
+            // listener, refresh the file list, and re-show the
+            // popover automatically.
+            return true;
+          }
+        }
+        return false;
+      }
       if (event.logicalKey == LogicalKey.tab) {
         // Tab → also accept the current selection (matches the
         // file-picker muscle memory from GUI IDEs).

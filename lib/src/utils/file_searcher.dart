@@ -18,6 +18,11 @@ class FileMatch {
     required this.kind,
     required this.score,
   });
+
+  /// True if this match is a directory. Convenience for callers
+  /// that want to handle the two kinds differently (e.g. the
+  /// @-mention popover drills into directories on right-arrow).
+  bool get isDirectory => kind == FileMatchKind.directory;
 }
 
 enum FileMatchKind { file, directory }
