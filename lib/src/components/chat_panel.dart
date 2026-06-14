@@ -350,6 +350,14 @@ class _ChatPanelState extends State<ChatPanel> {
     return Fullpane(
       title: 'Fullpane',
       onClose: _closeFullpane,
+      contentBuilder: (context) => Center(
+        child: Text(
+          'Fullpane placeholder content',
+          style: TextStyle(
+            color: CruxTheme.of(context).onSurfaceDim,
+          ),
+        ),
+      ),
     );
   }
 

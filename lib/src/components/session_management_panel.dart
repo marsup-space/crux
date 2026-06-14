@@ -2,7 +2,7 @@ import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/terminal_symbols.dart';
-import 'ui/modal_panel.dart';
+import 'ui/fullpane.dart';
 
 class SessionManagementPanel extends StatefulComponent {
   final List<Session> sessions;
@@ -207,11 +207,11 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     final sorted = _sorted;
 
     if (_mode == _PanelMode.rename) {
-      return _buildRenameOverlay(sorted);
+      return _buildRenameFullpane(sorted);
     }
 
-    final shortcuts = <ModalPanelShortcut>[
-      ModalPanelShortcut(
+    final shortcuts = <FullpaneShortcut>[
+      FullpaneShortcut(
         label: 'delete',
         keyHint: 'Ctrl+D',
         matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyD,
@@ -219,7 +219,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
             ? _confirmDelete
             : _initiateDelete,
       ),
-      ModalPanelShortcut(
+      FullpaneShortcut(
         label: 'rename',
         keyHint: 'Ctrl+R',
         matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyR,
@@ -227,9 +227,9 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       ),
     ];
 
-    return ModalPanel(
+    return Fullpane(
       title: _mode == _PanelMode.confirmDelete ? 'Confirm Delete' : 'Sessions',
-      onDismiss: component.onDismiss,
+      onClose: component.onDismiss,
       shortcuts: shortcuts,
       onKeyEvent: _handleKeyEvent,
       contentBuilder: (context) {
@@ -425,13 +425,13 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     );
   }
 
-  Component _buildRenameOverlay(List<Session> sorted) {
+  Component _buildRenameFullpane(List<Session> sorted) {
     if (sorted.isEmpty) return const SizedBox();
     final session = sorted[_selectedIndex];
 
-    return ModalPanel(
+    return Fullpane(
       title: 'Rename Session',
-      onDismiss: _cancelAction,
+      onClose: _cancelAction,
       contentBuilder: (context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -13,22 +13,44 @@ const kFullpaneNarrowThreshold = 100;
 /// that there's no room for margins around the pane.
 const kFullpaneShortThreshold = 24;
 
+/// A shortcut hint displayed in the fullpane footer.
+class FullpaneShortcut {
+  final String label;
+  final String keyHint;
+  final bool Function(KeyboardEvent event) matches;
+  final VoidCallback onActivate;
+
+  const FullpaneShortcut({
+    required this.label,
+    required this.keyHint,
+    required this.matches,
+    required this.onActivate,
+  });
+}
+
 /// A huge, near-full-screen modal pane. When the terminal is wide
 /// and tall enough it renders with a margin on each side so the
-/// underlying UI is still visible around the edges; when the
-/// terminal is narrow (< [kFullpaneNarrowThreshold] columns) or
+/// underlying UI is still visible (dimmed) around the edges; when
+/// the terminal is narrow (< [kFullpaneNarrowThreshold] columns) or
 /// short (< [kFullpaneShortThreshold] rows) it fills the entire
 /// screen instead.
 ///
-/// Currently a placeholder — title, content area, and a close
-/// button in the top-right corner.
+/// Provides a title bar with close button, an expanded content area,
+/// and an optional shortcuts footer — the same chrome that
+/// [ModalPanel] offers, but in a larger, near-full-screen form.
 class Fullpane extends StatefulComponent {
   final String title;
   final VoidCallback onClose;
+  final Component Function(BuildContext context) contentBuilder;
+  final List<FullpaneShortcut> shortcuts;
+  final KeyEventHandler? onKeyEvent;
 
   const Fullpane({
     required this.title,
     required this.onClose,
+    required this.contentBuilder,
+    this.shortcuts = const [],
+    this.onKeyEvent,
     super.key,
   });
 
@@ -104,23 +126,27 @@ class _FullpaneState extends State<Fullpane> {
                             color: CruxTheme.of(context).hintText,
                             hoverColor: CruxTheme.of(context).foreground,
                             bgColor: CruxTheme.of(context).surface,
-                            hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
+                            hoverBgColor:
+                                CruxTheme.of(context).buttonBackgroundHover,
                           ),
                         ],
                       ),
-                      Divider(color: CruxTheme.of(context).outline, height: 1),
-
-                      // ── Content area (placeholder) ──
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            'Fullpane placeholder content',
-                            style: TextStyle(
-                              color: CruxTheme.of(context).onSurfaceDim,
-                            ),
-                          ),
-                        ),
+                      Divider(
+                        color: CruxTheme.of(context).outline,
+                        height: 1,
                       ),
+
+                      // ── Content area ──
+                      Expanded(child: component.contentBuilder(context)),
+
+                      // ── Shortcuts footer ──
+                      if (component.shortcuts.isNotEmpty) ...[
+                        Divider(
+                          color: CruxTheme.of(context).outline,
+                          height: 1,
+                        ),
+                        _buildShortcutsFooter(),
+                      ],
                     ],
                   ),
                 ),
@@ -132,10 +158,44 @@ class _FullpaneState extends State<Fullpane> {
     );
   }
 
+  Component _buildShortcutsFooter() {
+    final items = <Component>[];
+    for (int i = 0; i < component.shortcuts.length; i++) {
+      if (i > 0) {
+        items.add(
+          Text(
+            '  ',
+            style: TextStyle(color: CruxTheme.of(context).hintText),
+          ),
+        );
+      }
+      final s = component.shortcuts[i];
+      items.add(
+        Text(
+          '${s.keyHint} ${s.label}',
+          style: TextStyle(
+            color: CruxTheme.of(context).onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return Row(children: items);
+  }
+
   bool _handleKeyEvent(KeyboardEvent event) {
+    if (component.onKeyEvent != null) {
+      final handled = component.onKeyEvent!(event);
+      if (handled) return true;
+    }
     if (event.logicalKey == LogicalKey.escape) {
       component.onClose();
       return true;
+    }
+    for (final shortcut in component.shortcuts) {
+      if (shortcut.matches(event)) {
+        shortcut.onActivate();
+        return true;
+      }
     }
     // Consume all other keys so the underlying chat doesn't react
     // while the fullpane is open.
