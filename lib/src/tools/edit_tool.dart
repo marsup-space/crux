@@ -242,9 +242,10 @@ class EditTool extends LargePayloadTool with IntentionalTool {
   ) {
     final offloaded = argsToOffload(args);
     if (offloaded.isEmpty || ctx.callId == null) return result;
+    final intent = (this as IntentionalTool).intentFromArgs(args);
     return ToolResult(
       title: result.title,
-      output: '${result.output}\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded)}',
+      output: '${result.output}\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded, intent: intent)}',
     );
   }
 

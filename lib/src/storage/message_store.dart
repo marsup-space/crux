@@ -245,6 +245,7 @@ class MessageStore {
     required int byteSize,
     required int lineCount,
     required String content,
+    String intent = '',
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await _db.into(_db.offloadedContent).insert(
@@ -255,6 +256,7 @@ class MessageStore {
         byteSize: byteSize,
         lineCount: lineCount,
         content: content,
+        intent: Value(intent),
         createdAt: nowMs,
       ),
       mode: InsertMode.insertOrReplace,

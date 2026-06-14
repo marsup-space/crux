@@ -43,11 +43,11 @@ class ExtraInfoPanel extends StatefulComponent {
   /// Number of archived sessions (not included in [sessions]).
   final int archivedCount;
 
-  /// Session IDs that are currently responding (streaming).  This is
-  /// the SSoT for "is a session running?" — used to drive the
-  /// animation and status display instead of [Session.status], which
-  /// can lag behind the runtime state.
-  final Set<int> respondingSessionIds;
+  /// Live check: is the given session currently responding (LLM
+  /// streaming)?  This is called on every animation tick so it
+  /// must read from the runtime state directly, not from a stale
+  /// snapshot.
+  final bool Function(int sessionId) isSessionResponding;
 
   /// Invoked when the user clicks the `open` segment of the project
   /// path button. Should open the project directory in the system
@@ -64,7 +64,7 @@ class ExtraInfoPanel extends StatefulComponent {
     required this.currentSessionId,
     required this.onSwitchSession,
     required this.archivedCount,
-    required this.respondingSessionIds,
+    required this.isSessionResponding,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
@@ -201,7 +201,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
   bool _hasRespondingSession() {
     return component.sessions.any(
-      (s) => component.respondingSessionIds.contains(s.id),
+      (s) => component.isSessionResponding(s.id),
     );
   }
 
@@ -466,7 +466,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     // session is responding, it's running regardless of what
     // session.status says (which can lag).  Otherwise use the
     // persisted status.
-    final isResponding = panel.respondingSessionIds.contains(session.id);
+    final isResponding = panel.isSessionResponding(session.id);
     final status = isResponding
         ? SessionStatus.running
         : session.status;

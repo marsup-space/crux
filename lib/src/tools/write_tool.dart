@@ -172,7 +172,8 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
 
     final offloaded = argsToOffload(args);
     if (offloaded.isNotEmpty && ctx.callId != null) {
-      output = '$output\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded)}';
+      final toolIntent = (this as IntentionalTool).intentFromArgs(args);
+      output = '$output\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded, intent: toolIntent)}';
     }
 
     return ToolResult(

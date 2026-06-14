@@ -2926,6 +2926,16 @@ class $OffloadedContentTable extends OffloadedContent
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _intentMeta = const VerificationMeta('intent');
+  @override
+  late final GeneratedColumn<String> intent = GeneratedColumn<String>(
+    'intent',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2945,6 +2955,7 @@ class $OffloadedContentTable extends OffloadedContent
     byteSize,
     lineCount,
     content,
+    intent,
     createdAt,
   ];
   @override
@@ -3007,6 +3018,12 @@ class $OffloadedContentTable extends OffloadedContent
     } else if (isInserting) {
       context.missing(_contentMeta);
     }
+    if (data.containsKey('intent')) {
+      context.handle(
+        _intentMeta,
+        intent.isAcceptableOrUnknown(data['intent']!, _intentMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -3048,6 +3065,10 @@ class $OffloadedContentTable extends OffloadedContent
         DriftSqlType.string,
         data['${effectivePrefix}content'],
       )!,
+      intent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}intent'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -3069,6 +3090,7 @@ class OffloadedContentData extends DataClass
   final int byteSize;
   final int lineCount;
   final String content;
+  final String intent;
   final int createdAt;
   const OffloadedContentData({
     required this.sessionId,
@@ -3077,6 +3099,7 @@ class OffloadedContentData extends DataClass
     required this.byteSize,
     required this.lineCount,
     required this.content,
+    required this.intent,
     required this.createdAt,
   });
   @override
@@ -3088,6 +3111,7 @@ class OffloadedContentData extends DataClass
     map['byte_size'] = Variable<int>(byteSize);
     map['line_count'] = Variable<int>(lineCount);
     map['content'] = Variable<String>(content);
+    map['intent'] = Variable<String>(intent);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -3100,6 +3124,7 @@ class OffloadedContentData extends DataClass
       byteSize: Value(byteSize),
       lineCount: Value(lineCount),
       content: Value(content),
+      intent: Value(intent),
       createdAt: Value(createdAt),
     );
   }
@@ -3116,6 +3141,7 @@ class OffloadedContentData extends DataClass
       byteSize: serializer.fromJson<int>(json['byteSize']),
       lineCount: serializer.fromJson<int>(json['lineCount']),
       content: serializer.fromJson<String>(json['content']),
+      intent: serializer.fromJson<String>(json['intent']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -3129,6 +3155,7 @@ class OffloadedContentData extends DataClass
       'byteSize': serializer.toJson<int>(byteSize),
       'lineCount': serializer.toJson<int>(lineCount),
       'content': serializer.toJson<String>(content),
+      'intent': serializer.toJson<String>(intent),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -3140,6 +3167,7 @@ class OffloadedContentData extends DataClass
     int? byteSize,
     int? lineCount,
     String? content,
+    String? intent,
     int? createdAt,
   }) => OffloadedContentData(
     sessionId: sessionId ?? this.sessionId,
@@ -3148,6 +3176,7 @@ class OffloadedContentData extends DataClass
     byteSize: byteSize ?? this.byteSize,
     lineCount: lineCount ?? this.lineCount,
     content: content ?? this.content,
+    intent: intent ?? this.intent,
     createdAt: createdAt ?? this.createdAt,
   );
   OffloadedContentData copyWithCompanion(OffloadedContentCompanion data) {
@@ -3158,6 +3187,7 @@ class OffloadedContentData extends DataClass
       byteSize: data.byteSize.present ? data.byteSize.value : this.byteSize,
       lineCount: data.lineCount.present ? data.lineCount.value : this.lineCount,
       content: data.content.present ? data.content.value : this.content,
+      intent: data.intent.present ? data.intent.value : this.intent,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -3171,6 +3201,7 @@ class OffloadedContentData extends DataClass
           ..write('byteSize: $byteSize, ')
           ..write('lineCount: $lineCount, ')
           ..write('content: $content, ')
+          ..write('intent: $intent, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -3184,6 +3215,7 @@ class OffloadedContentData extends DataClass
     byteSize,
     lineCount,
     content,
+    intent,
     createdAt,
   );
   @override
@@ -3196,6 +3228,7 @@ class OffloadedContentData extends DataClass
           other.byteSize == this.byteSize &&
           other.lineCount == this.lineCount &&
           other.content == this.content &&
+          other.intent == this.intent &&
           other.createdAt == this.createdAt);
 }
 
@@ -3206,6 +3239,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
   final Value<int> byteSize;
   final Value<int> lineCount;
   final Value<String> content;
+  final Value<String> intent;
   final Value<int> createdAt;
   final Value<int> rowid;
   const OffloadedContentCompanion({
@@ -3215,6 +3249,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
     this.byteSize = const Value.absent(),
     this.lineCount = const Value.absent(),
     this.content = const Value.absent(),
+    this.intent = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -3225,6 +3260,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
     required int byteSize,
     required int lineCount,
     required String content,
+    this.intent = const Value.absent(),
     required int createdAt,
     this.rowid = const Value.absent(),
   }) : sessionId = Value(sessionId),
@@ -3241,6 +3277,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
     Expression<int>? byteSize,
     Expression<int>? lineCount,
     Expression<String>? content,
+    Expression<String>? intent,
     Expression<int>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -3251,6 +3288,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
       if (byteSize != null) 'byte_size': byteSize,
       if (lineCount != null) 'line_count': lineCount,
       if (content != null) 'content': content,
+      if (intent != null) 'intent': intent,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -3263,6 +3301,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
     Value<int>? byteSize,
     Value<int>? lineCount,
     Value<String>? content,
+    Value<String>? intent,
     Value<int>? createdAt,
     Value<int>? rowid,
   }) {
@@ -3273,6 +3312,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
       byteSize: byteSize ?? this.byteSize,
       lineCount: lineCount ?? this.lineCount,
       content: content ?? this.content,
+      intent: intent ?? this.intent,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -3299,6 +3339,9 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
     if (content.present) {
       map['content'] = Variable<String>(content.value);
     }
+    if (intent.present) {
+      map['intent'] = Variable<String>(intent.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -3317,6 +3360,7 @@ class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
           ..write('byteSize: $byteSize, ')
           ..write('lineCount: $lineCount, ')
           ..write('content: $content, ')
+          ..write('intent: $intent, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -5676,6 +5720,7 @@ typedef $$OffloadedContentTableCreateCompanionBuilder =
       required int byteSize,
       required int lineCount,
       required String content,
+      Value<String> intent,
       required int createdAt,
       Value<int> rowid,
     });
@@ -5687,6 +5732,7 @@ typedef $$OffloadedContentTableUpdateCompanionBuilder =
       Value<int> byteSize,
       Value<int> lineCount,
       Value<String> content,
+      Value<String> intent,
       Value<int> createdAt,
       Value<int> rowid,
     });
@@ -5758,6 +5804,11 @@ class $$OffloadedContentTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -5821,6 +5872,11 @@ class $$OffloadedContentTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -5873,6 +5929,9 @@ class $$OffloadedContentTableAnnotationComposer
 
   GeneratedColumn<String> get content =>
       $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get intent =>
+      $composableBuilder(column: $table.intent, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5937,6 +5996,7 @@ class $$OffloadedContentTableTableManager
                 Value<int> byteSize = const Value.absent(),
                 Value<int> lineCount = const Value.absent(),
                 Value<String> content = const Value.absent(),
+                Value<String> intent = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OffloadedContentCompanion(
@@ -5946,6 +6006,7 @@ class $$OffloadedContentTableTableManager
                 byteSize: byteSize,
                 lineCount: lineCount,
                 content: content,
+                intent: intent,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -5957,6 +6018,7 @@ class $$OffloadedContentTableTableManager
                 required int byteSize,
                 required int lineCount,
                 required String content,
+                Value<String> intent = const Value.absent(),
                 required int createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => OffloadedContentCompanion.insert(
@@ -5966,6 +6028,7 @@ class $$OffloadedContentTableTableManager
                 byteSize: byteSize,
                 lineCount: lineCount,
                 content: content,
+                intent: intent,
                 createdAt: createdAt,
                 rowid: rowid,
               ),

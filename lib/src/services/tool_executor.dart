@@ -62,6 +62,19 @@ class ToolExecutor {
     final tool = _registry.lookup(call.name);
     if (tool is! LargePayloadTool) return call;
 
+    // Extract intent from args if the tool supports it, so the
+    // stand-in pointer can carry a human-readable summary of what
+    // the offloaded content was about. This helps the LLM reason
+    // about compressed history without needing to recall the full
+    // bytes on every subsequent turn.
+    final String? intent;
+    if (tool is IntentionalTool) {
+      intent = (tool as IntentionalTool).intentFromArgs(call.input);
+    } else {
+      final v = call.input['intent'];
+      intent = v is String && v.isNotEmpty ? v : null;
+    }
+
     var modified = false;
     var newInput = call.input;
     for (final argKey in tool.offloadableArgs) {
@@ -79,6 +92,7 @@ class ToolExecutor {
         byteSize: bytes.length,
         lineCount: lineCount,
         content: value,
+        intent: intent ?? '',
       );
       newInput = Map<String, dynamic>.from(newInput);
       newInput[argKey] = _buildOffloadStandIn(
@@ -86,6 +100,7 @@ class ToolExecutor {
         argKey: argKey,
         lineCount: lineCount,
         bytes: bytes.length,
+        intent: intent,
       );
       modified = true;
     }
@@ -252,7 +267,7 @@ String _formatBytes(int bytes) {
 /// line with `N: `, so a stand-in starting with `[\d+` is
 /// visually adjacent to that prefix and gets mis-copied).
 ///
-/// Two properties that make the pointer robust against that bug:
+/// Three properties that make the pointer robust against that bug:
 ///
 /// 1. It does not start with `[\d+`. It starts with the literal
 ///    word `offloaded` so the LLM can recognize it as
@@ -263,13 +278,24 @@ String _formatBytes(int bytes) {
 ///    the LLM has the information it needs to recover the bytes
 ///    via the `recall` tool. (The previous format omitted this
 ///    and the LLM had no way to know how to recover.)
+///
+/// 3. When [intent] is provided, it is embedded in the pointer
+///    so the LLM can understand *what* the offloaded content was
+///    about without having to recall it — this is especially
+///    valuable on subsequent turns where the LLM is reasoning
+///    over compressed history and the full arg bytes are no
+///    longer in context.
 String _buildOffloadStandIn({
   required String callId,
   required String argKey,
   required int lineCount,
   required int bytes,
+  String? intent,
 }) {
   final compositeKey = '${callId}_$argKey';
-  return '[offloaded: $lineCount lines / ${_formatBytes(bytes)}; '
+  final intentFragment = intent != null && intent.isNotEmpty
+      ? '; intent: "$intent"'
+      : '';
+  return '[offloaded: $lineCount lines / ${_formatBytes(bytes)}$intentFragment; '
       'recall via offloaded_content(key="$compositeKey")]';
 }

@@ -197,8 +197,10 @@ abstract class LargePayloadTool extends ToolDef {
 /// output when one or more of its arguments are off-loaded by the
 /// chat service. The note tells the LLM (a) which arguments were
 /// moved, (b) the composite key(s) under offloaded_content where
-/// the original bytes live, and (c) that a stand-in pointer will
-/// substitute for the argument on subsequent turns.
+/// the original bytes live, (c) that a stand-in pointer will
+/// substitute for the argument on subsequent turns, and (d) the
+/// intent of the call so the LLM can reason about the offloaded
+/// content without recalling it.
 ///
 /// Tools call this from `execute` when [LargePayloadTool.argsToOffload]
 /// returns a non-empty list, so the agent sees a single
@@ -208,6 +210,7 @@ abstract class LargePayloadTool extends ToolDef {
 String buildOffloadNote({
   required String callId,
   required List<String> offloadedArgs,
+  String? intent,
 }) {
   if (offloadedArgs.isEmpty) return '';
   final keys = offloadedArgs
@@ -216,7 +219,10 @@ String buildOffloadNote({
   final argList = _formatArgList(offloadedArgs);
   final were = offloadedArgs.length == 1 ? 'was' : 'were';
   final pronoun = offloadedArgs.length == 1 ? 'it' : 'them';
-  return 'The $argList argument(s) exceeded the offload threshold and $were '
+  final intentFragment = intent != null && intent.isNotEmpty
+      ? " (intent: '$intent')"
+      : '';
+  return 'The $argList argument(s)$intentFragment exceeded the offload threshold and $were '
       'moved to the `offloaded_content` table (composite key(s): $keys) to '
       'reduce token usage; a stand-in pointer will substitute for $pronoun '
       'on subsequent turns.';

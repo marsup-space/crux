@@ -96,6 +96,7 @@ class OffloadedContent extends Table {
   IntColumn get byteSize => integer()();
   IntColumn get lineCount => integer()();
   TextColumn get content => text()();
+  TextColumn get intent => text().withDefault(const Constant(''))();
   IntColumn get createdAt => integer()();
 
   @override
