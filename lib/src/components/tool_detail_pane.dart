@@ -532,14 +532,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       children.add(Divider(color: theme.divider, height: 1));
     }
 
-    // Content with scrollbar and syntax-highlighted code blocks.
-    // For file tools, detect the language so the output (which often
-    // contains file content) gets highlighted.
-    final language = _detectLanguage();
-    final highlightedOutput = language != null && language.isNotEmpty
-        ? '```$language\n$output\n```'
-        : output;
-
+    // Content with scrollbar. The output is a status/result message,
+    // not source code, so we render it as plain markdown (no language
+    // code fences — those belong in the Input tab for the actual args).
     children.add(
       Expanded(
         child: Scrollbar(
@@ -551,7 +546,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
             controller: _outputScrollController,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-              child: HighlightedMarkdownText(highlightedOutput),
+              child: HighlightedMarkdownText(output),
             ),
           ),
         ),
