@@ -67,10 +67,23 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Map<String, String> _offloadedArgs = {};
   bool _offloadLoading = true;
 
+  /// Scroll controllers for each tab.
+  final _inputScrollController = ScrollController();
+  final _outputScrollController = ScrollController();
+  final _summaryScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _loadOffloadedContent();
+  }
+
+  @override
+  void dispose() {
+    _inputScrollController.dispose();
+    _outputScrollController.dispose();
+    _summaryScrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadOffloadedContent() async {
@@ -244,7 +257,16 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       }
     }
 
-    return ListView(children: children);
+    return Scrollbar(
+      controller: _inputScrollController,
+      thumbVisibility: true,
+      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      child: ListView(
+        controller: _inputScrollController,
+        children: children,
+      ),
+    );
   }
 
   Component _buildArgBlock(String key, dynamic value, CruxThemeData theme) {
@@ -264,7 +286,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         // Value was offloaded — try to recover the original from DB.
         final original = _offloadedArgs[key];
         if (original != null) {
-          return _buildArgBlockWithContent(key, original, theme, wasOffloaded: true);
+          return _buildArgBlockWithContent(
+            key, original, theme,
+            wasOffloaded: true,
+          );
         }
         // Still loading or couldn't recover — show compact summary.
         if (_offloadLoading) {
@@ -279,9 +304,24 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return _buildArgBlockWithContent(key, valueStr, theme);
   }
 
-  /// Render an argument with its full content, using a code block
-  /// for multi-line or long values. [wasOffloaded] indicates the
-  /// value was recovered from the offloaded_content table.
+  /// Detect the language for syntax highlighting from the tool call's
+  /// `filePath` / `path` argument. Returns null if unknown.
+  String? _detectLanguage() {
+    final tc = component.data.toolCall;
+    const pathKeys = ['filePath', 'file_path', 'path'];
+    for (final key in pathKeys) {
+      final path = tc.input[key];
+      if (path is String && path.isNotEmpty) {
+        return _languageFromPath(path);
+      }
+    }
+    return null;
+  }
+
+  /// Render an argument with its full content, using a syntax-
+  /// highlighted code block for multi-line or long values.
+  /// [wasOffloaded] indicates the value was recovered from the
+  /// offloaded_content table.
   Component _buildArgBlockWithContent(
     String key,
     String valueStr,
@@ -289,6 +329,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     bool wasOffloaded = false,
   }) {
     final isLong = valueStr.length > 80 || valueStr.contains('\n');
+
+    // For content-like args of file tools, use the file's language
+    // for syntax highlighting.
+    final language = _languageForArgKey(key);
 
     final headerSpans = <TextSpan>[];
     headerSpans.add(TextSpan(
@@ -330,12 +374,28 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           Container(
             padding: const EdgeInsets.only(left: 2),
             child: HighlightedMarkdownText(
-              '```\n$valueStr\n```',
+              '```$language\n$valueStr\n```',
               styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
             ),
           ),
       ],
     );
+  }
+
+  /// Determine the syntax-highlight language for a given arg key.
+  /// For file-content args (content, oldString, newString), detect
+  /// from the file path. For commands, use 'bash'. Otherwise no hint.
+  String _languageForArgKey(String key) {
+    switch (key) {
+      case 'content':
+      case 'oldString':
+      case 'newString':
+        return _detectLanguage() ?? '';
+      case 'command':
+        return 'bash';
+      default:
+        return '';
+    }
   }
 
   /// Build a compact summary for an offloadable argument
@@ -472,13 +532,27 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       children.add(Divider(color: theme.divider, height: 1));
     }
 
-    // Content
+    // Content with scrollbar and syntax-highlighted code blocks.
+    // For file tools, detect the language so the output (which often
+    // contains file content) gets highlighted.
+    final language = _detectLanguage();
+    final highlightedOutput = language != null && language.isNotEmpty
+        ? '```$language\n$output\n```'
+        : output;
+
     children.add(
       Expanded(
-        child: SingleChildScrollView(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: HighlightedMarkdownText(output),
+        child: Scrollbar(
+          controller: _outputScrollController,
+          thumbVisibility: true,
+          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+          trackColor: theme.surfaceVariant.withOpacity(0.3),
+          child: SingleChildScrollView(
+            controller: _outputScrollController,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+              child: HighlightedMarkdownText(highlightedOutput),
+            ),
           ),
         ),
       ),
@@ -630,7 +704,16 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       }
     }
 
-    return ListView(children: children);
+    return Scrollbar(
+      controller: _summaryScrollController,
+      thumbVisibility: true,
+      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      child: ListView(
+        controller: _summaryScrollController,
+        children: children,
+      ),
+    );
   }
 
   // ─── Shared helpers ────────────────────────────────────────────────
@@ -787,4 +870,63 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final trimmed = (period == -1 ? reason : reason.substring(0, period)).trim();
     return trimmed.isEmpty ? 'Auto-read' : 'Auto-read: $trimmed';
   }
+
+  /// Map a file extension to a TextMate grammar language identifier
+  /// understood by the highlight service.
+  static String? _languageFromPath(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot < 0 || dot >= path.length - 1) return null;
+    final ext = path.substring(dot + 1).toLowerCase();
+    return _extToLanguage[ext];
+  }
+
+  static const _extToLanguage = <String, String>{
+    'dart': 'dart',
+    'py': 'python',
+    'js': 'javascript',
+    'mjs': 'javascript',
+    'cjs': 'javascript',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'jsx': 'javascript',
+    'rs': 'rust',
+    'go': 'go',
+    'java': 'java',
+    'kt': 'kotlin',
+    'kts': 'kotlin',
+    'swift': 'swift',
+    'html': 'html',
+    'htm': 'html',
+    'css': 'css',
+    'scss': 'css',
+    'json': 'json',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'sql': 'sql',
+    'sh': 'bash',
+    'bash': 'bash',
+    'zsh': 'bash',
+    'toml': 'toml',
+    'xml': 'xml',
+    'md': 'markdown',
+    'c': 'c',
+    'cpp': 'cpp',
+    'cc': 'cpp',
+    'cxx': 'cpp',
+    'h': 'c',
+    'hpp': 'cpp',
+    'rb': 'ruby',
+    'php': 'php',
+    'lua': 'lua',
+    'pl': 'perl',
+    'r': 'r',
+    'scala': 'scala',
+    'ex': 'elixir',
+    'exs': 'elixir',
+    'erl': 'erlang',
+    'hs': 'haskell',
+    'clj': 'clojure',
+    'vue': 'html',
+    'svelte': 'html',
+  };
 }
