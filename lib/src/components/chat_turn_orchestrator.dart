@@ -297,8 +297,8 @@ class ChatTurnOrchestrator {
 
         // Refresh immediately so the session list picks up the status
         // change (idle/done) without waiting for the rest of the
-        // completion work (message reloads, tldr, title generation,
-        // etc.).
+        // completion work (message reloads, optional title/tldr
+        // generation, queued-message drain, etc.).
         _refresh();
 
         _streamingController.clearStreamingFor(sessionId);
