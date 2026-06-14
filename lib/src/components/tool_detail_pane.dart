@@ -247,11 +247,24 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     children.add(_fileHeader(filePath, intent, theme));
 
     // Content — syntax-highlighted code block
-    if (content.isEmpty || _parseOffloadStandIn(content) != null) {
-      children.add(_dimText(
-        _offloadLoading ? '  loading content…' : '  (content unavailable)',
-        theme,
-      ));
+    final standIn = _parseOffloadStandIn(content);
+    if (standIn != null) {
+      // Content was offloaded — show recovered content or status
+      final recovered = _offloadedArgs['content'];
+      if (recovered != null) {
+        children.add(Expanded(
+          child: _scrollableCodeBlock(recovered, language ?? '', theme),
+        ));
+      } else if (_offloadLoading) {
+        children.add(_dimText('  loading content…', theme));
+      } else {
+        children.add(_dimText(
+          '  ${standIn.lineCount} lines, ${standIn.sizeStr} (offloaded, unavailable)',
+          theme,
+        ));
+      }
+    } else if (content.isEmpty) {
+      children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Expanded(
         child: _scrollableCodeBlock(content, language ?? '', theme),
@@ -285,11 +298,24 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // Old → New diff-style view
     children.add(_sectionHeading('Old', theme, color: theme.error));
-    if (oldStr.isEmpty || _parseOffloadStandIn(oldStr) != null) {
-      children.add(_dimText(
-        _offloadLoading ? '  loading…' : '  (unavailable)',
-        theme,
-      ));
+    final oldStandIn = _parseOffloadStandIn(oldStr);
+    if (oldStandIn != null) {
+      final recovered = _offloadedArgs['oldString'];
+      if (recovered != null) {
+        children.add(Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: _inlineCodeBlock(recovered, language ?? '', theme),
+        ));
+      } else if (_offloadLoading) {
+        children.add(_dimText('  loading…', theme));
+      } else {
+        children.add(_dimText(
+          '  ${oldStandIn.lineCount} lines (offloaded, unavailable)',
+          theme,
+        ));
+      }
+    } else if (oldStr.isEmpty) {
+      children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Container(
         padding: const EdgeInsets.only(left: 1),
@@ -299,11 +325,24 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     children.add(Divider(color: theme.dividerDim, height: 1));
     children.add(_sectionHeading('New', theme, color: theme.success));
-    if (newStr.isEmpty || _parseOffloadStandIn(newStr) != null) {
-      children.add(_dimText(
-        _offloadLoading ? '  loading…' : '  (unavailable)',
-        theme,
-      ));
+    final newStandIn = _parseOffloadStandIn(newStr);
+    if (newStandIn != null) {
+      final recovered = _offloadedArgs['newString'];
+      if (recovered != null) {
+        children.add(Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: _inlineCodeBlock(recovered, language ?? '', theme),
+        ));
+      } else if (_offloadLoading) {
+        children.add(_dimText('  loading…', theme));
+      } else {
+        children.add(_dimText(
+          '  ${newStandIn.lineCount} lines (offloaded, unavailable)',
+          theme,
+        ));
+      }
+    } else if (newStr.isEmpty) {
+      children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Container(
         padding: const EdgeInsets.only(left: 1),
