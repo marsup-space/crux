@@ -8,6 +8,7 @@ import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/clipboard_image.dart';
 import '../utils/cjk_word_boundary.dart';
+import '../utils/file_searcher.dart';
 import '../commands/registry.dart';
 import 'chat_turn_orchestrator.dart';
 import 'overlay_controller.dart';
@@ -43,6 +44,11 @@ class ChatInput extends StatefulComponent {
   final Future<void> Function() onCreateNewSession;
   final void Function(ImageAttachment image)? onAttachClipboardImage;
 
+  /// Absolute path of the project root, used by the @-mention file
+  /// browser to scope its fuzzy search. Defaults to the current
+  /// working directory when not provided.
+  final String projectPath;
+
   const ChatInput({
     super.key,
     required this.textController,
@@ -61,6 +67,7 @@ class ChatInput extends StatefulComponent {
     required this.onInitSessions,
     required this.onCreateNewSession,
     this.onAttachClipboardImage,
+    this.projectPath = '.',
   });
 
   @override
@@ -69,6 +76,34 @@ class ChatInput extends StatefulComponent {
 
 /// Public state for [ChatInput], exposed via [GlobalKey] so that parent
 /// widgets can call [stashAndSetCommand].
+/// Bounds the cached state of an active @-mention. Found by
+/// [ChatInputState._findActiveMention] on every text change and
+/// passed to [_showAtMention] / [OverlayController.insertAtMention]
+/// so the popover knows both *which* `@` is active and *what* the
+/// user has typed so far.
+class _AtMention {
+  /// Offset of the `@` in the text.
+  final int atOffset;
+
+  /// Offset where the query begins (== atOffset + 1). Convenience
+  /// field — the code that uses [_AtMention] only needs one or the
+  /// other depending on context.
+  final int queryStart;
+
+  /// Current cursor position (== end of query).
+  final int cursor;
+
+  /// Text between the `@` and the cursor.
+  final String query;
+
+  const _AtMention({
+    required this.atOffset,
+    required this.queryStart,
+    required this.cursor,
+    required this.query,
+  });
+}
+
 class ChatInputState extends State<ChatInput> {
   /// Timestamp of the last ESC key press while the agent was streaming.
   DateTime? _lastEscPressTime;
@@ -85,6 +120,16 @@ class ChatInputState extends State<ChatInput> {
   /// True briefly after the first Ctrl+C press while streaming, so the
   /// UI can show a "Press Ctrl+C again to quit" hint.
   bool _ctrlCQuitHint = false;
+
+  /// Lazily-built file/directory index for the @-mention browser.
+  /// Scoped to [ChatInput.projectPath] so different project roots
+  /// don't bleed into each other. Re-walked on demand if the user
+  /// switches projects (via `/project`); the caller is expected to
+  /// call [_fileSearcher.invalidate] in that case, but for now we
+  /// just rebuild from the constructor's path on first use.
+  late FileSearcher _fileSearcher = FileSearcher(
+    rootPath: component.projectPath,
+  );
 
   /// Text that was in the input box before the user entered command mode
   /// (by typing '/' as the first character or by pressing a toolbar button
@@ -166,8 +211,20 @@ class ChatInputState extends State<ChatInput> {
 
   void _onTextChanged() {
     final text = component.textController.text;
-    final trimmed = text.replaceFirst(RegExp(r'^\s+'), '');
     final overlay = component.overlayController;
+
+    // First, check for an @-mention trigger. The `@` doesn't have
+    // to be at offset 0 — it can appear anywhere in the text. We
+    // look for the last `@` at or before the cursor that's preceded
+    // by a non-identifier char (so emails don't trigger).
+    final mention = _findActiveMention();
+    if (mention != null) {
+      _showAtMention(mention);
+      component.refresh();
+      return;
+    }
+
+    final trimmed = text.replaceFirst(RegExp(r'^\s+'), '');
 
     if (!trimmed.startsWith('/')) {
       overlay.setOverlayOff();
@@ -328,6 +385,93 @@ class ChatInputState extends State<ChatInput> {
     overlay.selectedSuggestionIndex = 0;
     overlay.suggestionScrollOffset = 0;
     component.refresh();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // @-mention detection
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// Scan the input text for an active `@<query>` fragment ending at
+  /// the current cursor. Returns `null` if there is no mention the
+  /// user is currently editing (e.g. they backspaced out of it, or
+  /// they typed whitespace inside the query, or there is no `@`).
+  ///
+  /// "Active" means: there's an `@` somewhere at or before the
+  /// cursor, no whitespace/closing-punctuation between it and the
+  /// cursor, and the char before the `@` is either nothing or a
+  /// non-identifier char (so `foo@bar` doesn't trigger).
+  _AtMention? _findActiveMention() {
+    final tc = component.textController;
+    final text = tc.text;
+    final cursor = tc.selection.extentOffset.clamp(0, text.length);
+
+    // Walk backwards from the cursor looking for an `@` that is
+    // the start of an in-progress mention. Stop at whitespace or
+    // closing punctuation (which terminates the query).
+    var atOffset = -1;
+    for (var i = cursor - 1; i >= 0; i--) {
+      final ch = text[i];
+      if (ch == '@') {
+        atOffset = i;
+        break;
+      }
+      // Whitespace, comma, semicolon, paren, bracket, brace all
+      // end the query — no mention here.
+      final cc = ch.codeUnitAt(0);
+      if (cc == 0x20 || cc == 0x09 || cc == 0x0A || // space, tab, newline
+          cc == 0x28 || cc == 0x29 ||                 // ( )
+          cc == 0x5B || cc == 0x5D ||                 // [ ]
+          cc == 0x7B || cc == 0x7D ||                 // { }
+          cc == 0x2C || cc == 0x3B) {                 // , ;
+        return null;
+      }
+    }
+    if (atOffset < 0) return null;
+
+    // Reject email-style mentions: the char immediately before the
+    // `@` must not be an identifier char (A–Z, a–z, 0–9, _, -).
+    if (atOffset > 0) {
+      final prev = text[atOffset - 1];
+      final pc = prev.codeUnitAt(0);
+      final isIdent = (pc >= 0x30 && pc <= 0x39) ||
+          (pc >= 0x41 && pc <= 0x5A) ||
+          (pc >= 0x61 && pc <= 0x7A) ||
+          pc == 0x5F || // _
+          pc == 0x2D;  // -
+      if (isIdent) return null;
+    }
+
+    final query = text.substring(atOffset + 1, cursor);
+    return _AtMention(
+      atOffset: atOffset,
+      queryStart: atOffset + 1,
+      cursor: cursor,
+      query: query,
+    );
+  }
+
+  /// Open (or refresh) the @-mention file browser with the matches
+  /// for [mention.query]. If the popover is already open for a
+  /// different query (e.g. user kept typing), preserve the
+  /// selection across the search so arrow-key navigation isn't
+  /// reset on every keystroke.
+  void _showAtMention(_AtMention mention) {
+    final overlay = component.overlayController;
+    // If the popover is already in atMention mode and the user is
+    // just refining the same query (extending it), keep their
+    // selected index. Only reset when the atOffset moved (i.e. a
+    // different `@` is now active — a stale result from a prior
+    // mention shouldn't follow the cursor).
+    final stayingOnSameAt = overlay.overlayMode == OverlayMode.atMention &&
+        overlay.atMentionQuery.length <= mention.query.length;
+    if (!stayingOnSameAt) {
+      overlay.selectedFileIndex = 0;
+      overlay.fileScrollOffset = 0;
+    }
+
+    overlay.overlayMode = OverlayMode.atMention;
+    overlay.atMentionQuery = mention.query;
+    overlay.filteredFiles = _fileSearcher.search(mention.query);
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {
@@ -767,6 +911,63 @@ class ChatInputState extends State<ChatInput> {
         } else {
           tc.clear();
         }
+        overlay.setOverlayOff();
+        component.refresh();
+        return true;
+      }
+      return false;
+    }
+
+    if (overlay.overlayMode == OverlayMode.atMention) {
+      // Empty result set: only Enter and Esc do anything useful;
+      // arrow keys are no-ops. The popover shows "no matches" so
+      // the user knows their query is the problem.
+      if (overlay.filteredFiles.isEmpty) {
+        if (event.logicalKey == LogicalKey.escape) {
+          overlay.setOverlayOff();
+          component.refresh();
+          return true;
+        }
+        if (event.logicalKey == LogicalKey.enter) {
+          // Dismiss the popover so the user can press Enter to
+          // actually send their message (the @-query stays in
+          // the input — it was meant as a search term, not a
+          // literal).
+          overlay.setOverlayOff();
+          component.refresh();
+          return true;
+        }
+        return false;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        overlay.moveFileSelectionUp();
+        component.refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        overlay.moveFileSelectionDown();
+        component.refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.tab) {
+        // Tab → also accept the current selection (matches the
+        // file-picker muscle memory from GUI IDEs).
+        final mention = _findActiveMention();
+        overlay.insertAtMention(mention?.atOffset);
+        component.refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.enter) {
+        final mention = _findActiveMention();
+        overlay.insertAtMention(mention?.atOffset);
+        component.refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.escape) {
+        // ESC dismisses the file browser but leaves the `@<query>`
+        // fragment in the input untouched. The user can keep
+        // typing, or backspace to remove it.
         overlay.setOverlayOff();
         component.refresh();
         return true;

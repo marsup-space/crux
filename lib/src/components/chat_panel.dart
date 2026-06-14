@@ -23,6 +23,7 @@ import 'chat_toolbar.dart';
 import 'chat_turn_orchestrator.dart';
 import 'command_overlay.dart';
 import 'extra_info_panel.dart';
+import 'file_browser_overlay.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'session_management_panel.dart';
@@ -544,6 +545,40 @@ class _ChatPanelState extends State<ChatPanel> {
           ),
         ),
       );
+    } else if (overlay.overlayMode == OverlayMode.atMention) {
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: (e) {
+              setState(() => overlay.onScrollFile(e));
+            },
+            opaque: false,
+            child: FileBrowserOverlay(
+              files: overlay.filteredFiles,
+              selectedIndex: overlay.selectedFileIndex,
+              scrollOffset: overlay.fileScrollOffset,
+              maxVisible: _maxVisibleItems,
+              query: overlay.atMentionQuery,
+              onHover: (i) => setState(() => overlay.onHoverFile(i)),
+              onTap: (i) {
+                // `onTap` is the mouse equivalent of Enter on the
+                // keyboard: insert the path at the active @ and
+                // dismiss the popover. The chat input stores the
+                // @-offset in the overlay; we re-resolve it here
+                // via the text controller since the input is the
+                // single source of truth for cursor position.
+                setState(() {
+                  overlay.selectedFileIndex = i;
+                  overlay.insertAtMention(null);
+                });
+              },
+            ),
+          ),
+        ),
+      );
     }
 
     overlays.add(
@@ -616,6 +651,7 @@ class _ChatPanelState extends State<ChatPanel> {
             themeController: component.themeController,
             scrollController: scrollController,
             refresh: _refresh,
+            projectPath: Directory.current.path,
             onSendTurn: (text) {
               final sid = _sessionController.currentSessionId;
               final images = sid != null

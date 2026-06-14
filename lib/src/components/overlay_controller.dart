@@ -1,7 +1,8 @@
 import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
+import '../utils/file_searcher.dart';
 
-enum OverlayMode { off, command, parameter, wizard }
+enum OverlayMode { off, command, parameter, wizard, atMention }
 
 enum ProviderWizardSubcommand { builtin }
 
@@ -19,6 +20,15 @@ class OverlayController {
   String? builtinProviderName;
   bool showSessionManager = false;
   bool showFullpane = false;
+
+  /// @-mention file browser state. The popover shows while
+  /// [overlayMode] is [OverlayMode.atMention]; [atMentionQuery] is
+  /// the text after the `@` up to the cursor, and [filteredFiles] is
+  /// the fuzzy-search result for it.
+  String atMentionQuery = '';
+  List<FileMatch> filteredFiles = [];
+  int selectedFileIndex = 0;
+  int fileScrollOffset = 0;
 
   final int maxVisibleItems;
   final TextEditingController textController;
@@ -40,6 +50,10 @@ class OverlayController {
     currentParamIndex = 0;
     selectedSuggestionIndex = 0;
     suggestionScrollOffset = 0;
+    atMentionQuery = '';
+    filteredFiles = [];
+    selectedFileIndex = 0;
+    fileScrollOffset = 0;
     showSessionManager = false;
     showFullpane = false;
   }
@@ -200,5 +214,145 @@ class OverlayController {
         maxOffset,
       );
     }
+  }
+
+  // ── @-mention file browser ──────────────────────────────────────
+  //
+  // The `@` popover behaves a lot like the command parameter
+  // suggestions: arrow keys move the cursor, Enter inserts the
+  // selected path into the text controller (replacing the
+  // `@<query>` fragment the user typed so far), and ESC dismisses.
+  //
+  // The two differences vs. command params:
+  // 1. There is no fixed command prefix — the trigger is just an
+  //    `@` character somewhere in the message (not at offset 0).
+  //    The chat input computes the start offset of the `@<query>`
+  //    fragment and passes it to [insertAtMention].
+  // 2. Files/directories are typed via the `FileMatch` model
+  //    (relative path + kind + score) instead of generic
+  //    `CommandSuggestion` values.
+
+  void moveFileSelectionUp() {
+    selectedFileIndex = selectedFileIndex > 0
+        ? selectedFileIndex - 1
+        : filteredFiles.length - 1;
+    fileScrollOffset = computeScrollOffset(
+      selectedFileIndex,
+      fileScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void moveFileSelectionDown() {
+    selectedFileIndex = selectedFileIndex < filteredFiles.length - 1
+        ? selectedFileIndex + 1
+        : 0;
+    fileScrollOffset = computeScrollOffset(
+      selectedFileIndex,
+      fileScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void onHoverFile(int index) {
+    selectedFileIndex = index;
+    fileScrollOffset = computeScrollOffset(index, fileScrollOffset, maxVisibleItems);
+  }
+
+  void onScrollFile(MouseEvent event) {
+    final maxOffset = filteredFiles.length > maxVisibleItems
+        ? filteredFiles.length - maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp && fileScrollOffset > 0) {
+      fileScrollOffset = (fileScrollOffset - maxVisibleItems).clamp(0, maxOffset);
+    } else if (event.button == MouseButton.wheelDown &&
+        fileScrollOffset < maxOffset) {
+      fileScrollOffset = (fileScrollOffset + maxVisibleItems).clamp(0, maxOffset);
+    }
+  }
+
+  /// Insert the currently-selected file at the given `@` start
+  /// position. The `@<query>` fragment is replaced with `@<path> `
+  /// (or `@<path>/ ` for directories so the user can keep typing to
+  /// drill in). The trailing space is what makes the popover dismiss
+  /// itself — the next char typed will land in the chat message body
+  /// rather than the query. The cursor is placed at the end of the
+  /// inserted text.
+  ///
+  /// If [atStart] is `null`, falls back to "find the last `@` in the
+  /// text" — this is the common case when the popover was just
+  /// dismissed by Enter and we know which `@` to replace.
+  void insertAtMention(int? atStart) {
+    if (filteredFiles.isEmpty) return;
+    final selected = filteredFiles[selectedFileIndex];
+    final text = textController.text;
+    final cursor = textController.selection.extentOffset;
+
+    // If the caller didn't tell us where the @ is, find the last
+    // occurrence at or before the cursor.
+    final resolvedStart =
+        atStart ?? _findLastAt(text, cursor);
+    if (resolvedStart < 0) return;
+
+    final insertion = selected.kind == FileMatchKind.directory
+        ? '@${selected.relativePath} '
+        : '@${selected.relativePath} ';
+
+    // The query runs from resolvedStart to the current cursor; we
+    // replace that span in place. The new cursor lands right after
+    // the inserted path.
+    final newText = text.replaceRange(resolvedStart, cursor, insertion);
+    textController.text = newText;
+    textController.selection = TextSelection.collapsed(
+      offset: resolvedStart + insertion.length,
+    );
+
+    setOverlayOff();
+  }
+
+  /// Find the offset of the last `@` in [text] that is `<= [cursor]`
+  /// and is not preceded by an identifier char (so emails like
+  /// `foo@bar` don't trigger a mention). Returns `-1` if none.
+  ///
+  /// This is intentionally a best-effort heuristic — the chat input
+  /// already computed and passed the start offset to us; this is
+  /// just the safety-net path for when the popover is dismissed
+  /// without an explicit atStart.
+  static int _findLastAt(String text, int cursor) {
+    final clamped = cursor.clamp(0, text.length);
+    for (var i = clamped - 1; i >= 0; i--) {
+      final c = text[i];
+      if (c == '@') {
+        // Don't trigger on email-style mentions: the char before
+        // must not be alphanumeric or a path/word char.
+        if (i > 0) {
+          final prev = text[i - 1];
+          if (_isMentionChar(prev)) return -1;
+        }
+        return i;
+      }
+      if (_isMentionBlocker(c)) return -1;
+    }
+    return -1;
+  }
+
+  static bool _isMentionChar(String c) {
+    if (c.isEmpty) return false;
+    final cc = c.codeUnitAt(0);
+    // A–Z, a–z, 0–9, _, -
+    return (cc >= 0x30 && cc <= 0x39) ||
+        (cc >= 0x41 && cc <= 0x5A) ||
+        (cc >= 0x61 && cc <= 0x7A) ||
+        cc == 0x5F || // _
+        cc == 0x2D; // -
+  }
+
+  static bool _isMentionBlocker(String c) {
+    if (c.isEmpty) return true;
+    final cc = c.codeUnitAt(0);
+    // Whitespace, common punctuation that ends a mention.
+    return cc == 0x20 || cc == 0x09 || cc == 0x0A ||
+        cc == 0x28 || cc == 0x29 || cc == 0x5B || cc == 0x5D ||
+        cc == 0x7B || cc == 0x7D || cc == 0x2C || cc == 0x3B;
   }
 }
