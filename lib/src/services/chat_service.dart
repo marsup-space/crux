@@ -5,6 +5,7 @@ import '../models/message.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
+import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../utils/token_estimate.dart';
@@ -39,6 +40,7 @@ class ChatResponse {
 
 class ChatService {
   final SessionStore _store;
+  final MessageStore _messageStore;
   final ProviderService _providerService;
   final LlmClient _llmClient;
   final ToolExecutor _toolExecutor;
@@ -51,7 +53,8 @@ class ChatService {
     this._providerService,
     this._llmClient,
     this._toolExecutor,
-  ) : _auxiliaryService = AuxiliaryService(_providerService, _store);
+  ) : _messageStore = _store.messageStore,
+       _auxiliaryService = AuxiliaryService(_providerService, _store.messageStore);
 
   bool isStreaming(int sessionId) => _activeSessions.contains(sessionId);
 
@@ -98,7 +101,7 @@ class ChatService {
     String? userContent,
   }) async {
     if (userContent != null) {
-      await _store.addMessage(sessionId, role: 'user', content: userContent);
+      await _messageStore.addMessage(sessionId, role: 'user', content: userContent);
     }
 
     await _store.update(sessionId, status: SessionStatus.running);
@@ -135,7 +138,7 @@ class ChatService {
       return;
     }
 
-    final history = await _store.getMessages(sessionId);
+    final history = await _messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = buildApiMessages(history, wireFamily);
     final toolDefs = _toolExecutor.getApiToolDefinitions();
@@ -700,14 +703,14 @@ class ChatService {
           .toList();
 
       // ── Persist (tool_call + tool_results in one transaction) ──
-      // The two writes used to be sequential `_store.addMessage`
+      // The two writes used to be sequential `_messageStore.addMessage`
       // calls; closing the terminal between them left the
       // `tool_call` row stranded without its results, and every
       // subsequent replay would be rejected by strict providers
       // (e.g. MiniMax "tool call result does not follow tool
       // call"). [addToolRound] wraps both writes in a SQLite
       // transaction so the persist step is all-or-nothing.
-      await _store.addToolRound(
+      await _messageStore.addToolRound(
         sessionId,
         roundText: roundText,
         reasoningContent: roundReasoning,
@@ -738,7 +741,7 @@ class ChatService {
       // message list and the store so the next LLM round sees it.
       final queuedContent = onQueueDrain?.call();
       if (queuedContent != null) {
-        await _store.addMessage(
+        await _messageStore.addMessage(
           sessionId,
           role: 'user',
           content: queuedContent,
@@ -762,7 +765,7 @@ class ChatService {
         ? roundThinkingDurationMs.round()
         : 0;
 
-    await _store.addMessage(
+    await _messageStore.addMessage(
       sessionId,
       role: 'ai',
       content: content,

@@ -6,6 +6,7 @@ import '../services/chat_service.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
+import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/registry.dart';
 import '../tools/shell_base.dart';
@@ -29,6 +30,7 @@ typedef ShowToastCallback = void Function(String message, {ToastMode mode});
 /// widgets directly.
 class ChatTurnOrchestrator {
   final SessionStore _store;
+  final MessageStore _messageStore;
   final ChatService _chatService;
   final ProviderService _providerService;
   final SessionController _sessionController;
@@ -64,6 +66,7 @@ class ChatTurnOrchestrator {
     required ShowToastCallback showToast,
     required void Function() refresh,
   })  : _store = store,
+        _messageStore = store.messageStore,
         _chatService = chatService,
         _providerService = providerService,
         _sessionController = sessionController,
@@ -191,7 +194,7 @@ class ChatTurnOrchestrator {
             'Your response was interrupted by user. The user is now '
             'sending a new message. Do not repeat or continue the '
             'interrupted response unless the user explicitly asks.';
-        await _store.addMessage(
+        await _messageStore.addMessage(
           sessionId,
           role: 'system',
           content: interruptionNotice,
@@ -292,7 +295,7 @@ class ChatTurnOrchestrator {
         _activeAbortSignals.remove(sessionId);
         rt.turnBaseTokens = 0;
         rt.accumulatedToolTokens = 0;
-        final msgs = await _store.getMessages(sessionId);
+        final msgs = await _messageStore.getMessages(sessionId);
         _sessionController.messageCache[sessionId] = msgs;
         if (response.promptTokens + response.completionTokens > 0) {
           final finalTokens =
@@ -332,12 +335,12 @@ class ChatTurnOrchestrator {
         // persist it and kick off a new turn.
         if (response.queuedMessage != null &&
             response.queuedMessage!.isNotEmpty) {
-          await _store.addMessage(
+          await _messageStore.addMessage(
             sessionId,
             role: 'user',
             content: response.queuedMessage!,
           );
-          final updatedMsgs = await _store.getMessages(sessionId);
+          final updatedMsgs = await _messageStore.getMessages(sessionId);
           _sessionController.messageCache[sessionId] = updatedMsgs;
           _refresh();
           await sendTurn(text: null);
@@ -382,7 +385,7 @@ class ChatTurnOrchestrator {
     }
 
     // Build the wire message list for this btw call.
-    final history = await _store.getMessages(sessionId);
+    final history = await _messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = <Map<String, dynamic>>[
       ...ChatService.buildApiMessages(history, wireFamily),
@@ -616,7 +619,7 @@ class ChatTurnOrchestrator {
             ? '$partialContent\n\n*[Response interrupted by user]*'
             : '*[Response interrupted by user]*';
 
-        _store.addMessage(
+        _messageStore.addMessage(
           sessionId,
           role: 'ai',
           content: interruptedContent,
@@ -659,7 +662,7 @@ class ChatTurnOrchestrator {
   Future<Message?> findLastUserMessage() async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return null;
-    final messages = await _store.getMessages(sessionId);
+    final messages = await _messageStore.getMessages(sessionId);
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role == 'user') return messages[i];
     }
@@ -671,7 +674,7 @@ class ChatTurnOrchestrator {
   Future<void> deleteMessagesFrom(int fromId) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
-    await _store.deleteMessagesFrom(sessionId, fromId);
+    await _messageStore.deleteMessagesFrom(sessionId, fromId);
     _sessionController.clearBtwTurnsFor(sessionId);
     await _sessionController.loadMessages(sessionId);
     _refresh();
@@ -711,7 +714,7 @@ class ChatTurnOrchestrator {
     // Manual regeneration: clear the cached tldr on the in-memory
     // message so the bubble re-enters its generating state immediately.
     if (force && aiMsg.tldr.isNotEmpty) {
-      await _store.updateMessageTldr(aiMsg.id, '');
+      await _messageStore.updateMessageTldr(aiMsg.id, '');
       final msgs = _sessionController.messageCache[sessionId];
       if (msgs != null) {
         for (var i = 0; i < msgs.length; i++) {
@@ -732,7 +735,7 @@ class ChatTurnOrchestrator {
     );
     rt.isGeneratingTldr = false;
     if (tldrText != null && tldrText.isNotEmpty) {
-      await _store.updateMessageTldr(aiMsg.id, tldrText);
+      await _messageStore.updateMessageTldr(aiMsg.id, tldrText);
       final msgs = _sessionController.messageCache[sessionId];
       if (msgs != null) {
         for (var i = 0; i < msgs.length; i++) {

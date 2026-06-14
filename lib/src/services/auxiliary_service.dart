@@ -1,5 +1,5 @@
 import '../models/provider_config.dart';
-import '../storage/session_store.dart';
+import '../storage/message_store.dart';
 import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
 import 'provider_service.dart';
@@ -10,10 +10,10 @@ import 'provider_service.dart';
 /// fresh `HttpClient` per auxiliary request.
 class AuxiliaryService {
   final ProviderService _providerService;
-  final SessionStore _store;
+  final MessageStore _messageStore;
   final LlmClient _client = LlmClient();
 
-  AuxiliaryService(this._providerService, this._store);
+  AuxiliaryService(this._providerService, this._messageStore);
 
   /// Resolve the auxiliary model's provider, api key, and model id.
   /// Returns null if no auxiliary model is configured or if the
@@ -99,7 +99,7 @@ class AuxiliaryService {
     if (userContent != null && userContent.trim().isNotEmpty) {
       userText = userContent;
     } else {
-      final messages = await _store.getMessages(sessionId);
+      final messages = await _messageStore.getMessages(sessionId);
       final userMessage = messages.firstWhere(
         (m) => m.role == 'user',
         orElse: () => messages.first,

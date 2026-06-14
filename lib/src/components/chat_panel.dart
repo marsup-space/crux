@@ -94,7 +94,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final tracker = FileReadTracker();
     final registry = ToolRegistry();
     registry.registerDefaults(tracker);
-    final toolExecutor = ToolExecutor(registry, _store);
+    final toolExecutor = ToolExecutor(registry, _store.messageStore);
     _toolRegistry = registry;
     _chatService = ChatService(
       _store,

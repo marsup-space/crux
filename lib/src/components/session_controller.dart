@@ -5,6 +5,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/provider_service.dart';
+import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../utils/token_estimate.dart';
 
@@ -22,6 +23,7 @@ class BtwTurn {
 
 class SessionController {
   final SessionStore _store;
+  final MessageStore _messageStore;
   final ProviderService _providerService;
   final ChatService _chatService;
   final void Function() _refresh;
@@ -157,6 +159,7 @@ class SessionController {
     required ChatService chatService,
     required void Function() refresh,
   }) : _store = store,
+       _messageStore = store.messageStore,
        _providerService = providerService,
        _chatService = chatService,
        _refresh = refresh;
@@ -274,7 +277,7 @@ class SessionController {
   }
 
   Future<void> loadMessages(int sessionId) async {
-    messageCache[sessionId] = await _store.getMessages(sessionId);
+    messageCache[sessionId] = await _messageStore.getMessages(sessionId);
   }
 
   Future<String?> switchSession(int id) async {

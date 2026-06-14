@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import '../models/provider_config.dart';
-import '../storage/session_store.dart';
+import '../storage/message_store.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import 'llm_client.dart';
@@ -28,9 +28,9 @@ class _ToolCallAccum {
 
 class ToolExecutor {
   final ToolRegistry _registry;
-  final SessionStore _store;
+  final MessageStore _messageStore;
 
-  ToolExecutor(this._registry, this._store);
+  ToolExecutor(this._registry, this._messageStore);
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
@@ -72,7 +72,7 @@ class ToolExecutor {
 
       final lineCount = '\n'.allMatches(value).length + 1;
       final compositeKey = '${call.callId}_$argKey';
-      await _store.saveOffloadedContent(
+      await _messageStore.saveOffloadedContent(
         sessionId: sessionId,
         callId: compositeKey,
         toolName: call.name,
