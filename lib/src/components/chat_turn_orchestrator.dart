@@ -740,24 +740,27 @@ class ChatTurnOrchestrator {
     rt.isGeneratingTldr = true;
     _refresh();
 
-    final tldrText = await _chatService.generateTldr(
-      aiMsg.content,
-      detail: detail,
-    );
-    rt.isGeneratingTldr = false;
-    if (tldrText != null && tldrText.isNotEmpty) {
-      await _messageStore.updateMessageTldr(aiMsg.id, tldrText);
-      final msgs = _sessionController.messageCache[sessionId];
-      if (msgs != null) {
-        for (var i = 0; i < msgs.length; i++) {
-          if (msgs[i].id == aiMsg.id) {
-            msgs[i] = msgs[i].copyWith(tldr: tldrText);
-            break;
+    try {
+      final tldrText = await _chatService.generateTldr(
+        aiMsg.content,
+        detail: detail,
+      );
+      if (tldrText != null && tldrText.isNotEmpty) {
+        await _messageStore.updateMessageTldr(aiMsg.id, tldrText);
+        final msgs = _sessionController.messageCache[sessionId];
+        if (msgs != null) {
+          for (var i = 0; i < msgs.length; i++) {
+            if (msgs[i].id == aiMsg.id) {
+              msgs[i] = msgs[i].copyWith(tldr: tldrText);
+              break;
+            }
           }
         }
       }
+    } finally {
+      rt.isGeneratingTldr = false;
+      _refresh();
     }
-    _refresh();
   }
 
   // ─────────────────────────────────────────────────────────────────────

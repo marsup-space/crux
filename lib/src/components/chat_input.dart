@@ -373,6 +373,7 @@ class ChatInputState extends State<ChatInput> {
     if (_ctrlCQuitHint) {
       _ctrlCQuitHint = false;
       _lastCtrlCPressTime = null;
+      setState(() {});
     }
 
     final overlay = component.overlayController;
