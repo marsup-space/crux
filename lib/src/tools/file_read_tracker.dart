@@ -4,13 +4,27 @@ import 'tool_def.dart';
 
 class FileReadTracker {
   final Map<String, int> _cache = {};
+  int? _sessionId;
+  final Future<void> Function(int sessionId, String normalizedPath, int mtimeMs)?
+      onRecordRead;
 
-  void recordRead(String filePath, int mtimeMs) {
+  FileReadTracker({int? sessionId, this.onRecordRead})
+      : _sessionId = sessionId;
+
+  Future<void> recordRead(String filePath, int mtimeMs) async {
     final normalized = _normalize(filePath);
     _cache[normalized] = mtimeMs;
+    if (_sessionId != null && onRecordRead != null) {
+      try {
+        await onRecordRead!(_sessionId!, normalized, mtimeMs);
+      } catch (_) {
+        // Persistence failure is non-fatal — the in-memory cache
+        // update above is sufficient for the current session.
+      }
+    }
   }
 
-  GuardResult? checkWriteGuard(String filePath) {
+  Future<GuardResult?> checkWriteGuard(String filePath) async {
     final normalized = _normalize(filePath);
     final file = File(filePath);
 
@@ -20,13 +34,13 @@ class FileReadTracker {
 
     if (!_cache.containsKey(normalized)) {
       final content = file.readAsStringSync();
-      recordRead(filePath, currentMtime);
+      await recordRead(filePath, currentMtime);
       return GuardResult(
         header:
-            '[GUARD] No changes were made — file was not read before write. '
-            'We re-read it for you (saved a round trip). The content is '
-            'below; you can call edit/write again now without having to '
-            'call read first.',
+            '[GUARD] Write was BLOCKED — file was not read before write. '
+            'Your write did NOT take effect. The current file content is '
+            'below; call edit or write again now and it will succeed '
+            '(the file has been auto-read for you).',
         content: content,
       );
     }
@@ -34,13 +48,12 @@ class FileReadTracker {
     final recordedMtime = _cache[normalized];
     if (recordedMtime != null && currentMtime > recordedMtime) {
       final content = file.readAsStringSync();
-      recordRead(filePath, currentMtime);
+      await recordRead(filePath, currentMtime);
       return GuardResult(
         header:
-            '[GUARD] No changes were made — file was modified since last '
-            'read. We re-read it for you (saved a round trip). The new '
-            'content is below; retry your edit with a pattern that matches '
-            'this version.',
+            '[GUARD] Write was BLOCKED — file was modified since last '
+            'read. Your write did NOT take effect. The new content is '
+            'below; retry your edit with a pattern that matches this version.',
         content: content,
       );
     }
@@ -50,6 +63,16 @@ class FileReadTracker {
 
   void loadFromMap(Map<String, int> data) {
     _cache.addAll(data.map((k, v) => MapEntry(_normalize(k), v)));
+  }
+
+  void loadSession(int sessionId, Map<String, int> data) {
+    _sessionId = sessionId;
+    _cache.clear();
+    _cache.addAll(data.map((k, v) => MapEntry(_normalize(k), v)));
+  }
+
+  void clear() {
+    _cache.clear();
   }
 
   Map<String, int> toMap() {

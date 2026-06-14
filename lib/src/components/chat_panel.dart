@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
+import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
@@ -12,6 +13,7 @@ import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../tools/registry.dart';
+import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/url_launcher.dart';
 import 'chat_history.dart';
@@ -25,6 +27,7 @@ import 'session_controller.dart';
 import 'session_management_panel.dart';
 import 'streaming_controller.dart';
 import 'suggestion_overlay.dart';
+import 'tool_detail_pane.dart';
 import 'ui/toast.dart';
 import 'ui/fullpane.dart';
 
@@ -56,6 +59,10 @@ class _ChatPanelState extends State<ChatPanel> {
   late final StreamingController _streamingController;
   late final CommandExecutor _commandExecutor;
   late final ChatTurnOrchestrator _turnOrchestrator;
+  late final FileReadTracker _tracker;
+
+  /// When non-null, a tool detail fullpane is shown for this tool call.
+  ToolDetailData? _toolDetailData;
 
   bool _providerServiceReady = false;
 
@@ -92,7 +99,12 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     final db = CruxDatabase();
     _store = SessionStore(db);
-    final tracker = FileReadTracker();
+    final tracker = FileReadTracker(
+      onRecordRead: (sessionId, normalizedPath, mtimeMs) {
+        return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);
+      },
+    );
+    _tracker = tracker;
     final registry = ToolRegistry();
     registry.registerDefaults(tracker);
     final toolExecutor = ToolExecutor(registry, _store.messageStore);
@@ -181,6 +193,11 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Future<void> _initSessions() async {
     await _sessionController.initSessions();
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId != null) {
+      final savedState = await _store.loadFileReadState(sessionId);
+      _tracker.loadSession(sessionId, savedState);
+    }
     setState(() {});
   }
 
@@ -211,6 +228,9 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     final error = await _sessionController.switchSession(id);
+
+    final savedState = await _store.loadFileReadState(id);
+    _tracker.loadSession(id, savedState);
 
     // Restore the input text from the new session's stash (if any).
     // This must happen after switchSession updates currentSessionId.
@@ -347,6 +367,23 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildFullpane() {
+    final data = _toolDetailData;
+    if (data != null) {
+      final tc = data.toolCall;
+      final tool = data.toolRegistry?.lookup(tc.name);
+      String? intent;
+      if (tool is IntentionalTool) {
+        intent = tool.intentFromArgs(tc.input);
+      }
+      final title = intent != null && intent.isNotEmpty
+          ? '${_capitalize(tc.name)} — $intent'
+          : _capitalize(tc.name);
+      return Fullpane(
+        title: title,
+        onClose: _closeFullpane,
+        contentBuilder: (context) => ToolDetailPane(data: data),
+      );
+    }
     return Fullpane(
       title: 'Fullpane',
       onClose: _closeFullpane,
@@ -361,8 +398,24 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  static String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
   void _openFullpane() {
     setState(() {
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  void _openToolDetail(ToolCallData toolCall, Message? pairedResult) {
+    setState(() {
+      _toolDetailData = ToolDetailData(
+        toolCall: toolCall,
+        pairedResult: pairedResult,
+        toolRegistry: _toolRegistry,
+      );
       _overlayController.showFullpane = true;
     });
   }
@@ -370,6 +423,7 @@ class _ChatPanelState extends State<ChatPanel> {
   void _closeFullpane() {
     setState(() {
       _overlayController.showFullpane = false;
+      _toolDetailData = null;
     });
   }
 
@@ -503,6 +557,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   toolRegistry: _toolRegistry,
                   showToast: _showToast,
                   refresh: _refresh,
+                  onToolCallTap: _openToolDetail,
                 ),
                 ...overlays,
               ],

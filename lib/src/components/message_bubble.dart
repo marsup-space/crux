@@ -22,6 +22,11 @@ class MessageBubble extends StatelessComponent {
   /// is used.
   final List<ReasoningPreset>? reasoningPresets;
 
+  /// Callback when a tool call bubble is tapped. Receives the
+  /// [ToolCallData] and the paired result [Message] (if any).
+  final void Function(ToolCallData toolCall, Message? pairedResult)?
+      onToolCallTap;
+
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
@@ -29,6 +34,7 @@ class MessageBubble extends StatelessComponent {
     this.toolRegistry,
     this.highlightText,
     this.reasoningPresets,
+    this.onToolCallTap,
   });
 
   String _displayEffort(String effort) {
@@ -253,7 +259,13 @@ class MessageBubble extends StatelessComponent {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: calls
-                .map((tc) => _buildCollapsedToolCall(tc, context))
+                .map((tc) => _ClickableToolCall(
+                      toolCall: tc,
+                      pairedResult: pairedResult,
+                      toolRegistry: toolRegistry,
+                      preCompressTokens: message.preCompressTokens,
+                      onTap: onToolCallTap,
+                    ))
                 .toList(),
           ),
         ),
@@ -262,31 +274,61 @@ class MessageBubble extends StatelessComponent {
 
     return Column(children: children);
   }
+}
 
-  Component _buildCollapsedToolCall(ToolCallData tc, BuildContext context) {
-    final tool = toolRegistry?.lookup(tc.name);
+/// A single collapsed tool-call row that is clickable and shows
+/// hover state. Tapping it invokes [onTap] to open the detail
+/// fullpane. This is a [StatefulComponent] to track hover state.
+class _ClickableToolCall extends StatefulComponent {
+  final ToolCallData toolCall;
+  final Message? pairedResult;
+  final ToolRegistry? toolRegistry;
+  final int? preCompressTokens;
+  final void Function(ToolCallData toolCall, Message? pairedResult)? onTap;
+
+  const _ClickableToolCall({
+    required this.toolCall,
+    this.pairedResult,
+    this.toolRegistry,
+    this.preCompressTokens,
+    this.onTap,
+  });
+
+  @override
+  State<_ClickableToolCall> createState() => _ClickableToolCallState();
+}
+
+class _ClickableToolCallState extends State<_ClickableToolCall> {
+  bool _hovered = false;
+
+  @override
+  Component build(BuildContext context) {
+    final tc = component.toolCall;
+    final tool = component.toolRegistry?.lookup(tc.name);
+    final theme = CruxTheme.of(context);
     final keyArg = _keyArg(tc);
     CollapsedSummary? summary;
     String? fallbackText;
-    final resultContent = pairedResult?.content ?? '';
+    final resultContent = component.pairedResult?.content ?? '';
     final isGuard = resultContent.startsWith('[GUARD]');
     final isAutoRead = resultContent.startsWith('[AUTOREAD]');
     if (isGuard || isAutoRead) {
-      final label = isGuard ? 'guard triggered (auto read)' : _autoReadLabel(resultContent);
+      final label =
+          isGuard ? _guardLabel(resultContent) : _autoReadLabel(resultContent);
       final tokens = estimateTokens(resultContent);
       summary = CollapsedSummary(
         text: label,
         argsTokens: tokens,
         totalTokens: tokens,
       );
-    } else if (tool != null && pairedResult != null) {
+    } else if (tool != null && component.pairedResult != null) {
       final result = ToolResult(title: '', output: resultContent);
       summary = tool.collapsedSummary(tc.input, result);
-    } else if (pairedResult != null) {
+    } else if (component.pairedResult != null) {
       fallbackText = _resultMetrics(resultContent);
     }
 
-    final preCompress = message.preCompressTokens;
+    final preCompress = component.preCompressTokens;
     final isCompressed = preCompress != null && preCompress > 0;
 
     // For intentional tools, prefer displaying the intent over the
@@ -299,20 +341,20 @@ class MessageBubble extends StatelessComponent {
       bodySpans.add(TextSpan(
         text: '$intentLabel ',
         style: TextStyle(
-          color: CruxTheme.of(context).foreground,
+          color: theme.foreground,
           fontStyle: FontStyle.italic,
         ),
       ));
     } else if (keyArg.isNotEmpty) {
       bodySpans.add(TextSpan(
         text: '$keyArg ',
-        style: TextStyle(color: CruxTheme.of(context).foreground),
+        style: TextStyle(color: theme.foreground),
       ));
     }
     if (summary != null) {
       bodySpans.add(TextSpan(
         text: '${summary.text}, ',
-        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+        style: TextStyle(color: theme.onSurfaceDim),
       ));
       if (isCompressed && !isGuard && !isAutoRead) {
         final hasSavings = summary.argsTokens < preCompress;
@@ -320,47 +362,71 @@ class MessageBubble extends StatelessComponent {
           bodySpans.add(TextSpan(
             text: '$preCompress t',
             style: TextStyle(
-              color: CruxTheme.of(context).onSurfaceDim,
+              color: theme.onSurfaceDim,
               decoration: TextDecoration.lineThrough,
             ),
           ));
           bodySpans.add(TextSpan(
             text: ' → ~${summary.argsTokens} t',
-            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+            style: TextStyle(color: theme.onSurfaceDim),
           ));
         } else {
           bodySpans.add(TextSpan(
             text: '~${summary.totalTokens} t',
-            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+            style: TextStyle(color: theme.onSurfaceDim),
           ));
         }
       } else {
         bodySpans.add(TextSpan(
           text: '~${summary.totalTokens} t',
-          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          style: TextStyle(color: theme.onSurfaceDim),
         ));
       }
     } else if (fallbackText != null && fallbackText.isNotEmpty) {
       bodySpans.add(TextSpan(
         text: fallbackText,
-        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+        style: TextStyle(color: theme.onSurfaceDim),
       ));
     }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          ' ${_capitalize(tc.name)}: ',
-          style: TextStyle(
-            color: CruxTheme.of(context).toolPrefix,
-            fontWeight: FontWeight.bold,
+    // Hover indicator — show ▸ on hover to signal clickability.
+    final prefixSpans = <TextSpan>[];
+    prefixSpans.add(TextSpan(
+      text: _hovered ? '▸ ' : ' ',
+      style: TextStyle(color: theme.toolPrefix),
+    ));
+    prefixSpans.add(TextSpan(
+      text: '${_capitalize(tc.name)}: ',
+      style: TextStyle(
+        color: theme.toolPrefix,
+        fontWeight: FontWeight.bold,
+      ),
+    ));
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      opaque: false,
+      child: GestureDetector(
+        onTap: component.onTap != null
+            ? () => component.onTap!(tc, component.pairedResult)
+            : null,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _hovered ? theme.surfaceVariant : null,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(text: TextSpan(children: prefixSpans)),
+              Expanded(
+                child: RichText(text: TextSpan(children: bodySpans)),
+              ),
+            ],
           ),
         ),
-        Expanded(
-          child: RichText(text: TextSpan(children: bodySpans)),
-        ),
-      ],
+      ),
     );
   }
 
@@ -382,9 +448,10 @@ class MessageBubble extends StatelessComponent {
     for (final key in priorityKeys) {
       if (tc.input.containsKey(key)) {
         final value = tc.input[key].toString();
-        final display = (key != 'command' && key != 'query' && key != 'url')
-            ? relativePath(value, Directory.current.path)
-            : value;
+        final display =
+            (key != 'command' && key != 'query' && key != 'url')
+                ? relativePath(value, Directory.current.path)
+                : value;
         return _truncateArg(display, 40);
       }
     }
@@ -394,14 +461,27 @@ class MessageBubble extends StatelessComponent {
     return '';
   }
 
-  /// For tools that implement [IntentionalTool], extract the intent
-  /// string from the call's input args. Returns null if the tool
-  /// is not intentional or no intent was provided.
   String? _intentLabel(ToolCallData tc, ToolDef? tool) {
     if (tool is IntentionalTool) {
       return tool.intentFromArgs(tc.input);
     }
     return null;
+  }
+
+  String _guardLabel(String content) {
+    const blockedPrefix = '[GUARD] Write was BLOCKED';
+    if (content.startsWith(blockedPrefix)) {
+      final rest = content.substring(blockedPrefix.length);
+      final dash = rest.indexOf('\u2014');
+      if (dash != -1) {
+        final reason = rest.substring(dash + 1);
+        final newline = reason.indexOf('\n');
+        final trimmed =
+            (newline == -1 ? reason : reason.substring(0, newline)).trim();
+        if (trimmed.isNotEmpty) return trimmed;
+      }
+    }
+    return 'guard triggered (auto read)';
   }
 
   String _autoReadLabel(String content) {
@@ -412,7 +492,8 @@ class MessageBubble extends StatelessComponent {
     if (dash == -1) return 'auto read';
     final reason = rest.substring(dash + 1);
     final newline = reason.indexOf('\n');
-    final trimmed = (newline == -1 ? reason : reason.substring(0, newline)).trim();
+    final trimmed =
+        (newline == -1 ? reason : reason.substring(0, newline)).trim();
     return trimmed.isEmpty ? 'auto read' : trimmed;
   }
 

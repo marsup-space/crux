@@ -218,18 +218,35 @@ class SessionStore implements SessionStoreAccessor {
   }
 
   Future<void> deleteSession(int id) async {
-    // Manual deletes in FK-cascade order. The schema declares
-    // `onDelete: KeyAction.cascade` on the child rows, but the
-    // connection does not enable `PRAGMA foreign_keys = ON` —
-    // so the cascade is advisory, not enforced. Doing the
-    // deletes explicitly keeps cleanup correct without changing
-    // the connection setup.
     await (_db.delete(_db.offloadedContent)
+          ..where((t) => t.sessionId.equals(id)))
+        .go();
+    await (_db.delete(_db.fileReadState)
           ..where((t) => t.sessionId.equals(id)))
         .go();
     await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
     await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
     await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<void> saveFileReadState(
+      int sessionId, String normalizedPath, int mtimeMs) async {
+    await _db
+        .into(_db.fileReadState)
+        .insertOnConflictUpdate(
+          db.FileReadStateCompanion.insert(
+            sessionId: sessionId,
+            path: normalizedPath,
+            mtimeMs: mtimeMs,
+          ),
+        );
+  }
+
+  Future<Map<String, int>> loadFileReadState(int sessionId) async {
+    final rows = await (_db.select(_db.fileReadState)
+          ..where((t) => t.sessionId.equals(sessionId)))
+        .get();
+    return {for (final r in rows) r.path: r.mtimeMs};
   }
 
   Future<int> deleteByProjectPath(String projectPath) async {
@@ -243,6 +260,9 @@ class SessionStore implements SessionStoreAccessor {
         _db.messages,
       )..where((t) => t.sessionId.equals(id))).go();
       await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(_db.fileReadState)
+            ..where((t) => t.sessionId.equals(id)))
+          .go();
     }
     await (_db.delete(
       _db.sessions,

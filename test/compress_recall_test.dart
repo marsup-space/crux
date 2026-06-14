@@ -211,6 +211,66 @@ void main() {
       );
     });
 
+    test('intent is embedded in the stand-in pointer', () async {
+      final session = await store.create(model: 'test/test');
+      final largeContent = 'y' * 5000;
+      final call = ToolCall(
+        callId: 'call_intent',
+        name: 'write',
+        input: {
+          'filePath': 'bar.py',
+          'content': largeContent,
+          'intent': 'Add the main entry point',
+        },
+      );
+
+      final compressed = await executor.compressCallForPersistence(
+        call,
+        session.id,
+      );
+
+      final standIn = compressed.input['content'] as String;
+      // The stand-in must carry the intent so the LLM can reason
+      // about compressed history without recalling the full bytes.
+      expect(standIn, contains('intent: "Add the main entry point"'));
+      expect(standIn, contains('offloaded'));
+      expect(standIn, contains('call_intent_content'));
+
+      // The intent arg itself is preserved unchanged.
+      expect(compressed.input['intent'], 'Add the main entry point');
+
+      // Full content is still recoverable.
+      final recovered = await store.messageStore.getOffloadedContent(
+        session.id,
+        'call_intent_content',
+      );
+      expect(recovered, largeContent);
+    });
+
+    test('stand-in pointer omits intent fragment when no intent provided',
+        () async {
+      final session = await store.create(model: 'test/test');
+      final largeContent = 'z' * 5000;
+      final call = ToolCall(
+        callId: 'call_nointent',
+        name: 'write',
+        input: {
+          'filePath': 'baz.py',
+          'content': largeContent,
+          // No 'intent' key at all.
+        },
+      );
+
+      final compressed = await executor.compressCallForPersistence(
+        call,
+        session.id,
+      );
+
+      final standIn = compressed.input['content'] as String;
+      expect(standIn, isNot(contains('intent:')));
+      expect(standIn, contains('offloaded'));
+    });
+
     // compressCallForPersistence always compresses large args when
     // called directly; the *caller* (chat_service.dart) is
     // responsible for skipping compression when the tool's

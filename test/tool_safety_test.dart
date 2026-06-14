@@ -26,6 +26,7 @@ import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
+import 'package:crux/src/tools/read_tool.dart';
 import 'package:crux/src/tools/write_tool.dart';
 
 void main() {
@@ -343,6 +344,26 @@ void main() {
       );
       expect(note, contains('`a`, `b`, and `c`'));
     });
+
+    test('intent is included in the note when provided', () {
+      final note = buildOffloadNote(
+        callId: 'call_with_intent',
+        offloadedArgs: const ['content'],
+        intent: 'Write the config file',
+      );
+      expect(note, contains("intent: 'Write the config file'"));
+      expect(note, contains('`content`'));
+      expect(note, contains('call_with_intent_content'));
+    });
+
+    test('intent is omitted from the note when not provided', () {
+      final note = buildOffloadNote(
+        callId: 'call_no_intent',
+        offloadedArgs: const ['content'],
+      );
+      expect(note, isNot(contains('intent:')));
+      expect(note, contains('`content`'));
+    });
   });
 
   group('EditTool result message includes the offload note', () {
@@ -515,6 +536,531 @@ void main() {
       expect(result.output, contains('call_w_big_content'),
           reason: 'composite key must appear so the LLM can name it');
       expect(result.output, contains('`content`'));
+    });
+  });
+
+  group('WriteTool read-before-write guard (regression: session 1141)', () {
+    late Directory tempDir;
+    late FileReadTracker tracker;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_guard_');
+      tracker = FileReadTracker();
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ToolContext ctx() => ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+
+    test('first write to a new file succeeds without guard', () async {
+      final filePath = '${tempDir.path}/new_file.dart';
+      final tool = WriteTool(tracker: tracker);
+
+      final result = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'hello world',
+          'intent': 'create new file',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('File written:'));
+      expect(result.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'hello world');
+    });
+
+    test('write tool records mtime after creating a new file, '
+        'so a second write does NOT trigger guard', () async {
+      // This is the correct behavior: the write tool creates the file
+      // and records the read. The agent knows what it just wrote, so
+      // a subsequent write in the same turn should not be blocked.
+      final filePath = '${tempDir.path}/created_by_write.dart';
+      final tool = WriteTool(tracker: tracker);
+
+      await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'initial content',
+          'intent': 'create file',
+        },
+        ctx(),
+      );
+
+      final result = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'updated content',
+          'intent': 'overwrite same-session file',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('File written:'));
+      expect(result.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'updated content');
+    });
+
+    test('writing to a pre-existing file that was never read triggers guard '
+        'and does NOT modify the file', () async {
+      // Session 1141 scenario: a file exists on disk (from a previous
+      // session, bash command, etc.) but the agent has never read it.
+      // The write tool must block and return the file content so the
+      // agent can retry.
+      final filePath = '${tempDir.path}/preexisting.dart';
+
+      // Simulate a pre-existing file (not created through the write tool,
+      // so the tracker has no record of it).
+      await File(filePath).writeAsString('original content from disk');
+
+      final tool = WriteTool(tracker: tracker);
+      final result = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'new content',
+          'intent': 'overwrite without reading',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('[GUARD]'));
+      expect(result.output, contains('BLOCKED'));
+      expect(result.output, contains('not read before write'));
+      expect(result.metadata['guardTriggered'], isTrue);
+      // The guard must include the file content so the agent can retry.
+      expect(result.output, contains('original content from disk'));
+
+      // The file must be unchanged — the guard blocked the write.
+      expect(await File(filePath).readAsString(), 'original content from disk',
+          reason: 'guard must block the write; file content must be unchanged');
+    });
+
+    test('after guard auto-read on a pre-existing file, a subsequent '
+        'write succeeds', () async {
+      final filePath = '${tempDir.path}/retry_preexisting.dart';
+      await File(filePath).writeAsString('version one on disk');
+
+      final tool = WriteTool(tracker: tracker);
+
+      // First write attempt — guard triggers (file never read),
+      // but the guard's auto-read records the mtime.
+      final guardResult = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'should not be written',
+          'intent': 'overwrite without read',
+        },
+        ctx(),
+      );
+      expect(guardResult.output, contains('[GUARD]'));
+
+      // Now the agent retries — the guard auto-read recorded the mtime,
+      // so this should succeed.
+      final retryResult = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'version two',
+          'intent': 'overwrite after guard auto-read',
+        },
+        ctx(),
+      );
+
+      expect(retryResult.output, contains('File written:'));
+      expect(retryResult.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'version two');
+    });
+
+    test('read then write on a pre-existing file does not trigger guard',
+        () async {
+      final filePath = '${tempDir.path}/read_then_write.dart';
+      await File(filePath).writeAsString('original');
+
+      final readTool = ReadTool(tracker: tracker);
+      final writeTool = WriteTool(tracker: tracker);
+
+      // Read the file first — this records the mtime in the tracker
+      await readTool.execute({'filePath': filePath}, ctx());
+
+      // Now write — guard should NOT trigger
+      final result = await writeTool.execute(
+        {
+          'filePath': filePath,
+          'content': 'updated',
+          'intent': 'update after read',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('File written:'));
+      expect(result.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'updated');
+    });
+
+    test('EditTool guard on a pre-existing unread file does not modify file',
+        () async {
+      final filePath = '${tempDir.path}/edit_preexisting.dart';
+      await File(filePath).writeAsString('alpha\nbeta\ngamma\n');
+
+      final editTool = EditTool(tracker: tracker);
+
+      // Edit without reading — guard must trigger
+      final result = await editTool.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'beta',
+          'newString': 'replaced',
+          'intent': 'edit without read',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('[GUARD]'));
+      expect(result.metadata['guardTriggered'], isTrue);
+      // File must be unchanged
+      expect(await File(filePath).readAsString(), 'alpha\nbeta\ngamma\n',
+          reason: 'guard must block the edit; file content must be unchanged');
+    });
+
+    test('guard does NOT trigger for a non-existent file (new file creation)',
+        () async {
+      // Brand-new file: no guard, any write is legitimate.
+      final filePath = '${tempDir.path}/brand_new.dart';
+      final tool = WriteTool(tracker: tracker);
+
+      final result = await tool.execute(
+        {
+          'filePath': filePath,
+          'content': 'fresh content',
+          'intent': 'create new file',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('File written:'));
+      expect(result.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'fresh content');
+    });
+
+    test('session 1141 exact sequence: guard → read → write should succeed',
+        () async {
+      // Exact reproduction of session 1141:
+      // 1. File exists on disk (from previous session)
+      // 2. Agent tries to write → guard triggers
+      // 3. Agent reads the file (because guard said to)
+      // 4. Agent writes again → should succeed
+      final filePath = '${tempDir.path}/session1141.dart';
+      await File(filePath).writeAsString('pre-existing content');
+
+      final readTool = ReadTool(tracker: tracker);
+      final writeTool = WriteTool(tracker: tracker);
+
+      // Step 1: write without read → guard triggers
+      final r1 = await writeTool.execute(
+        {
+          'filePath': filePath,
+          'content': 'new content',
+          'intent': 'overwrite',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('[GUARD]'));
+      expect(r1.metadata['guardTriggered'], isTrue);
+      expect(await File(filePath).readAsString(), 'pre-existing content');
+
+      // Step 2: agent reads the file
+      final r2 = await readTool.execute({'filePath': filePath}, ctx());
+      expect(r2.output, contains('pre-existing content'));
+
+      // Step 3: agent writes again — must succeed
+      final r3 = await writeTool.execute(
+        {
+          'filePath': filePath,
+          'content': 'new content',
+          'intent': 'overwrite after read',
+        },
+        ctx(),
+      );
+      expect(r3.output, contains('File written:'),
+          reason: 'after reading the file, the write must succeed');
+      expect(r3.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'new content');
+    });
+
+    test('session 1141 exact sequence: guard auto-read → write should succeed '
+        '(without explicit read)', () async {
+      // The guard's auto-read already records the mtime, so the agent
+      // should be able to write immediately without an explicit read.
+      final filePath = '${tempDir.path}/session1141_autoread.dart';
+      await File(filePath).writeAsString('pre-existing content');
+
+      final writeTool = WriteTool(tracker: tracker);
+
+      // Step 1: write without read → guard triggers (auto-reads)
+      final r1 = await writeTool.execute(
+        {
+          'filePath': filePath,
+          'content': 'new content',
+          'intent': 'overwrite',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('[GUARD]'));
+
+      // Step 2: write again — guard's auto-read already recorded mtime
+      final r2 = await writeTool.execute(
+        {
+          'filePath': filePath,
+          'content': 'new content',
+          'intent': 'overwrite after guard auto-read',
+        },
+        ctx(),
+      );
+      expect(r2.output, contains('File written:'),
+          reason: 'guard auto-read should have recorded mtime; '
+              'second write must succeed');
+      expect(r2.output, isNot(contains('[GUARD]')));
+      expect(await File(filePath).readAsString(), 'new content');
+    });
+
+    test('session 1141 exact sequence: guard→read→edit→read→edit', () async {
+      // The exact sequence from session 1141:
+      // 1. Edit unread file → guard triggers (auto-read records mtime)
+      // 2. Read the file explicitly
+      // 3. Edit succeeds (recordRead after edit)
+      // 4. Read the file again
+      // 5. Edit again → must NOT trigger "not read before write" guard
+      final filePath = '${tempDir.path}/session1141_full.dart';
+      await File(filePath).writeAsString('alpha\nbeta\ngamma\ndelta\n');
+
+      final readTool = ReadTool(tracker: tracker);
+      final editTool = EditTool(tracker: tracker);
+
+      // Step 1: edit unread file → guard
+      final r1 = await editTool.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'beta',
+          'newString': 'BETA',
+          'intent': 'replace beta',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('[GUARD]'));
+      expect(r1.metadata['guardTriggered'], isTrue);
+      expect(await File(filePath).readAsString(), 'alpha\nbeta\ngamma\ndelta\n');
+
+      // Step 2: read the file
+      final r2 = await readTool.execute({'filePath': filePath}, ctx());
+      expect(r2.output, contains('beta'));
+
+      // Step 3: edit succeeds
+      final r3 = await editTool.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'beta',
+          'newString': 'BETA',
+          'intent': 'replace beta',
+        },
+        ctx(),
+      );
+      expect(r3.output, contains('Edit applied'));
+      expect(r3.output, isNot(contains('[GUARD]')));
+
+      // Step 4: read again
+      final r4 = await readTool.execute({'filePath': filePath}, ctx());
+      expect(r4.output, contains('BETA'));
+
+      // Step 5: edit again — the bug: guard "not read before write"
+      final r5 = await editTool.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'gamma',
+          'newString': 'GAMMA',
+          'intent': 'replace gamma',
+        },
+        ctx(),
+      );
+      expect(r5.output, contains('Edit applied'),
+          reason: 'after edit+read+edit+read, a subsequent edit '
+              'must NOT be guarded as "not read before write"');
+      expect(r5.output, isNot(contains('[GUARD]')));
+    });
+
+    test('session 1141 exact sequence with relative paths: '
+        'guard→read→edit→read→edit', () async {
+      final subDir = '${tempDir.path}/lib/src/components';
+      await Directory(subDir).create(recursive: true);
+      final filePath = '$subDir/message_bubble.dart';
+      await File(filePath).writeAsString('alpha\nbeta\ngamma\ndelta\n');
+
+      final readTool = ReadTool(tracker: tracker);
+      final editTool = EditTool(tracker: tracker);
+
+      // Step 1: guard
+      final r1 = await editTool.execute(
+        {
+          'filePath': 'lib/src/components/message_bubble.dart',
+          'oldString': 'beta',
+          'newString': 'BETA',
+          'intent': 'replace beta',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('[GUARD]'));
+
+      // Step 2: read
+      await readTool.execute(
+        {'filePath': 'lib/src/components/message_bubble.dart'},
+        ctx(),
+      );
+
+      // Step 3: edit succeeds
+      final r3 = await editTool.execute(
+        {
+          'filePath': 'lib/src/components/message_bubble.dart',
+          'oldString': 'beta',
+          'newString': 'BETA',
+          'intent': 'replace beta',
+        },
+        ctx(),
+      );
+      expect(r3.output, contains('Edit applied'));
+
+      // Step 4: read
+      await readTool.execute(
+        {'filePath': 'lib/src/components/message_bubble.dart'},
+        ctx(),
+      );
+
+      // Step 5: edit again — must NOT guard
+      final r5 = await editTool.execute(
+        {
+          'filePath': 'lib/src/components/message_bubble.dart',
+          'oldString': 'gamma',
+          'newString': 'GAMMA',
+          'intent': 'replace gamma',
+        },
+        ctx(),
+      );
+      expect(r5.output, contains('Edit applied'),
+          reason: 'relative-path edit after edit+read must not be guarded');
+      expect(r5.output, isNot(contains('[GUARD]')));
+    });
+
+    test('session 1141: guard → read → write using relative paths '
+        '(same as agent uses)', () async {
+      // The agent uses relative paths like "lib/src/components/foo.dart"
+      // while the working directory is the project root. This test
+      // ensures path normalization doesn't break the tracker.
+      final subDir = '${tempDir.path}/lib/src/components';
+      await Directory(subDir).create(recursive: true);
+      final filePath = '$subDir/relative.dart';
+      await File(filePath).writeAsString('original');
+
+      final readTool = ReadTool(tracker: tracker);
+      final writeTool = WriteTool(tracker: tracker);
+
+      // Write using relative path → guard
+      final r1 = await writeTool.execute(
+        {
+          'filePath': 'lib/src/components/relative.dart',
+          'content': 'new',
+          'intent': 'overwrite',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('[GUARD]'));
+
+      // Read using relative path
+      await readTool.execute(
+        {'filePath': 'lib/src/components/relative.dart'},
+        ctx(),
+      );
+
+      // Write using relative path again — must succeed
+      final r3 = await writeTool.execute(
+        {
+          'filePath': 'lib/src/components/relative.dart',
+          'content': 'new',
+          'intent': 'overwrite after read',
+        },
+        ctx(),
+      );
+      expect(r3.output, contains('File written:'),
+          reason: 'relative path normalization must be consistent '
+              'between read and write tools');
+      expect(r3.output, isNot(contains('[GUARD]')));
+    });
+
+    test('tracker state survives simulated app restart via loadSession', () async {
+      // Regression test for session 1141: tracker cache was lost on
+      // app restart, causing false "not read before write" guards.
+      // With persistence, the state is loaded from the DB.
+      final filePath = '${tempDir.path}/persist_test.dart';
+      await File(filePath).writeAsString('original content');
+
+      final persisted = <(int, String, int)>[];
+      final tracker1 = FileReadTracker(
+        sessionId: 1,
+        onRecordRead: (sid, path, mtime) async {
+          persisted.add((sid, path, mtime));
+        },
+      );
+
+      final readTool1 = ReadTool(tracker: tracker1);
+      final editTool1 = EditTool(tracker: tracker1);
+
+      // Read and edit with first tracker instance
+      await readTool1.execute({'filePath': filePath}, ctx());
+      final r1 = await editTool1.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'original content',
+          'newString': 'edited content',
+          'intent': 'edit after read',
+        },
+        ctx(),
+      );
+      expect(r1.output, contains('Edit applied'));
+      expect(persisted.length, greaterThanOrEqualTo(2));
+
+      // Simulate app restart: new tracker, load state from "DB"
+      final savedState = <String, int>{};
+      for (final (_, path, mtime) in persisted) {
+        savedState[path] = mtime;
+      }
+      final tracker2 = FileReadTracker(
+        sessionId: 1,
+        onRecordRead: (sid, path, mtime) async {
+          persisted.add((sid, path, mtime));
+        },
+      );
+      tracker2.loadSession(1, savedState);
+
+      // Edit with second tracker — should NOT trigger guard
+      final editTool2 = EditTool(tracker: tracker2);
+      final r2 = await editTool2.execute(
+        {
+          'filePath': filePath,
+          'oldString': 'edited content',
+          'newString': 'further edited',
+          'intent': 'edit after restart',
+        },
+        ctx(),
+      );
+      expect(r2.output, contains('Edit applied'),
+          reason: 'tracker state loaded from DB must prevent '
+              'false "not read before write" guard after restart');
+      expect(r2.output, isNot(contains('[GUARD]')));
     });
   });
 }

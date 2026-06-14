@@ -605,7 +605,7 @@ class ChatService {
       apiMessages.add(assistantMsg);
       final callResults = <String, ToolResult>{};
       var roundResultTokens = 0;
-      {
+      try {
         final isAnthropic = wireFamily == WireFamily.anthropicCompatible;
         final content = isAnthropic ? <Map<String, dynamic>>[] : null;
         for (final call in toolCalls) {
@@ -660,36 +660,54 @@ class ChatService {
         if (isAnthropic) {
           apiMessages.add({'role': 'user', 'content': content});
         }
+      } catch (e) {
+        runtime.pauseStreamingTimer();
+        runtime.isResponding = false;
+        await _store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        _activeSessions.remove(sessionId);
+        onError('Tool execution error: $e');
+        return;
       }
 
       // ── Compress (skip calls where the guard fired) ──
       final compressedToolCalls = <ToolCall>[];
       var preCompressTokens = 0;
-      for (final call in toolCalls) {
-        final tool = _toolExecutor.lookupTool(call.name);
-        if (tool is LargePayloadTool && guardTriggers.contains(call.callId)) {
-          // Guard fired — keep the original args so the LLM can
-          // re-evaluate its edit/write without an extra recall.
-          compressedToolCalls.add(call);
-          continue;
-        }
-        if (tool is LargePayloadTool) {
-          // Include the OFFLOADABLE args in the pre-number. The
-          // strikethrough is meant to show what compression SAVES —
-          // if we exclude oldString/newString from the estimate,
-          // both numbers look the same and the user sees zero
-          // benefit. The post number (from collapsedSummary) also
-          // includes the args (which are now stand-ins), so the
-          // comparison is honest: big strikethrough = big saving.
-          preCompressTokens += estimateToolRoundTripTokens(
-            toolName: call.name,
-            args: call.input,
-            resultOutput: '',
+      try {
+        for (final call in toolCalls) {
+          final tool = _toolExecutor.lookupTool(call.name);
+          if (tool is LargePayloadTool && guardTriggers.contains(call.callId)) {
+            // Guard fired — keep the original args so the LLM can
+            // re-evaluate its edit/write without an extra recall.
+            compressedToolCalls.add(call);
+            continue;
+          }
+          if (tool is LargePayloadTool) {
+            // Include the OFFLOADABLE args in the pre-number. The
+            // strikethrough is meant to show what compression SAVES —
+            // if we exclude oldString/newString from the estimate,
+            // both numbers look the same and the user sees zero
+            // benefit. The post number (from collapsedSummary) also
+            // includes the args (which are now stand-ins), so the
+            // comparison is honest: big strikethrough = big saving.
+            preCompressTokens += estimateToolRoundTripTokens(
+              toolName: call.name,
+              args: call.input,
+              resultOutput: '',
+            );
+          }
+          compressedToolCalls.add(
+            await _toolExecutor.compressCallForPersistence(call, sessionId),
           );
         }
-        compressedToolCalls.add(
-          await _toolExecutor.compressCallForPersistence(call, sessionId),
-        );
+      } catch (e) {
+        runtime.pauseStreamingTimer();
+        runtime.isResponding = false;
+        await _store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        _activeSessions.remove(sessionId);
+        onError('Compression error: $e');
+        return;
       }
 
       final toolCallData = compressedToolCalls
@@ -710,26 +728,36 @@ class ChatService {
       // (e.g. MiniMax "tool call result does not follow tool
       // call"). [addToolRound] wraps both writes in a SQLite
       // transaction so the persist step is all-or-nothing.
-      await _messageStore.addToolRound(
-        sessionId,
-        roundText: roundText,
-        reasoningContent: roundReasoning,
-        reasoningSignature: roundReasoningSignature,
-        reasoningTokens: roundReasoningTokens,
-        thinkingDurationMs:
-            (roundReasoning.isNotEmpty || roundReasoningTokens > 0)
-            ? roundThinkingDurationMs.round()
-            : 0,
-        reasoningEffort: runtime.thinkingMode == 'disabled'
-            ? null
-            : runtime.reasoningEffort ?? 'normal',
-        toolCalls: toolCallData,
-        preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
-        results: [
-          for (final call in toolCalls)
-            (callId: call.callId, output: callResults[call.callId]!.output),
-        ],
-      );
+      try {
+        await _messageStore.addToolRound(
+          sessionId,
+          roundText: roundText,
+          reasoningContent: roundReasoning,
+          reasoningSignature: roundReasoningSignature,
+          reasoningTokens: roundReasoningTokens,
+          thinkingDurationMs:
+              (roundReasoning.isNotEmpty || roundReasoningTokens > 0)
+              ? roundThinkingDurationMs.round()
+              : 0,
+          reasoningEffort: runtime.thinkingMode == 'disabled'
+              ? null
+              : runtime.reasoningEffort ?? 'normal',
+          toolCalls: toolCallData,
+          preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
+          results: [
+            for (final call in toolCalls)
+              (callId: call.callId, output: callResults[call.callId]!.output),
+          ],
+        );
+      } catch (e) {
+        runtime.pauseStreamingTimer();
+        runtime.isResponding = false;
+        await _store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        _activeSessions.remove(sessionId);
+        onError('Persistence error: $e');
+        return;
+      }
 
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();

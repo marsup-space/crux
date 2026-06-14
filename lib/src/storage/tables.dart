@@ -64,6 +64,9 @@ class FileReadState extends Table {
       integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
   TextColumn get path => text()();
   IntColumn get mtimeMs => integer()();
+
+  @override
+  Set<Column> get primaryKey => {sessionId, path};
 }
 
 class Parts extends Table {

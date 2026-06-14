@@ -128,7 +128,7 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     }
 
     if (tracker != null) {
-      final guard = tracker!.checkWriteGuard(resolved);
+      final guard = await tracker!.checkWriteGuard(resolved);
       if (guard != null) {
         return ToolResult(
           title: 'Read-before-write guard triggered',
@@ -144,7 +144,7 @@ class EditTool extends LargePayloadTool with IntentionalTool {
 
     if (oldString.isEmpty) {
       await _writePreservingEncoding(file, newString, meta);
-      if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
+      if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
       return _withOffloadNote(
         args,
         ctx,
@@ -197,7 +197,7 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     final normalized = normalizeToLineEnding(newContent, meta.lineEnding);
     await _writePreservingEncoding(file, normalized, meta);
 
-    if (tracker != null) tracker!.recordRead(resolved, await _mtimeMs(file));
+    if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
 
     final count = matchResult.positions.length;
     return _withOffloadNote(

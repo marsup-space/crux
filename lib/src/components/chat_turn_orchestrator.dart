@@ -365,7 +365,16 @@ class ChatTurnOrchestrator {
         _streamingController.stopMetricsTimer(sessionId);
         _showToast(error, mode: ToastMode.error);
       },
-    );
+    ).catchError((e) {
+      if (!_interruptedSessions.contains(sessionId)) {
+        _showToast('Unhandled error: $e', mode: ToastMode.error);
+      }
+      rt.isResponding = false;
+      _streamingController.stopMetricsTimer(sessionId);
+      _streamingController.clearStreamingFor(sessionId);
+      _activeAbortSignals.remove(sessionId);
+      _refresh();
+    });
   }
 
   /// Drive a single `/btw` turn. Nothing is written to the database.

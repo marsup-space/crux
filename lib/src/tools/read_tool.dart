@@ -119,7 +119,7 @@ class ReadTool extends ToolDef {
   ) async {
     final file = File(path);
     final mtimeMs = file.statSync().modified.millisecondsSinceEpoch;
-    _tracker?.recordRead(path, mtimeMs);
+    await _tracker?.recordRead(path, mtimeMs);
 
     final binaryExts = {
       '.exe',

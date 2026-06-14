@@ -165,8 +165,8 @@ void main() {
         final file = File('${tempDir.path}/fresh.txt');
         await file.writeAsString('hello');
         final mtime = file.statSync().modified.millisecondsSinceEpoch;
-        tracker.recordRead(file.path, mtime);
-        final guard = tracker.checkWriteGuard(file.path);
+        await tracker.recordRead(file.path, mtime);
+        final guard = await tracker.checkWriteGuard(file.path);
         expect(guard, isNull);
       },
     );
@@ -176,10 +176,10 @@ void main() {
         () async {
       final file = File('${tempDir.path}/unread.txt');
       await file.writeAsString('content here');
-      final guard = tracker.checkWriteGuard(file.path);
+      final guard = await tracker.checkWriteGuard(file.path);
       expect(guard, isNotNull);
       expect(guard!.header, contains('[GUARD]'));
-      expect(guard.header, contains('not read before write'));
+      expect(guard.header, contains('BLOCKED'));
       expect(guard.content, 'content here');
     });
 
@@ -188,26 +188,62 @@ void main() {
         'with a clear "pattern must match this version" hint', () async {
       final file = File('${tempDir.path}/modified.txt');
       await file.writeAsString('original');
-      tracker.recordRead(
+      await tracker.recordRead(
         file.path,
         file.statSync().modified.millisecondsSinceEpoch,
       );
       await Future.delayed(const Duration(milliseconds: 1500));
       await file.writeAsString('updated completely different content here');
-      final guard = tracker.checkWriteGuard(file.path);
+      final guard = await tracker.checkWriteGuard(file.path);
       expect(guard, isNotNull);
-      expect(guard!.header, contains('We re-read it for you'));
-      expect(guard.header, contains('retry your edit'));
+      expect(guard!.header, contains('BLOCKED'));
+      expect(guard.header, contains('modified since last read'));
       expect(guard.content, 'updated completely different content here');
     });
 
-    test('toMap and loadFromMap preserve state', () {
-      tracker.recordRead('/foo/bar.dart', 12345);
-      tracker.recordRead('/baz/qux.dart', 67890);
+    test('toMap and loadFromMap preserve state', () async {
+      await tracker.recordRead('/foo/bar.dart', 12345);
+      await tracker.recordRead('/baz/qux.dart', 67890);
       final map = tracker.toMap();
       final newTracker = FileReadTracker();
       newTracker.loadFromMap(map);
       expect(newTracker.toMap().length, 2);
+    });
+
+    test('loadSession replaces cache and sets sessionId', () async {
+      await tracker.recordRead('/old/path.dart', 111);
+      tracker.loadSession(42, {'/new/path.dart': 222});
+      expect(tracker.toMap(), {'/new/path.dart': 222});
+    });
+
+    test('onRecordRead callback fires with sessionId and normalized path',
+        () async {
+      final calls = <(int, String, int)>[];
+      final t = FileReadTracker(
+        sessionId: 7,
+        onRecordRead: (sid, path, mtime) async {
+          calls.add((sid, path, mtime));
+        },
+      );
+      await t.recordRead('/foo/bar.dart', 999);
+      expect(calls.length, 1);
+      expect(calls[0], (7, '/foo/bar.dart', 999));
+    });
+
+    test('onRecordRead does not fire when sessionId is null', () async {
+      var called = false;
+      final t = FileReadTracker(onRecordRead: (_, _, _) async {
+        called = true;
+      });
+      await t.recordRead('/foo/bar.dart', 999);
+      expect(called, isFalse);
+    });
+
+    test('clear empties the cache', () async {
+      await tracker.recordRead('/foo.dart', 123);
+      expect(tracker.toMap().length, 1);
+      tracker.clear();
+      expect(tracker.toMap().length, 0);
     });
   });
 
@@ -1591,7 +1627,7 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('[GUARD]'));
-      expect(result.output, contains('not read before write'));
+      expect(result.output, contains('BLOCKED'));
       expect(result.output, contains('existing content'));
       expect(result.metadata['guardTriggered'], isTrue);
     });
@@ -1602,7 +1638,7 @@ void main() {
       final tool = EditTool(tracker: tracker);
       final filePath = '${tempDir.path}/modified.txt';
       await File(filePath).writeAsString('version 1');
-      tracker.recordRead(filePath,
+      await tracker.recordRead(filePath,
           DateTime.now().subtract(const Duration(seconds: 10)).millisecondsSinceEpoch);
 
       await File(filePath).writeAsString('version 2');
@@ -1613,7 +1649,7 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('[GUARD]'));
-      expect(result.output, contains('We re-read it'));
+      expect(result.output, contains('BLOCKED'));
       expect(result.output, contains('version 2'));
       expect(result.metadata['guardTriggered'], isTrue);
     });

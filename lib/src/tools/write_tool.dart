@@ -104,7 +104,7 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     final file = File(resolved);
 
     if (tracker != null && file.existsSync()) {
-      final guard = tracker!.checkWriteGuard(resolved);
+      final guard = await tracker!.checkWriteGuard(resolved);
       if (guard != null) {
         return ToolResult(
           title: 'Read-before-write guard triggered',
@@ -158,7 +158,7 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     }
 
     if (tracker != null) {
-      tracker!.recordRead(resolved, await _mtimeMs(file));
+      await tracker!.recordRead(resolved, await _mtimeMs(file));
     }
 
     final relPath = relativePath(resolved, ctx.workingDirectory);

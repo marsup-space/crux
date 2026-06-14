@@ -30,6 +30,10 @@ class ChatHistory extends StatefulComponent {
   final void Function(String message, {ToastMode mode}) showToast;
   final void Function() refresh;
 
+  /// Callback when a tool call bubble is tapped. Receives the
+  /// [ToolCallData] and the paired result [Message] (if any).
+  final void Function(ToolCallData toolCall, Message? pairedResult)? onToolCallTap;
+
   const ChatHistory({
     super.key,
     required this.scrollController,
@@ -40,6 +44,7 @@ class ChatHistory extends StatefulComponent {
     required this.toolRegistry,
     required this.showToast,
     required this.refresh,
+    this.onToolCallTap,
   });
 
   @override
@@ -116,6 +121,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           highlightText:
               msg.id == _highlightMessageId ? _highlightText : null,
           reasoningPresets: _currentReasoningPresets(),
+          onToolCallTap: component.onToolCallTap,
         ),
       );
 
