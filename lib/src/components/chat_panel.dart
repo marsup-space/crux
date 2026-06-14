@@ -415,9 +415,33 @@ class _ChatPanelState extends State<ChatPanel> {
         toolCall: toolCall,
         pairedResult: pairedResult,
         toolRegistry: _toolRegistry,
+        sessionId: _sessionController.currentSessionId,
+        getOffloadedContent: _getOffloadedContent,
       );
       _overlayController.showFullpane = true;
     });
+  }
+
+  /// Retrieve all offloaded content for a tool call.
+  /// Returns a map of argKey → original content string.
+  Future<Map<String, String>> _getOffloadedContent(
+    int sessionId,
+    String callId,
+  ) async {
+    final rows = await _store.messageStore.getAllOffloadedContentForCall(
+      sessionId,
+      callId,
+    );
+    final result = <String, String>{};
+    final prefix = '${callId}_';
+    for (final row in rows) {
+      // The composite key is `callId_argKey`, extract the argKey.
+      if (row.callId.startsWith(prefix)) {
+        final argKey = row.callId.substring(prefix.length);
+        result[argKey] = row.content;
+      }
+    }
+    return result;
   }
 
   void _closeFullpane() {

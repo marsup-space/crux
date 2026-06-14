@@ -274,6 +274,25 @@ class MessageStore {
     return row?.content;
   }
 
+  /// Return all offloaded-content rows for a tool call identified
+  /// by [sessionId] and [toolCallId] (the LLM-assigned call ID,
+  /// not the composite key). The composite keys in the DB have the
+  /// format `<toolCallId>_<argKey>`, so we match rows whose
+  /// `callId` starts with `<toolCallId>_`.
+  Future<List<db.OffloadedContentData>> getAllOffloadedContentForCall(
+    int sessionId,
+    String toolCallId,
+  ) async {
+    final prefix = '${toolCallId}_';
+    return (_db.select(_db.offloadedContent)
+          ..where(
+            (t) =>
+                t.sessionId.equals(sessionId) &
+                t.callId.like('$prefix%'),
+          ))
+        .get();
+  }
+
   /// Delete every off-loaded-content row for [sessionId]. Returns
   /// the number of bytes freed (sum of `byte_size` over the deleted
   /// rows, or 0 if nothing was off-loaded). Called from

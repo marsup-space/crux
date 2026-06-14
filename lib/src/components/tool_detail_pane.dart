@@ -14,10 +14,20 @@ class ToolDetailData {
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
 
+  /// Session ID for looking up offloaded content.
+  final int? sessionId;
+
+  /// Callback to retrieve offloaded content for a tool call.
+  /// Returns a map of argKey → original content string.
+  final Future<Map<String, String>> Function(int sessionId, String callId)?
+      getOffloadedContent;
+
   const ToolDetailData({
     required this.toolCall,
     this.pairedResult,
     this.toolRegistry,
+    this.sessionId,
+    this.getOffloadedContent,
   });
 }
 
@@ -51,6 +61,38 @@ class ToolDetailPane extends StatefulComponent {
 class _ToolDetailPaneState extends State<ToolDetailPane> {
   /// Active tab: 0 = input, 1 = output, 2 = summary.
   int _activeTab = 1; // default to output — most useful view
+
+  /// Original content for offloaded args, keyed by arg name.
+  /// Populated asynchronously when the pane opens.
+  Map<String, String> _offloadedArgs = {};
+  bool _offloadLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOffloadedContent();
+  }
+
+  Future<void> _loadOffloadedContent() async {
+    final data = component.data;
+    final sessionId = data.sessionId;
+    final getter = data.getOffloadedContent;
+    if (sessionId == null || getter == null) {
+      if (mounted) setState(() => _offloadLoading = false);
+      return;
+    }
+    try {
+      final result = await getter(sessionId, data.toolCall.callId);
+      if (mounted) {
+        setState(() {
+          _offloadedArgs = result;
+          _offloadLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _offloadLoading = false);
+    }
+  }
 
   @override
   Component build(BuildContext context) {
@@ -209,18 +251,68 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final valueStr = _formatValue(value);
 
     // For LargePayloadTool offloadable args (write's content, edit's
-    // oldString/newString), never dump the full value into the detail
-    // pane — even "small" writes/edits can be distracting when shown
-    // inline, and after offloading the value is a stand-in pointer
-    // that should also be summarised rather than displayed raw.
+    // oldString/newString), check if the value was actually offloaded
+    // (replaced with a stand-in pointer) or still holds the original
+    // content.
     final tc = component.data.toolCall;
     final tool = component.data.toolRegistry?.lookup(tc.name);
     if (tool is LargePayloadTool &&
         tool.offloadableArgs.contains(key)) {
-      return _buildLargeArgSummary(key, valueStr, theme);
+      // Detect offload stand-in pointers.
+      final standIn = _parseOffloadStandIn(valueStr);
+      if (standIn != null) {
+        // Value was offloaded — try to recover the original from DB.
+        final original = _offloadedArgs[key];
+        if (original != null) {
+          return _buildArgBlockWithContent(key, original, theme, wasOffloaded: true);
+        }
+        // Still loading or couldn't recover — show compact summary.
+        if (_offloadLoading) {
+          return _buildLargeArgSummary(key, valueStr, theme, loading: true);
+        }
+        return _buildLargeArgSummary(key, valueStr, theme);
+      }
+      // Value was NOT offloaded — it's the actual content. Show it.
+      return _buildArgBlockWithContent(key, valueStr, theme);
     }
 
+    return _buildArgBlockWithContent(key, valueStr, theme);
+  }
+
+  /// Render an argument with its full content, using a code block
+  /// for multi-line or long values. [wasOffloaded] indicates the
+  /// value was recovered from the offloaded_content table.
+  Component _buildArgBlockWithContent(
+    String key,
+    String valueStr,
+    CruxThemeData theme, {
+    bool wasOffloaded = false,
+  }) {
     final isLong = valueStr.length > 80 || valueStr.contains('\n');
+
+    final headerSpans = <TextSpan>[];
+    headerSpans.add(TextSpan(
+      text: '$key ',
+      style: TextStyle(
+        color: theme.foreground,
+        fontWeight: FontWeight.bold,
+      ),
+    ));
+    if (wasOffloaded) {
+      headerSpans.add(TextSpan(
+        text: '(offloaded) ',
+        style: TextStyle(
+          color: theme.onSurfaceDim,
+          fontStyle: FontStyle.italic,
+        ),
+      ));
+    }
+    if (!isLong) {
+      headerSpans.add(TextSpan(
+        text: valueStr,
+        style: TextStyle(color: theme.foreground),
+      ));
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,20 +322,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '$key ',
-                style: TextStyle(
-                  color: theme.foreground,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (!isLong)
-                Expanded(
-                  child: Text(
-                    valueStr,
-                    style: TextStyle(color: theme.foreground),
-                  ),
-                ),
+              Expanded(child: RichText(text: TextSpan(children: headerSpans))),
             ],
           ),
         ),
@@ -268,8 +347,36 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _buildLargeArgSummary(
     String key,
     String valueStr,
-    CruxThemeData theme,
-  ) {
+    CruxThemeData theme, {
+    bool loading = false,
+  }) {
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$key ',
+              style: TextStyle(
+                color: theme.foreground,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Expanded(
+              child: Text(
+                'loading…',
+                style: TextStyle(
+                  color: theme.onSurfaceDim,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Detect offload stand-in pointers and extract their metrics
     // rather than displaying the raw pointer text.
     final standIn = _parseOffloadStandIn(valueStr);
