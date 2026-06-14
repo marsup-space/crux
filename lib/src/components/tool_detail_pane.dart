@@ -31,21 +31,9 @@ class ToolDetailData {
   });
 }
 
-/// Parsed metrics from an offload stand-in pointer string.
-class _OffloadStandIn {
-  final int lineCount;
-  final String sizeStr;
-  final String? intent;
-
-  const _OffloadStandIn({
-    required this.lineCount,
-    required this.sizeStr,
-    this.intent,
-  });
-}
-
 /// Fullpane content that shows the detailed view of a tool call,
-/// with tabbed Input / Output / Summary views.
+/// with two tabs: Pretty (tool-specific well-presented view)
+/// and Raw (full input + output).
 class ToolDetailPane extends StatefulComponent {
   final ToolDetailData data;
 
@@ -59,18 +47,16 @@ class ToolDetailPane extends StatefulComponent {
 }
 
 class _ToolDetailPaneState extends State<ToolDetailPane> {
-  /// Active tab: 0 = input, 1 = output, 2 = summary.
-  int _activeTab = 1; // default to output — most useful view
+  /// Active tab: 0 = pretty, 1 = raw.
+  int _activeTab = 0;
 
   /// Original content for offloaded args, keyed by arg name.
-  /// Populated asynchronously when the pane opens.
   Map<String, String> _offloadedArgs = {};
   bool _offloadLoading = true;
 
   /// Scroll controllers for each tab.
-  final _inputScrollController = ScrollController();
-  final _outputScrollController = ScrollController();
-  final _summaryScrollController = ScrollController();
+  final _prettyScrollController = ScrollController();
+  final _rawScrollController = ScrollController();
 
   @override
   void initState() {
@@ -80,9 +66,8 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
   @override
   void dispose() {
-    _inputScrollController.dispose();
-    _outputScrollController.dispose();
-    _summaryScrollController.dispose();
+    _prettyScrollController.dispose();
+    _rawScrollController.dispose();
     super.dispose();
   }
 
@@ -107,6 +92,25 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     }
   }
 
+  // ── Resolve the real value for an arg, recovering offloaded content ──
+
+  String _resolveArg(String key, dynamic rawValue) {
+    final valueStr = _formatValue(rawValue);
+    final tc = component.data.toolCall;
+    final tool = component.data.toolRegistry?.lookup(tc.name);
+    if (tool is LargePayloadTool && tool.offloadableArgs.contains(key)) {
+      final standIn = _parseOffloadStandIn(valueStr);
+      if (standIn != null) {
+        return _offloadedArgs[key] ?? valueStr;
+      }
+    }
+    return valueStr;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Build
+  // ══════════════════════════════════════════════════════════════════════
+
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
@@ -120,25 +124,22 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
         // ── Content area ──
         Expanded(
-          child: _buildContent(theme),
+          child: _activeTab == 0
+              ? _buildPrettyTab(theme)
+              : _buildRawTab(theme),
         ),
       ],
     );
   }
 
-  // ─── Tab bar ────────────────────────────────────────────────────────
+  // ── Tab bar ──────────────────────────────────────────────────────────
 
   Component _buildTabBar(CruxThemeData theme) {
-    final result = component.data.pairedResult;
     return Row(
       children: [
-        _buildTab('Input', 0, theme),
+        _buildTab('Pretty', 0, theme),
         _tabSep(theme),
-        _buildTab('Output', 1, theme),
-        if (result != null) ...[
-          _tabSep(theme),
-          _buildTab('Summary', 2, theme),
-        ],
+        _buildTab('Raw', 1, theme),
         const Spacer(),
         _buildQuickMetrics(theme),
       ],
@@ -203,30 +204,420 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return Text(metric, style: TextStyle(color: theme.onSurfaceDim));
   }
 
-  // ─── Content router ────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Pretty tab — tool-specific well-presented views
+  // ══════════════════════════════════════════════════════════════════════
 
-  Component _buildContent(CruxThemeData theme) {
-    switch (_activeTab) {
-      case 0:
-        return _buildInputTab(theme);
-      case 1:
-        return _buildOutputTab(theme);
-      case 2:
-        return _buildSummaryTab(theme);
+  Component _buildPrettyTab(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    switch (tc.name) {
+      case 'write':
+        return _buildPrettyWrite(theme);
+      case 'edit':
+        return _buildPrettyEdit(theme);
+      case 'bash':
+      case 'cmd':
+      case 'powershell':
+        return _buildPrettyShell(theme);
+      case 'read':
+        return _buildPrettyRead(theme);
+      case 'grep':
+        return _buildPrettyGrep(theme);
+      case 'glob':
+        return _buildPrettyGlob(theme);
+      case 'webfetch':
+        return _buildPrettyWebfetch(theme);
       default:
-        return _buildOutputTab(theme);
+        return _buildPrettyGeneric(theme);
     }
   }
 
-  // ─── Input tab ─────────────────────────────────────────────────────
+  // ── Write ────────────────────────────────────────────────────────────
 
-  Component _buildInputTab(CruxThemeData theme) {
+  Component _buildPrettyWrite(CruxThemeData theme) {
     final tc = component.data.toolCall;
-    final tool = component.data.toolRegistry?.lookup(tc.name);
+    final filePath = tc.input['filePath']?.toString() ?? '';
+    final intent = tc.input['intent']?.toString() ?? '';
+    final content = _resolveArg('content', tc.input['content']);
+    final language = _languageFromPath(filePath);
 
     final children = <Component>[];
 
-    // Tool name
+    // Header
+    children.add(_fileHeader(filePath, intent, theme));
+
+    // Content — syntax-highlighted code block
+    if (content.isEmpty || _parseOffloadStandIn(content) != null) {
+      children.add(_dimText(
+        _offloadLoading ? '  loading content…' : '  (content unavailable)',
+        theme,
+      ));
+    } else {
+      children.add(Expanded(
+        child: _scrollableCodeBlock(content, language ?? '', theme),
+      ));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── Edit ─────────────────────────────────────────────────────────────
+
+  Component _buildPrettyEdit(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final filePath = tc.input['filePath']?.toString() ?? '';
+    final intent = tc.input['intent']?.toString() ?? '';
+    final oldStr = _resolveArg('oldString', tc.input['oldString']);
+    final newStr = _resolveArg('newString', tc.input['newString']);
+    final replaceAll = tc.input['replaceAll'] == true;
+    final language = _languageFromPath(filePath);
+
+    final children = <Component>[];
+
+    // Header
+    children.add(_fileHeader(filePath, intent, theme));
+    if (replaceAll) {
+      children.add(_banner('⟳ Replace all occurrences', theme.info, theme));
+    }
+
+    // Old → New diff-style view
+    children.add(_sectionHeading('Old', theme, color: theme.error));
+    if (oldStr.isEmpty || _parseOffloadStandIn(oldStr) != null) {
+      children.add(_dimText(
+        _offloadLoading ? '  loading…' : '  (unavailable)',
+        theme,
+      ));
+    } else {
+      children.add(Container(
+        padding: const EdgeInsets.only(left: 1),
+        child: _inlineCodeBlock(oldStr, language ?? '', theme),
+      ));
+    }
+
+    children.add(Divider(color: theme.dividerDim, height: 1));
+    children.add(_sectionHeading('New', theme, color: theme.success));
+    if (newStr.isEmpty || _parseOffloadStandIn(newStr) != null) {
+      children.add(_dimText(
+        _offloadLoading ? '  loading…' : '  (unavailable)',
+        theme,
+      ));
+    } else {
+      children.add(Container(
+        padding: const EdgeInsets.only(left: 1),
+        child: _inlineCodeBlock(newStr, language ?? '', theme),
+      ));
+    }
+
+    return Scrollbar(
+      controller: _prettyScrollController,
+      thumbVisibility: true,
+      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      child: SingleChildScrollView(
+        controller: _prettyScrollController,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Shell (bash / cmd / powershell) ──────────────────────────────────
+
+  Component _buildPrettyShell(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final command = tc.input['command']?.toString() ?? '';
+    final intent = tc.input['intent']?.toString() ?? '';
+    final result = component.data.pairedResult;
+    final output = result?.content ?? '';
+
+    final children = <Component>[];
+
+    // Header: command + intent
+    children.add(Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [
+          Text(
+            '\$ ',
+            style: TextStyle(
+              color: theme.success,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              command,
+              style: TextStyle(
+                color: theme.foreground,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ));
+    if (intent.isNotEmpty) {
+      children.add(_labelValue('Intent', intent, theme, valueItalic: true));
+    }
+
+    // Exit code from metadata
+    final exitCode = result != null
+        ? _extractExitCode(result.content)
+        : null;
+    if (exitCode != null && exitCode != 0) {
+      children.add(_banner('✗ Exit code: $exitCode', theme.error, theme));
+    } else if (result != null) {
+      children.add(_banner('✓ Completed', theme.success, theme));
+    }
+
+    children.add(Divider(color: theme.dividerDim, height: 1));
+
+    // Output — the actual command output, shown in a code block
+    if (output.isNotEmpty) {
+      // Strip the [exit code: N] trailer that the tool appends
+      final displayOutput = _stripExitCodeLine(output);
+      children.add(Expanded(
+        child: _scrollableCodeBlock(displayOutput, '', theme),
+      ));
+    } else {
+      children.add(_dimText('  (no output)', theme));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── Read ─────────────────────────────────────────────────────────────
+
+  Component _buildPrettyRead(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final filePath = tc.input['filePath']?.toString() ?? '';
+    final result = component.data.pairedResult;
+    final output = result?.content ?? '';
+    final language = _languageFromPath(filePath);
+
+    final children = <Component>[];
+
+    // Header
+    children.add(_fileHeader(filePath, '', theme));
+
+    // File content (output already has line numbers from the tool)
+    if (output.isNotEmpty) {
+      children.add(Expanded(
+        child: _scrollableCodeBlock(output, language ?? '', theme),
+      ));
+    } else {
+      children.add(_dimText('  (no content)', theme));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── Grep ─────────────────────────────────────────────────────────────
+
+  Component _buildPrettyGrep(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final pattern = tc.input['pattern']?.toString() ?? '';
+    final path = tc.input['path']?.toString() ?? '';
+    final include = tc.input['include']?.toString() ?? '';
+    final result = component.data.pairedResult;
+    final output = result?.content ?? '';
+
+    final children = <Component>[];
+
+    // Header
+    final headerParts = <TextSpan>[];
+    headerParts.add(TextSpan(
+      text: 'Pattern: ',
+      style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
+    ));
+    headerParts.add(TextSpan(
+      text: '/$pattern/',
+      style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
+    ));
+    if (path.isNotEmpty) {
+      headerParts.add(TextSpan(
+        text: '  in $path',
+        style: TextStyle(color: theme.onSurfaceDim),
+      ));
+    }
+    if (include.isNotEmpty) {
+      headerParts.add(TextSpan(
+        text: '  filter: $include',
+        style: TextStyle(color: theme.onSurfaceDim),
+      ));
+    }
+    children.add(Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [Expanded(child: RichText(text: TextSpan(children: headerParts)))],
+      ),
+    ));
+
+    // Match count
+    final totalMatches = result?.content.isNotEmpty == true
+        ? '\n'.allMatches(output).length + 1
+        : 0;
+    children.add(_labelValue('Matches', '$totalMatches', theme));
+
+    children.add(Divider(color: theme.dividerDim, height: 1));
+
+    // Results
+    if (output.isNotEmpty) {
+      children.add(Expanded(
+        child: _scrollableCodeBlock(output, '', theme),
+      ));
+    } else {
+      children.add(_dimText('  (no matches)', theme));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── Glob ─────────────────────────────────────────────────────────────
+
+  Component _buildPrettyGlob(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final pattern = tc.input['pattern']?.toString() ?? '';
+    final path = tc.input['path']?.toString() ?? '';
+    final result = component.data.pairedResult;
+    final output = result?.content ?? '';
+
+    final children = <Component>[];
+
+    // Header
+    final headerParts = <TextSpan>[];
+    headerParts.add(TextSpan(
+      text: 'Pattern: ',
+      style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
+    ));
+    headerParts.add(TextSpan(
+      text: pattern,
+      style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
+    ));
+    if (path.isNotEmpty) {
+      headerParts.add(TextSpan(
+        text: '  in $path',
+        style: TextStyle(color: theme.onSurfaceDim),
+      ));
+    }
+    children.add(Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [Expanded(child: RichText(text: TextSpan(children: headerParts)))],
+      ),
+    ));
+
+    final fileCount = output.isNotEmpty
+        ? '\n'.allMatches(output).length + 1
+        : 0;
+    children.add(_labelValue('Files', '$fileCount', theme));
+
+    children.add(Divider(color: theme.dividerDim, height: 1));
+
+    if (output.isNotEmpty) {
+      children.add(Expanded(
+        child: _scrollableCodeBlock(output, '', theme),
+      ));
+    } else {
+      children.add(_dimText('  (no files matched)', theme));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── WebFetch ─────────────────────────────────────────────────────────
+
+  Component _buildPrettyWebfetch(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final url = tc.input['url']?.toString() ?? '';
+    final result = component.data.pairedResult;
+    final output = result?.content ?? '';
+
+    final children = <Component>[];
+
+    // Header
+    children.add(Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [
+          Text(
+            'URL: ',
+            style: TextStyle(
+              color: theme.onSurfaceDim,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              url,
+              style: TextStyle(
+                color: theme.mdLink,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ));
+
+    children.add(Divider(color: theme.dividerDim, height: 1));
+
+    // Content
+    if (output.isNotEmpty) {
+      children.add(Expanded(
+        child: Scrollbar(
+          controller: _prettyScrollController,
+          thumbVisibility: true,
+          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+          trackColor: theme.surfaceVariant.withOpacity(0.3),
+          child: SingleChildScrollView(
+            controller: _prettyScrollController,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+              child: HighlightedMarkdownText(output),
+            ),
+          ),
+        ),
+      ));
+    } else {
+      children.add(_dimText('  (no content)', theme));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  // ── Generic fallback ─────────────────────────────────────────────────
+
+  Component _buildPrettyGeneric(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final tool = component.data.toolRegistry?.lookup(tc.name);
+    final intent = _intentLabel(tc, tool);
+
+    final children = <Component>[];
+
     children.add(_labelValue(
       'Tool',
       _capitalize(tc.name),
@@ -234,16 +625,8 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       valueColor: theme.toolPrefix,
       valueBold: true,
     ));
-
-    // Intent
-    final intent = _intentLabel(tc, tool);
     if (intent.isNotEmpty) {
-      children.add(_labelValue(
-        'Intent',
-        intent,
-        theme,
-        valueItalic: true,
-      ));
+      children.add(_labelValue('Intent', intent, theme, valueItalic: true));
     }
 
     children.add(Divider(color: theme.dividerDim, height: 1));
@@ -257,71 +640,218 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       }
     }
 
+    // Result
+    final result = component.data.pairedResult;
+    if (result != null && result.content.isNotEmpty) {
+      children.add(Divider(color: theme.dividerDim, height: 1));
+      children.add(_sectionHeading('Result', theme));
+      children.add(Container(
+        padding: const EdgeInsets.only(left: 1),
+        child: HighlightedMarkdownText(result.content),
+      ));
+    }
+
     return Scrollbar(
-      controller: _inputScrollController,
+      controller: _prettyScrollController,
       thumbVisibility: true,
       thumbColor: theme.onSurfaceDim.withOpacity(0.4),
       trackColor: theme.surfaceVariant.withOpacity(0.3),
       child: ListView(
-        controller: _inputScrollController,
+        controller: _prettyScrollController,
         children: children,
       ),
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Raw tab — shows all input args + full output
+  // ══════════════════════════════════════════════════════════════════════
+
+  Component _buildRawTab(CruxThemeData theme) {
+    final tc = component.data.toolCall;
+    final tool = component.data.toolRegistry?.lookup(tc.name);
+    final result = component.data.pairedResult;
+
+    final children = <Component>[];
+
+    // ── Input section ──
+    children.add(_sectionLabel('Input', theme));
+    children.add(_labelValue(
+      'Tool',
+      _capitalize(tc.name),
+      theme,
+      valueColor: theme.toolPrefix,
+      valueBold: true,
+    ));
+
+    final intent = _intentLabel(tc, tool);
+    if (intent.isNotEmpty) {
+      children.add(_labelValue('Intent', intent, theme, valueItalic: true));
+    }
+
+    if (tc.input.isEmpty) {
+      children.add(_dimText('  (no arguments)', theme));
+    } else {
+      for (final entry in tc.input.entries) {
+        children.add(_buildArgBlock(entry.key, entry.value, theme));
+      }
+    }
+
+    // ── Output section ──
+    if (result != null) {
+      children.add(Divider(color: theme.divider, height: 1));
+      children.add(_sectionLabel('Output', theme));
+
+      final output = result.content;
+      final isGuard = output.startsWith('[GUARD]');
+      final isAutoRead = output.startsWith('[AUTOREAD]');
+      if (isGuard) {
+        children.add(_banner('⚠ ${_guardReason(output)}', theme.warning, theme));
+      } else if (isAutoRead) {
+        children.add(_banner('↻ ${_autoReadReason(output)}', theme.info, theme));
+      }
+
+      if (output.isNotEmpty) {
+        children.add(Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: HighlightedMarkdownText(output),
+        ));
+      } else {
+        children.add(_dimText('  (empty)', theme));
+      }
+    } else {
+      children.add(Divider(color: theme.divider, height: 1));
+      children.add(_sectionLabel('Output', theme));
+      children.add(_dimText('  (no result yet)', theme));
+    }
+
+    return Scrollbar(
+      controller: _rawScrollController,
+      thumbVisibility: true,
+      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      child: ListView(
+        controller: _rawScrollController,
+        children: children,
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Shared building blocks
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// File path header used by write, edit, read.
+  Component _fileHeader(String filePath, String intent, CruxThemeData theme) {
+    final spans = <TextSpan>[];
+    spans.add(TextSpan(
+      text: '📄 ', // file icon
+      style: TextStyle(color: theme.foreground),
+    ));
+    spans.add(TextSpan(
+      text: filePath,
+      style: TextStyle(
+        color: theme.foreground,
+        fontWeight: FontWeight.bold,
+      ),
+    ));
+    if (intent.isNotEmpty) {
+      spans.add(TextSpan(
+        text: '  $intent',
+        style: TextStyle(
+          color: theme.onSurfaceDim,
+          fontStyle: FontStyle.italic,
+        ),
+      ));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Row(
+        children: [Expanded(child: RichText(text: TextSpan(children: spans)))],
+      ),
+    );
+  }
+
+  /// Section label with a colored background bar.
+  Component _sectionLabel(String label, CruxThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(color: theme.surfaceVariant),
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: theme.foreground,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  /// A full-width scrollable code block with syntax highlighting.
+  Component _scrollableCodeBlock(
+    String content,
+    String language,
+    CruxThemeData theme,
+  ) {
+    final fence = language.isNotEmpty ? '```$language\n$content\n```' : '```\n$content\n```';
+    return Scrollbar(
+      controller: _prettyScrollController,
+      thumbVisibility: true,
+      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      child: SingleChildScrollView(
+        controller: _prettyScrollController,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: HighlightedMarkdownText(
+            fence,
+            styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// An inline (non-scrollable) code block. Used when the code is
+  /// inside a larger scrollable area (e.g. edit's old/new).
+  Component _inlineCodeBlock(
+    String content,
+    String language,
+    CruxThemeData theme,
+  ) {
+    final fence = language.isNotEmpty ? '```$language\n$content\n```' : '```\n$content\n```';
+    return HighlightedMarkdownText(
+      fence,
+      styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
+    );
+  }
+
+  // ── Arg rendering (used by Raw tab and Generic pretty) ──────────────
+
   Component _buildArgBlock(String key, dynamic value, CruxThemeData theme) {
     final valueStr = _formatValue(value);
 
-    // For LargePayloadTool offloadable args (write's content, edit's
-    // oldString/newString), check if the value was actually offloaded
-    // (replaced with a stand-in pointer) or still holds the original
-    // content.
     final tc = component.data.toolCall;
     final tool = component.data.toolRegistry?.lookup(tc.name);
     if (tool is LargePayloadTool &&
         tool.offloadableArgs.contains(key)) {
-      // Detect offload stand-in pointers.
       final standIn = _parseOffloadStandIn(valueStr);
       if (standIn != null) {
-        // Value was offloaded — try to recover the original from DB.
         final original = _offloadedArgs[key];
         if (original != null) {
-          return _buildArgBlockWithContent(
-            key, original, theme,
-            wasOffloaded: true,
-          );
+          return _buildArgBlockWithContent(key, original, theme, wasOffloaded: true);
         }
-        // Still loading or couldn't recover — show compact summary.
         if (_offloadLoading) {
           return _buildLargeArgSummary(key, valueStr, theme, loading: true);
         }
         return _buildLargeArgSummary(key, valueStr, theme);
       }
-      // Value was NOT offloaded — it's the actual content. Show it.
       return _buildArgBlockWithContent(key, valueStr, theme);
     }
 
     return _buildArgBlockWithContent(key, valueStr, theme);
   }
 
-  /// Detect the language for syntax highlighting from the tool call's
-  /// `filePath` / `path` argument. Returns null if unknown.
-  String? _detectLanguage() {
-    final tc = component.data.toolCall;
-    const pathKeys = ['filePath', 'file_path', 'path'];
-    for (final key in pathKeys) {
-      final path = tc.input[key];
-      if (path is String && path.isNotEmpty) {
-        return _languageFromPath(path);
-      }
-    }
-    return null;
-  }
-
-  /// Render an argument with its full content, using a syntax-
-  /// highlighted code block for multi-line or long values.
-  /// [wasOffloaded] indicates the value was recovered from the
-  /// offloaded_content table.
   Component _buildArgBlockWithContent(
     String key,
     String valueStr,
@@ -329,18 +859,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     bool wasOffloaded = false,
   }) {
     final isLong = valueStr.length > 80 || valueStr.contains('\n');
-
-    // For content-like args of file tools, use the file's language
-    // for syntax highlighting.
     final language = _languageForArgKey(key);
 
     final headerSpans = <TextSpan>[];
     headerSpans.add(TextSpan(
       text: '$key ',
-      style: TextStyle(
-        color: theme.foreground,
-        fontWeight: FontWeight.bold,
-      ),
+      style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
     ));
     if (wasOffloaded) {
       headerSpans.add(TextSpan(
@@ -373,37 +897,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         if (isLong)
           Container(
             padding: const EdgeInsets.only(left: 2),
-            child: HighlightedMarkdownText(
-              '```$language\n$valueStr\n```',
-              styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
-            ),
+            child: _inlineCodeBlock(valueStr, language, theme),
           ),
       ],
     );
   }
 
-  /// Determine the syntax-highlight language for a given arg key.
-  /// For file-content args (content, oldString, newString), detect
-  /// from the file path. For commands, use 'bash'. Otherwise no hint.
-  String _languageForArgKey(String key) {
-    switch (key) {
-      case 'content':
-      case 'oldString':
-      case 'newString':
-        return _detectLanguage() ?? '';
-      case 'command':
-        return 'bash';
-      default:
-        return '';
-    }
-  }
-
-  /// Build a compact summary for an offloadable argument
-  /// (e.g. write's `content`, edit's `oldString`/`newString`).
-  /// Shows just the arg name, line count, and byte size — never the
-  /// full content. When the value is an offload stand-in pointer
-  /// (e.g. `[offloaded: 142 lines / 4.2KB; …]`), the metrics are
-  /// extracted from the pointer text so the display stays clean.
   Component _buildLargeArgSummary(
     String key,
     String valueStr,
@@ -414,31 +913,14 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '$key ',
-              style: TextStyle(
-                color: theme.foreground,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Expanded(
-              child: Text(
-                'loading…',
-                style: TextStyle(
-                  color: theme.onSurfaceDim,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
+            Text('$key ', style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold)),
+            Expanded(child: Text('loading…', style: TextStyle(color: theme.onSurfaceDim, fontStyle: FontStyle.italic))),
           ],
         ),
       );
     }
 
-    // Detect offload stand-in pointers and extract their metrics
-    // rather than displaying the raw pointer text.
     final standIn = _parseOffloadStandIn(valueStr);
     String metricsText;
     if (standIn != null) {
@@ -448,270 +930,26 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       metricsText = 'empty';
     } else {
       final lineCount = '\n'.allMatches(valueStr).length + 1;
-      final byteSize = valueStr.length;
-      final sizeStr = byteSize > 1024
-          ? '${(byteSize / 1024).toStringAsFixed(1)}KB'
-          : '${byteSize}B';
+      final sizeStr = valueStr.length > 1024
+          ? '${(valueStr.length / 1024).toStringAsFixed(1)}KB'
+          : '${valueStr.length}B';
       metricsText = '$lineCount lines, $sizeStr';
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$key ',
-            style: TextStyle(
-              color: theme.foreground,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              metricsText,
-              style: TextStyle(color: theme.onSurfaceDim),
-            ),
-          ),
+          Text('$key ', style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold)),
+          Expanded(child: Text(metricsText, style: TextStyle(color: theme.onSurfaceDim))),
         ],
       ),
     );
   }
 
-  /// Parse an offload stand-in pointer string like
-  /// `[offloaded: 142 lines / 4.2KB; intent: "…"; recall via …]`
-  /// and extract its metrics. Returns null if [text] is not a stand-in.
-  _OffloadStandIn? _parseOffloadStandIn(String text) {
-    // Stand-in format: [offloaded: N lines / SIZE; …]
-    final match = RegExp(
-      r'^\[offloaded:\s*(\d+)\s+lines\s*/\s*([\d.]+[KMG]?B)',
-    ).firstMatch(text);
-    if (match == null) return null;
-    final lineCount = int.tryParse(match.group(1)!) ?? 0;
-    final sizeStr = match.group(2)!;
-    // Try to extract intent from the stand-in.
-    final intentMatch = RegExp(r'intent:\s*"((?:[^"\\]|\\.)*)"')
-        .firstMatch(text);
-    final intent = intentMatch?.group(1);
-    return _OffloadStandIn(
-      lineCount: lineCount,
-      sizeStr: sizeStr,
-      intent: intent,
-    );
-  }
-
-  // ─── Output tab ────────────────────────────────────────────────────
-
-  Component _buildOutputTab(CruxThemeData theme) {
-    final result = component.data.pairedResult;
-
-    if (result == null) {
-      return Center(
-        child: Text(
-          'No result yet (tool may still be running)',
-          style: TextStyle(
-            color: theme.onSurfaceDim,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      );
-    }
-
-    final output = result.content;
-    final isGuard = output.startsWith('[GUARD]');
-    final isAutoRead = output.startsWith('[AUTOREAD]');
-
-    final children = <Component>[];
-
-    // Status banner
-    if (isGuard) {
-      children.add(_banner('⚠ ${_guardReason(output)}', theme.warning, theme));
-      children.add(Divider(color: theme.divider, height: 1));
-    } else if (isAutoRead) {
-      children.add(_banner('↻ ${_autoReadReason(output)}', theme.info, theme));
-      children.add(Divider(color: theme.divider, height: 1));
-    }
-
-    // Content with scrollbar. The output is a status/result message,
-    // not source code, so we render it as plain markdown (no language
-    // code fences — those belong in the Input tab for the actual args).
-    children.add(
-      Expanded(
-        child: Scrollbar(
-          controller: _outputScrollController,
-          thumbVisibility: true,
-          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-          trackColor: theme.surfaceVariant.withOpacity(0.3),
-          child: SingleChildScrollView(
-            controller: _outputScrollController,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-              child: HighlightedMarkdownText(output),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-
-  // ─── Summary tab ───────────────────────────────────────────────────
-
-  Component _buildSummaryTab(CruxThemeData theme) {
-    final tc = component.data.toolCall;
-    final result = component.data.pairedResult;
-    final tool = component.data.toolRegistry?.lookup(tc.name);
-
-    final children = <Component>[];
-
-    // Tool name
-    children.add(_labelValue(
-      'Tool',
-      _capitalize(tc.name),
-      theme,
-      valueColor: theme.toolPrefix,
-      valueBold: true,
-    ));
-
-    // Intent
-    final intent = _intentLabel(tc, tool);
-    if (intent.isNotEmpty) {
-      children.add(_labelValue('Intent', intent, theme, valueItalic: true));
-    }
-
-    // Key arg
-    final keyArg = _keyArg(tc);
-    if (keyArg.isNotEmpty) {
-      children.add(_labelValue('Target', keyArg, theme));
-    }
-
-    children.add(Divider(color: theme.dividerDim, height: 1));
-
-    // Collapsed summary
-    if (tool != null && result != null) {
-      final output = result.content;
-      final isGuard = output.startsWith('[GUARD]');
-      final isAutoRead = output.startsWith('[AUTOREAD]');
-
-      if (!isGuard && !isAutoRead) {
-        final summary = tool.collapsedSummary(
-          tc.input,
-          ToolResult(title: '', output: output),
-        );
-        children.add(_labelValue('Summary', summary.text, theme));
-
-        final tokenInfo = StringBuffer('~${summary.totalTokens} total');
-        if (summary.argsTokens > 0 &&
-            summary.argsTokens != summary.totalTokens) {
-          tokenInfo.write(', args ~${summary.argsTokens}');
-        }
-        children.add(_labelValue(
-          'Tokens',
-          tokenInfo.toString(),
-          theme,
-          valueColor: theme.onSurfaceDim,
-        ));
-      } else if (isGuard) {
-        children.add(_labelValue(
-          'Status',
-          'Guard triggered — auto read',
-          theme,
-          valueColor: theme.warning,
-        ));
-      } else if (isAutoRead) {
-        children.add(_labelValue(
-          'Status',
-          'Auto-read — no changes',
-          theme,
-          valueColor: theme.info,
-        ));
-      }
-    } else if (result != null) {
-      children.add(_labelValue(
-        'Result',
-        _resultMetrics(result.content),
-        theme,
-        valueColor: theme.onSurfaceDim,
-      ));
-    }
-
-    children.add(Divider(color: theme.dividerDim, height: 1));
-
-    // Compact argument list
-    children.add(_sectionHeading('Arguments', theme));
-
-    if (tc.input.isEmpty) {
-      children.add(_dimText('  (none)', theme));
-    } else {
-      for (final entry in tc.input.entries) {
-        // For LargePayloadTool offloadable args, show a compact
-        // summary instead of the value.
-        final tool = component.data.toolRegistry?.lookup(tc.name);
-        final isOffloadable = tool is LargePayloadTool &&
-            tool.offloadableArgs.contains(entry.key);
-        final valueStr = _formatValue(entry.value);
-        String display;
-        if (isOffloadable) {
-          final standIn = _parseOffloadStandIn(valueStr);
-          if (standIn != null) {
-            display = '${standIn.lineCount} lines, ${standIn.sizeStr}';
-          } else if (valueStr.isEmpty) {
-            display = 'empty';
-          } else {
-            final lineCount = '\n'.allMatches(valueStr).length + 1;
-            final sizeStr = valueStr.length > 1024
-                ? '${(valueStr.length / 1024).toStringAsFixed(1)}KB'
-                : '${valueStr.length}B';
-            display = '$lineCount lines, $sizeStr';
-          }
-        } else {
-          final lineCount = '\n'.allMatches(valueStr).length + 1;
-          display = lineCount > 1
-              ? '($lineCount lines)'
-              : (valueStr.length > 60
-                  ? '${valueStr.substring(0, 57)}...'
-                  : valueStr);
-        }
-        children.add(
-          Container(
-            padding: const EdgeInsets.only(left: 2),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${entry.key}: ',
-                  style: TextStyle(color: theme.onSurfaceDim),
-                ),
-                Expanded(
-                  child: Text(
-                    display,
-                    style: TextStyle(color: theme.foreground),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    }
-
-    return Scrollbar(
-      controller: _summaryScrollController,
-      thumbVisibility: true,
-      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-      trackColor: theme.surfaceVariant.withOpacity(0.3),
-      child: ListView(
-        controller: _summaryScrollController,
-        children: children,
-      ),
-    );
-  }
-
-  // ─── Shared helpers ────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Helpers
+  // ══════════════════════════════════════════════════════════════════════
 
   Component _labelValue(
     String label,
@@ -728,10 +966,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         children: [
           Text(
             '$label: ',
-            style: TextStyle(
-              color: theme.onSurfaceDim,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
           ),
           Expanded(
             child: Text(
@@ -748,13 +983,13 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     );
   }
 
-  Component _sectionHeading(String text, CruxThemeData theme) {
+  Component _sectionHeading(String text, CruxThemeData theme, {Color? color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Text(
         text,
         style: TextStyle(
-          color: theme.onSurfaceDim,
+          color: color ?? theme.onSurfaceDim,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -764,23 +999,66 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _banner(String text, Color color, CruxThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Text(
-        text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold),
-      ),
+      child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
     );
   }
 
   Component _dimText(String text, CruxThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: theme.onSurfaceDim,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
+      child: Text(text, style: TextStyle(color: theme.onSurfaceDim, fontStyle: FontStyle.italic)),
+    );
+  }
+
+  String _languageForArgKey(String key) {
+    switch (key) {
+      case 'content':
+      case 'oldString':
+      case 'newString':
+        return _detectLanguage() ?? '';
+      case 'command':
+        return 'bash';
+      default:
+        return '';
+    }
+  }
+
+  String? _detectLanguage() {
+    final tc = component.data.toolCall;
+    const pathKeys = ['filePath', 'file_path', 'path'];
+    for (final key in pathKeys) {
+      final path = tc.input[key];
+      if (path is String && path.isNotEmpty) {
+        return _languageFromPath(path);
+      }
+    }
+    return null;
+  }
+
+  /// Extract exit code from the tool result output line like
+  /// `[exit code: N]`. Returns null if not found.
+  int? _extractExitCode(String output) {
+    final match = RegExp(r'\[exit code:\s*(\d+)\]').firstMatch(output);
+    return match != null ? int.tryParse(match.group(1)!) : null;
+  }
+
+  /// Strip the `[exit code: N]` line from shell output.
+  String _stripExitCodeLine(String output) {
+    return output.replaceFirst(RegExp(r'\n?\[exit code:\s*\d+\]\s*$'), '');
+  }
+
+  _OffloadStandIn? _parseOffloadStandIn(String text) {
+    final match = RegExp(
+      r'^\[offloaded:\s*(\d+)\s+lines\s*/\s*([\d.]+[KMG]?B)',
+    ).firstMatch(text);
+    if (match == null) return null;
+    final lineCount = int.tryParse(match.group(1)!) ?? 0;
+    final sizeStr = match.group(2)!;
+    final intentMatch = RegExp(r'intent:\s*"((?:[^"\\]|\\.)*)"').firstMatch(text);
+    return _OffloadStandIn(
+      lineCount: lineCount,
+      sizeStr: sizeStr,
+      intent: intentMatch?.group(1),
     );
   }
 
@@ -801,36 +1079,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       return tool.intentFromArgs(tc.input) ?? '';
     }
     return '';
-  }
-
-  String _keyArg(ToolCallData tc) {
-    const priorityKeys = [
-      'file_path',
-      'path',
-      'filePath',
-      'command',
-      'query',
-      'url',
-      'directory',
-    ];
-    for (final key in priorityKeys) {
-      if (tc.input.containsKey(key)) {
-        return tc.input[key].toString();
-      }
-    }
-    if (tc.input.isNotEmpty) {
-      return tc.input.values.first.toString();
-    }
-    return '';
-  }
-
-  String _resultMetrics(String content) {
-    final lines = '\n'.allMatches(content).length + 1;
-    final size = content.length;
-    final sizeStr = size > 1024
-        ? '${(size / 1024).toStringAsFixed(1)}KB'
-        : '${size}B';
-    return '$lines lines, $sizeStr';
   }
 
   String _capitalize(String s) {
@@ -866,8 +1114,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return trimmed.isEmpty ? 'Auto-read' : 'Auto-read: $trimmed';
   }
 
-  /// Map a file extension to a TextMate grammar language identifier
-  /// understood by the highlight service.
   static String? _languageFromPath(String path) {
     final dot = path.lastIndexOf('.');
     if (dot < 0 || dot >= path.length - 1) return null;
@@ -924,4 +1170,17 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     'vue': 'html',
     'svelte': 'html',
   };
+}
+
+/// Parsed metrics from an offload stand-in pointer string.
+class _OffloadStandIn {
+  final int lineCount;
+  final String sizeStr;
+  final String? intent;
+
+  const _OffloadStandIn({
+    required this.lineCount,
+    required this.sizeStr,
+    this.intent,
+  });
 }
