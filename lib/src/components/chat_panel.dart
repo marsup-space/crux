@@ -562,6 +562,7 @@ class _ChatPanelState extends State<ChatPanel> {
               scrollOffset: overlay.fileScrollOffset,
               maxVisible: _maxVisibleItems,
               query: overlay.atMentionQuery,
+              isSearching: overlay.isSearching,
               onHover: (i) => setState(() => overlay.onHoverFile(i)),
               onTap: (i) {
                 // `onTap` is the mouse equivalent of Enter on the

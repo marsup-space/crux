@@ -13,6 +13,13 @@ class FileBrowserOverlay extends StatelessComponent {
   final int scrollOffset;
   final int maxVisible;
   final String query;
+
+  /// True while the underlying FileSearcher is still building its
+  /// index. The popover swaps the "no matches" line for a
+  /// "Searching..." placeholder so the user knows the empty
+  /// state is transient (rather than a hard "no such file").
+  final bool isSearching;
+
   final void Function(int)? onHover;
   final void Function(int)? onTap;
 
@@ -22,6 +29,7 @@ class FileBrowserOverlay extends StatelessComponent {
     required this.scrollOffset,
     required this.maxVisible,
     required this.query,
+    this.isSearching = false,
     this.onHover,
     this.onTap,
   });
@@ -52,7 +60,13 @@ class FileBrowserOverlay extends StatelessComponent {
                   : '(@$query)',
               style: TextStyle(color: theme.wizardTextDim),
             ),
-            if (files.isEmpty) ...[
+            if (isSearching) ...[
+              SizedBox(width: 1),
+              Text(
+                '  Searching…',
+                style: TextStyle(color: theme.wizardTextDim),
+              ),
+            ] else if (files.isEmpty) ...[
               SizedBox(width: 1),
               Text(
                 '  no matches',

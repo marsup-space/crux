@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -131,6 +132,18 @@ class ChatInputState extends State<ChatInput> {
     rootPath: component.projectPath,
   );
 
+  /// Debounce timer for the @-mention search. We don't want to
+  /// run the fuzzy scan on every keystroke (it can scan 50k
+  /// paths); 60ms of quiet settles the burst and is well below
+  /// the human-perceptible lag threshold (~100ms).
+  Timer? _atMentionDebouncer;
+
+  /// Monotonic counter used to discard stale async search results.
+  /// Each keystroke bumps the counter; if a search started under
+  /// an older counter finishes, we ignore its result so the UI
+  /// doesn't flicker with out-of-date matches.
+  int _atMentionSearchSeq = 0;
+
   /// Text that was in the input box before the user entered command mode
   /// (by typing '/' as the first character or by pressing a toolbar button
   /// that places a '/' command in the box). This text is restored when the
@@ -154,6 +167,7 @@ class ChatInputState extends State<ChatInput> {
   void dispose() {
     component.textController.removeListener(_onTextChanged);
     CommandRegistry.instance.removeListener(component.refresh);
+    _atMentionDebouncer?.cancel();
     super.dispose();
   }
 
@@ -452,11 +466,20 @@ class ChatInputState extends State<ChatInput> {
 
   /// Open (or refresh) the @-mention file browser with the matches
   /// for [mention.query]. If the popover is already open for a
-  /// different query (e.g. user kept typing), preserve the
-  /// selection across the search so arrow-key navigation isn't
-  /// reset on every keystroke.
+  /// Trigger the @-mention popover for [mention]. Two-phase:
+  ///
+  /// 1. Immediately flip the popover into atMention mode and show
+  ///    a "Searching..." placeholder if the index is still
+  ///    building. This gives the user instant visual feedback
+  ///    that their `@` was recognized.
+  /// 2. Schedule the actual search on a 60ms debounce so a burst
+  ///    of keystrokes coalesces into a single scan. The scan
+  ///    itself is async (it `await`s the index build on first
+  ///    use) and tagged with a sequence number so an older
+  ///    in-flight result can't clobber a fresher one.
   void _showAtMention(_AtMention mention) {
     final overlay = component.overlayController;
+
     // If the popover is already in atMention mode and the user is
     // just refining the same query (extending it), keep their
     // selected index. Only reset when the atOffset moved (i.e. a
@@ -471,7 +494,62 @@ class ChatInputState extends State<ChatInput> {
 
     overlay.overlayMode = OverlayMode.atMention;
     overlay.atMentionQuery = mention.query;
+
+    // Kick off async indexing if it hasn't started. The first
+    // search is the slow one (file-system walk); after that,
+    // every subsequent search is purely in-memory.
+    _fileSearcher.ensureIndex();
+
+    // Show "Searching..." while the index is still building or
+    // while the debounce timer is pending. The real results
+    // replace this once the async search completes.
+    if (_fileSearcher.isIndexing) {
+      overlay.filteredFiles = const [];
+      overlay.isSearching = true;
+    } else {
+      // Index is warm — we can run the search synchronously and
+      // it'll be a few ms even on 50k paths.
+      overlay.filteredFiles = _fileSearcher.search(mention.query);
+      overlay.isSearching = false;
+    }
+
+    // Schedule a debounced re-run so subsequent keystrokes
+    // (which clear the index flag) get a fresh result if the
+    // index finished building in the meantime.
+    _atMentionDebouncer?.cancel();
+    final seq = ++_atMentionSearchSeq;
+    _atMentionDebouncer = Timer(const Duration(milliseconds: 60), () {
+      _runAtMentionSearch(mention, seq);
+    });
+  }
+
+  /// Async search runner. Awaited by [_showAtMention]'s debounced
+  /// timer. If the index isn't ready, this just waits for it,
+  /// then runs the search. If the user kept typing (the seq
+  /// moved on), the result is discarded.
+  Future<void> _runAtMentionSearch(_AtMention mention, int seq) async {
+    final overlay = component.overlayController;
+    if (seq != _atMentionSearchSeq) return; // stale
+    if (overlay.overlayMode != OverlayMode.atMention) return;
+    if (overlay.atMentionQuery != mention.query) return;
+
+    // If we're still indexing, wait for it.
+    if (_fileSearcher.isIndexing) {
+      overlay.isSearching = true;
+      component.refresh();
+      try {
+        await _fileSearcher.ready;
+      } catch (_) {
+        // ignore — search will just return empty
+      }
+    }
+    if (seq != _atMentionSearchSeq) return;
+    if (overlay.overlayMode != OverlayMode.atMention) return;
+    if (overlay.atMentionQuery != mention.query) return;
+
     overlay.filteredFiles = _fileSearcher.search(mention.query);
+    overlay.isSearching = false;
+    component.refresh();
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {

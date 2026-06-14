@@ -30,6 +30,14 @@ class OverlayController {
   int selectedFileIndex = 0;
   int fileScrollOffset = 0;
 
+  /// True while the file search is still working — either the
+  /// index is being built (first time after construction or after
+  /// a `/project` switch) or a debounced scan is in flight. The
+  /// file browser overlay reads this to show a "Searching..."
+  /// placeholder instead of an empty list, so the user knows
+  /// the empty popover is a temporary state.
+  bool isSearching = false;
+
   final int maxVisibleItems;
   final TextEditingController textController;
   final void Function(String) executeCommandCallback;
@@ -54,6 +62,7 @@ class OverlayController {
     filteredFiles = [];
     selectedFileIndex = 0;
     fileScrollOffset = 0;
+    isSearching = false;
     showSessionManager = false;
     showFullpane = false;
   }
