@@ -616,11 +616,13 @@ class ChatInputState extends State<ChatInput> {
       if (overlay.filteredCommands.isEmpty) return false;
 
       if (event.logicalKey == LogicalKey.arrowUp) {
-        setState(() => overlay.moveCommandSelectionUp());
+        overlay.moveCommandSelectionUp();
+        component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown) {
-        setState(() => overlay.moveCommandSelectionDown());
+        overlay.moveCommandSelectionDown();
+        component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.enter) {
@@ -651,11 +653,13 @@ class ChatInputState extends State<ChatInput> {
       if (overlay.filteredSuggestions.isEmpty) return false;
 
       if (event.logicalKey == LogicalKey.arrowUp) {
-        setState(() => overlay.moveSuggestionSelectionUp());
+        overlay.moveSuggestionSelectionUp();
+        component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown) {
-        setState(() => overlay.moveSuggestionSelectionDown());
+        overlay.moveSuggestionSelectionDown();
+        component.refresh();
         return true;
       }
       if (event.logicalKey == LogicalKey.enter) {
