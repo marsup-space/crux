@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'gitignore.dart';
+
 /// A single file/directory match returned by [FileSearcher.search].
 class FileMatch {
   /// Path relative to the search root (e.g. "lib/main.dart", "src/").
@@ -53,6 +55,11 @@ enum FileMatchKind { file, directory }
 /// the index build may take seconds — the [isIndexing] flag lets
 /// the UI show a progress placeholder rather than silently
 /// truncating results.
+/// One `.gitignore` file encountered during the sweep, with the
+/// relative directory it lives in. The matcher consults this
+/// when answering "would this path be ignored if it appeared
+/// under this directory?" — the directory is the scope inside
+/// which the patterns are evaluated.
 class FileSearcher {
   /// Absolute path of the project root we're indexing.
   final String rootPath;
@@ -78,6 +85,13 @@ class FileSearcher {
   /// Paths in the index that end with the platform separator are
   /// directories (see [_walk] and `_ripgrepLinesToPaths`).
   List<bool>? _isDir;
+
+  /// Composite gitignore matcher built from every `.gitignore`
+  /// found in the project tree. Only the in-process walker uses
+  /// this; ripgrep honors `.gitignore` natively so when ripgrep
+  /// builds the index the matcher stays null. Lazily populated
+  /// by [_loadGitignores] on the first in-process walk.
+  GitignoreMatcher? _gitignore;
 
   /// True while [_buildIndex] is in flight. The chat input reads
   /// this to show "Searching..." in the popover header.
@@ -433,9 +447,65 @@ class FileSearcher {
   List<String> _walkInProcess() {
     final root = Directory(rootPath);
     if (!root.existsSync()) return const [];
+    _gitignore ??= _loadGitignores(root);
     final out = <String>[];
     _walk(root, out, '');
     return out;
+  }
+
+  /// Walk the project tree and merge every `.gitignore` we find
+  /// into a single matcher. The matcher's [matches] check is
+  /// path-aware, so the walker can pass the in-progress relative
+  /// path to a directory entry and ask "is this directory
+  /// ignored before I descend into it?" — short-circuiting whole
+  /// subtrees like `build/` or `node_modules/` even if the user
+  /// didn't list them in the static skip set.
+  ///
+  /// We load *all* .gitignore files up front (in a single sweep
+  /// with bounded recursion) so the matcher's `directoryIgnores`
+  /// lookup is O(1) per dir during the main walk. The .gitignore
+  /// stack is implicit: a pattern without a `/` in it matches
+  /// at any depth; one with a `/` only matches at the level of
+  /// its containing file. [GitignoreMatcher.matches] handles the
+  /// "negation" rule (!foo) and the "anchored-to-root" rule
+  /// (`/foo` only at the project root) for us.
+  GitignoreMatcher _loadGitignores(Directory root) {
+    final matcher = GitignoreMatcher();
+    final out = <GitignoreSource>[];
+    _collectGitignores(root, '', out);
+    matcher.loadAll(out);
+    return matcher;
+  }
+
+  void _collectGitignores(
+    Directory dir,
+    String relPrefix,
+    List<GitignoreSource> out,
+  ) {
+    final sep = p.separator;
+    try {
+      final gi = File(p.join(dir.path, '.gitignore'));
+      if (gi.existsSync()) {
+        try {
+          final lines = gi.readAsLinesSync();
+          out.add((
+            directory: relPrefix.isEmpty ? '.' : relPrefix,
+            lines: lines,
+          ));
+        } on FileSystemException {
+          // Unreadable .gitignore — skip.
+        }
+      }
+      for (final entry in dir.listSync(recursive: false, followLinks: false)) {
+        if (entry is! Directory) continue;
+        final name = p.basename(entry.path);
+        if (_shouldSkip(name)) continue;
+        final rel = relPrefix.isEmpty ? name : '$relPrefix$sep$name';
+        _collectGitignores(entry, rel, out);
+      }
+    } on FileSystemException {
+      // Permission denied / transient errors — skip.
+    }
   }
 
   void _walk(Directory dir, List<String> out, String prefix) {
@@ -447,10 +517,23 @@ class FileSearcher {
         final name = p.basename(entry.path);
         if (_shouldSkip(name)) continue;
         final rel = prefix.isEmpty ? name : '$prefix$sep$name';
+        // Honor .gitignore. A directory is skipped wholesale if
+        // it's ignored — no point descending. The check uses
+        // the bare path (no trailing separator) so a pattern
+        // like `build/` matches the directory `build`.
+        if (_gitignore != null && entry is Directory) {
+          if (_gitignore!.matches(rel, isDirectory: true)) continue;
+        }
         if (entry is Directory) {
           out.add('$rel$sep');
           _walk(entry, out, rel);
         } else if (entry is File) {
+          // Same check for files — a file matching an ignore
+          // pattern is dropped.
+          if (_gitignore != null &&
+              _gitignore!.matches(rel, isDirectory: false)) {
+            continue;
+          }
           out.add(rel);
         }
       }
