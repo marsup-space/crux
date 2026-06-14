@@ -18,6 +18,7 @@ class OverlayController {
   ProviderWizardSubcommand? activeWizardSubcommand;
   String? builtinProviderName;
   bool showSessionManager = false;
+  bool showFullpane = false;
 
   final int maxVisibleItems;
   final TextEditingController textController;
@@ -40,6 +41,7 @@ class OverlayController {
     selectedSuggestionIndex = 0;
     suggestionScrollOffset = 0;
     showSessionManager = false;
+    showFullpane = false;
   }
 
   int computeScrollOffset(

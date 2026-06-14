@@ -26,6 +26,7 @@ import 'session_management_panel.dart';
 import 'streaming_controller.dart';
 import 'suggestion_overlay.dart';
 import 'ui/toast.dart';
+import 'ui/fullpane.dart';
 
 class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
@@ -288,6 +289,7 @@ class _ChatPanelState extends State<ChatPanel> {
       deleteMessagesFrom: _turnOrchestrator.deleteMessagesFrom,
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
+      showFullpane: _openFullpane,
     );
     await _commandExecutor.execute(text, ctx);
     setState(() {});
@@ -342,6 +344,25 @@ class _ChatPanelState extends State<ChatPanel> {
     }
     _sessionController.persistThinkingLevel(rt);
     setState(() {});
+  }
+
+  Component _buildFullpane() {
+    return Fullpane(
+      title: 'Fullpane',
+      onClose: _closeFullpane,
+    );
+  }
+
+  void _openFullpane() {
+    setState(() {
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  void _closeFullpane() {
+    setState(() {
+      _overlayController.showFullpane = false;
+    });
   }
 
   Component _buildSessionManager() {
@@ -550,6 +571,15 @@ class _ChatPanelState extends State<ChatPanel> {
             ],
           );
 
+          if (_overlayController.showFullpane) {
+            return Stack(
+              children: [
+                Positioned.fill(child: body),
+                Positioned.fill(child: _buildFullpane()),
+              ],
+            );
+          }
+
           if (_overlayController.showSessionManager) {
             return Stack(
               children: [
@@ -560,6 +590,15 @@ class _ChatPanelState extends State<ChatPanel> {
           }
 
           return body;
+        }
+
+        if (_overlayController.showFullpane) {
+          return Stack(
+            children: [
+              Positioned.fill(child: mainContent),
+              Positioned.fill(child: _buildFullpane()),
+            ],
+          );
         }
 
         if (_overlayController.showSessionManager) {

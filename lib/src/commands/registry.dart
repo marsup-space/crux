@@ -363,4 +363,9 @@ const List<SlashCommand> _debugCommands = [
     params: ['message'],
     availableDuringResponse: true,
   ),
+  SlashCommand(
+    name: '/d-fullpane',
+    description: '[debug] Open the fullpane (near-full-screen modal) overlay',
+    availableDuringResponse: true,
+  ),
 ];

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/session.dart';
@@ -85,6 +86,10 @@ class CommandContext {
   /// btw context is guaranteed to never leak into a "real" turn.
   final void Function(int sessionId) clearBtwTurns;
 
+  /// Open the fullpane overlay. Implemented by ChatPanel via
+  /// setState + overlayController.showFullpane.
+  final VoidCallback? showFullpane;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -109,6 +114,7 @@ class CommandContext {
     required this.deleteMessagesFrom,
     required this.sendBtwTurn,
     required this.clearBtwTurns,
+    this.showFullpane,
   });
 }
 
@@ -172,6 +178,8 @@ class CommandExecutor {
         await executeDebugEnv(ctx);
       case '/d-toast':
         await executeDebugToast(parts, ctx);
+      case '/d-fullpane':
+        await executeDebugFullpane(ctx);
       default:
         if (command != null) {
           ctx.showToast(
@@ -999,6 +1007,15 @@ class CommandExecutor {
     final message = parts.skip(1).join(' ').trim();
     // No explicit mode → ToastHub's keyword detection runs.
     ctx.showToast(message);
+  }
+
+  /// `/d-fullpane` — open the fullpane (near-full-screen modal) overlay.
+  Future<void> executeDebugFullpane(CommandContext ctx) async {
+    if (ctx.showFullpane != null) {
+      ctx.showFullpane!();
+    } else {
+      ctx.showToast('Fullpane not available', mode: ToastMode.error);
+    }
   }
 
   String _truncate(String s, int n) =>
