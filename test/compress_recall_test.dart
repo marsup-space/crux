@@ -444,4 +444,92 @@ void main() {
       expect(second, 0);
     });
   });
+
+  group('getAllOffloadedContentForCall', () {
+    test('recovers write.content by callId prefix', () async {
+      final session = await store.create(model: 'test/test');
+      await store.messageStore.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_write_content',
+        toolName: 'write',
+        byteSize: 5000,
+        lineCount: 50,
+        content: 'x' * 5000,
+        intent: 'test write',
+      );
+
+      final rows = await store.messageStore.getAllOffloadedContentForCall(
+        session.id,
+        'call_write',
+      );
+      expect(rows.length, 1);
+      expect(rows.first.callId, 'call_write_content');
+      expect(rows.first.content, 'x' * 5000);
+    });
+
+    test('recovers edit.oldString and edit.newString by callId prefix',
+        () async {
+      final session = await store.create(model: 'test/test');
+      await store.messageStore.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_edit_oldString',
+        toolName: 'edit',
+        byteSize: 3000,
+        lineCount: 30,
+        content: 'a' * 3000,
+      );
+      await store.messageStore.saveOffloadedContent(
+        sessionId: session.id,
+        callId: 'call_edit_newString',
+        toolName: 'edit',
+        byteSize: 3000,
+        lineCount: 30,
+        content: 'b' * 3000,
+      );
+
+      final rows = await store.messageStore.getAllOffloadedContentForCall(
+        session.id,
+        'call_edit',
+      );
+      expect(rows.length, 2);
+      final callIds = rows.map((r) => r.callId).toSet();
+      expect(callIds, containsAll(['call_edit_oldString', 'call_edit_newString']));
+    });
+
+    test('returns empty list when no rows match', () async {
+      final session = await store.create(model: 'test/test');
+      final rows = await store.messageStore.getAllOffloadedContentForCall(
+        session.id,
+        'nonexistent',
+      );
+      expect(rows, isEmpty);
+    });
+
+    test('does not return rows from other sessions', () async {
+      final sessionA = await store.create(model: 'test/test');
+      final sessionB = await store.create(model: 'test/test');
+      await store.messageStore.saveOffloadedContent(
+        sessionId: sessionA.id,
+        callId: 'call_shared_content',
+        toolName: 'write',
+        byteSize: 5000,
+        lineCount: 50,
+        content: 'session A content',
+      );
+
+      // Session B should not see session A's rows.
+      final rowsB = await store.messageStore.getAllOffloadedContentForCall(
+        sessionB.id,
+        'call_shared',
+      );
+      expect(rowsB, isEmpty);
+
+      // Session A should see its own rows.
+      final rowsA = await store.messageStore.getAllOffloadedContentForCall(
+        sessionA.id,
+        'call_shared',
+      );
+      expect(rowsA.length, 1);
+    });
+  });
 }

@@ -381,7 +381,10 @@ class _ChatPanelState extends State<ChatPanel> {
       return Fullpane(
         title: title,
         onClose: _closeFullpane,
-        contentBuilder: (context) => ToolDetailPane(data: data),
+        contentBuilder: (context) => ToolDetailPane(
+          data: data,
+          key: ValueKey(data.toolCall.callId),
+        ),
       );
     }
     return Fullpane(

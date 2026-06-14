@@ -65,6 +65,21 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   }
 
   @override
+  void didUpdateComponent(covariant ToolDetailPane oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    // When the tool call changes (e.g. navigating between tool calls
+    // without closing the fullpane), reload the offloaded content for
+    // the new call. Without this, the stale _offloadedArgs map from
+    // the previous tool call persists and the new tool's pretty view
+    // shows "offloaded, unavailable" because its arg keys don't match.
+    if (component.data.toolCall.callId != oldComponent.data.toolCall.callId) {
+      _offloadedArgs = {};
+      _offloadLoading = true;
+      _loadOffloadedContent();
+    }
+  }
+
+  @override
   void dispose() {
     _prettyScrollController.dispose();
     _rawScrollController.dispose();
@@ -87,7 +102,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           _offloadLoading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _offloadLoading = false);
     }
   }
