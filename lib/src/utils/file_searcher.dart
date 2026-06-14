@@ -183,15 +183,16 @@ class FileSearcher {
     _lower = List<String>.unmodifiable(
       paths.map((s) => s.toLowerCase()).toList(),
     );
-    final sep = p.separator;
     _basenames = List<String>.unmodifiable(
       paths.map((s) => p.basename(s)).toList(),
     );
+    // Directories in the index are marked by a trailing `/`
+    // (see [_walk] and `_ripgrepOutputToPaths` — both store
+    // directories with the trailing slash). `p.basename` is
+    // separator-agnostic, so the Windows `\` vs POSIX `/`
+    // distinction doesn't matter for the basename field.
     _isDir = List<bool>.unmodifiable(
-      paths
-          .map((s) =>
-              s.endsWith('/') || s.endsWith(sep) ? true : false)
-          .toList(),
+      paths.map((s) => s.endsWith('/')).toList(),
     );
   }
 
@@ -402,7 +403,11 @@ class FileSearcher {
 
   static List<String> _ripgrepOutputToPaths(String output) {
     if (output.isEmpty) return const [];
-    final sep = p.separator;
+    // ripgrep always emits `/`-separated paths (POSIX style)
+    // regardless of the host platform. We keep that on disk so
+    // the index matches the in-process walker output, and only
+    // re-translate to native separators at display time.
+    const sep = '/';
     // ripgrep prints paths relative to its CWD, one per line.
     // For our use case, we append `/` for directories — but
     // `rg --files` only emits files. We don't get directory
@@ -482,7 +487,10 @@ class FileSearcher {
     String relPrefix,
     List<GitignoreSource> out,
   ) {
-    final sep = p.separator;
+    // Same /-normalization as [_walk] — keep the relPrefix
+    // consistent with the paths the walker will produce so the
+    // GitignoreMatcher's `src.dir` lookup matches.
+    const sep = '/';
     try {
       final gi = File(p.join(dir.path, '.gitignore'));
       if (gi.existsSync()) {
@@ -509,7 +517,15 @@ class FileSearcher {
   }
 
   void _walk(Directory dir, List<String> out, String prefix) {
-    final sep = p.separator;
+    // Always use POSIX `/` for the index, even on Windows. The
+    // platform's native separator is `\` on Windows; mixing that
+    // with the `/` ripgrep emits on every platform would make the
+    // in-process walker disagree with the ripgrep backend (and
+    // disagree with every gitignore pattern, which is POSIX-style
+    // by definition). The user-facing paths we display in the
+    // popover get re-rendered with `p.separator` so they look
+    // native on Windows.
+    const sep = '/';
     try {
       final entries = dir.listSync(recursive: false, followLinks: false);
       entries.sort((a, b) => a.path.compareTo(b.path));

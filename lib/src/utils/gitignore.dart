@@ -14,8 +14,6 @@
 // evaluated in a single pass. Negation is the last pattern that
 // matches a path wins, which matches git's behavior.
 
-import 'package:path/path.dart' as p;
-
 class _CompiledPattern {
   /// The original pattern string (for debugging / error messages).
   final String raw;
@@ -94,7 +92,13 @@ class GitignoreMatcher {
   /// matches directories only; a plain pattern matches both
   /// (git's own behavior).
   bool matches(String relPath, {required bool isDirectory}) {
-    final sep = p.separator;
+    // Gitignore patterns are always POSIX-style (`/` separator,
+    // `**` wildcard, etc.) — that's part of the file format.
+    // We split on `/` so the matcher works on Windows the same
+    // way it does on Linux/macOS. The caller is responsible for
+    // passing the path in normalized form (e.g. `lib/main.dart`,
+    // not `lib\main.dart`); [FileSearcher] ensures this.
+    const sep = '/';
     final parts = relPath.split(sep);
     var ignored = false;
 
