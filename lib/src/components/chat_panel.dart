@@ -348,6 +348,7 @@ class _ChatPanelState extends State<ChatPanel> {
     return SessionManagementPanel(
       sessions: _sessionController.sessions,
       currentSessionId: _sessionController.currentSessionId ?? 0,
+      respondingSessionIds: _sessionController.respondingSessionIds,
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -536,6 +537,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       _sessionController.currentSessionId ?? 0,
                   onSwitchSession: _switchSession,
                   archivedCount: _sessionController.archivedCount,
+                  respondingSessionIds: _sessionController.respondingSessionIds,
                   onSessionTitleTap: () {
                     setState(() {
                       _overlayController.showSessionManager = true;

@@ -186,6 +186,18 @@ class SessionController {
     return null;
   }
 
+  /// Session IDs that are currently responding (i.e. the LLM is
+  /// streaming).  This is the single source of truth for "is a
+  /// session running?" — the toolbar animation, session list
+  /// animation, and status display should all derive from this,
+  /// not from [Session.status] which can lag behind.
+  Set<int> get respondingSessionIds {
+    return _runtimeStates.entries
+        .where((e) => e.value.isResponding)
+        .map((e) => e.key)
+        .toSet();
+  }
+
   SessionRuntimeState runtime(int sessionId) {
     return _runtimeStates.putIfAbsent(sessionId, () {
       final initial = computeBaseContext(sessionId);

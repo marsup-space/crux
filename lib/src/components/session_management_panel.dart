@@ -7,6 +7,7 @@ import 'ui/modal_panel.dart';
 class SessionManagementPanel extends StatefulComponent {
   final List<Session> sessions;
   final int currentSessionId;
+  final Set<int> respondingSessionIds;
   final Future<void> Function(int sessionId) onDeleteSession;
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
   final void Function(int sessionId) onSwitchSession;
@@ -15,6 +16,7 @@ class SessionManagementPanel extends StatefulComponent {
   const SessionManagementPanel({
     required this.sessions,
     required this.currentSessionId,
+    required this.respondingSessionIds,
     required this.onDeleteSession,
     required this.onRenameSession,
     required this.onSwitchSession,
@@ -342,8 +344,12 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               : CruxTheme.of(context).onSurfaceVariant;
 
           final prefix = isSelected ? '${terminalSymbol('▸', '>')} ' : '  ';
-          final icon = _statusIcon(s.status);
-          final iconColor = _statusColor(s.status);
+          final isResponding =
+              component.respondingSessionIds.contains(s.id);
+          final status =
+              isResponding ? SessionStatus.running : s.status;
+          final icon = _statusIcon(status);
+          final iconColor = _statusColor(status);
           final titleDisplay = s.title.length > 30
               ? '${s.title.substring(0, 29)}~'
               : s.title;

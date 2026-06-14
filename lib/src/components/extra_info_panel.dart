@@ -43,6 +43,12 @@ class ExtraInfoPanel extends StatefulComponent {
   /// Number of archived sessions (not included in [sessions]).
   final int archivedCount;
 
+  /// Session IDs that are currently responding (streaming).  This is
+  /// the SSoT for "is a session running?" — used to drive the
+  /// animation and status display instead of [Session.status], which
+  /// can lag behind the runtime state.
+  final Set<int> respondingSessionIds;
+
   /// Invoked when the user clicks the `open` segment of the project
   /// path button. Should open the project directory in the system
   /// file explorer and surface any failure as a toast.
@@ -58,6 +64,7 @@ class ExtraInfoPanel extends StatefulComponent {
     required this.currentSessionId,
     required this.onSwitchSession,
     required this.archivedCount,
+    required this.respondingSessionIds,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
@@ -192,14 +199,16 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     super.dispose();
   }
 
-  bool _hasRunningSession() {
-    return component.sessions.any((s) => s.status == SessionStatus.running);
+  bool _hasRespondingSession() {
+    return component.sessions.any(
+      (s) => component.respondingSessionIds.contains(s.id),
+    );
   }
 
   void _startAnimIfNeeded() {
-    if (_hasRunningSession()) {
+    if (_hasRespondingSession()) {
       _animTimer ??= Timer.periodic(_animInterval, (_) {
-        if (!_hasRunningSession()) {
+        if (!_hasRespondingSession()) {
           _animTimer?.cancel();
           _animTimer = null;
           _phase = 0.0;
@@ -453,7 +462,15 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       Session session, ExtraInfoPanel panel, int maxTitleLen) {
     final isCurrent = session.id == panel.currentSessionId;
     final isHovered = _hoveredIds.contains(session.id);
-    final prefix = _statusPrefix(session.status);
+    // Derive display status from the SSoT: if the runtime says this
+    // session is responding, it's running regardless of what
+    // session.status says (which can lag).  Otherwise use the
+    // persisted status.
+    final isResponding = panel.respondingSessionIds.contains(session.id);
+    final status = isResponding
+        ? SessionStatus.running
+        : session.status;
+    final prefix = _statusPrefix(status);
     final title = _truncateByWidth(session.title, maxTitleLen);
 
     return MouseRegion(
@@ -470,14 +487,14 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
               Text(
                 prefix,
                 style: TextStyle(
-                  color: _prefixColor(session.status, isCurrent),
+                  color: _prefixColor(status, isCurrent),
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
               ),
               Text(
                 ' $title',
                 style: TextStyle(
-                  color: _titleColor(session.status, isCurrent, isHovered),
+                  color: _titleColor(status, isCurrent, isHovered),
                   fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
                 ),
               ),
