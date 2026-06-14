@@ -172,6 +172,16 @@ class ChatTurnOrchestrator {
 
     _streamingController.startMetricsTimer(sessionId);
     if (text != null) {
+      // Bump updatedAt immediately so the sidebar moves the session
+      // into "Today" before the first UI refresh. The DB is touched
+      // again shortly by ChatService.sendMessage, but the in-memory
+      // object needs the update now so the fingerprint-based cache in
+      // ExtraInfoPanel invalidates on the first _refresh().
+      final session = _sessionController.findSession(sessionId);
+      if (session != null) {
+        session.updatedAt = DateTime.now();
+      }
+
       // If the previous response was interrupted, inject a system
       // message before the user's new input so the LLM knows its
       // prior response was cut off.
@@ -263,6 +273,20 @@ class ChatTurnOrchestrator {
           _activeAbortSignals.remove(sessionId);
           return;
         }
+
+        // The chat service sets SessionStatus.done on completion, but
+        // for the *current* session the user is already viewing the
+        // response — there's nothing "unread" about it.  Override to
+        // idle so the persisted status stays correct even if the user
+        // later switches away.
+        if (sessionId == _sessionController.currentSessionId) {
+          final session = _sessionController.findSession(sessionId);
+          if (session != null && session.status == SessionStatus.done) {
+            await _store.update(sessionId, status: SessionStatus.idle);
+            session.status = SessionStatus.idle;
+          }
+        }
+
         _streamingController.clearStreamingFor(sessionId);
         _streamingController.stopMetricsTimer(sessionId);
         _activeAbortSignals.remove(sessionId);

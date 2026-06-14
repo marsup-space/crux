@@ -11,7 +11,6 @@ class SessionManagementPanel extends StatefulComponent {
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
   final void Function(int sessionId) onSwitchSession;
   final VoidCallback onDismiss;
-  final SessionStatus Function(Session)? statusResolver;
 
   const SessionManagementPanel({
     required this.sessions,
@@ -20,7 +19,6 @@ class SessionManagementPanel extends StatefulComponent {
     required this.onRenameSession,
     required this.onSwitchSession,
     required this.onDismiss,
-    this.statusResolver,
   });
 
   @override
@@ -344,9 +342,8 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               : CruxTheme.of(context).onSurfaceVariant;
 
           final prefix = isSelected ? '${terminalSymbol('▸', '>')} ' : '  ';
-          final status = component.statusResolver?.call(s) ?? s.status;
-          final icon = _statusIcon(status);
-          final iconColor = _statusColor(status);
+          final icon = _statusIcon(s.status);
+          final iconColor = _statusColor(s.status);
           final titleDisplay = s.title.length > 30
               ? '${s.title.substring(0, 29)}~'
               : s.title;

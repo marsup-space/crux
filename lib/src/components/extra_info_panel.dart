@@ -53,11 +53,6 @@ class ExtraInfoPanel extends StatefulComponent {
   /// the user can type a new project path and submit it.
   final VoidCallback? onSwitchProject;
 
-  /// Derives the effective display status for a session, factoring in
-  /// whether it is currently being viewed.  When not provided the raw
-  /// [Session.status] is used as-is.
-  final SessionStatus Function(Session)? statusResolver;
-
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
@@ -66,7 +61,6 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
-    this.statusResolver,
   });
 
   @override
@@ -97,8 +91,25 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// ListViews and lets [ListView.builder] handle everything in one
   /// flat list.
   List<Object> _rows = const [];
-  List<Session> _prevSessions = const [];
+  List<Session>? _prevSessions;
   int _prevArchivedCount = 0;
+  int _prevFingerprint = 0;
+
+  /// Compute a lightweight fingerprint of the session list so that
+  /// in-place mutations (e.g. a session's [updatedAt] being bumped
+  /// when the user continues it) correctly invalidate the cached row
+  /// list.  Using [identical] on the list reference is insufficient
+  /// because [Session.updatedAt] is mutated on the existing object
+  /// without replacing the list.
+  static int _fingerprint(List<Session> sessions) {
+    var hash = 0;
+    for (final s in sessions) {
+      //updatedAt.millisecondsSinceEpoch changes when a session is
+      // continued, which is exactly the signal we need.
+      hash ^= s.id ^ s.updatedAt.millisecondsSinceEpoch;
+    }
+    return hash;
+  }
 
   /// Build the flat row list from the sorted sessions, inserting
   /// group headers where appropriate.
@@ -151,8 +162,10 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   List<Object> get _ensureRows {
     final sessions = component.sessions;
     final archived = component.archivedCount;
-    if (!identical(_prevSessions, sessions) || _prevArchivedCount != archived) {
+    final fp = _fingerprint(sessions);
+    if (_prevSessions != sessions || _prevFingerprint != fp || _prevArchivedCount != archived) {
       _prevSessions = sessions;
+      _prevFingerprint = fp;
       _prevArchivedCount = archived;
       final sorted = List<Session>.from(sessions)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -179,15 +192,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     super.dispose();
   }
 
-  /// Resolve the effective display status for [session] using the
-  /// optional [statusResolver] callback.  Falls back to the raw
-  /// [Session.status] when no resolver is provided.
-  SessionStatus _resolveStatus(Session session) {
-    return component.statusResolver?.call(session) ?? session.status;
-  }
-
   bool _hasRunningSession() {
-    return component.sessions.any((s) => _resolveStatus(s) == SessionStatus.running);
+    return component.sessions.any((s) => s.status == SessionStatus.running);
   }
 
   void _startAnimIfNeeded() {
@@ -442,8 +448,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       Session session, ExtraInfoPanel panel, int maxTitleLen) {
     final isCurrent = session.id == panel.currentSessionId;
     final isHovered = _hoveredIds.contains(session.id);
-    final status = _resolveStatus(session);
-    final prefix = _statusPrefix(status);
+    final prefix = _statusPrefix(session.status);
     final title = _truncateByWidth(session.title, maxTitleLen);
 
     return MouseRegion(
@@ -460,14 +465,14 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
               Text(
                 prefix,
                 style: TextStyle(
-                  color: _prefixColor(status, isCurrent),
+                  color: _prefixColor(session.status, isCurrent),
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
               ),
               Text(
                 ' $title',
                 style: TextStyle(
-                  color: _titleColor(status, isCurrent, isHovered),
+                  color: _titleColor(session.status, isCurrent, isHovered),
                   fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
                 ),
               ),
