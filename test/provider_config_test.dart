@@ -80,8 +80,8 @@ void main() {
     test('defaults optional fields', () {
       const model = ModelConfig(id: 'test', name: 'Test', contextSize: 4096);
       expect(model.imageSupport, isFalse);
-      expect(model.reasoningEffort, isNull);
-      expect(model.thinking, isFalse);
+      expect(model.reasoningEffort, ReasoningEffort.medium);
+      expect(model.thinking, isTrue);
       expect(model.thinkingBudget, isNull);
     });
   });
@@ -426,8 +426,8 @@ context_size = 128000
       expect(openai.models.length, 1);
       expect(openai.models[0].id, 'gpt-4o');
       expect(openai.models[0].imageSupport, isFalse);
-      expect(openai.models[0].thinking, isFalse);
-      expect(openai.models[0].reasoningEffort, isNull);
+      expect(openai.models[0].thinking, isTrue);
+      expect(openai.models[0].reasoningEffort, ReasoningEffort.medium);
     });
 
     test('loadAll parses a full model with all optional fields', () async {
@@ -556,7 +556,7 @@ image_support = true
 
       final haiku = anthropic.models[1];
       expect(haiku.id, 'claude-3-5-haiku-20241022');
-      expect(haiku.thinking, isFalse);
+      expect(haiku.thinking, isTrue);
     });
 
     test('loadAll parses multiple provider files', () async {

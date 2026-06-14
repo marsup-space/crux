@@ -515,14 +515,25 @@ void main() {
         () {
       // Adaptive is an M3-only feature. The UI shows the
       // `adaptive` label (renamed from `normal`) only when the
-      // active model is M3.
-      final presets = provider.reasoningPresetsFor('MiniMax-M3');
-      final low = presets.firstWhere((p) => p.internalValue == 'low');
-      expect(low.displayLabel, 'low');
+      // active model is M3. The labels come from minimax.toml's
+      // [models.reasoning_labels] — not hardcoded.
+      const m3ModelLabels = {
+        'low': 'disabled',
+        'normal': 'adaptive',
+        'high': 'disabled',
+        'max': 'disabled',
+      };
+      final presets = provider.reasoningPresetsFor(
+        'MiniMax-M3',
+        modelLabels: m3ModelLabels,
+      );
+      // low/high/max are disabled — only normal (as "adaptive") and off remain.
       final normal = presets.firstWhere((p) => p.internalValue == 'normal');
       expect(normal.displayLabel, 'adaptive');
-      final high = presets.firstWhere((p) => p.internalValue == 'high');
-      expect(high.displayLabel, 'high');
+      // Disabled entries are removed from the list.
+      expect(presets.where((p) => p.internalValue == 'low'), isEmpty);
+      expect(presets.where((p) => p.internalValue == 'high'), isEmpty);
+      expect(presets.where((p) => p.internalValue == 'max'), isEmpty);
     });
 
     test('reasoningPresetsFor M2.x shows normal → normal (no adaptive label)',

@@ -380,7 +380,7 @@ void main() {
       );
       final result = await tool.execute({
         'command': 'echo hello_crux_test',
-        'description': 'Test echo command',
+        'intent': 'Test echo command',
       }, ctx);
       expect(result.output, contains('hello_crux_test'));
       expect(result.metadata['exitCode'], 0);
@@ -396,7 +396,7 @@ void main() {
       );
       final result = await tool.execute({
         'command': 'exit 7',
-        'description': 'Test failing command',
+        'intent': 'Test failing command',
       }, ctx);
       expect(result.metadata['exitCode'], 7);
       expect(result.output.trimRight().endsWith('[exit code: 7]'), isTrue);
@@ -415,7 +415,7 @@ void main() {
         // 2500 lines + a failing command → output is truncated and exit != 0
         final result = await tool.execute({
           'command': 'seq 1 2500; exit 3',
-          'description': 'Long failing output',
+          'intent': 'Long failing output',
         }, ctx);
         expect(result.truncated, isTrue);
         expect(result.outputPath, isNotNull);
@@ -1065,7 +1065,7 @@ void main() {
           'lib',
           'src',
           'components',
-          'chat_panel.dart',
+          'chat_input.dart',
         ),
         'context': 3,
       }, ctx);
@@ -1283,14 +1283,14 @@ void main() {
       expect(summary.argsTokens, summary.totalTokens);
     });
 
-    test('BashTool includes command preview in the text', () {
+    test('BashTool shows line count and size in collapsed summary', () {
       final tool = BashTool();
       final summary = tool.collapsedSummary(
-        {'command': 'ls -la /tmp'},
+        {'command': 'ls -la /tmp', 'intent': 'list files'},
         ToolResult(title: 'Bash', output: 'foo\nbar\n', metadata: {'exitCode': 0}),
       );
-      expect(summary.text, contains('ls -la /tmp'));
       expect(summary.text, contains('lines'));
+      expect(summary.text, contains('B'));
       expect(summary.argsTokens, greaterThan(0));
       expect(summary.totalTokens, summary.argsTokens);
     });
