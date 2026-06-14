@@ -32,7 +32,7 @@ void main() {
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     store = SessionStore(db);
     registry = ToolRegistry()..registerDefaults(FileReadTracker());
-    executor = ToolExecutor(registry, store);
+    executor = ToolExecutor(registry, store.messageStore);
   });
 
   tearDown(() async {
@@ -89,7 +89,7 @@ void main() {
       expect(standIn, isNot(contains('5000 lines')));
 
       // Full content is recoverable via the composite key.
-      final recovered = await store.getOffloadedContent(session.id, 'call_abc_content');
+      final recovered = await store.messageStore.getOffloadedContent(session.id, 'call_abc_content');
       expect(recovered, largeContent);
     });
 
@@ -110,7 +110,7 @@ void main() {
       // No offload: input is the same object (no stand-in).
       expect(compressed.input['content'], smallContent);
       expect(
-        await store.getOffloadedContent(session.id, 'call_small'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_small'),
         isNull,
       );
     });
@@ -146,11 +146,11 @@ void main() {
       // keys (callId + '_' + argKey). No overwriting because the
       // offloaded_content PK is (session_id, call_id) and the
       // composite key includes the arg name.
-      final recoveredOld = await store.getOffloadedContent(
+      final recoveredOld = await store.messageStore.getOffloadedContent(
         session.id,
         'call_edit_oldString',
       );
-      final recoveredNew = await store.getOffloadedContent(
+      final recoveredNew = await store.messageStore.getOffloadedContent(
         session.id,
         'call_edit_newString',
       );
@@ -178,7 +178,7 @@ void main() {
       // Returned call is identical to the input (same content).
       expect(compressed.input['command'], largeCommand);
       expect(
-        await store.getOffloadedContent(session.id, 'call_bash'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_bash'),
         isNull,
       );
     });
@@ -206,7 +206,7 @@ void main() {
       );
       expect(compressed.input['content'], isNull);
       expect(
-        await store.getOffloadedContent(session.id, 'call_weird'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_weird'),
         isNull,
       );
     });
@@ -223,7 +223,7 @@ void main() {
   group('session lifecycle', () {
     test('deleteSession cascades to offloaded_content', () async {
       final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'call_z',
         toolName: 'write',
@@ -234,7 +234,7 @@ void main() {
 
       // Confirm the row exists.
       expect(
-        await store.getOffloadedContent(session.id, 'call_z'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_z'),
         'goodbye',
       );
 
@@ -242,14 +242,14 @@ void main() {
       // should clean up the row.
       await store.deleteSession(session.id);
       expect(
-        await store.getOffloadedContent(session.id, 'call_z'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_z'),
         isNull,
       );
     });
 
     test('archiveSession calls cleanOffloadedContent automatically', () async {
       final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'call_a',
         toolName: 'write',
@@ -262,7 +262,7 @@ void main() {
       // keep the session row itself.
       await store.archiveSession(session.id);
       expect(
-        await store.getOffloadedContent(session.id, 'call_a'),
+        await store.messageStore.getOffloadedContent(session.id, 'call_a'),
         isNull,
       );
       // Session survives archive (just hidden from sidebar).
@@ -275,7 +275,7 @@ void main() {
   group('cleanOffloadedContent (direct)', () {
     test('returns the sum of byte_size across all rows deleted', () async {
       final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'call_1',
         toolName: 'write',
@@ -283,7 +283,7 @@ void main() {
         lineCount: 1,
         content: 'x' * 100,
       );
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'call_2',
         toolName: 'write',
@@ -291,7 +291,7 @@ void main() {
         lineCount: 1,
         content: 'y' * 250,
       );
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'call_3',
         toolName: 'edit',
@@ -300,14 +300,14 @@ void main() {
         content: 'z' * 50,
       );
 
-      final freed = await store.cleanOffloadedContent(session.id);
+      final freed = await store.messageStore.cleanOffloadedContent(session.id);
       expect(freed, 100 + 250 + 50); // 400
     });
 
     test('removes every row for the session', () async {
       final session = await store.create(model: 'test/test');
       for (final id in ['a', 'b', 'c']) {
-        await store.saveOffloadedContent(
+        await store.messageStore.saveOffloadedContent(
           sessionId: session.id,
           callId: id,
           toolName: 'write',
@@ -317,11 +317,11 @@ void main() {
         );
       }
 
-      await store.cleanOffloadedContent(session.id);
+      await store.messageStore.cleanOffloadedContent(session.id);
 
       for (final id in ['a', 'b', 'c']) {
         expect(
-          await store.getOffloadedContent(session.id, id),
+          await store.messageStore.getOffloadedContent(session.id, id),
           isNull,
           reason: 'row $id should be gone after clean',
         );
@@ -331,7 +331,7 @@ void main() {
     test('does not touch other sessions rows', () async {
       final sessionA = await store.create(model: 'test/test');
       final sessionB = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: sessionA.id,
         callId: 'a_only',
         toolName: 'write',
@@ -339,7 +339,7 @@ void main() {
         lineCount: 1,
         content: 'x' * 10,
       );
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: sessionB.id,
         callId: 'b_only',
         toolName: 'write',
@@ -349,27 +349,27 @@ void main() {
       );
 
       // Clean only session A. Session B's row must survive.
-      final freed = await store.cleanOffloadedContent(sessionA.id);
+      final freed = await store.messageStore.cleanOffloadedContent(sessionA.id);
       expect(freed, 10);
       expect(
-        await store.getOffloadedContent(sessionA.id, 'a_only'),
+        await store.messageStore.getOffloadedContent(sessionA.id, 'a_only'),
         isNull,
       );
       expect(
-        await store.getOffloadedContent(sessionB.id, 'b_only'),
+        await store.messageStore.getOffloadedContent(sessionB.id, 'b_only'),
         'y' * 20,
       );
     });
 
     test('returns 0 for a session with no offloaded rows', () async {
       final session = await store.create(model: 'test/test');
-      final freed = await store.cleanOffloadedContent(session.id);
+      final freed = await store.messageStore.cleanOffloadedContent(session.id);
       expect(freed, 0);
     });
 
     test('is idempotent — second call returns 0', () async {
       final session = await store.create(model: 'test/test');
-      await store.saveOffloadedContent(
+      await store.messageStore.saveOffloadedContent(
         sessionId: session.id,
         callId: 'once',
         toolName: 'write',
@@ -378,9 +378,9 @@ void main() {
         content: 'hello',
       );
 
-      final first = await store.cleanOffloadedContent(session.id);
+      final first = await store.messageStore.cleanOffloadedContent(session.id);
       expect(first, 5);
-      final second = await store.cleanOffloadedContent(session.id);
+      final second = await store.messageStore.cleanOffloadedContent(session.id);
       expect(second, 0);
     });
   });

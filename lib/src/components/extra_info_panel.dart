@@ -199,6 +199,11 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   void _startAnimIfNeeded() {
     if (_hasRunningSession()) {
       _animTimer ??= Timer.periodic(_animInterval, (_) {
+        if (!_hasRunningSession()) {
+          _animTimer?.cancel();
+          _animTimer = null;
+          _phase = 0.0;
+        }
         _phase += _animStep;
         setState(() {});
       });

@@ -39,7 +39,7 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       registry = ToolRegistry()..registerDefaults(FileReadTracker());
-      executor = ToolExecutor(registry, store);
+      executor = ToolExecutor(registry, store.messageStore);
     });
 
     tearDown(() async {

@@ -79,6 +79,11 @@ class ChatTurnOrchestrator {
   // Public API
   // ─────────────────────────────────────────────────────────────────────
 
+  /// Show a toast notification via the chat panel's toast hub.
+  void showToast(String message, {ToastMode mode = ToastMode.info}) {
+    _showToast(message, mode: mode);
+  }
+
   /// Whether the given session was interrupted (used by the input
   /// placeholder text).
   bool wasInterrupted(int? sessionId) {
@@ -289,6 +294,12 @@ class ChatTurnOrchestrator {
             session.status = SessionStatus.idle;
           }
         }
+
+        // Refresh immediately so the session list picks up the status
+        // change (idle/done) without waiting for the rest of the
+        // completion work (message reloads, tldr, title generation,
+        // etc.).
+        _refresh();
 
         _streamingController.clearStreamingFor(sessionId);
         _streamingController.stopMetricsTimer(sessionId);

@@ -9,6 +9,7 @@ import 'chat_turn_orchestrator.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
+import 'ui/toast.dart';
 
 /// The chat input box at the bottom of the chat panel.
 ///
@@ -69,6 +70,15 @@ class ChatInputState extends State<ChatInput> {
   /// True briefly after the first ESC press while streaming, so the
   /// UI can show a "Press ESC again to interrupt" hint.
   bool _escInterruptHint = false;
+
+  /// Timestamp of the last Ctrl+C key press while the agent was streaming.
+  /// Used to implement a two-step quit guard: first Ctrl+C shows a toast,
+  /// second Ctrl+C within the timeout actually quits the app.
+  DateTime? _lastCtrlCPressTime;
+
+  /// True briefly after the first Ctrl+C press while streaming, so the
+  /// UI can show a "Press Ctrl+C again to quit" hint.
+  bool _ctrlCQuitHint = false;
 
   /// Text that was in the input box before the user entered command mode
   /// (by typing '/' as the first character or by pressing a toolbar button
@@ -315,6 +325,56 @@ class ChatInputState extends State<ChatInput> {
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {
+    // --- Ctrl+C double-press-to-quit guard ---
+    // When any session is currently streaming/responding, the first Ctrl+C
+    // shows a toast warning instead of quitting. A second Ctrl+C within
+    // 3 seconds (while the toast is active) really quits. When no session
+    // is streaming, Ctrl+C passes through and quits immediately (the
+    // default TerminalBinding.immediateExit behaviour).
+    if (event.logicalKey == LogicalKey.keyC && event.isControlPressed &&
+        !event.isShiftPressed && !event.isAltPressed && !event.isMetaPressed) {
+      final sessionId = component.sessionController.currentSessionId;
+      final isStreaming = sessionId != null &&
+          component.sessionController.runtime(sessionId).isResponding;
+
+      if (isStreaming) {
+        final now = DateTime.now();
+        if (_lastCtrlCPressTime != null &&
+            now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
+            _ctrlCQuitHint) {
+          // Second press within 3s — let it through so the app exits.
+          _lastCtrlCPressTime = null;
+          _ctrlCQuitHint = false;
+          return false;
+        } else {
+          // First press — show warning toast, don't quit.
+          _lastCtrlCPressTime = now;
+          _ctrlCQuitHint = true;
+          component.turnOrchestrator.showToast(
+            'Agent is running. Press Ctrl+C again to quit.',
+            mode: ToastMode.info,
+          );
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted && _ctrlCQuitHint) {
+              _ctrlCQuitHint = false;
+              setState(() {});
+            }
+          });
+          setState(() {});
+          return true; // consume — don't quit
+        }
+      }
+
+      // No session streaming — let Ctrl+C bubble up (app exits).
+      return false;
+    }
+
+    // Any other key resets the Ctrl+C quit hint.
+    if (_ctrlCQuitHint) {
+      _ctrlCQuitHint = false;
+      _lastCtrlCPressTime = null;
+    }
+
     final overlay = component.overlayController;
     if (overlay.showSessionManager) return true;
 
@@ -800,9 +860,11 @@ class ChatInputState extends State<ChatInput> {
 
     final overlay = component.overlayController;
     final placeholder = isStreaming
-        ? _escInterruptHint
-            ? 'Press ESC again to interrupt...'
-            : 'Enter message to queue, ESC×2 to interrupt'
+        ? _ctrlCQuitHint
+            ? 'Press Ctrl+C again to quit...'
+            : _escInterruptHint
+                ? 'Press ESC again to interrupt...'
+                : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
             ? 'Response was interrupted. Type a new message...'
             : 'Type a message...';

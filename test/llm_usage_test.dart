@@ -89,7 +89,7 @@ void main() {
       addTearDown(database.close);
 
       final session = await store.create(title: 'test');
-      await store.addMessage(
+      await store.messageStore.addMessage(
         session.id,
         role: 'ai',
         content: 'answer',
@@ -97,7 +97,7 @@ void main() {
         reasoningSignature: 'persisted-signature',
       );
 
-      final messages = await store.getMessages(session.id);
+      final messages = await store.messageStore.getMessages(session.id);
       expect(messages.single.reasoningSignature, 'persisted-signature');
     });
   });

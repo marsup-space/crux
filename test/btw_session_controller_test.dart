@@ -52,7 +52,7 @@ void main() {
         store,
         providerService,
         LlmClient(),
-        ToolExecutor(toolRegistry, store),
+        ToolExecutor(toolRegistry, store.messageStore),
       ),
       refresh: () {},
     );
@@ -268,7 +268,7 @@ void main() {
     //      `_store.addMessage(...)` to persist the new real user
     //      message, then dispatches the LLM call.
     c.clearBtwTurnsFor(session.id);
-    await store.addMessage(
+    await store.messageStore.addMessage(
       session.id,
       role: 'user',
       content: 'now let\'s refactor',
@@ -277,7 +277,7 @@ void main() {
 
     // The persisted history (what the LLM sees) must contain only
     // the real turn — no btw content at all.
-    final persisted = await store.getMessages(session.id);
+    final persisted = await store.messageStore.getMessages(session.id);
     expect(persisted, hasLength(1),
         reason: 'only the real turn should be persisted');
     expect(persisted.single.role, equals('user'));

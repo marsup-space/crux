@@ -372,17 +372,17 @@ void main() {
         // The order matters — the wipe must complete before the
         // re-send so we don't briefly render a duplicate.
         const userText = 'build me a TUI';
-        final userMsg = await store.addMessage(
+        final userMsg = await store.messageStore.addMessage(
           session.id,
           role: 'user',
           content: userText,
         );
-        await store.addMessage(
+        await store.messageStore.addMessage(
           session.id,
           role: 'ai',
           content: 'Sure, let me plan this out...',
         );
-        final currentMessages = await store.getMessages(session.id);
+        final currentMessages = await store.messageStore.getMessages(session.id);
 
         final events = <String>[];
         await CommandExecutor().execute(
@@ -515,12 +515,12 @@ void main() {
       'also works for the Chinese alias /重试',
       () async {
         const userText = 'hello world';
-        final userMsg = await store.addMessage(
+        final userMsg = await store.messageStore.addMessage(
           session.id,
           role: 'user',
           content: userText,
         );
-        final currentMessages = await store.getMessages(session.id);
+        final currentMessages = await store.messageStore.getMessages(session.id);
 
         var sendTurnCalls = 0;
         String? lastTextSent;
