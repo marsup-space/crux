@@ -16,6 +16,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'package:crux/src/commands/command_executor.dart';
@@ -979,6 +980,200 @@ void main() {
       expect(session.title, equals('中文标题'));
       final reloaded = await store.getById(session.id);
       expect(reloaded!.title, equals('中文标题'));
+    });
+  });
+
+  group('CommandExecutor — /project', () {
+    late Directory tempDir;
+    late Directory originalCwd;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      originalCwd = Directory.current;
+      tempDir = await Directory.systemTemp.createTemp('crux_project_test_');
+      tempDir = Directory(await tempDir.resolveSymbolicLinks());
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      Directory.current = originalCwd;
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ({
+      CommandContext ctx,
+      List<String> toasts,
+      List<ToastMode?> modes,
+      int Function() initSessionsCalls,
+    })
+    buildContext() {
+      final toasts = <String>[];
+      final modes = <ToastMode?>[];
+      var initSessionsCalls = 0;
+      Directory.current = tempDir;
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const [],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add(message);
+          modes.add(mode);
+        },
+        switchSession: (_) async {},
+        initSessions: () async {
+          initSessionsCalls++;
+        },
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+      return (
+        ctx: ctx,
+        toasts: toasts,
+        modes: modes,
+        initSessionsCalls: () => initSessionsCalls,
+      );
+    }
+
+    test(r'expands ~/ to HOME and switches project', () async {
+      final home =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (home == null || home.isEmpty) {
+        markTestSkipped('No HOME/USERPROFILE in env');
+        return;
+      }
+      final bundle = buildContext();
+
+      await CommandExecutor().execute('/project ~/', bundle.ctx);
+
+      expect(Directory.current.path, equals(home));
+      expect(bundle.toasts.last, contains('Switched to'));
+      expect(bundle.modes.last, equals(ToastMode.status));
+      expect(bundle.initSessionsCalls(), equals(1));
+    });
+
+    test(r'expands bare ~ to HOME', () async {
+      final home =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (home == null || home.isEmpty) {
+        markTestSkipped('No HOME/USERPROFILE in env');
+        return;
+      }
+      final bundle = buildContext();
+
+      await CommandExecutor().execute('/project ~', bundle.ctx);
+
+      expect(Directory.current.path, equals(home));
+      expect(bundle.toasts.last, contains('Switched to'));
+    });
+
+    test(r'expands ~/<sub> to HOME/<sub>', () async {
+      final home =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (home == null || home.isEmpty) {
+        markTestSkipped('No HOME/USERPROFILE in env');
+        return;
+      }
+      final children = Directory(home)
+          .listSync(followLinks: false)
+          .whereType<Directory>()
+          .toList();
+      if (children.isEmpty) {
+        markTestSkipped('Home directory has no child directory to target');
+        return;
+      }
+      final realTarget = children.first.path;
+      final bundle = buildContext();
+
+      await CommandExecutor().execute(
+        '/project ~/${p.basename(realTarget)}',
+        bundle.ctx,
+      );
+
+      expect(Directory.current.path, equals(realTarget));
+      expect(bundle.toasts.last, contains('Switched to'));
+    });
+
+    test('reports directory not found for a missing ~/<path>', () async {
+      final home =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (home == null || home.isEmpty) {
+        markTestSkipped('No HOME/USERPROFILE in env');
+        return;
+      }
+      final missing = p.join(
+        home,
+        'crux-nonexistent-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      final bundle = buildContext();
+
+      await CommandExecutor().execute(
+        '/project ~/${p.basename(missing)}',
+        bundle.ctx,
+      );
+
+      expect(Directory.current.path, equals(tempDir.path));
+      expect(bundle.toasts.last, contains('Directory not found'));
+      expect(bundle.modes.last, equals(ToastMode.error));
+      expect(bundle.initSessionsCalls(), equals(0));
+    });
+
+    test('shows usage toast when no path is provided', () async {
+      final bundle = buildContext();
+
+      await CommandExecutor().execute('/project', bundle.ctx);
+
+      expect(bundle.toasts.last, contains('Usage: /project'));
+      expect(Directory.current.path, equals(tempDir.path));
+      expect(bundle.initSessionsCalls(), equals(0));
+    });
+
+    test('passes absolute paths through unchanged', () async {
+      final bundle = buildContext();
+
+      await CommandExecutor().execute('/project ${tempDir.path}', bundle.ctx);
+
+      expect(Directory.current.path, equals(p.normalize(tempDir.path)));
+      expect(bundle.toasts.last, contains('Switched to'));
+    });
+
+    test('rejects relative paths that do not exist', () async {
+      final bundle = buildContext();
+
+      await CommandExecutor().execute(
+        '/project '
+        'definitely-not-a-real-dir-${DateTime.now().microsecondsSinceEpoch}',
+        bundle.ctx,
+      );
+
+      expect(bundle.toasts.last, contains('Directory not found'));
+      expect(bundle.modes.last, equals(ToastMode.error));
+      expect(Directory.current.path, equals(tempDir.path));
     });
   });
 }

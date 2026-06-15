@@ -452,7 +452,8 @@ class CommandExecutor {
 
   Future<void> executeProject(List<String> parts, CommandContext ctx) async {
     if (parts.length > 1 && parts[1].isNotEmpty) {
-      final target = p.normalize(p.absolute(parts[1]));
+      final expanded = _expandHome(parts[1]);
+      final target = p.normalize(p.absolute(expanded));
       final dir = Directory(target);
       if (!dir.existsSync()) {
         ctx.showToast('Directory not found: $target', mode: ToastMode.error);
@@ -464,6 +465,17 @@ class CommandExecutor {
     } else {
       ctx.showToast('Usage: /project <path> (current: ${ctx.projectPath})');
     }
+  }
+
+  String _expandHome(String path) {
+    final hasHomePrefix =
+        path == '~' || path.startsWith('~/') || path.startsWith(r'~\');
+    if (!hasHomePrefix) return path;
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    if (home == null || home.isEmpty) return path;
+    if (path == '~' || path.length == 2) return home;
+    return p.join(home, path.substring(2));
   }
 
   Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
