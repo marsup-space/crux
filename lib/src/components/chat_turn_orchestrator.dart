@@ -516,6 +516,8 @@ class ChatTurnOrchestrator {
           _refresh();
         }
       }
+    } catch (e) {
+      streamError = e.toString();
     } finally {
       llmClient.dispose();
     }
@@ -559,6 +561,19 @@ class ChatTurnOrchestrator {
     final responseText = buffer.toString();
     _streamingController.clearStreamingFor(sessionId);
     assert(responseText.isNotEmpty || streamError == null);
+
+    // Drain any messages the user queued while the btw was streaming.
+    // These are "real" messages, so they clear the btw chain and
+    // start a normal turn — same as if the user had typed them
+    // after the btw finished.
+    final queued = _sessionController.drainMessageQueue(sessionId);
+    if (queued != null && queued.isNotEmpty) {
+      _sessionController.clearBtwTurnsFor(sessionId);
+      _refresh();
+      await sendTurn(text: queued);
+      return;
+    }
+
     _refresh();
   }
 
