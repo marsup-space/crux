@@ -205,11 +205,24 @@ class FileSearcher {
   /// isn't ready, we return an empty list and let the caller's
   /// "Searching..." placeholder do the talking.
   ///
-  /// Scoring: filename prefix match (200+) → filename substring
-  /// (100-) → path substring (50-) → subsequence match (10).
-  /// Files rank above directories at equal score, and shorter
-  /// paths rank above longer ones (so the closest match
-  /// surfaces first).
+  /// Scoring tiers (highest first), designed so filename matches
+  /// always outrank path-only matches:
+  ///
+  /// | Tier                           | Base score |
+  /// |--------------------------------|------------|
+  /// | Exact basename match           | 5000       |
+  /// | Filename prefix match          | 4000       |
+  /// | Filename substring match       | 3000       |
+  /// | Path substring match           | 2000       |
+  /// | Subsequence match              | 1000       |
+  ///
+  /// The exact basename tier means typing `@main.dart` ranks
+  /// the file `main.dart` above `lib/main.dart` /
+  /// `old/main.dart` (which share the basename but aren't
+  /// exact). Every filename tier also outranks every path tier,
+  /// so a weak basename hit still beats a strong path hit —
+  /// matching the @-mention UX where the user is naming a file,
+  /// not navigating to a directory.
   List<FileMatch> search(String query, {int limit = 10}) {
     final paths = _paths;
     if (paths == null || paths.isEmpty) return const [];
@@ -293,9 +306,52 @@ class FileSearcher {
     }
   }
 
+  // ── Score tiers ─────────────────────────────────────────────────
+  //
+  // The score encodes the tier in the high bits and a within-tier
+  // tiebreaker in the low bits. Tiers are spaced far enough apart
+  // that two adjacent tiers can never overlap, regardless of how
+  // the tiebreaker saturates. Ordering (highest first):
+  //
+  //   _tierExactBasename    (5000) — query equals the basename
+  //   _tierFilenamePrefix   (4000) — query is a prefix of the basename
+  //   _tierFilenameSubstr   (3000) — query appears in the basename
+  //   _tierPathSubstr       (2000) — query appears only in the dir part
+  //   _tierSubsequence      (1000) — query chars appear in order in path
+  //
+  // Within each tier, the tiebreaker rewards shorter filenames /
+  // earlier substring positions (so `@read` ranks `read.dart`
+  // above `read_tool.dart`). All scores are positive so the
+  // `s <= 0` filter in [_scoredQueryResults] still drops
+  // genuine misses without accidentally dropping weak matches.
+  static const int _tierExactBasename = 5000;
+  static const int _tierFilenamePrefix = 4000;
+  static const int _tierFilenameSubstr = 3000;
+  static const int _tierPathSubstr = 2000;
+  static const int _tierSubsequence = 1000;
+
   /// Score [path index] for [ql] / [qFirst] using the pre-computed
   /// lowercase + basename parallel arrays. All branches are O(L)
   /// in the path length and avoid per-call allocations.
+  ///
+  /// Tiers (highest first):
+  ///   1. Exact basename match     — query equals the basename
+  ///                                 (e.g. `@main.dart` → `main.dart`)
+  ///   2. Filename prefix match    — query is a prefix of the basename
+  ///   3. Filename substring match — query appears in the basename
+  ///   4. Path substring match     — query appears only in the dir prefix
+  ///   5. Subsequence match        — every char of the query appears
+  ///                                 in order in the path
+  ///
+  /// Filename tiers (1-3) all outrank the path tier (4), so a
+  /// weak filename hit always beats a strong path hit. This
+  /// matches the @-mention UX: the user is naming a file, and
+  /// "the file matches, just buried in a directory" should
+  /// surface above "the directory happens to contain these chars".
+  ///
+  /// Within the exact-basename tier (1) the tiebreaker prefers
+  /// shorter paths, so `main.dart` outranks `lib/main.dart`
+  /// when both basenames match exactly.
   int _score(
     int idx,
     String ql,
@@ -306,31 +362,48 @@ class FileSearcher {
     final nameL = basenames[idx];
     final pathL = lower[idx];
 
-    // Filename prefix match — by far the most common case
-    // ("@read" should rank "read_tool.dart" first).
-    if (nameL.startsWith(ql)) {
-      return 200 + (100 - nameL.length).clamp(0, 100);
+    // 1. Exact basename match. The user typed the full filename
+    //    (including extension), so this should outrank every
+    //    other match — including files with the same basename
+    //    that live in a different directory. "@main.dart" →
+    //    "main.dart" beats "lib/main.dart" / "old/main.dart".
+    //    Tiebreaker: shorter paths win, so the version closest
+    //    to root (`main.dart`) ranks above the buried copy
+    //    (`lib/main.dart`) when both basenames match exactly.
+    if (nameL == ql) {
+      return _tierExactBasename + (1000 - pathL.length).clamp(0, 1000);
     }
 
-    // Filename contains query as a substring.
+    // 2. Filename prefix match — the most common case
+    //    ("@read" should rank "read_tool.dart" first).
+    if (nameL.startsWith(ql)) {
+      return _tierFilenamePrefix + (100 - nameL.length).clamp(0, 100);
+    }
+
+    // 3. Filename contains query as a substring. Earlier index
+    //    wins (so `@foo` ranks `before_foo.dart` above
+    //    `something_foo.dart`). Always strictly above the path
+    //    tier thanks to the tier gap, so even a basename match
+    //    at index 100 outranks a path match at index 0.
     final idxInName = nameL.indexOf(ql);
     if (idxInName >= 0) {
-      return 100 - idxInName;
+      return _tierFilenameSubstr + (100 - idxInName).clamp(0, 100);
     }
 
-    // Path contains query as a substring.
+    // 4. Path contains query as a substring (basename didn't
+    //    match). Always strictly below every filename tier, but
+    //    still included in results — the user might be drilling
+    //    into a directory by name.
     final idxInPath = pathL.indexOf(ql);
     if (idxInPath >= 0) {
-      return 50 - (idxInPath ~/ 4);
+      return _tierPathSubstr + (50 - (idxInPath ~/ 4)).clamp(0, 50);
     }
 
-    // Subsequence match: every char of `ql` appears in `pathL`
-    // in order, starting with the first char of `ql`. Reward
-    // shorter gaps by giving a flat +10 — we don't try to score
-    // gap tightness because it's the slowest branch and the
-    // common case is already handled by the substring checks.
+    // 5. Subsequence match: every char of `ql` appears in `pathL`
+    //    in order, starting with the first char of `ql`. The
+    //    slowest branch so we keep the tiebreaker flat.
     if (_isSubsequence(pathL, ql, qFirst)) {
-      return 10;
+      return _tierSubsequence;
     }
 
     return 0;
