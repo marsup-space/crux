@@ -79,7 +79,11 @@ class FileSearcher {
   List<String>? _lower;
 
   /// Pre-computed basename of every path in [_paths], parallel
-  /// array. Saves an O(L) `p.basename` per path per keystroke.
+  /// array. Stored lowercased so the case-insensitive basename
+  /// comparisons in [_score] are O(L) without an allocation per
+  /// keystroke. The original-case form is still available via
+  /// [_paths] for display — we only need the lowercased form for
+  /// matching, since `@battlemode.cs` should hit `Battlemode.cs`.
   List<String>? _basenames;
 
   /// Pre-computed isDirectory flag for every path in [_paths].
@@ -184,8 +188,15 @@ class FileSearcher {
     _lower = List<String>.unmodifiable(
       paths.map((s) => s.toLowerCase()).toList(),
     );
+    // Lowercased once at index time so [_score] doesn't need to
+    // re-allocate on every keystroke. We do this for the basename
+    // specifically because the @-mention UX expects case-insensitive
+    // matching (`@battlemode.cs` should find `Battlemode.cs`), but
+    // [p.basename] preserves the original case. Path comparisons are
+    // already case-insensitive via [_lower] below — this just extends
+    // the same property to basename comparisons.
     _basenames = List<String>.unmodifiable(
-      paths.map((s) => p.basename(s)).toList(),
+      paths.map((s) => p.basename(s).toLowerCase()).toList(),
     );
     // Directories in the index are marked by a trailing `/`
     // (see [_walk] and `_ripgrepOutputToPaths` — both store

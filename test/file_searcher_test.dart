@@ -75,6 +75,29 @@ void main() {
       expect(paths, ['foo.dart', 'lib/foo.dart', 'old/foo.dart']);
     });
 
+    test('exact basename match works regardless of file casing', () async {
+      // Basenames are stored lowercased so the @-mention UX is
+      // case-insensitive: `@battlemode.cs` must find `Battlemode.cs`
+      // (a real C# file name) and rank it above `ShowIfInBattlemode.cs`
+      // whose basename contains `battlemode.cs` only as a substring.
+      // Without the lowercasing fix this file would be demoted to the
+      // path-substring tier — losing to the substring match.
+      final (searcher, dir) = await _buildSearcher({
+        'Battlemode.cs': '',         // exact basename (PascalCase on disk)
+        'ShowIfInBattlemode.cs': '', // filename substring match
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('battlemode.cs');
+      final paths = results.map((m) => m.relativePath).toList();
+
+      // The exact basename match wins over the substring match,
+      // even though the on-disk file is `Battlemode.cs` (mixed case)
+      // and the user typed lowercase `battlemode.cs`.
+      expect(paths.first, 'Battlemode.cs');
+      expect(paths.last, 'ShowIfInBattlemode.cs');
+    });
+
     test('filename prefix match ranks above filename substring', () async {
       // `reader.dart` has `read` as a prefix; `old_read.dart`
       // has `read` only as a substring.
