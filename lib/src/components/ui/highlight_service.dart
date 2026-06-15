@@ -15,6 +15,7 @@ class HighlightService {
     if (_instance != null) return _instance!;
 
     final languages = [
+      // Original
       'dart',
       'python',
       'javascript',
@@ -29,6 +30,26 @@ class HighlightService {
       'json',
       'yaml',
       'sql',
+      // Added
+      'csharp',
+      'c',
+      'cpp',
+      'ruby',
+      'php',
+      'bash',
+      'toml',
+      'diff',
+      'dockerfile',
+      'lua',
+      'scala',
+      'haskell',
+      'markdown',
+      'xml',
+      'perl',
+      'r',
+      'elixir',
+      'erlang',
+      'clojure',
     ];
 
     await tm.Highlighter.initialize(languages);
@@ -58,10 +79,14 @@ class HighlightService {
     final lower = lang.toLowerCase().trim();
     switch (lower) {
       case 'js':
+      case 'mjs':
+      case 'cjs':
         return 'javascript';
       case 'ts':
+      case 'tsx':
         return 'typescript';
       case 'py':
+      case 'py3':
         return 'python';
       case 'rs':
         return 'rust';
@@ -70,6 +95,48 @@ class HighlightService {
         return 'kotlin';
       case 'yml':
         return 'yaml';
+      case 'c#':
+      case 'cs':
+        return 'csharp';
+      case 'cc':
+      case 'cxx':
+      case 'hpp':
+      case 'hxx':
+      case 'hh':
+        return 'cpp';
+      case 'h':
+        return 'c';
+      case 'rb':
+        return 'ruby';
+      case 'sh':
+      case 'zsh':
+        return 'bash';
+      case 'patch':
+        return 'diff';
+      case 'md':
+        return 'markdown';
+      case 'pl':
+      case 'pm':
+        return 'perl';
+      case 'ex':
+      case 'exs':
+        return 'elixir';
+      case 'erl':
+      case 'hrl':
+        return 'erlang';
+      case 'clj':
+      case 'cljs':
+      case 'cljc':
+      case 'edn':
+        return 'clojure';
+      case 'htm':
+        return 'html';
+      case 'svg':
+      case 'xsl':
+      case 'xslt':
+        return 'xml';
+      case 'dockerfile':
+        return 'dockerfile';
       default:
         return lower;
     }
@@ -84,6 +151,8 @@ Map<String, Color> _scopeColorMap(CruxThemeData theme) => {
   'entity.name.function': theme.highlightFunction,
   'entity.name.type': theme.highlightType,
   'entity.name.class': theme.highlightType,
+  'support': theme.highlightAttribute,
+  'support.type': theme.highlightAttribute,
   'support.function': theme.highlightFunction,
   'support.class': theme.highlightType,
   'string': theme.highlightString,
@@ -92,13 +161,14 @@ Map<String, Color> _scopeColorMap(CruxThemeData theme) => {
   'comment': theme.highlightComment,
   'constant': theme.highlightConstant,
   'constant.numeric': theme.highlightNumeric,
+  'constant.language.boolean': theme.highlightConstant,
+  'constant.language.null': theme.highlightKeyword,
   'variable': theme.highlightVariable,
   'variable.parameter': theme.highlightVariable,
   'tag': theme.highlightTag,
   'attribute.name': theme.highlightAttribute,
   'punctuation': theme.highlightPunctuation,
   'punctuation.definition': theme.highlightPunctuation,
-  'meta': theme.highlightMeta,
   'heading': theme.highlightType,
   'emphasis': theme.highlightFunction,
   'strong': theme.highlightFunction,
