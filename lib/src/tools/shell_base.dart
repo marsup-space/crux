@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -123,9 +124,19 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     final sessionId = abort?.sessionId;
     Process? process;
     try {
+      final environment = Map<String, String>.from(Platform.environment);
+      final bundledBin = await resolveBundledBinDirectory();
+      if (bundledBin != null) {
+        final separator = Platform.isWindows ? ';' : ':';
+        final existingPath = environment['PATH'];
+        environment['PATH'] = existingPath == null || existingPath.isEmpty
+            ? bundledBin.path
+            : '${bundledBin.path}$separator$existingPath';
+      }
       process = await Process.start(
         invocation.executable,
         invocation.args,
+        environment: environment,
         runInShell: true,
         mode: ProcessStartMode.normal,
       );

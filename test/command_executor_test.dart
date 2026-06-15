@@ -1071,7 +1071,7 @@ void main() {
 
       await CommandExecutor().execute('/project ~/', bundle.ctx);
 
-      expect(Directory.current.path, equals(home));
+      expect(p.equals(Directory.current.path, home), isTrue);
       expect(bundle.toasts.last, contains('Switched to'));
       expect(bundle.modes.last, equals(ToastMode.status));
       expect(bundle.initSessionsCalls(), equals(1));
@@ -1088,7 +1088,7 @@ void main() {
 
       await CommandExecutor().execute('/project ~', bundle.ctx);
 
-      expect(Directory.current.path, equals(home));
+      expect(p.equals(Directory.current.path, home), isTrue);
       expect(bundle.toasts.last, contains('Switched to'));
     });
 
@@ -1115,7 +1115,7 @@ void main() {
         bundle.ctx,
       );
 
-      expect(Directory.current.path, equals(realTarget));
+      expect(p.equals(Directory.current.path, realTarget), isTrue);
       expect(bundle.toasts.last, contains('Switched to'));
     });
 
@@ -1137,7 +1137,7 @@ void main() {
         bundle.ctx,
       );
 
-      expect(Directory.current.path, equals(tempDir.path));
+      expect(p.equals(Directory.current.path, tempDir.path), isTrue);
       expect(bundle.toasts.last, contains('Directory not found'));
       expect(bundle.modes.last, equals(ToastMode.error));
       expect(bundle.initSessionsCalls(), equals(0));
@@ -1149,7 +1149,7 @@ void main() {
       await CommandExecutor().execute('/project', bundle.ctx);
 
       expect(bundle.toasts.last, contains('Usage: /project'));
-      expect(Directory.current.path, equals(tempDir.path));
+      expect(p.equals(Directory.current.path, tempDir.path), isTrue);
       expect(bundle.initSessionsCalls(), equals(0));
     });
 
@@ -1158,7 +1158,7 @@ void main() {
 
       await CommandExecutor().execute('/project ${tempDir.path}', bundle.ctx);
 
-      expect(Directory.current.path, equals(p.normalize(tempDir.path)));
+      expect(p.equals(Directory.current.path, tempDir.path), isTrue);
       expect(bundle.toasts.last, contains('Switched to'));
     });
 
@@ -1173,7 +1173,7 @@ void main() {
 
       expect(bundle.toasts.last, contains('Directory not found'));
       expect(bundle.modes.last, equals(ToastMode.error));
-      expect(Directory.current.path, equals(tempDir.path));
+      expect(p.equals(Directory.current.path, tempDir.path), isTrue);
     });
   });
 }

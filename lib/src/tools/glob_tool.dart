@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:glob/glob.dart';
 import 'package:glob/list_local_fs.dart';
 
+import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -59,9 +60,6 @@ class GlobTool extends ToolDef {
       return ToolResult.error('Missing required parameter: pattern');
     }
 
-    if (Platform.isWindows) {
-      return _executeDart(pattern, path, ctx);
-    }
     return _executeRipgrep(pattern, path, ctx);
   }
 
@@ -79,7 +77,10 @@ class GlobTool extends ToolDef {
     ];
 
     try {
-      final result = await Process.run('rg', cmdArgs);
+      final executable = await resolveBundledExecutable(
+        Platform.isWindows ? 'rg.exe' : 'rg',
+      );
+      final result = await Process.run(executable, cmdArgs);
       if (result.exitCode == 0) {
         final output = result.stdout as String;
         if (output.isEmpty) {
@@ -116,10 +117,8 @@ class GlobTool extends ToolDef {
         return ToolResult.error('ripgrep error: ${stderr.trim()}');
       }
       return ToolResult.error('ripgrep exited with code ${result.exitCode}');
-    } catch (e) {
-      return ToolResult.error(
-        'ripgrep not available: $e. Install ripgrep or use bash tool.',
-      );
+    } on ProcessException {
+      return _executeDart(pattern, path, ctx);
     }
   }
 

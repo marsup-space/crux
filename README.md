@@ -165,12 +165,37 @@ MIT
 ### Quick Start
 
 ```bash
+# Fetch bundled native tools for the current OS and architecture
+dart run tool/third_party.dart fetch
+
 # Run from project root
 dart run bin/crux.dart
 
 # With a working directory
 dart run bin/crux.dart /path/to/your/project
 ```
+
+### Release Builds
+
+Crux pins third-party native tools in `third_party/manifest.json`. Development
+uses `third_party/bin/<os>-<arch>/`, while release bundles contain only the
+selected target under `third_party/bin/` beside the executable.
+
+```bash
+# Build for the current platform
+dart run tool/build_release.dart
+
+# Build one of:
+# macos-arm64, macos-x64, linux-arm64, linux-x64,
+# windows-arm64, windows-x64
+dart run tool/build_release.dart --target linux-x64
+```
+
+The build script downloads missing tools, verifies their SHA-256 hashes,
+compiles Crux, and copies providers, themes, binaries, and licenses into
+`build/releases/crux-<target>/`. Dart can cross-compile some targets, but
+release automation should run each target on a compatible host when the local
+SDK reports that a target is unsupported.
 
 ### Commands
 

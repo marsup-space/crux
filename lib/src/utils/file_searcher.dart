@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'bundled_executable.dart';
 import 'gitignore.dart';
 
 /// A single file/directory match returned by [FileSearcher.search].
@@ -351,7 +352,7 @@ class FileSearcher {
     if (!await _isRipgrepAvailable()) return null;
     try {
       final result = await Process.run(
-        _ripgrepPath,
+        _ripgrepPath!,
         const [
           '--no-config',
           '--files',
@@ -382,14 +383,17 @@ class FileSearcher {
     }
   }
 
-  static String _ripgrepPath = 'rg';
+  String? _ripgrepPath;
 
   Future<bool> _isRipgrepAvailable() async {
     final cached = _ripgrepAvailableCache;
     if (cached != null) return cached;
     try {
+      _ripgrepPath ??= await resolveBundledExecutable(
+        Platform.isWindows ? 'rg.exe' : 'rg',
+      );
       final result = await Process.run(
-        _ripgrepPath,
+        _ripgrepPath!,
         const ['--version'],
       );
       final ok = result.exitCode == 0;

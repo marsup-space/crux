@@ -1,7 +1,6 @@
 import 'dart:io';
 
-import 'package:glob/glob.dart';
-
+import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -34,7 +33,7 @@ class GrepTool extends ToolDef {
 
   @override
   String get description =>
-      'Search file contents with regex. '
+      'Search file contents with ripgrep regex syntax. '
       'Returns file paths and line numbers with matches, '
       'up to $_maxMatches results. '
       'For match counts, use Bash with `rg` directly.';
@@ -81,17 +80,6 @@ class GrepTool extends ToolDef {
       return ToolResult.error('Missing required parameter: pattern');
     }
 
-    if (Platform.isWindows) {
-      return _executeDart(
-        pattern: pattern,
-        root: path,
-        ctx: ctx,
-        include: include,
-        caseInsensitive: caseInsensitive,
-        context: context,
-        headLimit: headLimit,
-      );
-    }
     return _executeRipgrep(
       pattern: pattern,
       path: path,
@@ -112,7 +100,12 @@ class GrepTool extends ToolDef {
     int? context,
     int? headLimit,
   }) async {
-    final cmdArgs = <String>[];
+    final cmdArgs = <String>[
+      '--no-config',
+      '--color=never',
+      '--path-separator',
+      '/',
+    ];
     cmdArgs.add('--line-number');
     cmdArgs.add('--with-filename');
     cmdArgs.add('--sort=path');
@@ -137,7 +130,10 @@ class GrepTool extends ToolDef {
     cmdArgs.add(path);
 
     try {
-      final result = await Process.run('rg', cmdArgs);
+      final executable = await resolveBundledExecutable(
+        Platform.isWindows ? 'rg.exe' : 'rg',
+      );
+      final result = await Process.run(executable, cmdArgs);
       if (result.exitCode == 0) {
         final output = result.stdout as String;
         if (output.isEmpty) {
@@ -167,120 +163,10 @@ class GrepTool extends ToolDef {
         return ToolResult.error('ripgrep error: ${stderr.trim()}');
       }
       return ToolResult.error('ripgrep exited with code ${result.exitCode}');
-    } catch (e) {
+    } on ProcessException catch (error) {
       return ToolResult.error(
-        'ripgrep not available: $e. Install ripgrep or use bash tool.',
+        'Unable to start bundled ripgrep: ${error.message}',
       );
-    }
-  }
-
-  Future<ToolResult> _executeDart({
-    required String pattern,
-    required String root,
-    required ToolContext ctx,
-    String? include,
-    bool caseInsensitive = false,
-    int? context,
-    int? headLimit,
-  }) async {
-    try {
-      final RegExp regex;
-      try {
-        regex = RegExp(pattern, caseSensitive: !caseInsensitive);
-      } catch (e) {
-        return ToolResult.error('Invalid regex: $e');
-      }
-
-      final includeGlob = include != null
-          ? Glob(include.replaceAll('\\', '/'), recursive: true)
-          : null;
-
-      final rootType = FileSystemEntity.typeSync(root);
-      if (rootType == FileSystemEntityType.notFound) {
-        return ToolResult.error(
-            'Path not found: ${relativePath(root, ctx.workingDirectory)}');
-      }
-
-      final Iterable<FileSystemEntity> entries;
-      if (rootType == FileSystemEntityType.directory) {
-        entries = Directory(root).listSync(recursive: true, followLinks: false)
-          ..sort((a, b) => a.path.compareTo(b.path));
-      } else {
-        entries = [File(root)];
-      }
-
-      final lines = <String>[];
-      var totalMatches = 0;
-      var truncated = false;
-
-      outer:
-      for (final entry in entries) {
-        if (entry is! File) continue;
-        if (includeGlob != null &&
-            !includeGlob.matches(entry.path.replaceAll('\\', '/'))) {
-          continue;
-        }
-        String content;
-        try {
-          content = entry.readAsStringSync();
-        } on FileSystemException {
-          continue;
-        } on FormatException {
-          continue;
-        }
-        final relPath = relativePath(entry.path, ctx.workingDirectory);
-        final entryLines = content.split('\n');
-        for (var i = 0; i < entryLines.length; i++) {
-          if (!regex.hasMatch(entryLines[i])) continue;
-          if (context != null && context > 0) {
-            final start = (i - context).clamp(0, entryLines.length);
-            final end = (i + context + 1).clamp(0, entryLines.length);
-            for (var j = start; j < end; j++) {
-              lines.add('$relPath-${j + 1}-$j-$j:${entryLines[j]}');
-            }
-          } else {
-            lines.add('$relPath-${i + 1}:${entryLines[i]}');
-          }
-          totalMatches++;
-          if (lines.length >= _maxMatches) {
-            truncated = true;
-            break outer;
-          }
-        }
-      }
-
-      if (totalMatches == 0) {
-        return ToolResult(
-          title: 'Grep: $pattern',
-          output: 'No matches found',
-          truncated: false,
-          metadata: {'totalMatches': 0, 'truncated': false},
-        );
-      }
-
-      final kept = lines.map((line) {
-        if (line.length > _maxLineLength) {
-          return '${line.substring(0, _maxLineLength)}...';
-        }
-        return line;
-      }).join('\n');
-
-      final header = truncated
-          ? 'Found at least $totalMatches matches (showing first $_maxMatches)\n'
-          : '';
-      final footer = truncated
-          ? '\n\n(Results truncated: showing $_maxMatches matches. '
-              'Consider a more specific path or pattern.)'
-          : '';
-
-      return ToolResult(
-        title: 'Grep: $pattern',
-        output: '$header$kept$footer',
-        truncated: truncated,
-        metadata: {'totalMatches': totalMatches, 'truncated': truncated},
-      );
-    } catch (e) {
-      return ToolResult.error('grep failed: $e');
     }
   }
 
@@ -315,18 +201,20 @@ class GrepTool extends ToolDef {
   }
 
   String _makePathsRelative(String output, String workingDirectory) {
-    final prefix = '$workingDirectory/';
+    final normalizedWorkingDirectory = workingDirectory.replaceAll('\\', '/');
+    final prefix = '$normalizedWorkingDirectory/';
     return output
         .split('\n')
         .map((line) {
-          if (line.startsWith(prefix)) {
+          final normalizedLine = line.replaceAll('\\', '/');
+          if (normalizedLine.startsWith(prefix)) {
             final colonIdx = line.indexOf(':', prefix.length);
             if (colonIdx != -1) {
-              return line.substring(prefix.length);
+              return normalizedLine.substring(prefix.length);
             }
-            return line.substring(prefix.length);
+            return normalizedLine.substring(prefix.length);
           }
-          return line;
+          return normalizedLine;
         })
         .join('\n');
   }

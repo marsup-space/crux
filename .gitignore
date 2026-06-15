@@ -8,6 +8,10 @@ build/
 *.lock
 pubspec.lock
 
+# Reproducibly fetched from third_party/manifest.json.
+/third_party/bin/
+/third_party/licenses/
+
 .idea/
 .vscode/
 *.iml
