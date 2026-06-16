@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
-import '../models/session_runtime_state.dart';
 import '../theme/crux_theme.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -54,11 +53,10 @@ class _ContextBarState extends State<ContextBar> {
   /// for repaint — the widget tree is NOT rebuilt.
   double _displayTokens = 0.0;
 
-  /// Last target value we animated toward. The timer polls
-  /// this on every tick so we can detect new chunks WITHOUT
-  /// needing the chat panel to rebuild (the chat panel no
-  /// longer calls `_refresh` on chunks).
-  int _lastSeenTarget = 0;
+  /// The session id we last rendered for. Used to detect a
+  /// session switch in [build] so we can snap (not lerp) the
+  /// bar to the new session's value.
+  int? _currentSessionId;
 
   Timer? _timer;
   DateTime? _lastTick;
@@ -73,7 +71,9 @@ class _ContextBarState extends State<ContextBar> {
   /// this changes (no rebuild needed).
   bool _hovered = false;
 
-  void _ensureTimerRunning() {
+  /// Start the 16ms polling timer if it isn't already running.
+  /// The timer self-stops in [_tick] when streaming ends.
+  void _startTimer() {
     if (_timer != null) return;
     _lastTick = DateTime.now();
     _timer = Timer.periodic(const Duration(milliseconds: 16), (_) {
@@ -88,8 +88,25 @@ class _ContextBarState extends State<ContextBar> {
     _lastTick = null;
   }
 
-  /// Format the label string. Runs on timer ticks (not on
-  /// every paint), so the allocation cost is amortized.
+  /// Sync the timer with the runtime's streaming state. Runs
+  /// only while `rt.isResponding` is true — no point polling
+  /// when nothing's streaming. The chat panel rebuilds on
+  /// turn start/end (via `_refresh`), which re-runs [build]
+  /// and re-evaluates this.
+  void _syncTimer() {
+    final sessionId = component.sessionController.currentSessionId;
+    if (sessionId == null) {
+      _stopTimer();
+      return;
+    }
+    final rt = component.sessionController.runtime(sessionId);
+    if (rt.isResponding) {
+      _startTimer();
+    } else {
+      _stopTimer();
+    }
+  }
+
   String _formatLabel(int displayTokens, int maxTokens, bool hovered) {
     if (hovered) return 'Compact';
     return '${_fmtNum(displayTokens)} / ${_fmtCtx(maxTokens)}';
@@ -111,34 +128,29 @@ class _ContextBarState extends State<ContextBar> {
   void _tick() {
     final sessionId = component.sessionController.currentSessionId;
     if (sessionId == null) {
-      // No active session — stop the timer. The State will be
-      // disposed when the widget unmounts, so we don't need to
-      // worry about coming back.
       _stopTimer();
       return;
     }
     final rt = component.sessionController.runtime(sessionId);
-    final target = rt.contextTargetTokens;
-    final targetDouble = target.toDouble();
 
-    // Detect target change from a chunk arrival. The chat
-    // panel doesn't call `_refresh` on chunks anymore, so this
-    // is the only place we see new token counts.
-    if (target != _lastSeenTarget) {
-      _lastSeenTarget = target;
-      // Don't snap to the new target — keep lerping from the
-      // current display value so the animation feels smooth
-      // even when chunks arrive rapidly.
+    // If streaming ended between the last tick and this one,
+    // bail. The chat panel will rebuild and [build] will stop
+    // the timer via [_syncTimer].
+    if (!rt.isResponding) {
+      _stopTimer();
+      return;
     }
 
+    final target = rt.contextTargetTokens;
+    final targetDouble = target.toDouble();
     final diff = targetDouble - _displayTokens;
+
     if (diff.abs() < 0.5) {
-      // Close enough to the target — stop the lerp animation
-      // but keep the timer running for ~1s so a follow-up
-      // chunk doesn't need to wait for a fresh build to be
-      // noticed.
+      // Close enough — snap and keep ticking. We don't stop
+      // the timer mid-streaming because the next chunk could
+      // be one tick away and we want to catch it without
+      // waiting for a chat-panel rebuild.
       _displayTokens = targetDouble;
-      _maybeStopAfterIdle();
       _pushToRenderObject();
       return;
     }
@@ -150,27 +162,6 @@ class _ContextBarState extends State<ContextBar> {
     _lastTick = now;
     _displayTokens += diff * (dt * _lerpSpeed);
     _pushToRenderObject();
-  }
-
-  /// Once we've caught up to the target, give the timer a
-  /// short grace period so a follow-up chunk (which usually
-  /// arrives within a few hundred milliseconds of the previous
-  /// one) is detected without needing the chat panel to
-  /// rebuild. If no chunk arrives in the grace period, the
-  /// timer stops; the next chunk will be detected on the
-  /// next `build()` after the chat panel does rebuild for
-  /// some other reason (e.g. end of turn).
-  static const Duration _idleGrace = Duration(milliseconds: 100);
-  DateTime? _lastTargetChangeAt;
-
-  void _maybeStopAfterIdle() {
-    if (_timer == null) return;
-    final now = DateTime.now();
-    _lastTargetChangeAt ??= now;
-    if (now.difference(_lastTargetChangeAt!) > _idleGrace) {
-      _stopTimer();
-      _lastTargetChangeAt = null;
-    }
   }
 
   /// Push the current [_displayTokens] and hover state to the
@@ -197,23 +188,32 @@ class _ContextBarState extends State<ContextBar> {
   @override
   Component build(BuildContext context) {
     final sessionId = component.sessionController.currentSessionId;
-    if (sessionId == null) return const SizedBox();
+    if (sessionId == null) {
+      _stopTimer();
+      _currentSessionId = null;
+      return const SizedBox();
+    }
 
     final rt = component.sessionController.runtime(sessionId);
 
-    // Seed the polling state from the initial runtime value
-    // on first build (or after a chat-panel rebuild). The
-    // 16ms timer handles all subsequent updates from chunks
-    // without needing the chat panel to rebuild.
-    if (_lastSeenTarget == 0 && rt.contextTargetTokens > 0) {
-      _lastSeenTarget = rt.contextTargetTokens;
+    // Detect session switch — snap to the new session's
+    // target without animating. Otherwise the bar would lerp
+    // from session A's final value to session B's, which is
+    // visually misleading (it implies session B is consuming
+    // those tokens).
+    if (_currentSessionId != sessionId) {
+      _currentSessionId = sessionId;
       _displayTokens = rt.contextTargetTokens.toDouble();
+      _stopTimer();
+      _pushToRenderObject();
     }
-    // Start (or keep) the timer so the polling loop is
-    // active. The timer self-stops once it has been idle for
-    // the grace period, so this is cheap when nothing is
-    // streaming.
-    _ensureTimerRunning();
+
+    // Sync the timer with the streaming state. Runs only
+    // while `isResponding` — otherwise the bar would tick
+    // pointlessly forever. On end-of-turn the chat panel
+    // rebuilds, build() sees isResponding=false, and the
+    // timer stops.
+    _syncTimer();
 
     // Sync hover state in case the streaming controller
     // changed it between builds.
