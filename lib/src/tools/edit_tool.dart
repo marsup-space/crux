@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/file_metadata.dart';
+import '../utils/offload_standin.dart' show lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
@@ -24,10 +25,24 @@ class EditTool extends LargePayloadTool with IntentionalTool {
   ) {
     final oldString = args['oldString'] as String? ?? '';
     final newString = args['newString'] as String? ?? '';
+    // _replaceCount is stashed in args by [execute] so the
+    // summary can show the *actual* number of replacements
+    // (which we only know at execute time, not from the call
+    // site of collapsedSummary). When the call hasn't run yet
+    // — e.g. the result is being rendered before the tool has
+    // actually executed — we fall back to 1, which is correct
+    // for the non-replaceAll path.
+    final replaceCount = (args['_replaceCount'] as int?) ?? 1;
     final replaceAll = (args['replaceAll'] as bool?) ?? false;
-    final count = replaceAll ? 'all' : '1';
-    final oldLines = '\n'.allMatches(oldString).length + 1;
-    final newLines = '\n'.allMatches(newString).length + 1;
+    // The oldString / newString may have been offloaded and
+    // replaced with a stand-in pointer; in that case
+    // [lineCountOfArg] recovers the line count of the original
+    // bytes from the pointer rather than counting the lines of
+    // the stand-in metadata string (which would be off by 1).
+    final oldLines = lineCountOfArg(oldString);
+    final newLines = lineCountOfArg(newString);
+    final linesRemoved = oldLines * replaceCount;
+    final linesAdded = newLines * replaceCount;
     // Total cost = the full round-trip including the args as they
     // are NOW (stand-ins if compressed, full content if not) +
     // the result. The args are *not* excluded — the strikethrough
@@ -48,8 +63,34 @@ class EditTool extends LargePayloadTool with IntentionalTool {
       args: args,
       resultOutput: '',
     );
+    // The "create file" path (oldString is empty) is special —
+    // there's no "removed" to speak of, so the +/- frame doesn't
+    // fit. Show the new file's line count as `new file, N lines`
+    // so the user can see at a glance how big the brand-new file
+    // is, matching the format used by `write` for new files.
+    String text;
+    if (oldLines == 0) {
+      text = 'new file, $newLines lines';
+    } else {
+      // Prefer the actual replacement count when [execute]
+      // stashed it on the args (the typical post-execute
+      // rendering path). Fall back to "all" only when the
+      // tool hasn't run yet and we genuinely don't know the
+      // count — keeping the previous "all replacement" UX
+      // for the rare case where someone renders a
+      // `replaceAll` call without its result yet.
+      final countLabel = args.containsKey('_replaceCount')
+          ? '$replaceCount'
+          : (replaceAll ? 'all' : '1');
+      // Pluralize naturally: 1 → "replacement", anything
+      // else (including "all") → "replacements".
+      final replacementLabel = countLabel == '1'
+          ? '1 replacement'
+          : '$countLabel replacements';
+      text = '$replacementLabel, +$linesAdded -$linesRemoved lines';
+    }
     return CollapsedSummary(
-      text: '$count replacement, $oldLines→$newLines lines',
+      text: text,
       argsTokens: argsTokens,
       totalTokens: totalTokens,
     );
@@ -145,6 +186,14 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     if (oldString.isEmpty) {
       await _writePreservingEncoding(file, newString, meta);
       if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
+      // Stash the "added" line count so the bubble's
+      // collapsedSummary can render "+N lines" next to the
+      // token estimate. We use the same stash field as the
+      // normal replacement path (_replaceCount) and treat an
+      // empty oldString as "0 removed" implicitly via the
+      // `oldLines == 0` branch in collapsedSummary.
+      args['_replaceCount'] = 1;
+      final newLines = lineCountOfArg(newString);
       return _withOffloadNote(
         args,
         ctx,
@@ -152,7 +201,7 @@ class EditTool extends LargePayloadTool with IntentionalTool {
           title: 'Edit file: $resolved',
           output: _successMessage(
             relativePath(resolved, ctx.workingDirectory),
-            'Created file with ${newString.length} characters',
+            'Created file with $newLines lines (+$newLines lines)',
             args,
           ),
         ),
@@ -200,6 +249,17 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
 
     final count = matchResult.positions.length;
+    // Stash the actual replacement count for the bubble's
+    // collapsedSummary — we only know it after the matcher
+    // ran, and the args we hand to the LLM (and to subsequent
+    // turns' collapsedSummary) are the natural place to keep
+    // this since the LLM doesn't have to look at it.
+    args['_replaceCount'] = count;
+    final oldLines = lineCountOfArg(oldString);
+    final newLines = lineCountOfArg(newString);
+    final linesRemoved = oldLines * count;
+    final linesAdded = newLines * count;
+    final occLabel = count == 1 ? 'occurrence' : 'occurrences';
     return _withOffloadNote(
       args,
       ctx,
@@ -207,7 +267,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
         title: 'Edit file: $resolved',
         output: _successMessage(
           relativePath(resolved, ctx.workingDirectory),
-          'Replaced $count occurrence(s) of oldString',
+          'Replaced $count $occLabel of oldString '
+          '(+$linesAdded -$linesRemoved lines)',
           args,
         ),
       ),

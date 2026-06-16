@@ -1270,7 +1270,10 @@ void main() {
         ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
       );
       expect(summary, isA<CollapsedSummary>());
-      expect(summary.text, '1 lines, 4.9KB');
+      // No _existingLineCount in args → treated as a new file →
+      // text is `+1 lines, 4.9KB` (the `a` * 5000 string has
+      // no newlines, so 1 line).
+      expect(summary.text, '+1 lines, 4.9KB');
       expect(summary.text, isNot(contains('~')));
       // For `write`, the content is both an arg and the
       // "result" of the operation. The two numbers differ
@@ -1283,6 +1286,63 @@ void main() {
       expect(summary.totalTokens, greaterThan(0));
     });
 
+    test('WriteTool summary shows +N -M when _existingLineCount is set', () {
+      final tool = WriteTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'content': 'a' * 5000,
+          'intent': '...',
+          '_existingLineCount': 17,
+        },
+        ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
+      );
+      // +1 line added (no newlines in the 5000-char string),
+      // 17 lines removed (the prior file). The `, 4.9KB` size
+      // suffix is preserved from the original format.
+      expect(summary.text, '+1 -17 lines, 4.9KB');
+    });
+
+    test('WriteTool summary shows new-file form when existing is zero', () {
+      final tool = WriteTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'content': 'hello\nworld\n',
+          'intent': '...',
+          '_existingLineCount': 0,
+        },
+        ToolResult(title: 'Write', output: 'Wrote 12 chars'),
+      );
+      // 'hello\nworld\n' is 3 lines (the trailing \n adds a
+      // final empty line, matching how `read` counts). 3 added,
+      // 0 removed → drop the `-0` half, keep `+3`.
+      expect(summary.text, startsWith('+3 lines,'));
+      expect(summary.text, isNot(contains('-')));
+    });
+
+    test(
+      'WriteTool summary recovers size from offload stand-in pointer',
+      () {
+        // When content is offloaded, the persisted args hold a
+        // stand-in pointer (small, ~100 chars). The summary's
+        // size suffix must show the *original* payload's size
+        // (5.0KB), not the stand-in's.
+        final tool = WriteTool();
+        final summary = tool.collapsedSummary(
+          {
+            'filePath': 'foo.py',
+            'content':
+                '[offloaded: 42 lines / 5.0KB; recall via offloaded_content(key="x_content")]',
+            'intent': '...',
+            '_existingLineCount': 10,
+          },
+          ToolResult(title: 'Write', output: 'Wrote 5120 chars'),
+        );
+        expect(summary.text, '+42 -10 lines, 5.0KB');
+      },
+    );
+
     test('EditTool args-only includes the large args (stand-ins or full)', () {
       final tool = EditTool();
       final summary = tool.collapsedSummary(
@@ -1294,7 +1354,9 @@ void main() {
         },
         ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
       );
-      expect(summary.text, '1 replacement, 1→1 lines');
+      // No _replaceCount in args → defaults to 1. The single-line
+      // strings each count as 1 line, so the diff is +1 -1.
+      expect(summary.text, '1 replacement, +1 -1 lines');
       // Both pre (from chat_service) and post (from collapsedSummary)
       // include the oldString/newString. The strikethrough comparison
       // is honest: pre counts the full strings, post counts the
@@ -1303,6 +1365,75 @@ void main() {
       // reflects the actual (full or stand-in) arg values.
       expect(summary.argsTokens, greaterThan(500));
       expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
+    });
+
+    test('EditTool summary reflects actual replacement count from args', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'foo',
+          'newString': 'bar',
+          'intent': '...',
+          '_replaceCount': 3,
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'),
+      );
+      // 3 replacements * 1 line each → +3 -3.
+      expect(summary.text, '3 replacements, +3 -3 lines');
+    });
+
+    test('EditTool summary handles multi-line oldString / newString', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': 'a\nb\nc\nd',
+          'newString': 'x\ny',
+          'intent': '...',
+          '_replaceCount': 1,
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+      );
+      // oldString is 4 lines, newString is 2 lines, 1 replacement.
+      expect(summary.text, '1 replacement, +2 -4 lines');
+    });
+
+    test('EditTool summary recovers line count from offload stand-in', () {
+      // If oldString was offloaded, the persisted args carry a
+      // stand-in pointer like the one produced by
+      // [ToolExecutor._buildOffloadStandIn]. The summary should
+      // pull the line count out of the pointer, not count the
+      // lines of the stand-in metadata string itself.
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString':
+              '[offloaded: 7 lines / 2.0KB; recall via offloaded_content(key="x_oldString")]',
+          'newString':
+              '[offloaded: 3 lines / 1.0KB; recall via offloaded_content(key="x_newString")]',
+          'intent': '...',
+          '_replaceCount': 1,
+        },
+        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+      );
+      expect(summary.text, '1 replacement, +3 -7 lines');
+    });
+
+    test('EditTool summary shows "new file" when oldString is empty', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary(
+        {
+          'filePath': 'foo.py',
+          'oldString': '',
+          'newString': 'alpha\nbeta\ngamma\n',
+          'intent': '...',
+          '_replaceCount': 1,
+        },
+        ToolResult(title: 'Edit', output: 'Created file'),
+      );
+      expect(summary.text, 'new file, 4 lines');
     });
 
     test('ReadTool returns lines + size, args-only == total (not offloadable)',
@@ -1343,7 +1474,12 @@ void main() {
         },
         ToolResult(title: 'Edit', output: 'Replaced 5 occurrences'),
       );
-      expect(summary.text, startsWith('all replacement'));
+      // replaceAll without an _replaceCount falls back to "all
+      // replacements" with the +N -N line diff still computed
+      // from the single replacement (since the matcher may have
+      // matched 0 or 1 — we don't know the actual count at this
+      // point, so it shows the per-occurrence cost).
+      expect(summary.text, startsWith('all replacements,'));
     });
 
     test('BashTool shows [exit N] suffix for non-zero exit codes', () {
@@ -1697,5 +1833,171 @@ void main() {
 
       expect(await File('${tempDir.path}/test.txt').readAsString(), original);
     });
+
+    // ── Line diff in success message + collapsedSummary ──
+
+    test(
+      'execute() emits +N -M line diff in the success message '
+      'and stashes _replaceCount for the bubble',
+      () async {
+        // 3-line oldString, 2-line newString, single replacement.
+        await fileHelper('test.txt', 'header\nold-a\nold-b\nold-c\nfooter\n');
+        final args = <String, dynamic>{
+          'filePath': 'test.txt',
+          'oldString': 'old-a\nold-b\nold-c',
+          'newString': 'new-a\nnew-b',
+        };
+        final result = await EditTool().execute(args, ctx());
+
+        // Success message should report the per-replacement diff.
+        expect(result.output, contains('Replaced 1 occurrence'));
+        expect(result.output, contains('+2 -3 lines'));
+
+        // _replaceCount is stashed on the args so the bubble's
+        // collapsedSummary can render `+2 -3 lines` (which it
+        // would derive as newLines*count - oldLines*count).
+        expect(args['_replaceCount'], 1);
+
+        // The summary should pick up the stash and show the
+        // correct diff next to the token count.
+        final summary = EditTool().collapsedSummary(
+          args,
+          ToolResult(title: 'Edit', output: result.output),
+        );
+        expect(summary.text, '1 replacement, +2 -3 lines');
+      },
+    );
+
+    test(
+      'execute() with replaceAll reports the actual count, '
+      'and the summary scales the diff by that count',
+      () async {
+        await fileHelper(
+          'test.txt',
+          'foo\nfoo\nfoo\nbetween\nfoo\n',
+        );
+        final args = <String, dynamic>{
+          'filePath': 'test.txt',
+          'oldString': 'foo',
+          'newString': 'bar',
+          'replaceAll': true,
+        };
+        final result = await EditTool().execute(args, ctx());
+
+        expect(result.output, contains('Replaced 4 occurrences'));
+        // 4 occurrences * 1 line each → +4 -4.
+        expect(result.output, contains('+4 -4 lines'));
+        expect(args['_replaceCount'], 4);
+
+        final summary = EditTool().collapsedSummary(
+          args,
+          ToolResult(title: 'Edit', output: result.output),
+        );
+        // When _replaceCount is known, the summary shows the
+        // actual count rather than the "all" fallback.
+        expect(summary.text, '4 replacements, +4 -4 lines');
+      },
+    );
+
+    test(
+      'execute() with empty oldString reports the new file as +N lines',
+      () async {
+        // File already exists; the empty-oldString path creates
+        // a new file with [newString]'s contents.
+        await fileHelper('test.txt', 'pre-existing content\n');
+        final args = <String, dynamic>{
+          'filePath': 'test.txt',
+          'oldString': '',
+          'newString': 'one\ntwo\nthree\n',
+        };
+        final result = await EditTool().execute(args, ctx());
+
+        expect(result.output, contains('Created file'));
+        // 'one\ntwo\nthree\n' is 4 lines (trailing \n adds one).
+        expect(result.output, contains('+4 lines'));
+        // The collapsedSummary uses the "new file" form when
+        // oldString was empty, regardless of _replaceCount.
+        final summary = EditTool().collapsedSummary(
+          args,
+          ToolResult(title: 'Edit', output: result.output),
+        );
+        expect(summary.text, 'new file, 4 lines');
+      },
+    );
+  });
+
+  group('WriteTool line diff', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_write_diff_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ToolContext ctx() => ToolContext(
+      sessionId: 1,
+      messageId: 1,
+      abort: AbortSignal(),
+      workingDirectory: tempDir.path,
+    );
+
+    test(
+      'execute() emits +N -M in the success message and stashes '
+      '_existingLineCount for the bubble',
+      () async {
+        // Pre-existing file with 6 lines (a\nb\nc\nd\ne\n);
+        // we'll overwrite with 4 (x\ny\nz\n).
+        final f = File('${tempDir.path}/existing.txt');
+        await f.writeAsString('a\nb\nc\nd\ne\n');
+
+        final args = <String, dynamic>{
+          'filePath': 'existing.txt',
+          'content': 'x\ny\nz\n',
+          'intent': 'shrink it',
+        };
+        final result = await WriteTool().execute(args, ctx());
+
+        // Success message reports the diff.
+        expect(result.output, contains('+4 -6 lines'));
+
+        // The stash survives execute so the bubble's
+        // collapsedSummary can render the same diff.
+        expect(args['_existingLineCount'], 6);
+
+        final summary = WriteTool().collapsedSummary(
+          args,
+          ToolResult(title: 'Write', output: result.output),
+        );
+        expect(summary.text, startsWith('+4 -6 lines,'));
+      },
+    );
+
+    test(
+      'execute() on a brand-new file emits only the +N half',
+      () async {
+        final args = <String, dynamic>{
+          'filePath': 'brand_new.txt',
+          'content': 'first\nsecond\nthird\n',
+        };
+        final result = await WriteTool().execute(args, ctx());
+
+        // 'first\nsecond\nthird\n' is 4 lines.
+        expect(result.output, contains('+4 lines'));
+        // No `-N` half when the file didn't previously exist.
+        expect(result.output, isNot(contains('-')));
+        expect(args['_existingLineCount'], 0);
+
+        final summary = WriteTool().collapsedSummary(
+          args,
+          ToolResult(title: 'Write', output: result.output),
+        );
+        expect(summary.text, startsWith('+4 lines,'));
+      },
+    );
   });
 }

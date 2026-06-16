@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/file_metadata.dart';
+import '../utils/offload_standin.dart' show lineCountOfArg, parseOffloadStandIn;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
@@ -19,11 +20,29 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     ToolResult result,
   ) {
     final content = args['content'] as String? ?? '';
-    final lines = '\n'.allMatches(content).length + 1;
-    final size = content.length;
-    final sizeStr = size > 1024
-        ? '${(size / 1024).toStringAsFixed(1)}KB'
-        : '${size}B';
+    // _existingLineCount is stashed in args by [execute] at the
+    // moment we read the file's prior contents (so the summary
+    // can show the actual `+added -removed` diff). When the
+    // call hasn't run yet — e.g. the result is being rendered
+    // before the tool has actually executed — we fall back to
+    // 0, which means "no prior content" (i.e. treat it as a
+    // new file) and show only the `+added lines` part.
+    final existingLineCount = (args['_existingLineCount'] as int?) ?? 0;
+    final newLines = lineCountOfArg(content);
+    // When [content] is an offload stand-in pointer, the raw
+    // length is the length of the metadata string (~100 chars),
+    // not the original payload. Recover the real size from the
+    // stand-in's `sizeStr` field; only fall back to the raw
+    // length when the value isn't a stand-in.
+    final standIn = parseOffloadStandIn(content);
+    final sizeStr = standIn != null
+        ? standIn.sizeStr
+        : (() {
+            final size = content.length;
+            return size > 1024
+                ? '${(size / 1024).toStringAsFixed(1)}KB'
+                : '${size}B';
+          })();
     // Total cost = args (with the *as-persisted* content, which
     // may be a stand-in if offload happened) + the tool's result.
     final totalTokens = estimateToolRoundTripTokens(
@@ -41,8 +60,17 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
       args: args,
       resultOutput: '',
     );
+    // For a brand-new file (existingLineCount == 0) there is
+    // nothing "removed" to report, so we drop the -N part and
+    // show only the `+N lines` half. The `git diff --stat`
+    // convention does the same: a new file shows as
+    // `+N, -0`, not as `+N -0` — omitting the zero keeps the
+    // common case uncluttered.
+    final text = existingLineCount == 0
+        ? '+$newLines lines, $sizeStr'
+        : '+$newLines -$existingLineCount lines, $sizeStr';
     return CollapsedSummary(
-      text: '$lines lines, $sizeStr',
+      text: text,
       argsTokens: argsTokens,
       totalTokens: totalTokens,
     );
@@ -149,6 +177,27 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
         byteLength: 0,
       );
     }
+    // Capture the prior line count for the bubble's
+    // collapsedSummary (which renders the actual
+    // `+added -removed` diff). Stashing it on `args` keeps the
+    // data on the tool_call's input, where it survives the
+    // compress-for-persistence step. We stash it BEFORE
+    // writing the file — once we've overwritten the bytes
+    // the "existing" count would be lost.
+    //
+    // Edge case: if [content] was offloaded, [lineCountOfArg]
+    // would treat it as a stand-in pointer. We guarded against
+    // that by reading the prior contents from disk (not from
+    // [content]) — the line count here is of the OLD file, so
+    // the only value that could be a stand-in is [content],
+    // which we don't use for the prior line count.
+    final existingLineCount = meta.content.isEmpty
+        ? 0
+        : '\n'.allMatches(meta.content).length + 1;
+    args['_existingLineCount'] = existingLineCount;
+    final newLines = content.isEmpty
+        ? 0
+        : '\n'.allMatches(content).length + 1;
     final body = normalizeToLineEnding(content, meta.lineEnding);
     final encoded = utf8.encode(body);
     if (meta.encoding == 'utf-8-bom') {
@@ -162,12 +211,15 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     }
 
     final relPath = relativePath(resolved, ctx.workingDirectory);
+    final diffLabel = existingLineCount == 0
+        ? '+$newLines lines'
+        : '+$newLines -$existingLineCount lines';
     var output = 'File written: $relPath';
     final intent = args['intent'];
     if (intent is String && intent.isNotEmpty) {
-      output = '$output (intent: \'$intent\'), ${_formatBytes(content.length)}';
+      output = '$output (intent: \'$intent\'), $diffLabel, ${_formatBytes(content.length)}';
     } else {
-      output = '$output, ${_formatBytes(content.length)}';
+      output = '$output, $diffLabel, ${_formatBytes(content.length)}';
     }
 
     final offloaded = argsToOffload(args);

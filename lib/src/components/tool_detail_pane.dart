@@ -5,6 +5,7 @@ import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
+import '../utils/offload_standin.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
 
@@ -209,7 +210,16 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           tc.input,
           ToolResult(title: '', output: output),
         );
-        metric = '~${summary.totalTokens} tokens';
+        // The summary text already encodes the meaningful
+        // tool-specific line diff for edit/write (e.g. "+5 -2
+        // lines, 1.2KB"). For tools that don't have a custom
+        // summary the text falls back to a generic "N lines,
+        // size" string which we don't want to duplicate next to
+        // the token count, so we suppress it in that case.
+        final tokens = '~${summary.totalTokens} tokens';
+        metric = summary.text.isNotEmpty
+            ? '${summary.text}, $tokens'
+            : tokens;
       }
     } else if (result != null) {
       metric = '~${estimateTokens(result.content)} tokens';
@@ -1102,18 +1112,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   }
 
   _OffloadStandIn? _parseOffloadStandIn(String text) {
-    final match = RegExp(
-      r'^\[offloaded:\s*(\d+)\s+lines\s*/\s*([\d.]+[KMG]?B)',
-    ).firstMatch(text);
-    if (match == null) return null;
-    final lineCount = int.tryParse(match.group(1)!) ?? 0;
-    final sizeStr = match.group(2)!;
-    final intentMatch = RegExp(r'intent:\s*"((?:[^"\\]|\\.)*)"').firstMatch(text);
-    return _OffloadStandIn(
-      lineCount: lineCount,
-      sizeStr: sizeStr,
-      intent: intentMatch?.group(1),
-    );
+    return parseOffloadStandIn(text);
   }
 
   String _formatValue(dynamic value) {
@@ -1227,14 +1226,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 }
 
 /// Parsed metrics from an offload stand-in pointer string.
-class _OffloadStandIn {
-  final int lineCount;
-  final String sizeStr;
-  final String? intent;
-
-  const _OffloadStandIn({
-    required this.lineCount,
-    required this.sizeStr,
-    this.intent,
-  });
-}
+/// Re-exported as a type alias so the existing call sites can
+/// keep referring to it as `_OffloadStandIn?` while the canonical
+/// definition lives in `utils/offload_standin.dart`.
+typedef _OffloadStandIn = OffloadStandIn;
