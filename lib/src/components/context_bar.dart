@@ -44,6 +44,16 @@ class ContextBar extends StatefulComponent {
   State<ContextBar> createState() => _ContextBarState();
 }
 
+/// Animation lifecycle for [ContextBar]'s state.
+///
+/// The bar goes `active` → `cooling` → `idle`:
+/// - active: streaming is happening, timer is running, bar
+///   lerps toward rt.contextTargetTokens.
+/// - cooling: streaming just ended, timer keeps running for
+///   a short grace period so the lerp can finish smoothly.
+/// - idle: nothing happening, timer is stopped.
+enum _AnimState { active, cooling, idle }
+
 class _ContextBarState extends State<ContextBar> {
   static const double _lerpSpeed = 6.0;
 
@@ -71,8 +81,26 @@ class _ContextBarState extends State<ContextBar> {
   /// this changes (no rebuild needed).
   bool _hovered = false;
 
+  /// Whether the animation is active, cooling down, or idle.
+  ///
+  /// - [active]: streaming is in progress (or we just think it
+  ///   is). Timer is running.
+  /// - [cooling]: streaming just ended. Timer is still running
+  ///   for [_idleGrace] ms so the lerp can finish smoothly to
+  ///   the final target value.
+  /// - [idle]: nothing happening. Timer is stopped.
+  _AnimState _animState = _AnimState.idle;
+
+  /// When [_animState] entered [cooling]. Used by [_tick] to
+  /// decide when to transition to [idle] and stop the timer.
+  DateTime? _coolingStartedAt;
+
+  /// After streaming ends, keep the lerp running for this
+  /// long so the bar settles smoothly to its final value
+  /// instead of freezing mid-flight.
+  static const Duration _idleGrace = Duration(milliseconds: 100);
+
   /// Start the 16ms polling timer if it isn't already running.
-  /// The timer self-stops in [_tick] when streaming ends.
   void _startTimer() {
     if (_timer != null) return;
     _lastTick = DateTime.now();
@@ -86,11 +114,13 @@ class _ContextBarState extends State<ContextBar> {
     _timer?.cancel();
     _timer = null;
     _lastTick = null;
+    _animState = _AnimState.idle;
+    _coolingStartedAt = null;
   }
 
   /// Sync the timer with the runtime's streaming state. Runs
-  /// only while `rt.isResponding` is true — no point polling
-  /// when nothing's streaming. The chat panel rebuilds on
+  /// while `rt.isResponding` is true OR while we're in the
+  /// post-stream grace period. The chat panel rebuilds on
   /// turn start/end (via `_refresh`), which re-runs [build]
   /// and re-evaluates this.
   void _syncTimer() {
@@ -101,6 +131,12 @@ class _ContextBarState extends State<ContextBar> {
     }
     final rt = component.sessionController.runtime(sessionId);
     if (rt.isResponding) {
+      _animState = _AnimState.active;
+      _coolingStartedAt = null;
+      _startTimer();
+    } else if (_animState == _AnimState.cooling) {
+      // In grace period — keep ticking so [_tick] can finish
+      // the lerp and time out the grace.
       _startTimer();
     } else {
       _stopTimer();
@@ -133,12 +169,25 @@ class _ContextBarState extends State<ContextBar> {
     }
     final rt = component.sessionController.runtime(sessionId);
 
-    // If streaming ended between the last tick and this one,
-    // bail. The chat panel will rebuild and [build] will stop
-    // the timer via [_syncTimer].
-    if (!rt.isResponding) {
-      _stopTimer();
-      return;
+    // If we're in the post-stream grace period, check whether
+    // it's expired. Once it has, the bar settles and the
+    // timer stops.
+    if (_animState == _AnimState.cooling) {
+      final started = _coolingStartedAt;
+      if (started != null &&
+          DateTime.now().difference(started) >= _idleGrace) {
+        _displayTokens = rt.contextTargetTokens.toDouble();
+        _pushToRenderObject();
+        _stopTimer();
+        return;
+      }
+    } else if (!rt.isResponding && _animState == _AnimState.active) {
+      // Streaming just ended (between the last [_syncTimer]
+      // call and this tick, or because the chat panel hasn't
+      // rebuilt yet). Enter the cooling phase so the lerp can
+      // settle.
+      _animState = _AnimState.cooling;
+      _coolingStartedAt = DateTime.now();
     }
 
     final target = rt.contextTargetTokens;
@@ -146,12 +195,14 @@ class _ContextBarState extends State<ContextBar> {
     final diff = targetDouble - _displayTokens;
 
     if (diff.abs() < 0.5) {
-      // Close enough — snap and keep ticking. We don't stop
-      // the timer mid-streaming because the next chunk could
-      // be one tick away and we want to catch it without
-      // waiting for a chat-panel rebuild.
+      // Close enough to the target. If we were cooling, this
+      // is the natural end — stop the timer now (don't wait
+      // for the full grace period).
       _displayTokens = targetDouble;
       _pushToRenderObject();
+      if (_animState == _AnimState.cooling) {
+        _stopTimer();
+      }
       return;
     }
 
