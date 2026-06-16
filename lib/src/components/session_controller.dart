@@ -113,6 +113,15 @@ class SessionController {
     pendingImages.putIfAbsent(sessionId, () => <ImageAttachment>[]).add(image);
   }
 
+  /// Replace all pending image attachments for [sessionId].
+  void setPendingImages(int sessionId, List<ImageAttachment> images) {
+    if (images.isEmpty) {
+      pendingImages.remove(sessionId);
+    } else {
+      pendingImages[sessionId] = List<ImageAttachment>.from(images);
+    }
+  }
+
   /// Remove a single pending image by its 1-based index (the number
   /// shown in the `[ image N ]` text marker). Returns true if the
   /// image was found and removed.
@@ -273,8 +282,9 @@ class SessionController {
                 toolName: call.name,
                 args: call.input,
                 resultOutput: '',
-                excludeArgsFromEstimate:
-                    _chatService.offloadableArgsForTool(call.name),
+                excludeArgsFromEstimate: _chatService.offloadableArgsForTool(
+                  call.name,
+                ),
               );
             }
           case 'tool':

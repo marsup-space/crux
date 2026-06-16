@@ -8,6 +8,7 @@ import '../services/provider_service.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/clipboard_image.dart';
+import '../utils/clipboard_text.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/file_searcher.dart';
 import '../commands/registry.dart';
@@ -15,6 +16,7 @@ import 'chat_turn_orchestrator.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
+import 'ui/button.dart';
 import 'ui/toast.dart';
 
 /// The chat input box at the bottom of the chat panel.
@@ -106,6 +108,8 @@ class _AtMention {
 }
 
 class ChatInputState extends State<ChatInput> {
+  static final RegExp _imageMarkerPattern = RegExp(r'\[ image (\d+) \]');
+
   /// Timestamp of the last ESC key press while the agent was streaming.
   DateTime? _lastEscPressTime;
 
@@ -150,6 +154,8 @@ class ChatInputState extends State<ChatInput> {
   /// user deletes all characters while in command mode, giving them back
   /// their work-in-progress message.
   String? _commandStashedText;
+
+  bool _syncingImageMarkers = false;
 
   /// Public read-only access to the command-stashed text. Used by
   /// ChatPanel when switching sessions to preserve the user's message
@@ -224,6 +230,10 @@ class ChatInputState extends State<ChatInput> {
   }
 
   void _onTextChanged() {
+    if (!_syncingImageMarkers) {
+      _syncPendingImagesWithMarkers();
+    }
+
     final text = component.textController.text;
     final overlay = component.overlayController;
 
@@ -320,18 +330,20 @@ class ChatInputState extends State<ChatInput> {
           ...component.providerService
               .allModelEntries()
               .where(
-                  (e) => component.providerService.getApiKey(e.providerName) != null)
+                (e) =>
+                    component.providerService.getApiKey(e.providerName) != null,
+              )
               .map((e) {
-            final ctx = e.model.contextSize >= 1000000
-                ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
-                : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
-            final img = e.model.imageSupport ? ', img' : '';
-            final think = e.model.thinking ? ', think' : '';
-            return CommandSuggestion(
-              value: e.compositeKey,
-              description: '${e.model.name} ($ctx ctx$img$think)',
-            );
-          }),
+                final ctx = e.model.contextSize >= 1000000
+                    ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
+                    : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
+                final img = e.model.imageSupport ? ', img' : '';
+                final think = e.model.thinking ? ', think' : '';
+                return CommandSuggestion(
+                  value: e.compositeKey,
+                  description: '${e.model.name} ($ctx ctx$img$think)',
+                );
+              }),
         ];
       } else {
         suggestions = [];
@@ -365,19 +377,21 @@ class ChatInputState extends State<ChatInput> {
       if (component.providerServiceReady) {
         suggestions = component.providerService
             .allModelEntries()
-            .where((e) =>
-                component.providerService.getApiKey(e.providerName) != null)
+            .where(
+              (e) =>
+                  component.providerService.getApiKey(e.providerName) != null,
+            )
             .map((e) {
-          final ctx = e.model.contextSize >= 1000000
-              ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
-              : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
-          final img = e.model.imageSupport ? ', img' : '';
-          final think = e.model.thinking ? ', think' : '';
-          return CommandSuggestion(
-            value: e.compositeKey,
-            description: '${e.model.name} ($ctx ctx$img$think)',
-          );
-        })
+              final ctx = e.model.contextSize >= 1000000
+                  ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
+                  : '${(e.model.contextSize / 1000).toStringAsFixed(0)}K';
+              final img = e.model.imageSupport ? ', img' : '';
+              final think = e.model.thinking ? ', think' : '';
+              return CommandSuggestion(
+                value: e.compositeKey,
+                description: '${e.model.name} ($ctx ctx$img$think)',
+              );
+            })
             .toList();
       } else {
         suggestions = [];
@@ -432,11 +446,18 @@ class ChatInputState extends State<ChatInput> {
       // Whitespace, comma, semicolon, paren, bracket, brace all
       // end the query — no mention here.
       final cc = ch.codeUnitAt(0);
-      if (cc == 0x20 || cc == 0x09 || cc == 0x0A || // space, tab, newline
-          cc == 0x28 || cc == 0x29 ||                 // ( )
-          cc == 0x5B || cc == 0x5D ||                 // [ ]
-          cc == 0x7B || cc == 0x7D ||                 // { }
-          cc == 0x2C || cc == 0x3B) {                 // , ;
+      if (cc == 0x20 ||
+          cc == 0x09 ||
+          cc == 0x0A || // space, tab, newline
+          cc == 0x28 ||
+          cc == 0x29 || // ( )
+          cc == 0x5B ||
+          cc == 0x5D || // [ ]
+          cc == 0x7B ||
+          cc == 0x7D || // { }
+          cc == 0x2C ||
+          cc == 0x3B) {
+        // , ;
         return null;
       }
     }
@@ -447,11 +468,12 @@ class ChatInputState extends State<ChatInput> {
     if (atOffset > 0) {
       final prev = text[atOffset - 1];
       final pc = prev.codeUnitAt(0);
-      final isIdent = (pc >= 0x30 && pc <= 0x39) ||
+      final isIdent =
+          (pc >= 0x30 && pc <= 0x39) ||
           (pc >= 0x41 && pc <= 0x5A) ||
           (pc >= 0x61 && pc <= 0x7A) ||
           pc == 0x5F || // _
-          pc == 0x2D;  // -
+          pc == 0x2D; // -
       if (isIdent) return null;
     }
 
@@ -485,7 +507,8 @@ class ChatInputState extends State<ChatInput> {
     // selected index. Only reset when the atOffset moved (i.e. a
     // different `@` is now active — a stale result from a prior
     // mention shouldn't follow the cursor).
-    final stayingOnSameAt = overlay.overlayMode == OverlayMode.atMention &&
+    final stayingOnSameAt =
+        overlay.overlayMode == OverlayMode.atMention &&
         overlay.atMentionQuery.length <= mention.query.length;
     if (!stayingOnSameAt) {
       overlay.selectedFileIndex = 0;
@@ -559,10 +582,14 @@ class ChatInputState extends State<ChatInput> {
     // 3 seconds (while the toast is active) really quits. When no session
     // is streaming, Ctrl+C passes through and quits immediately (the
     // default TerminalBinding.immediateExit behaviour).
-    if (event.logicalKey == LogicalKey.keyC && event.isControlPressed &&
-        !event.isShiftPressed && !event.isAltPressed && !event.isMetaPressed) {
+    if (event.logicalKey == LogicalKey.keyC &&
+        event.isControlPressed &&
+        !event.isShiftPressed &&
+        !event.isAltPressed &&
+        !event.isMetaPressed) {
       final sessionId = component.sessionController.currentSessionId;
-      final isStreaming = sessionId != null &&
+      final isStreaming =
+          sessionId != null &&
           component.sessionController.runtime(sessionId).isResponding;
 
       if (isStreaming) {
@@ -608,8 +635,10 @@ class ChatInputState extends State<ChatInput> {
     if (overlay.showSessionManager) return true;
 
     // --- Ctrl+V: try clipboard image if current model supports it ---
-    if (event.logicalKey == LogicalKey.keyV && event.isControlPressed &&
-        !event.isShiftPressed && !event.isAltPressed) {
+    if (event.logicalKey == LogicalKey.keyV &&
+        event.isControlPressed &&
+        !event.isShiftPressed &&
+        !event.isAltPressed) {
       final sessionId = component.sessionController.currentSessionId;
       if (sessionId != null && component.onAttachClipboardImage != null) {
         // Check if the current model supports images
@@ -639,12 +668,16 @@ class ChatInputState extends State<ChatInput> {
     // (which would push text before the '/'). This includes typing, pasting,
     // and newline insertion.
     if (inCommandMode) {
-      final isCharacterInput = event.character != null ||
-          _getCharFromKey(event.logicalKey) != null;
-      final isPaste = event.logicalKey == LogicalKey.keyV && event.isControlPressed;
-      final isModifiedEnter = (event.logicalKey == LogicalKey.enter ||
+      final isCharacterInput =
+          event.character != null || _getCharFromKey(event.logicalKey) != null;
+      final isPaste =
+          event.logicalKey == LogicalKey.keyV && event.isControlPressed;
+      final isModifiedEnter =
+          (event.logicalKey == LogicalKey.enter ||
               event.logicalKey == LogicalKey.numpadEnter) &&
-          (event.isShiftPressed || event.isControlPressed || event.isAltPressed);
+          (event.isShiftPressed ||
+              event.isControlPressed ||
+              event.isAltPressed);
       final isCtrlJ = event.matches(LogicalKey.keyJ, ctrl: true);
 
       if (isCharacterInput || isPaste || isModifiedEnter || isCtrlJ) {
@@ -661,7 +694,8 @@ class ChatInputState extends State<ChatInput> {
     // When the user types '/' at position 0 (or has a selection starting at
     // 0) and the current text does NOT already start with '/', we stash the
     // existing text and replace the input with '/'.
-    if (!inCommandMode && (event.character == '/' || event.logicalKey == LogicalKey.slash)) {
+    if (!inCommandMode &&
+        (event.character == '/' || event.logicalKey == LogicalKey.slash)) {
       final selStart = selection.start.clamp(0, text.length);
       if (selStart == 0) {
         // The user is typing '/' at the beginning. If there's existing text,
@@ -680,7 +714,10 @@ class ChatInputState extends State<ChatInput> {
     // --- Backspace in command mode that empties the field ---
     // When the user backspaces and the result would be an empty string,
     // restore the stashed text instead of leaving the field empty.
-    if (inCommandMode && event.logicalKey == LogicalKey.backspace && !event.isControlPressed && !event.isAltPressed) {
+    if (inCommandMode &&
+        event.logicalKey == LogicalKey.backspace &&
+        !event.isControlPressed &&
+        !event.isAltPressed) {
       final selStart = selection.start.clamp(0, text.length);
       final selEnd = selection.end.clamp(0, text.length);
       final isCollapsed = selStart == selEnd;
@@ -725,8 +762,9 @@ class ChatInputState extends State<ChatInput> {
     // These delete a word backward. If they would delete the leading '/',
     // restore stashed text instead.
     if (inCommandMode &&
-        ((event.logicalKey == LogicalKey.backspace && (event.isControlPressed || event.isAltPressed)) ||
-         event.matches(LogicalKey.keyW, ctrl: true))) {
+        ((event.logicalKey == LogicalKey.backspace &&
+                (event.isControlPressed || event.isAltPressed)) ||
+            event.matches(LogicalKey.keyW, ctrl: true))) {
       // If the cursor is at or before the '/' position (offset 1) after
       // word deletion, we'd lose the '/'. Restore stash instead.
       if (cursorOffset <= 1) {
@@ -741,7 +779,10 @@ class ChatInputState extends State<ChatInput> {
     }
 
     // --- Delete key in command mode at position 0 ---
-    if (inCommandMode && event.logicalKey == LogicalKey.delete && !event.isControlPressed && !event.isAltPressed) {
+    if (inCommandMode &&
+        event.logicalKey == LogicalKey.delete &&
+        !event.isControlPressed &&
+        !event.isAltPressed) {
       final selStart = selection.start.clamp(0, text.length);
       final selEnd = selection.end.clamp(0, text.length);
       final isCollapsed = selStart == selEnd;
@@ -785,13 +826,17 @@ class ChatInputState extends State<ChatInput> {
     }
 
     // --- Home key in command mode: move to after the '/' ---
-    if (inCommandMode && event.logicalKey == LogicalKey.home && !event.isControlPressed) {
+    if (inCommandMode &&
+        event.logicalKey == LogicalKey.home &&
+        !event.isControlPressed) {
       tc.selection = const TextSelection.collapsed(offset: 1);
       return true;
     }
 
     // --- Cut (Ctrl+X) in command mode when selection includes position 0 ---
-    if (inCommandMode && event.logicalKey == LogicalKey.keyX && event.isControlPressed) {
+    if (inCommandMode &&
+        event.logicalKey == LogicalKey.keyX &&
+        event.isControlPressed) {
       final selStart = selection.start.clamp(0, text.length);
       final selEnd = selection.end.clamp(0, text.length);
       if (!selection.isCollapsed && selStart == 0) {
@@ -816,7 +861,8 @@ class ChatInputState extends State<ChatInput> {
       // Double-ESC interrupt logic.
       if (event.logicalKey == LogicalKey.escape) {
         final sessionId = component.sessionController.currentSessionId;
-        final isStreaming = sessionId != null &&
+        final isStreaming =
+            sessionId != null &&
             component.sessionController.runtime(sessionId).isResponding;
         if (isStreaming) {
           final now = DateTime.now();
@@ -856,9 +902,11 @@ class ChatInputState extends State<ChatInput> {
         _escInterruptHint = false;
       }
 
-      final isEnter = event.logicalKey == LogicalKey.enter ||
+      final isEnter =
+          event.logicalKey == LogicalKey.enter ||
           event.logicalKey == LogicalKey.numpadEnter;
-      final isModifiedEnter = isEnter &&
+      final isModifiedEnter =
+          isEnter &&
           (event.isShiftPressed ||
               event.isControlPressed ||
               event.isAltPressed);
@@ -902,13 +950,15 @@ class ChatInputState extends State<ChatInput> {
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowUp && event.isControlPressed) {
-        component.scrollController
-            .scrollUp(component.scrollController.viewportDimension / 2);
+        component.scrollController.scrollUp(
+          component.scrollController.viewportDimension / 2,
+        );
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown && event.isControlPressed) {
-        component.scrollController
-            .scrollDown(component.scrollController.viewportDimension / 2);
+        component.scrollController.scrollDown(
+          component.scrollController.viewportDimension / 2,
+        );
         return true;
       }
       if (event.logicalKey == LogicalKey.home && event.isControlPressed) {
@@ -1042,7 +1092,9 @@ class ChatInputState extends State<ChatInput> {
             // a separator (see FileSearcher._walk) — strip it so
             // the re-built query has exactly one trailing `/`.
             final path = selected.relativePath;
-            final stripped = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+            final stripped = path.endsWith('/')
+                ? path.substring(0, path.length - 1)
+                : path;
             final newQuery = '$stripped/';
             final tc = component.textController;
             final text = tc.text;
@@ -1121,7 +1173,10 @@ class ChatInputState extends State<ChatInput> {
   /// a pending attachment. Called on Ctrl+V when the current model
   /// supports images. This is best-effort — if no image is on the
   /// clipboard, nothing happens (the text paste proceeds normally).
-  Future<void> _tryClipboardImage(int sessionId) async {
+  Future<bool> _tryClipboardImage(
+    int sessionId, {
+    bool showEmptyToast = false,
+  }) async {
     try {
       final result = await ClipboardImageReader.readImage();
       if (result != null) {
@@ -1138,11 +1193,121 @@ class ChatInputState extends State<ChatInput> {
           mode: ToastMode.status,
         );
         setState(() {});
+        return true;
+      } else if (showEmptyToast) {
+        component.turnOrchestrator.showToast(
+          'Clipboard is empty or unavailable',
+          mode: ToastMode.error,
+        );
       }
-    } catch (_) {
-      // Clipboard image reading failed — ignore silently.
-      // The text paste from the default handler will proceed.
+    } catch (e) {
+      // Ctrl+V keeps this silent so ordinary text paste can proceed.
+      if (showEmptyToast) {
+        component.turnOrchestrator.showToast(
+          'Failed to read clipboard: $e',
+          mode: ToastMode.error,
+        );
+      }
     }
+    return false;
+  }
+
+  Future<void> _pasteFromButton(int? sessionId) async {
+    if (sessionId != null && _currentModelSupportsImages()) {
+      final attached = await _tryClipboardImage(sessionId);
+      if (attached) return;
+    }
+
+    final text =
+        await ClipboardTextReader.readText() ?? ClipboardManager.paste();
+    if (text != null && text.isNotEmpty) {
+      _pasteText(text, sessionId);
+      return;
+    }
+
+    component.turnOrchestrator.showToast(
+      'Clipboard is empty or unavailable',
+      mode: ToastMode.error,
+    );
+  }
+
+  void _pasteText(String clipboardText, int? sessionId) {
+    final normalized = clipboardText
+        .replaceAll(RegExp(r'\r\n'), '\n')
+        .replaceAll(RegExp(r'\r'), '\n');
+    final handled = _handlePaste(normalized, sessionId);
+    if (handled) return;
+
+    final tc = component.textController;
+    final text = tc.text;
+    final selection = tc.selection;
+    final start = selection.start.clamp(0, text.length);
+    final end = selection.end.clamp(0, text.length);
+    final replaceStart = start < end ? start : end;
+    final replaceEnd = start < end ? end : start;
+    final newText = text.replaceRange(replaceStart, replaceEnd, normalized);
+    tc.text = newText;
+    tc.selection = TextSelection.collapsed(
+      offset: replaceStart + normalized.length,
+    );
+    setState(() {});
+  }
+
+  bool _currentModelSupportsImages() {
+    if (component.onAttachClipboardImage == null) return false;
+    if (!component.providerServiceReady) return false;
+    final modelKey = component.sessionController.currentSession.model;
+    return component.providerService.imageModelKeys().contains(modelKey);
+  }
+
+  void _syncPendingImagesWithMarkers() {
+    final sessionId = component.sessionController.currentSessionId;
+    if (sessionId == null) return;
+
+    final pending = component.sessionController.pendingImagesFor(sessionId);
+    if (pending.isEmpty) return;
+
+    final text = component.textController.text;
+    final matches = _imageMarkerPattern.allMatches(text).toList();
+    final visibleIndexes = <int>{};
+    for (final match in matches) {
+      final index = int.tryParse(match.group(1) ?? '');
+      if (index != null && index >= 1 && index <= pending.length) {
+        visibleIndexes.add(index);
+      }
+    }
+
+    if (visibleIndexes.length == pending.length) return;
+
+    final keptImages = <ImageAttachment>[];
+    final renumber = <int, int>{};
+    for (var i = 0; i < pending.length; i++) {
+      final oldIndex = i + 1;
+      if (visibleIndexes.contains(oldIndex)) {
+        renumber[oldIndex] = keptImages.length + 1;
+        keptImages.add(pending[i]);
+      }
+    }
+
+    component.sessionController.setPendingImages(sessionId, keptImages);
+
+    var adjustedText = text.replaceAllMapped(_imageMarkerPattern, (match) {
+      final oldIndex = int.tryParse(match.group(1) ?? '');
+      final newIndex = oldIndex == null ? null : renumber[oldIndex];
+      return newIndex == null ? '' : '[ image $newIndex ]';
+    });
+
+    if (adjustedText != text) {
+      final oldCursor = component.textController.selection.extentOffset;
+      _syncingImageMarkers = true;
+      component.textController.text = adjustedText;
+      component.textController.selection = TextSelection.collapsed(
+        offset: oldCursor.clamp(0, adjustedText.length),
+      );
+      _syncingImageMarkers = false;
+    }
+
+    component.refresh();
   }
 
   /// Handle text pasted into the input. If the pasted text is a path
@@ -1157,11 +1322,7 @@ class ChatInputState extends State<ChatInput> {
     if (trimmed.isEmpty) return false;
 
     // Only act if the model supports images.
-    if (component.onAttachClipboardImage == null) return false;
-    if (!component.providerServiceReady) return false;
-    final modelKey = component.sessionController.currentSession.model;
-    final imageKeys = component.providerService.imageModelKeys();
-    if (!imageKeys.contains(modelKey)) return false;
+    if (!_currentModelSupportsImages()) return false;
 
     // Strip surrounding quotes and a leading "file://" prefix that
     // some file managers include when copying a file as a URI.
@@ -1223,7 +1384,8 @@ class ChatInputState extends State<ChatInput> {
     if (text.isEmpty) return;
 
     final sessionId = component.sessionController.currentSessionId;
-    final isResponding = sessionId != null &&
+    final isResponding =
+        sessionId != null &&
         component.sessionController.runtime(sessionId).isResponding;
 
     if (text.startsWith('/')) {
@@ -1254,8 +1416,8 @@ class ChatInputState extends State<ChatInput> {
 
     final avgHeight =
         component.scrollController.maxScrollExtent > 0 && messages.isNotEmpty
-            ? component.scrollController.maxScrollExtent / messages.length
-            : 3.0;
+        ? component.scrollController.maxScrollExtent / messages.length
+        : 3.0;
 
     final currentOffset = component.scrollController.offset;
     int? targetMsgIndex;
@@ -1287,8 +1449,8 @@ class ChatInputState extends State<ChatInput> {
 
     final avgHeight =
         component.scrollController.maxScrollExtent > 0 && messages.isNotEmpty
-            ? component.scrollController.maxScrollExtent / messages.length
-            : 3.0;
+        ? component.scrollController.maxScrollExtent / messages.length
+        : 3.0;
 
     final currentOffset = component.scrollController.offset;
     int? targetMsgIndex;
@@ -1317,8 +1479,7 @@ class ChatInputState extends State<ChatInput> {
         ? component.sessionController.runtime(sessionId)
         : null;
     final isStreaming = rt?.isResponding ?? false;
-    final wasInterrupted =
-        component.turnOrchestrator.wasInterrupted(sessionId);
+    final wasInterrupted = component.turnOrchestrator.wasInterrupted(sessionId);
 
     // Check for pending image attachments.
     final pendingImages = sessionId != null
@@ -1329,15 +1490,15 @@ class ChatInputState extends State<ChatInput> {
     final overlay = component.overlayController;
     final placeholder = isStreaming
         ? _ctrlCQuitHint
-            ? 'Press Ctrl+C again to quit...'
-            : _escInterruptHint
-                ? 'Press ESC again to interrupt...'
-                : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
+              ? 'Press Ctrl+C again to quit...'
+              : _escInterruptHint
+              ? 'Press ESC again to interrupt...'
+              : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
-            ? 'Response was interrupted. Type a new message...'
-            : hasImages
-                ? 'Type message to send with ${pendingImages.length} image(s)...'
-                : 'Type a message...';
+        ? 'Response was interrupted. Type a new message...'
+        : hasImages
+        ? 'Type message to send with ${pendingImages.length} image(s)...'
+        : 'Type a message...';
 
     return Container(
       padding: EdgeInsets.all(1),
@@ -1363,6 +1524,15 @@ class ChatInputState extends State<ChatInput> {
               onPaste: (pastedText) => _handlePaste(pastedText, sessionId),
               wordBoundaryProvider: cjkWordBoundaryProvider,
             ),
+          ),
+          Button(
+            label: 'paste',
+            onPressed: () => _pasteFromButton(sessionId),
+            color: CruxTheme.of(context).onSurfaceDim,
+            hoverColor: CruxTheme.of(context).buttonTextHover,
+            bgColor: CruxTheme.of(context).buttonBackground,
+            hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
+            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           ),
         ],
       ),
