@@ -11,6 +11,15 @@ import 'ui/bg_progress_bar.dart';
 import 'ui/button.dart';
 import 'ui/glossy_model_button.dart';
 
+/// Toolbar icons — safe BMP symbols that render as 1 cell, monochrome, in
+/// every Unicode-capable terminal. Previously these were Nerd Font PUA
+/// codepoints (U+F0EB, U+F06E, U+F013), which produced tofu for users
+/// without a Nerd Font and also caused a 1-cell-per-icon layout drift
+/// because `UnicodeWidth.stringWidth()` returns 0 for PUA.
+const _kIconReasoning = '\u{2736}'; // ✶ — six-pointed star
+const _kIconImage = '\u{25A3}'; // ▣ — square with inner shape (image badge)
+const _kIconAuxiliary = '\u{203A}'; // › — right chevron
+
 /// The toolbar above the input box showing model name, thinking mode,
 /// context bar, metrics (tok/s, TTFT), and auxiliary model button.
 class ChatToolbar extends StatefulComponent {
@@ -90,7 +99,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final effort = rt.thinkingMode == 'disabled'
         ? 'off'
         : _displayEffort(rt.reasoningEffort ?? 'normal');
-    return '\u{F0EB} ${effort.padRight(4)}';
+    return '$_kIconReasoning ${effort.padRight(4)}';
   }
 
   String _cacheHitLabel(SessionRuntimeState? rt, Session session) {
@@ -164,7 +173,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final isAuxBusy = _sessionController.isGeneratingTitle ||
         (rt?.isGeneratingTldr ?? false);
     return GlossyModelButton(
-      label: '\u{F013} ${_sessionController.auxiliaryModelShortName}',
+      label: '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}',
       isAnimating: isAuxBusy,
       onPressed: component.onAuxiliaryPressed,
     );
@@ -203,7 +212,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
         final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
         final imageW = _modelSupportsImages(
                 _sessionController.currentSession.model)
-            ? UnicodeWidth.stringWidth('\u{F06E}')
+            ? UnicodeWidth.stringWidth(_kIconImage)
             : 0;
         final thinkingLabel = (rt != null &&
                 _modelSupportsThinking(
@@ -227,7 +236,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 : '—';
         final ttftW = UnicodeWidth.stringWidth(ttftText) + smallSpacer;
         final auxLabel =
-            '\u{F013} ${_sessionController.auxiliaryModelShortName}';
+            '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
 
         var remaining =
@@ -260,7 +269,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
               if (_modelSupportsImages(
                   _sessionController.currentSession.model))
                 Text(
-                  '\u{F06E}',
+                  _kIconImage,
                   style: TextStyle(
                     color: CruxTheme.of(context).onSurfaceVariant,
                   ),
