@@ -101,6 +101,12 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     final db = CruxDatabase();
     _store = SessionStore(db);
+    // Reconcile any sessions left in `running` from a previous Crux
+    // process that didn't shut down cleanly. Fire-and-forget — the
+    // UI's session list is loaded async by `_initSessions` below, and
+    // the (very small) write will land before the user can navigate
+    // to a session that was affected.
+    _store.markOrphanedRunningSessionsAsInterrupted();
     final tracker = FileReadTracker(
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);

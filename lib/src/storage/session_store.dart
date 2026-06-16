@@ -280,6 +280,36 @@ class SessionStore implements SessionStoreAccessor {
         .write(db.SessionsCompanion(updatedAt: Value(nowMs)));
   }
 
+  /// Mark every session with status [SessionStatus.running] as
+  /// [SessionStatus.interrupted].
+  ///
+  /// On a clean launch there should be no sessions in `running` —
+  /// the only way one ends up that way in the database is if a
+  /// previous Crux process was killed (crash, SIGKILL, power loss)
+  /// while a turn was streaming. The in-memory state that would
+  /// have driven those sessions to `done` (or `needUserAction`) is
+  /// gone, so on the next launch we transition them to
+  /// `interrupted` — that mirrors the path the orchestrator takes
+  /// when the user presses Esc mid-stream, and the UI can render
+  /// them as resumable rather than falsely reporting them as
+  /// still in flight.
+  ///
+  /// Returns the number of sessions transitioned.
+  Future<int> markOrphanedRunningSessionsAsInterrupted() async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final updated = await (_db.update(_db.sessions)
+          ..where(
+            (t) => t.status.equalsValue(SessionStatus.running),
+          ))
+        .write(
+      db.SessionsCompanion(
+        status: const Value(SessionStatus.interrupted),
+        updatedAt: Value(nowMs),
+      ),
+    );
+    return updated;
+  }
+
   Session _rowToSession(db.Session row) {
     return Session(
       id: row.id,
