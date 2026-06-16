@@ -9,6 +9,7 @@ import '../models/session_runtime_state.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
+import '../utils/frame_profiler.dart';
 import '../utils/offload_standin.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
@@ -69,7 +70,10 @@ class ChatService {
     this._llmClient,
     this._toolExecutor,
   ) : _messageStore = _store.messageStore,
-       _auxiliaryService = AuxiliaryService(_providerService, _store.messageStore);
+      _auxiliaryService = AuxiliaryService(
+        _providerService,
+        _store.messageStore,
+      );
 
   bool isStreaming(int sessionId) => _activeSessions.contains(sessionId);
 
@@ -77,17 +81,13 @@ class ChatService {
     _cancelRequested.add(sessionId);
   }
 
-  Future<String?> generateSessionTitle(
-    int sessionId, {
-    String? userContent,
-  }) =>
+  Future<String?> generateSessionTitle(int sessionId, {String? userContent}) =>
       _auxiliaryService.generateTitle(sessionId, userContent: userContent);
 
   Future<String?> generateTldr(
     String responseContent, {
     TldrDetail detail = TldrDetail.defaultLevel,
-  }) =>
-      _auxiliaryService.generateTldr(responseContent, detail: detail);
+  }) => _auxiliaryService.generateTldr(responseContent, detail: detail);
 
   /// Run a single chat turn for [sessionId].
   ///
@@ -275,6 +275,7 @@ class ChatService {
         void ensureLerpTimer() {
           if (lerpTimer != null) return;
           lerpTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+            FrameProfiler.instance.markTimer('lerp');
             // Stop emitting if the stream was cancelled.
             if (_cancelRequested.contains(sessionId)) {
               lerpTimer?.cancel();
@@ -937,8 +938,7 @@ class ChatService {
                 content.add({
                   'type': 'image_url',
                   'image_url': {
-                    'url':
-                        'data:${img.mediaType};base64,${img.base64Data}',
+                    'url': 'data:${img.mediaType};base64,${img.base64Data}',
                   },
                 });
               }

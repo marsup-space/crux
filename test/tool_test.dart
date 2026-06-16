@@ -1198,10 +1198,14 @@ void main() {
   });
 
   group('LargePayloadTool', () {
-    test('WriteTool implements LargePayloadTool with content as offloadable', () {
+    test('WriteTool does not implement LargePayloadTool', () {
+      // `write` opted out of the LargePayloadTool offload pipeline:
+      // its `content` is the payload the LLM just produced and
+      // needs to keep referencing. `edit` is for in-place changes,
+      // so `write` is by definition substantial enough that the
+      // cost of keeping the content in context is justified.
       final tool = WriteTool();
-      expect(tool, isA<LargePayloadTool>());
-      expect((tool as LargePayloadTool).offloadableArgs, ['content']);
+      expect(tool, isNot(isA<LargePayloadTool>()));
     });
 
     test('EditTool implements LargePayloadTool with oldString and newString', () {
@@ -1225,9 +1229,10 @@ void main() {
   });
 
   group('offloadableArgsFor', () {
-    test('returns the offloadable args set for a LargePayloadTool', () {
+    test('returns null for WriteTool (no offloadable args)', () {
       final tool = WriteTool();
-      expect(offloadableArgsFor(tool), {'content'});
+      expect(offloadableArgsFor(tool), isNull,
+          reason: 'write opted out of the offload pipeline');
     });
 
     test('returns the offloadable args set for EditTool', () {
@@ -1320,28 +1325,6 @@ void main() {
       expect(summary.text, startsWith('+3 lines,'));
       expect(summary.text, isNot(contains('-')));
     });
-
-    test(
-      'WriteTool summary recovers size from offload stand-in pointer',
-      () {
-        // When content is offloaded, the persisted args hold a
-        // stand-in pointer (small, ~100 chars). The summary's
-        // size suffix must show the *original* payload's size
-        // (5.0KB), not the stand-in's.
-        final tool = WriteTool();
-        final summary = tool.collapsedSummary(
-          {
-            'filePath': 'foo.py',
-            'content':
-                '[offloaded: 42 lines / 5.0KB; recall via offloaded_content(key="x_content")]',
-            'intent': '...',
-            '_existingLineCount': 10,
-          },
-          ToolResult(title: 'Write', output: 'Wrote 5120 chars'),
-        );
-        expect(summary.text, '+42 -10 lines, 5.0KB');
-      },
-    );
 
     test('EditTool args-only includes the large args (stand-ins or full)', () {
       final tool = EditTool();

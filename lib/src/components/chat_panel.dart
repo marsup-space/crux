@@ -8,6 +8,7 @@ import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
+import '../services/recent_projects_store.dart';
 import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
@@ -16,6 +17,7 @@ import '../theme/theme_controller.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
+import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
 import 'chat_history.dart';
 import 'chat_input.dart';
@@ -37,6 +39,15 @@ class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+
+  /// Shared store of recently-opened project directories. Owned by
+  /// the binary (`bin/crux.dart`) and threaded through `_CruxApp`
+  /// so this panel never creates its own instance — otherwise the
+  /// cwd that the binary records at startup wouldn't be visible to
+  /// the chat input's `/project` autocomplete (each store has its
+  /// own in-memory list).
+  final RecentProjectsStore recentProjectsStore;
+
   final List<String> startupWarnings;
 
   const ChatPanel({
@@ -44,6 +55,7 @@ class ChatPanel extends StatefulComponent {
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
 
@@ -62,6 +74,14 @@ class _ChatPanelState extends State<ChatPanel> {
   late final CommandExecutor _commandExecutor;
   late final ChatTurnOrchestrator _turnOrchestrator;
   late final FileReadTracker _tracker;
+
+  /// History of recently-opened project directories. Loaded once
+  /// during construction and threaded through to the chat input so
+  /// the `/project` autocomplete can populate from real prior
+  /// sessions rather than asking the user to type a path from
+  /// scratch. Owned by the panel so it lives for the lifetime of the
+  /// TUI (and so `/d-paths` can surface its on-disk location).
+  late final RecentProjectsStore _recentProjectsStore;
 
   /// When non-null, a tool detail fullpane is shown for this tool call.
   ToolDetailData? _toolDetailData;
@@ -152,6 +172,22 @@ class _ChatPanelState extends State<ChatPanel> {
     );
 
     CommandRegistry.instance.addListener(_refresh);
+    // Expose a per-frame snapshot of "what's running right now"
+    // to the optional frame profiler. The snapshot is read at
+    // the end of every frame (post-frame callback) so the report
+    // can correlate slow frames with active timers / session
+    // state. Only invoked while the profiler is actively
+    // recording, so its cost is negligible when the profiler
+    // is idle.
+    FrameProfiler.instance.registerSnapshotProvider(_profilerSnapshot);
+    // The recent-projects store is provided by `bin/crux.dart`,
+    // which has already loaded the JSON file from disk and recorded
+    // the launched cwd before we get here. Bind to it directly —
+    // any `/project <path>` switches executed later in this session
+    // will mutate this same instance and trigger a refresh via the
+    // listener below, so the autocomplete overlay stays live.
+    _recentProjectsStore = component.recentProjectsStore;
+    _recentProjectsStore.addListener(_refresh);
     _initSessions();
     _providerService.initialize().then((_) {
       setState(() {
@@ -168,6 +204,11 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _refresh() {
+    // Notify the frame profiler that a setState happened
+    // before it propagates, so the next captured frame can
+    // attribute itself to "setState" (or a timer, if one
+    // fired first). No-op when the profiler is idle.
+    FrameProfiler.instance.markSetState();
     setState(() {});
   }
 
@@ -261,12 +302,53 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void dispose() {
     CommandRegistry.instance.removeListener(_refresh);
+    FrameProfiler.instance.clearSnapshotProvider();
+    // We only borrow the store — it's owned by `bin/crux.dart`,
+    // which disposes it in `_CruxAppState.dispose()`. Dropping
+    // our listener here keeps us from leaking the subscription
+    // when the panel is torn down independently of the app
+    // (relevant for tests that mount the panel in isolation).
+    _recentProjectsStore.removeListener(_refresh);
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
+  }
+
+  /// Snapshot of chat-panel state for the frame profiler.
+  /// Invoked at the end of every frame while a recording is
+  /// active; the keys land in the per-frame `features` object
+  /// in the JSON report so a slow frame can be attributed to
+  /// "the metrics timer was on" or "tldr was generating" or
+  /// "100 messages were rendered".
+  ///
+  /// Keep the keys flat and the values primitive — the map is
+  /// JSON-serialised verbatim and a slow snapshot would defeat
+  /// the point of the profiler.
+  Map<String, dynamic> _profilerSnapshot() {
+    final sessionId = _sessionController.currentSessionId;
+    final rt = sessionId != null
+        ? _sessionController.runtime(sessionId)
+        : null;
+    final messages = _sessionController.currentMessages;
+    final anyResponding = _sessionController.sessions.any(
+      (s) => _sessionController.runtime(s.id).isResponding,
+    );
+    return {
+      'sessionId': sessionId,
+      'isResponding': rt?.isResponding ?? false,
+      'isGeneratingTldr': rt?.isGeneratingTldr ?? false,
+      'btwMode': rt?.btwMode ?? false,
+      'interrupted': rt?.interrupted ?? false,
+      'isGeneratingTitle': _sessionController.isGeneratingTitle,
+      'messageCount': messages.length,
+      'reasoningMsgs':
+          messages.where((m) => m.reasoningContent.isNotEmpty).length,
+      'contextAnimActive': _streamingController.contextAnimTimerIsActive(),
+      'anySessionResponding': anyResponding,
+    };
   }
 
   Future<void> _createNewSession() async {
@@ -318,6 +400,7 @@ class _ChatPanelState extends State<ChatPanel> {
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
       showFullpane: _openFullpane,
+      recentProjectsStore: _recentProjectsStore,
     );
     await _commandExecutor.execute(text, ctx);
     setState(() {});
@@ -602,8 +685,14 @@ class _ChatPanelState extends State<ChatPanel> {
 
   @override
   Component build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
+    // Wrap the top-level build in a profiler section so
+    // the report can show how much of each frame was spent
+    // in the chat panel's build itself (vs. layout / paint
+    // / nested widget builds that the chat history's own
+    // timed section catches).
+    return FrameProfiler.instance.timed('chatPanel.build', () {
+      return LayoutBuilder(
+        builder: (context, constraints) {
         final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
 
         final sessionId = _sessionController.currentSessionId;
@@ -659,6 +748,7 @@ class _ChatPanelState extends State<ChatPanel> {
             scrollController: scrollController,
             refresh: _refresh,
             projectPath: Directory.current.path,
+            recentProjectsStore: _recentProjectsStore,
             onSendTurn: (text) {
               final sid = _sessionController.currentSessionId;
               final images = sid != null
@@ -772,5 +862,6 @@ class _ChatPanelState extends State<ChatPanel> {
         return mainContent;
       },
     );
+    });
   }
 }

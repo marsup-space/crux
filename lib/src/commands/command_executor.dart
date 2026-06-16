@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
@@ -6,12 +7,14 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/provider_service.dart';
+import '../services/recent_projects_store.dart';
 import '../storage/session_store.dart';
 import '../utils/terminal_symbols.dart';
 import '../utils/user_data_directory.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
+import '../utils/frame_profiler.dart';
 
 // Signature for the toast callback used by commands.
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
@@ -90,6 +93,15 @@ class CommandContext {
   /// setState + overlayController.showFullpane.
   final VoidCallback? showFullpane;
 
+  /// Store of recently-opened project directories. Used by `/project`
+  /// to remember every directory the user has switched into (whether
+  /// from the in-app command or by launching `crux <path>`) so the
+  /// chat input can auto-suggest the next time the user types
+  /// `/project`. Optional so callers that don't care (legacy tests,
+  /// debug harnesses) can omit it; the executor treats `null` as a
+  /// no-op for the bookkeeping side-effect.
+  final RecentProjectsStore? recentProjectsStore;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -115,6 +127,7 @@ class CommandContext {
     required this.sendBtwTurn,
     required this.clearBtwTurns,
     this.showFullpane,
+    this.recentProjectsStore,
   });
 }
 
@@ -180,6 +193,8 @@ class CommandExecutor {
         await executeDebugToast(parts, ctx);
       case '/d-fullpane':
         await executeDebugFullpane(ctx);
+      case '/d-profiler':
+        await executeDebugProfiler(parts, ctx);
       default:
         if (command != null) {
           ctx.showToast(
@@ -459,6 +474,13 @@ class CommandExecutor {
         ctx.showToast('Directory not found: $target', mode: ToastMode.error);
       } else {
         Directory.current = dir;
+        // Record the switch *before* `initSessions` so a slow
+        // session-init (it touches the DB) can't race with the file
+        // write — the recent-projects file will already reflect the
+        // new cwd by the time the user sees the toast. The store
+        // swallows write errors so a failed flush doesn't poison
+        // the session reload that follows.
+        await ctx.recentProjectsStore?.add(target);
         await ctx.initSessions();
         ctx.showToast('Switched to $target', mode: ToastMode.status);
       }
@@ -984,6 +1006,7 @@ class CommandExecutor {
     buf.writeln('  authJsonPath:   ${ctx.providerService.authJsonPath}');
     buf.writeln('  dataDir:        $dataDir');
     buf.writeln('  databaseFile:   ${p.join(dataDir, "crux.db")}');
+    buf.writeln('  recentProjects: ${p.join(dataDir, "recent_projects.json")}');
     buf.writeln('  cwd:            ${Directory.current.path}');
     ctx.showToast(buf.toString().trimRight());
   }
@@ -1028,6 +1051,159 @@ class CommandExecutor {
     } else {
       ctx.showToast('Fullpane not available', mode: ToastMode.error);
     }
+  }
+
+  /// `/d-profiler [<secs> [<path>]]` — record per-frame
+  /// scheduler timings and dump a JSON report.
+  ///
+  /// Forms:
+  /// - `/d-profiler` (no args)           → show status
+  ///   (recording? frames captured so far? requested duration?)
+  /// - `/d-profiler <secs>`              → start a recording
+  ///   that runs for `<secs>` seconds, then auto-dumps the
+  ///   report under the user data dir. `<secs>` accepts
+  ///   integers or floats (e.g. `0.5` is fine for a quick
+  ///   smoke test).
+  /// - `/d-profiler <secs> <path>`       → same, but write
+  ///   the report to `<path>` instead of the default
+  ///   `profile-<iso>.json` location.
+  /// - `/d-profiler stop`                → stop the active
+  ///   recording immediately and dump the report.
+  ///
+  /// The recording is hooked into the chat panel via a
+  /// snapshot provider registered in [ChatPanel.initState]
+  /// (see [FrameProfiler.registerSnapshotProvider]); if the
+  /// snapshot provider isn't there (e.g. because the chat
+  /// panel hasn't been mounted yet), the report still
+  /// captures frame timings but the per-frame `features`
+  /// field will be empty.
+  Future<void> executeDebugProfiler(
+    List<String> parts,
+    CommandContext ctx,
+  ) async {
+    final profiler = FrameProfiler.instance;
+    final first = parts.length > 1 ? parts[1].trim() : '';
+    final second = parts.length > 2 ? parts[2].trim() : '';
+
+    // No args → status.
+    if (first.isEmpty) {
+      if (!profiler.isRecording) {
+        ctx.showToast(
+          'Profiler idle. Usage: /d-profiler <secs> [path], '
+          '/d-profiler stop',
+        );
+        return;
+      }
+      final elapsed = profiler.startedAt == null
+          ? 0
+          : DateTime.now().difference(profiler.startedAt!).inSeconds;
+      final requested = profiler.requestedDuration.inSeconds;
+      ctx.showToast(
+        'Profiler recording: ${elapsed}s / ${requested}s, '
+        '${profiler.capturedFrameCount} frames so far',
+      );
+      return;
+    }
+
+    // `/d-profiler stop` → stop now and dump.
+    if (first == 'stop' || first == '--stop') {
+      if (!profiler.isRecording) {
+        ctx.showToast('Profiler is not recording');
+        return;
+      }
+      final report = profiler.stop();
+      final path = second.isEmpty ? _profilerDefaultPath() : second;
+      await FrameProfiler.writeJson(path, report);
+      _showProfilerSummary(ctx, report, path);
+      return;
+    }
+
+    // `/d-profiler <secs> [path]` → start a recording.
+    final secs = double.tryParse(first);
+    if (secs == null || secs <= 0) {
+      ctx.showToast(
+        'Invalid duration: "$first". Usage: /d-profiler <secs> [path]',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+    if (profiler.isRecording) {
+      ctx.showToast('Profiler is already recording');
+      return;
+    }
+
+    final path = second.isEmpty ? _profilerDefaultPath() : second;
+    final duration = Duration(
+      microseconds: (secs * Duration.microsecondsPerSecond).round(),
+    );
+    ctx.showToast(
+      '${terminalSymbol('●', '*')} Profiler recording for '
+      '${secs}s → $path',
+      mode: ToastMode.status,
+    );
+    // Fire-and-forget the timed recording. The future is
+    // intentionally not awaited so the command can return
+    // immediately and the user can interact with the UI
+    // while the recording runs.
+    unawaited(
+      profiler.recordFor(duration, outputPath: path).then((result) {
+        // Show a toast with the summary once the recording
+        // completes. The toast will be no-op if the chat
+        // panel has been disposed by then, which is fine.
+        _showProfilerSummary(ctx, result.report, result.path);
+      }).catchError((Object e, StackTrace st) {
+        ctx.showToast('Profiler failed: $e', mode: ToastMode.error);
+      }),
+    );
+  }
+
+  static String _profilerDefaultPath() {
+    final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+    return p.join(resolveUserDataDirectory(), 'profile-$ts.json');
+  }
+
+  /// Compact one-screen summary of a profiler report, rendered
+  /// as a toast. The full report is on disk — this is just
+  /// enough to tell whether a recording was worth keeping.
+  static void _showProfilerSummary(
+    CommandContext ctx,
+    Map<String, dynamic> report,
+    String path,
+  ) {
+    if (report.containsKey('error')) {
+      ctx.showToast('Profiler: ${report['error']}', mode: ToastMode.error);
+      return;
+    }
+    final frames = report['frameCount'] ?? 0;
+    final fps = report['observedFps'] ?? '0.00';
+    final totals = report['percentilesUs']?['total'] as Map?;
+    final p99 = totals?['p99'] ?? 0;
+    final maxUs = totals?['max'] ?? 0;
+    final byReason = (report['byReason'] as Map?)?.length ?? 0;
+
+    // Surface the top layout hotspot (the render object type
+    // that consumed the most layout time during the recording)
+    // right in the toast. The full per-type breakdown is on
+    // disk in the report; this gives a one-liner that points
+    // straight at the suspect when the user comes back from
+    // an "FPS dropped to 2" report.
+    final byLayout = report['byLayout'] as Map?;
+    final byType = byLayout?['byType'] as Map?;
+    String layoutHotspot = '';
+    if (byType != null && byType.isNotEmpty) {
+      final first = byType.entries.first;
+      final name = first.key;
+      // Strip the "Render" prefix for readability.
+      final short = name.startsWith('Render') ? name.substring(6) : name;
+      final totalUs = (first.value as Map)['totalUs'] ?? 0;
+      layoutHotspot = ' layoutHot=$short(${totalUs ~/ 1000}ms)';
+    }
+
+    ctx.showToast(
+      'Profiler: $frames frames, ${fps}fps, '
+      'p99=${p99}us max=${maxUs}us, '
+      '$byReason reason(s)$layoutHotspot. Report: $path',
+    );
   }
 
   String _truncate(String s, int n) =>

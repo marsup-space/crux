@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
+import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 
@@ -57,6 +58,17 @@ void main(List<String> args) async {
     Directory.current = dir;
   }
 
+  // Kick off the recent-projects bookkeeping *now* so it runs in
+  // parallel with the splash + provider-seed work below. We can't
+  // do this fire-and-forget: the chat panel needs to bind to the
+  // same `RecentProjectsStore` instance we use here, otherwise the
+  // cwd we add wouldn't be visible to the autocomplete overlay
+  // (each instance keeps its own in-memory copy). So we hold onto
+  // the future and `await` it right before `runApp` — the splash
+  // covers the cost in the common case where the on-disk read +
+  // write finish inside the 504ms sweep.
+  final recentProjectsStoreFuture = _loadAndRecordCurrentProject();
+
   // Resolve the provider search dirs:
   // - built-in: next to the executable (portable install), else ./providers/
   //   (development). May not exist; the seeder is a no-op in that case.
@@ -95,6 +107,16 @@ void main(List<String> args) async {
     userThemesDir: userThemesDir,
     themeConfigFile: themeConfigFile,
   );
+
+  // Block on the recent-projects work *after* the splash so the
+  // user sees the splash animation even on a slow disk read. By
+  // this point the future has either already resolved (the read +
+  // write fit inside the splash window) or is about to. Crucially,
+  // we don't pass a *separate* store into the chat panel — sharing
+  // this instance means a `/project <path>` switch executed later
+  // in the session writes to the same in-memory list the
+  // autocomplete overlay is observing.
+  final recentProjectsStore = await recentProjectsStoreFuture;
 
   // Log seeder changes after the splash is done, so the stderr lines
   // don't interleave with the logo frames.
@@ -137,15 +159,65 @@ void main(List<String> args) async {
       userProvidersDir: userDir.path,
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
       themeController: results.themeController,
+      recentProjectsStore: recentProjectsStore,
       startupWarnings: [
         ...results.themeController.registry.loadErrors.entries.map(
           (entry) => 'Theme ${p.basename(entry.key)}: ${entry.value}',
         ),
         if (results.themeController.startupWarning != null)
           results.themeController.startupWarning!,
+        // When launched under `--observe` / `--enable-vm-service`,
+        // the Dart runtime prints the VM service URL to stderr
+        // BEFORE our app enters alt-screen mode, so the user
+        // can't see it. Surface it as a startup toast instead.
+        // The exact auth token isn't reachable from inside the
+        // app, so we tell the user how to recover the URL they
+        // already have on stderr (or how to disable auth so the
+        // URL is token-free).
+        ..._vmServiceStartupWarnings(),
       ],
     ),
   );
+}
+
+/// Detect if the Dart VM service is active and return startup warnings
+/// explaining how to recover the VM service URL (it was printed to stderr
+/// before the app entered alt-screen mode).
+List<String> _vmServiceStartupWarnings() {
+  try {
+    final uri = Uri.parse(Platform.environment['VmServiceUrl'] ?? '');
+    if (uri.isAbsolute) {
+      return [
+        'VM service is active: $uri',
+        'To disable auth, relaunch with --no-authenticate-vm-service',
+      ];
+    }
+  } catch (_) {
+    // Ignore – env var not set or not a valid URI.
+  }
+  return [];
+}
+
+/// Load the recent-projects JSON from disk and record the current
+/// working directory in it. Returns the live store (not just the
+/// entries) so the chat panel can bind to it and observe future
+/// mutations from `/project` switches without a second disk read.
+///
+/// Errors are swallowed: `RecentProjectsStore.add` already does
+/// best-effort persistence, so a read-only home dir during a CI
+/// smoke test yields an empty list rather than crashing the binary.
+Future<RecentProjectsStore> _loadAndRecordCurrentProject() async {
+  try {
+    final store = await RecentProjectsStore.load();
+    await store.add(Directory.current.path);
+    return store;
+  } catch (_) {
+    // Fall back to an empty store pointing at the canonical file
+    // path so downstream `add` calls still have a place to write.
+    // This keeps the TUI functional even when the JSON file is
+    // unreadable for some platform-specific reason.
+    return RecentProjectsStore.empty();
+  }
 }
 
 /// Run the splash animation and the loading work concurrently in the
@@ -414,12 +486,14 @@ class _CruxApp extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+  final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
 
   const _CruxApp({
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
 
@@ -444,6 +518,11 @@ class _CruxAppState extends State<_CruxApp> {
   void dispose() {
     component.themeController.removeListener(_handleThemeChanged);
     component.themeController.dispose();
+    // The chat panel already disposed this store, but be defensive:
+    // if the panel never mounted (e.g. the app bailed out before
+    // its first frame) we still need to release the listener
+    // subscriptions to avoid leaking the ChangeNotifier.
+    component.recentProjectsStore.dispose();
     super.dispose();
   }
 
@@ -459,6 +538,7 @@ class _CruxAppState extends State<_CruxApp> {
           userProvidersDir: component.userProvidersDir,
           builtInProvidersDir: component.builtInProvidersDir,
           themeController: component.themeController,
+          recentProjectsStore: component.recentProjectsStore,
           startupWarnings: component.startupWarnings,
         ),
       ),

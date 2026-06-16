@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/frame_profiler.dart';
 import '../../utils/terminal_symbols.dart';
 import 'button.dart';
 
@@ -163,6 +164,7 @@ class ToastHubState extends State<ToastHub> {
     _stopTimers();
     _dismissTimer = Timer(_remaining, _onDismiss);
     _tickTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      FrameProfiler.instance.markTimer('toastTick');
       if (!_hovered) {
         _remaining -= const Duration(milliseconds: 50);
         if (_remaining.isNegative) _remaining = Duration.zero;

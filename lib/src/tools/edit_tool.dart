@@ -194,7 +194,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
 
     if (oldString.isEmpty) {
       await _writePreservingEncoding(file, newString, meta);
-      if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
+      if (tracker != null)
+        await tracker!.recordRead(resolved, await _mtimeMs(file));
       // Stash the "added" line count so the bubble's
       // collapsedSummary can render "+N lines" next to the
       // token estimate. We use the same stash field as the
@@ -226,11 +227,7 @@ class EditTool extends LargePayloadTool with IntentionalTool {
       );
     }
     if (matchResult.error != null) {
-      return _autoReadResult(
-        resolved,
-        '${matchResult.error}',
-        content,
-      );
+      return _autoReadResult(resolved, '${matchResult.error}', content);
     }
     final matchLen = matchResult.matchLength ?? oldString.length;
     if (_isDisproportionateMatch(oldString, matchLen)) {
@@ -255,7 +252,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     final normalized = normalizeToLineEnding(newContent, meta.lineEnding);
     await _writePreservingEncoding(file, normalized, meta);
 
-    if (tracker != null) await tracker!.recordRead(resolved, await _mtimeMs(file));
+    if (tracker != null)
+      await tracker!.recordRead(resolved, await _mtimeMs(file));
 
     final count = matchResult.positions.length;
     // Stash the actual replacement count for the bubble's
@@ -315,7 +313,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     final intent = (this as IntentionalTool).intentFromArgs(args);
     return ToolResult(
       title: result.title,
-      output: '${result.output}\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded, intent: intent)}',
+      output:
+          '${result.output}\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded, intent: intent)}',
     );
   }
 
@@ -381,8 +380,11 @@ class EditTool extends LargePayloadTool with IntentionalTool {
   /// round-trip. Same pattern as the read-before-write guard.
   ToolResult _autoReadResult(String filePath, String reason, String content) {
     return ToolResult(
-      title: 'Auto-read: $relativePath(filePath, '')',
-      output: '[AUTOREAD] No changes were made — $reason\n\n'
+      title:
+          'Auto-read: $relativePath(filePath, '
+          ')',
+      output:
+          '[AUTOREAD] No changes were made — $reason\n\n'
           'We re-read the file for you (saved a round trip). '
           'The current content is below; you can call edit again '
           'now without having to call read first.\n\n'
@@ -397,7 +399,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     final at = content[pos];
     final prev = content[pos - 1];
     final atIsWs = at == ' ' || at == '\t';
-    final prevIsWs = prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r';
+    final prevIsWs =
+        prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r';
     return atIsWs && prevIsWs;
   }
 
@@ -424,7 +427,6 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     }
     // Fallback: also reject when the raw character span is
     // massively out of proportion to oldString.
-    return matchLen > oldString.length * 4 &&
-        matchLen > oldString.length + 500;
+    return matchLen > oldString.length * 4 && matchLen > oldString.length + 500;
   }
 }

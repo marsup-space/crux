@@ -2,15 +2,19 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
+import 'package:path/path.dart' as p;
 import '../models/image_attachment.dart';
 import '../models/slash_command.dart';
 import '../services/provider_service.dart';
+import '../services/recent_projects_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/clipboard_image.dart';
 import '../utils/clipboard_text.dart';
 import '../utils/cjk_word_boundary.dart';
+import '../utils/dropped_file_handler.dart';
 import '../utils/file_searcher.dart';
+import '../utils/frame_profiler.dart';
 import '../commands/registry.dart';
 import 'chat_turn_orchestrator.dart';
 import 'overlay_controller.dart';
@@ -52,6 +56,13 @@ class ChatInput extends StatefulComponent {
   /// working directory when not provided.
   final String projectPath;
 
+  /// Source of `/project` autocomplete suggestions. When provided,
+  /// typing `/project ` shows the recently-opened directories as
+  /// pickable items (most-recent first) instead of an empty list.
+  /// Optional so legacy/test harnesses that don't care about recent
+  /// projects can still construct a `ChatInput`.
+  final RecentProjectsStore? recentProjectsStore;
+
   const ChatInput({
     super.key,
     required this.textController,
@@ -71,6 +82,7 @@ class ChatInput extends StatefulComponent {
     required this.onCreateNewSession,
     this.onAttachClipboardImage,
     this.projectPath = '.',
+    this.recentProjectsStore,
   });
 
   @override
@@ -105,6 +117,46 @@ class _AtMention {
     required this.cursor,
     required this.query,
   });
+}
+
+/// Lightweight snapshot of just the [OverlayController] fields
+/// the chat panel actually reads when rendering the overlay
+/// popover. Captured before mutating the overlay and compared
+/// after, so [_ChatInputState._onTextChanged] can skip the
+/// chat-panel refresh for the 95% of keystrokes that don't
+/// actually change what's shown above the input.
+///
+/// Lives at top level (not nested in [ChatInputState]) because
+/// Dart disallows nested class declarations. Equality is
+/// field-by-field via [ChatInputState._overlayChanged] so the
+/// snapshot can be a plain data class without overriding
+/// `==`/`hashCode` (avoiding allocations in the hot path).
+class OverlaySnapshot {
+  const OverlaySnapshot({
+    required this.mode,
+    required this.commandsLen,
+    required this.suggestionsLen,
+    required this.filesLen,
+    required this.isSearching,
+    required this.selectedCommandIndex,
+    required this.selectedSuggestionIndex,
+    required this.selectedFileIndex,
+    required this.atMentionQuery,
+    required this.showSessionManager,
+    required this.showFullpane,
+  });
+
+  final OverlayMode mode;
+  final int commandsLen;
+  final int suggestionsLen;
+  final int filesLen;
+  final bool isSearching;
+  final int selectedCommandIndex;
+  final int selectedSuggestionIndex;
+  final int selectedFileIndex;
+  final String atMentionQuery;
+  final bool showSessionManager;
+  final bool showFullpane;
 }
 
 class ChatInputState extends State<ChatInput> {
@@ -162,17 +214,44 @@ class ChatInputState extends State<ChatInput> {
   /// that was hidden behind a '/' command.
   String? get commandStashedText => _commandStashedText;
 
+  /// Decide what to rebuild after [_onTextChanged] mutated the
+  /// overlay state. If the panel-visible state actually
+  /// changed, kick the chat panel so it can re-render the
+  /// overlay popover. Otherwise just refresh this input
+  /// (for placeholder / pending-image changes) — the chat
+  /// history with 606 messages does NOT need to be rebuilt.
+  void _maybeRefresh(OverlaySnapshot prev, OverlayController overlay) {
+    if (_overlayChanged(prev, overlay)) {
+      component.refresh();
+    } else {
+      if (mounted) setState(() {});
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     component.textController.addListener(_onTextChanged);
     CommandRegistry.instance.addListener(component.refresh);
+    // `component.refresh` alone rebuilds the panel but doesn't
+    // re-evaluate the suggestion overlay (suggestions are only
+    // repopulated when `_onTextChanged` runs). When the store
+    // changes — most commonly right after a successful
+    // `/project <path>` switch — we want the suggestion list
+    // to refresh even if the user hasn't typed anything new,
+    // so a freshly-added entry appears immediately. Calling
+    // `_onTextChanged` re-reads the current text and rebuilds
+    // the overlay against the new store state; if no command
+    // is being composed, the overlay just gets cleared, which
+    // is the correct no-op behavior.
+    component.recentProjectsStore?.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
     component.textController.removeListener(_onTextChanged);
     CommandRegistry.instance.removeListener(component.refresh);
+    component.recentProjectsStore?.removeListener(_onTextChanged);
     _atMentionDebouncer?.cancel();
     super.dispose();
   }
@@ -229,6 +308,61 @@ class ChatInputState extends State<ChatInput> {
     restoreCommandStash();
   }
 
+  /// Capture the overlay's "what the panel needs to redraw"
+  /// state right before we mutate it, so [_onTextChanged] can
+  /// tell whether a chat-panel rebuild is actually needed.
+  ///
+  /// Without this, every keystroke calls `component.refresh()`,
+  /// which causes a full chat-panel rebuild (rebuilding the
+  /// chat history with all 606 messages, layouting the
+  /// visible ones in ~30ms). Most keystrokes don't change
+  /// what's shown above the input — typing `hello` keeps the
+  /// overlay mode at `off` the whole time — so the chat
+  /// panel rebuild is wasted work. Comparing the snapshot
+  /// before/after each keystroke lets us skip the chat-panel
+  /// refresh for the 95% of keystrokes that don't actually
+  /// change the overlay.
+  ///
+  /// Captured fields are intentionally restricted to the
+  /// subset that the chat panel's overlay rendering reads
+  /// (see `chat_panel._buildOverlays`). Anything not in here
+  /// doesn't affect the panel.
+  OverlaySnapshot _snapshotOverlay(OverlayController o) {
+    return OverlaySnapshot(
+      mode: o.overlayMode,
+      commandsLen: o.filteredCommands.length,
+      suggestionsLen: o.filteredSuggestions.length,
+      filesLen: o.filteredFiles.length,
+      isSearching: o.isSearching,
+      selectedCommandIndex: o.selectedCommandIndex,
+      selectedSuggestionIndex: o.selectedSuggestionIndex,
+      selectedFileIndex: o.selectedFileIndex,
+      atMentionQuery: o.atMentionQuery,
+      showSessionManager: o.showSessionManager,
+      showFullpane: o.showFullpane,
+    );
+  }
+
+  /// Returns true iff the panel-rendered overlay state
+  /// changed since [prev]. Cheap field-by-field comparison;
+  /// lists are compared by length (the panel only needs to
+  /// know "are there items to render?", and equality on
+  /// lists would also work but does a full element-by-element
+  /// walk we don't need).
+  bool _overlayChanged(OverlaySnapshot prev, OverlayController o) {
+    return prev.mode != o.overlayMode ||
+        prev.commandsLen != o.filteredCommands.length ||
+        prev.suggestionsLen != o.filteredSuggestions.length ||
+        prev.filesLen != o.filteredFiles.length ||
+        prev.isSearching != o.isSearching ||
+        prev.selectedCommandIndex != o.selectedCommandIndex ||
+        prev.selectedSuggestionIndex != o.selectedSuggestionIndex ||
+        prev.selectedFileIndex != o.selectedFileIndex ||
+        prev.atMentionQuery != o.atMentionQuery ||
+        prev.showSessionManager != o.showSessionManager ||
+        prev.showFullpane != o.showFullpane;
+  }
+
   void _onTextChanged() {
     if (!_syncingImageMarkers) {
       _syncPendingImagesWithMarkers();
@@ -237,6 +371,14 @@ class ChatInputState extends State<ChatInput> {
     final text = component.textController.text;
     final overlay = component.overlayController;
 
+    // Snapshot the overlay state before mutating it so we
+    // can compare afterwards and decide whether a
+    // chat-panel-wide refresh is actually needed. Most
+    // keystrokes leave every field of this snapshot
+    // identical, so the refresh is skipped and only the
+    // chat input itself rebuilds (via setState below).
+    final prev = _snapshotOverlay(overlay);
+
     // First, check for an @-mention trigger. The `@` doesn't have
     // to be at offset 0 — it can appear anywhere in the text. We
     // look for the last `@` at or before the cursor that's preceded
@@ -244,7 +386,7 @@ class ChatInputState extends State<ChatInput> {
     final mention = _findActiveMention();
     if (mention != null) {
       _showAtMention(mention);
-      component.refresh();
+      _maybeRefresh(prev, overlay);
       return;
     }
 
@@ -252,7 +394,7 @@ class ChatInputState extends State<ChatInput> {
 
     if (!trimmed.startsWith('/')) {
       overlay.setOverlayOff();
-      component.refresh();
+      _maybeRefresh(prev, overlay);
       return;
     }
 
@@ -267,7 +409,7 @@ class ChatInputState extends State<ChatInput> {
         overlay.selectedCommandIndex = 0;
         overlay.commandScrollOffset = 0;
       }
-      component.refresh();
+      _maybeRefresh(prev, overlay);
       return;
     }
 
@@ -279,9 +421,10 @@ class ChatInputState extends State<ChatInput> {
             commandName != '/model' &&
             commandName != '/auxiliary' &&
             commandName != '/provider' &&
-            commandName != '/theme')) {
+            commandName != '/theme' &&
+            commandName != '/project')) {
       overlay.setOverlayOff();
-      component.refresh();
+      _maybeRefresh(prev, overlay);
       return;
     }
 
@@ -310,9 +453,10 @@ class ChatInputState extends State<ChatInput> {
         !(commandName == '/model' && paramIndex == 0) &&
         !(commandName == '/auxiliary' && paramIndex == 0) &&
         !(commandName == '/provider' && paramIndex == 0) &&
-        !(commandName == '/theme' && paramIndex == 0)) {
+        !(commandName == '/theme' && paramIndex == 0) &&
+        !(commandName == '/project' && paramIndex == 0)) {
       overlay.setOverlayOff();
-      component.refresh();
+      _maybeRefresh(prev, overlay);
       return;
     }
 
@@ -396,6 +540,26 @@ class ChatInputState extends State<ChatInput> {
       } else {
         suggestions = [];
       }
+    } else if (commandName == '/project' && paramIndex == 0) {
+      // Surface the recently-opened directories so the user can hop
+      // back into a prior project without retyping its path. The
+      // list comes from `RecentProjectsStore` (which itself is fed
+      // by successful `/project` switches and by direct `crux
+      // <path>` launches), so it's never empty after the first
+      // session has ever opened a project.
+      final store = component.recentProjectsStore;
+      if (store == null) {
+        suggestions = const [];
+      } else {
+        final now = DateTime.now();
+        suggestions = [
+          for (final entry in store.entries)
+            CommandSuggestion(
+              value: entry.path,
+              description: _describeRecentProject(entry, now),
+            ),
+        ];
+      }
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }
@@ -413,6 +577,47 @@ class ChatInputState extends State<ChatInput> {
     overlay.selectedSuggestionIndex = 0;
     overlay.suggestionScrollOffset = 0;
     component.refresh();
+  }
+
+  /// Build the secondary line shown next to a `/project` suggestion.
+  ///
+  /// The path itself goes in the suggestion's `value` (which the
+  /// suggestion-overlay fills into the input box), so the description
+  /// is free to be a friendly, shorter form: a `~`-shortened absolute
+  /// path plus a relative-time hint so the user can scan the list and
+  /// pick the right one without re-reading every full path.
+  ///
+  /// Falls back to the raw path on Windows (no `HOME`) and to just
+  /// the shortened path when the timestamp is the epoch (a sentinel
+  /// we emit when an entry was loaded from a malformed JSON record).
+  String _describeRecentProject(RecentProject entry, DateTime now) {
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    final displayPath = (home != null && home.isNotEmpty && entry.path.startsWith(home))
+        ? '~${entry.path.substring(home.length)}'
+        : entry.path;
+
+    final ageMs = now.difference(entry.lastOpenedAt).inMilliseconds;
+    final String? relative;
+    if (entry.lastOpenedAt.millisecondsSinceEpoch == 0) {
+      relative = null;
+    } else if (ageMs < 0) {
+      // Clock went backwards since the entry was written; show
+      // "just now" rather than a negative duration.
+      relative = 'just now';
+    } else if (ageMs < 60 * 1000) {
+      relative = 'just now';
+    } else if (ageMs < 60 * 60 * 1000) {
+      relative = '${ageMs ~/ (60 * 1000)}m ago';
+    } else if (ageMs < 24 * 60 * 60 * 1000) {
+      relative = '${ageMs ~/ (60 * 60 * 1000)}h ago';
+    } else if (ageMs < 7 * 24 * 60 * 60 * 1000) {
+      relative = '${ageMs ~/ (24 * 60 * 60 * 1000)}d ago';
+    } else {
+      relative = null;
+    }
+
+    if (relative == null) return displayPath;
+    return '$displayPath — $relative';
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -1310,22 +1515,55 @@ class ChatInputState extends State<ChatInput> {
     component.refresh();
   }
 
-  /// Handle text pasted into the input. If the pasted text is a path
-  /// to a supported image file, attach it as a pending image and
-  /// return `true` to skip the default text insertion (so the user
-  /// doesn't see the raw path — they get an `[ image N ]` marker
-  /// instead). Otherwise return `false` to fall through to the
-  /// default paste behavior.
+  /// Handle text pasted into the input. This is the single entry
+  /// point for everything that arrives via bracketed paste mode,
+  /// which includes both ordinary copy-pasted text *and* files
+  /// dragged onto the terminal window (the terminal emits the
+  /// file's absolute path as a bracketed-paste payload).
+  ///
+  /// Routing:
+  ///   1. Tokenize the payload; if any token resolves to a real
+  ///      file on disk, route the whole batch through
+  ///      [_processDroppedFiles] and return `true` (consume).
+  ///   2. Otherwise fall back to the legacy single-image path
+  ///      (so an old `/path/to/image.png` paste that the new
+  ///      classifier rejected — e.g. on a non-image-supporting
+  ///      model — still gets the right behavior).
+  ///   3. Otherwise return `false` to let the TextField insert
+  ///      the raw text normally.
   bool _handlePaste(String pastedText, int? sessionId) {
     if (sessionId == null) return false;
     final trimmed = pastedText.trim();
     if (trimmed.isEmpty) return false;
 
-    // Only act if the model supports images.
+    // ── 1) Drag-and-drop routing ───────────────────────────────
+    // Bracketed-paste payloads from a file drop usually contain
+    // one or more absolute paths. Tokenize on whitespace, then
+    // resolve each token against the project root. If at least
+    // one token is a real file, take over the paste and dispatch
+    // each file by kind (image attach / inline content / path
+    // reference / directory listing / missing → toast).
+    final candidates = extractDroppedPaths(trimmed);
+    if (candidates.isNotEmpty) {
+      final classified = classifyDroppedPaths(
+        candidates,
+        projectRoot: component.projectPath,
+      );
+      final hasRealFile =
+          classified.any((f) => f.kind != DroppedFileKind.missing);
+      if (hasRealFile) {
+        _processDroppedFiles(classified, sessionId);
+        return true;
+      }
+    }
+
+    // ── 2) Legacy single-image path ────────────────────────────
+    // Preserved verbatim (modulo the new docstring) for the case
+    // where the classifier above saw nothing to act on, but the
+    // single-token payload is still a path to an image file that
+    // the current model can attach.
     if (!_currentModelSupportsImages()) return false;
 
-    // Strip surrounding quotes and a leading "file://" prefix that
-    // some file managers include when copying a file as a URI.
     var candidate = trimmed;
     if (candidate.startsWith("'") && candidate.endsWith("'") ||
         candidate.startsWith('"') && candidate.endsWith('"')) {
@@ -1335,17 +1573,117 @@ class ChatInputState extends State<ChatInput> {
       candidate = candidate.substring('file://'.length);
     }
 
-    // Check the file exists and has a supported image extension.
     if (!_looksLikeImagePath(candidate)) return false;
     final file = File(candidate);
     if (!file.existsSync()) return false;
 
-    // Try to load and attach the image asynchronously. We *consume*
-    // the paste (return true) so the user doesn't see the raw path
-    // appear in the input — instead they'll see the `[ image N ]`
-    // marker that gets inserted.
     _tryAttachImageFile(file, sessionId);
     return true;
+  }
+
+  /// Apply the side-effects for a batch of classified dropped
+  /// files. Splits the work across:
+  ///
+  ///   * image attachments (via [_tryAttachImageFile], which
+  ///     already shows a per-file toast and inserts an
+  ///     `[ image N ]` marker at the cursor);
+  ///   * an aggregated text insertion (via
+  ///     [formatDroppedFilesForInput]) that puts file content /
+  ///     path references / directory listings into the input
+  ///     box at the current cursor position;
+  ///   * a summary toast, plus an error toast for any missing
+  ///     paths.
+  ///
+  /// Callers should `return true` from [_handlePaste] immediately
+  /// after calling this — we have consumed the paste and the
+  /// default text insertion must NOT run.
+  void _processDroppedFiles(List<DroppedFile> files, int sessionId) {
+    final tc = component.textController;
+    final text = tc.text;
+    final selection = tc.selection;
+    final start = selection.start.clamp(0, text.length);
+    final end = selection.end.clamp(0, text.length);
+    final replaceStart = start < end ? start : end;
+    final replaceEnd = start < end ? end : start;
+
+    final supportsImages = _currentModelSupportsImages();
+    var imageCount = 0;
+    var inlinedCount = 0;
+    var refCount = 0;
+    final missingNames = <String>[];
+
+    for (final f in files) {
+      switch (f.kind) {
+        case DroppedFileKind.image:
+          if (supportsImages) {
+            // The image attach path is async and shows its own
+            // per-file toast (filename + size), so we don't
+            // double-toast for images.
+            _tryAttachImageFile(File(f.absolutePath), sessionId);
+            imageCount++;
+          } else {
+            // No image support on this model: fall through and
+            // treat the path as a plain file reference so the
+            // user still sees something useful in the input.
+            refCount++;
+          }
+          break;
+        case DroppedFileKind.inlineableText:
+          inlinedCount++;
+          break;
+        case DroppedFileKind.largeOrBinary:
+        case DroppedFileKind.directory:
+          refCount++;
+          break;
+        case DroppedFileKind.missing:
+          missingNames.add(p.basename(f.originalPath));
+          break;
+      }
+    }
+
+    // Build the text that goes into the input box. This is
+    // everything that wasn't an image (or that was an image the
+    // model can't handle), minus the missing ones. Images that
+    // were successfully attached are *not* inserted as text —
+    // the user gets an `[ image N ]` marker from
+    // [_tryAttachImageFile] instead.
+    final textPortion = formatDroppedFilesForInput(
+      files
+          .where((f) => f.kind != DroppedFileKind.missing)
+          .where((f) => !(f.kind == DroppedFileKind.image && supportsImages))
+          .toList(),
+    );
+
+    if (textPortion.isNotEmpty) {
+      final newText = text.replaceRange(replaceStart, replaceEnd, textPortion);
+      tc.text = newText;
+      tc.selection = TextSelection.collapsed(
+        offset: replaceStart + textPortion.length,
+      );
+    }
+
+    // One error toast for any missing files. The summary toast
+    // below only fires if at least one *non-image* file was
+    // processed — otherwise the per-image toasts from
+    // [_tryAttachImageFile] are already plenty.
+    if (missingNames.isNotEmpty) {
+      component.turnOrchestrator.showToast(
+        '⚠️ File(s) not found: ${missingNames.join(', ')}',
+        mode: ToastMode.error,
+      );
+    }
+    if (inlinedCount > 0 || refCount > 0) {
+      final parts = <String>[];
+      if (imageCount > 0) parts.add('$imageCount image(s) attached');
+      if (inlinedCount > 0) parts.add('$inlinedCount file(s) inlined');
+      if (refCount > 0) parts.add('$refCount path(s) inserted');
+      component.turnOrchestrator.showToast(
+        '📎 Dropped: ${parts.join(', ')}',
+        mode: ToastMode.status,
+      );
+    }
+
+    setState(() {});
   }
 
   /// Heuristic: does this path look like an image file? Checks the
@@ -1474,6 +1812,13 @@ class ChatInputState extends State<ChatInput> {
 
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'chatInput.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final sessionId = component.sessionController.currentSessionId;
     final rt = sessionId != null
         ? component.sessionController.runtime(sessionId)

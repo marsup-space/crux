@@ -368,4 +368,20 @@ const List<SlashCommand> _debugCommands = [
     description: '[debug] Open the fullpane (near-full-screen modal) overlay',
     availableDuringResponse: true,
   ),
+  // Record per-frame timings for the given duration (default 5s),
+  // then dump a JSON report under the user data dir.
+  // Usage:
+  //   /d-profiler              → status
+  //   /d-profiler <secs>       → record for <secs> seconds
+  //   /d-profiler <secs> <path>→ record for <secs> seconds, write
+  //                              report to <path>
+  //   /d-profiler stop         → stop the active recording and
+  //                              dump the report immediately
+  SlashCommand(
+    name: '/d-profiler',
+    description:
+        '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
+    params: ['secs', 'path?'],
+    availableDuringResponse: true,
+  ),
 ];

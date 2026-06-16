@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:nocterm/nocterm.dart';
 import '../../commands/registry.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/frame_profiler.dart';
 
 /// A tiny FPS readout pinned to a corner of the side panel.
 ///
@@ -81,7 +82,10 @@ class _FpsCounterState extends State<FpsCounter> {
     // Always start the sampler; it costs essentially nothing (a single
     // counter read every 500ms) and avoids a tiny flicker on the very first
     // build after toggling debug on.
-    _sampleTimer ??= Timer.periodic(_sampleInterval, (_) => _sampleFps());
+    _sampleTimer ??= Timer.periodic(_sampleInterval, (_) {
+      FrameProfiler.instance.markTimer('fpsCounter');
+      _sampleFps();
+    });
   }
 
   @override

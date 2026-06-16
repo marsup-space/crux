@@ -43,7 +43,7 @@ void main() {
   });
 
   group('compressCallForPersistence', () {
-    test('large write.content gets off-loaded and replaced with stand-in',
+    test('write.content is never off-loaded, even at large sizes',
         () async {
       // Create a session to scope the offloaded_content row.
       final session = await store.create(model: 'test/test');
@@ -61,39 +61,27 @@ void main() {
         session.id,
       );
 
-      // Stand-in replaces the content; other args untouched.
+      // WriteTool opted out of the LargePayloadTool offload
+      // pipeline, so the input is returned unchanged — the full
+      // content stays in the conversation context for the LLM
+      // to reference on subsequent turns without a recall.
       expect(compressed.callId, 'call_abc');
       expect(compressed.name, 'write');
       expect(compressed.input['filePath'], 'foo.py');
       expect(compressed.input['intent'], '...');
-      final standIn = compressed.input['content'] as String;
-      expect(standIn, isNot(equals(largeContent)));
-      expect(standIn, contains('KB'),
-          reason: 'stand-in reports the byte size');
-      // 'x' * 5000 = one long line, so the line count is 1, not 5000.
-      // The byte count is the interesting number: ~4.9KB, over the
-      // 2KB threshold which is what triggered the offload.
+      expect(compressed.input['content'], largeContent,
+          reason: 'write content must be preserved verbatim');
+      // No offloaded_content row should exist for this call.
       expect(
-        RegExp(r'^\[\d+ lines').hasMatch(standIn),
-        isFalse,
-        reason:
-            'stand-in format must not start with `[<digits> lines` — that '
-            'pattern is visually adjacent to a `read`-tool line prefix '
-            '(`N: <line>`) and the LLM has been observed pasting the '
-            'stand-in into subsequent edits/writes, corrupting files.',
+        await store.messageStore.getOffloadedContent(
+          session.id,
+          'call_abc_content',
+        ),
+        isNull,
       );
-      // The new format must include the composite key so the LLM
-      // can name the row when calling the (future) `recall` tool.
-      expect(standIn, contains('call_abc_content'),
-          reason: 'stand-in must reference the offloaded_content key');
-      expect(standIn, isNot(contains('5000 lines')));
-
-      // Full content is recoverable via the composite key.
-      final recovered = await store.messageStore.getOffloadedContent(session.id, 'call_abc_content');
-      expect(recovered, largeContent);
     });
 
-    test('small write.content is left untouched', () async {
+    test('write.content is left untouched at small sizes too', () async {
       final session = await store.create(model: 'test/test');
       final smallContent = 'hello world'; // 11 bytes, well under 2 KB
       final call = ToolCall(
@@ -107,7 +95,12 @@ void main() {
         session.id,
       );
 
-      // No offload: input is the same object (no stand-in).
+      // WriteTool doesn't offload at any size, so the input is
+      // the same object (no stand-in). This is a regression test
+      // — previously a "small write" was the escape hatch, but
+      // we removed the entire offload for `write` since the
+      // escape hatch didn't exist in practice (small changes go
+      // through `edit`).
       expect(compressed.input['content'], smallContent);
       expect(
         await store.messageStore.getOffloadedContent(session.id, 'call_small'),
@@ -211,66 +204,6 @@ void main() {
       );
     });
 
-    test('intent is embedded in the stand-in pointer', () async {
-      final session = await store.create(model: 'test/test');
-      final largeContent = 'y' * 5000;
-      final call = ToolCall(
-        callId: 'call_intent',
-        name: 'write',
-        input: {
-          'filePath': 'bar.py',
-          'content': largeContent,
-          'intent': 'Add the main entry point',
-        },
-      );
-
-      final compressed = await executor.compressCallForPersistence(
-        call,
-        session.id,
-      );
-
-      final standIn = compressed.input['content'] as String;
-      // The stand-in must carry the intent so the LLM can reason
-      // about compressed history without recalling the full bytes.
-      expect(standIn, contains('intent: "Add the main entry point"'));
-      expect(standIn, contains('offloaded'));
-      expect(standIn, contains('call_intent_content'));
-
-      // The intent arg itself is preserved unchanged.
-      expect(compressed.input['intent'], 'Add the main entry point');
-
-      // Full content is still recoverable.
-      final recovered = await store.messageStore.getOffloadedContent(
-        session.id,
-        'call_intent_content',
-      );
-      expect(recovered, largeContent);
-    });
-
-    test('stand-in pointer omits intent fragment when no intent provided',
-        () async {
-      final session = await store.create(model: 'test/test');
-      final largeContent = 'z' * 5000;
-      final call = ToolCall(
-        callId: 'call_nointent',
-        name: 'write',
-        input: {
-          'filePath': 'baz.py',
-          'content': largeContent,
-          // No 'intent' key at all.
-        },
-      );
-
-      final compressed = await executor.compressCallForPersistence(
-        call,
-        session.id,
-      );
-
-      final standIn = compressed.input['content'] as String;
-      expect(standIn, isNot(contains('intent:')));
-      expect(standIn, contains('offloaded'));
-    });
-
     // compressCallForPersistence always compresses large args when
     // called directly; the *caller* (chat_service.dart) is
     // responsible for skipping compression when the tool's
@@ -278,6 +211,9 @@ void main() {
     // See the guard trigger check in chat_service.dart at line 709:
     //   if (tool is LargePayloadTool && guardTriggers.contains(callId))
     //     compressedToolCalls.add(call); // original — not compressed
+    //
+    // Note: as of the write-offload removal, this guard-skip path
+    // only applies to `edit` (the only remaining LargePayloadTool).
   });
 
   group('session lifecycle', () {

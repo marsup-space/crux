@@ -4,6 +4,7 @@ import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/message.dart';
 import '../services/llm_provider.dart';
+import '../utils/frame_profiler.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
@@ -49,6 +50,21 @@ class MessageBubble extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    // Each message bubble's build is cheap on its own
+    // (tens of microseconds), but with hundreds of messages
+    // in a session the cumulative cost is visible in the
+    // chat history's overall build time. Tagging each
+    // individual bubble lets the report break the
+    // aggregate down to "how many message bubbles were
+    // built per frame" rather than treating it as one
+    // monolithic build.
+    return FrameProfiler.instance.timed(
+      'messageBubble.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     if (message.role == 'tool') return const SizedBox.shrink();
     if (message.role == 'tool_call') return _buildToolCallWithContent(context);
 
@@ -307,6 +323,13 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
 
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'clickableToolCall.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final tc = component.toolCall;
     final tool = component.toolRegistry?.lookup(tc.name);
     final theme = CruxTheme.of(context);

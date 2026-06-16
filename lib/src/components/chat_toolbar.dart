@@ -5,6 +5,9 @@ import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../theme/crux_theme.dart';
+import '../utils/frame_profiler.dart';
+import 'context_bar.dart';
+import 'metrics_display.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 import 'ui/bg_progress_bar.dart';
@@ -53,7 +56,11 @@ class ChatToolbar extends StatefulComponent {
 }
 
 class _ChatToolbarState extends State<ChatToolbar> {
-  bool _metricsHovered = false;
+  // The `_metricsHovered` state used to live here so the
+  // inline tok/s Text could swap to a cache-hit label on
+  // hover. After the [MetricsDisplay] extraction, hover
+  // state is owned by the metrics widget itself — keeping
+  // a duplicate here would just be dead state.
 
   SessionController get _sessionController => component.sessionController;
   StreamingController get _streamingController => component.streamingController;
@@ -102,67 +109,27 @@ class _ChatToolbarState extends State<ChatToolbar> {
     return '$_kIconReasoning ${effort.padRight(4)}';
   }
 
-  String _cacheHitLabel(SessionRuntimeState? rt, Session session) {
-    if (rt?.cacheHitPct != null) {
-      return 'cache ${rt!.cacheHitPct}%';
-    }
-    final hit = session.promptCacheHitTokens;
-    final total = session.tokensIn;
-    if (total > 0 && hit > 0) {
-      return 'cache ${((hit / total) * 100).round()}%';
-    }
-    return '—';
-  }
+  // The old _cacheHitLabel helper moved to [MetricsDisplay],
+  // which owns the live tok/s readout and the cache-hit
+  // hover label. Keeping a no-op shim here would just be
+  // dead code; the helper was only used by the inline
+  // metrics row that this refactor replaced.
 
   Component _buildContextBar(BuildContext context) {
-    final sessionId = _sessionController.currentSessionId;
-    if (sessionId == null) return const SizedBox();
-    final rt = _sessionController.runtime(sessionId);
-    final displayTokens = rt.contextDisplayTokens.round();
-    final fillRatio = (displayTokens / component.contextMaxTokens).clamp(0.0, 1.0);
-    String fmtCtx(int n) {
-      final k = n ~/ 1024;
-      final kStr = k.toString().replaceAllMapped(
-            RegExp(r'\B(?=(\d{3})+(?!\d))'),
-            (m) => ',',
-          );
-      return '${kStr}k';
-    }
-    String fmtNum(int n) => n.toString().replaceAllMapped(
-          RegExp(r'\B(?=(\d{3})+(?!\d))'),
-          (m) => ',',
-        );
-    final labelText = _streamingController.contextBarHovered
-        ? 'Compact'
-        : '${fmtNum(displayTokens)} / ${fmtCtx(component.contextMaxTokens)}';
-
-    final bar = BgProgressBar(
-      value: fillRatio,
-      width: 20,
-      label: labelText,
-      fillColor: _streamingController.contextBarHovered
-          ? CruxTheme.of(context).metricsActive
-          : CruxTheme.of(context).progressFill,
-      emptyColor: CruxTheme.of(context).progressEmpty,
-      labelFillFg: _streamingController.contextBarHovered
-          ? CruxTheme.of(context).outlineDim
-          : CruxTheme.of(context).buttonBackground,
-      labelEmptyFg: _streamingController.contextBarHovered
-          ? CruxTheme.of(context).metricsActive
-          : CruxTheme.of(context).progressLabelEmpty,
-    );
-
-    return MouseRegion(
-      onEnter: (_) =>
-          _streamingController.contextBarHovered = true,
-      onExit: (_) =>
-          _streamingController.contextBarHovered = false,
-      opaque: false,
-      child: GestureDetector(
-        onTap: component.onCompactPressed,
-        behavior: HitTestBehavior.opaque,
-        child: bar,
-      ),
+    // Delegate to the dedicated [ContextBar] widget, which
+    // owns its own 16ms lerp [Timer] and only rebuilds itself
+    // (not the whole chat panel) when the displayed value
+    // changes. Previously this method read
+    // `rt.contextDisplayTokens` directly, which was the value
+    // a streaming-controller timer updated every 16ms via a
+    // chat-panel-wide `_refresh()`. That caused an 80ms full
+    // relayout on every tick — the 12-FPS bottleneck the
+    // profiler exposed via `byLayout`.
+    return ContextBar(
+      sessionController: _sessionController,
+      streamingController: _streamingController,
+      contextMaxTokens: component.contextMaxTokens,
+      onTap: component.onCompactPressed,
     );
   }
 
@@ -181,6 +148,13 @@ class _ChatToolbarState extends State<ChatToolbar> {
 
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'chatToolbar.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final modelLabel = _sessionController.currentSession.model.isEmpty
         ? 'select model'
         : _sessionController.currentSession.model;
@@ -223,18 +197,15 @@ class _ChatToolbarState extends State<ChatToolbar> {
             ? UnicodeWidth.stringWidth(thinkingLabel) + btnPad
             : 0;
         final contextW = 20 + spacer;
-        final tokText = isResponding && rt != null
-            ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
-            : rt != null && rt.tokPerSec > 0
-                ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
-                : '— tok/s';
-        final tokW = UnicodeWidth.stringWidth(tokText) + spacer;
-        final ttftText = isResponding && rt != null
-            ? _streamingController.formatTtft(rt.ttftMs)
-            : rt != null && rt.ttftMs > 0
-                ? _streamingController.formatTtft(rt.ttftMs)
-                : '—';
-        final ttftW = UnicodeWidth.stringWidth(ttftText) + smallSpacer;
+        // The metrics area is now a dedicated widget
+        // ([MetricsDisplay]) that owns its own state. For
+        // layout-width budgeting we still need a width
+        // estimate, so use the worst-case (longest) form of
+        // the strings it might display — over-estimating
+        // here just means the area gets reserved when it
+        // could be hidden, which is harmless.
+        final tokW = '999.9 tok/s'.length + spacer;
+        final ttftW = '999.99s'.length + smallSpacer;
         final auxLabel =
             '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
@@ -289,54 +260,25 @@ class _ChatToolbarState extends State<ChatToolbar> {
                       EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 ),
               if (showContext) ...[
+                _buildContextBar(context),
                 Text(
                   '  ',
                   style:
                       TextStyle(color: CruxTheme.of(context).divider),
                 ),
-                _buildContextBar(context),
               ],
               if (showTokPerSec || showTtft)
-                MouseRegion(
-                  onEnter: (_) => setState(() => _metricsHovered = true),
-                  onExit: (_) => setState(() => _metricsHovered = false),
-                  opaque: false,
-                  child: Row(
-                    children: [
-                      if (showTokPerSec) ...[
-                        Text(
-                          '  ',
-                          style: TextStyle(
-                              color: CruxTheme.of(context).divider),
-                        ),
-                        Text(
-                          _metricsHovered
-                              ? _cacheHitLabel(rt, _sessionController.currentSession)
-                              : tokText,
-                          style: TextStyle(
-                            color: rt?.isResponding ?? false
-                                ? CruxTheme.of(context).metricsActive
-                                : CruxTheme.of(context).metricsIdle,
-                          ),
-                        ),
-                      ],
-                      if (showTtft) ...[
-                        Text(
-                          ' ',
-                          style: TextStyle(
-                              color: CruxTheme.of(context).divider),
-                        ),
-                        Text(
-                          ttftText,
-                          style: TextStyle(
-                            color: rt?.isResponding ?? false
-                                ? CruxTheme.of(context).metricsActive
-                                : CruxTheme.of(context).metricsIdle,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                // Delegate the live tok/s + TTFT readout to
+                // [MetricsDisplay], which owns its own 50ms
+                // Timer and only rebuilds itself. The
+                // chat panel does NOT get setState on every
+                // tick anymore — that's the 2.4× speedup
+                // landed earlier. Hover state (cache-hit %)
+                // is also handled locally in the widget.
+                MetricsDisplay(
+                  sessionController: _sessionController,
+                  streamingController: _streamingController,
+                  currentSessionId: _sessionController.currentSessionId,
                 ),
               Expanded(child: SizedBox()),
               if (showAux) _buildAuxiliaryModelButton(context),

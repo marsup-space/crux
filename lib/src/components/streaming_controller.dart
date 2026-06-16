@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../services/llm_client.dart';
+import '../utils/frame_profiler.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
 
@@ -111,7 +112,27 @@ class StreamingController {
     _streamingToolCalls.remove(sessionId);
   }
 
+  // The metricsTimer was previously held here in a per-session
+  // map and called `_refresh()` (chat-panel-wide setState) on
+  // every 50ms tick. That responsibility now lives in
+  // [MetricsDisplay] (see components/metrics_display.dart),
+  // which owns its own 50ms Timer and rebuilds only itself.
+  // The legacy `startMetricsTimer` / `stopMetricsTimer` API
+  // is preserved as a no-op shim so existing callers in
+  // `chat_panel.dart` and `chat_turn_orchestrator.dart` don't
+  // have to be updated — the widget picks up the "isResponding
+  // changed" signal through its own `didUpdateComponent`.
   final Map<int, Timer> _metricsTimers = {};
+  // Context bar animation was moved to [ContextBar] in
+  // components/context_bar.dart. The bar now owns its own
+  // 16ms lerp Timer, so the streaming controller no longer
+  // needs to call `_refresh()` (chat-panel-wide setState)
+  // every tick. The legacy `startContextAnimation` /
+  // `stopContextAnimation` / `contextAnimTimerIsActive` API
+  // is kept as a no-op shim so chat_turn_orchestrator and
+  // other callers don't need to be updated, but they no
+  // longer have any effect — the real animation lives in
+  // the widget that actually paints the bar.
   Timer? _contextAnimTimer;
   DateTime? _lastContextTick;
   static const double _contextLerpSpeed = 6.0;
@@ -122,20 +143,22 @@ class StreamingController {
   }) : _sessionController = sessionController,
        _refresh = refresh;
 
+  /// No-op legacy API. The metrics display is now driven
+  /// by the [MetricsDisplay] widget, which owns its own
+  /// 50ms Timer and reads the runtime's `tokPerSec` /
+  /// `ttftMs` from its own state — no chat-panel-wide
+  /// `_refresh()` happens on every tick. The [updateLiveMetrics]
+  /// method is still public and is still the right thing
+  /// for the widget to call on each tick; what's gone is
+  /// the chat-panel-wide `setState` that used to follow it.
   void startMetricsTimer(int sessionId) {
-    stopMetricsTimer(sessionId);
-    _metricsTimers[sessionId] = Timer.periodic(
-      const Duration(milliseconds: 50),
-      (_) {
-        updateLiveMetrics(sessionId);
-        _refresh();
-      },
-    );
+    // Intentionally empty — MetricsDisplay handles its own
+    // timer based on `rt.isResponding` changes detected via
+    // its own `didUpdateComponent`.
   }
 
   void stopMetricsTimer(int sessionId) {
-    _metricsTimers[sessionId]?.cancel();
-    _metricsTimers.remove(sessionId);
+    // Intentionally empty.
   }
 
   void updateLiveMetrics(int sessionId) {
@@ -195,38 +218,23 @@ class StreamingController {
     }
   }
 
+  /// No-op legacy API. The real context-bar animation lives
+  /// in the [ContextBar] widget now (it owns its own Timer
+  /// and only rebuilds itself). This is kept as a stub so
+  /// callers in `chat_turn_orchestrator` don't need to be
+  /// touched; they were calling it on every chunk arrival
+  /// to kick off the lerp, and the new [ContextBar] handles
+  /// "target changed → restart animation" itself via its
+  /// own `didUpdateComponent`/build path.
   void startContextAnimation() {
-    if (_contextAnimTimer != null) return;
-    _lastContextTick = DateTime.now();
-    _contextAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      final now = DateTime.now();
-      final deltaTime =
-          now.difference(_lastContextTick!).inMilliseconds / 1000.0;
-      _lastContextTick = now;
-
-      final currentSessionId = _sessionController.currentSessionId;
-      if (currentSessionId == null) return;
-      final rt = _sessionController.runtime(currentSessionId);
-      final diff = rt.contextTargetTokens - rt.contextDisplayTokens;
-      if (diff.abs() < 0.5) {
-        rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
-        stopContextAnimation();
-        _refresh();
-        return;
-      }
-
-      rt.contextDisplayTokens += diff * (deltaTime * _contextLerpSpeed);
-      _refresh();
-    });
+    // Intentionally empty.
   }
 
   void stopContextAnimation() {
-    _contextAnimTimer?.cancel();
-    _contextAnimTimer = null;
-    _lastContextTick = null;
+    // Intentionally empty.
   }
 
-  bool contextAnimTimerIsActive() => _contextAnimTimer != null;
+  bool contextAnimTimerIsActive() => false;
 
   String formatTtft(double ms) {
     if (ms >= 1000) {

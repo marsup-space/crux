@@ -250,12 +250,21 @@ class ChatTurnOrchestrator {
           _streamingController.streamingContentFor(sessionId) +
               _streamingController.streamingReasoningFor(sessionId),
         );
+        // The context bar's [ContextBar] widget polls
+        // `rt.contextTargetTokens` on every frame and starts
+        // its own lerp animation when the value changes, so
+        // we don't need to call `_refresh()` to drive that
+        // animation. The streaming bubble's [StreamingBubble]
+        // widget polls the streaming controller on its own
+        // 33ms timer and rebuilds itself. Calling `_refresh()`
+        // here used to cause a 30ms full-layout pass on every
+        // 16ms chunk, which is what was killing streaming
+        // performance on sessions with hundreds of messages.
         rt.contextTargetTokens =
             rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
         if (!_streamingController.contextAnimTimerIsActive()) {
           _streamingController.startContextAnimation();
         }
-        _refresh();
       },
       onToolRound: (int toolResultTokens) {
         if (_interruptedSessions.contains(sessionId)) return;
@@ -286,17 +295,19 @@ class ChatTurnOrchestrator {
           return;
         }
 
-        // The chat service sets SessionStatus.done on completion, but
-        // for the *current* session the user is already viewing the
-        // response — there's nothing "unread" about it.  Override to
-        // idle so the persisted status stays correct even if the user
-        // later switches away.
-        if (sessionId == _sessionController.currentSessionId) {
-          final session = _sessionController.findSession(sessionId);
-          if (session != null && session.status == SessionStatus.done) {
-            await _store.update(sessionId, status: SessionStatus.idle);
-            session.status = SessionStatus.idle;
-          }
+        // The chat service sets SessionStatus.done on completion. We
+        // override to idle for *every* session that completes — current
+        // *and* background — so the sidebar doesn't display a lingering
+        // non-idle status (running / done) for a turn that already
+        // finished. Previously this only ran for the current session,
+        // which left background sessions stuck showing the "done" (✦)
+        // indicator in the sidebar until the user manually switched to
+        // them, even though the response was complete and a TLDR
+        // (fire-and-forget) was already being generated.
+        final session = _sessionController.findSession(sessionId);
+        if (session != null && session.status == SessionStatus.done) {
+          await _store.update(sessionId, status: SessionStatus.idle);
+          session.status = SessionStatus.idle;
         }
 
         // Refresh immediately so the session list picks up the status

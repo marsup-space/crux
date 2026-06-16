@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/frame_profiler.dart';
 
 class GlossyModelButton extends StatefulComponent {
   final String label;
@@ -67,6 +68,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     _tickCount = 0;
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      FrameProfiler.instance.markTimer('glossyButton');
       _phase += 1.5; // faster sweep
       final sweepEnd =
           component.label.length + 2 + _bandWidth; // +2 for padding cells

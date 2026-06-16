@@ -3,15 +3,22 @@ import 'dart:io';
 
 import '../utils/file_metadata.dart';
 import '../utils/offload_standin.dart'
-    show containsOffloadStandIn, lineCountOfArg, parseOffloadStandIn;
+    show containsOffloadStandIn, lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
-class WriteTool extends LargePayloadTool with IntentionalTool {
-  @override
-  List<String> get offloadableArgs => ['content'];
-
+/// `write` intentionally does NOT extend [LargePayloadTool]: its
+/// `content` argument is the payload the LLM just produced and
+/// wants to keep referencing on subsequent turns (especially for
+/// new files, where the LLM has no other anchor for what it
+/// wrote). Compressing the content to a stand-in pointer forces a
+/// redundant `read` turn to recover it. Edit-tool-sized changes
+/// are done via `edit`, so `write` calls are by definition
+/// substantial enough that the cost of keeping the content in
+/// context is justified. See session discussion: the offload
+/// "small write" escape hatch doesn't exist in practice.
+class WriteTool extends ToolDef with IntentionalTool {
   @override
   String get name => 'write';
 
@@ -30,32 +37,22 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     // new file) and show only the `+added lines` part.
     final existingLineCount = (args['_existingLineCount'] as int?) ?? 0;
     final newLines = lineCountOfArg(content);
-    // When [content] is an offload stand-in pointer, the raw
-    // length is the length of the metadata string (~100 chars),
-    // not the original payload. Recover the real size from the
-    // stand-in's `sizeStr` field; only fall back to the raw
-    // length when the value isn't a stand-in.
-    final standIn = parseOffloadStandIn(content);
-    final sizeStr = standIn != null
-        ? standIn.sizeStr
-        : (() {
-            final size = content.length;
-            return size > 1024
-                ? '${(size / 1024).toStringAsFixed(1)}KB'
-                : '${size}B';
-          })();
-    // Total cost = args (with the *as-persisted* content, which
-    // may be a stand-in if offload happened) + the tool's result.
+    final size = content.length;
+    final sizeStr = size > 1024
+        ? '${(size / 1024).toStringAsFixed(1)}KB'
+        : '${size}B';
+    // Total cost = args (always full content — never offloaded)
+    // + the tool's result.
     final totalTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
       resultOutput: content,
     );
     // Args-only cost is what the strikethrough compares against.
-    // We compute it on the *as-passed* args, which is the same
-    // thing the chat service's preCompressTokens calculation
-    // uses (it also runs at the compress boundary, so the args
-    // are still full there).
+    // For `write` there is no compression, so args-only == total
+    // and the strikethrough display is suppressed at the call
+    // site (preCompressTokens is never accumulated for `write`).
+    // We still compute it here for the bubble's own display.
     final argsTokens = estimateToolRoundTripTokens(
       toolName: name,
       args: args,
@@ -79,24 +76,20 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
 
   @override
   String get description =>
-      'Overwrites a file with new content. After a successful call, the '
-      'content is moved from the conversation context to the '
-      'offloaded_content table if it exceeds the offload threshold; the '
-      'result message reports the composite key when this happens so it '
-      'can be referenced on subsequent turns if needed.';
+      'Overwrites a file with new content. The full content stays in '
+      'the conversation context for subsequent turns (no offload) so '
+      'the LLM can reference what it just wrote without re-reading.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {
       'filePath': {'type': 'string', 'description': 'Path to file'},
-      'content': {
-        'type': 'string',
-        'description': 'Content to write',
-      },
+      'content': {'type': 'string', 'description': 'Content to write'},
       'intent': {
         'type': 'string',
-        'description': 'What this file is for / why you are writing it. Be concise.',
+        'description':
+            'What this file is for / why you are writing it. Be concise.',
       },
       'force': {
         'type': 'boolean',
@@ -189,24 +182,15 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     // Capture the prior line count for the bubble's
     // collapsedSummary (which renders the actual
     // `+added -removed` diff). Stashing it on `args` keeps the
-    // data on the tool_call's input, where it survives the
-    // compress-for-persistence step. We stash it BEFORE
-    // writing the file — once we've overwritten the bytes
-    // the "existing" count would be lost.
-    //
-    // Edge case: if [content] was offloaded, [lineCountOfArg]
-    // would treat it as a stand-in pointer. We guarded against
-    // that by reading the prior contents from disk (not from
-    // [content]) — the line count here is of the OLD file, so
-    // the only value that could be a stand-in is [content],
-    // which we don't use for the prior line count.
+    // data on the tool_call's input, where it survives across
+    // rounds. We stash it BEFORE writing the file — once
+    // we've overwritten the bytes the "existing" count would
+    // be lost.
     final existingLineCount = meta.content.isEmpty
         ? 0
         : '\n'.allMatches(meta.content).length + 1;
     args['_existingLineCount'] = existingLineCount;
-    final newLines = content.isEmpty
-        ? 0
-        : '\n'.allMatches(content).length + 1;
+    final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
     final body = normalizeToLineEnding(content, meta.lineEnding);
     final encoded = utf8.encode(body);
     if (meta.encoding == 'utf-8-bom') {
@@ -226,21 +210,13 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     var output = 'File written: $relPath';
     final intent = args['intent'];
     if (intent is String && intent.isNotEmpty) {
-      output = '$output (intent: \'$intent\'), $diffLabel, ${_formatBytes(content.length)}';
+      output =
+          '$output (intent: \'$intent\'), $diffLabel, ${_formatBytes(content.length)}';
     } else {
       output = '$output, $diffLabel, ${_formatBytes(content.length)}';
     }
 
-    final offloaded = argsToOffload(args);
-    if (offloaded.isNotEmpty && ctx.callId != null) {
-      final toolIntent = (this as IntentionalTool).intentFromArgs(args);
-      output = '$output\n\n${buildOffloadNote(callId: ctx.callId!, offloadedArgs: offloaded, intent: toolIntent)}';
-    }
-
-    return ToolResult(
-      title: 'Write file: $resolved',
-      output: output,
-    );
+    return ToolResult(title: 'Write file: $resolved', output: output);
   }
 
   Future<int> _mtimeMs(File file) async {
@@ -282,16 +258,18 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
         ? 0
         : '\n'.allMatches(existingText).length + 1;
     final newBytes = utf8.encode(newContent).length;
-    final newLines =
-        newContent.isEmpty ? 0 : '\n'.allMatches(newContent).length + 1;
+    final newLines = newContent.isEmpty
+        ? 0
+        : '\n'.allMatches(newContent).length + 1;
 
-    final isLarge = existingLines >= kLargeLineThreshold ||
+    final isLarge =
+        existingLines >= kLargeLineThreshold ||
         existingBytes >= kLargeByteThreshold;
     if (!isLarge) return null;
 
     final isTinyByBytes = newBytes <= existingBytes * kTinyFraction;
-    final isTinyByLines = existingLines > 0 &&
-        newLines <= existingLines * kTinyLineFraction;
+    final isTinyByLines =
+        existingLines > 0 && newLines <= existingLines * kTinyLineFraction;
     // Both shrinkages must be true to trigger — protects against
     // false positives where the new content is a small refactor
     // that just happens to use shorter lines.

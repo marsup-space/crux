@@ -1,15 +1,39 @@
+import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 
-import '../theme/crux_theme.dart';
 import '../models/session_runtime_state.dart';
-import '../tools/tool_def.dart';
+import '../theme/crux_theme.dart';
 import '../tools/registry.dart';
+import '../tools/tool_def.dart';
+import '../utils/frame_profiler.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
 
-class StreamingBubble extends StatelessComponent {
-  final String streamingContent;
-  final String streamingReasoning;
+/// Live streaming bubble shown at the bottom of the chat log
+/// while the model is generating.
+///
+/// Previously a [StatelessComponent] that took the current
+/// streaming content as a constructor argument — the chat
+/// history rebuilt it on every chunk because it added the
+/// bubble to its items list with new content each time,
+/// which in turn forced a chat-panel rebuild for the cost
+/// of an entire 606-message layout pass. This is the
+/// streaming counterpart of the typing fix: the bubble
+/// owns its own [State] and a ~30fps [Timer] that polls the
+/// streaming controller for fresh content and calls
+/// [State.setState] on itself. The chat history, the chat
+/// panel, the toolbar — none of them get re-laid-out on a
+/// streaming chunk anymore. Only this widget.
+///
+/// The widget still goes in the chat history's items list
+/// (so it scrolls with the messages), but the framework
+/// sees the same `StreamingBubble` instance across rebuilds
+/// (because the chat history caches the items list when
+/// messages don't change) and only the bubble's own subtree
+/// is dirtied on each tick.
+class StreamingBubble extends StatefulComponent {
+  final StreamingController streamingController;
+  final int sessionId;
   final SessionRuntimeState? runtimeState;
 
   /// In-progress tool calls, in declared order. Each entry is a
@@ -17,6 +41,11 @@ class StreamingBubble extends StatelessComponent {
   /// input JSON the LLM has emitted so far. We render one row per
   /// call so the user sees parallel calls materialize as they
   /// stream, instead of having to wait for the round to end.
+  ///
+  /// These are *snapshots* — passed in once by the chat history
+  /// and re-rendered each tick. The bubble doesn't poll the
+  /// controller for tool calls because they only change on round
+  /// boundaries, which the chat history already reacts to.
   final List<StreamingToolCall> streamingToolCalls;
 
   /// Optional registry used to look up the [ToolDef] for each
@@ -27,16 +56,95 @@ class StreamingBubble extends StatelessComponent {
   final ToolRegistry? toolRegistry;
 
   const StreamingBubble({
-    required this.streamingContent,
-    required this.streamingReasoning,
+    required this.streamingController,
+    required this.sessionId,
     this.runtimeState,
     this.streamingToolCalls = const [],
     this.toolRegistry,
+    super.key,
   });
 
   @override
+  State<StreamingBubble> createState() => _StreamingBubbleState();
+}
+
+class _StreamingBubbleState extends State<StreamingBubble> {
+  static const Duration _tickInterval = Duration(milliseconds: 33);
+
+  /// Cached strings read from the streaming controller. The
+  /// controller's `streamingContent` and `streamingReasoning`
+  /// are `String`s we can't subscribe to, so we poll on a
+  /// ~30fps timer and call setState when the value changes.
+  /// 33ms is fast enough to look smooth during streaming
+  /// (~30fps) and slow enough that the timer itself is
+  /// negligible cost.
+  String _content = '';
+  String _reasoning = '';
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshFromController();
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateComponent(StreamingBubble old) {
+    super.didUpdateComponent(old);
+    // If the user switched sessions, the new widget's
+    // sessionId is different — re-read content and restart
+    // the timer against the new id. (The chat history is
+    // responsible for keeping the StreamingBubble instance
+    // stable across rebuilds, but the runtime's `findSession`
+    // lookup is keyed by sessionId, not instance.)
+    if (old.sessionId != component.sessionId) {
+      _refreshFromController();
+      _startTimerIfNeeded();
+      return;
+    }
+    // Session didn't change — just resync in case the
+    // controller was repopulated between two ticks (e.g.
+    // tool calls just finished and the new state arrived).
+    _refreshFromController();
+    _startTimerIfNeeded();
+  }
+
+  void _startTimerIfNeeded() {
+    final running = component.runtimeState?.isResponding ?? false;
+    if (running && _timer == null) {
+      _timer = Timer.periodic(_tickInterval, (_) {
+        FrameProfiler.instance.markTimer('streamingBubble');
+        if (!mounted) return;
+        _refreshFromController();
+      });
+    } else if (!running && _timer != null) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  void _refreshFromController() {
+    final c = component.streamingController;
+    final newContent = c.streamingContentFor(component.sessionId);
+    final newReasoning = c.streamingReasoningFor(component.sessionId);
+    if (newContent == _content && newReasoning == _reasoning) return;
+    setState(() {
+      _content = newContent;
+      _reasoning = newReasoning;
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+    super.dispose();
+  }
+
+  @override
   Component build(BuildContext context) {
-    final hasReasoning = streamingReasoning.isNotEmpty;
+    final hasReasoning = _reasoning.isNotEmpty;
 
     final children = <Component>[];
 
@@ -58,7 +166,7 @@ class StreamingBubble extends StatelessComponent {
                 ),
                 Expanded(
                   child: HighlightedMarkdownText(
-                    streamingReasoning,
+                    _reasoning,
                     styleSheet: HighlightMarkdownStyleSheet.thinking(
                       CruxTheme.of(context),
                     ),
@@ -85,25 +193,25 @@ class StreamingBubble extends StatelessComponent {
               ),
             ),
             Expanded(
-              child: streamingContent.isEmpty
+              child: _content.isEmpty
                   ? Text(
                       '...',
                       style: TextStyle(color: CruxTheme.of(context).foreground),
                     )
-                  : HighlightedMarkdownText(streamingContent),
+                  : HighlightedMarkdownText(_content),
             ),
           ],
         ),
       ),
     );
 
-    if (streamingToolCalls.isNotEmpty) {
+    if (component.streamingToolCalls.isNotEmpty) {
       children.add(
         Container(
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: streamingToolCalls
+            children: component.streamingToolCalls
                 .map((tc) => _buildStreamingToolCallRow(tc, context))
                 .toList(),
           ),
@@ -126,7 +234,7 @@ class StreamingBubble extends StatelessComponent {
     StreamingToolCall tc,
     BuildContext context,
   ) {
-    final tool = toolRegistry?.lookup(tc.name);
+    final tool = component.toolRegistry?.lookup(tc.name);
 
     // For intentional tools, try to extract the intent from the
     // partial JSON and display it as the label.

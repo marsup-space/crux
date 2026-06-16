@@ -25,6 +25,7 @@ import 'package:crux/src/models/message.dart';
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/models/session_runtime_state.dart';
 import 'package:crux/src/services/provider_service.dart';
+import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/storage/storage.dart';
 
 void main() {
@@ -1174,6 +1175,92 @@ void main() {
       expect(bundle.toasts.last, contains('Directory not found'));
       expect(bundle.modes.last, equals(ToastMode.error));
       expect(p.equals(Directory.current.path, tempDir.path), isTrue);
+    });
+
+    test('records the switched-to directory in the recent-projects '
+        'store on success', () async {
+      final recentsFile = File(
+        p.join(tempDir.path, 'recent_projects.json'),
+      );
+      final recents = RecentProjectsStore.forTesting(recentsFile.path);
+      final toasts = <String>[];
+      final modes = <ToastMode?>[];
+      Directory.current = tempDir;
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const [],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add(message);
+          modes.add(mode);
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        recentProjectsStore: recents,
+      );
+
+      await CommandExecutor().execute('/project ${tempDir.path}', ctx);
+
+      expect(recents.entries, hasLength(1));
+      expect(
+        p.equals(recents.entries.first.path, tempDir.path),
+        isTrue,
+        reason: 'expected ${recents.entries.first.path} == ${tempDir.path}',
+      );
+    });
+
+    test('does not record a recent entry when the switch fails', () async {
+      final recentsFile = File(
+        p.join(tempDir.path, 'recent_projects.json'),
+      );
+      final recents = RecentProjectsStore.forTesting(recentsFile.path);
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const [],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {},
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        recentProjectsStore: recents,
+      );
+
+      await CommandExecutor().execute(
+        '/project '
+        'definitely-not-a-real-dir-${DateTime.now().microsecondsSinceEpoch}',
+        ctx,
+      );
+
+      expect(recents.entries, isEmpty);
     });
   });
 }

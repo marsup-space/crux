@@ -242,7 +242,7 @@ String _formatArgList(List<String> args) {
 ///
 /// Implemented as a mixin (rather than an abstract class with
 /// `implements ToolDef`) so it can be mixed into tools that already
-/// extend another class (e.g. `WriteTool extends LargePayloadTool`).
+/// extend another class (e.g. `WriteTool extends ToolDef`).
 mixin IntentionalTool implements ToolDef {
   /// Extract the intent string from the tool's input arguments.
   /// Returns null if no intent was provided.

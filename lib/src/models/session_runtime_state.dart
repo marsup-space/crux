@@ -54,7 +54,18 @@ class SessionRuntimeState {
   double streamingDurationMs;
   DateTime? _streamingStart;
   int contextTargetTokens;
-  double contextDisplayTokens;
+  // The previously-used `contextDisplayTokens` field was the
+  // lerp "displayed" value that the streaming controller
+  // animated toward the target. That animation has moved
+  // into the [ContextBar] widget, which now owns its own
+  // displayed value in its own state — so the field is
+  // gone from the runtime. Setter sites in
+  // `chat_turn_orchestrator` and `session_controller` were
+  // updated to drop the assignment; this is a no-op shim so
+  // any persisted JSON shape that still references the field
+  // doesn't break loading.
+  // ignore: prefer_final_fields
+  double contextDisplayTokens = 0.0;
   int turnBaseTokens;
   int accumulatedToolTokens;
   String thinkingMode;

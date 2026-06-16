@@ -3,6 +3,7 @@ import 'package:nocterm/src/text/text_layout_engine.dart';
 import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
+import '../utils/frame_profiler.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_headings.dart';
 import '../utils/url_launcher.dart';
@@ -58,6 +59,21 @@ class _ChatHistoryState extends State<ChatHistory> {
 
   @override
   Component build(BuildContext context) {
+    // The chat history is the most expensive widget to
+    // build in the chat panel: it iterates over every
+    // message in the session and creates a MessageBubble
+    // for each, even though only the visible ones are
+    // actually laid out and painted. Wrapping the whole
+    // build in a profiler section makes a slow frame
+    // attributable to "the chat history had N messages
+    // to iterate" rather than just "build took 12ms".
+    return FrameProfiler.instance.timed(
+      'chatHistory.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final messages = component.sessionController.currentMessages;
     final sessionId = component.sessionController.currentSessionId;
     final rt = sessionId != null
@@ -194,14 +210,19 @@ class _ChatHistoryState extends State<ChatHistory> {
       } else {
         items.add(
           StreamingBubble(
-            streamingContent:
-                component.streamingController.streamingContentFor(
-              component.sessionController.currentSessionId ?? 0,
-            ),
-            streamingReasoning:
-                component.streamingController.streamingReasoningFor(
-              component.sessionController.currentSessionId ?? 0,
-            ),
+            // The streaming bubble now owns its own [State]
+            // and a 33ms poll Timer — the chat history no
+            // longer needs to feed the current content in
+            // on every build. That removes the dependency
+            // on the chat panel rebuilding during streaming,
+            // which is what was causing 30ms of layout per
+            // 16ms chunk arrival. The session id is passed
+            // so the bubble can look up the right
+            // controller maps; tool-call snapshots still
+            // come in via prop because they only change on
+            // round boundaries.
+            streamingController: component.streamingController,
+            sessionId: component.sessionController.currentSessionId ?? 0,
             streamingToolCalls:
                 component.streamingController.streamingToolCallsFor(
               component.sessionController.currentSessionId ?? 0,

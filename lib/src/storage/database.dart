@@ -91,7 +91,10 @@ LazyDatabase _openConnection() {
 
     open.overrideFor(OperatingSystem.linux, _openLinuxSqlite);
 
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(file, setup: (db) {
+      db.execute('PRAGMA journal_mode=WAL;');
+      db.execute('PRAGMA busy_timeout=5000;');
+    });
   });
 }
 

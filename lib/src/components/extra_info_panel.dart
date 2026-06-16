@@ -6,6 +6,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import '../utils/frame_profiler.dart';
 import '../utils/terminal_symbols.dart';
 import 'ui/fps_counter.dart';
 import 'ui/multi_button.dart';
@@ -208,6 +209,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   void _startAnimIfNeeded() {
     if (_hasRespondingSession()) {
       _animTimer ??= Timer.periodic(_animInterval, (_) {
+        FrameProfiler.instance.markTimer('extraInfoAnim');
         if (!_hasRespondingSession()) {
           _animTimer?.cancel();
           _animTimer = null;
@@ -307,6 +309,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'extraInfoPanel.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Scale the per-row title length with the panel's actual width:
