@@ -53,6 +53,82 @@ OffloadStandIn? parseOffloadStandIn(String text) {
   );
 }
 
+/// Returns true when [text] contains an offload stand-in pointer.
+///
+/// This is intentionally broader than [parseOffloadStandIn], which
+/// only parses a whole argument that starts with the stand-in. The
+/// write/edit tools use this guard before writing content to disk so
+/// a model cannot accidentally paste the history placeholder into a
+/// source file.
+bool containsOffloadStandIn(String text) {
+  return RegExp(
+    r'\[offloaded:\s*\d+\s+lines\s*/\s*[\d.]+[KMG]?B\b[^\n]*offloaded_content\(key="[^"]+"\)[^\n]*\]',
+  ).hasMatch(text);
+}
+
+/// Returns true when the JSON object text in [accumulatedJson]
+/// contains a string argument named [argName] whose value contains
+/// an offload stand-in pointer.
+///
+/// The input may be partial streaming JSON. We scan just the target
+/// string value prefix instead of decoding the whole object, because
+/// the closing quote/brace often has not arrived yet when the early
+/// guard can already make a decision.
+bool jsonStringArgContainsOffloadStandIn(
+  String accumulatedJson,
+  String argName,
+) {
+  final keyMatch = RegExp(
+    '"${RegExp.escape(argName)}"\\s*:',
+  ).firstMatch(accumulatedJson);
+  if (keyMatch == null) return false;
+
+  var i = keyMatch.end;
+  while (i < accumulatedJson.length && accumulatedJson.codeUnitAt(i) <= 0x20) {
+    i++;
+  }
+  if (i >= accumulatedJson.length || accumulatedJson[i] != '"') {
+    return false;
+  }
+
+  final buffer = StringBuffer();
+  var escaped = false;
+  for (var j = i + 1; j < accumulatedJson.length; j++) {
+    final ch = accumulatedJson[j];
+    if (escaped) {
+      switch (ch) {
+        case '"':
+          buffer.write('"');
+          break;
+        case '\\':
+          buffer.write('\\');
+          break;
+        case 'n':
+          buffer.write('\n');
+          break;
+        case 'r':
+          buffer.write('\r');
+          break;
+        case 't':
+          buffer.write('\t');
+          break;
+        default:
+          buffer.write(ch);
+      }
+      escaped = false;
+      continue;
+    }
+    if (ch == '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch == '"') break;
+    buffer.write(ch);
+  }
+
+  return containsOffloadStandIn(buffer.toString());
+}
+
 /// Line count of a (possibly offloaded) string argument.
 ///
 /// If [value] is the original content, this is just the number of

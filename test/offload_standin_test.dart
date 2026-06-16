@@ -6,8 +6,11 @@ void main() {
     test('returns null for non-stand-in text', () {
       expect(parseOffloadStandIn(''), isNull);
       expect(parseOffloadStandIn('hello world'), isNull);
-      expect(parseOffloadStandIn('foo\n[offloaded: 1 lines / 1B'), isNull,
-          reason: 'must start with [offloaded:, not contain it mid-string');
+      expect(
+        parseOffloadStandIn('foo\n[offloaded: 1 lines / 1B'),
+        isNull,
+        reason: 'must start with [offloaded:, not contain it mid-string',
+      );
     });
 
     test('parses the canonical stand-in form', () {
@@ -56,6 +59,79 @@ void main() {
     });
   });
 
+  group('containsOffloadStandIn', () {
+    test('detects a standalone stand-in', () {
+      expect(
+        containsOffloadStandIn(
+          '[offloaded: 42 lines / 3.0KB; recall via offloaded_content(key="abc_newString")]',
+        ),
+        isTrue,
+      );
+    });
+
+    test('detects a stand-in embedded as a line in a larger payload', () {
+      expect(
+        containsOffloadStandIn(
+          'before\n'
+          '[offloaded: 2 lines / 2.1KB; recall via offloaded_content(key="abc_newString")]\n'
+          'after',
+        ),
+        isTrue,
+      );
+    });
+
+    test('ignores ordinary prose that mentions offloading', () {
+      expect(
+        containsOffloadStandIn('offloaded_content is a table name'),
+        isFalse,
+      );
+    });
+  });
+
+  group('jsonStringArgContainsOffloadStandIn', () {
+    test('detects stand-in inside a complete write.content JSON string', () {
+      expect(
+        jsonStringArgContainsOffloadStandIn(
+          '{"filePath":"x","content":"[offloaded: 42 lines / 3.0KB; recall via offloaded_content(key=\\"abc_content\\")]"}',
+          'content',
+        ),
+        isTrue,
+      );
+    });
+
+    test('detects stand-in inside a partial streamed JSON string', () {
+      expect(
+        jsonStringArgContainsOffloadStandIn(
+          '{"filePath":"x","content":"before [offloaded: 2 lines / 2.1KB; recall via offloaded_content(key=\\"abc_content\\")]',
+          'content',
+        ),
+        isTrue,
+      );
+    });
+
+    test('only scans the requested argument value', () {
+      expect(
+        jsonStringArgContainsOffloadStandIn(
+          '{"oldString":"[offloaded: 42 lines / 3.0KB; recall via offloaded_content(key=\\"abc_oldString\\")]","newString":"clean"}',
+          'newString',
+        ),
+        isFalse,
+        reason:
+            'edit.oldString may contain a stand-in when cleaning up a polluted file',
+      );
+    });
+
+    test('ignores stand-ins in later unrelated fields', () {
+      expect(
+        jsonStringArgContainsOffloadStandIn(
+          '{"newString":"clean","intent":"mentions [offloaded: 42 lines / 3.0KB; recall via offloaded_content(key=\\"abc_newString\\")]"}',
+          'newString',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('lineCountOfArg', () {
     test('returns 0 for null and empty', () {
       expect(lineCountOfArg(null), 0);
@@ -65,8 +141,11 @@ void main() {
     test('counts lines in a plain string (matches `read` convention)', () {
       expect(lineCountOfArg('hello'), 1, reason: 'no newline → 1 line');
       expect(lineCountOfArg('a\nb'), 2);
-      expect(lineCountOfArg('a\nb\nc\n'), 4,
-          reason: 'trailing newline still counts a final empty line');
+      expect(
+        lineCountOfArg('a\nb\nc\n'),
+        4,
+        reason: 'trailing newline still counts a final empty line',
+      );
     });
 
     test('recovers line count from a stand-in pointer', () {

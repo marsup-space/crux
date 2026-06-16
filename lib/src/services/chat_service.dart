@@ -9,6 +9,7 @@ import '../models/session_runtime_state.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
+import '../utils/offload_standin.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
@@ -37,6 +38,19 @@ class ChatResponse {
     this.promptCacheMissTokens = 0,
     this.queuedMessage,
   });
+}
+
+class _StreamingToolUseAccum {
+  String callId = '';
+  String name = '';
+  final StringBuffer inputBuffer = StringBuffer();
+}
+
+class _EarlyToolAbort {
+  final ToolCall call;
+  final ToolResult result;
+
+  const _EarlyToolAbort({required this.call, required this.result});
 }
 
 class ChatService {
@@ -247,6 +261,8 @@ class ChatService {
       );
 
       final chunks = <LlmChunk>[];
+      final streamingToolAccums = <int, _StreamingToolUseAccum>{};
+      _EarlyToolAbort? earlyToolAbort;
 
       final useLerp = modelConfig.streamLerp;
       String lerpPendingText = '';
@@ -363,11 +379,19 @@ class ChatService {
             // content separately.
             roundLastDeltaTime = now;
             if (chunk.toolUse != null) {
-              if (chunk.toolUse!.inputDelta.isNotEmpty) {
+              final toolUse = chunk.toolUse!;
+              if (toolUse.inputDelta.isNotEmpty) {
                 runtime.cumulativeCompletionTokens += estimateTokens(
-                  chunk.toolUse!.inputDelta,
+                  toolUse.inputDelta,
                 );
               }
+              final acc = streamingToolAccums.putIfAbsent(
+                toolUse.index,
+                () => _StreamingToolUseAccum(),
+              );
+              if (toolUse.callId.isNotEmpty) acc.callId = toolUse.callId;
+              if (toolUse.name.isNotEmpty) acc.name = toolUse.name;
+              acc.inputBuffer.write(toolUse.inputDelta);
               // Forward the raw delta to the chat panel so the live
               // streaming bubble can show a per-tool "ToolName (~Nt)"
               // row that materializes as the JSON arguments stream
@@ -379,7 +403,8 @@ class ChatService {
               // arguments into a later one) — so the row appears the
               // moment the LLM starts streaming a tool call rather
               // than after the full JSON has been received and parsed.
-              onToolUse?.call(chunk.toolUse!);
+              onToolUse?.call(toolUse);
+              earlyToolAbort ??= _checkEarlyOffloadStandInAbort(acc);
             }
             if (firstTokenEver &&
                 (chunk.textDelta != null || chunk.reasoningContent != null)) {
@@ -444,6 +469,11 @@ class ChatService {
               // running at that point (no pending text).
               onChunk();
             }
+          }
+
+          if (earlyToolAbort != null) {
+            lerpTimer?.cancel();
+            break;
           }
 
           if (chunk.promptTokens != null) {
@@ -561,7 +591,9 @@ class ChatService {
 
       runtime.pauseStreamingTimer();
 
-      final finishReason = ToolExecutor.parseFinishReason(chunks);
+      final finishReason = earlyToolAbort != null
+          ? 'tool_use'
+          : ToolExecutor.parseFinishReason(chunks);
 
       if (finishReason != 'tool_use') break;
 
@@ -578,7 +610,9 @@ class ChatService {
         return;
       }
 
-      final toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
+      final toolCalls = earlyToolAbort != null
+          ? [earlyToolAbort.call]
+          : ToolExecutor.parseToolUseFromChunks(chunks);
       if (toolCalls.isEmpty) break;
 
       final roundText = roundTextBuffer.toString();
@@ -637,7 +671,9 @@ class ChatService {
             callId: call.callId,
             workingDirectory: session.projectPath,
           );
-          final result = await _toolExecutor.executeTool(call, ctx);
+          final result = earlyToolAbort?.call.callId == call.callId
+              ? earlyToolAbort!.result
+              : await _toolExecutor.executeTool(call, ctx);
           callResults[call.callId] = result;
           if (result.metadata['guardTriggered'] == true) {
             guardTriggers.add(call.callId);
@@ -1070,4 +1106,50 @@ class ChatService {
     _llmClient.dispose();
     _auxiliaryService.dispose();
   }
+}
+
+_EarlyToolAbort? _checkEarlyOffloadStandInAbort(_StreamingToolUseAccum acc) {
+  if (acc.callId.isEmpty || acc.name.isEmpty) return null;
+
+  final toolName = acc.name.toLowerCase();
+  final argName = switch (toolName) {
+    'write' => 'content',
+    'edit' => 'newString',
+    _ => null,
+  };
+  if (argName == null) return null;
+
+  if (!jsonStringArgContainsOffloadStandIn(
+    acc.inputBuffer.toString(),
+    argName,
+  )) {
+    return null;
+  }
+
+  final displayName = toolName.isEmpty
+      ? 'Tool'
+      : '${toolName[0].toUpperCase()}${toolName.substring(1)}';
+  return _EarlyToolAbort(
+    call: ToolCall(
+      callId: acc.callId,
+      name: toolName,
+      input: {
+        argName:
+            '[offloaded: ...; blocked before execution because this is a history placeholder]',
+      },
+    ),
+    result: ToolResult(
+      title: 'Offload stand-in guard triggered',
+      output:
+          '[GUARD] $displayName was BLOCKED — `$argName` contains an '
+          'offloaded-content stand-in pointer, not the original text. '
+          'No file was modified. Re-read the file or provide the real '
+          'content before calling `$toolName` again.',
+      metadata: const {
+        'guardTriggered': true,
+        'guardKind': 'offload_standin',
+        'earlyAbort': true,
+      },
+    ),
+  );
 }

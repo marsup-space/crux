@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/file_metadata.dart';
-import '../utils/offload_standin.dart' show lineCountOfArg;
+import '../utils/offload_standin.dart'
+    show containsOffloadStandIn, lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
@@ -155,6 +156,14 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     }
     if (newString == null) {
       return ToolResult.error('Missing required parameter: newString');
+    }
+    if (containsOffloadStandIn(newString)) {
+      return ToolResult.error(
+        'Refusing to write offloaded-content stand-in text into a file. '
+        'The `newString` argument contains a `[offloaded: ...]` history '
+        'placeholder, not the original replacement bytes. Re-read the file '
+        'or provide the real replacement text before calling `edit`.',
+      );
     }
     if (oldString == newString) {
       return ToolResult.error('oldString and newString must be different');

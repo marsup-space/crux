@@ -539,6 +539,106 @@ void main() {
     });
   });
 
+  group('Offload stand-in write guard', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_standin_guard_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ToolContext ctx() => ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+
+    const standIn =
+        '[offloaded: 42 lines / 3.0KB; recall via offloaded_content(key="call_x_newString")]';
+
+    test('write refuses to write a standalone offload stand-in', () async {
+      final filePath = '${tempDir.path}/target.txt';
+
+      final result = await WriteTool().execute(
+        {
+          'filePath': filePath,
+          'content': standIn,
+          'intent': 'accidental placeholder write',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('Refusing to write'));
+      expect(result.output, contains('offloaded-content stand-in'));
+      expect(await File(filePath).exists(), isFalse,
+          reason: 'the guard must not create or modify the target');
+    });
+
+    test('write refuses an embedded offload stand-in line', () async {
+      final filePath = '${tempDir.path}/target.txt';
+      await File(filePath).writeAsString('original');
+
+      final result = await WriteTool().execute(
+        {
+          'filePath': filePath,
+          'content': 'before\n$standIn\nafter',
+          'intent': 'accidental placeholder write',
+          'force': true,
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('Refusing to write'));
+      expect(await File(filePath).readAsString(), 'original',
+          reason: 'force must not bypass the placeholder guard');
+    });
+
+    test('edit refuses to use an offload stand-in as replacement text',
+        () async {
+      final filePath = '${tempDir.path}/edit.txt';
+      await File(filePath).writeAsString('hello world');
+
+      final result = await EditTool().execute(
+        {
+          'filePath': filePath,
+          'oldString': 'world',
+          'newString': standIn,
+          'intent': 'accidental placeholder replacement',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('Refusing to write'));
+      expect(result.output, contains('newString'));
+      expect(await File(filePath).readAsString(), 'hello world');
+    });
+
+    test('edit can still target an existing stand-in in oldString for cleanup',
+        () async {
+      final filePath = '${tempDir.path}/polluted.txt';
+      await File(filePath).writeAsString('before\n$standIn\nafter');
+
+      final result = await EditTool().execute(
+        {
+          'filePath': filePath,
+          'oldString': standIn,
+          'newString': 'clean',
+          'intent': 'remove accidental placeholder',
+        },
+        ctx(),
+      );
+
+      expect(result.output, contains('Edit applied'));
+      expect(await File(filePath).readAsString(), 'before\nclean\nafter');
+    });
+  });
+
   group('WriteTool read-before-write guard (regression: session 1141)', () {
     late Directory tempDir;
     late FileReadTracker tracker;

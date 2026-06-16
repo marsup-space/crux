@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/file_metadata.dart';
-import '../utils/offload_standin.dart' show lineCountOfArg, parseOffloadStandIn;
+import '../utils/offload_standin.dart'
+    show containsOffloadStandIn, lineCountOfArg, parseOffloadStandIn;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
@@ -126,6 +127,14 @@ class WriteTool extends LargePayloadTool with IntentionalTool {
     }
     if (content == null) {
       return ToolResult.error('Missing required parameter: content');
+    }
+    if (containsOffloadStandIn(content)) {
+      return ToolResult.error(
+        'Refusing to write offloaded-content stand-in text into a file. '
+        'The `content` argument contains a `[offloaded: ...]` history '
+        'placeholder, not the original file bytes. Re-read the file or '
+        'provide the real content before calling `write`.',
+      );
     }
 
     final resolved = resolvePath(filePath, ctx.workingDirectory);
