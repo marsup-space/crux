@@ -328,6 +328,8 @@ class ProviderConfigLoader {
 
         final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
 
+    final temperature = _optionalDouble(map, 'temperature') ?? 0;
+
     // Optional per-model display label overrides for reasoning effort.
     // TOML: [models.reasoning_labels]
     //   normal = "adaptive"
@@ -367,6 +369,7 @@ class ProviderConfigLoader {
       thinkingBudget: thinkingBudget,
       maxTokens: maxTokens,
       streamLerp: streamLerp,
+      temperature: temperature,
       reasoningLabels: reasoningLabels,
       maxRounds: maxRounds,
     );
@@ -466,6 +469,15 @@ class ProviderConfigLoader {
       );
     }
     return v;
+  }
+
+  double? _optionalDouble(Map<String, dynamic> map, String key) {
+    final v = map[key];
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    throw FormatException(
+      'Field "$key" must be a number if present, got ${v.runtimeType}',
+    );
   }
 
   bool? _optionalBool(Map<String, dynamic> map, String key) {

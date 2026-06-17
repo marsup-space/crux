@@ -76,6 +76,9 @@
 #                             overrides provider.
 #     stream_lerp     (opt, default false)  Smoother stream rendering
 #                                           for some chatty models.
+#     temperature     (opt, default 0)      Sampling temperature (0–2).
+#                                           0 = deterministic (coding default).
+#                                           Higher = more creative/varied.
 #     max_rounds      (opt)   Per-model override of round-trip cap.
 #                             0/absent = fall back to default_max_rounds.
 #
@@ -107,6 +110,7 @@ image_support = true
 thinking_budget = 10000       # cap on reasoning tokens
 reasoning_effort = "medium"   # override default "normal" to "medium"
 max_tokens = 16384            # cap on output tokens
+temperature = 0               # deterministic (coding default)
 # max_rounds omitted → falls back to default_max_rounds = 50
 
 # Example: rename "normal" effort to "adaptive" and disable
@@ -126,6 +130,7 @@ image_support = false
 thinking = false              # opt out of thinking mode
 reasoning_effort = "none"     # opt out of reasoning-effort controls
 # max_tokens omitted → upstream default
+temperature = 0               # deterministic coding default
 max_rounds = 15              # tighter cap on the cheap model
 stream_lerp = true           # smoother stream rendering for chatty output
 

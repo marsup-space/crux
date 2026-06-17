@@ -100,6 +100,10 @@ class ModelConfig {
 
   final bool streamLerp;
 
+  /// Sampling temperature (0–2). Default `0` — deterministic output
+  /// suitable for coding agents. Set higher in TOML for creative tasks.
+  final double temperature;
+
   /// Per-model display label overrides for reasoning effort levels.
   ///
   /// Maps internal effort values to user-facing labels. For example,
@@ -135,6 +139,7 @@ class ModelConfig {
     this.thinkingBudget,
     this.maxTokens,
     this.streamLerp = false,
+    this.temperature = 0,
     this.reasoningLabels = const {},
     this.maxRounds,
   });
@@ -146,7 +151,7 @@ class ModelConfig {
   String toString() =>
       'ModelConfig($id, name=$name, ctx=$contextSize, '
       'img=$imageSupport, effort=$reasoningEffort, think=$thinking, '
-      'maxRounds=$maxRounds)';
+      'temp=$temperature, maxRounds=$maxRounds)';
 }
 
 /// Usage quota tier — maps a time window label to a token/request budget.

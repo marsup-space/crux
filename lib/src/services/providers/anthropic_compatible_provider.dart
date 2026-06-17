@@ -19,6 +19,7 @@ class AnthropicCompatibleProvider extends LlmProvider {
     String? reasoningEffort,
     int? thinkingBudget,
     int? maxTokens,
+    double temperature = 0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
@@ -29,6 +30,7 @@ class AnthropicCompatibleProvider extends LlmProvider {
       'messages': injectCacheBreakpoints(chatMsgs),
       'max_tokens': maxTokens ?? 16384,
       'stream': true,
+      'temperature': temperature,
     };
     if (systemMsg.isNotEmpty) {
       body['system'] = buildCachedSystemBlocks(systemMsg);

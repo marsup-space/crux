@@ -12,6 +12,7 @@ context_size = 8192
 image_support = false
 thinking = false
 reasoning_effort = "none"
+temperature = 0
 
 [[models]]
 id = "mistral"
@@ -20,3 +21,4 @@ context_size = 32000
 image_support = false
 thinking = false
 reasoning_effort = "none"
+temperature = 0

@@ -44,6 +44,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
     String? reasoningEffort,
     int? thinkingBudget,
     int? maxTokens,
+    double temperature = 0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
@@ -55,6 +56,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider {
       'messages': injectCacheBreakpoints(chatMsgs),
       'max_tokens': maxTokens ?? 16384,
       'stream': true,
+      'temperature': temperature,
     };
     if (systemMsg.isNotEmpty) {
       body['system'] = buildCachedSystemBlocks(systemMsg);

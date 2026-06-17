@@ -258,6 +258,7 @@ class ChatService {
         reasoningEffort: runtime.reasoningEffort,
         thinkingBudget: modelConfig.thinkingBudget,
         maxTokens: modelConfig.maxTokens,
+        temperature: modelConfig.temperature,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
         userId: '${InstallSlug.slug}-$sessionId',
       );

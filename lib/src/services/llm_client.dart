@@ -92,6 +92,7 @@ class LlmClient {
     String? reasoningEffort,
     int? thinkingBudget,
     int? maxTokens,
+    double temperature = 0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
@@ -110,13 +111,25 @@ class LlmClient {
         request.headers.set('Content-Type', 'application/json; charset=utf-8');
         _setAuthHeaders(request, authStyle, apiKey);
 
+        // Provider-specific wire-format sanitization (default no-op).
+        // DeepSeek uses this to backfill `reasoning_content: ''` on
+        // assistant messages that were produced by a different
+        // provider and would otherwise trip DeepSeek's 400 "reasoning
+        // context must be passed back" check. Runs per-request (not
+        // per-turn) so it also catches `tool_call` assistant messages
+        // that ChatService adds inside the agentic loop on rounds
+        // 2+. The no-op default returns the same list reference, so
+        // providers that don't need it pay zero allocation cost.
+        final sanitizedMessages = provider.sanitizeMessages(messages);
+
         final bodyMap = provider.buildRequestBody(
           modelId,
-          messages,
+          sanitizedMessages,
           thinkingMode: thinkingMode,
           reasoningEffort: reasoningEffort,
           thinkingBudget: thinkingBudget,
           maxTokens: maxTokens,
+          temperature: temperature,
           tools: tools,
           userId: userId,
         );

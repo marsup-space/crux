@@ -120,9 +120,33 @@ abstract class LlmProvider {
     String? reasoningEffort,
     int? thinkingBudget,
     int? maxTokens,
+    double temperature = 0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   });
+
+  /// Last-chance hook to mutate the wire-format message list before
+  /// it gets sent to the model. Default: no-op (returns [messages]
+  /// unchanged).
+  ///
+  /// Use this to backfill provider-specific required fields that may
+  /// be missing from messages produced by other providers — e.g.
+  /// when the user switches the session model mid-conversation, the
+  /// prior `assistant` messages in the history were serialized by a
+  /// different provider's `buildApiMessages` and may lack fields the
+  /// new provider requires. The DeepSeek provider, for instance,
+  /// needs every prior `assistant` message to include a
+  /// `reasoning_content` field when the request is in thinking mode
+  /// and a previous turn involved tool calls; see
+  /// [DeepSeekProvider.sanitizeMessages].
+  ///
+  /// The returned list is what gets serialized into the request body.
+  /// Implementations should return the original list reference
+  /// unchanged when no modifications are needed so callers can invoke
+  /// this unconditionally without per-request allocation overhead.
+  List<Map<String, dynamic>> sanitizeMessages(
+    List<Map<String, dynamic>> messages,
+  ) => messages;
 }
 
 class ResolvedProvider {

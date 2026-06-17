@@ -21,6 +21,7 @@ image_support = true
 max_tokens = 131072
 thinking = true
 thinking_budget = 10000
+temperature = 0
 stream_lerp = true
 
 [models.reasoning_labels]
@@ -36,6 +37,7 @@ context_size = 204800
 max_tokens = 65536
 thinking = true
 thinking_budget = 10000
+temperature = 0
 stream_lerp = true
 
 [[models]]
@@ -45,4 +47,5 @@ context_size = 204800
 max_tokens = 65536
 thinking = true
 thinking_budget = 10000
+temperature = 0
 stream_lerp = true
