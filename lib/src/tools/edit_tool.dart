@@ -229,12 +229,46 @@ class EditTool extends LargePayloadTool with IntentionalTool {
 
     final bytes = await file.readAsBytes();
     final meta = readFileWithMetadata(bytes);
-    final content = meta.content;
+    // Determine the *target* line ending for the file: prefer
+    // the project's `.gitattributes` declaration, fall back to
+    // the file's detected line ending. We normalize the
+    // in-memory content to the target before matching so a
+    // CRLF file can be matched by an LF-only oldString (and
+    // vice versa) without relying on the matchers' lenient
+    // fallback path, which has its own off-by-one issue for
+    // patterns that contain line endings. The `oldString` is
+    // also normalized to the same target so `ExactMatcher` can
+    // find a byte-exact match in the common case.
+    final targetLineEnding =
+        targetLineEndingFor(resolved, meta.lineEnding);
+    final content = targetLineEnding == null
+        ? meta.content
+        : normalizeToLineEnding(meta.content, targetLineEnding);
+    // Normalize the oldString too. When the target is null the
+    // file is binary and we leave the oldString untouched (we
+    // can't really do anything useful with line endings in a
+    // binary file anyway).
+    final oldStringForMatch = (targetLineEnding == null || oldString.isEmpty)
+        ? oldString
+        : normalizeToLineEnding(oldString, targetLineEnding);
 
-    if (oldString.isEmpty) {
-      await _writePreservingEncoding(file, newString, meta);
-      if (tracker != null)
+        if (oldString.isEmpty) {
+      // New-file creation: also respect the target line ending
+      // from .gitattributes, so a freshly created file in a
+      // CRLF-mandated directory lands with CRLF.
+      if (targetLineEnding != null) {
+        await _writePreservingEncoding(
+          file,
+          normalizeToLineEnding(newString, targetLineEnding),
+          meta,
+          overrideLineEnding: targetLineEnding,
+        );
+      } else {
+        await _writePreservingEncoding(file, newString, meta);
+      }
+      if (tracker != null) {
         await tracker!.recordRead(resolved, await _mtimeMs(file));
+      }
       // Stash the "added" line count so the bubble's
       // collapsedSummary can render "+N lines" next to the
       // token estimate. We use the same stash field as the
@@ -257,7 +291,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
       );
     }
 
-    final matchResult = _findMatch(content, oldString, replaceAll);
+    final matchResult =
+        _findMatch(content, oldStringForMatch, replaceAll);
     if (matchResult == null) {
       return _autoReadResult(
         resolved,
@@ -268,8 +303,8 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     if (matchResult.error != null) {
       return _autoReadResult(resolved, '${matchResult.error}', content);
     }
-    final matchLen = matchResult.matchLength ?? oldString.length;
-    if (_isDisproportionateMatch(oldString, matchLen)) {
+    final matchLen = matchResult.matchLength ?? oldStringForMatch.length;
+    if (_isDisproportionateMatch(oldStringForMatch, matchLen)) {
       return _autoReadResult(
         resolved,
         'Refusing replacement because the matched span ($matchLen chars) '
@@ -283,16 +318,33 @@ class EditTool extends LargePayloadTool with IntentionalTool {
     final newContent = _applyReplacements(
       content,
       matchResult.positions,
-      oldString,
+      oldStringForMatch,
       newString,
       replaceAll,
       matchResult.matchLength,
     );
-    final normalized = normalizeToLineEnding(newContent, meta.lineEnding);
-    await _writePreservingEncoding(file, normalized, meta);
-
-    if (tracker != null)
+    // Use the target line ending (from .gitattributes) when
+    // writing, not the file's detected line ending. This way a
+    // file that was mis-saved as LF on disk but should be CRLF
+    // (per the project's .gitattributes) gets corrected to
+    // CRLF on the next edit. `targetLineEnding == null` means
+    // "binary, leave alone" and we skip the rewrite path.
+            if (targetLineEnding != null) {
+      final normalized =
+          normalizeToLineEnding(newContent, targetLineEnding);
+      await _writePreservingEncoding(
+        file,
+        normalized,
+        meta,
+        overrideLineEnding: targetLineEnding,
+      );
+    } else {
+      // Binary file: write the modified content as-is.
+      await _writePreservingEncoding(file, newContent, meta);
+    }
+    if (tracker != null) {
       await tracker!.recordRead(resolved, await _mtimeMs(file));
+    }
 
     final count = matchResult.positions.length;
     // Stash the actual replacement count for the bubble's
@@ -398,9 +450,19 @@ class EditTool extends LargePayloadTool with IntentionalTool {
   Future<void> _writePreservingEncoding(
     File file,
     String text,
-    FileReadResult meta,
-  ) async {
-    final body = normalizeToLineEnding(text, meta.lineEnding);
+    FileReadResult meta, {
+    String? overrideLineEnding,
+  }) async {
+    // If the caller already normalized `text` to the target
+    // line ending (e.g. the .gitattributes-driven path), honor
+    // that and skip the per-file detected-end normalization
+    // — otherwise we'd undo the caller's work. Otherwise, use
+    // the file's detected line ending so an edit on a file
+    // without a .gitattributes declaration still preserves
+    // its on-disk convention.
+    final body = overrideLineEnding == null
+        ? normalizeToLineEnding(text, meta.lineEnding)
+        : text;
     final encoded = utf8.encode(body);
     if (meta.encoding == 'utf-8-bom') {
       await file.writeAsBytes(<int>[0xEF, 0xBB, 0xBF, ...encoded]);

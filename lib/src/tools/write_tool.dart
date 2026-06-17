@@ -224,7 +224,17 @@ class WriteTool extends ToolDef with IntentionalTool {
         : '\n'.allMatches(meta.content).length + 1;
     args['_existingLineCount'] = existingLineCount;
     final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
-    final body = normalizeToLineEnding(content, meta.lineEnding);
+    // Respect the target line ending from .gitattributes. If
+    // the file is declared binary, `targetLineEnding` is null
+    // and we write the content byte-for-byte (no normalization
+    // — the agent would have to ask for a write that re-encodes
+    // a binary file, which we should refuse on principle, but
+    // for now we just don't break it).
+    final targetLineEnding =
+        targetLineEndingFor(resolved, meta.lineEnding);
+    final body = targetLineEnding == null
+        ? content
+        : normalizeToLineEnding(content, targetLineEnding);
     final encoded = utf8.encode(body);
     if (meta.encoding == 'utf-8-bom') {
       await file.writeAsBytes(<int>[0xEF, 0xBB, 0xBF, ...encoded]);
