@@ -1,14 +1,13 @@
-import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import '../theme/crux_theme.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
-import '../utils/frame_profiler.dart';
+import '../utils/ticker_registry.dart';
 
 /// Context-window usage bar.
 ///
-/// Has its own [State] and a 16ms lerp [Timer] that interpolates
+/// Has its own [State] and a 16ms lerp [TickerToken] that interpolates
 /// from the runtime's `contextTargetTokens` (the "true" value
 /// that jumps when a new chunk arrives) toward the displayed
 /// value. Critical: the lerp ticks update this widget's
@@ -68,7 +67,7 @@ class _ContextBarState extends State<ContextBar> {
   /// bar to the new session's value.
   int? _currentSessionId;
 
-  Timer? _timer;
+  TickerToken? _animTicker;
   DateTime? _lastTick;
 
   /// Direct reference to the render object. Set by the bridge
@@ -100,19 +99,20 @@ class _ContextBarState extends State<ContextBar> {
   /// instead of freezing mid-flight.
   static const Duration _idleGrace = Duration(milliseconds: 100);
 
-  /// Start the 16ms polling timer if it isn't already running.
+  /// Start the 16ms polling ticker if it isn't already running.
   void _startTimer() {
-    if (_timer != null) return;
+    if (_animTicker != null) return;
     _lastTick = DateTime.now();
-    _timer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      FrameProfiler.instance.markTimer('contextAnim');
-      _tick();
-    });
+    _animTicker = TickerRegistry.instance.subscribe(
+      name: 'contextAnim',
+      interval: const Duration(milliseconds: 16),
+      onTick: _tick,
+    );
   }
 
   void _stopTimer() {
-    _timer?.cancel();
-    _timer = null;
+    _animTicker?.cancel();
+    _animTicker = null;
     _lastTick = null;
     _animState = _AnimState.idle;
     _coolingStartedAt = null;

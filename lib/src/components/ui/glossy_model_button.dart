@@ -1,8 +1,7 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
-import '../../utils/frame_profiler.dart';
+import '../../utils/ticker_registry.dart';
 
 class GlossyModelButton extends StatefulComponent {
   final String label;
@@ -20,7 +19,7 @@ class GlossyModelButton extends StatefulComponent {
 }
 
 class GlossyModelButtonState extends State<GlossyModelButton> {
-  Timer? _animTimer;
+  TickerToken? _animTicker;
   double _phase = -_bandWidth;
   int _tickCount = 0;
   bool _hovered = false;
@@ -49,8 +48,8 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
       // Start fade-out instead of immediately stopping
       _isFadingOut = true;
       _fadeIntensity = 1.0;
-      // Animation timer keeps running during fade
-      if (_animTimer == null) {
+      // Animation ticker keeps running during fade
+      if (_animTicker == null) {
         _startAnimation();
       }
     }
@@ -58,43 +57,46 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
 
   @override
   void dispose() {
-    _animTimer?.cancel();
-    _animTimer = null;
+    _animTicker?.cancel();
+    _animTicker = null;
     super.dispose();
   }
 
   void _startAnimation() {
     _phase = -_bandWidth;
     _tickCount = 0;
-    _animTimer?.cancel();
-    _animTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
-      FrameProfiler.instance.markTimer('glossyButton');
-      _phase += 1.5; // faster sweep
-      final sweepEnd =
-          component.label.length + 2 + _bandWidth; // +2 for padding cells
-      if (_phase > sweepEnd) {
-        _phase = -_bandWidth;
-      }
-      _tickCount++;
-
-      if (_isFadingOut) {
-        _fadeIntensity -= 1.0 / _fadeTicks;
-        if (_fadeIntensity <= 0) {
-          _fadeIntensity = 0;
-          _isFadingOut = false;
-          _stopAnimation();
-          setState(() {});
-          return;
+    _animTicker?.cancel();
+    _animTicker = TickerRegistry.instance.subscribe(
+      name: 'glossyButton',
+      interval: const Duration(milliseconds: 60),
+      onTick: () {
+        _phase += 1.5; // faster sweep
+        final sweepEnd =
+            component.label.length + 2 + _bandWidth; // +2 for padding cells
+        if (_phase > sweepEnd) {
+          _phase = -_bandWidth;
         }
-      }
+        _tickCount++;
 
-      setState(() {});
-    });
+        if (_isFadingOut) {
+          _fadeIntensity -= 1.0 / _fadeTicks;
+          if (_fadeIntensity <= 0) {
+            _fadeIntensity = 0;
+            _isFadingOut = false;
+            _stopAnimation();
+            setState(() {});
+            return;
+          }
+        }
+
+        setState(() {});
+      },
+    );
   }
 
   void _stopAnimation() {
-    _animTimer?.cancel();
-    _animTimer = null;
+    _animTicker?.cancel();
+    _animTicker = null;
   }
 
   @override

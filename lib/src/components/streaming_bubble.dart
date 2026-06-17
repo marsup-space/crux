@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 
 import '../models/session_runtime_state.dart';
 import '../theme/crux_theme.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
-import '../utils/frame_profiler.dart';
+import '../utils/ticker_registry.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
 
@@ -19,7 +18,7 @@ import 'ui/highlighted_markdown_text.dart';
 /// which in turn forced a chat-panel rebuild for the cost
 /// of an entire 606-message layout pass. This is the
 /// streaming counterpart of the typing fix: the bubble
-/// owns its own [State] and a ~30fps [Timer] that polls the
+/// owns its own [State] and a ~30fps [TickerToken] that polls the
 /// streaming controller for fresh content and calls
 /// [State.setState] on itself. The chat history, the chat
 /// panel, the toolbar — none of them get re-laid-out on a
@@ -74,13 +73,15 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   /// Cached strings read from the streaming controller. The
   /// controller's `streamingContent` and `streamingReasoning`
   /// are `String`s we can't subscribe to, so we poll on a
-  /// ~30fps timer and call setState when the value changes.
+  /// ~30fps ticker and call setState when the value changes.
   /// 33ms is fast enough to look smooth during streaming
-  /// (~30fps) and slow enough that the timer itself is
-  /// negligible cost.
+  /// (~30fps) and slow enough that the ticker itself is
+  /// negligible cost. Shares the global [TickerRegistry] so
+  /// the bubble's tick is delivered by the same wakeup that
+  /// drives every other periodic widget in the app.
   String _content = '';
   String _reasoning = '';
-  Timer? _timer;
+  TickerToken? _ticker;
 
   @override
   void initState() {
@@ -112,15 +113,18 @@ class _StreamingBubbleState extends State<StreamingBubble> {
 
   void _startTimerIfNeeded() {
     final running = component.runtimeState?.isResponding ?? false;
-    if (running && _timer == null) {
-      _timer = Timer.periodic(_tickInterval, (_) {
-        FrameProfiler.instance.markTimer('streamingBubble');
-        if (!mounted) return;
-        _refreshFromController();
-      });
-    } else if (!running && _timer != null) {
-      _timer?.cancel();
-      _timer = null;
+    if (running && _ticker == null) {
+      _ticker = TickerRegistry.instance.subscribe(
+        name: 'streamingBubble',
+        interval: _tickInterval,
+        onTick: () {
+          if (!mounted) return;
+          _refreshFromController();
+        },
+      );
+    } else if (!running && _ticker != null) {
+      _ticker?.cancel();
+      _ticker = null;
     }
   }
 
@@ -137,8 +141,8 @@ class _StreamingBubbleState extends State<StreamingBubble> {
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _timer = null;
+    _ticker?.cancel();
+    _ticker = null;
     super.dispose();
   }
 

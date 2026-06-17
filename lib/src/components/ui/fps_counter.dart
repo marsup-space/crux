@@ -1,9 +1,8 @@
-import 'dart:async';
 import 'dart:collection';
 import 'package:nocterm/nocterm.dart';
 import '../../commands/registry.dart';
 import '../../theme/crux_theme.dart';
-import '../../utils/frame_profiler.dart';
+import '../../utils/ticker_registry.dart';
 
 /// A tiny FPS readout pinned to a corner of the side panel.
 ///
@@ -55,7 +54,7 @@ class _FpsCounterState extends State<FpsCounter> {
   /// the number lag noticeably behind what's actually being rendered.
   static const int _maxFrameSamples = 60;
 
-  Timer? _sampleTimer;
+  TickerToken? _sampleTicker;
   double _fps = 0.0;
   double _targetFps = 0.0;
   double _maxFps = 0.0;
@@ -81,11 +80,13 @@ class _FpsCounterState extends State<FpsCounter> {
     SchedulerBinding.instance.addFrameTimingCallback(_frameCallback!);
     // Always start the sampler; it costs essentially nothing (a single
     // counter read every 500ms) and avoids a tiny flicker on the very first
-    // build after toggling debug on.
-    _sampleTimer ??= Timer.periodic(_sampleInterval, (_) {
-      FrameProfiler.instance.markTimer('fpsCounter');
-      _sampleFps();
-    });
+    // build after toggling debug on. Shares the scheduler-backed ticker so
+    // it lands in the same frame pipeline as other animation work.
+    _sampleTicker ??= TickerRegistry.instance.subscribe(
+      name: 'fpsCounter',
+      interval: _sampleInterval,
+      onTick: _sampleFps,
+    );
   }
 
   @override
@@ -95,8 +96,8 @@ class _FpsCounterState extends State<FpsCounter> {
       SchedulerBinding.instance.removeFrameTimingCallback(_frameCallback!);
       _frameCallback = null;
     }
-    _sampleTimer?.cancel();
-    _sampleTimer = null;
+    _sampleTicker?.cancel();
+    _sampleTicker = null;
     super.dispose();
   }
 
@@ -165,9 +166,7 @@ class _FpsCounterState extends State<FpsCounter> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      decoration: BoxDecoration(
-        color: theme.buttonBackground,
-      ),
+      decoration: BoxDecoration(color: theme.buttonBackground),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -184,18 +183,12 @@ class _FpsCounterState extends State<FpsCounter> {
           // visual hierarchy reads "current → limit → ceiling". The
           // trailing 't' avoids the line "FPS: 22 / 60" being mistaken
           // for a ratio.
-          Text(
-            ' / $targetFpsStr t',
-            style: TextStyle(color: theme.outlineDim),
-          ),
+          Text(' / $targetFpsStr t', style: TextStyle(color: theme.outlineDim)),
           // Max FPS — theoretical ceiling given per-frame work. Outlined
           // (rather than dim) so it sits visually between target and the
           // background, since it's a derived number rather than something
           // the framework is doing.
-          Text(
-            ' / $maxFpsStr max',
-            style: TextStyle(color: theme.outline),
-          ),
+          Text(' / $maxFpsStr max', style: TextStyle(color: theme.outline)),
         ],
       ),
     );

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:nocterm/nocterm.dart';
+
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/provider_config.dart';
@@ -267,67 +269,73 @@ class ChatService {
       final useLerp = modelConfig.streamLerp;
       String lerpPendingText = '';
       String lerpPendingReasoning = '';
-      Timer? lerpTimer;
+      SchedulerHandle? lerpTimer;
       var lerpStreamDone = false;
       Completer<void>? lerpDrainCompleter;
 
       try {
         void ensureLerpTimer() {
           if (lerpTimer != null) return;
-          lerpTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-            FrameProfiler.instance.markTimer('lerp');
-            // Stop emitting if the stream was cancelled.
-            if (_cancelRequested.contains(sessionId)) {
-              lerpTimer?.cancel();
-              lerpTimer = null;
-              if (lerpDrainCompleter != null &&
-                  !lerpDrainCompleter.isCompleted) {
-                lerpDrainCompleter.complete();
+          lerpTimer = NoctermScheduler.instance.every(
+            const Duration(milliseconds: 16),
+            (_) {
+              FrameProfiler.instance.markTimer('lerp');
+              // Stop emitting if the stream was cancelled.
+              if (_cancelRequested.contains(sessionId)) {
+                lerpTimer?.cancel();
+                lerpTimer = null;
+                if (lerpDrainCompleter != null &&
+                    !lerpDrainCompleter.isCompleted) {
+                  lerpDrainCompleter.complete();
+                }
+                return;
               }
-              return;
-            }
 
-            final totalPending =
-                lerpPendingText.length + lerpPendingReasoning.length;
-            if (totalPending == 0) {
-              if (lerpStreamDone &&
-                  lerpDrainCompleter != null &&
-                  !lerpDrainCompleter.isCompleted) {
-                lerpDrainCompleter.complete();
+              final totalPending =
+                  lerpPendingText.length + lerpPendingReasoning.length;
+              if (totalPending == 0) {
+                if (lerpStreamDone &&
+                    lerpDrainCompleter != null &&
+                    !lerpDrainCompleter.isCompleted) {
+                  lerpDrainCompleter.complete();
+                }
+                return;
               }
-              return;
-            }
 
-            final alpha = lerpStreamDone ? 0.03 : 0.016;
-            final minCount = lerpStreamDone ? 2 : 1;
-            final count = (totalPending * alpha).ceil().clamp(
-              minCount,
-              totalPending,
-            );
+              final alpha = lerpStreamDone ? 0.03 : 0.016;
+              final minCount = lerpStreamDone ? 2 : 1;
+              final count = (totalPending * alpha).ceil().clamp(
+                minCount,
+                totalPending,
+              );
 
-            var remaining = count;
+              var remaining = count;
 
-            if (lerpPendingText.isNotEmpty) {
-              final take = remaining.clamp(0, lerpPendingText.length);
-              if (take > 0) {
-                final emit = lerpPendingText.substring(0, take);
-                lerpPendingText = lerpPendingText.substring(take);
-                onDelta(emit);
-                remaining -= take;
+              if (lerpPendingText.isNotEmpty) {
+                final take = remaining.clamp(0, lerpPendingText.length);
+                if (take > 0) {
+                  final emit = lerpPendingText.substring(0, take);
+                  lerpPendingText = lerpPendingText.substring(take);
+                  onDelta(emit);
+                  remaining -= take;
+                }
               }
-            }
 
-            if (remaining > 0 && lerpPendingReasoning.isNotEmpty) {
-              final take = remaining.clamp(0, lerpPendingReasoning.length);
-              if (take > 0) {
-                final emit = lerpPendingReasoning.substring(0, take);
-                lerpPendingReasoning = lerpPendingReasoning.substring(take);
-                onReasoning(emit);
+              if (remaining > 0 && lerpPendingReasoning.isNotEmpty) {
+                final take = remaining.clamp(0, lerpPendingReasoning.length);
+                if (take > 0) {
+                  final emit = lerpPendingReasoning.substring(0, take);
+                  lerpPendingReasoning = lerpPendingReasoning.substring(take);
+                  onReasoning(emit);
+                }
               }
-            }
 
-            onChunk();
-          });
+              onChunk();
+            },
+            name: 'streamLerp',
+            owner: this,
+            priority: SchedulePriority.animation,
+          );
         }
 
         await for (final chunk in stream) {

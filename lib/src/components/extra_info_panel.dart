@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:characters/characters.dart';
@@ -7,6 +6,7 @@ import 'package:nocterm/src/utils/unicode_width.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/frame_profiler.dart';
+import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
 import 'ui/fps_counter.dart';
 import 'ui/multi_button.dart';
@@ -76,7 +76,7 @@ class ExtraInfoPanel extends StatefulComponent {
 }
 
 class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
-  Timer? _animTimer;
+  TickerToken? _animTicker;
   double _phase = 0.0;
   final Set<int> _hoveredIds = {};
   bool _titleHovered = false;
@@ -196,7 +196,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
   @override
   void dispose() {
-    _animTimer?.cancel();
+    _animTicker?.cancel();
     super.dispose();
   }
 
@@ -208,19 +208,22 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
   void _startAnimIfNeeded() {
     if (_hasRespondingSession()) {
-      _animTimer ??= Timer.periodic(_animInterval, (_) {
-        FrameProfiler.instance.markTimer('extraInfoAnim');
-        if (!_hasRespondingSession()) {
-          _animTimer?.cancel();
-          _animTimer = null;
-          _phase = 0.0;
-        }
-        _phase += _animStep;
-        setState(() {});
-      });
+      _animTicker ??= TickerRegistry.instance.subscribe(
+        name: 'extraInfoAnim',
+        interval: _animInterval,
+        onTick: () {
+          if (!_hasRespondingSession()) {
+            _animTicker?.cancel();
+            _animTicker = null;
+            _phase = 0.0;
+          }
+          _phase += _animStep;
+          setState(() {});
+        },
+      );
     } else {
-      _animTimer?.cancel();
-      _animTimer = null;
+      _animTicker?.cancel();
+      _animTicker = null;
       _phase = 0.0;
     }
   }

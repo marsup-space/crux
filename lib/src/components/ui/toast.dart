@@ -1,7 +1,6 @@
-import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
-import '../../utils/frame_profiler.dart';
+import '../../utils/ticker_registry.dart';
 import '../../utils/terminal_symbols.dart';
 import 'button.dart';
 
@@ -106,8 +105,8 @@ class ToastHubState extends State<ToastHub> {
   final List<_ToastItem> _queue = [];
   _ToastItem? _current;
 
-  Timer? _dismissTimer;
-  Timer? _tickTimer;
+  SchedulerHandle? _dismissTimer;
+  TickerToken? _tickTicker;
   Duration _remaining = Duration.zero;
   bool _hovered = false;
 
@@ -162,22 +161,30 @@ class ToastHubState extends State<ToastHub> {
 
   void _startTimers() {
     _stopTimers();
-    _dismissTimer = Timer(_remaining, _onDismiss);
-    _tickTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
-      FrameProfiler.instance.markTimer('toastTick');
-      if (!_hovered) {
-        _remaining -= const Duration(milliseconds: 50);
-        if (_remaining.isNegative) _remaining = Duration.zero;
-        setState(() {});
-      }
-    });
+    _dismissTimer = SchedulerBinding.instance.scheduler.once(
+      (_) => _onDismiss(),
+      delay: _remaining,
+      owner: this,
+      name: 'toastDismiss',
+    );
+    _tickTicker = TickerRegistry.instance.subscribe(
+      name: 'toastTick',
+      interval: const Duration(milliseconds: 50),
+      onTick: () {
+        if (!_hovered) {
+          _remaining -= const Duration(milliseconds: 50);
+          if (_remaining.isNegative) _remaining = Duration.zero;
+          setState(() {});
+        }
+      },
+    );
   }
 
   void _stopTimers() {
     _dismissTimer?.cancel();
     _dismissTimer = null;
-    _tickTimer?.cancel();
-    _tickTimer = null;
+    _tickTicker?.cancel();
+    _tickTicker = null;
   }
 
   void _pauseTimers() {

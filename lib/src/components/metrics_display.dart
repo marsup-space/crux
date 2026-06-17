@@ -3,7 +3,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import '../models/session_runtime_state.dart';
 import '../theme/crux_theme.dart';
-import '../utils/frame_profiler.dart';
+import '../utils/ticker_registry.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 
@@ -45,11 +45,11 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
   /// The session id whose metrics are being shown. We bind
   /// to a specific session id rather than "whatever the
   /// current session is right now" so a session switch
-  /// cleanly tears down the old timer and starts a new one
+  /// cleanly tears down the old ticker and starts a new one
   /// for the new session (or stops it if the new session
   /// isn't responding).
   int? _activeSessionId;
-  Timer? _timer;
+  TickerToken? _ticker;
 
   /// Cached hover state. We push updates to the render
   /// object when this changes (no rebuild needed).
@@ -78,19 +78,22 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
   }
 
   void _startTimer(int sessionId) {
-    if (_timer != null && _activeSessionId == sessionId) return;
+    if (_ticker != null && _activeSessionId == sessionId) return;
     _stopTimer();
     _activeSessionId = sessionId;
-    _timer = Timer.periodic(_interval, (_) {
-      FrameProfiler.instance.markTimer('metricsTimer');
-      component.streamingController.updateLiveMetrics(sessionId);
-      _pushToRenderObject();
-    });
+    _ticker = TickerRegistry.instance.subscribe(
+      name: 'metricsTimer',
+      interval: _interval,
+      onTick: () {
+        component.streamingController.updateLiveMetrics(sessionId);
+        _pushToRenderObject();
+      },
+    );
   }
 
   void _stopTimer() {
-    _timer?.cancel();
-    _timer = null;
+    _ticker?.cancel();
+    _ticker = null;
     _activeSessionId = null;
   }
 
@@ -151,6 +154,14 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
 
+    // Ensure the metrics timer is synced with the current session
+    // state. This must be called here (not just in onRenderObject)
+    // because onRenderObject only fires on createRenderObject (first
+    // mount). On subsequent rebuilds (e.g. when isResponding becomes
+    // true at turn start), updateRenderObject is called instead, so
+    // _syncTimer() would never re-run if it were only in onRenderObject.
+    _syncTimer();
+
     return MouseRegion(
       onEnter: (_) {
         _hovered = true;
@@ -169,7 +180,6 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
           ro.context = context;
           _renderObject = ro;
           _pushToRenderObject();
-          _syncTimer();
         },
       ),
     );
