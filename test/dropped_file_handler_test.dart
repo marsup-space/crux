@@ -288,4 +288,115 @@ void main() {
       expect(classified.single.kind, DroppedFileKind.missing);
     });
   });
+
+  group('looksLikeFileDrop', () {
+    test('rejects an empty classification list', () {
+      expect(looksLikeFileDrop(const <DroppedFile>[]), isFalse);
+    });
+
+    test('accepts a single real file', () {
+      final classified = classifyDroppedPaths(
+        [fx.path('hello.txt')],
+        projectRoot: fx.root.path,
+      );
+      expect(looksLikeFileDrop(classified), isTrue);
+    });
+
+    test('accepts a single real directory', () {
+      final classified = classifyDroppedPaths(
+        [fx.path('sub')],
+        projectRoot: fx.root.path,
+      );
+      expect(looksLikeFileDrop(classified), isTrue);
+    });
+
+    test('accepts a mixed batch of real files and a directory', () {
+      final classified = classifyDroppedPaths(
+        [
+          fx.path('hello.txt'),
+          fx.path('photo.png'),
+          fx.path('big.bin'),
+          fx.path('sub'),
+        ],
+        projectRoot: fx.root.path,
+      );
+      expect(
+        classified.every((f) => f.kind != DroppedFileKind.missing),
+        isTrue,
+        reason: 'all four are real on disk',
+      );
+      expect(looksLikeFileDrop(classified), isTrue);
+    });
+
+    test('rejects when at least one token is missing (prose-with-path bug)',
+        () {
+      // Regression: the previous implementation used `any(...)` to
+      // decide whether a paste was a file drop, so a sentence that
+      // happened to mention a real file path (e.g. "see
+      // /tmp/hello.txt for context") was mis-routed as a file drop
+      // and the surrounding words were surfaced as "File(s) not
+      // found" toasts. With the new `every(...)` check, the paste
+      // falls through to plain-text insertion.
+      final classified = classifyDroppedPaths(
+        const ['see', '/see', 'for', 'context'],
+        projectRoot: fx.root.path,
+      );
+      // Sanity: the path-less words are missing; the only one that
+      // resolves is whatever happens to be a real file at that name
+      // (likely none in the fixture), or possibly one of them. The
+      // important property is that NOT all of them are real.
+      expect(
+        classified.any((f) => f.kind == DroppedFileKind.missing),
+        isTrue,
+      );
+      expect(looksLikeFileDrop(classified), isFalse);
+    });
+
+    test(
+        'rejects a real prose payload whose tokens include a real path '
+        '(reproduces the chatbox regression end-to-end)', () {
+      // End-to-end repro: paste a sentence that *mentions* a real
+      // file. With the old `any` check the chat input would consume
+      // the paste and toast the non-path words as missing files. The
+      // new `every` check must say "not a file drop" so the text
+      // falls through to the plain-text path.
+      final payload =
+          'see ${fx.path('hello.txt')} for context on the design';
+      final tokens = extractDroppedPaths(payload);
+      final classified = classifyDroppedPaths(
+        tokens,
+        projectRoot: fx.root.path,
+      );
+
+      // The real file is among the tokens, so the legacy `any`
+      // check would have classified this as a drop. The new
+      // `every` check must NOT.
+      expect(
+        classified.any((f) => f.kind != DroppedFileKind.missing),
+        isTrue,
+        reason: 'the real file token is present and resolves',
+      );
+      expect(
+        classified.any((f) => f.kind == DroppedFileKind.missing),
+        isTrue,
+        reason: 'the surrounding words resolve to nothing',
+      );
+      expect(looksLikeFileDrop(classified), isFalse);
+    });
+
+    test('rejects when every token is missing', () {
+      final classified = classifyDroppedPaths(
+        [
+          p.join(fx.root.path, 'nope_a.md'),
+          p.join(fx.root.path, 'nope_b.md'),
+        ],
+        projectRoot: fx.root.path,
+      );
+      expect(
+        classified.every((f) => f.kind == DroppedFileKind.missing),
+        isTrue,
+      );
+      expect(looksLikeFileDrop(classified), isFalse);
+    });
+  });
 }

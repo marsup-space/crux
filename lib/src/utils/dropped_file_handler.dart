@@ -278,6 +278,32 @@ String formatDroppedFilesForInput(List<DroppedFile> files) {
   return buf.toString();
 }
 
+// ─── decision helpers ───────────────────────────────────────────────
+
+/// Decide whether a paste payload, once tokenized and classified,
+/// should be treated as a file drop.
+///
+/// Real file drops from terminal emulators (iTerm2, Kitty, WezTerm,
+/// Ghostty, Finder) have a characteristic shape: every token in the
+/// payload is a path. Requiring the same here keeps us from
+/// misreading a sentence that merely *mentions* a path as a drop
+/// (e.g. pasting "see /tmp/photo.png for context" used to be
+/// mis-routed as a single-image attach, with the surrounding words
+/// surfaced as "File(s) not found" toasts).
+///
+/// Returns `true` only when [classified] is non-empty AND every
+/// token resolved to a real file or directory on disk. The caller
+/// is expected to fall through to the legacy single-image path
+/// (and from there to plain-text insertion) when this returns
+/// `false`.
+bool looksLikeFileDrop(List<DroppedFile> classified) {
+  if (classified.isEmpty) return false;
+  for (final f in classified) {
+    if (f.kind == DroppedFileKind.missing) return false;
+  }
+  return true;
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 const _imageExtensions = <String>{

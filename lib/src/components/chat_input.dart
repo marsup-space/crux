@@ -1538,20 +1538,21 @@ class ChatInputState extends State<ChatInput> {
 
     // ── 1) Drag-and-drop routing ───────────────────────────────
     // Bracketed-paste payloads from a file drop usually contain
-    // one or more absolute paths. Tokenize on whitespace, then
-    // resolve each token against the project root. If at least
-    // one token is a real file, take over the paste and dispatch
-    // each file by kind (image attach / inline content / path
-    // reference / directory listing / missing → toast).
+    // one or more absolute paths. Tokenize on whitespace, resolve
+    // each token against the project root, and require that
+    // *every* token resolves to a real file or directory before
+    // taking over the paste. Real terminal-emulator drops have
+    // a characteristic shape where every token is a path; this
+    // guard keeps us from misreading a sentence that merely
+    // *mentions* a path (e.g. "see /tmp/photo.png for context")
+    // as a file drop. See [looksLikeFileDrop].
     final candidates = extractDroppedPaths(trimmed);
     if (candidates.isNotEmpty) {
       final classified = classifyDroppedPaths(
         candidates,
         projectRoot: component.projectPath,
       );
-      final hasRealFile =
-          classified.any((f) => f.kind != DroppedFileKind.missing);
-      if (hasRealFile) {
+      if (looksLikeFileDrop(classified)) {
         _processDroppedFiles(classified, sessionId);
         return true;
       }
