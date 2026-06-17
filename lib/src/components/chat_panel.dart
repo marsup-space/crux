@@ -759,6 +759,12 @@ class _ChatPanelState extends State<ChatPanel> {
                 textController: textController,
                 images: images,
               );
+              // Auto-scroll to bottom when the user submits a message.
+              // This is critical when previous turns had expanded thinking
+              // bubbles that collapse on the new turn — without this, the
+              // scroll position drifts above the bottom and auto-scroll
+              // won't engage for the new streaming content.
+              scrollController.scrollToBottom();
             },
             onExecuteCommand: _executeCommand,
             onSwitchSession: _switchSession,

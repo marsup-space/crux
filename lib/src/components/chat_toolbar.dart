@@ -135,14 +135,14 @@ class _ChatToolbarState extends State<ChatToolbar> {
 
   Component _buildAuxiliaryModelButton(BuildContext context) {
     final sessionId = _sessionController.currentSessionId;
-    final rt =
-        sessionId != null ? _sessionController.runtime(sessionId) : null;
-    final isAuxBusy = _sessionController.isGeneratingTitle ||
-        (rt?.isGeneratingTldr ?? false);
+    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
+    final isAuxBusy =
+        _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
+    final isResponding = rt?.isResponding ?? false;
     return GlossyModelButton(
       label: '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}',
       isAnimating: isAuxBusy,
-      onPressed: component.onAuxiliaryPressed,
+      onPressed: isResponding ? null : component.onAuxiliaryPressed,
     );
   }
 
@@ -165,7 +165,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
         ? GlossyModelButton(
             label: modelLabel,
             isAnimating: true,
-            onPressed: component.onModelPressed,
+            onPressed: null, // Not clickable during streaming
           )
         : Button(
             label: modelLabel,
