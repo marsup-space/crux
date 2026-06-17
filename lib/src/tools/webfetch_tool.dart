@@ -34,8 +34,14 @@ class WebFetchTool extends ToolDef {
 
   @override
   String get description =>
-      'Fetch content from URL. Converts to requested format (markdown by default). '
-      'HTTP auto-upgraded to HTTPS. Large results may be summarized.';
+      'Fetch content from URL. Converts to requested format (markdown '
+      'by default). HTTP auto-upgraded to HTTPS. Large results (>5MB) '
+      'return an error rather than being summarized. '
+      'CALL MULTIPLE IN PARALLEL — when fetching several independent '
+      'URLs, issue all the webfetch calls in the same turn rather '
+      'than sequentially. This saves roundtrips. Aim for at most '
+      '~5 concurrent calls per turn to avoid rate limits or '
+      'upstream overload.';
 
   @override
   Map<String, dynamic> get parametersSchema => {

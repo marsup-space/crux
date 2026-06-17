@@ -32,8 +32,19 @@ class GlobTool extends ToolDef {
 
   @override
   String get description =>
-      'Find files by glob pattern. '
-      'Returns matching paths sorted by modification time.';
+      'Find files and directories by glob pattern '
+      '(e.g. `lib/**/*.dart`, `src/**/*.test.ts`). '
+      'Returns matching paths sorted by modification time. '
+      'CALL MULTIPLE IN PARALLEL — when you need to find files '
+      'matching several patterns, issue all the glob calls in the '
+      'same turn rather than sequentially. This saves roundtrips. '
+      'Mixing with read and grep in the same turn is also encouraged '
+      'when the calls are independent (e.g. glob to discover files, '
+      'then read or grep them — but issue all of them together when '
+      'you already know the paths). '
+      'Do NOT shell out to find / ls -R / tree via bash to do this — '
+      'call this tool directly. It is faster, returns structured '
+      'output, and avoids shell-quoting bugs.';
 
   @override
   Map<String, dynamic> get parametersSchema => {

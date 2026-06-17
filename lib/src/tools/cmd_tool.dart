@@ -11,11 +11,18 @@ class CmdTool extends ShellBase {
       'Executes a Windows cmd.exe command with optional timeout. '
       'Commands are written to a temporary .bat file to sidestep '
       'cmd.exe\'s broken argv parser; the file is deleted after execution. '
-      'Use this for running CLI apps, chaining operations, or anything '
-      'that needs the shell. Only avoid for single file operations that '
-      'dedicated tools handle better: use read/write/edit for file '
-      'content, grep for search, glob for file matching, etc. '
-      'Prefer powershell for complex pipelines or .NET interop.';
+      'Use ONLY for shell-native tasks: running project scripts, '
+      'builds, tests, and chaining CLI commands together. '
+      'CHAINING IS ENCOURAGED — combine multiple commands in one call '
+      'using &&, ||, |, or for-loops. This saves roundtrips and is a '
+      'primary reason to use this tool. Prefer one rich cmd call over '
+      'several short ones. Example patterns: `dotnet build && dotnet '
+      'test`, `npm run lint && npm test`, `dir /b | findstr ".csproj"`. '
+      'Do NOT use this tool to inspect files (search/find/read/edit) '
+      '— use grep, glob, read, edit, or write. Running findstr on a '
+      'file, dir as a file lister, type, more, or tree as the primary '
+      'operation on a file is wrong — use the dedicated tool. Prefer '
+      'powershell for complex pipelines or .NET interop.';
 
   @override
   ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'}) {

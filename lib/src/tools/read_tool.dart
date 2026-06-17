@@ -39,9 +39,17 @@ class ReadTool extends ToolDef {
 
   @override
   String get description =>
-      'Reads file or directory from filesystem. '
-      'Returns up to 2000 lines with line number prefixes. '
-      'Use offset/limit for later sections.';
+      'Reads the contents of a file, a directory listing, or a '
+      'specific line range of a file. Returns up to 2000 lines with '
+      'line number prefixes; use offset/limit for later sections. '
+      'CALL MULTIPLE IN PARALLEL — and feel free to mix with grep '
+      'and glob in the same turn. When you need to read several '
+      'files, list several directories, or read different ranges of '
+      'the same file, issue all the read calls in the same turn '
+      'rather than sequentially. This saves roundtrips. '
+      'Do NOT shell out to cat / head / tail / less / sed -n via bash '
+      'to do this — call this tool directly. It is faster, returns '
+      'structured output, and supports line ranges directly.';
 
   @override
   Map<String, dynamic> get parametersSchema => {

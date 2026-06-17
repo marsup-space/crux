@@ -33,10 +33,19 @@ class GrepTool extends ToolDef {
 
   @override
   String get description =>
-      'Search file contents with ripgrep regex syntax. '
-      'Returns file paths and line numbers with matches, '
-      'up to $_maxMatches results. '
-      'For match counts, use Bash with `rg` directly.';
+      'Search file contents with a regex (ripgrep syntax). '
+      'Returns matching file paths and lines with line numbers and '
+      'surrounding context, up to $_maxMatches results. The total '
+      'match count is included in the response. '
+      'CALL MULTIPLE IN PARALLEL — when searching for several '
+      'patterns, or searching the same pattern across several paths '
+      'or file globs, issue all the grep calls in the same turn '
+      'rather than sequentially. This saves roundtrips. Mixing with '
+      'read and glob in the same turn is also encouraged when the '
+      'calls are independent. '
+      'Do NOT shell out to grep / rg / ack via bash to do this — '
+      'call this tool directly. It is faster, returns structured '
+      'output, and avoids shell-quoting bugs.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
