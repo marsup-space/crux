@@ -8,6 +8,7 @@ import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
+import '../services/providers/coding_plan_provider.dart';
 import '../services/recent_projects_store.dart';
 import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
@@ -34,6 +35,17 @@ import 'suggestion_overlay.dart';
 import 'tool_detail_pane.dart';
 import 'ui/toast.dart';
 import 'ui/fullpane.dart';
+
+/// Polling cadence for the coding-plan quota API.
+///
+/// Picked by [ChatPanel] on every build based on whether any
+/// session is currently responding — the user is making API
+/// calls, the quota is moving, so poll more often. 30s while
+/// active gives near-real-time feedback on a heavy chat turn;
+/// 180s when idle keeps the upstream endpoint mostly unbothered
+/// during slow afternoons.
+const Duration _kCodingPlanActiveInterval = Duration(seconds: 30);
+const Duration _kCodingPlanIdleInterval = Duration(seconds: 180);
 
 class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
@@ -79,14 +91,35 @@ class _ChatPanelState extends State<ChatPanel> {
   /// during construction and threaded through to the chat input so
   /// the `/project` autocomplete can populate from real prior
   /// sessions rather than asking the user to type a path from
-  /// scratch. Owned by the panel so it lives for the lifetime of the
-  /// TUI (and so `/d-paths` can surface its on-disk location).
+  /// scratch. Owned by the panel so it lives for the lifetime of
+  /// the TUI (and so `/d-paths` can surface its on-disk location).
   late final RecentProjectsStore _recentProjectsStore;
 
   /// When non-null, a tool detail fullpane is shown for this tool call.
   ToolDetailData? _toolDetailData;
 
   bool _providerServiceReady = false;
+
+  // ─── Coding-plan polling state ───────────────────────────────
+
+  /// The active `CodingPlanProvider` mixin for the current
+  /// model, or null if the active provider has no coding
+  /// plan (DeepSeek, Local, custom) or no API key. Recomputed
+  /// on every build; the toolbar reads this to decide
+  /// whether to render the quota cell.
+  ///
+  /// The API key lives on the mixin itself (passed in via
+  /// `startCodingPlanPolling(apiKey: …)`); we don't need to
+  /// stash it separately on the panel.
+  CodingPlanProvider? _activeCodingPlanProvider;
+
+  /// The last provider name + activity state we synchronized
+  /// polling for. Used to short-circuit [_syncCodingPlanPolling]
+  /// when nothing actually changed (the chat panel rebuilds
+  /// on every keystroke and we don't want to re-issue
+  /// `startCodingPlanPolling` needlessly).
+  String? _lastSyncedProviderName;
+  bool? _lastSyncedHasActiveSession;
 
   final _toastKey = GlobalKey<ToastHubState>();
   final _chatInputKey = GlobalKey<ChatInputState>();
@@ -299,6 +332,92 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
+  /// Resolve the active model's [CodingPlanProvider] mixin (if
+  /// any) and re-align polling state with it. Idempotent — a
+  /// no-op when neither the provider nor the session activity
+  /// has changed since the last call. Called from [build] so
+  /// model switches and turn start/stop transitions are picked
+  /// up on the next paint.
+  void _syncCodingPlanPolling() {
+    if (!_providerServiceReady) return;
+
+    // Identify the active provider name from the current model
+    // (composite key form: `providerName/modelId`).
+    final modelKey = _sessionController.currentSession.model;
+    final slashIdx = modelKey.indexOf('/');
+    final providerName = slashIdx > 0
+        ? modelKey.substring(0, slashIdx)
+        : null;
+
+    // Look up the provider's LlmProvider instance and see if
+    // it opted into the CodingPlanProvider mixin. Non-coding-
+    // plan providers (DeepSeek, Local, custom) won't match.
+    CodingPlanProvider? provider;
+    String? apiKey;
+    if (providerName != null) {
+      final llm = _providerService.llmProviderByName(providerName);
+      if (llm is CodingPlanProvider) {
+        provider = llm;
+        apiKey = _providerService.getApiKey(providerName);
+        // If the key isn't set, treat the provider as "not
+        // available" — no polling, no toolbar cell.
+        if (apiKey == null || apiKey.isEmpty) {
+          provider = null;
+          apiKey = null;
+        }
+      }
+    }
+
+    // Is any session actively streaming? Drives the polling
+    // cadence: 30s while busy, 180s when idle.
+    final hasActive = _hasActiveSession();
+
+    // No-op when nothing actually changed. The chat panel
+    // rebuilds on every keystroke, so this short-circuit
+    // matters — without it we'd re-issue start/stop on
+    // every render.
+    if (providerName == _lastSyncedProviderName &&
+        hasActive == _lastSyncedHasActiveSession) {
+      return;
+    }
+
+    // Provider changed (or activity changed for the same
+    // provider). Stop the old polling, then start the new
+    // one (if any). When activity flips while the provider
+    // stays the same, just update the cadence — no need
+    // to tear down the timer.
+    final providerChanged = providerName != _lastSyncedProviderName;
+
+    if (providerChanged && _activeCodingPlanProvider != null) {
+      _activeCodingPlanProvider!.stopCodingPlanPolling();
+      _activeCodingPlanProvider = null;
+    }
+
+    if (provider != null && apiKey != null) {
+      _activeCodingPlanProvider = provider;
+      provider.startCodingPlanPolling(
+        apiKey: apiKey,
+        interval: hasActive
+            ? _kCodingPlanActiveInterval
+            : _kCodingPlanIdleInterval,
+      );
+    }
+
+    _lastSyncedProviderName = providerName;
+    _lastSyncedHasActiveSession = hasActive;
+  }
+
+  /// True if any session in the panel is currently
+  /// `isResponding`. Covers non-current sessions too: a
+  /// background session that's still streaming is "active"
+  /// and the user wants the same freshness for it.
+  bool _hasActiveSession() {
+    for (final s in _sessionController.sessions) {
+      if (_sessionController.runtime(s.id).isResponding) return true;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     CommandRegistry.instance.removeListener(_refresh);
@@ -312,6 +431,15 @@ class _ChatPanelState extends State<ChatPanel> {
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
+    // Stop the coding-plan polling timer. The provider's
+    // mixin owns the timer / stream / cache, so this just
+    // tells it to stop firing. The mixin's `dispose` would
+    // also close the stream controller, but we don't call
+    // it here — the provider instance is shared with the
+    // app's lifetime and other consumers may still want to
+    // read `latestCodingPlanUsage`.
+    _activeCodingPlanProvider?.stopCodingPlanPolling();
+    _activeCodingPlanProvider = null;
     scrollController.dispose();
     textController.dispose();
     super.dispose();
@@ -685,6 +813,11 @@ class _ChatPanelState extends State<ChatPanel> {
 
   @override
   Component build(BuildContext context) {
+    // Re-align the coding-plan polling timer with the current
+    // active model + session activity. Idempotent — a no-op
+    // when neither has changed since the last build.
+    _syncCodingPlanPolling();
+
     // Wrap the top-level build in a profiler section so
     // the report can show how much of each frame was spent
     // in the chat panel's build itself (vs. layout / paint
@@ -727,6 +860,7 @@ class _ChatPanelState extends State<ChatPanel> {
             streamingController: _streamingController,
             providerService: _providerService,
             providerServiceReady: _providerServiceReady,
+            codingPlanProvider: _activeCodingPlanProvider,
             runtime: rt,
             contextMaxTokens: _contextMaxTokens,
             onModelPressed: _onModelButtonPressed,

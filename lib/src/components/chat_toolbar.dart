@@ -4,8 +4,10 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
+import '../services/providers/coding_plan_provider.dart';
 import '../theme/crux_theme.dart';
 import '../utils/frame_profiler.dart';
+import 'coding_plan_usage_display.dart';
 import 'context_bar.dart';
 import 'metrics_display.dart';
 import 'session_controller.dart';
@@ -24,12 +26,26 @@ const _kIconImage = '\u{25A3}'; // ▣ — square with inner shape (image badge)
 const _kIconAuxiliary = '\u{203A}'; // › — right chevron
 
 /// The toolbar above the input box showing model name, thinking mode,
-/// context bar, metrics (tok/s, TTFT), and auxiliary model button.
+/// context bar, metrics (tok/s, TTFT), coding-plan usage, and
+/// auxiliary model button.
+///
+/// The coding-plan usage display is opt-in: it's only rendered when
+/// [codingPlanProvider] is non-null. The chat panel passes the
+/// `CodingPlanProvider` mixin instance of the active provider —
+/// providers that include the mixin (currently just MiniMax) get
+/// a quota cell; everyone else (DeepSeek, Local, custom) gets
+/// nothing.
 class ChatToolbar extends StatefulComponent {
   final SessionController sessionController;
   final StreamingController streamingController;
   final ProviderService providerService;
   final bool providerServiceReady;
+  /// The active provider's coding-plan mixin instance, or null
+  /// if the active provider doesn't have a coding plan (or no
+  /// API key is set). The chat panel resolves this on every
+  /// build and passes it through; the toolbar just plumbs it
+  /// to the widget and budgets layout when it's non-null.
+  final CodingPlanProvider? codingPlanProvider;
   final SessionRuntimeState? runtime;
   final int contextMaxTokens;
   final void Function() onModelPressed;
@@ -49,6 +65,7 @@ class ChatToolbar extends StatefulComponent {
     required this.onCompactPressed,
     required this.onAuxiliaryPressed,
     required this.onCycleThinking,
+    this.codingPlanProvider,
   });
 
   @override
@@ -146,6 +163,14 @@ class _ChatToolbarState extends State<ChatToolbar> {
     );
   }
 
+  /// Whether the active provider opted into the coding-plan
+  /// mixin (and thus has a stream to subscribe to). The
+  /// toolbar hides the quota cell when this is false so
+  /// non-coding-plan providers (DeepSeek, Local, custom)
+  /// don't get a stray "5h 100% / 1w 100%" tag in their
+  /// toolbar.
+  bool _hasCodingPlanProvider() => component.codingPlanProvider != null;
+
   @override
   Component build(BuildContext context) {
     return FrameProfiler.instance.timed(
@@ -206,6 +231,15 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // could be hidden, which is harmless.
         final tokW = '999.9 tok/s'.length + spacer;
         final ttftW = '999.99s'.length + smallSpacer;
+        // Coding-plan usage readout width budget. The widget
+        // shows itself (zero-width) when the active provider
+        // opted into the CodingPlanProvider mixin. Reserve
+        // worst-case room so a provider switch doesn't make
+        // the toolbar relayout mid-keystroke. Worst case is
+        // the hover-countdown shape: "  5h 4h 32m / 1w 6d 4h"
+        // — 27 characters.
+        final showCodingPlan = _hasCodingPlanProvider();
+        final codingPlanW = showCodingPlan ? 27 + spacer : 0;
         final auxLabel =
             '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
@@ -225,6 +259,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
 
         final showTtft = (remaining - ttftW) >= 0;
         if (showTtft) remaining -= ttftW;
+
+        final showCodingPlanUsage =
+            showCodingPlan && (remaining - codingPlanW) >= 0;
+        if (showCodingPlanUsage) remaining -= codingPlanW;
 
         final showAux = (remaining - auxW) >= 0;
 
@@ -302,6 +340,28 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     sessionController: _sessionController,
                     streamingController: _streamingController,
                     currentSessionId: _sessionController.currentSessionId,
+                  ),
+                ),
+              if (showCodingPlanUsage && component.codingPlanProvider != null)
+                // Coding-plan (Token Plan) usage readout.
+                // Sits immediately to the right of the
+                // generation-metrics display. The widget
+                // itself is display-only — it subscribes to
+                // the provider's stream and re-paints on
+                // each new snapshot. The chat panel owns
+                // the polling lifecycle (start/stop on
+                // provider switch, interval switch on
+                // session activity).
+                Hinted(
+                  hint:
+                      'Coding-plan usage\n'
+                      '5h: short-window remaining\n'
+                      '1w: weekly remaining',
+                  child: CodingPlanUsageDisplay(
+                    stream: component.codingPlanProvider!
+                        .codingPlanUsageStream,
+                    initialUsage: component.codingPlanProvider!
+                        .latestCodingPlanUsage,
                   ),
                 ),
               Expanded(child: SizedBox()),

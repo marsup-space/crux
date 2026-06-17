@@ -1,5 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import '../../models/coding_plan_usage.dart';
 import '../../models/provider_config.dart';
-import '../providers/anthropic_compatible_provider.dart';
+import '../coding_plan_usage_parser.dart';
+import 'anthropic_compatible_provider.dart';
+import 'coding_plan_provider.dart';
 
 /// Provider for the MiniMax Anthropic-compatible endpoint.
 ///
@@ -25,12 +32,114 @@ import '../providers/anthropic_compatible_provider.dart';
 /// M3's `normal` → `adaptive` rename lives in `minimax.toml` under
 /// the M3 model's `[models.reasoning_labels]` sub-table. M2.x models
 /// have no such override, so `normal` displays as `normal`.
-class MiniMaxProvider extends AnthropicCompatibleProvider {
+///
+/// The provider also includes [CodingPlanProvider] so the
+/// toolbar can display a live "Token Plan" usage readout while
+/// any MiniMax model is active. The quota is queried via
+/// `https://www.minimaxi.com/v1/token_plan/remains` using the
+/// same API key as the chat endpoint.
+class MiniMaxProvider extends AnthropicCompatibleProvider
+    with CodingPlanProvider {
   @override
   String get name => 'minimax';
 
   @override
   AuthStyle get authStyle => AuthStyle.bearer;
+
+  // ─── CodingPlanProvider implementation ──────────────────────
+
+  /// The MiniMax coding-plan (Token Plan) "remains" endpoint.
+  /// Same Bearer-token auth as the chat endpoint.
+  @override
+  Future<CodingPlanUsage> getCodingPlanUsage() async {
+    // The mixin has the API key (it was passed to
+    // `startCodingPlanPolling`); we read it back through the
+    // mixin's stream-side. But the mixin doesn't expose the
+    // key — it just stores it. Workaround: re-resolve via
+    // [ProviderService]. For a single-provider TUI this is
+    // the simplest path. See note on `currentCodingPlanApiKey`
+    // below.
+    final key = _currentCodingPlanApiKey;
+    if (key == null) {
+      throw const CodingPlanUsageError(
+        CodingPlanUsageErrorKind.noApiKey,
+        'No API key available for MiniMax coding-plan fetch',
+      );
+    }
+
+    final client = HttpClient();
+    try {
+      final request = await client
+          .getUrl(Uri.parse(_codingPlanApiUrl))
+          .timeout(const Duration(seconds: 10));
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $key');
+      request.headers
+          .set(HttpHeaders.contentTypeHeader, 'application/json');
+      final response = await request.close().timeout(
+            const Duration(seconds: 10),
+          );
+      if (response.statusCode != 200) {
+        throw CodingPlanUsageError(
+          CodingPlanUsageErrorKind.network,
+          'HTTP ${response.statusCode} from $_codingPlanApiUrl',
+        );
+      }
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
+      return parseCodingPlanUsageResponse(
+        body,
+        providerName: name,
+        preferredModelName: 'general',
+      );
+    } on CodingPlanUsageError {
+      rethrow;
+    } on SocketException catch (e) {
+      throw CodingPlanUsageError(
+        CodingPlanUsageErrorKind.network,
+        'Network error: ${e.message}',
+      );
+    } on TimeoutException {
+      throw const CodingPlanUsageError(
+        CodingPlanUsageErrorKind.network,
+        'Request timed out',
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// The API endpoint the mixin's [getCodingPlanUsage] calls.
+  /// Kept private to the provider so callers go through
+  /// [startCodingPlanPolling] rather than hitting the URL
+  /// directly.
+  static const String _codingPlanApiUrl =
+      'https://www.minimaxi.com/v1/token_plan/remains';
+
+  /// The API key passed to [startCodingPlanPolling]. The
+  /// mixin owns the timer / stream / cache, but the
+  /// provider owns the key (the chat panel pulls it from
+  /// `ProviderService` and threads it through). We stash it
+  /// on a private field here so [getCodingPlanUsage] can
+  /// read it back during a tick.
+  String? _currentCodingPlanApiKey;
+
+  @override
+  void startCodingPlanPolling({
+    required String apiKey,
+    Duration? interval,
+  }) {
+    _currentCodingPlanApiKey = apiKey;
+    super.startCodingPlanPolling(apiKey: apiKey, interval: interval);
+  }
+
+  @override
+  void stopCodingPlanPolling() {
+    super.stopCodingPlanPolling();
+    _currentCodingPlanApiKey = null;
+  }
 
   /// No class-level label overrides — all customization is done via
   /// TOML `[reasoning_labels]` (provider or model level). The base

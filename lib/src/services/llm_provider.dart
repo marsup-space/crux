@@ -36,6 +36,17 @@ abstract class LlmProvider {
 
   AuthStyle get authStyle;
 
+  /// Whether this provider exposes a coding-plan (subscription
+  /// usage) endpoint. The toolbar uses this to decide whether
+  /// to render a live quota readout next to the metrics.
+  ///
+  /// Default is `false`. Providers that want a coding-plan
+  /// display include the `CodingPlanProvider` mixin (declared
+  /// in `services/providers/coding_plan_provider.dart`), which
+  /// overrides this getter to `true` and provides the polling
+  /// lifecycle.
+  bool get isCodingPlan => false;
+
   /// Reasoning presets for a model, with TOML-driven label overrides applied.
   ///
   /// Resolution priority (highest wins on label conflicts):
