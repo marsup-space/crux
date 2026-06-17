@@ -260,12 +260,12 @@ class _ChatToolbarState extends State<ChatToolbar> {
                       EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 ),
               if (showContext) ...[
-                _buildContextBar(context),
                 Text(
                   '  ',
                   style:
                       TextStyle(color: CruxTheme.of(context).divider),
                 ),
+                _buildContextBar(context),
               ],
               if (showTokPerSec || showTtft)
                 // Delegate the live tok/s + TTFT readout to
