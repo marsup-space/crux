@@ -5,6 +5,7 @@ import '../utils/file_metadata.dart';
 import '../utils/offload_standin.dart'
     show containsOffloadStandIn, lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
+import 'file_lock.dart';
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
 
@@ -78,7 +79,13 @@ class WriteTool extends ToolDef with IntentionalTool {
   String get description =>
       'Overwrites a file with new content. The full content stays in '
       'the conversation context for subsequent turns (no offload) so '
-      'the LLM can reference what it just wrote without re-reading.';
+      'the LLM can reference what it just wrote without re-reading. '
+      'CALL MULTIPLE IN PARALLEL — issue as many write calls in one '
+      'turn as you need. Writes to DIFFERENT files run in parallel; '
+      'writes to the SAME file are serialized internally so all of '
+      'them apply in emission order (last write wins, in order). '
+      'Mixing write with read and grep in the same turn is also '
+      'encouraged when the calls are independent.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -131,6 +138,32 @@ class WriteTool extends ToolDef with IntentionalTool {
     }
 
     final resolved = resolvePath(filePath, ctx.workingDirectory);
+
+    // Critical section: any file mutation must be serialized per-file
+    // so concurrent writes (and write/edit crosses) don't lose data
+    // or corrupt the file. See file_lock.dart and
+    // write_parallel_safety_test.dart. The lock is per-path so
+    // writes to different files still run in parallel.
+    return fileLock(resolved).run(
+      () => _doWrite(
+        args: args,
+        ctx: ctx,
+        resolved: resolved,
+        content: content,
+        force: force,
+      ),
+    );
+  }
+
+  /// Body of [execute] that actually touches the file. Runs under
+  /// the per-file lock acquired by [execute]; see file_lock.dart.
+  Future<ToolResult> _doWrite({
+    required Map<String, dynamic> args,
+    required ToolContext ctx,
+    required String resolved,
+    required String content,
+    required bool force,
+  }) async {
     final file = File(resolved);
 
     if (tracker != null && file.existsSync()) {

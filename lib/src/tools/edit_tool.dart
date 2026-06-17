@@ -5,6 +5,7 @@ import '../utils/file_metadata.dart';
 import '../utils/offload_standin.dart'
     show containsOffloadStandIn, lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
+import 'file_lock.dart';
 import 'file_read_tracker.dart';
 import 'matchers/matcher.dart';
 import 'matchers/exact_matcher.dart';
@@ -101,6 +102,12 @@ class EditTool extends LargePayloadTool with IntentionalTool {
   String get description =>
       'Replaces exact text in a file. '
       'Use replaceAll for renaming across file. '
+      'CALL MULTIPLE IN PARALLEL — issue as many edit calls in one '
+      'turn as you need, including several against the SAME file. '
+      'Same-file edits are serialized internally so all of them apply '
+      'in emission order; edits to different files run in parallel. '
+      'This saves roundtrips. Mixing edit with read and grep in the '
+      'same turn is also encouraged when the calls are independent. '
       'After a successful call, any argument that exceeds the offload '
       'threshold is moved from the conversation context to the '
       'offloaded_content table; the result message reports the '
@@ -177,6 +184,38 @@ class EditTool extends LargePayloadTool with IntentionalTool {
       );
     }
 
+    // Serialize all file mutations on this path. Without the lock,
+    // two concurrent `edit` calls to the same file race on the
+    // read-modify-write cycle and only one edit survives — the rest
+    // are silently overwritten (verified by
+    // edit_parallel_safety_test.dart). Per-file locking keeps
+    // concurrent edits to DIFFERENT files running in parallel.
+    return fileLock(resolved).run(
+      () => _doMutation(
+        args: args,
+        resolved: resolved,
+        file: file,
+        oldString: oldString,
+        newString: newString,
+        replaceAll: replaceAll,
+        ctx: ctx,
+      ),
+    );
+  }
+
+  /// File-mutation body, executed under the per-file lock acquired
+  /// by [execute]. Extracted so the lock holds across all awaits
+  /// in this method — moving any `await` outside the lock would
+  /// re-open the race window.
+  Future<ToolResult> _doMutation({
+    required Map<String, dynamic> args,
+    required String resolved,
+    required File file,
+    required String oldString,
+    required String newString,
+    required bool replaceAll,
+    required ToolContext ctx,
+  }) async {
     if (tracker != null) {
       final guard = await tracker!.checkWriteGuard(resolved);
       if (guard != null) {
