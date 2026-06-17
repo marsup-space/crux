@@ -236,36 +236,55 @@ class _ChatToolbarState extends State<ChatToolbar> {
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Row(
             children: [
-              modelButton,
-              if (_modelSupportsImages(
-                  _sessionController.currentSession.model))
-                Text(
-                  _kIconImage,
-                  style: TextStyle(
-                    color: CruxTheme.of(context).onSurfaceVariant,
+              // The model picker button. Hinted with the current
+              // model so the user can tell at a glance which model
+              // the next click will switch to. The default
+              // 500 ms delay is what we want for toolbar buttons.
+              Hinted(
+                hint: isResponding
+                    ? 'Current model: $modelLabel\n(model cannot be changed while the agent is responding)'
+                    : 'Current model: $modelLabel\n(click to change)',
+                child: modelButton,
+              ),
+              if (_modelSupportsImages(_sessionController.currentSession.model))
+                Hinted(
+                  hint: 'This model accepts image inputs',
+                  child: Text(
+                    _kIconImage,
+                    style: TextStyle(
+                      color: CruxTheme.of(context).onSurfaceVariant,
+                    ),
                   ),
                 ),
               if (showThinking && nonNullRt != null)
-                Button(
-                  label: thinkingLabel,
-                  onPressed: () => component.onCycleThinking(nonNullRt),
-                  color: nonNullRt.thinkingMode == 'disabled'
-                      ? CruxTheme.of(context).thinkingLabelDisabled
-                      : CruxTheme.of(context).onSurfaceVariant,
-                  hoverColor: CruxTheme.of(context).buttonTextHover,
-                  bgColor: CruxTheme.of(context).buttonBackground,
-                  hoverBgColor:
-                      CruxTheme.of(context).buttonBackgroundHover,
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                Hinted(
+                  hint:
+                      'Thinking mode: '
+                      '${_displayEffort(nonNullRt.reasoningEffort ?? 'normal')}\n'
+                      '(click to cycle through effort levels)',
+                  child: Button(
+                    label: thinkingLabel,
+                    onPressed: () => component.onCycleThinking(nonNullRt),
+                    color: nonNullRt.thinkingMode == 'disabled'
+                        ? CruxTheme.of(context).thinkingLabelDisabled
+                        : CruxTheme.of(context).onSurfaceVariant,
+                    hoverColor: CruxTheme.of(context).buttonTextHover,
+                    bgColor: CruxTheme.of(context).buttonBackground,
+                    hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
+                    padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                  ),
                 ),
               if (showContext) ...[
                 Text(
                   '  ',
-                  style:
-                      TextStyle(color: CruxTheme.of(context).divider),
+                  style: TextStyle(color: CruxTheme.of(context).divider),
                 ),
-                _buildContextBar(context),
+                Hinted(
+                  hint:
+                      'Context window usage.\n'
+                      'Click to compact the session history.',
+                  child: _buildContextBar(context),
+                ),
               ],
               if (showTokPerSec || showTtft)
                 // Delegate the live tok/s + TTFT readout to
@@ -275,13 +294,28 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 // tick anymore — that's the 2.4× speedup
                 // landed earlier. Hover state (cache-hit %)
                 // is also handled locally in the widget.
-                MetricsDisplay(
-                  sessionController: _sessionController,
-                  streamingController: _streamingController,
-                  currentSessionId: _sessionController.currentSessionId,
+                Hinted(
+                  hint:
+                      'Generation throughput (tokens/sec) and '
+                      'time to first token',
+                  child: MetricsDisplay(
+                    sessionController: _sessionController,
+                    streamingController: _streamingController,
+                    currentSessionId: _sessionController.currentSessionId,
+                  ),
                 ),
               Expanded(child: SizedBox()),
-              if (showAux) _buildAuxiliaryModelButton(context),
+              if (showAux)
+                Hinted(
+                  hint: isResponding
+                      ? 'Auxiliary model: '
+                          '${_sessionController.auxiliaryModelShortName}\n'
+                          '(cannot be changed while the agent is responding)'
+                      : 'Auxiliary model: '
+                          '${_sessionController.auxiliaryModelShortName}\n'
+                          '(used for /tldr summaries and title generation)',
+                  child: _buildAuxiliaryModelButton(context),
+                ),
             ],
           ),
         );

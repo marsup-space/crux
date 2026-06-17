@@ -1,32 +1,10 @@
 import 'dart:math' as math;
 
-import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
-import 'package:nocterm/src/utils/unicode_width.dart';
 
 import '../utils/terminal_symbols.dart';
-
-// Rounded-border glyphs used by the hover tooltip. These match the
-// `_BorderCharacters.rounded` set in nocterm's `decorated_box.dart`
-// (BoxBorderStyle.rounded), so the visual output is identical to what
-// `BoxBorder.all(style: BoxBorderStyle.rounded)` would produce.
-//
-// We draw the border by hand rather than using a `Container` with a
-// `BoxDecoration` because the tooltip is painted directly inside
-// `RenderAnnotatedScrollbar.paint`, at a position derived from the
-// scrollbar-internal marker coordinates (`_visibleMarkers`, `scrollbarX`,
-// `markerY`). Those coordinates are only known during the paint pass; a
-// `Container` would need them at layout time, which would mean hoisting
-// marker-position math out of the render object and through the widget
-// tree — a much bigger change than the rest of the scrollbar warrants.
-const _tooltipTopLeft = '╭';
-const _tooltipTopRight = '╮';
-const _tooltipBottomLeft = '╰';
-const _tooltipBottomRight = '╯';
-const _tooltipHorizontal = '─';
-const _tooltipVertical = '│';
 
 class ScrollbarMarker {
   const ScrollbarMarker({
@@ -63,8 +41,6 @@ class AnnotatedScrollbar extends StatefulComponent {
     this.thickness = 1.0,
     this.trackColor,
     this.thumbColor,
-    this.tooltipBackgroundColor,
-    this.tooltipBorderColor,
     this.markers = const [],
   });
 
@@ -74,15 +50,14 @@ class AnnotatedScrollbar extends StatefulComponent {
   final double thickness;
   final Color? trackColor;
   final Color? thumbColor;
-  final Color? tooltipBackgroundColor;
-  final Color? tooltipBorderColor;
   final List<ScrollbarMarker> markers;
 
   @override
   State<AnnotatedScrollbar> createState() => _AnnotatedScrollbarState();
 }
 
-class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
+class _AnnotatedScrollbarState extends State<AnnotatedScrollbar>
+    with HintStateMixin<AnnotatedScrollbar> {
   ScrollController? _controller;
   int? _hoveredMarkerIndex;
   bool _isHovered = false;
@@ -103,11 +78,114 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
     }
   }
 
-  void _onHover(MouseEvent event) {
-    final renderObj = _getRenderObject();
-    if (renderObj == null) return;
-    final hitIdx = renderObj.markerAtGlobalPosition(event.x, event.y);
+  // The scrollbar's tooltip is anchored to the hovered marker, not
+  // the mouse cursor. The default mixin behavior (follow-the-mouse)
+  // would put the tooltip on top of the scrollbar, which is exactly
+  // where the marker is — close, but not what we want. The
+  // The marker tooltip should appear *to the left* of the marker
+  // (between the chat content and the scrollbar thumb), not above
+  // or below. The default placement ([HintPlacement.above]) would
+  // drop the tooltip into the chat history, which is the wrong
+  // place to anchor a scroll-bar hint.
+  @override
+  HintPlacement get hintPlacement => HintPlacement.left;
 
+  // The marker labels are short and the user expects the tooltip
+  // to appear immediately when the cursor crosses a marker — the
+  // 500 ms default would make the scroll bar feel sluggish. The
+  // tooltips for the *toolbar* items below use the default 500 ms
+  // (see the chat toolbar's [Hinted] wrappers), which is the
+  // conventional tooltip feel for hoverable buttons.
+  @override
+  Duration get hintDelay => Duration.zero;
+
+  @override
+  String? get hintContent {
+    final idx = _hoveredMarkerIndex;
+    if (idx == null) return null;
+    final markers = component.markers;
+    if (idx < 0 || idx >= markers.length) return null;
+    return markers[idx].label;
+  }
+
+  @override
+  Color? get hintColor {
+    final idx = _hoveredMarkerIndex;
+    if (idx == null) return null;
+    final markers = component.markers;
+    if (idx < 0 || idx >= markers.length) return null;
+    return markers[idx].color;
+  }
+
+  /// The bounds of the marker's cell, in the [HintOverlay]'s local
+  /// coordinate system. The resolver uses this to anchor the
+  /// tooltip *next to* the marker (via the [hintPlacement] of
+  /// [HintPlacement.left] above) rather than directly on top of it
+  /// or below it.
+  ///
+  /// When no marker is hovered the [hintContent] returns `null`
+  /// anyway, so the bounds don't matter — the controller hides the
+  /// hint before the resolver ever sees it.
+  @override
+  Rect hintSourceBounds(MouseEvent event) {
+    final idx = _hoveredMarkerIndex;
+    final renderObj = _getRenderObject();
+    if (idx == null || renderObj == null) {
+      // Fall back to a 1×1 rect at the mouse — same as the
+      // default. Shouldn't be hit in practice (the hint is hidden
+      // when there's no marker), but a no-op fallback keeps the
+      // type honest.
+      return Rect.fromLTWH(event.x.toDouble(), event.y.toDouble(), 1, 1);
+    }
+    // The marker is rendered at column `scrollbarX` (= size.width −
+    // thickness) in the render object's local frame. Per the
+    // invariant documented on [HintStateMixin.hintPosition], the
+    // render object's local frame *is* the overlay's local frame
+    // when the state passes a hint from inside the overlay's
+    // subtree (which is the only case where this state is mounted).
+    return renderObj.markerSourceBounds(idx) ??
+        Rect.fromLTWH(event.x.toDouble(), event.y.toDouble(), 1, 1);
+  }
+
+  // Pin the tooltip's outer width to the space between the chat
+  // content and the scrollbar thumb. Without this, the overlay's
+  // default width (40 cells) is used, which is wider than the
+  // available space for most terminals — the right edge of the
+  // tooltip would no longer sit flush against the thumb, and the
+  // word-wrapping would happen at a width that doesn't match the
+  // layout the scroll bar was sized for.
+  @override
+  int? get hintMaxWidth {
+    final w = _getRenderObject()?.getMarkerMaxTooltipWidth() ?? 0;
+    return w > 0 ? w : null;
+  }
+
+  // The mouse handlers are all overridden so the state can keep
+  // [_isHovered] and [_hoveredMarkerIndex] in sync with the render
+  // object before delegating to the mixin. The mixin's
+  // [HintStateMixin.onHintEnter] / [onHintHover] / [onHintExit] read
+  // the (now-updated) [hintContent] / [hintColor] / [hintPosition]
+  // getters and push the result to the [HintController]. Because
+  // [HintStateMixin.buildWithHint] always installs a [MouseRegion]
+  // (even when [hintContent] is currently null), these overrides
+  // are guaranteed to fire on the very first hover — no parallel
+  // inner [MouseRegion] needed.
+  @override
+  void onHintEnter(MouseEvent event) {
+    setState(() {
+      _isHovered = true;
+      _isLeftButtonDown = event.pressed || event.isPrimaryButtonDown;
+      final renderObj = _getRenderObject();
+      if (renderObj == null) return;
+      _hoveredMarkerIndex = renderObj.markerAtGlobalPosition(event.x, event.y);
+    });
+    super.onHintEnter(event);
+  }
+
+  @override
+  void onHintHover(MouseEvent event) {
+    final renderObj = _getRenderObject();
+    final hitIdx = renderObj?.markerAtGlobalPosition(event.x, event.y);
     if (hitIdx != _hoveredMarkerIndex) {
       setState(() {
         _hoveredMarkerIndex = hitIdx;
@@ -119,28 +197,20 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
       _jumpToMarker(hitIdx);
     }
     _isLeftButtonDown = leftDown;
+
+    super.onHintHover(event);
   }
 
-  void _onEnter(MouseEvent event) {
-    _isHovered = true;
-    final renderObj = _getRenderObject();
-    if (renderObj == null) return;
-    final hitIdx = renderObj.markerAtGlobalPosition(event.x, event.y);
-    if (hitIdx != _hoveredMarkerIndex) {
+  @override
+  void onHintExit(MouseEvent event) {
+    if (_isHovered || _hoveredMarkerIndex != null) {
       setState(() {
-        _hoveredMarkerIndex = hitIdx;
-      });
-    }
-  }
-
-  void _onExit(MouseEvent event) {
-    _isHovered = false;
-    _isLeftButtonDown = false;
-    if (_hoveredMarkerIndex != null) {
-      setState(() {
+        _isHovered = false;
+        _isLeftButtonDown = false;
         _hoveredMarkerIndex = null;
       });
     }
+    super.onHintExit(event);
   }
 
   void _jumpToMarker(int markerIndex) {
@@ -166,20 +236,14 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar> {
 
   @override
   Component build(BuildContext context) {
-    return MouseRegion(
-      opaque: false,
-      onHover: _onHover,
-      onEnter: _onEnter,
-      onExit: _onExit,
-      child: _AnnotatedScrollbarRenderObjectWidget(
+    return buildWithHint(
+      _AnnotatedScrollbarRenderObjectWidget(
         key: _renderKey,
         controller: _controller,
         thumbVisibility: component.thumbVisibility,
         thickness: component.thickness,
         trackColor: component.trackColor,
         thumbColor: component.thumbColor,
-        tooltipBackgroundColor: component.tooltipBackgroundColor,
-        tooltipBorderColor: component.tooltipBorderColor,
         markers: component.markers,
         hoveredMarkerIndex: _hoveredMarkerIndex,
         isScrollbarHovered: _isHovered,
@@ -198,8 +262,6 @@ class _AnnotatedScrollbarRenderObjectWidget
     required this.thickness,
     this.trackColor,
     this.thumbColor,
-    this.tooltipBackgroundColor,
-    this.tooltipBorderColor,
     required this.markers,
     required this.hoveredMarkerIndex,
     required this.isScrollbarHovered,
@@ -211,8 +273,6 @@ class _AnnotatedScrollbarRenderObjectWidget
   final double thickness;
   final Color? trackColor;
   final Color? thumbColor;
-  final Color? tooltipBackgroundColor;
-  final Color? tooltipBorderColor;
   final List<ScrollbarMarker> markers;
   final int? hoveredMarkerIndex;
   final bool isScrollbarHovered;
@@ -226,8 +286,6 @@ class _AnnotatedScrollbarRenderObjectWidget
       thickness: thickness,
       trackColor: trackColor ?? theme.surface,
       thumbColor: thumbColor ?? theme.onSurface,
-      tooltipBackgroundColor: tooltipBackgroundColor,
-      tooltipBorderColor: tooltipBorderColor,
       markers: markers,
       hoveredMarkerIndex: hoveredMarkerIndex,
       isScrollbarHovered: isScrollbarHovered,
@@ -236,7 +294,9 @@ class _AnnotatedScrollbarRenderObjectWidget
 
   @override
   void updateRenderObject(
-      BuildContext context, RenderAnnotatedScrollbar renderObject) {
+    BuildContext context,
+    RenderAnnotatedScrollbar renderObject,
+  ) {
     final theme = TuiTheme.of(context);
     renderObject
       ..controller = controller
@@ -244,8 +304,6 @@ class _AnnotatedScrollbarRenderObjectWidget
       ..thickness = thickness
       ..trackColor = trackColor ?? theme.surface
       ..thumbColor = thumbColor ?? theme.onSurface
-      ..tooltipBackgroundColor = tooltipBackgroundColor
-      ..tooltipBorderColor = tooltipBorderColor
       ..markers = markers
       ..hoveredMarkerIndex = hoveredMarkerIndex
       ..isScrollbarHovered = isScrollbarHovered;
@@ -259,34 +317,15 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     required super.thickness,
     required super.trackColor,
     required super.thumbColor,
-    Color? tooltipBackgroundColor,
-    Color? tooltipBorderColor,
     List<ScrollbarMarker> markers = const [],
     int? hoveredMarkerIndex,
     bool isScrollbarHovered = false,
-  })  : _markers = markers,
-        _hoveredMarkerIndex = hoveredMarkerIndex,
-        _isScrollbarHovered = isScrollbarHovered,
-        _tooltipBackgroundColor = tooltipBackgroundColor,
-        _tooltipBorderColor = tooltipBorderColor;
+  }) : _markers = markers,
+       _hoveredMarkerIndex = hoveredMarkerIndex,
+       _isScrollbarHovered = isScrollbarHovered;
 
+  @override
   double get minimumThumbHeight => 2.0;
-
-  Color? _tooltipBackgroundColor;
-  Color? get tooltipBackgroundColor => _tooltipBackgroundColor;
-  set tooltipBackgroundColor(Color? value) {
-    if (_tooltipBackgroundColor == value) return;
-    _tooltipBackgroundColor = value;
-    markNeedsPaint();
-  }
-
-  Color? _tooltipBorderColor;
-  Color? get tooltipBorderColor => _tooltipBorderColor;
-  set tooltipBorderColor(Color? value) {
-    if (_tooltipBorderColor == value) return;
-    _tooltipBorderColor = value;
-    markNeedsPaint();
-  }
 
   List<ScrollbarMarker> _markers;
   List<ScrollbarMarker> get markers => _markers;
@@ -362,14 +401,10 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
           final trackEnd = hasArrows ? size.height - 1 : size.height;
           final isReversed = ctrl.isReversed;
           if (localY < trackStart) {
-            isReversed
-                ? ctrl.scrollToEnd()
-                : ctrl.scrollToStart();
+            isReversed ? ctrl.scrollToEnd() : ctrl.scrollToStart();
             return;
           } else if (localY >= trackEnd) {
-            isReversed
-                ? ctrl.scrollToStart()
-                : ctrl.scrollToEnd();
+            isReversed ? ctrl.scrollToStart() : ctrl.scrollToEnd();
             return;
           }
         }
@@ -390,9 +425,10 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     if (controller!.maxScrollExtent <= 0) return;
     if (_markers.isEmpty) return;
     _paintMarkers(canvas, offset);
-    if (_hoveredMarkerIndex != null) {
-      _paintTooltip(canvas, offset);
-    }
+    // The hover tooltip is no longer painted here — it now flows
+    // through the app-wide [HintOverlay] (see
+    // [_AnnotatedScrollbarState.onHintHover] and
+    // [getMarkerTooltipGlobalPosition] below).
   }
 
   int? markerAtGlobalPosition(int globalX, int globalY) {
@@ -408,6 +444,80 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
       }
     }
     return null;
+  }
+
+  /// Returns the outer width (including the border) that a tooltip
+  /// for this scrollbar should be pinned to. The tooltip fills
+  /// exactly the space between the chat content and the scrollbar
+  /// thumb, capped at half the scrollbar's width so it never
+  /// reaches the opposite edge of the terminal.
+  ///
+  /// Returns 0 when the scrollbar is too narrow to host a tooltip
+  /// at all (callers should treat that as "no tooltip possible").
+  int getMarkerMaxTooltipWidth() {
+    final scrollbarX = size.width - thickness;
+    final maxTooltipWidth = math.min(
+      (scrollbarX - 1).toInt(),
+      (size.width / 2).floor(),
+    );
+    return maxTooltipWidth < 3 ? 0 : maxTooltipWidth;
+  }
+
+  /// Returns the position at which a tooltip for [markerIndex] should
+  /// be drawn, in the **HintOverlay's local coordinate system** (i.e.
+  /// relative to the top-left of the [HintOverlay]'s `Stack`).
+  ///
+  /// The tooltip is placed to the left of the scrollbar (in the area
+  /// typically occupied by chat content), one row above the marker
+  /// itself, so the top of the bordered tooltip sits flush with the
+  /// marker row. The tooltip's outer width is
+  /// [getMarkerMaxTooltipWidth], which the [_AnnotatedScrollbarState]
+  /// passes to the [HintController] as the `maxWidth` so the
+  /// tooltip's content word-wraps to fit the same width.
+  ///
+  /// The position is returned in the overlay's local space, not in
+  /// absolute terminal coordinates, because the [HintOverlay] uses
+  /// the value as the `Positioned` widget's `left`/`top` — which
+  /// are interpreted in the Stack's local frame. The Stack's paint
+  /// offset is added by the framework during paint, so we must not
+  /// add [_myPaintOffset] here (doing so would shift the tooltip by
+  /// the render object's terminal position *twice* — once by us,
+  /// once by the Stack's paint pass).
+  ///
+  /// In practice, the render object that owns [_myPaintOffset] and
+  /// the HintOverlay's Stack sit at the same terminal position
+  /// (the AnnotatedScrollbar's render object is a descendant of the
+  /// Stack's child, and every component in the chain — the
+  /// `HintOverlay`, the `ChatPanel`'s `LayoutBuilder`, the chat
+  /// history's `Stack`, the `SelectionArea`, and the scroll bar's
+  /// own `MouseRegion` — has zero paint offset relative to its
+  /// parent). That equality is what makes "return the local
+  /// coordinates" equivalent to "return the offset the user
+  /// expects" for the actual app.
+  ///
+  /// Returns the bounds (in the render object's local coordinate
+  /// system) of the cell that paints [markerIndex], or `null` if
+  /// the marker isn't currently visible (e.g. it's hidden by the
+  /// thumb). The state passes this to [HintController.show] as the
+  /// hint's [HintController.activeSourceBounds], which the
+  /// [HintOverlay] uses to anchor the tooltip on the marker.
+  ///
+  /// The marker is always a single cell wide (`thickness` is the
+  /// scrollbar's rightmost column) and 1 cell tall. The vertical
+  /// position is the marker's actual y in [_visibleMarkers]; the
+  /// horizontal position is always `size.width - thickness` (the
+  /// scrollbar's column).
+  Rect? markerSourceBounds(int markerIndex) {
+    double? markerY;
+    for (final (idx, y) in _visibleMarkers) {
+      if (idx == markerIndex) {
+        markerY = y;
+        break;
+      }
+    }
+    if (markerY == null) return null;
+    final scrollbarX = size.width - thickness;
+    return Rect.fromLTWH(scrollbarX.toDouble(), markerY, 1, 1);
   }
 
   static Color _dimColor(Color color, double factor) {
@@ -487,193 +597,9 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     }
   }
 
-  void _paintTooltip(TerminalCanvas canvas, Offset offset) {
-    if (_hoveredMarkerIndex == null) return;
-    if (_hoveredMarkerIndex! >= _markers.length) return;
-
-    final marker = _markers[_hoveredMarkerIndex!];
-    final label = marker.label;
-    if (label == null || label.isEmpty) return;
-
-    double? markerY;
-    for (final (idx, y) in _visibleMarkers) {
-      if (idx == _hoveredMarkerIndex) {
-        markerY = y;
-        break;
-      }
-    }
-    if (markerY == null) return;
-
-    final scrollbarX = size.width - thickness;
-    final maxTooltipWidth = math.min(
-      (scrollbarX - 1).toInt(),
-      (size.width / 2).floor(),
-    );
-    if (maxTooltipWidth <= 0) return;
-
-    const maxLines = 4;
-    // Reserve 2 columns for the left/right border.
-    final innerWidth = maxTooltipWidth - 2;
-    if (innerWidth <= 0) return;
-
-    final lines = _wrapText(label, innerWidth);
-    final trimmedLines = lines.length > maxLines
-        ? [...lines.sublist(0, maxLines - 1), '${lines[maxLines - 1]}…']
-        : lines;
-
-    // Vertical layout:
-    //   row 0: top border (╭──…──╮)
-    //   rows 1..N: content lines (│…│)
-    //   row N+1: bottom border (╰──…──╯)
-    // The content is anchored to the marker row (markerY), so the top border
-    // sits one row above the marker, and the content lines start at markerY.
-    final topY = markerY - 1;
-    if (topY < 0) return;
-
-    var tooltipLineCount = trimmedLines.length;
-    // Clamp the number of content lines to whatever fits before the bottom.
-    final maxBottomY = size.height - 1; // reserve 1 row for the bottom border
-    if (markerY + tooltipLineCount > maxBottomY) {
-      tooltipLineCount = (maxBottomY - markerY).toInt();
-    }
-    if (tooltipLineCount <= 0) return;
-
-    final effectiveLines = trimmedLines.sublist(0, tooltipLineCount);
-    final bgColor = tooltipBackgroundColor ?? const Color(0x21222C);
-    final borderColor = tooltipBorderColor ?? const Color(0x6272A4);
-
-    final rightEdge = scrollbarX - 1;
-    final tooltipX = rightEdge - maxTooltipWidth;
-
-    // Top border: ╭──…──╮
-    final topRow = '$_tooltipTopLeft${_tooltipHorizontal * innerWidth}$_tooltipTopRight';
-    canvas.fillRect(
-      Rect.fromLTWH(
-        offset.dx + tooltipX,
-        offset.dy + topY,
-        maxTooltipWidth.toDouble(),
-        1.0,
-      ),
-      ' ',
-      style: TextStyle(backgroundColor: bgColor),
-    );
-    canvas.drawText(
-      offset + Offset(tooltipX.toDouble(), topY),
-      topRow,
-      style: TextStyle(color: borderColor, backgroundColor: bgColor),
-    );
-
-    // Content rows: │<padded text>│
-    for (var lineIdx = 0; lineIdx < effectiveLines.length; lineIdx++) {
-      final line = effectiveLines[lineIdx];
-      final lineY = markerY + lineIdx.toDouble();
-
-      canvas.fillRect(
-        Rect.fromLTWH(
-          offset.dx + tooltipX,
-          offset.dy + lineY,
-          maxTooltipWidth.toDouble(),
-          1.0,
-        ),
-        ' ',
-        style: TextStyle(backgroundColor: bgColor),
-      );
-
-      // Side borders.
-      canvas.drawText(
-        offset + Offset(tooltipX.toDouble(), lineY),
-        _tooltipVertical,
-        style: TextStyle(color: borderColor, backgroundColor: bgColor),
-      );
-      canvas.drawText(
-        offset + Offset((tooltipX + maxTooltipWidth - 1).toDouble(), lineY),
-        _tooltipVertical,
-        style: TextStyle(color: borderColor, backgroundColor: bgColor),
-      );
-
-      canvas.drawText(
-        offset + Offset((tooltipX + 1).toDouble(), lineY),
-        line,
-        style: TextStyle(
-          color: marker.color,
-          backgroundColor: bgColor,
-        ),
-      );
-    }
-
-    // Bottom border: ╰──…──╯
-    final bottomY = markerY + tooltipLineCount;
-    if (bottomY < size.height) {
-      final bottomRow =
-          '$_tooltipBottomLeft${_tooltipHorizontal * innerWidth}$_tooltipBottomRight';
-      canvas.fillRect(
-        Rect.fromLTWH(
-          offset.dx + tooltipX,
-          offset.dy + bottomY,
-          maxTooltipWidth.toDouble(),
-          1.0,
-        ),
-        ' ',
-        style: TextStyle(backgroundColor: bgColor),
-      );
-      canvas.drawText(
-        offset + Offset(tooltipX.toDouble(), bottomY),
-        bottomRow,
-        style: TextStyle(color: borderColor, backgroundColor: bgColor),
-      );
-    }
-  }
-
-  List<String> _wrapText(String text, int maxWidth) {
-    if (maxWidth <= 0) return [];
-    final words = text.split(RegExp(r'\s+'));
-    final lines = <String>[];
-    var currentLine = '';
-
-    for (final word in words) {
-      if (word.isEmpty) continue;
-      final wordWidth = UnicodeWidth.stringWidth(word);
-
-      if (currentLine.isEmpty) {
-        if (wordWidth <= maxWidth) {
-          currentLine = word;
-        } else {
-          currentLine = _truncateToWidth(word, maxWidth);
-        }
-      } else {
-        final combinedWidth =
-            UnicodeWidth.stringWidth(currentLine) + 1 + wordWidth;
-        if (combinedWidth <= maxWidth) {
-          currentLine = '$currentLine $word';
-        } else {
-          lines.add(currentLine);
-          if (wordWidth <= maxWidth) {
-            currentLine = word;
-          } else {
-            currentLine = _truncateToWidth(word, maxWidth);
-          }
-        }
-      }
-    }
-
-    if (currentLine.isNotEmpty) {
-      lines.add(currentLine);
-    }
-
-    return lines;
-  }
-
-  String _truncateToWidth(String text, int maxWidth) {
-    if (maxWidth <= 1) return '…';
-    final targetWidth = maxWidth - 1;
-    var width = 0;
-    final buffer = StringBuffer();
-    for (final char in text.characters) {
-      final charWidth = UnicodeWidth.stringWidth(char);
-      if (width + charWidth > targetWidth) break;
-      buffer.write(char);
-      width += charWidth;
-    }
-    return '$buffer…';
-  }
+  // The hover tooltip used to be drawn by [_paintTooltip] here, but
+  // it now flows through the app-wide [HintOverlay]. All this code
+  // needs is [getMarkerTooltipGlobalPosition] above, which the
+  // [_AnnotatedScrollbarState] uses to position the hint next to the
+  // marker.
 }

@@ -508,8 +508,9 @@ class _CruxAppState extends State<_CruxApp> {
     component.themeController.addListener(_handleThemeChanged);
     // Override nocterm's default 30fps to 60fps for smoother animations
     // (streaming text, status indicators, context bar, etc.).
-    SchedulerBinding.instance.targetFrameDuration =
-        const Duration(microseconds: 16667);
+    SchedulerBinding.instance.targetFrameDuration = const Duration(
+      microseconds: 16667,
+    );
   }
 
   void _handleThemeChanged() => setState(() {});
@@ -532,14 +533,26 @@ class _CruxAppState extends State<_CruxApp> {
     return NoctermApp(
       title: 'Crux',
       theme: theme.toTuiThemeData(),
+      // HintOverlay sits just inside the [NoctermApp] so its [Stack]
+      // is anchored at the global origin — every hint registered via
+      // the app-wide [HintController] draws over the chat panel
+      // regardless of where in the tree its source lives. The
+      // scrollbar markers (see [AnnotatedScrollbar]) register hints
+      // with a zero delay so they show immediately; ordinary
+      // components that mix in [HintStateMixin] use the default
+      // 500 ms delay.
       child: CruxTheme(
         data: theme,
-        child: ChatPanel(
-          userProvidersDir: component.userProvidersDir,
-          builtInProvidersDir: component.builtInProvidersDir,
-          themeController: component.themeController,
-          recentProjectsStore: component.recentProjectsStore,
-          startupWarnings: component.startupWarnings,
+        child: HintOverlay(
+          tooltipBackgroundColor: theme.overlayBackground,
+          tooltipBorderColor: theme.overlayBorder,
+          child: ChatPanel(
+            userProvidersDir: component.userProvidersDir,
+            builtInProvidersDir: component.builtInProvidersDir,
+            themeController: component.themeController,
+            recentProjectsStore: component.recentProjectsStore,
+            startupWarnings: component.startupWarnings,
+          ),
         ),
       ),
     );

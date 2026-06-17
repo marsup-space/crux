@@ -271,7 +271,6 @@ class _ChatHistoryState extends State<ChatHistory> {
         controller: component.scrollController,
         thumbVisibility: true,
         markers: markers,
-        tooltipBackgroundColor: CruxTheme.of(context).overlayBackground,
         child: ListView.builder(
           controller: component.scrollController,
           padding: EdgeInsets.all(1),
