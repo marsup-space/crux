@@ -11,6 +11,7 @@ import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/write_tool.dart';
 
 import 'package:crux/src/components/ui/highlighted_markdown_text.dart';
+import 'package:crux/src/components/ui/response_link_text.dart';
 
 ToolRegistry _registryWithWriteTool() {
   final r = ToolRegistry();
@@ -264,6 +265,53 @@ void main() {
         expect(tester.terminalState, containsText('2'));
       });
     });
+
+    test(
+      'TLDR ResponseLinkText renders tables with the same borders as the main '
+      'response',
+      () async {
+        await testNocterm('tldr table', (tester) async {
+          const input = '| A | B |\n|---|---|\n| 1 | 2 |';
+
+          String mainBorder, tldrBorder;
+          await tester.pumpComponent(
+            Container(
+              width: 80,
+              height: 24,
+              child: HighlightedMarkdownText(input),
+            ),
+          );
+          mainBorder = tester.renderToString();
+
+          await tester.pumpComponent(
+            Container(
+              width: 80,
+              height: 24,
+              child: const ResponseLinkText(markdownText: input),
+            ),
+          );
+          tldrBorder = tester.renderToString();
+
+          // Both renderers should produce the same box-drawing borders and
+          // table content — the TLDR path was previously using a different
+          // (incorrect) table renderer.
+          expect(tldrBorder, contains('┌'));
+          expect(tldrBorder, contains('┐'));
+          expect(tldrBorder, contains('└'));
+          expect(tldrBorder, contains('┘'));
+          expect(tldrBorder, contains('├'));
+          expect(tldrBorder, contains('┤'));
+          expect(tldrBorder, contains('┬'));
+          expect(tldrBorder, contains('┴'));
+          expect(tldrBorder, contains('┼'));
+          // Body cells must be present.
+          expect(tldrBorder, contains('1'));
+          expect(tldrBorder, contains('2'));
+          // The two renderers should be byte-identical for the same input.
+          expect(tldrBorder, equals(mainBorder));
+        });
+      },
+    );
   });
 
   group('Button', () {

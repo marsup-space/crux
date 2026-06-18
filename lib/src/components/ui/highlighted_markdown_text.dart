@@ -42,20 +42,12 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   String? _lastThemeId;
 
   List<InlineSpan> _parseMarkdown(CruxThemeData theme, {int? maxWidth}) {
-    final effectiveStyleSheet =
-        component.styleSheet ?? HighlightMarkdownStyleSheet.fromTheme(theme);
-    final document = md.Document(
-      extensionSet: md.ExtensionSet.gitHubFlavored,
-      encodeHtml: false,
-    );
-    final nodes = document.parse(component.data);
-
-    final visitor = _HighlightMarkdownVisitor(
-      effectiveStyleSheet,
-      theme: theme,
+    return parseMarkdownToInlineSpans(
+      component.data,
+      theme,
       maxWidth: maxWidth,
+      styleSheet: component.styleSheet,
     );
-    return visitor.visitNodes(nodes);
   }
 
   @override
@@ -239,6 +231,40 @@ TextStyle? _mergedWithHighlight(TextStyle? base, CruxThemeData theme) {
     fontStyle: base?.fontStyle,
     decoration: base?.decoration,
   );
+}
+
+/// Parses [text] as GitHub-Flavored Markdown and returns a flat list of
+/// [InlineSpan]s suitable for terminal rendering.
+///
+/// This is the shared entry point used by every markdown-aware widget
+/// in the app (the main chat response renderer, the TLDR summary
+/// renderer, the BTW bubble, tool detail panes, etc.) so they all
+/// produce visually consistent output — including tables, code
+/// blocks, and the full box-drawing border treatment.
+///
+/// Pass [maxWidth] to constrain the rendered width to the available
+/// terminal columns; tables, code blocks, and HR rules respect this
+/// value. [styleSheet] overrides the theme-derived default styles.
+List<InlineSpan> parseMarkdownToInlineSpans(
+  String text,
+  CruxThemeData theme, {
+  int? maxWidth,
+  HighlightMarkdownStyleSheet? styleSheet,
+}) {
+  final effectiveStyleSheet =
+      styleSheet ?? HighlightMarkdownStyleSheet.fromTheme(theme);
+  final document = md.Document(
+    extensionSet: md.ExtensionSet.gitHubFlavored,
+    encodeHtml: false,
+  );
+  final nodes = document.parse(text);
+
+  final visitor = _HighlightMarkdownVisitor(
+    effectiveStyleSheet,
+    theme: theme,
+    maxWidth: maxWidth,
+  );
+  return visitor.visitNodes(nodes);
 }
 
 typedef _FlatSpan = (String, TextStyle?);

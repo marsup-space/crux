@@ -1,4 +1,3 @@
-import 'package:markdown/markdown.dart' as md;
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
 import 'highlighted_markdown_text.dart';
@@ -124,14 +123,17 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
     return null;
   }
 
-  (List<InlineSpan>, List<ResponseLink>) _buildSpans(CruxThemeData theme) {
+  (List<InlineSpan>, List<ResponseLink>) _buildSpans(
+    CruxThemeData theme, {
+    int? maxWidth,
+  }) {
     final parsed = _parseTldrRefs(component.markdownText);
     if (parsed.links.isEmpty) {
-      final spans = _parseMarkdown(parsed.displayText, theme);
+      final spans = _parseMarkdown(parsed.displayText, theme, maxWidth);
       return (spans, parsed.links);
     }
 
-    final mdSpans = _parseMarkdown(parsed.displayText, theme);
+    final mdSpans = _parseMarkdown(parsed.displayText, theme, maxWidth);
     final plainText = _flattenToPlainText(mdSpans);
 
     final resolvedLinks = <ResponseLink>[];
@@ -156,15 +158,12 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
     return (styledSpans, resolvedLinks);
   }
 
-  List<InlineSpan> _parseMarkdown(String text, CruxThemeData theme) {
-    final styleSheet = HighlightMarkdownStyleSheet.fromTheme(theme);
-    final document = md.Document(
-      extensionSet: md.ExtensionSet.gitHubFlavored,
-      encodeHtml: false,
-    );
-    final nodes = document.parse(text);
-    final visitor = _TldrMarkdownVisitor(styleSheet, theme);
-    return visitor.visitNodes(nodes);
+  List<InlineSpan> _parseMarkdown(
+    String text,
+    CruxThemeData theme,
+    int? maxWidth,
+  ) {
+    return parseMarkdownToInlineSpans(text, theme, maxWidth: maxWidth);
   }
 
   List<InlineSpan> _applyLinkStyles(
@@ -248,26 +247,33 @@ class _ResponseLinkTextState extends State<ResponseLinkText> {
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final (spans, links) = _buildSpans(theme);
-    _lastLinks = links;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.toInt()
+            : null;
+        final (spans, links) = _buildSpans(theme, maxWidth: maxWidth);
+        _lastLinks = links;
 
-    return GestureDetector(
-      onTap: _handleTap,
-      behavior: HitTestBehavior.opaque,
-      child: MouseRegion(
-        opaque: true,
-        onHover: _handleHover,
-        onExit: (_) {
-          if (_hoveredLink != null) {
-            _hoveredLink = null;
-            setState(() {});
-          }
-        },
-        child: RichText(
-          key: _richTextKey,
-          text: TextSpan(children: spans),
-        ),
-      ),
+        return GestureDetector(
+          onTap: _handleTap,
+          behavior: HitTestBehavior.opaque,
+          child: MouseRegion(
+            opaque: true,
+            onHover: _handleHover,
+            onExit: (_) {
+              if (_hoveredLink != null) {
+                _hoveredLink = null;
+                setState(() {});
+              }
+            },
+            child: RichText(
+              key: _richTextKey,
+              text: TextSpan(children: spans),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -367,250 +373,4 @@ TextStyle? _mergeSpanStyles(TextStyle? parent, TextStyle? child) {
     fontStyle: child.fontStyle ?? parent.fontStyle,
     decoration: child.decoration ?? parent.decoration,
   );
-}
-
-class _TldrMarkdownVisitor {
-  _TldrMarkdownVisitor(this.styleSheet, this.theme);
-
-  final HighlightMarkdownStyleSheet styleSheet;
-  final CruxThemeData theme;
-  int _listDepth = 0;
-
-  List<InlineSpan> visitNodes(List<md.Node> nodes) {
-    final spans = <InlineSpan>[];
-    for (final node in nodes) {
-      final span = visitNode(node);
-      if (span != null) {
-        spans.add(span);
-      }
-    }
-    if (spans.isNotEmpty) {
-      spans[spans.length - 1] = _trimTrailingNewlines(spans.last);
-    }
-    return spans;
-  }
-
-  static InlineSpan _trimTrailingNewlines(InlineSpan span) {
-    if (span is! TextSpan) return span;
-    final children = span.children;
-    if (children != null && children.isNotEmpty) {
-      final last = children.last;
-      if (last is TextSpan &&
-          last.text != null &&
-          RegExp(r'^\n+$').hasMatch(last.text!)) {
-        final trimmed = children.sublist(0, children.length - 1);
-        return TextSpan(children: trimmed, style: span.style);
-      }
-      final trimmedLast = _trimTrailingNewlines(last);
-      if (trimmedLast != last) {
-        final updated = [...children];
-        updated[updated.length - 1] = trimmedLast;
-        return TextSpan(children: updated, style: span.style);
-      }
-    } else if (span.text != null && span.text!.endsWith('\n')) {
-      return TextSpan(text: span.text!.trimRight(), style: span.style);
-    }
-    return span;
-  }
-
-  InlineSpan? visitNode(md.Node node) {
-    if (node is md.Element) {
-      return visitElement(node);
-    } else if (node is md.Text) {
-      return TextSpan(text: node.text);
-    }
-    return null;
-  }
-
-  InlineSpan? visitElement(md.Element element) {
-    switch (element.tag) {
-      case 'h1':
-      case 'h2':
-      case 'h3':
-      case 'h4':
-      case 'h5':
-      case 'h6':
-        final style = element.tag == 'h1'
-            ? styleSheet.h1Style
-            : element.tag == 'h2'
-            ? styleSheet.h2Style
-            : element.tag == 'h3'
-            ? styleSheet.h3Style
-            : element.tag == 'h4'
-            ? styleSheet.h4Style
-            : element.tag == 'h5'
-            ? styleSheet.h5Style
-            : styleSheet.h6Style;
-        return TextSpan(
-          children: [
-            ...visitChildren(element),
-            const TextSpan(text: '\n\n'),
-          ],
-          style: style,
-        );
-      case 'p':
-        return TextSpan(
-          children: [
-            ...visitChildren(element),
-            const TextSpan(text: '\n\n'),
-          ],
-        );
-      case 'strong':
-        return TextSpan(
-          children: visitChildren(element),
-          style: styleSheet.boldStyle,
-        );
-      case 'em':
-        return TextSpan(
-          children: visitChildren(element),
-          style: styleSheet.italicStyle,
-        );
-      case 'del':
-        return TextSpan(
-          children: visitChildren(element),
-          style: styleSheet.strikethroughStyle,
-        );
-      case 'code':
-        return TextSpan(text: element.textContent, style: styleSheet.codeStyle);
-      case 'pre':
-        return TextSpan(text: element.textContent);
-      case 'blockquote':
-        return TextSpan(
-          children: [
-            TextSpan(text: '│ ', style: styleSheet.blockquoteStyle),
-            ...visitChildren(element),
-          ],
-        );
-      case 'a':
-        return TextSpan(
-          children: visitChildren(element),
-          style: styleSheet.linkStyle,
-        );
-      case 'ul':
-        _listDepth++;
-        final spans = <InlineSpan>[];
-        for (final child in element.children ?? <md.Node>[]) {
-          spans.add(
-            TextSpan(
-              children: [
-                TextSpan(text: '  ' * (_listDepth - 1) + '• '),
-                ...visitChildren(child as md.Element),
-                const TextSpan(text: '\n'),
-              ],
-            ),
-          );
-        }
-        _listDepth--;
-        return TextSpan(children: spans);
-      case 'ol':
-        _listDepth++;
-        final spans = <InlineSpan>[];
-        var i = 1;
-        for (final child in element.children ?? <md.Node>[]) {
-          spans.add(
-            TextSpan(
-              children: [
-                TextSpan(text: '  ' * (_listDepth - 1) + '$i. '),
-                ...visitChildren(child as md.Element),
-                const TextSpan(text: '\n'),
-              ],
-            ),
-          );
-          i++;
-        }
-        _listDepth--;
-        return TextSpan(children: spans);
-      case 'li':
-        return TextSpan(children: visitChildren(element));
-      case 'hr':
-        return TextSpan(
-          text: '${'─' * 40}\n',
-          style: TextStyle(color: theme.divider),
-        );
-      case 'img':
-        final alt = element.attributes['alt'] ?? '';
-        return TextSpan(text: alt);
-      case 'table':
-        return _visitTable(element);
-      case 'thead':
-      case 'tbody':
-      case 'tr':
-        return TextSpan(children: visitChildren(element));
-      case 'th':
-      case 'td':
-        return TextSpan(
-          children: [
-            ...visitChildren(element),
-            const TextSpan(text: ' '),
-          ],
-        );
-      case 'br':
-        return const TextSpan(text: '\n');
-      default:
-        return TextSpan(children: visitChildren(element));
-    }
-  }
-
-  List<InlineSpan> visitChildren(md.Element parent) {
-    final spans = <InlineSpan>[];
-    for (final child in parent.children ?? <md.Node>[]) {
-      final span = visitNode(child);
-      if (span != null) {
-        spans.add(span);
-      }
-    }
-    return spans;
-  }
-
-  InlineSpan _visitTable(md.Element table) {
-    final rows = <List<String>>[];
-    void collectRows(md.Element element) {
-      if (element.tag == 'tr') {
-        final cells = <String>[];
-        for (final cell in element.children ?? <md.Node>[]) {
-          if (cell is md.Element && (cell.tag == 'th' || cell.tag == 'td')) {
-            cells.add(cell.textContent.trim());
-          }
-        }
-        rows.add(cells);
-      } else {
-        for (final child in element.children ?? <md.Node>[]) {
-          if (child is md.Element) collectRows(child);
-        }
-      }
-    }
-
-    collectRows(table);
-
-    if (rows.isEmpty) return const TextSpan(text: '');
-
-    final maxCols = rows.map((r) => r.length).reduce((a, b) => a > b ? a : b);
-    final colWidths = List.filled(maxCols, 0);
-    for (final row in rows) {
-      for (var i = 0; i < row.length && i < maxCols; i++) {
-        if (row[i].length > colWidths[i]) colWidths[i] = row[i].length;
-      }
-    }
-
-    final spans = <InlineSpan>[];
-    for (var r = 0; r < rows.length; r++) {
-      if (r == 1) {
-        final sep = colWidths.map((w) => '─' * (w + 2)).join('┼');
-        spans.add(
-          TextSpan(
-            text: '$sep\n',
-            style: TextStyle(color: theme.divider),
-          ),
-        );
-      }
-      final cells = <String>[];
-      for (var c = 0; c < maxCols; c++) {
-        final text = c < rows[r].length ? rows[r][c] : '';
-        cells.add(text.padRight(colWidths[c]));
-      }
-      final style = r == 0 ? styleSheet.boldStyle : null;
-      spans.add(TextSpan(text: ' ${cells.join(' │ ')} \n', style: style));
-    }
-    return TextSpan(children: spans);
-  }
 }
