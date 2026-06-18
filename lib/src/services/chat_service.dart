@@ -852,11 +852,13 @@ class ChatService {
         //
         // Both hints are deliberately NOT persisted to the DB — they
         // shape this session's behaviour and are gone on resumption.
-        // The user-facing `parallel_praise` bubble (persisted below)
-        // is a separate artefact that exists only for the positive
-        // signal; the single-call reminder has no user-facing
-        // counterpart (the user doesn't need to see "your agent got
-        // a nudge").
+        // The user-facing `parallel_praise` and `single_call_reminder`
+        // bubbles (persisted below) are separate artefacts: the
+        // praise bubble is the positive signal made visible to the
+        // user, and the reminder bubble is the corrective signal made
+        // visible. They're persisted only when the in-context hint
+        // also fires, so the chat history never claims a nudge that
+        // didn't happen.
 
         // First: update the consecutive-single-call counter based
         // on this round. We use the round's *successful* call count
@@ -955,14 +957,35 @@ class ChatService {
         // the tool_call row, so the chat history renders it inline
         // under the matching tool-call list. Same `hintEnabled`
         // gate as the in-context praise hint so the two never
-        // disagree. The single-call reminder has no user-facing
-        // counterpart (the user doesn't need to see the nudge).
+        // disagree.
         if (hintEnabled && successfulCalls >= 2) {
           await _messageStore.addMessage(
             sessionId,
             role: 'parallel_praise',
             content: renderParallelPraiseBubbleLabel(successfulCalls),
             parallelCount: successfulCalls,
+          );
+        }
+        // Mirror of the praise block above for the single-call
+        // reminder. Same `hintEnabled` gate AND the same modulo gate
+        // as the in-context hint injection above so all three
+        // surfaces (in-context hint, DB bubble, user-facing UI)
+        // fire and stay silent together. `parallelCount` is reused
+        // as the telemetry-int column for system-role bubbles — see
+        // the dispatch in `message_bubble.dart` and the
+        // `Message.parallelCount` docstring.
+        if (hintEnabled &&
+            successfulCalls == 1 &&
+            runtime.consecutiveSingleToolCallRounds > 0 &&
+            runtime.consecutiveSingleToolCallRounds % hintSingleThreshold ==
+                0) {
+          await _messageStore.addMessage(
+            sessionId,
+            role: 'single_call_reminder',
+            content: renderSingleCallReminderBubbleLabel(
+              runtime.consecutiveSingleToolCallRounds,
+            ),
+            parallelCount: runtime.consecutiveSingleToolCallRounds,
           );
         }
       } catch (e) {

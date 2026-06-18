@@ -246,3 +246,24 @@ String renderParallelPraiseBubbleLabel(int successfulCount) {
   return '$successfulCount tool calls parallelized · '
       'saving $savings $tripWord';
 }
+
+/// Short, user-facing label for the `single_call_reminder` bubble
+/// rendered in the TUI. This is *not* sent to the LLM — it's the
+/// one-liner the user sees scrolling past in the chat history,
+/// telling them the agent has been serialising for a while and the
+/// in-context reminder has just been injected into the next turn.
+///
+/// Counterpart to [renderParallelPraiseBubbleLabel]: same shape,
+/// different role, opposite sentiment. The two stay paired visually
+/// so users can scan chat history and tell at a glance which rounds
+/// batched well (praise, green) and which drifted toward
+/// serialisation (reminder, warning yellow).
+///
+/// [consecutiveCount] is the value of
+/// `SessionRuntimeState.consecutiveSingleToolCallRounds` at the
+/// moment the modulo gate fired — a positive multiple of the
+/// configured threshold (10, 20, 30, … by default).
+String renderSingleCallReminderBubbleLabel(int consecutiveCount) {
+  return '$consecutiveCount consecutive single-tool-call rounds · '
+      'consider batching independent reads/searches';
+}

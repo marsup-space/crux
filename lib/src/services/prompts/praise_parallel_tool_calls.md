@@ -161,9 +161,16 @@ in production.
 
 In-context hints are **never** persisted to the message store —
 they shape this session's behaviour and are gone on resumption.
-The user-facing `parallel_praise` bubble (positive signal only) is
-a different artefact and *is* persisted (so the user can scroll
-back and see which turns had parallel calls).
+The user-facing `parallel_praise` and `single_call_reminder`
+bubbles are different artefacts and *are* persisted (so the user
+can scroll back and see which turns had parallel calls and which
+drifted toward serialisation).
+
+Both bubbles reuse the `messages.parallel_count` int column as a
+generic telemetry-int payload — see `Message.parallelCount` for the
+role-specific interpretation. This avoids a schema migration for
+what is logically the same column ("a count for the system
+bubble's role").
 
 ## Toggle
 

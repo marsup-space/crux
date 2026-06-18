@@ -10,6 +10,7 @@ import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'parallel_praise_bubble.dart';
+import 'single_call_reminder_bubble.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -70,6 +71,16 @@ class MessageBubble extends StatelessComponent {
     if (message.role == 'tool_call') return _buildToolCallWithContent(context);
     if (message.role == 'parallel_praise') {
       return ParallelPraiseBubble(successfulCount: message.parallelCount);
+    }
+    if (message.role == 'single_call_reminder') {
+      // `parallelCount` is reused as the "telemetry int" column for
+      // both system-role bubbles: it's the parallelized call count
+      // for `parallel_praise` rows and the consecutive single-call
+      // round count for `single_call_reminder` rows. Same column,
+      // different meaning per role — see Message.parallelCount.
+      return SingleCallReminderBubble(
+        consecutiveCount: message.parallelCount,
+      );
     }
 
     final isUser = message.role == 'user';

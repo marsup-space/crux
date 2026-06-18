@@ -138,6 +138,23 @@ void main() {
     });
   });
 
+  group('renderSingleCallReminderBubbleLabel (user-facing reminder)', () {
+    test('shows the consecutive count and a batching suggestion', () {
+      final out = renderSingleCallReminderBubbleLabel(10);
+      expect(out, contains('10 consecutive single-tool-call rounds'));
+      expect(out, contains('consider batching'));
+    });
+
+    test('uses the actual count (no plural/singular branching needed)', () {
+      // Unlike the praise label (which switches "round trip"/"round
+      // trips" on the savings count), the reminder label only
+      // prints the consecutive round count once — no singular
+      // special case to test.
+      expect(renderSingleCallReminderBubbleLabel(20), contains('20'));
+      expect(renderSingleCallReminderBubbleLabel(30), contains('30'));
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────
   // 1b. Single-call hint prompt rendering (new feature)
   // ─────────────────────────────────────────────────────────────────
@@ -966,6 +983,141 @@ context_size = 1000
         'parallel_praise',
       ]);
       expect(msgs.last.parallelCount, 2);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 5. End-to-end persistence: single_call_reminder row + value integrity
+  //
+  // Mirrors the parallel_praise persistence group above. The
+  // `parallelCount` column is reused as the "telemetry int" for both
+  // system-role bubbles — for `single_call_reminder` rows it carries
+  // the consecutive single-call round count rather than the
+  // parallelised call count. The renderer dispatches on `role` and
+  // interprets the value with the role-appropriate meaning.
+  // ─────────────────────────────────────────────────────────────────────
+  group('MessageStore — single_call_reminder persistence', () {
+    late CruxDatabase db;
+    late SessionStore store;
+    late int sessionId;
+
+    setUp(() async {
+      db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      final session = await store.create(
+        title: 'reminder',
+        model: 'openai/gpt-4o',
+        projectPath: '/tmp',
+      );
+      sessionId = session.id;
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('addMessage with role=single_call_reminder stores consecutiveCount', () async {
+      final msg = await store.messageStore.addMessage(
+        sessionId,
+        role: 'single_call_reminder',
+        content: renderSingleCallReminderBubbleLabel(10),
+        parallelCount: 10,
+      );
+      expect(msg.role, 'single_call_reminder');
+      expect(msg.parallelCount, 10);
+      expect(msg.content, contains('10 consecutive single-tool-call rounds'));
+
+      // Round-trip through the DB to confirm the column persists.
+      final loaded = (await store.messageStore.getMessages(sessionId)).first;
+      expect(loaded.role, 'single_call_reminder');
+      expect(loaded.parallelCount, 10);
+    });
+
+    test('single_call_reminder row appears after a tool_call row in order', () async {
+      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q');
+      await store.messageStore.addToolRound(
+        sessionId,
+        roundText: '',
+        toolCalls: [
+          // Single tool call (drift round) — produces one tool row.
+          ToolCallData(callId: 'a', name: 'read', input: {}),
+        ],
+        results: [
+          (callId: 'a', output: 'contents'),
+        ],
+      );
+      await store.messageStore.addMessage(
+        sessionId,
+        role: 'single_call_reminder',
+        content: renderSingleCallReminderBubbleLabel(10),
+        parallelCount: 10,
+      );
+
+      final msgs = await store.messageStore.getMessages(sessionId);
+      // Same inline-under-the-tool-call-list ordering contract as
+      // the praise bubble: the renderer draws the reminder
+      // directly below the matching tool-call row.
+      expect(msgs.map((m) => m.role).toList(), [
+        'user',
+        'tool_call',
+        'tool',
+        'single_call_reminder',
+      ]);
+      expect(msgs.last.parallelCount, 10);
+    });
+
+    test('parallel_praise and single_call_reminder can coexist in one session', () async {
+      // Round 1: praise (batched).
+      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q');
+      await store.messageStore.addToolRound(
+        sessionId,
+        roundText: '',
+        toolCalls: [
+          ToolCallData(callId: 'a', name: 'grep', input: {}),
+          ToolCallData(callId: 'b', name: 'read', input: {}),
+        ],
+        results: [
+          (callId: 'a', output: 'match'),
+          (callId: 'b', output: 'contents'),
+        ],
+      );
+      await store.messageStore.addMessage(
+        sessionId,
+        role: 'parallel_praise',
+        content: renderParallelPraiseBubbleLabel(2),
+        parallelCount: 2,
+      );
+      // Round 2: drift (single call) + reminder.
+      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q2');
+      await store.messageStore.addToolRound(
+        sessionId,
+        roundText: '',
+        toolCalls: [
+          ToolCallData(callId: 'c', name: 'read', input: {}),
+        ],
+        results: [
+          (callId: 'c', output: 'contents'),
+        ],
+      );
+      await store.messageStore.addMessage(
+        sessionId,
+        role: 'single_call_reminder',
+        content: renderSingleCallReminderBubbleLabel(10),
+        parallelCount: 10,
+      );
+
+      final msgs = await store.messageStore.getMessages(sessionId);
+      expect(msgs.map((m) => m.role).toList(), [
+        'user',
+        'tool_call',
+        'tool',
+        'tool',
+        'parallel_praise',
+        'user',
+        'tool_call',
+        'tool',
+        'single_call_reminder',
+      ]);
     });
   });
 }
