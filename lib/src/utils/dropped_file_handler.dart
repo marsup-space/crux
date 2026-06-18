@@ -1,37 +1,23 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-/// Maximum size (in bytes) of a text file that will be inlined into
-/// the chat input when the user drags-and-drops it. Files larger
-/// than this fall back to being inserted as a path reference; the
-/// AI agent can still read them on demand with its file tools.
-///
-/// 64 KiB is large enough for most source files and small enough
-/// to keep the chat input responsive. Tuned for the typical
-/// single-file drop case (drag one source file, get the content);
-/// a multi-file drop with several of these would still fit in a
-/// normal LLM context.
-const int kMaxInlineTextBytes = 64 * 1024;
-
 /// How a single dropped path should be handled. The caller
 /// (`ChatInput._handlePaste`) maps each kind to a UI action:
-///   • [image]            → attach as image attachment (existing path)
-///   • [inlineableText]   → read content and inline into the input
-///   • [largeOrBinary]    → insert path as a labeled reference
-///   • [directory]        → list a few entries and insert as reference
-///   • [missing]          → show an error toast, do not insert
+///   • [image]         → attach as image attachment (existing path)
+///   • [file]          → insert path as a labeled reference
+///   • [directory]     → list a few entries and insert as reference
+///   • [missing]       → show an error toast, do not insert
 enum DroppedFileKind {
   image,
-  inlineableText,
-  largeOrBinary,
+  file,
   directory,
   missing,
 }
 
-/// One classified entry from a drop. [content] is only populated
-/// for [DroppedFileKind.inlineableText].
+/// One classified entry from a drop. Only the path is stored;
+/// file content is never inlined — the AI agent reads files on
+/// demand with its own tools.
 class DroppedFile {
   /// The raw token from the paste, as the user (or their file
   /// manager) emitted it — may be quoted, URL-encoded, or relative.
@@ -44,16 +30,11 @@ class DroppedFile {
   final DroppedFileKind kind;
   final int sizeBytes;
 
-  /// Inlined text content (only set when [kind] is
-  /// [DroppedFileKind.inlineableText]).
-  final String? content;
-
   const DroppedFile({
     required this.originalPath,
     required this.absolutePath,
     required this.kind,
     required this.sizeBytes,
-    this.content,
   });
 }
 
@@ -149,9 +130,9 @@ List<DroppedFile> classifyDroppedPaths(
       continue;
     }
 
-    // It's a file.
-    final file = File(resolved);
-    final size = _safeLength(file);
+    // It's a file — just record the path; the AI agent reads
+    // file content on demand with its own tools.
+    final size = _safeLength(resolved);
     final ext = p.extension(resolved).toLowerCase();
     if (_isImageExtension(ext)) {
       results.add(DroppedFile(
@@ -160,46 +141,11 @@ List<DroppedFile> classifyDroppedPaths(
         kind: DroppedFileKind.image,
         sizeBytes: size,
       ));
-      continue;
-    }
-    if (size > kMaxInlineTextBytes) {
+    } else {
       results.add(DroppedFile(
         originalPath: original,
         absolutePath: resolved,
-        kind: DroppedFileKind.largeOrBinary,
-        sizeBytes: size,
-      ));
-      continue;
-    }
-    // Small file: try to read as text. We treat a NUL byte in the
-    // first 8 KiB as a "definitely binary" signal (matches the
-    // `file` command's heuristic). If decoding fails for any
-    // reason we fall back to [largeOrBinary] so the user still
-    // gets a useful path reference.
-    try {
-      final bytes = file.readAsBytesSync();
-      if (_looksBinary(bytes)) {
-        results.add(DroppedFile(
-          originalPath: original,
-          absolutePath: resolved,
-          kind: DroppedFileKind.largeOrBinary,
-          sizeBytes: size,
-        ));
-        continue;
-      }
-      final text = utf8.decode(bytes, allowMalformed: true);
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.inlineableText,
-        sizeBytes: size,
-        content: text,
-      ));
-    } on FileSystemException {
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.largeOrBinary,
+        kind: DroppedFileKind.file,
         sizeBytes: size,
       ));
     }
@@ -210,12 +156,9 @@ List<DroppedFile> classifyDroppedPaths(
 /// Build the text to insert into the chat input for the
 /// non-image, non-missing entries in [files].
 ///
-/// The format is deliberately simple and grep-friendly: each file
-/// gets a `---` header line that contains the absolute path and
-/// the byte count, followed by its content, followed by an `end`
-/// marker. This is what tools like `aider`, `cursor`, and
-/// `claude-code` do internally — the AI can clearly see file
-/// boundaries and the user can see what was attached.
+/// Each file is inserted as a path reference — the AI agent will
+/// read file content on demand with its own tools. Directories
+/// get a lightweight listing so the user can see what's inside.
 ///
 /// Image and missing entries are skipped here; the caller handles
 /// them separately (attach / toast).
@@ -227,20 +170,10 @@ String formatDroppedFilesForInput(List<DroppedFile> files) {
       case DroppedFileKind.missing:
         // Caller handles these.
         break;
-      case DroppedFileKind.inlineableText:
-        final name = p.basename(f.absolutePath);
-        buf.writeln('--- $name (${f.absolutePath}, ${f.sizeBytes} B) ---');
-        buf.writeln(f.content ?? '');
-        if (buf.isNotEmpty && !buf.toString().endsWith('\n')) {
-          buf.writeln();
-        }
-        buf.writeln('--- end $name ---');
-        buf.writeln();
-        break;
-      case DroppedFileKind.largeOrBinary:
+      case DroppedFileKind.file:
         buf.writeln(
           '[file: ${f.absolutePath} '
-          '(${_humanSize(f.sizeBytes)}, not inlined)]',
+          '(${_humanSize(f.sizeBytes)})]',
         );
         buf.writeln();
         break;
@@ -313,21 +246,9 @@ const _imageExtensions = <String>{
 
 bool _isImageExtension(String ext) => _imageExtensions.contains(ext);
 
-bool _looksBinary(List<int> bytes) {
-  // Sample the first 8 KiB. Any NUL byte is a strong binary
-  // signal (no common text encoding uses 0x00 outside of UTF-16
-  // surrogates, and a real UTF-16 file would still decode fine
-  // through our UTF-8 fallback).
-  final n = bytes.length < 8192 ? bytes.length : 8192;
-  for (var i = 0; i < n; i++) {
-    if (bytes[i] == 0) return true;
-  }
-  return false;
-}
-
-int _safeLength(File f) {
+int _safeLength(String path) {
   try {
-    return f.lengthSync();
+    return File(path).lengthSync();
   } on FileSystemException {
     return 0;
   }

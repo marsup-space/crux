@@ -29,9 +29,8 @@ Future<_Fixture> _createFixture() async {
   await writeFile('hello.txt', 'Hello, world!\nLine 2.\n'.codeUnits);
   await writeFile('main.dart', 'void main() { print("hi"); }\n'.codeUnits);
   await writeFile('photo.png', [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-  await writeFile('big.bin', List.filled(kMaxInlineTextBytes + 100, 0x41));
-  // Binary: contains a NUL byte early, so the text heuristic
-  // should reject it even though it's well under the size limit.
+  await writeFile('big.bin', List.filled(128 * 1024, 0x41));
+  // Binary file with a NUL byte — should still be classified as 'file'.
   await writeFile('blarp.dat', [0x48, 0x65, 0x00, 0x6C, 0x6C, 0x6F]);
   await Directory(p.join(root.path, 'sub')).create();
   files['sub'] = p.join(root.path, 'sub');
@@ -108,32 +107,32 @@ void main() {
   });
 
   group('classifyDroppedPaths', () {
-    test('classifies a small UTF-8 text file as inlineableText', () {
+    test('classifies a small UTF-8 text file as file', () {
       final r = classifyDroppedPaths(
         [fx.path('hello.txt')],
         projectRoot: fx.root.path,
       );
       expect(r, hasLength(1));
-      expect(r.first.kind, DroppedFileKind.inlineableText);
+      expect(r.first.kind, DroppedFileKind.file);
       expect(r.first.sizeBytes, 'Hello, world!\nLine 2.\n'.length);
-      expect(r.first.content, 'Hello, world!\nLine 2.\n');
+      expect(r.first.absolutePath, fx.path('hello.txt'));
     });
 
-    test('classifies a file with a NUL byte as largeOrBinary', () {
+    test('classifies any non-image file as file (regardless of binary content)',
+        () {
       final r = classifyDroppedPaths(
         [fx.path('blarp.dat')],
         projectRoot: fx.root.path,
       );
-      expect(r.first.kind, DroppedFileKind.largeOrBinary);
+      expect(r.first.kind, DroppedFileKind.file);
     });
 
-    test('classifies a file larger than the inline limit as largeOrBinary',
-        () {
+    test('classifies a large file as file', () {
       final r = classifyDroppedPaths(
         [fx.path('big.bin')],
         projectRoot: fx.root.path,
       );
-      expect(r.first.kind, DroppedFileKind.largeOrBinary);
+      expect(r.first.kind, DroppedFileKind.file);
     });
 
     test('classifies a directory as directory', () {
@@ -165,7 +164,7 @@ void main() {
         ['hello.txt'],
         projectRoot: fx.root.path,
       );
-      expect(r.first.kind, DroppedFileKind.inlineableText);
+      expect(r.first.kind, DroppedFileKind.file);
       expect(r.first.absolutePath, fx.path('hello.txt'));
       // originalPath is the user's input — relative as they typed it.
       expect(r.first.originalPath, 'hello.txt');
@@ -183,9 +182,9 @@ void main() {
         projectRoot: fx.root.path,
       );
       expect(r.map((f) => f.kind).toList(), [
-        DroppedFileKind.inlineableText,
+        DroppedFileKind.file,
         DroppedFileKind.image,
-        DroppedFileKind.largeOrBinary,
+        DroppedFileKind.file,
         DroppedFileKind.directory,
         DroppedFileKind.missing,
       ]);
@@ -193,25 +192,25 @@ void main() {
   });
 
   group('formatDroppedFilesForInput', () {
-    test('renders inlined text with a header and end marker', () {
+    test('renders a file as a path reference', () {
       final files = classifyDroppedPaths(
         [fx.path('hello.txt')],
         projectRoot: fx.root.path,
       );
       final out = formatDroppedFilesForInput(files);
-      expect(out, contains('--- hello.txt ('));
-      expect(out, contains('Hello, world!'));
-      expect(out, contains('--- end hello.txt ---'));
+      expect(out, contains('[file:'));
+      expect(out, contains(fx.path('hello.txt')));
+      expect(out, isNot(contains('Hello, world!')));
     });
 
-    test('renders large/binary files as a labeled reference', () {
+    test('renders a large/binary file as a path reference', () {
       final files = classifyDroppedPaths(
         [fx.path('big.bin')],
         projectRoot: fx.root.path,
       );
       final out = formatDroppedFilesForInput(files);
       expect(out, contains('[file:'));
-      expect(out, contains('not inlined'));
+      expect(out, contains('128.0 KB'));
     });
 
     test('renders a directory with a listing of its first entries', () {
@@ -239,8 +238,7 @@ void main() {
   });
 
   group('end-to-end: extract + classify + format', () {
-    test('dropping a real text file yields an inlined, well-formed block',
-        () {
+    test('dropping a real text file yields a path reference, not content', () {
       // Simulate what a bracketed-paste payload looks like when
       // the user drags a file from Finder (single quoted path).
       final payload = "'${fx.path('main.dart')}'";
@@ -250,12 +248,14 @@ void main() {
         projectRoot: fx.root.path,
       );
       final out = formatDroppedFilesForInput(classified);
-      expect(out, contains('--- main.dart ('));
-      expect(out, contains('void main()'));
-      expect(out, contains('--- end main.dart ---'));
+      expect(out, contains('[file:'));
+      expect(out, contains('main.dart'));
+      // Content must NOT be inlined.
+      expect(out, isNot(contains('void main()')));
     });
 
-    test('dropping multiple files (newline-separated) processes each', () {
+    test('dropping multiple files (newline-separated) produces path references',
+        () {
       final payload = [
         fx.path('hello.txt'),
         fx.path('main.dart'),
@@ -266,10 +266,11 @@ void main() {
         projectRoot: fx.root.path,
       );
       final out = formatDroppedFilesForInput(classified);
+      // Both paths appear.
       expect(out, contains('hello.txt'));
       expect(out, contains('main.dart'));
-      // Both inlined, both should have end markers.
-      expect('--- end '.allMatches(out).length, 2);
+      // Both are [file:] references.
+      expect('[file:'.allMatches(out).length, 2);
     });
 
     test('dropping a path that does not exist falls through (empty format)',

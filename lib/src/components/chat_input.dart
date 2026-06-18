@@ -1541,7 +1541,6 @@ class ChatInputState extends State<ChatInput> {
 
     final supportsImages = _currentModelSupportsImages();
     var imageCount = 0;
-    var inlinedCount = 0;
     var refCount = 0;
     final missingNames = <String>[];
 
@@ -1561,10 +1560,7 @@ class ChatInputState extends State<ChatInput> {
             refCount++;
           }
           break;
-        case DroppedFileKind.inlineableText:
-          inlinedCount++;
-          break;
-        case DroppedFileKind.largeOrBinary:
+        case DroppedFileKind.file:
         case DroppedFileKind.directory:
           refCount++;
           break;
@@ -1605,10 +1601,9 @@ class ChatInputState extends State<ChatInput> {
         mode: ToastMode.error,
       );
     }
-    if (inlinedCount > 0 || refCount > 0) {
+    if (refCount > 0) {
       final parts = <String>[];
       if (imageCount > 0) parts.add('$imageCount image(s) attached');
-      if (inlinedCount > 0) parts.add('$inlinedCount file(s) inlined');
       if (refCount > 0) parts.add('$refCount path(s) inserted');
       component.turnOrchestrator.showToast(
         '📎 Dropped: ${parts.join(', ')}',
