@@ -93,6 +93,26 @@ class SessionRuntimeState {
   /// turn starts (`_sendTurn`).
   bool interrupted;
 
+  /// Number of consecutive rounds in this session where the model
+  /// emitted exactly one tool call. Used by the parallel-tool-call
+  /// hint feature to detect drift in long sessions: when the counter
+  /// crosses the configured threshold (default 10), the chat service
+  /// injects a corrective single-call hint into the LLM's next turn.
+  ///
+  /// Lifecycle (managed by `chat_service`):
+  ///   - `+1` when a round executes exactly 1 successful tool call
+  ///   - reset to `0` when a round executes ≥2 successful calls
+  ///     (the model is back to batching — drift has ended)
+  ///   - reset to `0` when a round executes 0 tool calls (the user
+  ///     just got a plain text reply; no serialisation signal)
+  ///   - reset to `0` when a new user turn starts (a `/btw`,
+  ///     `/continue`, or fresh prompt resets the drift detector)
+  ///
+  /// In-memory only — resets to 0 on app restart. That's intentional:
+  /// the drift signal is per-session, and a fresh app launch is
+  /// effectively a fresh session.
+  int consecutiveSingleToolCallRounds;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -114,6 +134,7 @@ class SessionRuntimeState {
     this.isGeneratingTldr = false,
     this.btwMode = false,
     this.interrupted = false,
+    this.consecutiveSingleToolCallRounds = 0,
   });
 
   double get thinkingDurationMs {

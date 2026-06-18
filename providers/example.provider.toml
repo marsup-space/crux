@@ -81,6 +81,58 @@
 #                                           Higher = more creative/varied.
 #     max_rounds      (opt)   Per-model override of round-trip cap.
 #                             0/absent = fall back to default_max_rounds.
+#     hint_parallel_calls (opt, default true)  Gates two
+#                             complementary in-context signals the
+#                             chat service can inject into the LLM's
+#                             next turn:
+#
+#                               1. **Praise** — when the model emits
+#                                  ≥2 successful tool calls in a
+#                                  single round, inject a short
+#                                  positive note AND persist a
+#                                  user-facing "N tool calls
+#                                  parallelized" bubble in the chat
+#                                  history.
+#                               2. **Single-call reminder** — when
+#                                  the model has emitted
+#                                  `hint_parallel_calls_single_threshold`
+#                                  consecutive single-tool-call
+#                                  rounds (default 10), inject a
+#                                  corrective nudge. Not persisted;
+#                                  the user doesn't see it.
+#
+#                             Resolution order, highest wins: this
+#                             model-level value →
+#                             provider-level `hint_parallel_calls` →
+#                             LlmProvider class default (true). Set
+#                             `false` to opt this model out entirely.
+#                             The legacy name `praise_parallel_calls`
+#                             is also accepted (it was renamed when
+#                             the second signal was added); when
+#                             both are present the new name wins.
+#
+#     hint_parallel_calls_single_threshold (opt, default 10)
+#                             Per-model override for the single-call
+#                             reminder threshold. After this many
+#                             consecutive single-tool-call rounds in
+#                             a row, the chat service injects the
+#                             corrective reminder. Setting this to
+#                             a very large value effectively disables
+#                             the reminder for this model. `null`
+#                             (TOML absent) falls through to the
+#                             provider-level override, then the
+#                             LlmProvider class default (10).
+#
+#   hint_parallel_calls (opt, default true)  Provider-level override
+#                             for the parallel-tool-call hint toggle.
+#                             Per-model values (above) take precedence.
+#                             See LlmProvider.defaultHintParallelCalls
+#                             in lib/src/services/llm_provider.dart.
+#
+#   hint_parallel_calls_single_threshold (opt, default 10)
+#                             Provider-level default for the
+#                             single-call reminder threshold. Per-model
+#                             values take precedence.
 #
 #   [models.reasoning_labels]  (opt)  Model-level display label overrides.
 #                             Same format as provider-level [reasoning_labels]
@@ -97,6 +149,19 @@ endpoint_url = "https://api.openai.com/v1"
 # Optional provider-wide round-trip cap. Per-model `max_rounds`
 # overrides this. 0 or absent = unbounded.
 default_max_rounds = 50
+
+# Optional: provider-level toggle for the parallel-tool-call hint
+# feature. When ≥2 successful tool calls land in a single round,
+# Crux injects a short in-context praise into the LLM's next turn
+# AND persists a user-facing "N tool calls parallelized" bubble.
+# When N consecutive single-tool-call rounds accumulate
+# (N = `hint_parallel_calls_single_threshold`, default 10), Crux
+# also injects a corrective single-call reminder.
+# Per-model `hint_parallel_calls` (below) takes precedence. Set
+# to `false` to disable both signals across the whole provider.
+# hint_parallel_calls = true  # default — omit unless opting out
+# Optional: provider-level threshold for the single-call reminder.
+# hint_parallel_calls_single_threshold = 10  # default — omit unless overriding
 
 # === Reasoning / thinking model (o-series / Claude-with-thinking style) ===
 # thinking and reasoning_effort are on by default — no need to set them

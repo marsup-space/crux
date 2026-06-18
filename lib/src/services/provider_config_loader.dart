@@ -292,6 +292,30 @@ class ProviderConfigLoader {
       providerReasoningLabels = const {};
     }
 
+    // --- Optional provider-level hint_parallel_calls override ---
+    // `true` or `false` only; `null` (TOML absent) preserves the
+    // LLM-provider class default. The legacy key
+    // `praise_parallel_calls` is also accepted for backward
+    // compatibility (it was renamed to `hint_parallel_calls` when
+    // the feature grew a second signal); when both are present the
+    // new name wins so a user can migrate by editing one line.
+    final hintParallelCalls = _resolveHintParallelCallsBool(
+      map,
+      legacyKey: 'praise_parallel_calls',
+      newKey: 'hint_parallel_calls',
+    );
+
+    // --- Optional provider-level single-call hint threshold ---
+    // Integer; must be >= 0. `null` falls through to the
+    // LLM-provider class default. There is no legacy name for
+    // this field — it didn't exist when `praise_parallel_calls`
+    // was the only knob.
+    final hintParallelCallsSingleThreshold = _optionalNonNegativeInt(
+      map,
+      'hint_parallel_calls_single_threshold',
+      fieldLabel: 'Provider "$name"',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -301,6 +325,8 @@ class ProviderConfigLoader {
       quota: quota,
       reasoningLabels: providerReasoningLabels,
       defaultMaxRounds: defaultMaxRounds,
+      hintParallelCalls: hintParallelCalls,
+      hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
     );
   }
 
@@ -359,6 +385,28 @@ class ProviderConfigLoader {
       fieldLabel: 'Model "$id"',
     );
 
+    // Optional per-model override for the parallel-tool-call hint
+    // toggle. `true`/`false` always wins over the provider-level
+    // override; `null` (TOML absent) falls through. The legacy
+    // key `praise_parallel_calls` is also accepted; the new
+    // `hint_parallel_calls` wins when both are present so users
+    // can migrate by editing one line.
+    final hintParallelCalls = _resolveHintParallelCallsBool(
+      map,
+      legacyKey: 'praise_parallel_calls',
+      newKey: 'hint_parallel_calls',
+    );
+
+    // Optional per-model override for the single-call hint
+    // threshold. Integer; must be >= 0. `null` falls through to
+    // the provider-level override, then the LLM-provider class
+    // default.
+    final hintParallelCallsSingleThreshold = _optionalNonNegativeInt(
+      map,
+      'hint_parallel_calls_single_threshold',
+      fieldLabel: 'Model "$id"',
+    );
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -372,6 +420,8 @@ class ProviderConfigLoader {
       temperature: temperature,
       reasoningLabels: reasoningLabels,
       maxRounds: maxRounds,
+      hintParallelCalls: hintParallelCalls,
+      hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
     );
   }
 
@@ -489,6 +539,53 @@ class ProviderConfigLoader {
       );
     }
     return v;
+  }
+
+  /// Resolve the parallel-tool-call hint boolean with backward
+  /// compatibility for the legacy `praise_parallel_calls` key.
+  ///
+  /// The feature was originally gated by a single
+  /// `praise_parallel_calls` TOML field. When a second signal
+  /// (the single-call reminder) was added, the field was renamed
+  /// to `hint_parallel_calls` to reflect the unified feature. To
+  /// avoid breaking existing user TOMLs, this helper accepts
+  /// either name. When both are present the new name wins (so
+  /// the user can migrate by editing one line and re-saving).
+  ///
+  /// If only the legacy key is present and it has the wrong type,
+  /// the error message names the legacy key so the user knows
+  /// exactly which line in their TOML is wrong even before they
+  /// migrate. When both keys are present and the legacy one is
+  /// malformed, we still throw (with a "rename to silence this"
+  /// hint) rather than silently overriding.
+  bool? _resolveHintParallelCallsBool(
+    Map<String, dynamic> map, {
+    required String legacyKey,
+    required String newKey,
+  }) {
+    final hasNew = map.containsKey(newKey);
+    final hasLegacy = map.containsKey(legacyKey);
+
+    if (hasNew) {
+      // The new key wins outright. If the legacy key is also
+      // present but malformed, surface that as a hint-laden error
+      // rather than letting it silently co-exist with a valid
+      // new-key value.
+      if (hasLegacy && map[legacyKey] is! bool) {
+        throw FormatException(
+          'Field "$legacyKey" must be a boolean if present, got '
+          '${map[legacyKey].runtimeType} (note: "$legacyKey" is '
+          'deprecated; rename to "$newKey" to silence this)',
+        );
+      }
+      return _optionalBool(map, newKey);
+    }
+
+    if (hasLegacy) {
+      return _optionalBool(map, legacyKey);
+    }
+
+    return null;
   }
 
   /// Optional non-negative integer accessor. Used for round-trip caps

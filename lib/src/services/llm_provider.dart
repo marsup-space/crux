@@ -136,6 +136,98 @@ abstract class LlmProvider {
     ReasoningPreset(internalValue: 'max', displayLabel: 'max'),
   ];
 
+  /// Default value for the `hint_parallel_calls` toggle, used
+  /// when no TOML override is set.
+  ///
+  /// When `true`, the chat service injects a short in-context
+  /// hint into the LLM's next turn whenever the model exhibits
+  /// either of two patterns:
+  ///
+  ///   1. **Praise** — emits ≥2 successful tool calls in a single
+  ///      round (positive reinforcement + a user-facing
+  ///      `parallel_praise` bubble in the TUI).
+  ///   2. **Single-call hint** — emits the same single tool call
+  ///      round after round (corrective nudge after
+  ///      [defaultHintParallelCallsSingleThreshold] consecutive
+  ///      single-tool-call rounds; the user does not see this one).
+  ///
+  /// The intent of both signals is to fight context-length decay in
+  /// long sessions, where the agent tends to forget system-prompt
+  /// instructions and regress to one call per turn.
+  ///
+  /// Subclasses can override this (e.g. a provider whose models
+  /// are known to over-batch junk calls might default to `false`).
+  /// Per-provider and per-model TOML overrides then take
+  /// precedence over the class default — see
+  /// [effectiveHintParallelCallsFor].
+  bool get defaultHintParallelCalls => true;
+
+  /// Resolve the effective `hint_parallel_calls` value for a
+  /// specific (provider, model) pair.
+  ///
+  /// Resolution order, highest wins:
+  ///   1. [modelOverride] — the `[[models]]` `hint_parallel_calls`
+  ///      field for this model, if non-null.
+  ///   2. [providerOverride] — the provider-level TOML
+  ///      `hint_parallel_calls` field, if non-null.
+  ///   3. [defaultHintParallelCalls] — the LLM-provider class
+  ///      default (`true` unless a subclass overrides).
+  ///
+  /// Both overrides are nullable bools so `null` (TOML absent) is
+  /// distinguishable from `false` (TOML explicit opt-out).
+  bool effectiveHintParallelCallsFor({
+    bool? modelOverride,
+    bool? providerOverride,
+  }) {
+    if (modelOverride != null) return modelOverride;
+    if (providerOverride != null) return providerOverride;
+    return defaultHintParallelCalls;
+  }
+
+  /// Default value for the `hint_parallel_calls_single_threshold`
+  /// setting, used when no TOML override is set.
+  ///
+  /// After this many consecutive single-tool-call rounds in a row,
+  /// the chat service injects the corrective single-call hint into
+  /// the LLM's next turn. The default of 10 is empirically the
+  /// threshold at which the agent has typically drifted into
+  /// serialization during long sessions — shorter and it would
+  /// fire on legitimate serial workflows; longer and the drift
+  /// compounds before any nudge.
+  ///
+  /// Setting this to a very large value effectively disables the
+  /// single-call hint at the class level (the praise hint on ≥2
+  /// calls is unaffected).
+  int get defaultHintParallelCallsSingleThreshold => 10;
+
+  /// Resolve the effective `hint_parallel_calls_single_threshold`
+  /// value for a specific (provider, model) pair.
+  ///
+  /// Resolution order, highest wins:
+  ///   1. [modelOverride] — the `[[models]]`
+  ///      `hint_parallel_calls_single_threshold` field for this
+  ///      model, if non-null.
+  ///   2. [providerOverride] — the provider-level TOML
+  ///      `hint_parallel_calls_single_threshold` field, if non-null.
+  ///   3. [defaultHintParallelCallsSingleThreshold] — the
+  ///      LLM-provider class default (10 unless a subclass
+  ///      overrides).
+  ///
+  /// Both overrides are nullable ints so `null` (TOML absent) is
+  /// distinguishable from `0` (TOML explicit "fire on every
+  /// single-tool-call round"). The chat service treats 0 the same
+  /// as 1 for the modulo check (`counter % threshold == 0`), so
+  /// 0 effectively means "fire every single-tool-call round" —
+  /// only useful for testing.
+  int effectiveHintParallelCallsSingleThresholdFor({
+    int? modelOverride,
+    int? providerOverride,
+  }) {
+    if (modelOverride != null) return modelOverride;
+    if (providerOverride != null) return providerOverride;
+    return defaultHintParallelCallsSingleThreshold;
+  }
+
   Map<String, dynamic> buildRequestBody(
     String modelId,
     List<Map<String, dynamic>> messages, {

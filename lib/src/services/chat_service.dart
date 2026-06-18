@@ -17,6 +17,7 @@ import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
+import 'prompts/praise_prompts.dart';
 import 'provider_service.dart';
 import 'tool_executor.dart';
 
@@ -95,7 +96,80 @@ class ChatService {
     required void Function(String delta) onDelta,
     required void Function(String reasoning) onReasoning,
     required void Function() onChunk,
-    required void Function(ChatResponse response) onComplete,
+    required FutureOr<void> Function(ChatResponse response) onComplete,
+    required void Function(String error) onError,
+    void Function(int toolResultTokens)? onToolRound,
+    void Function(ToolUseChunk chunk)? onToolUse,
+    String? Function()? onQueueDrain,
+    void Function(AbortSignal)? onAbortSignal,
+    String? userContent,
+    List<ImageAttachment> images = const [],
+  }) async {
+    try {
+      await _sendMessageUnsafe(
+        sessionId: sessionId,
+        session: session,
+        runtime: runtime,
+        onDelta: onDelta,
+        onReasoning: onReasoning,
+        onChunk: onChunk,
+        onComplete: onComplete,
+        onError: onError,
+        onToolRound: onToolRound,
+        onToolUse: onToolUse,
+        onQueueDrain: onQueueDrain,
+        onAbortSignal: onAbortSignal,
+        userContent: userContent,
+        images: images,
+      );
+    } catch (e) {
+      await _recoverFromUnexpectedTurnExit(
+        sessionId: sessionId,
+        session: session,
+        runtime: runtime,
+      );
+      onError('Unhandled chat service error: $e');
+    }
+  }
+
+  Future<void> _recoverFromUnexpectedTurnExit({
+    required int sessionId,
+    required Session session,
+    required SessionRuntimeState runtime,
+  }) async {
+    runtime.pauseStreamingTimer();
+    runtime.isResponding = false;
+    runtime.roundStreaming = false;
+    runtime.roundStartTime = null;
+    runtime.roundFirstTokenTime = null;
+    _activeSessions.remove(sessionId);
+    _cancelRequested.remove(sessionId);
+
+    if (session.status == SessionStatus.running) {
+      session.status = SessionStatus.idle;
+      session.updatedAt = DateTime.now();
+      try {
+        final updated = await _store.update(
+          sessionId,
+          status: SessionStatus.idle,
+        );
+        session.status = updated.status;
+        session.updatedAt = updated.updatedAt;
+      } catch (_) {
+        // Keep the in-memory SSoT sane even if persistence fails while
+        // unwinding an unexpected provider/tool/storage exception.
+      }
+    }
+  }
+
+  Future<void> _sendMessageUnsafe({
+    required int sessionId,
+    required Session session,
+    required SessionRuntimeState runtime,
+    required void Function(String delta) onDelta,
+    required void Function(String reasoning) onReasoning,
+    required void Function() onChunk,
+    required FutureOr<void> Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
     void Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
@@ -263,7 +337,7 @@ class ChatService {
         userId: '${InstallSlug.slug}-$sessionId',
       );
 
-            final chunks = <LlmChunk>[];
+      final chunks = <LlmChunk>[];
 
       final useLerp = modelConfig.streamLerp;
       String lerpPendingText = '';
@@ -599,6 +673,37 @@ class ChatService {
       final roundReasoning = roundReasoningBuffer.toString();
       final roundReasoningSignature = roundReasoningSignatureBuffer.toString();
 
+      // Compute `hintEnabled` once at the top of the round so the
+      // same value gates both in-context hint signals (praise on
+      // rounds with ≥2 calls, single-call reminder on rounds with
+      // 1 call once the threshold is reached) and the user-facing
+      // bubble (persisted to the DB right after `addToolRound`).
+      // Computing it twice would be a bug magnet if the resolver
+      // ever grew side effects (caching, telemetry).
+      //
+      // `llmProviderByName` returns null only if the provider name
+      // has no registered LLM (a misconfigured user TOML). In that
+      // pathological case we fall back to the same default the
+      // `LlmProvider` base class uses — `true` — so hints still
+      // fire; the user will hit a more obvious error elsewhere
+      // (the LLM call itself will fail).
+      final llm = _providerService.llmProviderByName(providerName);
+      final hintEnabled = llm == null
+          ? true
+          : llm.effectiveHintParallelCallsFor(
+              modelOverride: modelConfig.hintParallelCalls,
+              providerOverride: provider.hintParallelCalls,
+            );
+      // Threshold for the single-call hint. Same precedence as
+      // `hintEnabled` itself (model > provider > class default).
+      // Used below to gate the reminder injection.
+      final hintSingleThreshold = llm == null
+          ? 10
+          : llm.effectiveHintParallelCallsSingleThresholdFor(
+              modelOverride: modelConfig.hintParallelCallsSingleThreshold,
+              providerOverride: provider.hintParallelCallsSingleThreshold,
+            );
+
       // Execute tools.
       final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
         toolCalls,
@@ -610,6 +715,10 @@ class ChatService {
       apiMessages.add(assistantMsg);
       final callResults = <String, ToolResult>{};
       var roundResultTokens = 0;
+      // Hoisted so the post-persist `addMessage` for the user-facing
+      // praise bubble (below) can re-check the count. Filled by the
+      // for-loop body.
+      var successfulCalls = 0;
       try {
         final isAnthropic = wireFamily == WireFamily.anthropicCompatible;
         final content = isAnthropic ? <Map<String, dynamic>>[] : null;
@@ -656,9 +765,108 @@ class ChatService {
             args: call.input,
             resultOutput: result.output,
           );
+          // Tally a successful call (no parse error and the tool didn't
+          // throw). Used after the loop to gate both the in-context
+          // praise and the user-facing bubble.
+          if (call.parseError == null && result.title != 'Error') {
+            successfulCalls++;
+          }
         }
+
+        // In-context hint injection. Two complementary signals, both gated
+        // on `hintEnabled`:
+        //
+        //   1. **Praise** — fires when the round had ≥2 successful
+        //      tool calls. Positive reinforcement so the model keeps
+        //      batching independent calls in long sessions.
+        //   2. **Single-call reminder** — fires when the round had
+        //      exactly 1 successful tool call AND the
+        //      session-scoped consecutive-single-call counter just
+        //      crossed the configured threshold (default 10).
+        //      Corrective nudge for the opposite drift: the model
+        //      has regressed to one tool call per round.
+        //
+        // Both are appended to the last tool's `content` field
+        // (rather than a separate `user` message or a sibling `text`
+        // block). A new `user` message reads as a fresh human turn
+        // (the LLM would think the user just spoke and pivot its
+        // reply), and a sibling `text` block inside the
+        // post-tool-round `user` message muddies "this turn is tool
+        // results" with "the user is also saying X." By placing the
+        // hint inside the last tool's content — wrapped in its own
+        // marker tag — every `tool`/`tool_result` still
+        // unambiguously says "this came from a tool", and the hint
+        // is just a trailing system-tagged note in one of them.
+        // Different markers (`…parallel-tool-call hint` vs
+        // `…single-tool-call hint`) let the model pattern-match
+        // which signal it's seeing.
+        //
+        // Both injections are pure helpers (see `praise_prompts.dart`,
+        // which despite the file name hosts both signals' helpers) so
+        // tests can drive them directly. The Anthropic `user`
+        // message that wraps the tool_results must be pushed to
+        // `apiMessages` *first* so the helper can find it as
+        // `apiMessages.last`; for OpenAI the tool messages are
+        // already in `apiMessages` from the for-loop above.
+        //
+        // Both hints are deliberately NOT persisted to the DB — they
+        // shape this session's behaviour and are gone on resumption.
+        // The user-facing `parallel_praise` bubble (persisted below)
+        // is a separate artefact that exists only for the positive
+        // signal; the single-call reminder has no user-facing
+        // counterpart (the user doesn't need to see "your agent got
+        // a nudge").
+
+        // First: update the consecutive-single-call counter based
+        // on this round. We use the round's *successful* call count
+        // (the same value that gates the praise hint) so failed
+        // calls don't pollute the drift signal — the model intended
+        // to make N calls; whether they all returned successfully
+        // is a different question. The per-round transitions are
+        // documented on
+        // [SessionRuntimeState.consecutiveSingleToolCallRounds].
+        if (successfulCalls == 1) {
+          runtime.consecutiveSingleToolCallRounds += 1;
+        } else {
+          // 0 calls (LLM replied with text) or ≥2 calls (model is
+          // batching again) both end the drift streak.
+          runtime.consecutiveSingleToolCallRounds = 0;
+        }
+
         if (isAnthropic) {
           apiMessages.add({'role': 'user', 'content': content});
+        }
+        if (hintEnabled && successfulCalls >= 2) {
+          injectParallelToolCallHintIntoLastTool(
+            apiMessages,
+            isAnthropic: isAnthropic,
+            count: successfulCalls,
+          );
+        } else if (hintEnabled &&
+            successfulCalls == 1 &&
+            runtime.consecutiveSingleToolCallRounds > 0 &&
+            runtime.consecutiveSingleToolCallRounds % hintSingleThreshold ==
+                0) {
+          // Fire the reminder every `threshold` consecutive
+          // single-tool-call rounds. The modulo gate means the
+          // reminder is rhythmic rather than spammy — it doesn't
+          // fire on every single-call round, only on the ones that
+          // land on multiples of the threshold. The counter resets
+          // to 0 once the model returns to ≥2 calls (above), so a
+          // long stretch of single-call rounds produces reminders
+          // at round 10, 20, 30, … until the streak breaks.
+          //
+          // `> 0` guards against a 0 threshold (TOML explicit
+          // `hint_parallel_calls_single_threshold = 0`) — without
+          // it, every single-call round would fire. The modulo
+          // already collapses 0 to "always", but the `> 0` makes
+          // the intent explicit and protects against the case
+          // where the counter hasn't yet been incremented.
+          injectParallelSingleCallHintIntoLastTool(
+            apiMessages,
+            isAnthropic: isAnthropic,
+            consecutiveCount: runtime.consecutiveSingleToolCallRounds,
+          );
         }
       } catch (e) {
         runtime.pauseStreamingTimer();
@@ -702,6 +910,20 @@ class ChatService {
               (callId: call.callId, output: callResults[call.callId]!.output),
           ],
         );
+        // Persist the user-facing `parallel_praise` bubble right after
+        // the tool_call row, so the chat history renders it inline
+        // under the matching tool-call list. Same `hintEnabled`
+        // gate as the in-context praise hint so the two never
+        // disagree. The single-call reminder has no user-facing
+        // counterpart (the user doesn't need to see the nudge).
+        if (hintEnabled && successfulCalls >= 2) {
+          await _messageStore.addMessage(
+            sessionId,
+            role: 'parallel_praise',
+            content: renderParallelPraiseBubbleLabel(successfulCalls),
+            parallelCount: successfulCalls,
+          );
+        }
       } catch (e) {
         runtime.pauseStreamingTimer();
         stopActiveRound();
@@ -811,7 +1033,7 @@ class ChatService {
     // turn if the queue had messages.
     final finalQueuedContent = onQueueDrain?.call();
 
-    onComplete(
+    await onComplete(
       ChatResponse(
         promptTokens: promptTokens,
         completionTokens: completionTokens,

@@ -1,3 +1,23 @@
+// The convenience resolvers for the parallel-tool-call hint feature live on
+// `LlmProvider` (`effectiveHintParallelCallsFor` and
+// `effectiveHintParallelCallsSingleThresholdFor`) rather than on
+// `ProviderConfig`, because pulling `LlmProvider` into the `models/`
+// package would create a `models` → `services` → `models` import
+// cycle (`llm_provider.dart` already imports `models/provider_config.dart`).
+// Call sites that have both the config and the LLM pass the
+// provider's `hintParallelCalls` and the model's
+// `hintParallelCalls` to the LLM's resolver:
+//
+//   final on = llm.effectiveHintParallelCallsFor(
+//     modelOverride: model.hintParallelCalls,
+//     providerOverride: provider.hintParallelCalls,
+//   );
+//
+// The feature was previously named "praise_parallel_calls" — renamed to
+// "hint_parallel_calls" because the toggle now governs two signals
+// (a positive praise hint and a corrective single-call hint) rather
+// than just praise.
+
 /// The HTTP wire family a provider uses — determines URL paths, stream
 /// parsing, and message format.
 ///
@@ -129,6 +149,38 @@ class ModelConfig {
   /// as `null` (unbounded).
   final int? maxRounds;
 
+  /// Per-model override for the `hint_parallel_calls` toggle.
+  ///
+  /// Gates two complementary in-context signals the chat service
+  /// can inject into the LLM's next turn:
+  ///
+  ///   1. **Praise hint** — when the model emits ≥2 successful
+  ///      tool calls in a single round, inject a short positive
+  ///      note and persist a user-facing `parallel_praise` bubble.
+  ///   2. **Single-call hint** — when the model has emitted N
+  ///      consecutive single-tool-call rounds (where N comes from
+  ///      [hintParallelCallsSingleThreshold]), inject a corrective
+  ///      nudge. Not persisted; the user doesn't see it.
+  ///
+  /// `null` (TOML absent) means "fall through to the provider-level
+  /// override, then to the LLM-provider class default". A concrete
+  /// `true`/`false` always wins, so a model can opt out explicitly
+  /// even if the provider enables it for everyone else.
+  final bool? hintParallelCalls;
+
+  /// Per-model override for the single-call hint threshold.
+  ///
+  /// When the session has accumulated this many consecutive
+  /// single-tool-call rounds in a row, the chat service injects
+  /// the corrective single-call hint. `null` (TOML absent) falls
+  /// through to the provider-level override, then to the
+  /// `LlmProvider.defaultHintParallelCallsSingleThreshold` (10).
+  ///
+  /// Setting this to a very large value effectively disables the
+  /// reminder for this model (the praise hint still fires on
+  /// rounds with ≥2 calls).
+  final int? hintParallelCallsSingleThreshold;
+
   const ModelConfig({
     required this.id,
     required this.name,
@@ -142,6 +194,8 @@ class ModelConfig {
     this.temperature = 0,
     this.reasoningLabels = const {},
     this.maxRounds,
+    this.hintParallelCalls,
+    this.hintParallelCallsSingleThreshold,
   });
 
   /// The composite key used throughout Crux: `providerName/modelId`.
@@ -151,7 +205,9 @@ class ModelConfig {
   String toString() =>
       'ModelConfig($id, name=$name, ctx=$contextSize, '
       'img=$imageSupport, effort=$reasoningEffort, think=$thinking, '
-      'temp=$temperature, maxRounds=$maxRounds)';
+      'temp=$temperature, maxRounds=$maxRounds, '
+      'hintParallelCalls=$hintParallelCalls, '
+      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold)';
 }
 
 /// Usage quota tier — maps a time window label to a token/request budget.
@@ -269,6 +325,32 @@ class ProviderConfig {
   /// not interrupted by a step cap.
   final int? defaultMaxRounds;
 
+  /// Provider-level override for the `hint_parallel_calls` toggle.
+  ///
+  /// Gates two complementary in-context signals the chat service
+  /// can inject into the LLM's next turn: the praise hint (on
+  /// rounds with ≥2 successful tool calls) and the single-call
+  /// hint (after enough consecutive single-tool-call rounds).
+  /// Setting this to `false` disables both signals for every model
+  /// under this provider.
+  ///
+  /// `null` (TOML absent) means "fall through to the LLM-provider
+  /// class default". A concrete `true`/`false` always wins at the
+  /// provider level — per-model overrides take precedence over
+  /// this. See [LlmProvider.effectiveHintParallelCallsFor] for the
+  /// full resolution order.
+  final bool? hintParallelCalls;
+
+  /// Provider-level default for the single-call hint threshold.
+  ///
+  /// When the session has accumulated this many consecutive
+  /// single-tool-call rounds in a row, the chat service injects
+  /// the corrective single-call hint. `null` (TOML absent) falls
+  /// through to the
+  /// `LlmProvider.defaultHintParallelCallsSingleThreshold` (10).
+  /// Per-model overrides take precedence.
+  final int? hintParallelCallsSingleThreshold;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -278,6 +360,8 @@ class ProviderConfig {
     this.quota,
     this.reasoningLabels = const {},
     this.defaultMaxRounds,
+    this.hintParallelCalls,
+    this.hintParallelCallsSingleThreshold,
   });
 
   /// Convenience: look up a model by its [ModelConfig.id].
@@ -320,5 +404,7 @@ class ProviderConfig {
   String toString() =>
       'ProviderConfig($name, type=$type, wire=$wireFamily, '
       'endpoint=$endpointUrl, models=${models.length}, quota=$quota, '
-      'defaultMaxRounds=$defaultMaxRounds)';
+      'defaultMaxRounds=$defaultMaxRounds, '
+      'hintParallelCalls=$hintParallelCalls, '
+      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold)';
 }
