@@ -407,6 +407,19 @@ class ProviderService {
       _lastUsedModel = data['lastUsedModel'] as String?;
       _auxiliaryModel = data['auxiliaryModel'] as String?;
       _tldrThreshold = data['tldrThreshold'] as int? ?? 5000;
+
+      // Fallback: old code used to write top-level settings inside the
+      // [apiKeys] section by mistake. If the values are null at the top
+      // level but exist inside apiKeys, salvage them.
+      if (_lastUsedModel == null && apiKeys is Map<String, dynamic>) {
+        _lastUsedModel = apiKeys['lastUsedModel'] as String?;
+      }
+      if (_auxiliaryModel == null && apiKeys is Map<String, dynamic>) {
+        _auxiliaryModel = apiKeys['auxiliaryModel'] as String?;
+      }
+      if (_tldrThreshold == 5000 && apiKeys is Map<String, dynamic>) {
+        _tldrThreshold = apiKeys['tldrThreshold'] as int? ?? 5000;
+      }
     } else {
       // Legacy flat format — migrate on next write
       for (final entry in data.entries) {
@@ -452,13 +465,10 @@ class ProviderService {
     }
     final buf = StringBuffer();
     buf.writeln('# Crux persisted auth — managed by /auth');
-    if (_envKeys.isNotEmpty) {
-      buf.writeln();
-      buf.writeln('[apiKeys]');
-      for (final entry in _envKeys.entries) {
-        buf.writeln('${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}');
-      }
-    }
+    // Top-level settings come FIRST, before any [section] header, so they
+    // are parsed at the TOML root level. Putting them after a section header
+    // would nest them inside that section, causing them to come back as null
+    // on the next load (since _loadAuthKeys reads them from the top level).
     buf.writeln();
     if (_lastUsedModel != null) {
       buf.writeln('lastUsedModel = ${_tomlEscapeString(_lastUsedModel!)}');
@@ -467,6 +477,13 @@ class ProviderService {
       buf.writeln('auxiliaryModel = ${_tomlEscapeString(_auxiliaryModel!)}');
     }
     buf.writeln('tldrThreshold = $_tldrThreshold');
+    buf.writeln();
+    if (_envKeys.isNotEmpty) {
+      buf.writeln('[apiKeys]');
+      for (final entry in _envKeys.entries) {
+        buf.writeln('${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}');
+      }
+    }
 
     final file = File(authTomlPath);
     await file.writeAsString(buf.toString());
