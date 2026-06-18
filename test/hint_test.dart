@@ -165,6 +165,102 @@ void main() {
       HintController.instance.hide();
       expect(calls, greaterThanOrEqualTo(3));
     });
+
+    test(
+      'same requestId with zero delay notifies on field change '
+      'while already visible (regression: scroll-bar markers)',
+      () {
+        // The scroll-bar markers all share the same _requestId
+        // (the AnnotatedScrollbar's state). Moving the mouse from
+        // one marker to the next updates the controller's content
+        // / position in place — the overlay only repaints if it
+        // gets a notify callback. If the controller stayed silent
+        // on those updates, the tooltip would be stuck on the
+        // previous marker's label.
+        final id = Object();
+        var calls = 0;
+        void listener() {
+          calls += 1;
+        }
+
+        HintController.instance.addListener(listener);
+        addTearDown(() => HintController.instance.removeListener(listener));
+
+        // Make the hint visible with zero delay.
+        HintController.instance.show(
+          'marker A',
+          const Offset(0, 0),
+          delay: Duration.zero,
+          requestId: id,
+        );
+        final callsAfterFirst = calls;
+        expect(HintController.instance.activeHint, 'marker A');
+        expect(HintController.instance.visible, isTrue);
+
+        // Same request id, different content + position. The hint
+        // was already visible, so the live fields are updated in
+        // place — but the overlay must still be told to repaint.
+        HintController.instance.show(
+          'marker B',
+          const Offset(1, 1),
+          delay: Duration.zero,
+          requestId: id,
+        );
+        expect(HintController.instance.activeHint, 'marker B');
+        expect(HintController.instance.activePosition, const Offset(1, 1));
+        expect(
+          calls,
+          greaterThan(callsAfterFirst),
+          reason:
+              'overlay must be notified when the live fields change while '
+              'the hint is already visible, otherwise the tooltip would '
+              'keep showing the previous marker label',
+        );
+      },
+    );
+
+    test(
+      'same requestId with zero delay does NOT notify when nothing '
+      'actually changed',
+      () {
+        // The opposite regression guard: every mouse-move while the
+        // cursor sits on the same marker must not trigger a
+        // overlay rebuild. The controller should compare each field
+        // and only notify when at least one of them differs.
+        final id = Object();
+        var calls = 0;
+        void listener() {
+          calls += 1;
+        }
+
+        HintController.instance.addListener(listener);
+        addTearDown(() => HintController.instance.removeListener(listener));
+
+        HintController.instance.show(
+          'marker A',
+          const Offset(0, 0),
+          delay: Duration.zero,
+          requestId: id,
+        );
+        final callsAfterFirst = calls;
+
+        // Identical re-request: same content, same position.
+        HintController.instance.show(
+          'marker A',
+          const Offset(0, 0),
+          delay: Duration.zero,
+          requestId: id,
+        );
+        expect(
+          calls,
+          callsAfterFirst,
+          reason:
+              'no field changed, so the overlay must not be told to '
+              'rebuild (would waste work on every mouse-move while '
+              'hovering the same marker)',
+        );
+      },
+    );
   });
 
   group('HintStateMixin', () {
