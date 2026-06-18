@@ -37,10 +37,10 @@ void main() {
       // starts with `foo.dart` (prefix match). The unrelated
       // file has no match at all and shouldn't appear.
       final (searcher, dir) = await _buildSearcher({
-        'foo.dart.bak': '',      // filename prefix match
-        'foo.dart': '',          // exact basename match
-        'lib/foo.dart': '',      // exact basename match (longer path)
-        'unrelated.dart': '',    // no match for `foo.dart`
+        'foo.dart.bak': '', // filename prefix match
+        'foo.dart': '', // exact basename match
+        'lib/foo.dart': '', // exact basename match (longer path)
+        'unrelated.dart': '', // no match for `foo.dart`
       });
       addTearDown(() => dir.delete(recursive: true));
 
@@ -52,8 +52,10 @@ void main() {
       expect(paths.last, 'foo.dart.bak');
       // The non-exact basename match sorts by path length so
       // the root-level copy comes before the buried copy.
-      expect(paths.indexOf('foo.dart'),
-          lessThan(paths.indexOf('lib/foo.dart')));
+      expect(
+        paths.indexOf('foo.dart'),
+        lessThan(paths.indexOf('lib/foo.dart')),
+      );
       // Unrelated file is filtered out.
       expect(paths, isNot(contains('unrelated.dart')));
     });
@@ -83,7 +85,7 @@ void main() {
       // Without the lowercasing fix this file would be demoted to the
       // path-substring tier — losing to the substring match.
       final (searcher, dir) = await _buildSearcher({
-        'Battlemode.cs': '',         // exact basename (PascalCase on disk)
+        'Battlemode.cs': '', // exact basename (PascalCase on disk)
         'ShowIfInBattlemode.cs': '', // filename substring match
       });
       addTearDown(() => dir.delete(recursive: true));
@@ -102,8 +104,8 @@ void main() {
       // `reader.dart` has `read` as a prefix; `old_read.dart`
       // has `read` only as a substring.
       final (searcher, dir) = await _buildSearcher({
-        'old_read.dart': '',     // filename substring at idx 4
-        'reader.dart': '',       // filename prefix match
+        'old_read.dart': '', // filename substring at idx 4
+        'reader.dart': '', // filename prefix match
         'lib/unrelated.dart': '',
       });
       addTearDown(() => dir.delete(recursive: true));
@@ -154,10 +156,10 @@ void main() {
       // the top-K output is in strictly descending order
       // without ties.
       final (searcher, dir) = await _buildSearcher({
-        'foo_old.dart': '',       // filename prefix (basename len 11)
-        'foo.dart': '',           // filename prefix (basename len 8)
-        'old_foo.dart': '',       // filename substring (idx 4)
-        'lib/foo/bar.dart': '',   // path substring (idx 4)
+        'foo_old.dart': '', // filename prefix (basename len 11)
+        'foo.dart': '', // filename prefix (basename len 8)
+        'old_foo.dart': '', // filename substring (idx 4)
+        'lib/foo/bar.dart': '', // path substring (idx 4)
       });
       addTearDown(() => dir.delete(recursive: true));
 
@@ -169,7 +171,8 @@ void main() {
         expect(
           scores[i - 1],
           greaterThan(scores[i]),
-          reason: 'scores must be strictly descending; '
+          reason:
+              'scores must be strictly descending; '
               'broken at position $i between ${paths[i - 1]} '
               '(${scores[i - 1]}) and ${paths[i]} (${scores[i]})',
         );
@@ -187,10 +190,11 @@ void main() {
       final results = searcher.search('', limit: 10);
       expect(results.length, 3);
       // Index is sorted alphabetically.
-      expect(
-        results.map((m) => m.relativePath).toList(),
-        ['a.dart', 'b.dart', 'c.dart'],
-      );
+      expect(results.map((m) => m.relativePath).toList(), [
+        'a.dart',
+        'b.dart',
+        'c.dart',
+      ]);
     });
 
     test('subsequence fallback still surfaces weak matches', () async {
@@ -205,6 +209,147 @@ void main() {
       final results = searcher.search('fbz');
       expect(results.length, 1);
       expect(results.first.relativePath, 'foo_bar_baz.dart');
+    });
+
+    test('filename initials prefix matches acronym-style queries', () async {
+      // The original bug: typing `bm` should find `BattleMode.cs`.
+      // `bm` is a prefix of the basename initials `bmc`
+      // (Battle + Mode + cs) — neither substring nor prefix
+      // matches (no 'm' in `battlemode`), but initials do.
+      final (searcher, dir) = await _buildSearcher({
+        'BattleMode.cs': '',
+        'unrelated.dart': '',
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('bm');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths, contains('BattleMode.cs'));
+      // `unrelated.dart` shouldn't surface: 'b' and 'm' don't
+      // appear in either basename initials or path initials.
+      expect(paths, isNot(contains('unrelated.dart')));
+    });
+
+    test('exact filename outranks initials match (user requirement)', () async {
+      // If a literal file or directory named `bm` exists, it
+      // must rank above the partial-match `BattleMode.cs`. This
+      // is the priority the user explicitly asked for.
+      final (searcher, dir) = await _buildSearcher({
+        'BattleMode.cs': '', // initials match: bm prefix of bmc
+        'bm': '', // exact basename match
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('bm');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths.first, 'bm');
+      expect(paths, contains('BattleMode.cs'));
+      expect(paths.indexOf('bm'), lessThan(paths.indexOf('BattleMode.cs')));
+    });
+
+    test('snake_case names tokenize on underscores for initials', () async {
+      // `battle_mode.dart` → tokens [battle, mode, dart] →
+      // initials `bmd`. Query `bm` should match (prefix).
+      final (searcher, dir) = await _buildSearcher({
+        'battle_mode.dart': '',
+        'battle-mode.cs': '', // kebab-case split: [battle, mode, cs] → bmc
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('bm');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths, contains('battle_mode.dart'));
+      expect(paths, contains('battle-mode.cs'));
+    });
+
+    test('PascalCase names split camelCase boundaries for initials', () async {
+      // `XMLParser.cs` → tokens [XML, Parser, cs] → initials
+      // `xpc`. Query `xp` should match via filename initials
+      // prefix (xpc starts with xp).
+      final (searcher, dir) = await _buildSearcher({
+        'XMLParser.cs': '',
+        'unrelated.txt': '',
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('xp');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths.first, 'XMLParser.cs');
+    });
+
+    test('path initials prefix matches deep-path acronym queries', () async {
+      // Typing `lsfsd` should find `lib/src/file_searcher.dart`
+      // because that's the initials across all path components.
+      final (searcher, dir) = await _buildSearcher({
+        'lib/src/file_searcher.dart': '',
+        'unrelated.dart': '',
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('lsfsd');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths.first, 'lib/src/file_searcher.dart');
+    });
+
+    test('basename initials outrank path initials for same query', () async {
+      // Query `bm` should put `lib/BattleMode.cs` (basename
+      // initials prefix) above any path whose path initials
+      // happen to contain `bm` but whose basename initials
+      // don't. The basename initials tier is intentionally
+      // higher than the path initials tier.
+      final (searcher, dir) = await _buildSearcher({
+        'lib/big_matrix.dart': '', // path initials lbm (subseq)
+        'lib/BattleMode.cs': '', // basename initials bmc (prefix)
+      });
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('bm');
+      final paths = results.map((m) => m.relativePath).toList();
+      expect(paths.first, 'lib/BattleMode.cs');
+    });
+
+    test('subsequence no longer requires first char at path start', () async {
+      // Previously the subsequence tier required the query's
+      // first char to be at position 0 of the path, making it
+      // useless for non-prefix queries. Now any in-order
+      // subsequence matches.
+      final (searcher, dir) = await _buildSearcher({'a_b_c_d.dart': ''});
+      addTearDown(() => dir.delete(recursive: true));
+
+      // `bcd`: b at 2, c at 4, d at 6 — matches via subsequence.
+      final results = searcher.search('bcd');
+      expect(results.map((m) => m.relativePath), contains('a_b_c_d.dart'));
+    });
+
+    test('initials do not over-match when query has no shared chars', () async {
+      // Defensive: ensure the initials tier doesn't produce
+      // spurious matches when the query shares nothing with
+      // the target's initials. `zzz` shares no chars with
+      // `BattleMode.cs` initials `bmc` or `lsbmc`.
+      final (searcher, dir) = await _buildSearcher({'BattleMode.cs': ''});
+      addTearDown(() => dir.delete(recursive: true));
+
+      final results = searcher.search('zzz');
+      expect(results, isEmpty);
+    });
+
+    test('async isolate-backed search matches sync ranking', () async {
+      final (searcher, dir) = await _buildSearcher({
+        'BattleMode.cs': '',
+        'bm': '',
+        'lib/src/file_searcher.dart': '',
+        'unrelated.dart': '',
+      });
+      addTearDown(searcher.dispose);
+      addTearDown(() => dir.delete(recursive: true));
+
+      final sync = searcher.search('bm');
+      final async = await searcher.searchAsync('bm');
+
+      expect(
+        async.map((m) => (m.relativePath, m.kind, m.score)).toList(),
+        sync.map((m) => (m.relativePath, m.kind, m.score)).toList(),
+      );
     });
   });
 }

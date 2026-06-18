@@ -161,7 +161,7 @@ class ChatInputState extends State<ChatInput> {
   /// switches projects (via `/project`); the caller is expected to
   /// call [_fileSearcher.invalidate] in that case, but for now we
   /// just rebuild from the constructor's path on first use.
-  late FileSearcher _fileSearcher = FileSearcher(
+  late final FileSearcher _fileSearcher = FileSearcher(
     rootPath: component.projectPath,
   );
 
@@ -230,6 +230,7 @@ class ChatInputState extends State<ChatInput> {
     CommandRegistry.instance.removeListener(component.refresh);
     component.recentProjectsStore?.removeListener(_onTextChanged);
     _atMentionDebouncer?.cancel();
+    _fileSearcher.dispose();
     super.dispose();
   }
 
@@ -640,19 +641,21 @@ class ChatInputState extends State<ChatInput> {
     final overlay = component.overlayController;
 
     // If the popover is already in atMention mode and the user is
-    // just refining the same query (extending it), keep their
-    // selected index. Only reset when the atOffset moved (i.e. a
-    // different `@` is now active — a stale result from a prior
-    // mention shouldn't follow the cursor).
+    // refining the same `@`, keep their selected row and visible
+    // results while the next async search runs. Only reset when the
+    // atOffset moved — a stale result from a prior mention shouldn't
+    // follow the cursor.
     final stayingOnSameAt =
         overlay.overlayMode == OverlayMode.atMention &&
-        overlay.atMentionQuery.length <= mention.query.length;
+        overlay.atMentionOffset == mention.atOffset;
     if (!stayingOnSameAt) {
       overlay.selectedFileIndex = 0;
       overlay.fileScrollOffset = 0;
+      overlay.filteredFiles = const [];
     }
 
     overlay.overlayMode = OverlayMode.atMention;
+    overlay.atMentionOffset = mention.atOffset;
     overlay.atMentionQuery = mention.query;
 
     // Kick off async indexing if it hasn't started. The first
@@ -660,18 +663,10 @@ class ChatInputState extends State<ChatInput> {
     // every subsequent search is purely in-memory.
     _fileSearcher.ensureIndex();
 
-    // Show "Searching..." while the index is still building or
-    // while the debounce timer is pending. The real results
-    // replace this once the async search completes.
-    if (_fileSearcher.isIndexing) {
-      overlay.filteredFiles = const [];
-      overlay.isSearching = true;
-    } else {
-      // Index is warm — we can run the search synchronously and
-      // it'll be a few ms even on 50k paths.
-      overlay.filteredFiles = _fileSearcher.search(mention.query);
-      overlay.isSearching = false;
-    }
+    // Keep the existing rows visible while a fresh async search is
+    // pending. Clearing here makes the whole popover flash on every
+    // keypress; the loading indicator in the header is enough feedback.
+    overlay.isSearching = true;
 
     // Schedule a debounced re-run so subsequent keystrokes
     // (which clear the index flag) get a fresh result if the
@@ -693,21 +688,26 @@ class ChatInputState extends State<ChatInput> {
     if (overlay.overlayMode != OverlayMode.atMention) return;
     if (overlay.atMentionQuery != mention.query) return;
 
-    // If we're still indexing, wait for it.
-    if (_fileSearcher.isIndexing) {
-      overlay.isSearching = true;
-      component.refresh();
-      try {
+    overlay.isSearching = true;
+    component.refresh();
+
+    List<FileMatch> results = const [];
+    try {
+      if (_fileSearcher.isIndexing) {
         await _fileSearcher.ready;
-      } catch (_) {
-        // ignore — search will just return empty
       }
+      if (seq != _atMentionSearchSeq) return;
+      if (overlay.overlayMode != OverlayMode.atMention) return;
+      if (overlay.atMentionQuery != mention.query) return;
+      results = await _fileSearcher.searchAsync(mention.query);
+    } catch (_) {
+      // ignore — result stays empty
     }
     if (seq != _atMentionSearchSeq) return;
     if (overlay.overlayMode != OverlayMode.atMention) return;
     if (overlay.atMentionQuery != mention.query) return;
 
-    overlay.filteredFiles = _fileSearcher.search(mention.query);
+    overlay.filteredFiles = results;
     overlay.isSearching = false;
     component.refresh();
   }

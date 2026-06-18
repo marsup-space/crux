@@ -27,6 +27,7 @@ class OverlayController {
   /// the text after the `@` up to the cursor, and [filteredFiles] is
   /// the fuzzy-search result for it.
   String atMentionQuery = '';
+  int? atMentionOffset;
   List<FileMatch> filteredFiles = [];
   int selectedFileIndex = 0;
   int fileScrollOffset = 0;
@@ -60,6 +61,7 @@ class OverlayController {
     selectedSuggestionIndex = 0;
     suggestionScrollOffset = 0;
     atMentionQuery = '';
+    atMentionOffset = null;
     filteredFiles = [];
     selectedFileIndex = 0;
     fileScrollOffset = 0;

@@ -1,13 +1,14 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../utils/file_searcher.dart';
+import '../utils/ticker_registry.dart';
 
 /// File browser popover shown when the user types `@` in the chat
 /// input. Mirrors [SuggestionOverlay] but renders file/directory
 /// paths with a small icon column and segments the path into
 /// "directory/prefix" (dim) + "filename" (highlighted) so the user
 /// can scan visually. Layout matches the command palette.
-class FileBrowserOverlay extends StatelessComponent {
+class FileBrowserOverlay extends StatefulComponent {
   final List<FileMatch> files;
   final int selectedIndex;
   final int scrollOffset;
@@ -15,15 +16,16 @@ class FileBrowserOverlay extends StatelessComponent {
   final String query;
 
   /// True while the underlying FileSearcher is still building its
-  /// index. The popover swaps the "no matches" line for a
-  /// "Searching..." placeholder so the user knows the empty
-  /// state is transient (rather than a hard "no such file").
+  /// index or scoring the latest query. Existing rows stay visible;
+  /// the header shows a tiny spinner so the popover doesn't flash
+  /// on every keypress.
   final bool isSearching;
 
   final void Function(int)? onHover;
   final void Function(int)? onTap;
 
   const FileBrowserOverlay({
+    super.key,
     required this.files,
     required this.selectedIndex,
     required this.scrollOffset,
@@ -35,9 +37,63 @@ class FileBrowserOverlay extends StatelessComponent {
   });
 
   @override
+  State<FileBrowserOverlay> createState() => _FileBrowserOverlayState();
+}
+
+class _FileBrowserOverlayState extends State<FileBrowserOverlay> {
+  static const _spinnerFrames = ['|', '/', '-', r'\'];
+
+  TickerToken? _spinnerTicker;
+  int _spinnerFrame = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSpinnerTicker();
+  }
+
+  @override
+  void didUpdateComponent(covariant FileBrowserOverlay oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    _syncSpinnerTicker();
+  }
+
+  @override
+  void dispose() {
+    _stopSpinnerTicker();
+    super.dispose();
+  }
+
+  void _syncSpinnerTicker() {
+    if (component.isSearching) {
+      _spinnerTicker ??= TickerRegistry.instance.subscribe(
+        name: 'fileSearchSpinner',
+        interval: const Duration(milliseconds: 120),
+        onTick: () {
+          if (!mounted) return;
+          setState(() {
+            _spinnerFrame = (_spinnerFrame + 1) % _spinnerFrames.length;
+          });
+        },
+      );
+    } else {
+      _stopSpinnerTicker();
+      _spinnerFrame = 0;
+    }
+  }
+
+  void _stopSpinnerTicker() {
+    _spinnerTicker?.cancel();
+    _spinnerTicker = null;
+  }
+
+  @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final visible = files.skip(scrollOffset).take(maxVisible).toList();
+    final visible = component.files
+        .skip(component.scrollOffset)
+        .take(component.maxVisible)
+        .toList();
     final rows = <Component>[];
 
     rows.add(Divider(color: theme.outline, height: 1));
@@ -55,18 +111,18 @@ class FileBrowserOverlay extends StatelessComponent {
             ),
             SizedBox(width: 1),
             Text(
-              query.isEmpty
+              component.query.isEmpty
                   ? '(@-mention a file)'
-                  : '(@$query)',
+                  : '(@${component.query})',
               style: TextStyle(color: theme.wizardTextDim),
             ),
-            if (isSearching) ...[
+            if (component.isSearching) ...[
               SizedBox(width: 1),
               Text(
-                '  Searching…',
+                _spinnerFrames[_spinnerFrame],
                 style: TextStyle(color: theme.wizardTextDim),
               ),
-            ] else if (files.isEmpty) ...[
+            ] else if (component.files.isEmpty) ...[
               SizedBox(width: 1),
               Text(
                 '  no matches',
@@ -81,14 +137,14 @@ class FileBrowserOverlay extends StatelessComponent {
 
     for (int i = 0; i < visible.length; i++) {
       final file = visible[i];
-      final actualIndex = scrollOffset + i;
-      final isSelected = actualIndex == selectedIndex;
+      final actualIndex = component.scrollOffset + i;
+      final isSelected = actualIndex == component.selectedIndex;
       rows.add(
         MouseRegion(
-          onEnter: (_) => onHover?.call(actualIndex),
+          onEnter: (_) => component.onHover?.call(actualIndex),
           opaque: false,
           child: GestureDetector(
-            onTap: () => onTap?.call(actualIndex),
+            onTap: () => component.onTap?.call(actualIndex),
             behavior: HitTestBehavior.opaque,
             child: _buildFileRow(file, isSelected, theme),
           ),
