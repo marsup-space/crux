@@ -9,8 +9,11 @@ import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
+import '../lsp/language.dart';
 import 'parallel_praise_bubble.dart';
 import 'single_call_reminder_bubble.dart';
+import 'lsp_diagnostics_bubble.dart';
+import 'tool_guard_bubble.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -50,6 +53,27 @@ class MessageBubble extends StatelessComponent {
     return effort; // null presets or no match: show internal value
   }
 
+  /// Map a persisted LSP-diagnostic file path to a humanised
+  /// language label suitable for prefixing the bubble (e.g.
+  /// `foo.dart` → `Dart`, `src/auth.ts` → `Typescript`).
+  ///
+  /// Falls back to the shared [kLspLanguageIds] map and skips the
+  /// prefix entirely for unknown / extension-less paths so the
+  /// legacy `"lsp: ..."` form still renders for files we don't
+  /// recognise. The leading character is capitalised so the label
+  /// reads like a proper noun in the bubble body.
+  static String? _languageLabelForPath(String? filePath) {
+    if (filePath == null || filePath.isEmpty) return null;
+    final slash = filePath.lastIndexOf('/');
+    final basename = slash >= 0 ? filePath.substring(slash + 1) : filePath;
+    final dot = basename.lastIndexOf('.');
+    if (dot <= 0) return null; // no extension or hidden file
+    final ext = basename.substring(dot);
+    final id = kLspLanguageIds[ext];
+    if (id == null || id == 'plaintext') return null;
+    return id[0].toUpperCase() + id.substring(1);
+  }
+
   @override
   Component build(BuildContext context) {
     // Each message bubble's build is cheap on its own
@@ -81,6 +105,35 @@ class MessageBubble extends StatelessComponent {
       return SingleCallReminderBubble(
         consecutiveCount: message.parallelCount,
       );
+    }
+    if (message.role == 'lsp_diagnostics') {
+      // Same `parallelCount` column reused for the error count of
+      // LSP diagnostics produced by a tool round. The file path is
+      // stored in [Message.content] by the chat service; the bubble
+      // parses it back out. The language is derived from the file
+      // extension via the shared LSP extension map so the bubble
+      // reads `"Dart lsp: 5 errors in foo.dart"` rather than the
+      // generic `"lsp: 5 errors in foo.dart"`.
+      final filePath = message.content.isEmpty ? null : message.content;
+      return LspDiagnosticsBubble(
+        errorCount: message.parallelCount,
+        filePath: filePath,
+        language: _languageLabelForPath(filePath),
+      );
+    }
+    if (message.role == 'tool_guard') {
+      // The kind is encoded in `parallelCount` (the same
+      // multi-purpose telemetry-int column used by the other
+      // system-role bubbles). The file path is in `content` when
+      // applicable. A negative or out-of-range kind renders
+      // nothing — defensive against future schema drift.
+      final kindIndex = message.parallelCount;
+      if (kindIndex < 0 || kindIndex >= ToolGuardKind.values.length) {
+        return const SizedBox.shrink();
+      }
+      final kind = ToolGuardKind.values[kindIndex];
+      final filePath = message.content.isEmpty ? null : message.content;
+      return ToolGuardBubble(guardKind: kind, filePath: filePath);
     }
 
     final isUser = message.role == 'user';

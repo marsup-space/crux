@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';
+import '../lsp/diagnostic.dart' show extractLspPayload;
+import '../lsp/protocol.dart' show LspDiagnostic, LspDiagnosticSeverity;
 import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
@@ -210,13 +212,25 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     // Header
     children.add(_fileHeader(filePath, intent, theme));
 
-    // Content — syntax-highlighted code block
-    if (content.isEmpty) {
+    // Content — syntax-highlighted code block. The persist path
+    // embeds an LSP payload marker at the end of the result's
+    // content; we strip it from the displayed block but render the
+    // diagnostics in a dedicated section below.
+    final result = component.data.pairedResult;
+    final lsp = result == null
+        ? (visible: content, diagnostics: const <LspDiagnostic>[])
+        : extractLspPayload(result.content);
+
+    if (lsp.visible.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Expanded(
-        child: _scrollableCodeBlock(content, language ?? '', theme),
+        child: _scrollableCodeBlock(lsp.visible, language ?? '', theme),
       ));
+    }
+
+    if (lsp.diagnostics.isNotEmpty) {
+      children.add(_lspErrorsSection(filePath, lsp.diagnostics, theme));
     }
 
     return Column(
@@ -264,6 +278,21 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         padding: const EdgeInsets.only(left: 1),
         child: _inlineCodeBlock(newStr, language ?? '', theme),
       ));
+    }
+
+    // LSP errors section (if any diagnostics were attached to the
+    // tool result). The persist path embeds the diagnostic list
+    // in the result's content as a `<crux-lsp>...</crux-lsp>` JSON
+    // block; we parse it here and render a dedicated section so
+    // the user can see what the language server reported without
+    // having to switch to the raw tab.
+    final result = component.data.pairedResult;
+    if (result != null) {
+      final lsp = extractLspPayload(result.content);
+      if (lsp.diagnostics.isNotEmpty) {
+        children.add(Divider(color: theme.dividerDim, height: 1));
+        children.add(_lspErrorsSection(filePath, lsp.diagnostics, theme));
+      }
     }
 
     return Scrollbar(
@@ -832,6 +861,80 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   // ══════════════════════════════════════════════════════════════════════
   // Helpers
   // ══════════════════════════════════════════════════════════════════════
+
+  // ── LSP errors section ─────────────────────────────────────────────
+  //
+  // Rendered when the tool result carries an LSP diagnostic list
+  // (embedded as a `<crux-lsp>` JSON block by the chat_service
+  // persist path). Each diagnostic shows severity, 1-based
+  // line:col, source (e.g. "dart"), and the message text.
+  Component _lspErrorsSection(
+    String filePath,
+    List<LspDiagnostic> diagnostics,
+    CruxThemeData theme,
+  ) {
+    final errors = diagnostics
+        .where((d) => (d.severity ?? LspDiagnosticSeverity.error) ==
+            LspDiagnosticSeverity.error)
+        .toList();
+    final shown = errors.take(20).toList();
+    final more = errors.length - shown.length;
+    final word = shown.length == 1 ? 'error' : 'errors';
+
+    final children = <Component>[];
+    children.add(_sectionHeading(
+      'LSP · ${shown.length} $word',
+      theme,
+      color: theme.error,
+    ));
+    if (filePath.isNotEmpty) {
+      children.add(_dimText('  in $filePath', theme));
+    }
+    for (final d in shown) {
+      children.add(_lspErrorRow(d, theme));
+    }
+    if (more > 0) {
+      children.add(_dimText('  ... and $more more', theme));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  Component _lspErrorRow(LspDiagnostic d, CruxThemeData theme) {
+    final line = d.range.start.line + 1;
+    final col = d.range.start.character + 1;
+    final where = d.source ?? 'lsp';
+    final message = d.message;
+    return Container(
+      padding: const EdgeInsets.only(left: 2, top: 0, bottom: 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '✗ ',
+            style: TextStyle(color: theme.error, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            '[$where ',
+            style: TextStyle(color: theme.onSurfaceDim),
+          ),
+          Text(
+            '$line:$col',
+            style: TextStyle(
+              color: theme.onSurfaceDim,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            '] $message',
+            style: TextStyle(color: theme.foreground),
+          ),
+        ],
+      ),
+    );
+  }
 
   Component _labelValue(
     String label,

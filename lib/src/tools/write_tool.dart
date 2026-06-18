@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../lsp/manager.dart' show LspManager;
+import '../lsp/protocol.dart' show LspDiagnostic;
 import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
@@ -138,8 +140,9 @@ class WriteTool extends ToolDef with IntentionalTool {
   };
 
   final FileReadTracker? tracker;
+  final LspManager? lsp;
 
-  WriteTool({this.tracker});
+  WriteTool({this.tracker, this.lsp});
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -187,9 +190,9 @@ class WriteTool extends ToolDef with IntentionalTool {
       final guard = await tracker!.checkWriteGuard(resolved);
       if (guard != null) {
         return ToolResult(
-          title: 'Read-before-write guard triggered',
+          title: 'Write file: $resolved',
           output: '${guard.header}\n\n${guard.content}',
-          metadata: {'guardTriggered': true},
+          metadata: {'guardTriggered': true, 'guardKind': 'read_before_write'},
         );
       }
     }
@@ -206,7 +209,7 @@ class WriteTool extends ToolDef with IntentionalTool {
       final mismatch = _checkSizeMismatch(file, content);
       if (mismatch != null) {
         return ToolResult(
-          title: 'Size-mismatch guard triggered',
+          title: 'Write file: $resolved',
           output: mismatch,
           metadata: {'guardTriggered': true, 'guardKind': 'size_mismatch'},
         );
@@ -274,7 +277,61 @@ class WriteTool extends ToolDef with IntentionalTool {
       output = '$output, $diffLabel, ${_formatBytes(content.length)}';
     }
 
-    return ToolResult(title: 'Write file: $resolved', output: output);
+    final lspResult = await _collectLspDiagnostics(resolved, output, ctx);
+
+    return ToolResult(
+      title: 'Write file: $resolved',
+      output: lspResult.output,
+      metadata: {'lsp': lspResult.diagnostics},
+    );
+  }
+
+  /// Collect LSP diagnostics for [filePath]. Returns the (possibly-
+  /// modified) output text and the raw diagnostic list. The list is
+  /// exposed in [ToolResult.metadata] under the `lsp` key so
+  /// [collapsedSummary] can show the count in the hint bubble.
+  ///
+  /// The output text gets a brief one-liner (no verbose block); the
+  /// count goes in the hint bubble instead.
+  ///
+  /// Best-effort: any failure returns ([baseOutput], const []). The
+  /// tool must never fail because of LSP.
+  Future<({String output, List<LspDiagnostic> diagnostics})>
+      _collectLspDiagnostics(
+    String filePath,
+    String baseOutput,
+    ToolContext ctx,
+  ) async {
+    final mgr = lsp;
+    if (mgr == null) {
+      return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
+    }
+    try {
+      if (ctx.abort.isAborted) {
+        return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
+      }
+      final diagnostics = await mgr.touchFileAndWait(
+        filePath,
+        isCancelled: () => ctx.abort.isAborted,
+      );
+      if (diagnostics.isEmpty) {
+        return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
+      }
+      // Output text stays clean; the count is surfaced via the
+      // [LspDiagnosticsBubble] in the chat history, not appended
+      // to the tool's textual output.
+      return (output: baseOutput, diagnostics: diagnostics);
+    } catch (_) {
+      return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
+    }
+  }
+
+  /// (Deprecated) The LSP count hint is now surfaced via
+  /// [LspDiagnosticsBubble] in the chat history instead of being
+  /// appended to the collapsed summary. Kept for backwards-compat
+  /// with the test fixture; safe to delete in a follow-up.
+  static String _appendLspHint(String text, Map<String, dynamic> metadata) {
+    return text;
   }
 
   Future<int> _mtimeMs(File file) async {

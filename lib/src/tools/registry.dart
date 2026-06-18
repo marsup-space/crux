@@ -35,16 +35,21 @@ class ToolRegistry {
         .toList();
   }
 
-  void registerDefaults(FileReadTracker tracker) {
+  /// Register default tools. [lsp] is optional — when provided, edit
+  /// and write tools surface diagnostics from language servers after
+  /// each successful mutation, and the read tool warms the server
+  /// in the background so subsequent edits are fast. Pass null to
+  /// disable LSP feedback.
+  void registerDefaults(FileReadTracker tracker, {dynamic lsp}) {
     if (Platform.isWindows) {
       register(CmdTool());
       register(PowerShellTool());
     } else {
       register(BashTool());
     }
-    register(ReadTool(tracker: tracker));
-    register(WriteTool(tracker: tracker));
-    register(EditTool(tracker: tracker));
+    register(ReadTool(tracker: tracker, lsp: lsp));
+    register(WriteTool(tracker: tracker, lsp: lsp));
+    register(EditTool(tracker: tracker, lsp: lsp));
     register(GrepTool());
     register(GlobTool());
     register(WebFetchTool());

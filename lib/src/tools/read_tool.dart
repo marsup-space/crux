@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import '../lsp/manager.dart' show LspManager;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
@@ -9,8 +11,11 @@ const _maxLineLength = 2000;
 
 class ReadTool extends ToolDef {
   final FileReadTracker? _tracker;
+  final LspManager? _lsp;
 
-  ReadTool({FileReadTracker? tracker}) : _tracker = tracker;
+  ReadTool({FileReadTracker? tracker, LspManager? lsp})
+      : _tracker = tracker,
+        _lsp = lsp;
   @override
   String get name => 'read';
 
@@ -200,6 +205,17 @@ class ReadTool extends ToolDef {
         : '';
 
     final output = header.isNotEmpty ? '$header\n$numbered' : numbered;
+
+    // Warm the LSP server in the background. Fire-and-forget:
+    // the read tool must complete immediately without waiting
+    // for the language server to start or analyze. By the time
+    // the user edits the file, the analysis is already done
+    // and the edit's diagnostic collection is sub-second.
+    final mgr = _lsp;
+    if (mgr != null) {
+      unawaited(mgr.touchFileAndForget(path));
+    }
+
     return ToolResult(title: 'Read file: $path', output: output);
   }
 

@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
+import '../lsp/actors/dart.dart';
+import '../lsp/manager.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -88,6 +91,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final CommandExecutor _commandExecutor;
   late final ChatTurnOrchestrator _turnOrchestrator;
   late final FileReadTracker _tracker;
+  late final LspManager _lspManager;
 
   /// History of recently-opened project directories. Loaded once
   /// during construction and threaded through to the chat input so
@@ -183,8 +187,23 @@ class _ChatPanelState extends State<ChatPanel> {
       },
     );
     _tracker = tracker;
+    // Wire the LSP manager. Phase 2.0: in-process actors. The
+    // constructor is sync (no I/O) — the async `create()` helper
+    // exists for the future IsolateChannel path. The session's
+    // project directory (the cwd Crux was launched from) is the
+    // root for finding project markers like `pubspec.yaml`.
+    _lspManager = LspManager(
+      workingDirectory: Directory.current.path,
+      actorFactories: const {
+        // Phase 2.0: dogfood the Dart server. The other 8 servers
+        // from the design doc (typescript, python, rust, go, ruby,
+        // lua, bash, yaml) get added in Phase 2.1 once we
+        // validate the wiring through the live app.
+        'dart': DartServerActor.new,
+      },
+    );
     final registry = ToolRegistry();
-    registry.registerDefaults(tracker);
+    registry.registerDefaults(tracker, lsp: _lspManager);
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
     _chatService = ChatService(
@@ -508,6 +527,11 @@ class _ChatPanelState extends State<ChatPanel> {
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
+    // Shut down LSP servers so the dart analysis process doesn't
+    // outlive the panel (it would otherwise hang around until the
+    // actor's kill timer fires). Fire-and-forget — dispose isn't
+    // allowed to await.
+    unawaited(_lspManager.shutdown());
     // Stop the coding-plan polling timer. The provider's
     // mixin owns the timer / stream / cache, so this just
     // tells it to stop firing. The mixin's `dispose` would

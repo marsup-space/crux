@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
-
+import 'package:path/path.dart' as p;
+import '../components/tool_guard_bubble.dart' show ToolGuardKind;
+import '../lsp/diagnostic.dart' show buildLspPayload;
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/provider_config.dart';
@@ -1050,9 +1053,60 @@ class ChatService {
           toolCalls: toolCallData,
           results: [
             for (final call in toolCalls)
-              (callId: call.callId, output: callResults[call.callId]!.output),
+              _buildToolResultForPersist(
+                call.callId,
+                callResults[call.callId]!,
+              ),
           ],
         );
+        // Persist user-facing LSP-diagnostics bubbles right after
+        // the tool_call row, one per file that had error-severity
+        // diagnostics. Mirrors the parallel_praise pattern: inline
+        // under the tool-call list, persisted, no in-context hint
+        // (the LLM can call `read` on the file path the bubble
+        // references to see the actual errors).
+        //
+        // The metadata lives on [ToolResult.metadata] under the
+        // `lsp` key, set by `EditTool`/`WriteTool` after a
+        // successful mutation. The chat service only sees the
+        // serialized `output` going into the tool_result block of
+        // the API request, but it has the full [ToolResult] in
+        // [callResults] for the persist path.
+        for (final call in toolCalls) {
+          final result = callResults[call.callId];
+          if (result == null) continue;
+          final lsp = result.metadata['lsp'];
+          if (lsp is! List || lsp.isEmpty) continue;
+          final relPath = _relativeFilePathFromCall(call, session.projectPath);
+          await _messageStore.addMessage(
+            sessionId,
+            role: 'lsp_diagnostics',
+            content: relPath,
+            parallelCount: lsp.length,
+          );
+        }
+
+        // Persist user-facing tool-guard bubbles (auto-read,
+        // read-before-write, size-mismatch). Same idea: the
+        // model's view is unchanged (the tool's `output` already
+        // contains the explanation), but a small `⚠` bubble
+        // makes the user aware of what happened without bloating
+        // the tool_call row. The kind is encoded as the
+        // `parallelCount` int; the file path goes in `content`.
+        for (final call in toolCalls) {
+          final result = callResults[call.callId];
+          if (result == null) continue;
+          final kind = _guardKindFromResult(result);
+          if (kind == null) continue;
+          final relPath = _relativeFilePathFromCall(call, session.projectPath);
+          await _messageStore.addMessage(
+            sessionId,
+            role: 'tool_guard',
+            content: relPath,
+            parallelCount: kind.index,
+          );
+        }
+
         // Persist the user-facing `parallel_praise` bubble right after
         // the tool_call row, so the chat history renders it inline
         // under the matching tool-call list. Same `hintEnabled`
@@ -1222,10 +1276,7 @@ class ChatService {
     // stable across turns within a session. The OpenAI-compatible
     // path treats it as a regular message in the conversation.
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      result.add({
-        'role': 'system',
-        'content': systemPrompt,
-      });
+      result.add({'role': 'system', 'content': systemPrompt});
     }
 
     for (final m in history) {
@@ -1409,4 +1460,69 @@ class ChatService {
     _llmClient.dispose();
     _auxiliaryService.dispose();
   }
+}
+
+/// Compute a project-relative path for the file referenced by a tool
+/// call, used by the LSP-diagnostics bubble. Best-effort: if the call
+/// has no `filePath` arg, or the path doesn't live under the project
+/// root, the absolute path is returned unchanged.
+String _relativeFilePathFromCall(ToolCall call, String projectPath) {
+  final raw = call.input['filePath'];
+  if (raw is! String || raw.isEmpty) return '';
+  final abs = p.isAbsolute(raw)
+      ? p.normalize(raw)
+      : p.normalize(p.join(projectPath, raw));
+  final rel = p.relative(abs, from: projectPath);
+  if (rel.startsWith('..') || p.isAbsolute(rel)) return abs;
+  return rel;
+}
+
+/// Build a persist-ready record for a tool result. If the result
+/// carries LSP diagnostics in its metadata, embed them as a
+/// magic-marker JSON block in the persisted `output` so the
+/// detail view can render a dedicated "LSP errors" section.
+///
+/// The visible text the model sees is unchanged; the marker is
+/// appended after a blank line so a regex-based parser in the
+/// detail view can extract it. The marker content is structured
+/// JSON so the model can also use it directly to self-correct on
+/// the next turn.
+({String callId, String output}) _buildToolResultForPersist(
+  String callId,
+  ToolResult result,
+) {
+  final lsp = result.metadata['lsp'];
+  if (lsp is! List || lsp.isEmpty) {
+    return (callId: callId, output: result.output);
+  }
+  final payload = buildLspPayload(lsp.cast());
+  if (payload.isEmpty) {
+    return (callId: callId, output: result.output);
+  }
+  return (callId: callId, output: '${result.output}$payload');
+}
+
+/// Map a tool result's metadata into a [ToolGuardKind] for the
+/// user-facing hint bubble. Returns null when no guard was
+/// triggered (the common case). The kind is encoded as a
+/// `parallelCount` int in the persisted `tool_guard` message.
+ToolGuardKind? _guardKindFromResult(ToolResult result) {
+  final meta = result.metadata;
+  if (meta['autoRead'] == true) {
+    return ToolGuardKind.autoRead;
+  }
+  if (meta['guardTriggered'] == true) {
+    switch (meta['guardKind']) {
+      case 'size_mismatch':
+        return ToolGuardKind.sizeMismatch;
+      case 'read_before_write':
+      default:
+        // The plain `{'guardTriggered': true}` shape (no
+        // guardKind) is the read-before-write guard set by the
+        // write tool's `tracker.checkWriteGuard` path. Map it
+        // here to keep the write tool's metadata schema simple.
+        return ToolGuardKind.readBeforeWrite;
+    }
+  }
+  return null;
 }
