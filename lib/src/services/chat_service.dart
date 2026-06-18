@@ -52,6 +52,9 @@ class ChatService {
   final AuxiliaryService _auxiliaryService;
   final Set<int> _activeSessions = {};
   final Set<int> _cancelRequested = {};
+  final Map<int, Timer> _leaseHeartbeatTimers = {};
+
+  static const Duration _leaseHeartbeatInterval = Duration(seconds: 5);
 
   ChatService(
     this._store,
@@ -65,6 +68,29 @@ class ChatService {
       );
 
   bool isStreaming(int sessionId) => _activeSessions.contains(sessionId);
+
+  void _markSessionActive(int sessionId) {
+    _activeSessions.add(sessionId);
+    _startLeaseHeartbeat(sessionId);
+  }
+
+  void _markSessionInactive(int sessionId) {
+    _activeSessions.remove(sessionId);
+    _stopLeaseHeartbeat(sessionId);
+  }
+
+  void _startLeaseHeartbeat(int sessionId) {
+    _stopLeaseHeartbeat(sessionId);
+    _store.heartbeatRunningSession(sessionId);
+    _leaseHeartbeatTimers[sessionId] = Timer.periodic(
+      _leaseHeartbeatInterval,
+      (_) => _store.heartbeatRunningSession(sessionId),
+    );
+  }
+
+  void _stopLeaseHeartbeat(int sessionId) {
+    _leaseHeartbeatTimers.remove(sessionId)?.cancel();
+  }
 
   void cancelStream(int sessionId) {
     _cancelRequested.add(sessionId);
@@ -122,6 +148,14 @@ class ChatService {
         userContent: userContent,
         images: images,
       );
+    } on SessionLeaseClaimException catch (e) {
+      runtime.pauseStreamingTimer();
+      runtime.isResponding = false;
+      runtime.roundStreaming = false;
+      runtime.roundStartTime = null;
+      runtime.roundFirstTokenTime = null;
+      _markSessionInactive(sessionId);
+      onError(e.toString());
     } catch (e) {
       await _recoverFromUnexpectedTurnExit(
         sessionId: sessionId,
@@ -142,7 +176,7 @@ class ChatService {
     runtime.roundStreaming = false;
     runtime.roundStartTime = null;
     runtime.roundFirstTokenTime = null;
-    _activeSessions.remove(sessionId);
+    _markSessionInactive(sessionId);
     _cancelRequested.remove(sessionId);
 
     if (session.status == SessionStatus.running) {
@@ -178,6 +212,15 @@ class ChatService {
     String? userContent,
     List<ImageAttachment> images = const [],
   }) async {
+    final updatedSession = await _store.update(
+      sessionId,
+      status: SessionStatus.running,
+    );
+    session.status = updatedSession.status;
+    session.runningOwnerId = updatedSession.runningOwnerId;
+    session.runningHeartbeatAt = updatedSession.runningHeartbeatAt;
+    session.updatedAt = updatedSession.updatedAt;
+
     if (userContent != null) {
       await _messageStore.addMessage(
         sessionId,
@@ -187,15 +230,11 @@ class ChatService {
       );
     }
 
-    await _store.update(sessionId, status: SessionStatus.running);
-    session.status = SessionStatus.running;
-    session.updatedAt = DateTime.now();
-
     runtime.isResponding = true;
     runtime.tokPerSec = 0.0;
     runtime.tokCount = 0.0;
 
-    _activeSessions.add(sessionId);
+    _markSessionActive(sessionId);
 
     final compositeKey = session.model;
     final slashIndex = compositeKey.indexOf('/');
@@ -214,7 +253,7 @@ class ChatService {
       await _store.update(sessionId, status: SessionStatus.needUserAction);
       session.status = SessionStatus.needUserAction;
       runtime.isResponding = false;
-      _activeSessions.remove(sessionId);
+      _markSessionInactive(sessionId);
       onError(
         'No API key for provider "$providerName". Use /provider to connect.',
       );
@@ -298,7 +337,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         _cancelRequested.remove(sessionId);
         return;
       }
@@ -428,7 +467,7 @@ class ChatService {
             runtime.isResponding = false;
             await _store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
-            _activeSessions.remove(sessionId);
+            _markSessionInactive(sessionId);
             onError(chunk.error!);
             return;
           }
@@ -558,7 +597,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         onError(e.toString());
         return;
       }
@@ -573,7 +612,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         _cancelRequested.remove(sessionId);
         return;
       }
@@ -661,7 +700,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         _cancelRequested.remove(sessionId);
         return;
       }
@@ -731,7 +770,7 @@ class ChatService {
             runtime.isResponding = false;
             await _store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
-            _activeSessions.remove(sessionId);
+            _markSessionInactive(sessionId);
             _cancelRequested.remove(sessionId);
             return;
           }
@@ -874,7 +913,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         onError('Tool execution error: $e');
         return;
       }
@@ -930,7 +969,7 @@ class ChatService {
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
+        _markSessionInactive(sessionId);
         onError('Persistence error: $e');
         return;
       }
@@ -1011,7 +1050,7 @@ class ChatService {
     session.updatedAt = DateTime.now();
 
     runtime.isResponding = false;
-    _activeSessions.remove(sessionId);
+    _markSessionInactive(sessionId);
     _cancelRequested.remove(sessionId);
 
     if (stepLimitReached) {
@@ -1223,6 +1262,10 @@ class ChatService {
 
   void dispose() {
     _cancelRequested.clear();
+    for (final timer in _leaseHeartbeatTimers.values) {
+      timer.cancel();
+    }
+    _leaseHeartbeatTimers.clear();
     _activeSessions.clear();
     _llmClient.dispose();
     _auxiliaryService.dispose();

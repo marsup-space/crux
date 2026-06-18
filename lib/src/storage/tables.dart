@@ -22,6 +22,8 @@ class Sessions extends Table {
   TextColumn get thinkingMode =>
       text().withDefault(const Constant('enabled'))();
   TextColumn get reasoningEffort => text().nullable()();
+  TextColumn get runningOwnerId => text().nullable()();
+  IntColumn get runningHeartbeatAt => integer().nullable()();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();
@@ -53,6 +55,12 @@ class Messages extends Table {
   /// Kept in the schema so drift's codegen compiles, but never read.
   IntColumn get preCompressTokens => integer().nullable()();
   TextColumn get images => text().withDefault(const Constant(''))();
+
+  /// Count of successful tool calls in the round, persisted on
+  /// `parallel_praise` rows so the chat history bubble can render
+  /// "N tool calls parallelized" without re-deriving the number.
+  /// Always `0` for every other role.
+  IntColumn get parallelCount => integer().withDefault(const Constant(0))();
   IntColumn get createdAt => integer()();
 }
 

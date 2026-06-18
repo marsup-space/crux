@@ -174,7 +174,9 @@ class _ChatPanelState extends State<ChatPanel> {
     // UI's session list is loaded async by `_initSessions` below, and
     // the (very small) write will land before the user can navigate
     // to a session that was affected.
-    _store.markOrphanedRunningSessionsAsInterrupted();
+    _store.markOrphanedRunningSessionsAsInterrupted(
+      projectPath: Directory.current.path,
+    );
     final tracker = FileReadTracker(
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);
@@ -325,6 +327,17 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     final error = await _sessionController.switchSession(id);
+    if (error != null) {
+      _showToast(error, mode: ToastMode.error);
+      if (oldId != null && oldId != id) {
+        final oldRt = _sessionController.runtime(oldId);
+        if (oldRt.isResponding) {
+          _streamingController.startMetricsTimer(oldId);
+        }
+      }
+      setState(() {});
+      return;
+    }
 
     final savedState = await _store.loadFileReadState(id);
     _tracker.loadSession(id, savedState);
@@ -341,9 +354,6 @@ class _ChatPanelState extends State<ChatPanel> {
 
     _streamingController.stopContextAnimation();
     scrollController.scrollToBottom();
-    if (error != null) {
-      _showToast(error, mode: ToastMode.error);
-    }
     setState(() {});
   }
 

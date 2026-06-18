@@ -195,6 +195,27 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _runningOwnerIdMeta = const VerificationMeta(
+    'runningOwnerId',
+  );
+  @override
+  late final GeneratedColumn<String> runningOwnerId = GeneratedColumn<String>(
+    'running_owner_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _runningHeartbeatAtMeta =
+      const VerificationMeta('runningHeartbeatAt');
+  @override
+  late final GeneratedColumn<int> runningHeartbeatAt = GeneratedColumn<int>(
+    'running_heartbeat_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -247,6 +268,8 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
+    runningOwnerId,
+    runningHeartbeatAt,
     createdAt,
     updatedAt,
     archivedAt,
@@ -371,6 +394,24 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         ),
       );
     }
+    if (data.containsKey('running_owner_id')) {
+      context.handle(
+        _runningOwnerIdMeta,
+        runningOwnerId.isAcceptableOrUnknown(
+          data['running_owner_id']!,
+          _runningOwnerIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('running_heartbeat_at')) {
+      context.handle(
+        _runningHeartbeatAtMeta,
+        runningHeartbeatAt.isAcceptableOrUnknown(
+          data['running_heartbeat_at']!,
+          _runningHeartbeatAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -472,6 +513,14 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_effort'],
       ),
+      runningOwnerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}running_owner_id'],
+      ),
+      runningHeartbeatAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}running_heartbeat_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -514,6 +563,8 @@ class Session extends DataClass implements Insertable<Session> {
   final int promptCacheHitTokens;
   final String thinkingMode;
   final String? reasoningEffort;
+  final String? runningOwnerId;
+  final int? runningHeartbeatAt;
   final int createdAt;
   final int updatedAt;
   final int? archivedAt;
@@ -535,6 +586,8 @@ class Session extends DataClass implements Insertable<Session> {
     required this.promptCacheHitTokens,
     required this.thinkingMode,
     this.reasoningEffort,
+    this.runningOwnerId,
+    this.runningHeartbeatAt,
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
@@ -567,6 +620,12 @@ class Session extends DataClass implements Insertable<Session> {
     if (!nullToAbsent || reasoningEffort != null) {
       map['reasoning_effort'] = Variable<String>(reasoningEffort);
     }
+    if (!nullToAbsent || runningOwnerId != null) {
+      map['running_owner_id'] = Variable<String>(runningOwnerId);
+    }
+    if (!nullToAbsent || runningHeartbeatAt != null) {
+      map['running_heartbeat_at'] = Variable<int>(runningHeartbeatAt);
+    }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     if (!nullToAbsent || archivedAt != null) {
@@ -598,6 +657,12 @@ class Session extends DataClass implements Insertable<Session> {
       reasoningEffort: reasoningEffort == null && nullToAbsent
           ? const Value.absent()
           : Value(reasoningEffort),
+      runningOwnerId: runningOwnerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(runningOwnerId),
+      runningHeartbeatAt: runningHeartbeatAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(runningHeartbeatAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       archivedAt: archivedAt == null && nullToAbsent
@@ -633,6 +698,8 @@ class Session extends DataClass implements Insertable<Session> {
       ),
       thinkingMode: serializer.fromJson<String>(json['thinkingMode']),
       reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
+      runningOwnerId: serializer.fromJson<String?>(json['runningOwnerId']),
+      runningHeartbeatAt: serializer.fromJson<int?>(json['runningHeartbeatAt']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
@@ -661,6 +728,8 @@ class Session extends DataClass implements Insertable<Session> {
       'promptCacheHitTokens': serializer.toJson<int>(promptCacheHitTokens),
       'thinkingMode': serializer.toJson<String>(thinkingMode),
       'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
+      'runningOwnerId': serializer.toJson<String?>(runningOwnerId),
+      'runningHeartbeatAt': serializer.toJson<int?>(runningHeartbeatAt),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
@@ -685,6 +754,8 @@ class Session extends DataClass implements Insertable<Session> {
     int? promptCacheHitTokens,
     String? thinkingMode,
     Value<String?> reasoningEffort = const Value.absent(),
+    Value<String?> runningOwnerId = const Value.absent(),
+    Value<int?> runningHeartbeatAt = const Value.absent(),
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
@@ -708,6 +779,12 @@ class Session extends DataClass implements Insertable<Session> {
     reasoningEffort: reasoningEffort.present
         ? reasoningEffort.value
         : this.reasoningEffort,
+    runningOwnerId: runningOwnerId.present
+        ? runningOwnerId.value
+        : this.runningOwnerId,
+    runningHeartbeatAt: runningHeartbeatAt.present
+        ? runningHeartbeatAt.value
+        : this.runningHeartbeatAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
@@ -741,6 +818,12 @@ class Session extends DataClass implements Insertable<Session> {
       reasoningEffort: data.reasoningEffort.present
           ? data.reasoningEffort.value
           : this.reasoningEffort,
+      runningOwnerId: data.runningOwnerId.present
+          ? data.runningOwnerId.value
+          : this.runningOwnerId,
+      runningHeartbeatAt: data.runningHeartbeatAt.present
+          ? data.runningHeartbeatAt.value
+          : this.runningHeartbeatAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       archivedAt: data.archivedAt.present
@@ -769,6 +852,8 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
+          ..write('runningOwnerId: $runningOwnerId, ')
+          ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt')
@@ -777,7 +862,7 @@ class Session extends DataClass implements Insertable<Session> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     slug,
     title,
@@ -795,10 +880,12 @@ class Session extends DataClass implements Insertable<Session> {
     promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
+    runningOwnerId,
+    runningHeartbeatAt,
     createdAt,
     updatedAt,
     archivedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -820,6 +907,8 @@ class Session extends DataClass implements Insertable<Session> {
           other.promptCacheHitTokens == this.promptCacheHitTokens &&
           other.thinkingMode == this.thinkingMode &&
           other.reasoningEffort == this.reasoningEffort &&
+          other.runningOwnerId == this.runningOwnerId &&
+          other.runningHeartbeatAt == this.runningHeartbeatAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.archivedAt == this.archivedAt);
@@ -843,6 +932,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> promptCacheHitTokens;
   final Value<String> thinkingMode;
   final Value<String?> reasoningEffort;
+  final Value<String?> runningOwnerId;
+  final Value<int?> runningHeartbeatAt;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
@@ -864,6 +955,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
+    this.runningOwnerId = const Value.absent(),
+    this.runningHeartbeatAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
@@ -886,6 +979,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
+    this.runningOwnerId = const Value.absent(),
+    this.runningHeartbeatAt = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
@@ -910,6 +1005,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? promptCacheHitTokens,
     Expression<String>? thinkingMode,
     Expression<String>? reasoningEffort,
+    Expression<String>? runningOwnerId,
+    Expression<int>? runningHeartbeatAt,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
@@ -933,6 +1030,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
         'prompt_cache_hit_tokens': promptCacheHitTokens,
       if (thinkingMode != null) 'thinking_mode': thinkingMode,
       if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
+      if (runningOwnerId != null) 'running_owner_id': runningOwnerId,
+      if (runningHeartbeatAt != null)
+        'running_heartbeat_at': runningHeartbeatAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
@@ -957,6 +1057,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? promptCacheHitTokens,
     Value<String>? thinkingMode,
     Value<String?>? reasoningEffort,
+    Value<String?>? runningOwnerId,
+    Value<int?>? runningHeartbeatAt,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
@@ -979,6 +1081,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       promptCacheHitTokens: promptCacheHitTokens ?? this.promptCacheHitTokens,
       thinkingMode: thinkingMode ?? this.thinkingMode,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+      runningOwnerId: runningOwnerId ?? this.runningOwnerId,
+      runningHeartbeatAt: runningHeartbeatAt ?? this.runningHeartbeatAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
@@ -1043,6 +1147,12 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (reasoningEffort.present) {
       map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
     }
+    if (runningOwnerId.present) {
+      map['running_owner_id'] = Variable<String>(runningOwnerId.value);
+    }
+    if (runningHeartbeatAt.present) {
+      map['running_heartbeat_at'] = Variable<int>(runningHeartbeatAt.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1075,6 +1185,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
+          ..write('runningOwnerId: $runningOwnerId, ')
+          ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt')
@@ -1313,6 +1425,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _parallelCountMeta = const VerificationMeta(
+    'parallelCount',
+  );
+  @override
+  late final GeneratedColumn<int> parallelCount = GeneratedColumn<int>(
+    'parallel_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1346,6 +1470,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     parentMsgId,
     preCompressTokens,
     images,
+    parallelCount,
     createdAt,
   ];
   @override
@@ -1505,6 +1630,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         images.isAcceptableOrUnknown(data['images']!, _imagesMeta),
       );
     }
+    if (data.containsKey('parallel_count')) {
+      context.handle(
+        _parallelCountMeta,
+        parallelCount.isAcceptableOrUnknown(
+          data['parallel_count']!,
+          _parallelCountMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1602,6 +1736,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}images'],
       )!,
+      parallelCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}parallel_count'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1639,6 +1777,12 @@ class Message extends DataClass implements Insertable<Message> {
   /// Kept in the schema so drift's codegen compiles, but never read.
   final int? preCompressTokens;
   final String images;
+
+  /// Count of successful tool calls in the round, persisted on
+  /// `parallel_praise` rows so the chat history bubble can render
+  /// "N tool calls parallelized" without re-deriving the number.
+  /// Always `0` for every other role.
+  final int parallelCount;
   final int createdAt;
   const Message({
     required this.id,
@@ -1661,6 +1805,7 @@ class Message extends DataClass implements Insertable<Message> {
     this.parentMsgId,
     this.preCompressTokens,
     required this.images,
+    required this.parallelCount,
     required this.createdAt,
   });
   @override
@@ -1694,6 +1839,7 @@ class Message extends DataClass implements Insertable<Message> {
       map['pre_compress_tokens'] = Variable<int>(preCompressTokens);
     }
     map['images'] = Variable<String>(images);
+    map['parallel_count'] = Variable<int>(parallelCount);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -1728,6 +1874,7 @@ class Message extends DataClass implements Insertable<Message> {
           ? const Value.absent()
           : Value(preCompressTokens),
       images: Value(images),
+      parallelCount: Value(parallelCount),
       createdAt: Value(createdAt),
     );
   }
@@ -1760,6 +1907,7 @@ class Message extends DataClass implements Insertable<Message> {
       parentMsgId: serializer.fromJson<int?>(json['parentMsgId']),
       preCompressTokens: serializer.fromJson<int?>(json['preCompressTokens']),
       images: serializer.fromJson<String>(json['images']),
+      parallelCount: serializer.fromJson<int>(json['parallelCount']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -1787,6 +1935,7 @@ class Message extends DataClass implements Insertable<Message> {
       'parentMsgId': serializer.toJson<int?>(parentMsgId),
       'preCompressTokens': serializer.toJson<int?>(preCompressTokens),
       'images': serializer.toJson<String>(images),
+      'parallelCount': serializer.toJson<int>(parallelCount),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -1812,6 +1961,7 @@ class Message extends DataClass implements Insertable<Message> {
     Value<int?> parentMsgId = const Value.absent(),
     Value<int?> preCompressTokens = const Value.absent(),
     String? images,
+    int? parallelCount,
     int? createdAt,
   }) => Message(
     id: id ?? this.id,
@@ -1838,6 +1988,7 @@ class Message extends DataClass implements Insertable<Message> {
         ? preCompressTokens.value
         : this.preCompressTokens,
     images: images ?? this.images,
+    parallelCount: parallelCount ?? this.parallelCount,
     createdAt: createdAt ?? this.createdAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -1878,6 +2029,9 @@ class Message extends DataClass implements Insertable<Message> {
           ? data.preCompressTokens.value
           : this.preCompressTokens,
       images: data.images.present ? data.images.value : this.images,
+      parallelCount: data.parallelCount.present
+          ? data.parallelCount.value
+          : this.parallelCount,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1905,6 +2059,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('parentMsgId: $parentMsgId, ')
           ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
+          ..write('parallelCount: $parallelCount, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -1932,6 +2087,7 @@ class Message extends DataClass implements Insertable<Message> {
     parentMsgId,
     preCompressTokens,
     images,
+    parallelCount,
     createdAt,
   ]);
   @override
@@ -1958,6 +2114,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.parentMsgId == this.parentMsgId &&
           other.preCompressTokens == this.preCompressTokens &&
           other.images == this.images &&
+          other.parallelCount == this.parallelCount &&
           other.createdAt == this.createdAt);
 }
 
@@ -1982,6 +2139,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int?> parentMsgId;
   final Value<int?> preCompressTokens;
   final Value<String> images;
+  final Value<int> parallelCount;
   final Value<int> createdAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -2004,6 +2162,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.parentMsgId = const Value.absent(),
     this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
+    this.parallelCount = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -2027,6 +2186,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.parentMsgId = const Value.absent(),
     this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
+    this.parallelCount = const Value.absent(),
     required int createdAt,
   }) : sessionId = Value(sessionId),
        role = Value(role),
@@ -2052,6 +2212,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? parentMsgId,
     Expression<int>? preCompressTokens,
     Expression<String>? images,
+    Expression<int>? parallelCount,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -2076,6 +2237,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (parentMsgId != null) 'parent_msg_id': parentMsgId,
       if (preCompressTokens != null) 'pre_compress_tokens': preCompressTokens,
       if (images != null) 'images': images,
+      if (parallelCount != null) 'parallel_count': parallelCount,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -2101,6 +2263,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int?>? parentMsgId,
     Value<int?>? preCompressTokens,
     Value<String>? images,
+    Value<int>? parallelCount,
     Value<int>? createdAt,
   }) {
     return MessagesCompanion(
@@ -2124,6 +2287,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       parentMsgId: parentMsgId ?? this.parentMsgId,
       preCompressTokens: preCompressTokens ?? this.preCompressTokens,
       images: images ?? this.images,
+      parallelCount: parallelCount ?? this.parallelCount,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -2191,6 +2355,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (images.present) {
       map['images'] = Variable<String>(images.value);
     }
+    if (parallelCount.present) {
+      map['parallel_count'] = Variable<int>(parallelCount.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -2220,6 +2387,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('parentMsgId: $parentMsgId, ')
           ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
+          ..write('parallelCount: $parallelCount, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -3488,6 +3656,8 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
@@ -3511,6 +3681,8 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
@@ -3693,6 +3865,16 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get reasoningEffort => $composableBuilder(
     column: $table.reasoningEffort,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get runningOwnerId => $composableBuilder(
+    column: $table.runningOwnerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get runningHeartbeatAt => $composableBuilder(
+    column: $table.runningHeartbeatAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3906,6 +4088,16 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get runningOwnerId => $composableBuilder(
+    column: $table.runningOwnerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get runningHeartbeatAt => $composableBuilder(
+    column: $table.runningHeartbeatAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -3989,6 +4181,16 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<String> get reasoningEffort => $composableBuilder(
     column: $table.reasoningEffort,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get runningOwnerId => $composableBuilder(
+    column: $table.runningOwnerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get runningHeartbeatAt => $composableBuilder(
+    column: $table.runningHeartbeatAt,
     builder: (column) => column,
   );
 
@@ -4154,6 +4356,8 @@ class $$SessionsTableTableManager
                 Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
+                Value<String?> runningOwnerId = const Value.absent(),
+                Value<int?> runningHeartbeatAt = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
@@ -4175,6 +4379,8 @@ class $$SessionsTableTableManager
                 promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
+                runningOwnerId: runningOwnerId,
+                runningHeartbeatAt: runningHeartbeatAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -4198,6 +4404,8 @@ class $$SessionsTableTableManager
                 Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
+                Value<String?> runningOwnerId = const Value.absent(),
+                Value<int?> runningHeartbeatAt = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
@@ -4219,6 +4427,8 @@ class $$SessionsTableTableManager
                 promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
+                runningOwnerId: runningOwnerId,
+                runningHeartbeatAt: runningHeartbeatAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -4382,6 +4592,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<int?> parentMsgId,
       Value<int?> preCompressTokens,
       Value<String> images,
+      Value<int> parallelCount,
       required int createdAt,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -4406,6 +4617,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<int?> parentMsgId,
       Value<int?> preCompressTokens,
       Value<String> images,
+      Value<int> parallelCount,
       Value<int> createdAt,
     });
 
@@ -4551,6 +4763,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get images => $composableBuilder(
     column: $table.images,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get parallelCount => $composableBuilder(
+    column: $table.parallelCount,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4712,6 +4929,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get parallelCount => $composableBuilder(
+    column: $table.parallelCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4823,6 +5045,11 @@ class $$MessagesTableAnnotationComposer
   GeneratedColumn<String> get images =>
       $composableBuilder(column: $table.images, builder: (column) => column);
 
+  GeneratedColumn<int> get parallelCount => $composableBuilder(
+    column: $table.parallelCount,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -4923,6 +5150,7 @@ class $$MessagesTableTableManager
                 Value<int?> parentMsgId = const Value.absent(),
                 Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
+                Value<int> parallelCount = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -4945,6 +5173,7 @@ class $$MessagesTableTableManager
                 parentMsgId: parentMsgId,
                 preCompressTokens: preCompressTokens,
                 images: images,
+                parallelCount: parallelCount,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -4969,6 +5198,7 @@ class $$MessagesTableTableManager
                 Value<int?> parentMsgId = const Value.absent(),
                 Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
+                Value<int> parallelCount = const Value.absent(),
                 required int createdAt,
               }) => MessagesCompanion.insert(
                 id: id,
@@ -4991,6 +5221,7 @@ class $$MessagesTableTableManager
                 parentMsgId: parentMsgId,
                 preCompressTokens: preCompressTokens,
                 images: images,
+                parallelCount: parallelCount,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0

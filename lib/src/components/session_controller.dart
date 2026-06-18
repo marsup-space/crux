@@ -317,9 +317,89 @@ class SessionController {
       sessions = [session];
       resolveAuxiliaryModel();
     }
-    currentSessionId = sessions.first.id;
+    Session? initialSession;
+    for (final session in sessions) {
+      if (session.status == SessionStatus.idle ||
+          session.status == SessionStatus.done) {
+        initialSession = session;
+        break;
+      }
+    }
+    if (initialSession == null) {
+      await _providerService.initialize();
+      final model = _providerService.resolveDefaultModel() ?? '';
+      final session = await _store.create(
+        title: 'New Session',
+        model: model,
+        projectPath: Directory.current.path,
+      );
+      sessions = [session, ...sessions];
+      currentSessionId = session.id;
+      resolveAuxiliaryModel();
+    } else {
+      currentSessionId = initialSession.id;
+    }
     await loadMessages(currentSessionId!);
     _refresh();
+  }
+
+  bool _isInactiveRunningSession(Session session) {
+    if (session.status != SessionStatus.running) return false;
+    if (_chatService.isStreaming(session.id)) return false;
+    if (_store.isLiveRunningSessionOwnedByAnotherInstance(session)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> reconcileInactiveRunningSessions({bool refresh = true}) async {
+    var changed = false;
+    for (final session in sessions) {
+      if (!_isInactiveRunningSession(session)) continue;
+
+      final current = await _store.getById(session.id);
+      if (current == null) continue;
+      session.status = current.status;
+      session.runningOwnerId = current.runningOwnerId;
+      session.runningHeartbeatAt = current.runningHeartbeatAt;
+      session.updatedAt = current.updatedAt;
+
+      if (current.status != SessionStatus.running) {
+        changed = true;
+        continue;
+      }
+      if (!_isInactiveRunningSession(session)) continue;
+
+      final wasOwnedByThisInstance =
+          current.runningOwnerId == _store.instanceId;
+      final status = wasOwnedByThisInstance
+          ? SessionStatus.idle
+          : SessionStatus.interrupted;
+
+      final rt = _runtimeStates[session.id];
+      if (rt != null && !rt.isResponding) {
+        rt.roundStreaming = false;
+        rt.roundStartTime = null;
+        rt.roundFirstTokenTime = null;
+      }
+
+      session.status = status;
+      session.runningOwnerId = null;
+      session.runningHeartbeatAt = null;
+      session.updatedAt = DateTime.now();
+
+      final updated = await _store.update(session.id, status: status);
+      session.status = updated.status;
+      session.runningOwnerId = updated.runningOwnerId;
+      session.runningHeartbeatAt = updated.runningHeartbeatAt;
+      session.updatedAt = updated.updatedAt;
+      changed = true;
+    }
+
+    if (changed && refresh) {
+      _refresh();
+    }
+    return changed;
   }
 
   Future<void> loadMessages(int sessionId) async {
@@ -330,6 +410,10 @@ class SessionController {
     final session = findSession(id);
     if (session == null) {
       return 'Session #$id not found';
+    }
+
+    if (_store.isLiveRunningSessionOwnedByAnotherInstance(session)) {
+      return 'Session #$id is running in another Crux instance';
     }
 
     if (session.status == SessionStatus.done ||
@@ -350,12 +434,29 @@ class SessionController {
     // real turn (see the chat panel's `_sendMessage`) or when
     // the session itself is deleted (see [deleteSession]).
 
-    currentSessionId = id;
+    // CRITICAL ordering: [currentSessionId] and the new
+    // session's `contextTargetTokens` MUST be set in the same
+    // microtask — with no awaits between them. The context
+    // bar's 16ms lerp ticker reads both fields on every tick
+    // and uses a `_currentSessionId != sessionId` guard to
+    // detect session switches and snap instead of lerp. If
+    // `currentSessionId` flips to the new id *before* the
+    // target is reset, a tick that lands in that window will
+    // snap to the OLD session's target (still in
+    // `rt.contextTargetTokens`), then once the target reset
+    // finally lands the bar will lerp from that stale snap
+    // value toward the new base — exactly the "still seems
+    // wrong" lerp the user sees on session switch.
+    //
+    // Loading messages first, computing the base, then
+    // committing both the target reset and the
+    // `currentSessionId` flip together closes that window.
     await loadMessages(id);
     final rt = runtime(id);
     final base = computeBaseContext(id);
     rt.contextTargetTokens = base;
     rt.contextDisplayTokens = base.toDouble();
+    currentSessionId = id;
 
     if (!rt.isResponding) {
       rt.ttftMs = 0;

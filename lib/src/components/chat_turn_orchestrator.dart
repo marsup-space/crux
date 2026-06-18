@@ -154,90 +154,106 @@ class ChatTurnOrchestrator {
       if (_chatService.isStreaming(sessionId)) return;
     }
 
-    _streamingController.clearStreamingFor(sessionId);
+    try {
+      _streamingController.clearStreamingFor(sessionId);
 
-    // Clear the interrupted session flag — we're starting a fresh turn.
-    _interruptedSessions.remove(sessionId);
+      // Clear the interrupted session flag — we're starting a fresh turn.
+      _interruptedSessions.remove(sessionId);
 
-    final session = _sessionController.findSession(sessionId);
-    if (session != null && session.status != SessionStatus.running) {
-      final updated = await _store.update(
-        sessionId,
-        status: SessionStatus.running,
-      );
-      session.status = updated.status;
-      session.updatedAt = updated.updatedAt;
-    }
-
-    final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
-    final userTokens = text == null ? 0 : estimateTokens(text);
-    final turnBase =
-        _sessionController.computeBaseContext(sessionId) +
-        userTokens +
-        toolDefsTokens;
-    rt.turnBaseTokens = turnBase;
-    rt.accumulatedToolTokens = 0;
-    rt.contextTargetTokens = turnBase;
-    rt.contextDisplayTokens = turnBase.toDouble();
-    _streamingController.stopContextAnimation();
-
-    rt.isResponding = true;
-    rt.responseStartTime = DateTime.now();
-    rt.ttftMs = 0.0;
-    rt.ttftReceived = false;
-    rt.tokPerSec = 0.0;
-    rt.tokCount = 0.0;
-    rt.firstTokenTime = null;
-    rt.cumulativeGenMs = 0.0;
-    rt.cumulativeCompletionTokens = 0;
-    rt.roundStartTime = null;
-    rt.roundFirstTokenTime = null;
-    rt.roundStreaming = false;
-
-    _streamingController.startMetricsTimer(sessionId);
-    if (text != null) {
-      // Bump updatedAt immediately so the sidebar moves the session
-      // into "Today" before the first UI refresh. The DB is touched
-      // again shortly by ChatService.sendMessage, but the in-memory
-      // object needs the update now so the fingerprint-based cache in
-      // ExtraInfoPanel invalidates on the first _refresh().
-      if (session != null) {
-        session.updatedAt = DateTime.now();
-      }
-
-      // If the previous response was interrupted, inject a system
-      // message before the user's new input so the LLM knows its
-      // prior response was cut off.
-      if (rt.interrupted) {
-        rt.interrupted = false;
-        const interruptionNotice =
-            'Your response was interrupted by user. The user is now '
-            'sending a new message. Do not repeat or continue the '
-            'interrupted response unless the user explicitly asks.';
-        await _messageStore.addMessage(
+      final session = _sessionController.findSession(sessionId);
+      if (session != null && session.status != SessionStatus.running) {
+        final updated = await _store.update(
           sessionId,
-          role: 'system',
-          content: interruptionNotice,
+          status: SessionStatus.running,
         );
+        session.status = updated.status;
+        session.runningOwnerId = updated.runningOwnerId;
+        session.runningHeartbeatAt = updated.runningHeartbeatAt;
+        session.updatedAt = updated.updatedAt;
       }
 
-      final userMsg = Message(
-        id: -1,
-        sessionId: sessionId,
-        role: 'user',
-        content: text,
-        images: images,
-      );
-      _sessionController.messageCache[sessionId] = [
-        ...?_sessionController.messageCache[sessionId],
-        userMsg,
-      ];
-      _refresh();
+      final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
+      final userTokens = text == null ? 0 : estimateTokens(text);
+      final turnBase =
+          _sessionController.computeBaseContext(sessionId) +
+          userTokens +
+          toolDefsTokens;
+      rt.turnBaseTokens = turnBase;
+      rt.accumulatedToolTokens = 0;
+      rt.contextTargetTokens = turnBase;
+      rt.contextDisplayTokens = turnBase.toDouble();
+      _streamingController.stopContextAnimation();
 
-      // Only kick off the auxiliary title generator for genuinely
-      // new user input; a continuation shouldn't change the session
-      // title.
-      _maybeKickOffTitleEarly(sessionId, text);
+      rt.isResponding = true;
+      rt.responseStartTime = DateTime.now();
+      rt.ttftMs = 0.0;
+      rt.ttftReceived = false;
+      rt.tokPerSec = 0.0;
+      rt.tokCount = 0.0;
+      rt.firstTokenTime = null;
+      rt.cumulativeGenMs = 0.0;
+      rt.cumulativeCompletionTokens = 0;
+      rt.roundStartTime = null;
+      rt.roundFirstTokenTime = null;
+      rt.roundStreaming = false;
+
+      _streamingController.startMetricsTimer(sessionId);
+      if (text != null) {
+        // Bump updatedAt immediately so the sidebar moves the session
+        // into "Today" before the first UI refresh. The DB is touched
+        // again shortly by ChatService.sendMessage, but the in-memory
+        // object needs the update now so the fingerprint-based cache in
+        // ExtraInfoPanel invalidates on the first _refresh().
+        if (session != null) {
+          session.updatedAt = DateTime.now();
+        }
+
+        // If the previous response was interrupted, inject a system
+        // message before the user's new input so the LLM knows its
+        // prior response was cut off.
+        if (rt.interrupted) {
+          rt.interrupted = false;
+          const interruptionNotice =
+              'Your response was interrupted by user. The user is now '
+              'sending a new message. Do not repeat or continue the '
+              'interrupted response unless the user explicitly asks.';
+          await _messageStore.addMessage(
+            sessionId,
+            role: 'system',
+            content: interruptionNotice,
+          );
+        }
+
+        final userMsg = Message(
+          id: -1,
+          sessionId: sessionId,
+          role: 'user',
+          content: text,
+          images: images,
+        );
+        _sessionController.messageCache[sessionId] = [
+          ...?_sessionController.messageCache[sessionId],
+          userMsg,
+        ];
+        _refresh();
+
+        // Only kick off the auxiliary title generator for genuinely
+        // new user input; a continuation shouldn't change the session
+        // title.
+        _maybeKickOffTitleEarly(sessionId, text);
+      }
+    } catch (e) {
+      rt.isResponding = false;
+      rt.roundStreaming = false;
+      rt.roundStartTime = null;
+      rt.roundFirstTokenTime = null;
+      _streamingController.stopMetricsTimer(sessionId);
+      _streamingController.stopContextAnimation();
+      _streamingController.clearStreamingFor(sessionId);
+      await _sessionController.reconcileInactiveRunningSessions(refresh: false);
+      _showToast('Failed to start response: $e', mode: ToastMode.error);
+      _refresh();
+      return;
     }
 
     _chatService
@@ -308,6 +324,10 @@ class ChatTurnOrchestrator {
               return;
             }
 
+            await _sessionController.reconcileInactiveRunningSessions(
+              refresh: false,
+            );
+
             // The chat service sets SessionStatus.done on completion. We
             // override to idle for *every* session that completes — current
             // *and* background — so the sidebar doesn't display a lingering
@@ -319,8 +339,9 @@ class ChatTurnOrchestrator {
             // (fire-and-forget) was already being generated.
             final session = _sessionController.findSession(sessionId);
             if (session != null && session.status == SessionStatus.done) {
-              await _store.update(sessionId, status: SessionStatus.idle);
               session.status = SessionStatus.idle;
+              session.updatedAt = DateTime.now();
+              await _store.update(sessionId, status: SessionStatus.idle);
             }
 
             // Refresh immediately so the session list picks up the status
@@ -392,6 +413,11 @@ class ChatTurnOrchestrator {
               return;
             }
             _streamingController.stopMetricsTimer(sessionId);
+            _sessionController
+                .reconcileInactiveRunningSessions(refresh: false)
+                .then((changed) {
+                  if (changed) _refresh();
+                });
             _showToast(error, mode: ToastMode.error);
           },
         )
@@ -403,6 +429,11 @@ class ChatTurnOrchestrator {
           _streamingController.stopMetricsTimer(sessionId);
           _streamingController.clearStreamingFor(sessionId);
           _activeAbortSignals.remove(sessionId);
+          _sessionController
+              .reconcileInactiveRunningSessions(refresh: false)
+              .then((changed) {
+                if (changed) _refresh();
+              });
           _refresh();
         });
   }

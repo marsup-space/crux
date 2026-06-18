@@ -43,8 +43,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         schema (the offloading infrastructure was removed).
   ///         The table/column persist on disk for drift validation
   ///         but no application code reads or writes them.
+  ///   v17 – messages.parallelCount, used by `parallel_praise` rows
+  ///         to carry the number of successful tool calls in the
+  ///         round (drives the user-facing "N tool calls parallelized"
+  ///         bubble in the chat history).
+  ///   v18 – sessions.runningOwnerId and runningHeartbeatAt, used to
+  ///         distinguish stale `running` rows from live runs owned by
+  ///         another Crux process in the same project.
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -102,6 +109,13 @@ class CruxDatabase extends _$CruxDatabase {
       // v15 → v16: no structural changes. offloaded_content and
       // pre_compress_tokens are dead schema — they remain on disk
       // so drift's validation passes but are never read/written.
+      if (from < 17) {
+        await m.addColumn(messages, messages.parallelCount);
+      }
+      if (from < 18) {
+        await m.addColumn(sessions, sessions.runningOwnerId);
+        await m.addColumn(sessions, sessions.runningHeartbeatAt);
+      }
     },
   );
 }

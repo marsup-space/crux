@@ -18,6 +18,8 @@ class Session {
   int promptCacheHitTokens;
   String thinkingMode;
   String? reasoningEffort;
+  String? runningOwnerId;
+  DateTime? runningHeartbeatAt;
   final DateTime createdAt;
   DateTime updatedAt;
   DateTime? archivedAt;
@@ -40,6 +42,8 @@ class Session {
     this.promptCacheHitTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.runningOwnerId,
+    this.runningHeartbeatAt,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.archivedAt,

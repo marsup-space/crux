@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
@@ -5,19 +7,38 @@ import 'message_store.dart';
 
 const _unset = Object();
 
+class SessionLeaseClaimException implements Exception {
+  final int sessionId;
+
+  SessionLeaseClaimException(this.sessionId);
+
+  @override
+  String toString() {
+    return 'Session #$sessionId is already running in another Crux instance.';
+  }
+}
+
 /// Data-access layer for sessions.
 ///
 /// Message and parts CRUD live in [MessageStore].
 /// This class implements [SessionStoreAccessor] so [MessageStore] can
 /// bump `updated_at` on message writes without a circular dependency.
 class SessionStore implements SessionStoreAccessor {
+  static const defaultRunningLeaseTimeout = Duration(seconds: 30);
+
   final db.CruxDatabase _db;
+  final String instanceId;
+  final Duration runningLeaseTimeout;
 
   /// Message store — set after construction to avoid a circular
   /// dependency. [MessageStore.sessionStore] points back here.
   late final MessageStore messageStore;
 
-  SessionStore(this._db) {
+  SessionStore(
+    this._db, {
+    String? instanceId,
+    this.runningLeaseTimeout = defaultRunningLeaseTimeout,
+  }) : instanceId = instanceId ?? _defaultInstanceId() {
     messageStore = MessageStore(_db)..sessionStore = this;
   }
 
@@ -27,6 +48,11 @@ class SessionStore implements SessionStoreAccessor {
     _slugCounter++;
     final ts = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
     return 'session-$ts-$_slugCounter';
+  }
+
+  static String _defaultInstanceId() {
+    final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    return 'crux-$pid-$ts';
   }
 
   Future<Session> create({
@@ -180,6 +206,9 @@ class SessionStore implements SessionStoreAccessor {
     int? promptCacheHitTokens,
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (status == SessionStatus.running) {
+      return _claimRunningLease(id, nowMs: nowMs);
+    }
     final Value<String?> effortValue = reasoningEffort == _unset
         ? const Value.absent()
         : reasoningEffort == null
@@ -205,11 +234,89 @@ class SessionStore implements SessionStoreAccessor {
         promptCacheHitTokens: promptCacheHitTokens != null
             ? Value(promptCacheHitTokens)
             : const Value.absent(),
+        runningOwnerId: status != null
+            ? const Value(null)
+            : const Value.absent(),
+        runningHeartbeatAt: status != null
+            ? const Value(null)
+            : const Value.absent(),
         updatedAt: Value(nowMs),
       ),
     );
     final updated = await getById(id);
     return updated!;
+  }
+
+  Future<Session> _claimRunningLease(int id, {required int nowMs}) async {
+    final staleBeforeMs = nowMs - runningLeaseTimeout.inMilliseconds;
+    final updated = await _db.customUpdate(
+      '''
+UPDATE sessions
+SET status = ?,
+    running_owner_id = ?,
+    running_heartbeat_at = ?,
+    updated_at = ?
+WHERE id = ?
+  AND (
+    status != ?
+    OR running_owner_id IS NULL
+    OR running_owner_id = ?
+    OR running_heartbeat_at IS NULL
+    OR running_heartbeat_at < ?
+  )
+''',
+      variables: [
+        Variable<String>(SessionStatus.running.name),
+        Variable<String>(instanceId),
+        Variable<int>(nowMs),
+        Variable<int>(nowMs),
+        Variable<int>(id),
+        Variable<String>(SessionStatus.running.name),
+        Variable<String>(instanceId),
+        Variable<int>(staleBeforeMs),
+      ],
+      updates: {_db.sessions},
+    );
+    if (updated == 0) {
+      final existing = await getById(id);
+      if (existing == null) {
+        throw StateError('Session #$id not found');
+      }
+      throw SessionLeaseClaimException(id);
+    }
+    final reloaded = await getById(id);
+    return reloaded!;
+  }
+
+  Future<void> heartbeatRunningSession(int sessionId) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.customUpdate(
+      '''
+UPDATE sessions
+SET running_heartbeat_at = ?
+WHERE id = ?
+  AND status = ?
+  AND running_owner_id = ?
+''',
+      variables: [
+        Variable<int>(nowMs),
+        Variable<int>(sessionId),
+        Variable<String>(SessionStatus.running.name),
+        Variable<String>(instanceId),
+      ],
+      updates: {_db.sessions},
+    );
+  }
+
+  bool isLiveRunningSessionOwnedByAnotherInstance(Session session) {
+    if (session.status != SessionStatus.running) return false;
+    final ownerId = session.runningOwnerId;
+    final heartbeatAt = session.runningHeartbeatAt;
+    if (ownerId == null || ownerId == instanceId || heartbeatAt == null) {
+      return false;
+    }
+    final staleBefore = DateTime.now().subtract(runningLeaseTimeout);
+    return heartbeatAt.isAfter(staleBefore);
   }
 
   Future<void> deleteSession(int id) async {
@@ -272,10 +379,11 @@ class SessionStore implements SessionStoreAccessor {
         .write(db.SessionsCompanion(updatedAt: Value(nowMs)));
   }
 
-  /// Mark every session with status [SessionStatus.running] as
-  /// [SessionStatus.interrupted].
+  /// Mark every session in [projectPath] with status
+  /// [SessionStatus.running] as [SessionStatus.interrupted].
   ///
-  /// On a clean launch there should be no sessions in `running` —
+  /// On a clean launch there should be no stale sessions in `running`
+  /// for the current project —
   /// the only way one ends up that way in the database is if a
   /// previous Crux process was killed (crash, SIGKILL, power loss)
   /// while a turn was streaming. The in-memory state that would
@@ -287,17 +395,34 @@ class SessionStore implements SessionStoreAccessor {
   /// still in flight.
   ///
   /// Returns the number of sessions transitioned.
-  Future<int> markOrphanedRunningSessionsAsInterrupted() async {
+  Future<int> markOrphanedRunningSessionsAsInterrupted({
+    required String projectPath,
+  }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final updated = await (_db.update(_db.sessions)
-          ..where(
-            (t) => t.status.equalsValue(SessionStatus.running),
-          ))
-        .write(
-      db.SessionsCompanion(
-        status: const Value(SessionStatus.interrupted),
-        updatedAt: Value(nowMs),
-      ),
+    final staleBeforeMs = nowMs - runningLeaseTimeout.inMilliseconds;
+    final updated = await _db.customUpdate(
+      '''
+UPDATE sessions
+SET status = ?,
+    running_owner_id = NULL,
+    running_heartbeat_at = NULL,
+    updated_at = ?
+WHERE status = ?
+  AND project_path = ?
+  AND (
+    running_owner_id IS NULL
+    OR running_heartbeat_at IS NULL
+    OR running_heartbeat_at < ?
+  )
+''',
+      variables: [
+        Variable<String>(SessionStatus.interrupted.name),
+        Variable<int>(nowMs),
+        Variable<String>(SessionStatus.running.name),
+        Variable<String>(projectPath),
+        Variable<int>(staleBeforeMs),
+      ],
+      updates: {_db.sessions},
     );
     return updated;
   }
@@ -321,6 +446,10 @@ class SessionStore implements SessionStoreAccessor {
       ttftMs: row.ttftMs,
       tokPerSec: row.tokPerSec,
       promptCacheHitTokens: row.promptCacheHitTokens,
+      runningOwnerId: row.runningOwnerId,
+      runningHeartbeatAt: row.runningHeartbeatAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(row.runningHeartbeatAt!)
+          : null,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
       archivedAt: row.archivedAt != null
