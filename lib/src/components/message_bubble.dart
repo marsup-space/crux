@@ -9,6 +9,7 @@ import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'parallel_praise_bubble.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -67,6 +68,9 @@ class MessageBubble extends StatelessComponent {
   Component _buildInner(BuildContext context) {
     if (message.role == 'tool') return const SizedBox.shrink();
     if (message.role == 'tool_call') return _buildToolCallWithContent(context);
+    if (message.role == 'parallel_praise') {
+      return ParallelPraiseBubble(successfulCount: message.parallelCount);
+    }
 
     final isUser = message.role == 'user';
     final hasReasoning = !isUser && message.reasoningContent.isNotEmpty;

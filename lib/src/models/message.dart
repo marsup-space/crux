@@ -48,6 +48,12 @@ class Message {
   final String tldr;
   final List<ImageAttachment> images;
 
+  /// Successful tool-call count for a `parallel_praise` row. Always
+  /// `0` on every other role. The chat history reads this to
+  /// render the "N tool calls parallelized" bubble; the in-context
+  /// praise prompt doesn't use it.
+  final int parallelCount;
+
   Message({
     required this.id,
     required this.sessionId,
@@ -69,6 +75,7 @@ class Message {
     this.toolCallId = '',
     this.tldr = '',
     this.images = const [],
+    this.parallelCount = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   static List<ToolCallData> parseToolCallsJson(String json) {
@@ -107,6 +114,7 @@ class Message {
     String? toolCallId,
     String? tldr,
     List<ImageAttachment>? images,
+    int? parallelCount,
   }) {
     return Message(
       id: id ?? this.id,
@@ -129,6 +137,7 @@ class Message {
       toolCallId: toolCallId ?? this.toolCallId,
       tldr: tldr ?? this.tldr,
       images: images ?? this.images,
+      parallelCount: parallelCount ?? this.parallelCount,
     );
   }
 

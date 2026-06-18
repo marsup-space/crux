@@ -41,6 +41,7 @@ class MessageStore {
     String toolCallId = '',
     String tldr = '',
     List<ImageAttachment> images = const [],
+    int parallelCount = 0,
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -66,6 +67,7 @@ class MessageStore {
             toolCallId: Value(toolCallId),
             tldr: Value(tldr),
             images: Value(ImageAttachment.encodeList(images)),
+            parallelCount: Value(parallelCount),
           ),
         );
 
@@ -91,6 +93,7 @@ class MessageStore {
       toolCallId: toolCallId,
       tldr: tldr,
       images: images,
+      parallelCount: parallelCount,
     );
   }
 
@@ -255,6 +258,7 @@ class MessageStore {
       toolCallId: row.toolCallId,
       tldr: row.tldr,
       images: ImageAttachment.decodeList(row.images),
+      parallelCount: row.parallelCount,
     );
   }
 
