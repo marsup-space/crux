@@ -1,7 +1,7 @@
-/// Reproduction test matching the actual toolbar layout.
-///
-/// The toolbar items sit at a positive Y offset (not at screen top),
-/// so "above" placement should fit without clamping.
+// Reproduction test matching the actual toolbar layout.
+//
+// The toolbar items sit at a positive Y offset (not at screen top),
+// so "above" placement should fit without clamping.
 import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
 
@@ -47,12 +47,6 @@ void main() {
 
     final sb = HintController.instance.activeSourceBounds;
     final hint = HintController.instance.activeHint;
-
-    // Print the layout for debugging
-    print('--- sourceBounds=$sb hint="$hint" visible=${HintController.instance.visible} ---');
-    for (var y = 8; y < 15; y++) {
-      print('row $y: "${_r(tester, y)}"');
-    }
 
     return (sb, hint);
   }
@@ -100,7 +94,6 @@ void main() {
         ),
       );
       expect(sb, isNotNull);
-      print('sourceBounds = $sb');
       // The sourceBounds should come from the outer MouseRegion
       // (the HintStateMixin's one), not the inner one.
       // It should be at the toolbar row (y=10).

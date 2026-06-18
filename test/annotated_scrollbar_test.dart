@@ -250,12 +250,12 @@ void main() {
       final (cornerCol, cornerRow) = corner!;
       expect(
         cornerCol,
-        lessThan(markerCol!),
+        lessThan(markerCol),
         reason: 'tooltip should be to the left of the scrollbar',
       );
       expect(
         cornerRow,
-        inInclusiveRange(markerRow! - 6, markerRow + 6),
+        inInclusiveRange(markerRow - 6, markerRow + 6),
         reason: 'tooltip should be vertically near the marker row',
       );
     }, size: const Size(40, 20));

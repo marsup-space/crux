@@ -1,16 +1,16 @@
-/// Tests for streaming-related toolbar behaviors:
-///
-/// 1. Model button and auxiliary model button are not clickable during streaming.
-/// 2. Auto-scroll to bottom when user submits a message.
-///
-/// (Tok/s ticker registration is covered in test/ticker_registry_test.dart.)
+// Tests for streaming-related toolbar behaviors:
+//
+// Model button is not clickable during streaming. Auto-scroll and
+// tok/s ticker registration are covered in
+// test/ticker_registry_test.dart and the AutoScrollController
+// tests shipped upstream with nocterm.
 
 import 'package:test/test.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/src/components/ui/glossy_model_button.dart';
 
 void main() {
-  // ── Change 1: Model/auxiliary button not clickable during streaming ──
+  // ── Model/auxiliary button not clickable during streaming ──
 
   group('GlossyModelButton clickability', () {
     test('does not fire onPressed when onPressed is null (streaming)', () async {
@@ -71,45 +71,6 @@ void main() {
     });
   });
 
-  // ── Change 2: Auto-scroll to bottom on submit ──
-
-  group('AutoScrollController scrollToBottom', () {
-    test('scrollToBottom enables auto-scroll when disabled', () {
-      final controller = AutoScrollController();
-      expect(controller.isAutoScrollEnabled, isTrue);
-
-      controller.disableAutoScroll();
-      expect(controller.isAutoScrollEnabled, isFalse);
-
-      controller.scrollToBottom();
-      expect(controller.isAutoScrollEnabled, isTrue,
-          reason: 'scrollToBottom must re-enable auto-scroll');
-    });
-
-    test('scrollToBottom is idempotent', () {
-      final controller = AutoScrollController();
-      expect(controller.isAutoScrollEnabled, isTrue);
-
-      controller.scrollToBottom();
-      expect(controller.isAutoScrollEnabled, isTrue);
-
-      controller.scrollToBottom();
-      expect(controller.isAutoScrollEnabled, isTrue);
-
-      controller.disableAutoScroll();
-      controller.scrollToBottom();
-      expect(controller.isAutoScrollEnabled, isTrue);
-    });
-
-    test('starts with auto-scroll enabled by default', () {
-      final controller = AutoScrollController();
-      expect(controller.isAutoScrollEnabled, isTrue);
-    });
-
-    test('disableAutoScroll actually disables auto-scroll', () {
-      final controller = AutoScrollController();
-      controller.disableAutoScroll();
-      expect(controller.isAutoScrollEnabled, isFalse);
-    });
-  });
+  // (Auto-scroll behavior is tested upstream in nocterm's
+  // auto_scroll_controller_test.dart.)
 }
