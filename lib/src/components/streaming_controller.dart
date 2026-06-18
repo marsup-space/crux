@@ -179,13 +179,11 @@ class StreamingController {
     // inactive during local tool execution, between-round waits, and idle UI.
     if (!rt.roundStreaming) return;
 
-    // Live numerator: estimated tokens for the streaming text +
-    // reasoning, plus the tool_use JSON deltas the LLM emitted in
-    // earlier chunks of this turn (already accumulated into
-    // rt.cumulativeCompletionTokens by chat_service). Including
-    // tool_use is what makes tok/s reflect the LLM's actual
-    // generation rate for an agentic turn, not just the visible
-    // text rate.
+    // Live numerator: completed text/reasoning/tool_use tokens from prior
+    // rounds, plus tool_use JSON deltas already emitted in this round, plus
+    // the current round's still-buffered streaming text/reasoning. Including
+    // tool_use is what makes tok/s reflect the LLM's actual generation rate
+    // for an agentic turn, not just the visible text rate.
     final liveStreamingTokens = estimateTokens(
       streamingContentFor(sessionId) + streamingReasoningFor(sessionId),
     );

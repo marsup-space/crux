@@ -513,6 +513,12 @@ class ChatService {
       // BEFORE the lerp drain so the denominator reflects only the
       // LLM's actual generation time, not the visual lerp animation
       // (up to 10s of post-stream UI smoothing).
+      final roundTextReasoningTokens = estimateTokens(
+        roundTextBuffer.toString() + roundReasoningBuffer.toString(),
+      );
+      if (roundTextReasoningTokens > 0) {
+        runtime.cumulativeCompletionTokens += roundTextReasoningTokens;
+      }
       stopActiveRound(accumulate: true);
 
       // Compute per-round thinking duration from the wall-clock time
