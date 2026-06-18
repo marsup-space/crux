@@ -152,45 +152,65 @@ class _FpsCounterState extends State<FpsCounter> {
 
   @override
   Component build(BuildContext context) {
-    // No debug → nothing on screen. Return an empty box (not a SizedBox with
-    // a child) so it occupies zero space in the parent Stack.
-    if (!CommandRegistry.instance.debugEnabled) {
-      return const SizedBox.shrink();
-    }
-
     final theme = CruxTheme.of(context);
     // Trim trailing ".0" so whole numbers don't show as "60.0".
     final fpsStr = _fps.toStringAsFixed(0);
     final targetFpsStr = _targetFps.toStringAsFixed(0);
     final maxFpsStr = _maxFps.toStringAsFixed(0);
+    final showFps = CommandRegistry.instance.debugEnabled;
 
+    // Always return the same root widget — a [Container] — and always
+    // pass a non-null decoration (even when hidden) so the render tree
+    // stays stable across debug on/off toggles.
+    //
+    // Without this, the hidden state returned [SizedBox.shrink] (no
+    // decoration, no padding render object) while the visible state
+    // returned a Container with a decorated border. Each toggle replaced
+    // the Stack's child render object and dropped the [Positioned]'s
+    // parentData on the new render object — the Stack then handed the
+    // replacement tight constraints under `StackFit.expand`, briefly
+    // turning the FPS counter into a full-screen box until the next
+    // layout re-applied the parentData. Mirrors the fix in [ToastHub].
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      decoration: BoxDecoration(color: theme.buttonBackground),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Current FPS — the actually-observed rate. Bold and bright so
-          // it reads as the headline number.
-          Text(
-            'FPS: $fpsStr',
-            style: TextStyle(
-              color: theme.onSurfaceDim,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          // Target FPS — what the scheduler is aiming for. Dimmer so the
-          // visual hierarchy reads "current → limit → ceiling". The
-          // trailing 't' avoids the line "FPS: 22 / 60" being mistaken
-          // for a ratio.
-          Text(' / $targetFpsStr t', style: TextStyle(color: theme.outlineDim)),
-          // Max FPS — theoretical ceiling given per-frame work. Outlined
-          // (rather than dim) so it sits visually between target and the
-          // background, since it's a derived number rather than something
-          // the framework is doing.
-          Text(' / $maxFpsStr max', style: TextStyle(color: theme.outline)),
-        ],
-      ),
+      decoration: showFps
+          ? BoxDecoration(color: theme.buttonBackground)
+          // Empty decoration (no color, no border) keeps the DecoratedBox
+          // in the render tree with `borderInset == 0`, so the layout
+          // doesn't change between states. The decoration paints nothing.
+          : const BoxDecoration(),
+      child: showFps
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Current FPS — the actually-observed rate. Bold and bright
+                // so it reads as the headline number.
+                Text(
+                  'FPS: $fpsStr',
+                  style: TextStyle(
+                    color: theme.onSurfaceDim,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                // Target FPS — what the scheduler is aiming for. Dimmer so
+                // the visual hierarchy reads "current → limit → ceiling".
+                // The trailing 't' avoids the line "FPS: 22 / 60" being
+                // mistaken for a ratio.
+                Text(
+                  ' / $targetFpsStr t',
+                  style: TextStyle(color: theme.outlineDim),
+                ),
+                // Max FPS — theoretical ceiling given per-frame work.
+                // Outlined (rather than dim) so it sits visually between
+                // target and the background, since it's a derived number
+                // rather than something the framework is doing.
+                Text(
+                  ' / $maxFpsStr max',
+                  style: TextStyle(color: theme.outline),
+                ),
+              ],
+            )
+          : const SizedBox.shrink(),
     );
   }
 }

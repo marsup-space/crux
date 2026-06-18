@@ -240,8 +240,27 @@ class ToastHubState extends State<ToastHub> {
 
   @override
   Component build(BuildContext context) {
+    // Always wrap in [MouseRegion] so the render object attached to the
+    // parent [Stack] stays stable across rebuilds.
+    //
+    // Without this, the empty state returned a plain `SizedBox`, then the
+    // active state returns `MouseRegion(...)`. The `Positioned` wrapper's
+    // parentData (left/right/bottom) is applied once — to the initial
+    // SizedBox. When `MouseRegion` later replaces it as the Stack's
+    // child render object, the parentData isn't reapplied, so the Stack
+    // treats the new render object as non-positioned and gives it tight
+    // height constraints (because we use `StackFit.expand`). The toast's
+    // [Container] then expands to fill the full stack height and the
+    // rounded border paints across every row of the screen.
+    //
+    // Keeping the [MouseRegion] mounted the whole time means the same
+    // render object stays attached, so the parentData stays correct.
     final cur = _current;
-    if (cur == null) return const SizedBox();
+    if (cur == null) {
+      // No callbacks → no MouseTracker annotation; this MouseRegion is
+      // effectively inert and only exists to keep the render tree stable.
+      return const MouseRegion(opaque: false, child: SizedBox.shrink());
+    }
 
     final mode = cur.mode;
     final (
