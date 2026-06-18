@@ -16,6 +16,9 @@ pubspec.lock
 .vscode/
 *.iml
 
+# macOS Finder
+.DS_Store
+
 .fvm/
 .env
 
