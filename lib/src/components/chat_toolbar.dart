@@ -183,12 +183,19 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
     final isAuxBusy =
         _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
-    final isSessionRunning =
-        _sessionController.currentSession.status == SessionStatus.running;
+    // The auxiliary model is only used for side tasks (session-title
+    // generation, TLDR summaries) — never for the in-flight chat
+    // response — so it's safe to swap while the main model is busy.
+    // [AuxiliaryService._streamAuxiliaryCall] resolves the
+    // provider/key/model id once at the start of each call, so a
+    // mid-flight change takes effect on the *next* auxiliary call
+    // without disturbing the one currently in flight. The main-model
+    // button (above) is the one that needs to stay disabled while
+    // the session is running.
     return GlossyModelButton(
       label: '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}',
       isAnimating: isAuxBusy,
-      onPressed: isSessionRunning ? null : component.onAuxiliaryPressed,
+      onPressed: component.onAuxiliaryPressed,
     );
   }
 
