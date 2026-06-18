@@ -27,6 +27,25 @@ class Sessions extends Table {
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();
+
+  /// The rendered system prompt — the joined content of all four
+  /// layers, ready to be sent as a single `role: 'system'` message.
+  /// Computed once at session start and re-attached verbatim on every
+  /// turn.
+  ///
+  /// Stored on the session row (not as a synthetic `role: 'system'`
+  /// message in the messages table) so:
+  ///   - the compactor can never accidentally compact away Crux's
+  ///     identity,
+  ///   - a model switch is a single `UPDATE` (no scanning the
+  ///     messages table to find the system message),
+  ///   - the TUI's `/context` panel can read it directly,
+  ///   - `/clear` doesn't need a special case for the system message.
+  ///
+  /// `null` for legacy sessions opened before schema v19; the turn
+  /// pipeline falls back to a freshly-rendered system prompt the
+  /// first time such a session is used.
+  TextColumn get systemPrompt => text().nullable()();
 }
 
 class Messages extends Table {

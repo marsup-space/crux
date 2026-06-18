@@ -18,6 +18,7 @@ import 'auxiliary_service.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
 import 'prompts/praise_prompts.dart';
+import 'prompts/system_prompt.dart';
 import 'provider_service.dart';
 import 'tool_executor.dart';
 
@@ -94,6 +95,38 @@ class ChatService {
 
   void cancelStream(int sessionId) {
     _cancelRequested.add(sessionId);
+  }
+
+  /// Rebuild and persist the system prompt for [sessionId].
+  ///
+  /// Call this after any change that invalidates the cache key:
+  /// model switch, provider TOML reload, project notes edit, etc.
+  /// The next turn will pick up the new value automatically.
+  ///
+  /// Idempotent — calling when the system prompt is already current
+  /// is a no-op (the result is byte-identical so the column write
+  /// is wasted but harmless).
+  Future<void> rebuildSystemPrompt(int sessionId) async {
+    final session = await _store.getById(sessionId);
+    if (session == null) return;
+    final compositeKey = session.model;
+    final slashIndex = compositeKey.indexOf('/');
+    if (slashIndex <= 0) return;
+    final providerName = compositeKey.substring(0, slashIndex);
+    final modelId = compositeKey.substring(slashIndex + 1);
+    final provider = _providerService.providerByName(providerName);
+    final model = provider?.modelById(modelId);
+    if (provider == null || model == null) return;
+
+    final built = buildSystemPrompt(
+      provider: provider,
+      model: model,
+      cwd: session.projectPath,
+      worktree: session.projectPath,
+      sessionStarted: session.createdAt,
+    );
+    if (built == session.systemPrompt) return;
+    await _store.update(sessionId, systemPrompt: built);
   }
 
   Future<String?> generateSessionTitle(int sessionId, {String? userContent}) =>
@@ -260,9 +293,50 @@ class ChatService {
       return;
     }
 
+    // --- Resolve the system prompt ---
+    // Read from the session row if present; otherwise build fresh
+    // and persist. The cached form is byte-identical across turns
+    // in the same session, so the Anthropic provider's
+    // `cache_control: ephemeral` marker on the system message
+    // hits on every subsequent turn.
+    //
+    // On a model switch, the caller (the /model handler, not yet
+    // implemented) is responsible for clearing `session.systemPrompt`
+    // and calling `rebuildSystemPrompt` — the new build will
+    // include the new provider/model's tuning text, which changes
+    // the cache key and busts the prefix as required.
+    String? systemPrompt = session.systemPrompt;
+    if (systemPrompt == null || systemPrompt.isEmpty) {
+      if (modelConfig == null) {
+        // The model id from the session row doesn't match any
+        // known model in the provider's TOML. This usually means
+        // the user removed the model from their config mid-
+        // session, or the session was created against a model
+        // that's no longer registered. Skip the system prompt
+        // entirely; the LLM call itself will likely fail later
+        // with a model-not-found error, which the chat panel
+        // surfaces.
+        systemPrompt = null;
+      } else {
+        systemPrompt = buildSystemPrompt(
+          provider: provider,
+          model: modelConfig,
+          cwd: session.projectPath,
+          worktree: session.projectPath,
+          sessionStarted: session.createdAt,
+        );
+        session.systemPrompt = systemPrompt;
+        await _store.update(sessionId, systemPrompt: systemPrompt);
+      }
+    }
+
     final history = await _messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
-    final apiMessages = buildApiMessages(history, wireFamily);
+    final apiMessages = buildApiMessages(
+      history,
+      wireFamily,
+      systemPrompt: systemPrompt,
+    );
     final toolDefs = _toolExecutor.getApiToolDefinitions();
 
     // Per-round text/reasoning accumulators, hoisted out of the agentic
@@ -905,11 +979,37 @@ class ChatService {
           // already collapses 0 to "always", but the `> 0` makes
           // the intent explicit and protects against the case
           // where the counter hasn't yet been incremented.
-          injectParallelSingleCallHintIntoLastTool(
-            apiMessages,
-            isAnthropic: isAnthropic,
-            consecutiveCount: runtime.consecutiveSingleToolCallRounds,
-          );
+          // Wire-format split by severity (see `praise_prompts.dart`
+          // for the rationale):
+          //   * **mild / firm** (rounds < 3 * threshold) — append
+          //     the hint inside the last tool's `content`, framed
+          //     with a tier-specific marker. Same shape as the
+          //     praise hint.
+          //   * **urgent** (rounds >= 3 * threshold, i.e. 30+ with
+          //     default threshold) — push a fresh `user`-role
+          //     message after the tool results. The prior two tiers
+          //     evidently did not change behaviour, so escalate to
+          //     a placement the LLM cannot miss.
+          final count = runtime.consecutiveSingleToolCallRounds;
+          if (singleCallHintSeverityFor(
+                count,
+                threshold: hintSingleThreshold,
+              ) ==
+              SingleCallHintSeverity.urgent) {
+            injectParallelSingleCallHintAsUserMessage(
+              apiMessages,
+              isAnthropic: isAnthropic,
+              consecutiveCount: count,
+              threshold: hintSingleThreshold,
+            );
+          } else {
+            injectParallelSingleCallHintIntoLastTool(
+              apiMessages,
+              isAnthropic: isAnthropic,
+              consecutiveCount: count,
+              threshold: hintSingleThreshold,
+            );
+          }
         }
       } catch (e) {
         runtime.pauseStreamingTimer();
@@ -984,6 +1084,7 @@ class ChatService {
             role: 'single_call_reminder',
             content: renderSingleCallReminderBubbleLabel(
               runtime.consecutiveSingleToolCallRounds,
+              threshold: hintSingleThreshold,
             ),
             parallelCount: runtime.consecutiveSingleToolCallRounds,
           );
@@ -1110,9 +1211,22 @@ class ChatService {
 
   static List<Map<String, dynamic>> buildApiMessages(
     List<Message> history,
-    WireFamily wireFamily,
-  ) {
+    WireFamily wireFamily, {
+    String? systemPrompt,
+  }) {
     final result = <Map<String, dynamic>>[];
+
+    // Prepend the system prompt. The Anthropic provider converts
+    // this single `role: 'system'` message to a single text block
+    // with `cache_control: ephemeral`, so the cache prefix is
+    // stable across turns within a session. The OpenAI-compatible
+    // path treats it as a regular message in the conversation.
+    if (systemPrompt != null && systemPrompt.isNotEmpty) {
+      result.add({
+        'role': 'system',
+        'content': systemPrompt,
+      });
+    }
 
     for (final m in history) {
       switch (m.role) {

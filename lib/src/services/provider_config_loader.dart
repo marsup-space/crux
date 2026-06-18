@@ -316,6 +316,16 @@ class ProviderConfigLoader {
       fieldLabel: 'Provider "$name"',
     );
 
+    // --- Optional provider-level system_prompt_addition ---
+    // String (single-line) or multi-line TOML string. `null` if
+    // absent. A non-empty value is rendered as a separate system
+    // prompt layer for every model under this provider that
+    // doesn't define its own override.
+    final systemPromptAddition = _optionalString(
+      map,
+      'system_prompt_addition',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -327,6 +337,7 @@ class ProviderConfigLoader {
       defaultMaxRounds: defaultMaxRounds,
       hintParallelCalls: hintParallelCalls,
       hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
+      systemPromptAddition: systemPromptAddition,
     );
   }
 
@@ -407,6 +418,15 @@ class ProviderConfigLoader {
       fieldLabel: 'Model "$id"',
     );
 
+    // Optional per-model system_prompt_addition. A non-null,
+    // non-empty value here overrides the provider-level value.
+    // `null` falls through to the provider-level value; if both
+    // are null, the system-prompt tuning layer is omitted.
+    final systemPromptAddition = _optionalString(
+      map,
+      'system_prompt_addition',
+    );
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -422,6 +442,7 @@ class ProviderConfigLoader {
       maxRounds: maxRounds,
       hintParallelCalls: hintParallelCalls,
       hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
+      systemPromptAddition: systemPromptAddition,
     );
   }
 

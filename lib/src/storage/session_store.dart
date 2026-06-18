@@ -204,6 +204,7 @@ class SessionStore implements SessionStoreAccessor {
     double? ttftMs,
     double? tokPerSec,
     int? promptCacheHitTokens,
+    Object? systemPrompt = _unset,
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (status == SessionStatus.running) {
@@ -214,6 +215,11 @@ class SessionStore implements SessionStoreAccessor {
         : reasoningEffort == null
         ? const Value(null)
         : Value(reasoningEffort as String);
+    final Value<String?> systemPromptValue = systemPrompt == _unset
+        ? const Value.absent()
+        : systemPrompt == null
+        ? const Value(null)
+        : Value(systemPrompt as String);
     await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
       db.SessionsCompanion(
         title: title != null ? Value(title) : const Value.absent(),
@@ -234,6 +240,7 @@ class SessionStore implements SessionStoreAccessor {
         promptCacheHitTokens: promptCacheHitTokens != null
             ? Value(promptCacheHitTokens)
             : const Value.absent(),
+        systemPrompt: systemPromptValue,
         runningOwnerId: status != null
             ? const Value(null)
             : const Value.absent(),
@@ -455,6 +462,7 @@ WHERE status = ?
       archivedAt: row.archivedAt != null
           ? DateTime.fromMillisecondsSinceEpoch(row.archivedAt!)
           : null,
+      systemPrompt: row.systemPrompt,
     );
   }
 }

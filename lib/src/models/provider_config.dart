@@ -181,6 +181,30 @@ class ModelConfig {
   /// rounds with ≥2 calls).
   final int? hintParallelCallsSingleThreshold;
 
+  /// Per-model system-prompt tuning block.
+  ///
+  /// Rendered as a separate layer in the system prompt, after the
+  /// universal `system-prompt.md` and before project notes / env
+  /// meta. Use for model-specific quirks the universal prompt
+  /// shouldn't carry: parallel-call encouragement for a chatty
+  /// model, file-reference style for a model that handles them
+  /// poorly, etc.
+  ///
+  /// `null` (TOML absent) means "fall through to
+  /// [ProviderConfig.systemPromptAddition]". A non-null value
+  /// here overrides the provider-level value for this model.
+  /// If both are `null`, the layer is omitted entirely.
+  ///
+  /// TOML shape:
+  /// ```toml
+  /// [models.system_prompt_addition]
+  /// ```
+  /// or, for short single-block additions:
+  /// ```toml
+  /// system_prompt_addition = "one-line tuning"
+  /// ```
+  final String? systemPromptAddition;
+
   const ModelConfig({
     required this.id,
     required this.name,
@@ -196,6 +220,7 @@ class ModelConfig {
     this.maxRounds,
     this.hintParallelCalls,
     this.hintParallelCallsSingleThreshold,
+    this.systemPromptAddition,
   });
 
   /// The composite key used throughout Crux: `providerName/modelId`.
@@ -351,6 +376,17 @@ class ProviderConfig {
   /// Per-model overrides take precedence.
   final int? hintParallelCallsSingleThreshold;
 
+  /// Provider-level system-prompt tuning block, applied to every
+  /// model under this provider that does not define its own
+  /// [ModelConfig.systemPromptAddition].
+  ///
+  /// Use this for tuning that holds across an entire provider
+  /// (e.g. "all DeepSeek models prefer explicit `path:line`
+  /// references"). For model-specific quirks, override at the
+  /// model level. If both are null, the layer is omitted
+  /// entirely.
+  final String? systemPromptAddition;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -362,7 +398,19 @@ class ProviderConfig {
     this.defaultMaxRounds,
     this.hintParallelCalls,
     this.hintParallelCallsSingleThreshold,
+    this.systemPromptAddition,
   });
+
+  /// Resolve the effective system-prompt tuning block for a model.
+  ///
+  /// Precedence: [ModelConfig.systemPromptAddition] (per-model) →
+  /// [ProviderConfig.systemPromptAddition] (per-provider) → `null`.
+  ///
+  /// The caller should treat a `null` return as "omit this layer
+  /// entirely" — no placeholder text.
+  String? effectiveSystemPromptAdditionFor(ModelConfig model) {
+    return model.systemPromptAddition ?? systemPromptAddition;
+  }
 
   /// Convenience: look up a model by its [ModelConfig.id].
   ModelConfig? modelById(String id) {

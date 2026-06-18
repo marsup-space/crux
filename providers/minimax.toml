@@ -24,6 +24,19 @@ thinking_budget = 10000
 temperature = 0
 stream_lerp = true
 
+# Model-specific system prompt addition. Renders as a separate
+# layer in the system prompt, after the universal layer and before
+# project notes / env meta. Effective only for this model; the
+# other MiniMax models below inherit the provider-level value
+# (none defined here).
+system_prompt_addition = """
+Avoid thinking for too long. When the user's request is
+ambiguous or you need a decision to proceed, ask the user for
+clarification rather than guessing. The exception: if the
+user explicitly asks you to work autonomously, then proceed
+without asking and surface decisions in your final reply.
+"""
+
 [models.reasoning_labels]
 low = "disabled"
 normal = "adaptive"

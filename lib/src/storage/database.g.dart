@@ -249,6 +249,17 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _systemPromptMeta = const VerificationMeta(
+    'systemPrompt',
+  );
+  @override
+  late final GeneratedColumn<String> systemPrompt = GeneratedColumn<String>(
+    'system_prompt',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -273,6 +284,7 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     createdAt,
     updatedAt,
     archivedAt,
+    systemPrompt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -434,6 +446,15 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         archivedAt.isAcceptableOrUnknown(data['archived_at']!, _archivedAtMeta),
       );
     }
+    if (data.containsKey('system_prompt')) {
+      context.handle(
+        _systemPromptMeta,
+        systemPrompt.isAcceptableOrUnknown(
+          data['system_prompt']!,
+          _systemPromptMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -533,6 +554,10 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.int,
         data['${effectivePrefix}archived_at'],
       ),
+      systemPrompt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}system_prompt'],
+      ),
     );
   }
 
@@ -568,6 +593,25 @@ class Session extends DataClass implements Insertable<Session> {
   final int createdAt;
   final int updatedAt;
   final int? archivedAt;
+
+  /// The rendered system prompt — the joined content of all four
+  /// layers, ready to be sent as a single `role: 'system'` message.
+  /// Computed once at session start and re-attached verbatim on every
+  /// turn.
+  ///
+  /// Stored on the session row (not as a synthetic `role: 'system'`
+  /// message in the messages table) so:
+  ///   - the compactor can never accidentally compact away Crux's
+  ///     identity,
+  ///   - a model switch is a single `UPDATE` (no scanning the
+  ///     messages table to find the system message),
+  ///   - the TUI's `/context` panel can read it directly,
+  ///   - `/clear` doesn't need a special case for the system message.
+  ///
+  /// `null` for legacy sessions opened before schema v19; the turn
+  /// pipeline falls back to a freshly-rendered system prompt the
+  /// first time such a session is used.
+  final String? systemPrompt;
   const Session({
     required this.id,
     required this.slug,
@@ -591,6 +635,7 @@ class Session extends DataClass implements Insertable<Session> {
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
+    this.systemPrompt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -631,6 +676,9 @@ class Session extends DataClass implements Insertable<Session> {
     if (!nullToAbsent || archivedAt != null) {
       map['archived_at'] = Variable<int>(archivedAt);
     }
+    if (!nullToAbsent || systemPrompt != null) {
+      map['system_prompt'] = Variable<String>(systemPrompt);
+    }
     return map;
   }
 
@@ -668,6 +716,9 @@ class Session extends DataClass implements Insertable<Session> {
       archivedAt: archivedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(archivedAt),
+      systemPrompt: systemPrompt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(systemPrompt),
     );
   }
 
@@ -703,6 +754,7 @@ class Session extends DataClass implements Insertable<Session> {
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
+      systemPrompt: serializer.fromJson<String?>(json['systemPrompt']),
     );
   }
   @override
@@ -733,6 +785,7 @@ class Session extends DataClass implements Insertable<Session> {
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
+      'systemPrompt': serializer.toJson<String?>(systemPrompt),
     };
   }
 
@@ -759,6 +812,7 @@ class Session extends DataClass implements Insertable<Session> {
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
+    Value<String?> systemPrompt = const Value.absent(),
   }) => Session(
     id: id ?? this.id,
     slug: slug ?? this.slug,
@@ -788,6 +842,7 @@ class Session extends DataClass implements Insertable<Session> {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
+    systemPrompt: systemPrompt.present ? systemPrompt.value : this.systemPrompt,
   );
   Session copyWithCompanion(SessionsCompanion data) {
     return Session(
@@ -829,6 +884,9 @@ class Session extends DataClass implements Insertable<Session> {
       archivedAt: data.archivedAt.present
           ? data.archivedAt.value
           : this.archivedAt,
+      systemPrompt: data.systemPrompt.present
+          ? data.systemPrompt.value
+          : this.systemPrompt,
     );
   }
 
@@ -856,7 +914,8 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('archivedAt: $archivedAt')
+          ..write('archivedAt: $archivedAt, ')
+          ..write('systemPrompt: $systemPrompt')
           ..write(')'))
         .toString();
   }
@@ -885,6 +944,7 @@ class Session extends DataClass implements Insertable<Session> {
     createdAt,
     updatedAt,
     archivedAt,
+    systemPrompt,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -911,7 +971,8 @@ class Session extends DataClass implements Insertable<Session> {
           other.runningHeartbeatAt == this.runningHeartbeatAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.archivedAt == this.archivedAt);
+          other.archivedAt == this.archivedAt &&
+          other.systemPrompt == this.systemPrompt);
 }
 
 class SessionsCompanion extends UpdateCompanion<Session> {
@@ -937,6 +998,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
+  final Value<String?> systemPrompt;
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.slug = const Value.absent(),
@@ -960,6 +1022,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
+    this.systemPrompt = const Value.absent(),
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -984,6 +1047,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
+    this.systemPrompt = const Value.absent(),
   }) : status = Value(status),
        createdAt = Value(createdAt),
        updatedAt = Value(updatedAt);
@@ -1010,6 +1074,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
+    Expression<String>? systemPrompt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1036,6 +1101,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
+      if (systemPrompt != null) 'system_prompt': systemPrompt,
     });
   }
 
@@ -1062,6 +1128,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
+    Value<String?>? systemPrompt,
   }) {
     return SessionsCompanion(
       id: id ?? this.id,
@@ -1086,6 +1153,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
+      systemPrompt: systemPrompt ?? this.systemPrompt,
     );
   }
 
@@ -1162,6 +1230,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (archivedAt.present) {
       map['archived_at'] = Variable<int>(archivedAt.value);
     }
+    if (systemPrompt.present) {
+      map['system_prompt'] = Variable<String>(systemPrompt.value);
+    }
     return map;
   }
 
@@ -1189,7 +1260,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('archivedAt: $archivedAt')
+          ..write('archivedAt: $archivedAt, ')
+          ..write('systemPrompt: $systemPrompt')
           ..write(')'))
         .toString();
   }
@@ -3661,6 +3733,7 @@ typedef $$SessionsTableCreateCompanionBuilder =
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
+      Value<String?> systemPrompt,
     });
 typedef $$SessionsTableUpdateCompanionBuilder =
     SessionsCompanion Function({
@@ -3686,6 +3759,7 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
+      Value<String?> systemPrompt,
     });
 
 final class $$SessionsTableReferences
@@ -3890,6 +3964,11 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<int> get archivedAt => $composableBuilder(
     column: $table.archivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get systemPrompt => $composableBuilder(
+    column: $table.systemPrompt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4112,6 +4191,11 @@ class $$SessionsTableOrderingComposer
     column: $table.archivedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get systemPrompt => $composableBuilder(
+    column: $table.systemPrompt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SessionsTableAnnotationComposer
@@ -4202,6 +4286,11 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<int> get archivedAt => $composableBuilder(
     column: $table.archivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get systemPrompt => $composableBuilder(
+    column: $table.systemPrompt,
     builder: (column) => column,
   );
 
@@ -4361,6 +4450,7 @@ class $$SessionsTableTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
+                Value<String?> systemPrompt = const Value.absent(),
               }) => SessionsCompanion(
                 id: id,
                 slug: slug,
@@ -4384,6 +4474,7 @@ class $$SessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
+                systemPrompt: systemPrompt,
               ),
           createCompanionCallback:
               ({
@@ -4409,6 +4500,7 @@ class $$SessionsTableTableManager
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
+                Value<String?> systemPrompt = const Value.absent(),
               }) => SessionsCompanion.insert(
                 id: id,
                 slug: slug,
@@ -4432,6 +4524,7 @@ class $$SessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
+                systemPrompt: systemPrompt,
               ),
           withReferenceMapper: (p0) => p0
               .map(

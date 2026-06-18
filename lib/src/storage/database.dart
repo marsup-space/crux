@@ -50,8 +50,13 @@ class CruxDatabase extends _$CruxDatabase {
   ///   v18 – sessions.runningOwnerId and runningHeartbeatAt, used to
   ///         distinguish stale `running` rows from live runs owned by
   ///         another Crux process in the same project.
+  ///   v19 – sessions.systemPrompt: the rendered system prompt
+  ///         (a single joined text ready to send as one
+  ///         `role: 'system'` message), computed once at session
+  ///         start and re-attached verbatim on every subsequent
+  ///         turn. See `docs/design-system-prompt.md`.
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -115,6 +120,9 @@ class CruxDatabase extends _$CruxDatabase {
       if (from < 18) {
         await m.addColumn(sessions, sessions.runningOwnerId);
         await m.addColumn(sessions, sessions.runningHeartbeatAt);
+      }
+      if (from < 19) {
+        await m.addColumn(sessions, sessions.systemPrompt);
       }
     },
   );

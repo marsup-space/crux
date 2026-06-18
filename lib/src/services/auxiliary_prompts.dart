@@ -1,9 +1,35 @@
-const titleSystemPrompt =
-    'Generate a concise title (3-7 words) that captures the '
-    'main topic or goal of this coding session. The title should be clear '
-    'enough that the user recognizes the session in a list. You MUST use '
-    'the same language as the user. Output ONLY the title, nothing else. '
-    'No quotes, no explanation.';
+/// System prompt for the auxiliary title-generation call.
+///
+/// Crux fires a short, single-shot LLM call after the user's
+/// first message in a session, to generate a stable title for
+/// the session list in the sidebar. The input is the user's
+/// first message; the output is a 3-7 word title.
+///
+/// The earlier version of this prompt said "captures the main
+/// topic or goal of this coding session", which the model
+/// interpreted as "describe the conversation". For a meta
+/// opener like "who are you" the model produced "I am
+/// deepseek" — that's the model's reply, not the session's
+/// subject. The new prompt makes the role explicit and adds
+/// the rule: title by the subject the user is asking about,
+/// not by the model's answer.
+///
+/// The same-language rule mirrors the main agent's universal
+/// layer (see `kCruxSystemPrompt`).
+const titleSystemPrompt = '''
+You are Crux's title-generation helper. Your only purpose is to
+turn a user message into a short, stable session title (3-7
+words) that identifies what the session is about.
+
+The title describes the session's topic, not a recap of the
+user's words or the model's reply. When the user's first
+message is a meta question or greeting, title the session by
+the subject the user is asking about, not by the model's
+answer.
+
+You MUST use the same language as the user. Output ONLY the
+title, nothing else. No quotes, no explanation, no preamble.
+''';
 
 /// TLDR summary detail levels. The "default" level keeps the historical
 /// prompt (the auto-triggered path uses this). Manual `/tldr` invocations
