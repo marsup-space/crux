@@ -66,15 +66,15 @@ class ChatTurnOrchestrator {
     required ToolRegistry toolRegistry,
     required ShowToastCallback showToast,
     required void Function() refresh,
-  })  : _store = store,
-        _messageStore = store.messageStore,
-        _chatService = chatService,
-        _providerService = providerService,
-        _sessionController = sessionController,
-        _streamingController = streamingController,
-        _toolRegistry = toolRegistry,
-        _showToast = showToast,
-        _refresh = refresh;
+  }) : _store = store,
+       _messageStore = store.messageStore,
+       _chatService = chatService,
+       _providerService = providerService,
+       _sessionController = sessionController,
+       _streamingController = streamingController,
+       _toolRegistry = toolRegistry,
+       _showToast = showToast,
+       _refresh = refresh;
 
   // ─────────────────────────────────────────────────────────────────────
   // Public API
@@ -134,7 +134,10 @@ class ChatTurnOrchestrator {
   /// user message is added, the in-memory cache is left alone, and
   /// the LLM is called with whatever the persisted wire-format
   /// history currently ends on.
-  Future<void> sendTurn({String? text, List<ImageAttachment> images = const []}) async {
+  Future<void> sendTurn({
+    String? text,
+    List<ImageAttachment> images = const [],
+  }) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
@@ -156,12 +159,22 @@ class ChatTurnOrchestrator {
     // Clear the interrupted session flag — we're starting a fresh turn.
     _interruptedSessions.remove(sessionId);
 
+    final session = _sessionController.findSession(sessionId);
+    if (session != null && session.status != SessionStatus.running) {
+      final updated = await _store.update(
+        sessionId,
+        status: SessionStatus.running,
+      );
+      session.status = updated.status;
+      session.updatedAt = updated.updatedAt;
+    }
+
     final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
     final userTokens = text == null ? 0 : estimateTokens(text);
     final turnBase =
         _sessionController.computeBaseContext(sessionId) +
-            userTokens +
-            toolDefsTokens;
+        userTokens +
+        toolDefsTokens;
     rt.turnBaseTokens = turnBase;
     rt.accumulatedToolTokens = 0;
     rt.contextTargetTokens = turnBase;
@@ -188,7 +201,6 @@ class ChatTurnOrchestrator {
       // again shortly by ChatService.sendMessage, but the in-memory
       // object needs the update now so the fingerprint-based cache in
       // ExtraInfoPanel invalidates on the first _refresh().
-      final session = _sessionController.findSession(sessionId);
       if (session != null) {
         session.updatedAt = DateTime.now();
       }
@@ -228,169 +240,171 @@ class ChatTurnOrchestrator {
       _maybeKickOffTitleEarly(sessionId, text);
     }
 
-    _chatService.sendMessage(
-      sessionId: sessionId,
-      userContent: text,
-      images: images,
-      session: _sessionController.currentSession,
-      runtime: rt,
-      onDelta: (delta) {
-        if (_interruptedSessions.contains(sessionId)) return;
-        if (_streamingController.streamingContentFor(sessionId).isEmpty) {
-          rt.contentStartTime = DateTime.now();
-        }
-        _streamingController.appendStreamingContent(sessionId, delta);
-      },
-      onReasoning: (reasoning) {
-        if (_interruptedSessions.contains(sessionId)) return;
-        _streamingController.appendStreamingReasoning(sessionId, reasoning);
-      },
-      onChunk: () {
-        if (_interruptedSessions.contains(sessionId)) return;
-        final streamingTokens = estimateTokens(
-          _streamingController.streamingContentFor(sessionId) +
-              _streamingController.streamingReasoningFor(sessionId),
-        );
-        // The context bar's [ContextBar] widget polls
-        // `rt.contextTargetTokens` on every frame and starts
-        // its own lerp animation when the value changes, so
-        // we don't need to call `_refresh()` to drive that
-        // animation. The streaming bubble's [StreamingBubble]
-        // widget polls the streaming controller on its own
-        // 33ms timer and rebuilds itself. Calling `_refresh()`
-        // here used to cause a 30ms full-layout pass on every
-        // 16ms chunk, which is what was killing streaming
-        // performance on sessions with hundreds of messages.
-        rt.contextTargetTokens =
-            rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
-        if (!_streamingController.contextAnimTimerIsActive()) {
-          _streamingController.startContextAnimation();
-        }
-      },
-      onToolRound: (int toolResultTokens) {
-        if (_interruptedSessions.contains(sessionId)) return;
-        final streamingTokens = estimateTokens(
-          _streamingController.streamingContentFor(sessionId) +
-              _streamingController.streamingReasoningFor(sessionId),
-        );
-        rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
-        _streamingController.clearStreamingFor(sessionId);
-        rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
-        rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
-        _sessionController
-            .loadMessages(sessionId)
-            .then((_) => _refresh());
-      },
-      onToolUse: (ToolUseChunk chunk) {
-        if (_interruptedSessions.contains(sessionId)) return;
-        _streamingController.updateStreamingToolCall(sessionId, chunk);
-      },
-      onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
-      onAbortSignal: (signal) {
-        _activeAbortSignals.putIfAbsent(sessionId, () => []).add(signal);
-      },
-      onComplete: (response) async {
-        if (_interruptedSessions.contains(sessionId)) {
-          _interruptedSessions.remove(sessionId);
+    _chatService
+        .sendMessage(
+          sessionId: sessionId,
+          userContent: text,
+          images: images,
+          session: _sessionController.currentSession,
+          runtime: rt,
+          onDelta: (delta) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            if (_streamingController.streamingContentFor(sessionId).isEmpty) {
+              rt.contentStartTime = DateTime.now();
+            }
+            _streamingController.appendStreamingContent(sessionId, delta);
+          },
+          onReasoning: (reasoning) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            _streamingController.appendStreamingReasoning(sessionId, reasoning);
+          },
+          onChunk: () {
+            if (_interruptedSessions.contains(sessionId)) return;
+            final streamingTokens = estimateTokens(
+              _streamingController.streamingContentFor(sessionId) +
+                  _streamingController.streamingReasoningFor(sessionId),
+            );
+            // The context bar's [ContextBar] widget polls
+            // `rt.contextTargetTokens` on every frame and starts
+            // its own lerp animation when the value changes, so
+            // we don't need to call `_refresh()` to drive that
+            // animation. The streaming bubble's [StreamingBubble]
+            // widget polls the streaming controller on its own
+            // 33ms timer and rebuilds itself. Calling `_refresh()`
+            // here used to cause a 30ms full-layout pass on every
+            // 16ms chunk, which is what was killing streaming
+            // performance on sessions with hundreds of messages.
+            rt.contextTargetTokens =
+                rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
+            if (!_streamingController.contextAnimTimerIsActive()) {
+              _streamingController.startContextAnimation();
+            }
+          },
+          onToolRound: (int toolResultTokens) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            final streamingTokens = estimateTokens(
+              _streamingController.streamingContentFor(sessionId) +
+                  _streamingController.streamingReasoningFor(sessionId),
+            );
+            rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
+            _streamingController.clearStreamingFor(sessionId);
+            rt.contextTargetTokens =
+                rt.turnBaseTokens + rt.accumulatedToolTokens;
+            rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
+            _sessionController.loadMessages(sessionId).then((_) => _refresh());
+          },
+          onToolUse: (ToolUseChunk chunk) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            _streamingController.updateStreamingToolCall(sessionId, chunk);
+          },
+          onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
+          onAbortSignal: (signal) {
+            _activeAbortSignals.putIfAbsent(sessionId, () => []).add(signal);
+          },
+          onComplete: (response) async {
+            if (_interruptedSessions.contains(sessionId)) {
+              _interruptedSessions.remove(sessionId);
+              _activeAbortSignals.remove(sessionId);
+              return;
+            }
+
+            // The chat service sets SessionStatus.done on completion. We
+            // override to idle for *every* session that completes — current
+            // *and* background — so the sidebar doesn't display a lingering
+            // non-idle status (running / done) for a turn that already
+            // finished. Previously this only ran for the current session,
+            // which left background sessions stuck showing the "done" (✦)
+            // indicator in the sidebar until the user manually switched to
+            // them, even though the response was complete and a TLDR
+            // (fire-and-forget) was already being generated.
+            final session = _sessionController.findSession(sessionId);
+            if (session != null && session.status == SessionStatus.done) {
+              await _store.update(sessionId, status: SessionStatus.idle);
+              session.status = SessionStatus.idle;
+            }
+
+            // Refresh immediately so the session list picks up the status
+            // change (idle/done) without waiting for the rest of the
+            // completion work (message reloads, optional title/tldr
+            // generation, queued-message drain, etc.).
+            _refresh();
+
+            _streamingController.clearStreamingFor(sessionId);
+            _streamingController.stopMetricsTimer(sessionId);
+            _activeAbortSignals.remove(sessionId);
+            rt.turnBaseTokens = 0;
+            rt.accumulatedToolTokens = 0;
+            final msgs = await _messageStore.getMessages(sessionId);
+            _sessionController.messageCache[sessionId] = msgs;
+            if (response.promptTokens + response.completionTokens > 0) {
+              final finalTokens = _sessionController.computeBaseContext(
+                sessionId,
+              );
+              rt.contextTargetTokens = finalTokens;
+              rt.contextDisplayTokens = finalTokens.toDouble();
+              _streamingController.stopContextAnimation();
+            }
+            final hit = response.promptCacheHitTokens;
+            final total = response.promptTokens;
+            final miss = response.promptCacheMissTokens;
+            final nonCached = total - hit;
+            if (total > 0 && hit > 0 && nonCached > 0) {
+              rt.cacheHitPct = ((hit / total) * 100).round();
+            } else if (total > 0 && miss > 0 && hit == 0) {
+              rt.cacheHitPct = 0;
+            } else {
+              rt.cacheHitPct = null;
+            }
+            _refresh();
+            if (_sessionController.currentSession.title == 'New Session') {
+              _sessionController.generateTitle(sessionId);
+            }
+            final lastAiMsg = msgs.lastWhere(
+              (m) => m.role == 'ai',
+              orElse: () => Message(
+                id: -1,
+                sessionId: sessionId,
+                role: 'ai',
+                content: '',
+              ),
+            );
+            if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
+              maybeGenerateTldr(sessionId, lastAiMsg);
+            }
+            // If the user queued a message during the final response,
+            // persist it and kick off a new turn.
+            if (response.queuedMessage != null &&
+                response.queuedMessage!.isNotEmpty) {
+              await _messageStore.addMessage(
+                sessionId,
+                role: 'user',
+                content: response.queuedMessage!,
+              );
+              final updatedMsgs = await _messageStore.getMessages(sessionId);
+              _sessionController.messageCache[sessionId] = updatedMsgs;
+              _refresh();
+              await sendTurn(text: null);
+            }
+          },
+          onError: (error) {
+            if (_interruptedSessions.contains(sessionId)) {
+              _activeAbortSignals.remove(sessionId);
+              return;
+            }
+            _streamingController.stopMetricsTimer(sessionId);
+            _showToast(error, mode: ToastMode.error);
+          },
+        )
+        .catchError((e) {
+          if (!_interruptedSessions.contains(sessionId)) {
+            _showToast('Unhandled error: $e', mode: ToastMode.error);
+          }
+          rt.isResponding = false;
+          _streamingController.stopMetricsTimer(sessionId);
+          _streamingController.clearStreamingFor(sessionId);
           _activeAbortSignals.remove(sessionId);
-          return;
-        }
-
-        // The chat service sets SessionStatus.done on completion. We
-        // override to idle for *every* session that completes — current
-        // *and* background — so the sidebar doesn't display a lingering
-        // non-idle status (running / done) for a turn that already
-        // finished. Previously this only ran for the current session,
-        // which left background sessions stuck showing the "done" (✦)
-        // indicator in the sidebar until the user manually switched to
-        // them, even though the response was complete and a TLDR
-        // (fire-and-forget) was already being generated.
-        final session = _sessionController.findSession(sessionId);
-        if (session != null && session.status == SessionStatus.done) {
-          await _store.update(sessionId, status: SessionStatus.idle);
-          session.status = SessionStatus.idle;
-        }
-
-        // Refresh immediately so the session list picks up the status
-        // change (idle/done) without waiting for the rest of the
-        // completion work (message reloads, optional title/tldr
-        // generation, queued-message drain, etc.).
-        _refresh();
-
-        _streamingController.clearStreamingFor(sessionId);
-        _streamingController.stopMetricsTimer(sessionId);
-        _activeAbortSignals.remove(sessionId);
-        rt.turnBaseTokens = 0;
-        rt.accumulatedToolTokens = 0;
-        final msgs = await _messageStore.getMessages(sessionId);
-        _sessionController.messageCache[sessionId] = msgs;
-        if (response.promptTokens + response.completionTokens > 0) {
-          final finalTokens =
-              _sessionController.computeBaseContext(sessionId);
-          rt.contextTargetTokens = finalTokens;
-          rt.contextDisplayTokens = finalTokens.toDouble();
-          _streamingController.stopContextAnimation();
-        }
-        final hit = response.promptCacheHitTokens;
-        final total = response.promptTokens;
-        final miss = response.promptCacheMissTokens;
-        final nonCached = total - hit;
-        if (total > 0 && hit > 0 && nonCached > 0) {
-          rt.cacheHitPct = ((hit / total) * 100).round();
-        } else if (total > 0 && miss > 0 && hit == 0) {
-          rt.cacheHitPct = 0;
-        } else {
-          rt.cacheHitPct = null;
-        }
-        _refresh();
-        if (_sessionController.currentSession.title == 'New Session') {
-          _sessionController.generateTitle(sessionId);
-        }
-        final lastAiMsg = msgs.lastWhere(
-          (m) => m.role == 'ai',
-          orElse: () => Message(
-            id: -1,
-            sessionId: sessionId,
-            role: 'ai',
-            content: '',
-          ),
-        );
-        if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
-          maybeGenerateTldr(sessionId, lastAiMsg);
-        }
-        // If the user queued a message during the final response,
-        // persist it and kick off a new turn.
-        if (response.queuedMessage != null &&
-            response.queuedMessage!.isNotEmpty) {
-          await _messageStore.addMessage(
-            sessionId,
-            role: 'user',
-            content: response.queuedMessage!,
-          );
-          final updatedMsgs = await _messageStore.getMessages(sessionId);
-          _sessionController.messageCache[sessionId] = updatedMsgs;
           _refresh();
-          await sendTurn(text: null);
-        }
-      },
-      onError: (error) {
-        if (_interruptedSessions.contains(sessionId)) {
-          _activeAbortSignals.remove(sessionId);
-          return;
-        }
-        _streamingController.stopMetricsTimer(sessionId);
-        _showToast(error, mode: ToastMode.error);
-      },
-    ).catchError((e) {
-      if (!_interruptedSessions.contains(sessionId)) {
-        _showToast('Unhandled error: $e', mode: ToastMode.error);
-      }
-      rt.isResponding = false;
-      _streamingController.stopMetricsTimer(sessionId);
-      _streamingController.clearStreamingFor(sessionId);
-      _activeAbortSignals.remove(sessionId);
-      _refresh();
-    });
+        });
   }
 
   /// Drive a single `/btw` turn. Nothing is written to the database.
@@ -437,10 +451,7 @@ class ChatTurnOrchestrator {
         'content': t.aiText.isEmpty ? null : t.aiText,
       });
     }
-    apiMessages.add({
-      'role': 'user',
-      'content': btwRenderUserMessage(prompt),
-    });
+    apiMessages.add({'role': 'user', 'content': btwRenderUserMessage(prompt)});
 
     // Same response-state plumbing as the regular chat turn.
     _streamingController.clearStreamingFor(sessionId);
@@ -493,12 +504,10 @@ class ChatTurnOrchestrator {
         final deltaReasoning = chunk.reasoningContent;
         if (deltaText != null || deltaReasoning != null) {
           rt.roundFirstTokenTime ??= DateTime.now();
-          if (firstTokenEver &&
-              (deltaText != null || deltaReasoning != null)) {
+          if (firstTokenEver && (deltaText != null || deltaReasoning != null)) {
             final now = DateTime.now();
             final elapsed =
-                now.difference(rt.responseStartTime!).inMicroseconds /
-                    1000.0;
+                now.difference(rt.responseStartTime!).inMicroseconds / 1000.0;
             rt.ttftMs = elapsed;
             rt.ttftReceived = true;
             rt.firstTokenTime = now;
@@ -507,9 +516,7 @@ class ChatTurnOrchestrator {
           if (deltaText != null) {
             buffer.write(deltaText);
             _streamingController.appendStreamingContent(sessionId, deltaText);
-            if (_streamingController
-                .streamingContentFor(sessionId)
-                .isEmpty) {
+            if (_streamingController.streamingContentFor(sessionId).isEmpty) {
               rt.contentStartTime = DateTime.now();
             }
             _sessionController.updateLastBtwTurnAiText(
@@ -540,8 +547,7 @@ class ChatTurnOrchestrator {
 
     if (rt.roundStreaming && rt.roundStartTime != null) {
       rt.cumulativeGenMs +=
-          DateTime.now().difference(rt.roundStartTime!).inMicroseconds /
-              1000.0;
+          DateTime.now().difference(rt.roundStartTime!).inMicroseconds / 1000.0;
     }
     rt.roundStreaming = false;
     rt.roundStartTime = null;
@@ -594,9 +600,7 @@ class ChatTurnOrchestrator {
   }
 
   /// Interrupt the currently streaming response.
-  void interruptResponse({
-    required TextEditingController textController,
-  }) {
+  void interruptResponse({required TextEditingController textController}) {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
@@ -621,10 +625,10 @@ class ChatTurnOrchestrator {
     }
 
     // 2. Capture whatever was streamed so far.
-    final partialContent =
-        _streamingController.streamingContentFor(sessionId);
-    final partialReasoning =
-        _streamingController.streamingReasoningFor(sessionId);
+    final partialContent = _streamingController.streamingContentFor(sessionId);
+    final partialReasoning = _streamingController.streamingReasoningFor(
+      sessionId,
+    );
 
     // 3. Clear streaming state immediately.
     _streamingController.clearStreamingFor(sessionId);
@@ -675,23 +679,24 @@ class ChatTurnOrchestrator {
             ? '$partialContent\n\n*[Response interrupted by user]*'
             : '*[Response interrupted by user]*';
 
-        _messageStore.addMessage(
-          sessionId,
-          role: 'ai',
-          content: interruptedContent,
-          reasoningContent: partialReasoning,
-        ).then((_) {
-          _sessionController
-              .loadMessages(sessionId)
-              .then((_) => _refresh());
-        });
+        _messageStore
+            .addMessage(
+              sessionId,
+              role: 'ai',
+              content: interruptedContent,
+              reasoningContent: partialReasoning,
+            )
+            .then((_) {
+              _sessionController
+                  .loadMessages(sessionId)
+                  .then((_) => _refresh());
+            });
       }
 
       // Drain any queued messages back into the input field.
       final queue = _sessionController.messageQueueFor(sessionId);
       if (queue.isNotEmpty) {
-        final queuedTexts =
-            queue.messages.map((m) => m.content).join('\n');
+        final queuedTexts = queue.messages.map((m) => m.content).join('\n');
         final currentInput = textController.text;
         final newInput = currentInput.isEmpty
             ? queuedTexts
@@ -746,7 +751,7 @@ class ChatTurnOrchestrator {
     final rt = _sessionController.runtime(sessionId);
     final hasAuxModel =
         _providerService.auxiliaryModel != null &&
-            _providerService.auxiliaryModel != 'none';
+        _providerService.auxiliaryModel != 'none';
 
     if (!hasAuxModel) {
       if (force) {

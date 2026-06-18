@@ -44,12 +44,6 @@ class ExtraInfoPanel extends StatefulComponent {
   /// Number of archived sessions (not included in [sessions]).
   final int archivedCount;
 
-  /// Live check: is the given session currently responding (LLM
-  /// streaming)?  This is called on every animation tick so it
-  /// must read from the runtime state directly, not from a stale
-  /// snapshot.
-  final bool Function(int sessionId) isSessionResponding;
-
   /// Invoked when the user clicks the `open` segment of the project
   /// path button. Should open the project directory in the system
   /// file explorer and surface any failure as a toast.
@@ -65,7 +59,6 @@ class ExtraInfoPanel extends StatefulComponent {
     required this.currentSessionId,
     required this.onSwitchSession,
     required this.archivedCount,
-    required this.isSessionResponding,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
@@ -171,7 +164,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     final sessions = component.sessions;
     final archived = component.archivedCount;
     final fp = _fingerprint(sessions);
-    if (_prevSessions != sessions || _prevFingerprint != fp || _prevArchivedCount != archived) {
+    if (_prevSessions != sessions ||
+        _prevFingerprint != fp ||
+        _prevArchivedCount != archived) {
       _prevSessions = sessions;
       _prevFingerprint = fp;
       _prevArchivedCount = archived;
@@ -201,9 +196,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   }
 
   bool _hasRespondingSession() {
-    return component.sessions.any(
-      (s) => component.isSessionResponding(s.id),
-    );
+    return component.sessions.any((s) => s.status == SessionStatus.running);
   }
 
   void _startAnimIfNeeded() {
@@ -396,7 +389,10 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                         return _buildGroupHeader(item);
                       }
                       return _buildSessionRow(
-                          item as Session, panel, maxTitleLen);
+                        item as Session,
+                        panel,
+                        maxTitleLen,
+                      );
                     },
                   ),
                 ),
@@ -406,7 +402,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                   hoverColor: CruxTheme.of(context).foreground,
                   segments: [
                     MultiButtonSegment(
-                        label: 'open', onPressed: panel.onOpenProject),
+                      label: 'open',
+                      onPressed: panel.onOpenProject,
+                    ),
                     MultiButtonSegment(
                       label: 'switch',
                       onPressed: panel.onSwitchProject,
@@ -423,11 +421,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             // when the terminal is wide enough to show the side panel — it
             // inherits the "panel hidden ⇒ counter hidden" behaviour for
             // free.
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: const FpsCounter(),
-            ),
+            Positioned(bottom: 0, right: 0, child: const FpsCounter()),
           ],
         );
       },
@@ -471,17 +465,13 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
   /// Build a single session row widget.
   Component _buildSessionRow(
-      Session session, ExtraInfoPanel panel, int maxTitleLen) {
+    Session session,
+    ExtraInfoPanel panel,
+    int maxTitleLen,
+  ) {
     final isCurrent = session.id == panel.currentSessionId;
     final isHovered = _hoveredIds.contains(session.id);
-    // Derive display status from the SSoT: if the runtime says this
-    // session is responding, it's running regardless of what
-    // session.status says (which can lag).  Otherwise use the
-    // persisted status.
-    final isResponding = panel.isSessionResponding(session.id);
-    final status = isResponding
-        ? SessionStatus.running
-        : session.status;
+    final status = session.status;
     final prefix = _statusPrefix(status);
     final title = _truncateByWidth(session.title, maxTitleLen);
 

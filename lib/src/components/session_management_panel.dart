@@ -7,7 +7,6 @@ import 'ui/fullpane.dart';
 class SessionManagementPanel extends StatefulComponent {
   final List<Session> sessions;
   final int currentSessionId;
-  final bool Function(int sessionId) isSessionResponding;
   final Future<void> Function(int sessionId) onDeleteSession;
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
   final void Function(int sessionId) onSwitchSession;
@@ -16,7 +15,6 @@ class SessionManagementPanel extends StatefulComponent {
   const SessionManagementPanel({
     required this.sessions,
     required this.currentSessionId,
-    required this.isSessionResponding,
     required this.onDeleteSession,
     required this.onRenameSession,
     required this.onSwitchSession,
@@ -344,10 +342,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               : CruxTheme.of(context).onSurfaceVariant;
 
           final prefix = isSelected ? '${terminalSymbol('▸', '>')} ' : '  ';
-          final isResponding =
-              component.isSessionResponding(s.id);
-          final status =
-              isResponding ? SessionStatus.running : s.status;
+          final status = s.status;
           final icon = _statusIcon(status);
           final iconColor = _statusColor(status);
           final titleDisplay = s.title.length > 30
