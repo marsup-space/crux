@@ -60,7 +60,18 @@ class BgProgressBar extends StatelessComponent {
     final resolvedEmptyColor = emptyColor ?? theme.progressEmpty;
     final resolvedLabelFillFg = labelFillFg ?? theme.progressLabelFill;
     final resolvedLabelEmptyFg = labelEmptyFg ?? theme.progressLabelEmpty;
-    final filledCount = (clamped * width).floor();
+
+    // Split the (clamped × width) fill into whole cells plus a
+    // fractional remainder. The remainder is rendered by lerping
+    // the *leading-edge* cell's background between empty and fill
+    // colors, so the bar shows continuous progress rather than
+    // snapping to 5%-per-cell increments.
+    final rawFill = clamped * width;
+    final filledCount = rawFill.floor();
+    final partial = rawFill - filledCount; // 0..1
+    final boundaryIdx =
+        (partial > 0.0 && filledCount < width) ? filledCount : -1;
+
     final labelText = label ?? '';
     final labelLen = labelText.length;
 
@@ -69,13 +80,28 @@ class BgProgressBar extends StatelessComponent {
 
     final cells = <Component>[];
     for (int i = 0; i < width; i++) {
-      final isFilled = i < filledCount;
-      final bg = isFilled ? resolvedFillColor : resolvedEmptyColor;
+      final Color bg;
+      if (i < filledCount) {
+        bg = resolvedFillColor;
+      } else if (i == boundaryIdx) {
+        bg = Color.lerp(resolvedEmptyColor, resolvedFillColor, partial)!;
+      } else {
+        bg = resolvedEmptyColor;
+      }
 
       // Check if this cell position holds a label character
       final labelIndex = i - labelStart;
       if (labelLen > 0 && labelIndex >= 0 && labelIndex < labelLen) {
-        final fg = isFilled ? resolvedLabelFillFg : resolvedLabelEmptyFg;
+        // For the boundary cell, the bg is a blend — pick whichever
+        // label fg has better contrast against the dominant side.
+        final Color fg;
+        if (i < filledCount) {
+          fg = resolvedLabelFillFg;
+        } else if (i == boundaryIdx && partial >= 0.5) {
+          fg = resolvedLabelFillFg;
+        } else {
+          fg = resolvedLabelEmptyFg;
+        }
         cells.add(
           Text(
             labelText[labelIndex],

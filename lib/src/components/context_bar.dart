@@ -424,16 +424,50 @@ class RenderContextBar extends RenderObject {
   @override
   void paint(TerminalCanvas canvas, Offset offset) {
     super.paint(canvas, offset);
-    final filledCount = (_fillRatio * _width).floor();
+
+    // The bar is `_width` discrete cells, so a raw fill ratio of 0.37
+    // on a 20-cell bar is "7 full cells + 0.4 of the next cell". Rather
+    // than hard-snapping to 7 cells (which loses 40% of the partial
+    // cell's worth of resolution and makes 1–5% usage all look empty),
+    // we lerp the *leading-edge* cell's background between
+    // [_emptyColor] and [_fillColor]. This gives smooth, continuous
+    // resolution at the cost of one cell being a blended color.
+    final rawFill = _fillRatio * _width;
+    final filledCount = rawFill.floor();
+    final partial = rawFill - filledCount; // 0..1, weight of the edge cell
+    // Only one cell gets the interpolated bg, and only if there's a
+    // non-zero partial AND there's still a cell to place it in (avoids
+    // an out-of-bounds boundary when fillRatio is exactly 1.0).
+    final boundaryIdx =
+        (partial > 0.0 && filledCount < _width) ? filledCount : -1;
+
     final labelLen = _label.length;
     final labelStart = (_width - labelLen) ~/ 2;
 
     for (var i = 0; i < _width; i++) {
-      final isFilled = i < filledCount;
-      final bg = isFilled ? _fillColor : _emptyColor;
+      final Color bg;
+      if (i < filledCount) {
+        bg = _fillColor;
+      } else if (i == boundaryIdx) {
+        bg = Color.lerp(_emptyColor, _fillColor, partial)!;
+      } else {
+        bg = _emptyColor;
+      }
+
       final labelIndex = i - labelStart;
       if (labelLen > 0 && labelIndex >= 0 && labelIndex < labelLen) {
-        final fg = isFilled ? _labelFillFg : _labelEmptyFg;
+        // For the boundary cell, pick the label fg for whichever side
+        // dominates — a 50/50 blend would be muddy against either pure
+        // fg. Fully-filled and fully-empty cells use their dedicated
+        // fg as before.
+        final Color fg;
+        if (i < filledCount) {
+          fg = _labelFillFg;
+        } else if (i == boundaryIdx && partial >= 0.5) {
+          fg = _labelFillFg;
+        } else {
+          fg = _labelEmptyFg;
+        }
         canvas.drawText(
           offset + Offset(i.toDouble(), 0),
           _label[labelIndex],
