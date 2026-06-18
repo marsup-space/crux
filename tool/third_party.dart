@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+import 'package:toml/toml.dart';
 
 import 'package:crux/src/utils/bundled_executable.dart';
 
@@ -41,9 +42,7 @@ Future<void> main(List<String> args) async {
   final root = p.normalize(
     p.join(p.dirname(Platform.script.toFilePath()), '..'),
   );
-  final manifestFile = File(p.join(root, 'third_party', 'manifest.json'));
-  final manifest =
-      jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+  final manifest = await _loadManifest(root);
   final tools = manifest['tools'] as Map<String, dynamic>;
   final toolNames = selectedTool == null ? tools.keys : [selectedTool];
 
@@ -77,6 +76,25 @@ Future<void> main(List<String> args) async {
       );
     }
   }
+}
+
+/// Load the manifest, preferring `manifest.toml` and falling back to
+/// the legacy `manifest.json` for backward compatibility.
+Future<Map<String, dynamic>> _loadManifest(String root) async {
+  final tomlFile = File(p.join(root, 'third_party', 'manifest.toml'));
+  if (await tomlFile.exists()) {
+    return TomlDocument.parse(await tomlFile.readAsString()).toMap();
+  }
+
+  final jsonFile = File(p.join(root, 'third_party', 'manifest.json'));
+  if (await jsonFile.exists()) {
+    return jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+  }
+
+  throw StateError(
+    'No third-party manifest found at third_party/manifest.toml '
+    'or third_party/manifest.json',
+  );
 }
 
 Set<String> _allTargets(

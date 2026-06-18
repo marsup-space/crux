@@ -1635,12 +1635,8 @@ class Message extends DataClass implements Insertable<Message> {
   final String? error;
   final int? parentMsgId;
 
-  /// Total round-trip token cost of the tool_call's args *before*
-  /// compression. Set by the chat service when a LargePayloadTool's
-  /// large args were off-loaded. Null for non-tool-call messages
-  /// and for tool_call messages whose args were small enough to
-  /// keep in full. The chat bubble uses this to render the
-  /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
+  /// Orphaned column — the offloading infrastructure was removed.
+  /// Kept in the schema so drift's codegen compiles, but never read.
   final int? preCompressTokens;
   final String images;
   final int createdAt;

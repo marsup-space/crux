@@ -1,6 +1,13 @@
-import '../providers/openai_compatible_provider.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
-class DeepSeekProvider extends OpenAICompatibleProvider {
+import '../../models/credit_balance.dart';
+import '../providers/openai_compatible_provider.dart';
+import 'credit_balance_provider.dart';
+
+class DeepSeekProvider extends OpenAICompatibleProvider
+    with CreditBalanceProvider {
   @override
   String get name => 'deepseek';
 
@@ -77,5 +84,167 @@ class DeepSeekProvider extends OpenAICompatibleProvider {
       }
     }
     return modified ? out : messages;
+  }
+
+  // ─── CreditBalanceProvider implementation ───────────────────
+
+  /// The DeepSeek balance endpoint.
+  /// [API docs](https://api-docs.deepseek.com/api/get-user-balance)
+  static const String _balanceApiUrl =
+      'https://api.deepseek.com/user/balance';
+
+  /// The API key passed to [startCreditBalancePolling]. The
+  /// mixin owns the timer / stream / cache, but the
+  /// provider owns the key (the chat panel pulls it from
+  /// `ProviderService` and threads it through). We stash it
+  /// on a private field here so [getCreditBalance] can
+  /// read it back during a tick.
+  String? _currentCreditBalanceApiKey;
+
+  @override
+  void startCreditBalancePolling({
+    required String apiKey,
+    Duration? interval,
+  }) {
+    _currentCreditBalanceApiKey = apiKey;
+    super.startCreditBalancePolling(apiKey: apiKey, interval: interval);
+  }
+
+  @override
+  void stopCreditBalancePolling() {
+    super.stopCreditBalancePolling();
+    _currentCreditBalanceApiKey = null;
+  }
+
+  @override
+  Future<CreditBalance> getCreditBalance() async {
+    final key = _currentCreditBalanceApiKey;
+    if (key == null) {
+      throw const CreditBalanceError(
+        CreditBalanceErrorKind.noApiKey,
+        'No API key available for DeepSeek balance fetch',
+      );
+    }
+
+    final client = HttpClient();
+    try {
+      final request = await client
+          .getUrl(Uri.parse(_balanceApiUrl))
+          .timeout(const Duration(seconds: 10));
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $key');
+      request.headers
+          .set(HttpHeaders.contentTypeHeader, 'application/json');
+      final response = await request.close().timeout(
+            const Duration(seconds: 10),
+          );
+      if (response.statusCode != 200) {
+        throw CreditBalanceError(
+          CreditBalanceErrorKind.network,
+          'HTTP ${response.statusCode} from $_balanceApiUrl',
+        );
+      }
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
+      return _parseBalanceResponse(body);
+    } on CreditBalanceError {
+      rethrow;
+    } on SocketException catch (e) {
+      throw CreditBalanceError(
+        CreditBalanceErrorKind.network,
+        'Network error: ${e.message}',
+      );
+    } on TimeoutException {
+      throw const CreditBalanceError(
+        CreditBalanceErrorKind.network,
+        'Request timed out',
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Parse the JSON body of the `/user/balance` response into a
+  /// [CreditBalance].
+  ///
+  /// Expected shape:
+  /// ```json
+  /// {
+  ///   "is_available": true,
+  ///   "balance_infos": [
+  ///     {
+  ///       "currency": "CNY",
+  ///       "total_balance": "110.00",
+  ///       "granted_balance": "10.00",
+  ///       "topped_up_balance": "100.00"
+  ///     }
+  ///   ]
+  /// }
+  /// ```
+  CreditBalance _parseBalanceResponse(String body) {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException catch (e) {
+      throw CreditBalanceError(
+        CreditBalanceErrorKind.parse,
+        'Invalid JSON: ${e.message}',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const CreditBalanceError(
+        CreditBalanceErrorKind.parse,
+        'Response root is not a JSON object',
+      );
+    }
+
+    final isAvailable = decoded['is_available'];
+    if (isAvailable is! bool) {
+      throw const CreditBalanceError(
+        CreditBalanceErrorKind.parse,
+        'Missing or invalid is_available field',
+      );
+    }
+
+    final infosRaw = decoded['balance_infos'];
+    if (infosRaw is! List || infosRaw.isEmpty) {
+      throw const CreditBalanceError(
+        CreditBalanceErrorKind.parse,
+        'Missing or empty balance_infos array',
+      );
+    }
+
+    final infos = <BalanceInfo>[];
+    for (final entry in infosRaw) {
+      if (entry is! Map<String, dynamic>) continue;
+      final currency = entry['currency'];
+      final total = entry['total_balance'];
+      final granted = entry['granted_balance'];
+      final toppedUp = entry['topped_up_balance'];
+      if (currency is! String ||
+          total is! String ||
+          granted is! String ||
+          toppedUp is! String) {
+        throw const CreditBalanceError(
+          CreditBalanceErrorKind.parse,
+          'Malformed balance_infos entry',
+        );
+      }
+      infos.add(BalanceInfo(
+        currency: currency,
+        totalBalance: total,
+        grantedBalance: granted,
+        toppedUpBalance: toppedUp,
+      ));
+    }
+
+    return CreditBalance(
+      providerName: name,
+      isAvailable: isAvailable,
+      balanceInfos: infos,
+      fetchedAt: DateTime.now(),
+    );
   }
 }

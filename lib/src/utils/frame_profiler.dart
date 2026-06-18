@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/foundation/layout_profiler.dart';
 import 'package:path/path.dart' as p;
+import 'package:toml/toml.dart';
 
 import 'user_data_directory.dart';
 
@@ -337,12 +338,34 @@ class FrameProfiler {
     await Future<void>.delayed(duration);
     final report = stop();
     final path = outputPath ?? _defaultReportPath();
-    await writeJson(path, report);
+    await writeReport(path, report);
     return (report: report, path: path);
   }
 
-  /// Persist a report map to [path] as indented JSON. Creates
+  /// Persist a report map to [path] as TOML. Creates
   /// parent directories as needed.
+  static Future<void> writeReport(
+    String path,
+    Map<String, dynamic> report,
+  ) async {
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    try {
+      final doc = TomlAstBuilder().buildDocument(report);
+      final printer = TomlPrettyPrinter();
+      doc.acceptVisitor(printer);
+      await file.writeAsString('${printer.toString()}\n');
+    } catch (_) {
+      // Fallback: write as JSON if TOML encoding fails
+      // (e.g. integer keys in the profiler report).
+      const encoder = JsonEncoder.withIndent('  ');
+      await file.writeAsString(encoder.convert(report));
+    }
+  }
+
+  /// Legacy: persist as JSON. Kept for backward compat with
+  /// callers that explicitly want JSON output.
+  @Deprecated('Use writeReport instead')
   static Future<void> writeJson(
     String path,
     Map<String, dynamic> report,
@@ -570,6 +593,6 @@ class FrameProfiler {
 
   static String _defaultReportPath() {
     final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
-    return p.join(resolveUserDataDirectory(), 'profile-$ts.json');
+    return p.join(resolveUserDataDirectory(), 'profile-$ts.toml');
   }
 }

@@ -1,17 +1,6 @@
 import 'dart:convert';
 
-import '../tools/tool_def.dart';
-
 const _cjkRanges = [(0x4E00, 0x9FFF), (0x3400, 0x4DBF), (0xF900, 0xFAFF)];
-
-/// Returns the argument keys whose values should be excluded from the
-/// per-round token-count estimate, or `null` if the tool has no
-/// offloadable args. Accepts a nullable [tool] because callers
-/// frequently have a name (not a `ToolDef`) at hand; the lookup
-/// failure path is the same as "tool has no offloadable args."
-Set<String>? offloadableArgsFor(ToolDef? tool) {
-  return tool is LargePayloadTool ? tool.offloadableArgs.toSet() : null;
-}
 
 bool _isCJK(int codeUnit) {
   for (final range in _cjkRanges) {
@@ -40,17 +29,9 @@ int estimateToolRoundTripTokens({
   required Map<String, dynamic> args,
   required String resultOutput,
   bool anthropicOverhead = true,
-  Set<String>? excludeArgsFromEstimate,
 }) {
   var total = estimateTokens(toolName);
-  Map<String, dynamic> filteredArgs;
-  if (excludeArgsFromEstimate != null) {
-    filteredArgs = Map<String, dynamic>.from(args)
-      ..removeWhere((k, _) => excludeArgsFromEstimate.contains(k));
-  } else {
-    filteredArgs = args;
-  }
-  total += estimateTokens(jsonEncode(filteredArgs));
+  total += estimateTokens(jsonEncode(args));
   total += estimateTokens(resultOutput);
   if (anthropicOverhead) {
     total += 25;

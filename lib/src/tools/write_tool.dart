@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/file_metadata.dart';
-import '../utils/offload_standin.dart'
-    show containsOffloadStandIn, lineCountOfArg;
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
 import 'file_read_tracker.dart';
@@ -37,7 +35,7 @@ class WriteTool extends ToolDef with IntentionalTool {
     // 0, which means "no prior content" (i.e. treat it as a
     // new file) and show only the `+added lines` part.
     final existingLineCount = (args['_existingLineCount'] as int?) ?? 0;
-    final newLines = lineCountOfArg(content);
+    final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
     final size = content.length;
     final sizeStr = size > 1024
         ? '${(size / 1024).toStringAsFixed(1)}KB'
@@ -78,7 +76,7 @@ class WriteTool extends ToolDef with IntentionalTool {
   @override
   String get description =>
       'Overwrites a file with new content. The full content stays in '
-      'the conversation context for subsequent turns (no offload) so '
+      'the conversation context for subsequent turns so '
       'the LLM can reference what it just wrote without re-reading. '
       'CALL MULTIPLE IN PARALLEL — issue as many write calls in one '
       'turn as you need. Writes to DIFFERENT files run in parallel; '
@@ -127,14 +125,6 @@ class WriteTool extends ToolDef with IntentionalTool {
     }
     if (content == null) {
       return ToolResult.error('Missing required parameter: content');
-    }
-    if (containsOffloadStandIn(content)) {
-      return ToolResult.error(
-        'Refusing to write offloaded-content stand-in text into a file. '
-        'The `content` argument contains a `[offloaded: ...]` history '
-        'placeholder, not the original file bytes. Re-read the file or '
-        'provide the real content before calling `write`.',
-      );
     }
 
     final resolved = resolvePath(filePath, ctx.workingDirectory);

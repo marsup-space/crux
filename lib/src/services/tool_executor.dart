@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import '../models/provider_config.dart';
-import '../storage/message_store.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import 'llm_client.dart';
@@ -28,9 +27,8 @@ class _ToolCallAccum {
 
 class ToolExecutor {
   final ToolRegistry _registry;
-  final MessageStore _messageStore;
 
-  ToolExecutor(this._registry, this._messageStore);
+  ToolExecutor(this._registry);
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
@@ -43,75 +41,6 @@ class ToolExecutor {
       return ToolResult.error('Unknown tool: ${call.name}');
     }
     return tool.execute(call.input, ctx);
-  }
-
-  /// Return a [ToolCall] whose `input` map is safe to persist into
-  /// the conversation log. If [call] is for a [LargePayloadTool]
-  /// and any of its declared offloadable args exceeds
-  /// [offloadThresholdBytes] bytes (utf-8), the full value is
-  /// written to `offloaded_content` keyed by `(sessionId, callId)`
-  /// and replaced in the returned call's input with an
-  /// unambiguous stand-in pointer (see [_buildOffloadStandIn]).
-  ///
-  /// The original [call] is left unchanged so the tool itself
-  /// still receives the full content when it runs.
-  Future<ToolCall> compressCallForPersistence(
-    ToolCall call,
-    int sessionId,
-  ) async {
-    final tool = _registry.lookup(call.name);
-    if (tool is! LargePayloadTool) return call;
-
-    // Extract intent from args if the tool supports it, so the
-    // stand-in pointer can carry a human-readable summary of what
-    // the offloaded content was about. This helps the LLM reason
-    // about compressed history without needing to recall the full
-    // bytes on every subsequent turn.
-    final String? intent;
-    if (tool is IntentionalTool) {
-      intent = (tool as IntentionalTool).intentFromArgs(call.input);
-    } else {
-      final v = call.input['intent'];
-      intent = v is String && v.isNotEmpty ? v : null;
-    }
-
-    var modified = false;
-    var newInput = call.input;
-    for (final argKey in tool.offloadableArgs) {
-      final value = newInput[argKey];
-      if (value is! String) continue;
-      final bytes = utf8.encode(value);
-      if (bytes.length < offloadThresholdBytes) continue;
-
-      final lineCount = '\n'.allMatches(value).length + 1;
-      final compositeKey = '${call.callId}_$argKey';
-      await _messageStore.saveOffloadedContent(
-        sessionId: sessionId,
-        callId: compositeKey,
-        toolName: call.name,
-        byteSize: bytes.length,
-        lineCount: lineCount,
-        content: value,
-        intent: intent ?? '',
-      );
-      newInput = Map<String, dynamic>.from(newInput);
-      newInput[argKey] = _buildOffloadStandIn(
-        callId: call.callId,
-        argKey: argKey,
-        lineCount: lineCount,
-        bytes: bytes.length,
-        intent: intent,
-      );
-      modified = true;
-    }
-
-    if (!modified) return call;
-    return ToolCall(
-      callId: call.callId,
-      name: call.name,
-      input: newInput,
-      parseError: call.parseError,
-    );
   }
 
   Map<String, dynamic> formatToolResultForApi(
@@ -245,57 +174,4 @@ class ToolExecutor {
     }
     return null;
   }
-}
-
-String _formatBytes(int bytes) {
-  if (bytes < 1024) return '${bytes}B';
-  if (bytes < 1024 * 1024) {
-    return '${(bytes / 1024).toStringAsFixed(1)}KB';
-  }
-  return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
-}
-
-/// Build the stand-in pointer that replaces a large offloadable
-/// argument in the persisted tool_call.
-///
-/// The pointer is visible to the LLM in the conversation history
-/// (it's the value of the argument on the next turn) and on rare
-/// occasions the LLM has pasted it into a subsequent `edit` /
-/// `write` `oldString` / `newString` / `content`, polluting the
-/// file. The format is therefore designed to NOT look like a
-/// numbered line of source code (the `read` tool prefixes each
-/// line with `N: `, so a stand-in starting with `[\d+` is
-/// visually adjacent to that prefix and gets mis-copied).
-///
-/// Three properties that make the pointer robust against that bug:
-///
-/// 1. It does not start with `[\d+`. It starts with the literal
-///    word `offloaded` so the LLM can recognize it as
-///    meta-content, not as a line of code.
-///
-/// 2. It includes the composite key (`<callId>_<argKey>`) of the
-///    row in `offloaded_content` where the full bytes live, so
-///    the LLM has the information it needs to recover the bytes
-///    via the `recall` tool. (The previous format omitted this
-///    and the LLM had no way to know how to recover.)
-///
-/// 3. When [intent] is provided, it is embedded in the pointer
-///    so the LLM can understand *what* the offloaded content was
-///    about without having to recall it — this is especially
-///    valuable on subsequent turns where the LLM is reasoning
-///    over compressed history and the full arg bytes are no
-///    longer in context.
-String _buildOffloadStandIn({
-  required String callId,
-  required String argKey,
-  required int lineCount,
-  required int bytes,
-  String? intent,
-}) {
-  final compositeKey = '${callId}_$argKey';
-  final intentFragment = intent != null && intent.isNotEmpty
-      ? '; intent: "$intent"'
-      : '';
-  return '[offloaded: $lineCount lines / ${_formatBytes(bytes)}$intentFragment; '
-      'recall via offloaded_content(key="$compositeKey")]';
 }

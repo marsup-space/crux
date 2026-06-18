@@ -7,7 +7,7 @@ const _unset = Object();
 
 /// Data-access layer for sessions.
 ///
-/// Message, parts, and offloaded-content CRUD live in [MessageStore].
+/// Message and parts CRUD live in [MessageStore].
 /// This class implements [SessionStoreAccessor] so [MessageStore] can
 /// bump `updated_at` on message writes without a circular dependency.
 class SessionStore implements SessionStoreAccessor {
@@ -111,11 +111,6 @@ class SessionStore implements SessionStoreAccessor {
         updatedAt: Value(nowMs),
       ),
     );
-    // Free the off-loaded bytes tied to this session. The session
-    // itself survives archive (just hidden from the sidebar), so a
-    // future unarchive can still read the message history; only the
-    // recallable bytes are dropped.
-    await messageStore.cleanOffloadedContent(id);
   }
 
   Future<void> unarchiveSession(int id) async {
@@ -218,9 +213,6 @@ class SessionStore implements SessionStoreAccessor {
   }
 
   Future<void> deleteSession(int id) async {
-    await (_db.delete(_db.offloadedContent)
-          ..where((t) => t.sessionId.equals(id)))
-        .go();
     await (_db.delete(_db.fileReadState)
           ..where((t) => t.sessionId.equals(id)))
         .go();

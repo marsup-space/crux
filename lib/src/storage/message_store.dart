@@ -6,7 +6,7 @@ import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/part.dart';
 
-/// Data-access layer for messages, parts, and offloaded content.
+/// Data-access layer for messages and parts.
 ///
 /// Split from [SessionStore] so each class owns a single table family.
 /// The [sessionStore] reference supports the `_touchSession` side-effect
@@ -40,7 +40,6 @@ class MessageStore {
     List<ToolCallData> toolCalls = const [],
     String toolCallId = '',
     String tldr = '',
-    int? preCompressTokens,
     List<ImageAttachment> images = const [],
   }) async {
     final now = DateTime.now();
@@ -66,7 +65,6 @@ class MessageStore {
             toolCalls: Value(Message.encodeToolCalls(toolCalls)),
             toolCallId: Value(toolCallId),
             tldr: Value(tldr),
-            preCompressTokens: Value(preCompressTokens),
             images: Value(ImageAttachment.encodeList(images)),
           ),
         );
@@ -88,7 +86,6 @@ class MessageStore {
       tokensIn: tokensIn,
       tokensOut: tokensOut,
       error: error,
-      preCompressTokens: preCompressTokens,
       createdAt: now,
       toolCalls: toolCalls,
       toolCallId: toolCallId,
@@ -112,7 +109,6 @@ class MessageStore {
     int thinkingDurationMs = 0,
     String? reasoningEffort,
     required List<ToolCallData> toolCalls,
-    int? preCompressTokens,
     required List<({String callId, String output})> results,
   }) {
     return _db.transaction(() async {
@@ -126,7 +122,6 @@ class MessageStore {
         thinkingDurationMs: thinkingDurationMs,
         reasoningEffort: reasoningEffort,
         toolCalls: toolCalls,
-        preCompressTokens: preCompressTokens,
       );
       for (final r in results) {
         await addMessage(
@@ -236,85 +231,6 @@ class MessageStore {
     return rows.map(_rowToPart).toList();
   }
 
-  // ── Offloaded content ────────────────────────────────────────────
-
-  /// Persist the full bytes of a large tool-call argument that has
-  /// been off-loaded from the conversation log. The persisted
-  /// tool_call's argument is replaced with a stand-in pointer;
-  /// this row is the recovery target for the `recall` tool.
-  Future<void> saveOffloadedContent({
-    required int sessionId,
-    required String callId,
-    required String toolName,
-    required int byteSize,
-    required int lineCount,
-    required String content,
-    String intent = '',
-  }) async {
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    await _db.into(_db.offloadedContent).insert(
-      db.OffloadedContentCompanion.insert(
-        sessionId: sessionId,
-        callId: callId,
-        toolName: toolName,
-        byteSize: byteSize,
-        lineCount: lineCount,
-        content: content,
-        intent: Value(intent),
-        createdAt: nowMs,
-      ),
-      mode: InsertMode.insertOrReplace,
-    );
-  }
-
-  /// Return the full content for a previously off-loaded
-  /// `(sessionId, callId)` pair, or `null` if the row is gone.
-  Future<String?> getOffloadedContent(int sessionId, String callId) async {
-    final row = await (_db.select(_db.offloadedContent)
-          ..where(
-            (t) => t.sessionId.equals(sessionId) & t.callId.equals(callId),
-          ))
-        .getSingleOrNull();
-    return row?.content;
-  }
-
-  /// Return all offloaded-content rows for a tool call identified
-  /// by [sessionId] and [toolCallId] (the LLM-assigned call ID,
-  /// not the composite key). The composite keys in the DB have the
-  /// format `<toolCallId>_<argKey>`, so we match rows whose
-  /// `callId` starts with `<toolCallId>_`.
-  Future<List<db.OffloadedContentData>> getAllOffloadedContentForCall(
-    int sessionId,
-    String toolCallId,
-  ) async {
-    final prefix = '${toolCallId}_';
-    return (_db.select(_db.offloadedContent)
-          ..where(
-            (t) =>
-                t.sessionId.equals(sessionId) &
-                t.callId.like('$prefix%'),
-          ))
-        .get();
-  }
-
-  /// Delete every off-loaded-content row for [sessionId]. Returns
-  /// the number of bytes freed (sum of `byte_size` over the deleted
-  /// rows, or 0 if nothing was off-loaded). Called from
-  /// `archiveSession` today; will be called from `/compact` once
-  /// that lands.
-  Future<int> cleanOffloadedContent(int sessionId) async {
-    final sumRow = await (_db.selectOnly(_db.offloadedContent)
-          ..addColumns([_db.offloadedContent.byteSize.sum()])
-          ..where(_db.offloadedContent.sessionId.equals(sessionId)))
-        .map((row) => row.read(_db.offloadedContent.byteSize.sum()) ?? 0)
-        .getSingleOrNull();
-    final bytesFreed = sumRow ?? 0;
-    await (_db.delete(_db.offloadedContent)
-          ..where((t) => t.sessionId.equals(sessionId)))
-        .go();
-    return bytesFreed;
-  }
-
   // ── Row mappers ──────────────────────────────────────────────────
 
   Message _rowToMessage(db.Message row) {
@@ -334,7 +250,6 @@ class MessageStore {
       tokensOut: row.tokensOut,
       error: row.error,
       parentMsgId: row.parentMsgId,
-      preCompressTokens: row.preCompressTokens,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       toolCalls: Message.parseToolCallsJson(row.toolCalls),
       toolCallId: row.toolCallId,

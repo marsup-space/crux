@@ -56,7 +56,7 @@ void main() {
       store = SessionStore(db);
       tracker = FileReadTracker();
       registry = ToolRegistry()..registerDefaults(tracker);
-      executor = ToolExecutor(registry, store.messageStore);
+      executor = ToolExecutor(registry);
     });
 
     tearDown(() async {

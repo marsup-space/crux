@@ -49,12 +49,8 @@ class Messages extends Table {
   TextColumn get error => text().nullable()();
   IntColumn get parentMsgId => integer().nullable()();
 
-  /// Total round-trip token cost of the tool_call's args *before*
-  /// compression. Set by the chat service when a LargePayloadTool's
-  /// large args were off-loaded. Null for non-tool-call messages
-  /// and for tool_call messages whose args were small enough to
-  /// keep in full. The chat bubble uses this to render the
-  /// pre/post compression comparison (e.g. `~~5000t~~, compressed: 15t`).
+  /// Orphaned column — the offloading infrastructure was removed.
+  /// Kept in the schema so drift's codegen compiles, but never read.
   IntColumn get preCompressTokens => integer().nullable()();
   TextColumn get images => text().withDefault(const Constant(''))();
   IntColumn get createdAt => integer()();
@@ -81,17 +77,10 @@ class Parts extends Table {
   IntColumn get createdAt => integer()();
 }
 
-/// Off-loaded large tool-call argument values. When a [LargePayloadTool]
-/// call's argument (e.g. `write.content`, `edit.oldString/newString`)
-/// exceeds the offload threshold, the full bytes are written here and
-/// the persisted tool_call's argument is replaced with a stand-in
-/// pointer (`[N lines, B bytes; recall: <callId>]`). The LLM can
-/// recover the full bytes on demand via the `recall` tool.
-///
-/// Lifetime is bound to the session: `ON DELETE CASCADE` on the FK
-/// to `sessions` ensures the bytes die with the session (whether by
-/// explicit delete, or — once `/compact` exists — by a future
-/// `cleanOffloadedContent` call from `archiveSession`).
+/// Orphaned table — the offloading infrastructure was removed.
+/// Kept in the schema so drift's codegen compiles and past
+/// migrations work, but the actual on-disk table is dropped at
+/// schema v16 via [CruxDatabase._dropOffloadedContent].
 class OffloadedContent extends Table {
   IntColumn get sessionId =>
       integer().references(Sessions, #id, onDelete: KeyAction.cascade)();

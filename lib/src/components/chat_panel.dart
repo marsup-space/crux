@@ -9,6 +9,7 @@ import '../services/chat_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/providers/coding_plan_provider.dart';
+import '../services/providers/credit_balance_provider.dart';
 import '../services/recent_projects_store.dart';
 import '../services/tool_executor.dart';
 import '../storage/database.dart' hide Session, Message, Part;
@@ -113,13 +114,26 @@ class _ChatPanelState extends State<ChatPanel> {
   /// stash it separately on the panel.
   CodingPlanProvider? _activeCodingPlanProvider;
 
+  // ─── Credit-balance polling state ────────────────────────────
+
+  /// The active `CreditBalanceProvider` mixin for the current
+  /// model, or null if the active provider has no credit
+  /// balance or no API key. Recomputed on every build; the
+  /// toolbar reads this to decide whether to render the
+  /// balance cell.
+  CreditBalanceProvider? _activeCreditBalanceProvider;
+
   /// The last provider name + activity state we synchronized
-  /// polling for. Used to short-circuit [_syncCodingPlanPolling]
-  /// when nothing actually changed (the chat panel rebuilds
-  /// on every keystroke and we don't want to re-issue
-  /// `startCodingPlanPolling` needlessly).
-  String? _lastSyncedProviderName;
-  bool? _lastSyncedHasActiveSession;
+  /// coding-plan polling for. Used to short-circuit
+  /// [_syncCodingPlanPolling] when nothing actually changed.
+  String? _lastSyncedCpProviderName;
+  bool? _lastSyncedCpHasActiveSession;
+
+  /// The last provider name + activity state we synchronized
+  /// credit-balance polling for. Used to short-circuit
+  /// [_syncCreditBalancePolling] when nothing actually changed.
+  String? _lastSyncedCbProviderName;
+  bool? _lastSyncedCbHasActiveSession;
 
   final _toastKey = GlobalKey<ToastHubState>();
   final _chatInputKey = GlobalKey<ChatInputState>();
@@ -168,7 +182,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _tracker = tracker;
     final registry = ToolRegistry();
     registry.registerDefaults(tracker);
-    final toolExecutor = ToolExecutor(registry, _store.messageStore);
+    final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
     _chatService = ChatService(
       _store,
@@ -376,8 +390,8 @@ class _ChatPanelState extends State<ChatPanel> {
     // rebuilds on every keystroke, so this short-circuit
     // matters — without it we'd re-issue start/stop on
     // every render.
-    if (providerName == _lastSyncedProviderName &&
-        hasActive == _lastSyncedHasActiveSession) {
+    if (providerName == _lastSyncedCpProviderName &&
+        hasActive == _lastSyncedCpHasActiveSession) {
       return;
     }
 
@@ -386,7 +400,7 @@ class _ChatPanelState extends State<ChatPanel> {
     // one (if any). When activity flips while the provider
     // stays the same, just update the cadence — no need
     // to tear down the timer.
-    final providerChanged = providerName != _lastSyncedProviderName;
+    final providerChanged = providerName != _lastSyncedCpProviderName;
 
     if (providerChanged && _activeCodingPlanProvider != null) {
       _activeCodingPlanProvider!.stopCodingPlanPolling();
@@ -403,8 +417,8 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
-    _lastSyncedProviderName = providerName;
-    _lastSyncedHasActiveSession = hasActive;
+    _lastSyncedCpProviderName = providerName;
+    _lastSyncedCpHasActiveSession = hasActive;
   }
 
   /// True if any session in the panel is currently
@@ -416,6 +430,62 @@ class _ChatPanelState extends State<ChatPanel> {
       if (_sessionController.runtime(s.id).isResponding) return true;
     }
     return false;
+  }
+
+  /// Resolve the active model's [CreditBalanceProvider] mixin
+  /// (if any) and re-align polling state with it. Parallel to
+  /// [_syncCodingPlanPolling] but for credit-balance providers
+  /// (currently just DeepSeek).
+  void _syncCreditBalancePolling() {
+    if (!_providerServiceReady) return;
+
+    final modelKey = _sessionController.currentSession.model;
+    final slashIdx = modelKey.indexOf('/');
+    final providerName = slashIdx > 0
+        ? modelKey.substring(0, slashIdx)
+        : null;
+
+    CreditBalanceProvider? provider;
+    String? apiKey;
+    if (providerName != null) {
+      final llm = _providerService.llmProviderByName(providerName);
+      if (llm is CreditBalanceProvider) {
+        provider = llm;
+        apiKey = _providerService.getApiKey(providerName);
+        if (apiKey == null || apiKey.isEmpty) {
+          provider = null;
+          apiKey = null;
+        }
+      }
+    }
+
+    final hasActive = _hasActiveSession();
+
+    // No-op when nothing changed.
+    if (providerName == _lastSyncedCbProviderName &&
+        hasActive == _lastSyncedCbHasActiveSession) {
+      return;
+    }
+
+    final providerChanged = providerName != _lastSyncedCbProviderName;
+
+    if (providerChanged && _activeCreditBalanceProvider != null) {
+      _activeCreditBalanceProvider!.stopCreditBalancePolling();
+      _activeCreditBalanceProvider = null;
+    }
+
+    if (provider != null && apiKey != null) {
+      _activeCreditBalanceProvider = provider;
+      provider.startCreditBalancePolling(
+        apiKey: apiKey,
+        interval: hasActive
+            ? _kCodingPlanActiveInterval
+            : _kCodingPlanIdleInterval,
+      );
+    }
+
+    _lastSyncedCbProviderName = providerName;
+    _lastSyncedCbHasActiveSession = hasActive;
   }
 
   @override
@@ -440,6 +510,8 @@ class _ChatPanelState extends State<ChatPanel> {
     // read `latestCodingPlanUsage`.
     _activeCodingPlanProvider?.stopCodingPlanPolling();
     _activeCodingPlanProvider = null;
+    _activeCreditBalanceProvider?.stopCreditBalancePolling();
+    _activeCreditBalanceProvider = null;
     scrollController.dispose();
     textController.dispose();
     super.dispose();
@@ -637,33 +709,9 @@ class _ChatPanelState extends State<ChatPanel> {
         toolCall: toolCall,
         pairedResult: pairedResult,
         toolRegistry: _toolRegistry,
-        sessionId: _sessionController.currentSessionId,
-        getOffloadedContent: _getOffloadedContent,
       );
       _overlayController.showFullpane = true;
     });
-  }
-
-  /// Retrieve all offloaded content for a tool call.
-  /// Returns a map of argKey → original content string.
-  Future<Map<String, String>> _getOffloadedContent(
-    int sessionId,
-    String callId,
-  ) async {
-    final rows = await _store.messageStore.getAllOffloadedContentForCall(
-      sessionId,
-      callId,
-    );
-    final result = <String, String>{};
-    final prefix = '${callId}_';
-    for (final row in rows) {
-      // The composite key is `callId_argKey`, extract the argKey.
-      if (row.callId.startsWith(prefix)) {
-        final argKey = row.callId.substring(prefix.length);
-        result[argKey] = row.content;
-      }
-    }
-    return result;
   }
 
   void _closeFullpane() {
@@ -818,6 +866,9 @@ class _ChatPanelState extends State<ChatPanel> {
     // when neither has changed since the last build.
     _syncCodingPlanPolling();
 
+    // Re-align the credit-balance polling timer.
+    _syncCreditBalancePolling();
+
     // Wrap the top-level build in a profiler section so
     // the report can show how much of each frame was spent
     // in the chat panel's build itself (vs. layout / paint
@@ -861,6 +912,7 @@ class _ChatPanelState extends State<ChatPanel> {
             providerService: _providerService,
             providerServiceReady: _providerServiceReady,
             codingPlanProvider: _activeCodingPlanProvider,
+            creditBalanceProvider: _activeCreditBalanceProvider,
             runtime: rt,
             contextMaxTokens: _contextMaxTokens,
             onModelPressed: _onModelButtonPressed,

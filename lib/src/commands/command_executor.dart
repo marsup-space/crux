@@ -320,7 +320,7 @@ class CommandExecutor {
   /// - `/provider <name>`             → show that provider's status
   ///                                   (key set? endpoint? models?)
   /// - `/provider <name> <key>`       → persist the API key (writes
-  ///                                   to `auth.json` with `0o600`)
+  ///                                   to `auth.toml` with `0o600`)
   /// - `/provider <name> remove`      → delete the persisted key
   Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
     final name = parts.length > 1 ? parts[1].trim() : '';
@@ -1003,10 +1003,11 @@ class CommandExecutor {
     buf.writeln(
       '  builtInProvDir: ${ctx.providerService.builtInProvidersDir ?? "—"}',
     );
+    buf.writeln('  authTomlPath:   ${ctx.providerService.authTomlPath}');
     buf.writeln('  authJsonPath:   ${ctx.providerService.authJsonPath}');
     buf.writeln('  dataDir:        $dataDir');
     buf.writeln('  databaseFile:   ${p.join(dataDir, "crux.db")}');
-    buf.writeln('  recentProjects: ${p.join(dataDir, "recent_projects.json")}');
+    buf.writeln('  recentProjects: ${p.join(dataDir, "recent_projects.toml")}');
     buf.writeln('  cwd:            ${Directory.current.path}');
     ctx.showToast(buf.toString().trimRight());
   }
@@ -1054,7 +1055,7 @@ class CommandExecutor {
   }
 
   /// `/d-profiler [<secs> [<path>]]` — record per-frame
-  /// scheduler timings and dump a JSON report.
+  /// scheduler timings and dump a TOML report.
   ///
   /// Forms:
   /// - `/d-profiler` (no args)           → show status
@@ -1066,7 +1067,7 @@ class CommandExecutor {
   ///   smoke test).
   /// - `/d-profiler <secs> <path>`       → same, but write
   ///   the report to `<path>` instead of the default
-  ///   `profile-<iso>.json` location.
+  ///   `profile-<iso>.toml` location.
   /// - `/d-profiler stop`                → stop the active
   ///   recording immediately and dump the report.
   ///
@@ -1113,7 +1114,7 @@ class CommandExecutor {
       }
       final report = profiler.stop();
       final path = second.isEmpty ? _profilerDefaultPath() : second;
-      await FrameProfiler.writeJson(path, report);
+      await FrameProfiler.writeReport(path, report);
       _showProfilerSummary(ctx, report, path);
       return;
     }
@@ -1159,7 +1160,7 @@ class CommandExecutor {
 
   static String _profilerDefaultPath() {
     final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
-    return p.join(resolveUserDataDirectory(), 'profile-$ts.json');
+    return p.join(resolveUserDataDirectory(), 'profile-$ts.toml');
   }
 
   /// Compact one-screen summary of a profiler report, rendered

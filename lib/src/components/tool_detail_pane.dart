@@ -5,7 +5,6 @@ import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
-import '../utils/offload_standin.dart';
 import '../utils/token_estimate.dart';
 import 'ui/highlighted_markdown_text.dart';
 
@@ -15,20 +14,10 @@ class ToolDetailData {
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
 
-  /// Session ID for looking up offloaded content.
-  final int? sessionId;
-
-  /// Callback to retrieve offloaded content for a tool call.
-  /// Returns a map of argKey → original content string.
-  final Future<Map<String, String>> Function(int sessionId, String callId)?
-      getOffloadedContent;
-
   const ToolDetailData({
     required this.toolCall,
     this.pairedResult,
     this.toolRegistry,
-    this.sessionId,
-    this.getOffloadedContent,
   });
 }
 
@@ -51,10 +40,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   /// Active tab: 0 = pretty, 1 = raw.
   int _activeTab = 0;
 
-  /// Original content for offloaded args, keyed by arg name.
-  Map<String, String> _offloadedArgs = {};
-  bool _offloadLoading = true;
-
   /// Scroll controllers for each tab.
   final _prettyScrollController = ScrollController();
   final _rawScrollController = ScrollController();
@@ -62,22 +47,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   @override
   void initState() {
     super.initState();
-    _loadOffloadedContent();
-  }
-
-  @override
-  void didUpdateComponent(covariant ToolDetailPane oldComponent) {
-    super.didUpdateComponent(oldComponent);
-    // When the tool call changes (e.g. navigating between tool calls
-    // without closing the fullpane), reload the offloaded content for
-    // the new call. Without this, the stale _offloadedArgs map from
-    // the previous tool call persists and the new tool's pretty view
-    // shows "offloaded, unavailable" because its arg keys don't match.
-    if (component.data.toolCall.callId != oldComponent.data.toolCall.callId) {
-      _offloadedArgs = {};
-      _offloadLoading = true;
-      _loadOffloadedContent();
-    }
   }
 
   @override
@@ -87,40 +56,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     super.dispose();
   }
 
-  Future<void> _loadOffloadedContent() async {
-    final data = component.data;
-    final sessionId = data.sessionId;
-    final getter = data.getOffloadedContent;
-    if (sessionId == null || getter == null) {
-      if (mounted) setState(() => _offloadLoading = false);
-      return;
-    }
-    try {
-      final result = await getter(sessionId, data.toolCall.callId);
-      if (mounted) {
-        setState(() {
-          _offloadedArgs = result;
-          _offloadLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _offloadLoading = false);
-    }
-  }
-
-  // ── Resolve the real value for an arg, recovering offloaded content ──
+  // ── Resolve the real value for an arg ──
 
   String _resolveArg(String key, dynamic rawValue) {
-    final valueStr = _formatValue(rawValue);
-    final tc = component.data.toolCall;
-    final tool = component.data.toolRegistry?.lookup(tc.name);
-    if (tool is LargePayloadTool && tool.offloadableArgs.contains(key)) {
-      final standIn = _parseOffloadStandIn(valueStr);
-      if (standIn != null) {
-        return _offloadedArgs[key] ?? valueStr;
-      }
-    }
-    return valueStr;
+    return _formatValue(rawValue);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -272,23 +211,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     children.add(_fileHeader(filePath, intent, theme));
 
     // Content — syntax-highlighted code block
-    final standIn = _parseOffloadStandIn(content);
-    if (standIn != null) {
-      // Content was offloaded — show recovered content or status
-      final recovered = _offloadedArgs['content'];
-      if (recovered != null) {
-        children.add(Expanded(
-          child: _scrollableCodeBlock(recovered, language ?? '', theme),
-        ));
-      } else if (_offloadLoading) {
-        children.add(_dimText('  loading content…', theme));
-      } else {
-        children.add(_dimText(
-          '  ${standIn.lineCount} lines, ${standIn.sizeStr} (offloaded, unavailable)',
-          theme,
-        ));
-      }
-    } else if (content.isEmpty) {
+    if (content.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Expanded(
@@ -323,23 +246,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // Old → New diff-style view
     children.add(_sectionHeading('Old', theme, color: theme.error));
-    final oldStandIn = _parseOffloadStandIn(oldStr);
-    if (oldStandIn != null) {
-      final recovered = _offloadedArgs['oldString'];
-      if (recovered != null) {
-        children.add(Container(
-          padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(recovered, language ?? '', theme),
-        ));
-      } else if (_offloadLoading) {
-        children.add(_dimText('  loading…', theme));
-      } else {
-        children.add(_dimText(
-          '  ${oldStandIn.lineCount} lines (offloaded, unavailable)',
-          theme,
-        ));
-      }
-    } else if (oldStr.isEmpty) {
+    if (oldStr.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Container(
@@ -350,23 +257,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     children.add(Divider(color: theme.dividerDim, height: 1));
     children.add(_sectionHeading('New', theme, color: theme.success));
-    final newStandIn = _parseOffloadStandIn(newStr);
-    if (newStandIn != null) {
-      final recovered = _offloadedArgs['newString'];
-      if (recovered != null) {
-        children.add(Container(
-          padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(recovered, language ?? '', theme),
-        ));
-      } else if (_offloadLoading) {
-        children.add(_dimText('  loading…', theme));
-      } else {
-        children.add(_dimText(
-          '  ${newStandIn.lineCount} lines (offloaded, unavailable)',
-          theme,
-        ));
-      }
-    } else if (newStr.isEmpty) {
+    if (newStr.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
       children.add(Container(
@@ -894,34 +785,14 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
   Component _buildArgBlock(String key, dynamic value, CruxThemeData theme) {
     final valueStr = _formatValue(value);
-
-    final tc = component.data.toolCall;
-    final tool = component.data.toolRegistry?.lookup(tc.name);
-    if (tool is LargePayloadTool &&
-        tool.offloadableArgs.contains(key)) {
-      final standIn = _parseOffloadStandIn(valueStr);
-      if (standIn != null) {
-        final original = _offloadedArgs[key];
-        if (original != null) {
-          return _buildArgBlockWithContent(key, original, theme, wasOffloaded: true);
-        }
-        if (_offloadLoading) {
-          return _buildLargeArgSummary(key, valueStr, theme, loading: true);
-        }
-        return _buildLargeArgSummary(key, valueStr, theme);
-      }
-      return _buildArgBlockWithContent(key, valueStr, theme);
-    }
-
     return _buildArgBlockWithContent(key, valueStr, theme);
   }
 
   Component _buildArgBlockWithContent(
     String key,
     String valueStr,
-    CruxThemeData theme, {
-    bool wasOffloaded = false,
-  }) {
+    CruxThemeData theme,
+  ) {
     final isLong = valueStr.length > 80 || valueStr.contains('\n');
     final language = _languageForArgKey(key);
 
@@ -930,15 +801,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       text: '$key ',
       style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
     ));
-    if (wasOffloaded) {
-      headerSpans.add(TextSpan(
-        text: '(offloaded) ',
-        style: TextStyle(
-          color: theme.onSurfaceDim,
-          fontStyle: FontStyle.italic,
-        ),
-      ));
-    }
     if (!isLong) {
       headerSpans.add(TextSpan(
         text: valueStr,
@@ -964,50 +826,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
             child: _inlineCodeBlock(valueStr, language, theme),
           ),
       ],
-    );
-  }
-
-  Component _buildLargeArgSummary(
-    String key,
-    String valueStr,
-    CruxThemeData theme, {
-    bool loading = false,
-  }) {
-    if (loading) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-        child: Row(
-          children: [
-            Text('$key ', style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold)),
-            Expanded(child: Text('loading…', style: TextStyle(color: theme.onSurfaceDim, fontStyle: FontStyle.italic))),
-          ],
-        ),
-      );
-    }
-
-    final standIn = _parseOffloadStandIn(valueStr);
-    String metricsText;
-    if (standIn != null) {
-      metricsText = '${standIn.lineCount} lines, ${standIn.sizeStr}'
-          '${standIn.intent != null ? " (intent: '${standIn.intent}')" : ''}';
-    } else if (valueStr.isEmpty) {
-      metricsText = 'empty';
-    } else {
-      final lineCount = '\n'.allMatches(valueStr).length + 1;
-      final sizeStr = valueStr.length > 1024
-          ? '${(valueStr.length / 1024).toStringAsFixed(1)}KB'
-          : '${valueStr.length}B';
-      metricsText = '$lineCount lines, $sizeStr';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          Text('$key ', style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold)),
-          Expanded(child: Text(metricsText, style: TextStyle(color: theme.onSurfaceDim))),
-        ],
-      ),
     );
   }
 
@@ -1109,10 +927,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   /// Strip the `[exit code: N]` line from shell output.
   String _stripExitCodeLine(String output) {
     return output.replaceFirst(RegExp(r'\n?\[exit code:\s*\d+\]\s*$'), '');
-  }
-
-  _OffloadStandIn? _parseOffloadStandIn(String text) {
-    return parseOffloadStandIn(text);
   }
 
   String _formatValue(dynamic value) {
@@ -1224,9 +1038,3 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     'svelte': 'html',
   };
 }
-
-/// Parsed metrics from an offload stand-in pointer string.
-/// Re-exported as a type alias so the existing call sites can
-/// keep referring to it as `_OffloadStandIn?` while the canonical
-/// definition lives in `utils/offload_standin.dart`.
-typedef _OffloadStandIn = OffloadStandIn;

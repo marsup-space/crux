@@ -282,9 +282,6 @@ class SessionController {
                 toolName: call.name,
                 args: call.input,
                 resultOutput: '',
-                excludeArgsFromEstimate: _chatService.offloadableArgsForTool(
-                  call.name,
-                ),
               );
             }
           case 'tool':

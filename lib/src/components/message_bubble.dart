@@ -283,7 +283,6 @@ class MessageBubble extends StatelessComponent {
                       toolCall: tc,
                       pairedResult: pairedResult,
                       toolRegistry: toolRegistry,
-                      preCompressTokens: message.preCompressTokens,
                       onTap: onToolCallTap,
                     ))
                 .toList(),
@@ -303,14 +302,12 @@ class _ClickableToolCall extends StatefulComponent {
   final ToolCallData toolCall;
   final Message? pairedResult;
   final ToolRegistry? toolRegistry;
-  final int? preCompressTokens;
   final void Function(ToolCallData toolCall, Message? pairedResult)? onTap;
 
   const _ClickableToolCall({
     required this.toolCall,
     this.pairedResult,
     this.toolRegistry,
-    this.preCompressTokens,
     this.onTap,
   });
 
@@ -355,9 +352,6 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
       fallbackText = _resultMetrics(resultContent);
     }
 
-    final preCompress = component.preCompressTokens;
-    final isCompressed = preCompress != null && preCompress > 0;
-
     // For intentional tools, prefer displaying the intent over the
     // file path so the user sees *why* the tool was called.
     final intentLabel = _intentLabel(tc, tool);
@@ -383,32 +377,10 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
         text: '${summary.text}, ',
         style: TextStyle(color: theme.onSurfaceDim),
       ));
-      if (isCompressed && !isGuard && !isAutoRead) {
-        final hasSavings = summary.argsTokens < preCompress;
-        if (hasSavings) {
-          bodySpans.add(TextSpan(
-            text: '$preCompress t',
-            style: TextStyle(
-              color: theme.onSurfaceDim,
-              decoration: TextDecoration.lineThrough,
-            ),
-          ));
-          bodySpans.add(TextSpan(
-            text: ' → ~${summary.argsTokens} t',
-            style: TextStyle(color: theme.onSurfaceDim),
-          ));
-        } else {
-          bodySpans.add(TextSpan(
-            text: '~${summary.totalTokens} t',
-            style: TextStyle(color: theme.onSurfaceDim),
-          ));
-        }
-      } else {
-        bodySpans.add(TextSpan(
-          text: '~${summary.totalTokens} t',
-          style: TextStyle(color: theme.onSurfaceDim),
-        ));
-      }
+      bodySpans.add(TextSpan(
+        text: '~${summary.totalTokens} t',
+        style: TextStyle(color: theme.onSurfaceDim),
+      ));
     } else if (fallbackText != null && fallbackText.isNotEmpty) {
       bodySpans.add(TextSpan(
         text: fallbackText,

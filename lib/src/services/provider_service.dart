@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+import 'package:toml/toml.dart';
+
 import '../models/provider_config.dart';
 import '../utils/user_data_directory.dart';
 import 'llm_provider.dart';
@@ -81,27 +84,31 @@ class ProviderService {
   final ProviderConfigLoader _loader;
 
   /// API keys stored in-memory, keyed by env var name (e.g.
-  /// `CRUX_API_KEY_OPENAI`). Populated from [authJsonPath] on initialization
+  /// `CRUX_API_KEY_OPENAI`). Populated from the auth file on initialization
   /// and updated by [setApiKey] / [removeApiKey].
   final Map<String, String> _envKeys = {};
 
   /// The last model the user switched to via `/model`. Persisted in
-  /// `auth.json` and loaded on startup. Used by [resolveDefaultModel].
+  /// the auth file and loaded on startup. Used by [resolveDefaultModel].
   String? _lastUsedModel;
 
   /// The auxiliary model used for generating session names, summaries, etc.
-  /// Persisted in `auth.json` and loaded on startup. Global — not per-session.
+  /// Persisted in the auth file and loaded on startup. Global — not per-session.
   String? _auxiliaryModel;
 
   /// Character threshold for TLDR generation. If an AI response exceeds this
   /// many characters, a TLDR summary is generated using the auxiliary model.
-  /// Persisted in `auth.json`. Default is 5000.
+  /// Persisted in `auth.toml`. Default is 5000.
   int _tldrThreshold = 5000;
 
-  /// Path to the auth.json file for persistent key storage.
+  /// Path to the `auth.toml` file for persistent key storage (preferred).
   /// Uses the legacy `HOME\.local\share\crux` directory on Windows when it
   /// exists; otherwise uses `%LOCALAPPDATA%\crux`. Unix-like platforms follow
   /// XDG conventions.
+  late final String authTomlPath;
+
+  /// Legacy path to the `auth.json` file. Kept for backward compatibility —
+  /// on load we read from this if `auth.toml` doesn't exist yet.
   late final String authJsonPath;
 
   ProviderService({
@@ -113,6 +120,7 @@ class ProviderService {
              if (builtInProvidersDir != null) Directory(builtInProvidersDir),
            ],
          ) {
+    authTomlPath = p.join(resolveUserDataDirectory(), 'auth.toml');
     authJsonPath = p.join(resolveUserDataDirectory(), 'auth.json');
   }
 
@@ -121,7 +129,7 @@ class ProviderService {
   // ---------------------------------------------------------------------------
 
   /// Initializes the service: loads all provider TOML configs and API keys
-  /// from the persistent `auth.json` file.
+  /// from the persistent auth file.
   Future<void> initialize() async {
     await _loader.loadAll();
     await _loadAuthKeys();
@@ -251,7 +259,7 @@ class ProviderService {
   /// Persists the given model composite key as the last-used model.
   ///
   /// Called when the user switches model via `/model` or the local model
-  /// button. The value is stored in `auth.json` and used by
+  /// button. The value is stored in the auth file and used by
   /// [resolveDefaultModel] on the next launch.
   Future<void> setLastUsedModel(String compositeKey) async {
     _lastUsedModel = compositeKey;
@@ -259,7 +267,7 @@ class ProviderService {
   }
 
   /// Returns the last-used model composite key, or null if none has been
-  /// set in this session (or persisted in `auth.json`).
+  /// set in this session (or persisted in the auth file).
   String? get lastUsedModel => _lastUsedModel;
 
   /// Returns the auxiliary model composite key, or null if not set.
@@ -271,13 +279,13 @@ class ProviderService {
   /// Persists the given model composite key as the auxiliary model.
   ///
   /// Called when the user selects a model via `/auxiliary`. The value is
-  /// stored globally in `auth.json` and persists across sessions.
+  /// stored globally in the auth file and persists across sessions.
   Future<void> setAuxiliaryModel(String compositeKey) async {
     _auxiliaryModel = compositeKey;
     await _persistAuthKeys();
   }
 
-  /// Sets the TLDR threshold and persists it to `auth.json`.
+  /// Sets the TLDR threshold and persists it to the auth file.
   Future<void> setTldrThreshold(int threshold) async {
     _tldrThreshold = threshold;
     await _persistAuthKeys();
@@ -317,13 +325,13 @@ class ProviderService {
   }
 
   // ---------------------------------------------------------------------------
-  // API key management (env vars + auth.json persistence)
+  // API key management (env vars + auth.toml persistence)
   // ---------------------------------------------------------------------------
 
   /// Retrieves the API key for a given provider.
   ///
   /// Checks the following sources in order:
-  /// 1. Keys stored in `auth.json` (loaded into [_envKeys])
+  /// 1. Keys stored in `auth.toml` (loaded into [_envKeys])
   /// 2. Process environment variables ([Platform.environment])
   /// 3. The global default key `CRUX_API_KEY` (from either source)
   ///
@@ -342,17 +350,17 @@ class ProviderService {
     return Platform.environment['CRUX_API_KEY'];
   }
 
-  /// Stores an API key for a provider and persists it to `auth.json`.
+  /// Stores an API key for a provider and persists it to `auth.toml`.
   ///
   /// The key is written to both the in-memory map and the on-disk
-  /// `auth.json` file (XDG data dir, mode `0o600`).
+  /// `auth.toml` file (XDG data dir, mode `0o600`).
   Future<void> setApiKey(String providerName, String key) async {
     final envKey = 'CRUX_API_KEY_${providerName.toUpperCase()}';
     _envKeys[envKey] = key;
     await _persistAuthKeys();
   }
 
-  /// Removes an API key for a provider from both memory and `auth.json`.
+  /// Removes an API key for a provider from both memory and `auth.toml`.
   ///
   /// Note: if the key was also present in [Platform.environment] (set
   /// externally before the process started), it remains accessible there.
@@ -362,71 +370,131 @@ class ProviderService {
     await _persistAuthKeys();
   }
 
-  /// Loads API keys and last-used model from the `auth.json` file.
+  /// Loads API keys and last-used model from the auth file.
   ///
-  /// Supports two formats:
-  /// - **Legacy** (flat): `{ "CRUX_API_KEY_DEEPSEEK": "sk-..." }`
-  /// - **Current** (structured):
+  /// Tries `auth.toml` first, then falls back to the legacy `auth.json`.
+  ///
+  /// Supports three formats:
+  /// - **TOML** (current):
+  ///   ```toml
+  ///   [apiKeys]
+  ///   CRUX_API_KEY_DEEPSEEK = "sk-..."
+  ///   lastUsedModel = "deepseek/deepseek-v4-flash"
+  ///   tldrThreshold = 5000
+  ///   ```
+  /// - **JSON structured** (legacy):
   ///   ```json
-  ///   {
-  ///     "apiKeys": { "CRUX_API_KEY_DEEPSEEK": "sk-..." },
-  ///     "lastUsedModel": "deepseek/deepseek-v4-flash"
-  ///   }
+  ///   { "apiKeys": { "CRUX_API_KEY_DEEPSEEK": "sk-..." },
+  ///     "lastUsedModel": "deepseek/deepseek-v4-flash" }
+  ///   ```
+  /// - **JSON flat** (ancient legacy):
+  ///   ```json
+  ///   { "CRUX_API_KEY_DEEPSEEK": "sk-..." }
   ///   ```
   Future<void> _loadAuthKeys() async {
-    final file = File(authJsonPath);
-    if (!await file.exists()) return;
-    try {
-      final content = await file.readAsString();
-      final data = jsonDecode(content) as Map<String, dynamic>;
+    final data = await _tryLoadAuthToml() ?? await _tryLoadAuthJson();
+    if (data == null) return;
 
-      if (data.containsKey('apiKeys')) {
-        // Structured format
-        final apiKeys = data['apiKeys'] as Map<String, dynamic>;
+    if (data.containsKey('apiKeys')) {
+      final apiKeys = data['apiKeys'];
+      if (apiKeys is Map<String, dynamic>) {
         for (final entry in apiKeys.entries) {
           if (entry.value is String) {
             _envKeys[entry.key] = entry.value as String;
           }
         }
-        _lastUsedModel = data['lastUsedModel'] as String?;
-        _auxiliaryModel = data['auxiliaryModel'] as String?;
-        _tldrThreshold = data['tldrThreshold'] as int? ?? 5000;
-      } else {
-        // Legacy flat format — migrate on next write
-        for (final entry in data.entries) {
-          if (entry.value is String) {
-            _envKeys[entry.key] = entry.value as String;
-          }
+      }
+      _lastUsedModel = data['lastUsedModel'] as String?;
+      _auxiliaryModel = data['auxiliaryModel'] as String?;
+      _tldrThreshold = data['tldrThreshold'] as int? ?? 5000;
+    } else {
+      // Legacy flat format — migrate on next write
+      for (final entry in data.entries) {
+        if (entry.value is String) {
+          _envKeys[entry.key] = entry.value as String;
         }
       }
-    } catch (_) {
-      // Corrupt or unreadable auth file — skip gracefully
     }
   }
 
-  /// Persists API keys and last-used model to the `auth.json` file.
+  Future<Map<String, dynamic>?> _tryLoadAuthToml() async {
+    final file = File(authTomlPath);
+    if (!await file.exists()) return null;
+    try {
+      final content = await file.readAsString();
+      return TomlDocument.parse(content).toMap();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _tryLoadAuthJson() async {
+    final file = File(authJsonPath);
+    if (!await file.exists()) return null;
+    try {
+      final content = await file.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      // Migrate to TOML on next write
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists API keys and last-used model to the `auth.toml` file.
   ///
   /// Creates the XDG data directory if it doesn't exist, then writes
-  /// structured JSON with `0o600` permissions (owner rw only).
+  /// a TOML file with `0o600` permissions (owner rw only).
   Future<void> _persistAuthKeys() async {
-    final dir = File(authJsonPath).parent;
+    final dir = File(authTomlPath).parent;
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
-    final data = <String, dynamic>{
-      'apiKeys': _envKeys,
-      if (_lastUsedModel != null) 'lastUsedModel': _lastUsedModel,
-      if (_auxiliaryModel != null) 'auxiliaryModel': _auxiliaryModel,
-      'tldrThreshold': _tldrThreshold,
-    };
-    final content = '${JsonEncoder.withIndent('  ').convert(data)}\n';
-    final file = File(authJsonPath);
-    await file.writeAsString(content);
+    final buf = StringBuffer();
+    buf.writeln('# Crux persisted auth — managed by /auth');
+    if (_envKeys.isNotEmpty) {
+      buf.writeln();
+      buf.writeln('[apiKeys]');
+      for (final entry in _envKeys.entries) {
+        buf.writeln('${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}');
+      }
+    }
+    buf.writeln();
+    if (_lastUsedModel != null) {
+      buf.writeln('lastUsedModel = ${_tomlEscapeString(_lastUsedModel!)}');
+    }
+    if (_auxiliaryModel != null) {
+      buf.writeln('auxiliaryModel = ${_tomlEscapeString(_auxiliaryModel!)}');
+    }
+    buf.writeln('tldrThreshold = $_tldrThreshold');
+
+    final file = File(authTomlPath);
+    await file.writeAsString(buf.toString());
     try {
-      await Process.run('chmod', ['600', authJsonPath]);
+      await Process.run('chmod', ['600', authTomlPath]);
     } catch (_) {
       // chmod may not be available on all platforms
     }
+  }
+
+  /// Escape a string for a TOML basic string value.
+  static String _tomlEscapeString(String s) {
+    final escaped = s
+        .replaceAll('\\', '\\\\')
+        .replaceAll('"', '\\"')
+        .replaceAll('\b', '\\b')
+        .replaceAll('\f', '\\f')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r')
+        .replaceAll('\t', '\\t');
+    return '"$escaped"';
+  }
+
+  /// Escape a TOML bare key, falling back to quoted if needed.
+  static String _tomlEscapeKey(String s) {
+    // Bare keys: [A-Za-z0-9_-]+
+    if (RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(s)) return s;
+    return _tomlEscapeString(s);
   }
 
 }

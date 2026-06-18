@@ -943,30 +943,6 @@ void main() {
       );
       expect(withOverhead, greaterThan(withoutOverhead));
     });
-
-    test('excludeArgsFromEstimate removes specified args from estimate', () {
-      final full = estimateToolRoundTripTokens(
-        toolName: 'edit',
-        args: {
-          'filePath': '/foo.txt',
-          'oldString': 'a' * 1000,
-          'newString': 'b' * 1000,
-        },
-        resultOutput: 'Replaced 1 occurrence',
-      );
-      final excluded = estimateToolRoundTripTokens(
-        toolName: 'edit',
-        args: {
-          'filePath': '/foo.txt',
-          'oldString': 'a' * 1000,
-          'newString': 'b' * 1000,
-        },
-        resultOutput: 'Replaced 1 occurrence',
-        excludeArgsFromEstimate: {'oldString', 'newString'},
-      );
-      expect(excluded, lessThan(full));
-      expect(excluded, lessThan(100));
-    });
   });
 
   group('estimateToolDefsTokens', () {
@@ -1197,72 +1173,6 @@ void main() {
     });
   });
 
-  group('LargePayloadTool', () {
-    test('WriteTool does not implement LargePayloadTool', () {
-      // `write` opted out of the LargePayloadTool offload pipeline:
-      // its `content` is the payload the LLM just produced and
-      // needs to keep referencing. `edit` is for in-place changes,
-      // so `write` is by definition substantial enough that the
-      // cost of keeping the content in context is justified.
-      final tool = WriteTool();
-      expect(tool, isNot(isA<LargePayloadTool>()));
-    });
-
-    test('EditTool implements LargePayloadTool with oldString and newString', () {
-      final tool = EditTool();
-      expect(tool, isA<LargePayloadTool>());
-      expect(
-        (tool as LargePayloadTool).offloadableArgs,
-        ['oldString', 'newString'],
-      );
-    });
-
-    test('ReadTool does not implement LargePayloadTool', () {
-      final tool = ReadTool();
-      expect(tool, isNot(isA<LargePayloadTool>()));
-    });
-
-    test('BashTool does not implement LargePayloadTool', () {
-      final tool = BashTool();
-      expect(tool, isNot(isA<LargePayloadTool>()));
-    });
-  });
-
-  group('offloadableArgsFor', () {
-    test('returns null for WriteTool (no offloadable args)', () {
-      final tool = WriteTool();
-      expect(offloadableArgsFor(tool), isNull,
-          reason: 'write opted out of the offload pipeline');
-    });
-
-    test('returns the offloadable args set for EditTool', () {
-      final tool = EditTool();
-      expect(offloadableArgsFor(tool), {'oldString', 'newString'});
-    });
-
-    test('returns null for a non-LargePayloadTool', () {
-      final tool = ReadTool();
-      expect(offloadableArgsFor(tool), isNull);
-    });
-
-    test('returns null for a null tool', () {
-      expect(offloadableArgsFor(null), isNull);
-    });
-
-    test('preserves declaration order in the returned set', () {
-      // EditTool declares ['oldString', 'newString']; the order matters
-      // for cache-stable persisted JSON, so the interface contract
-      // requires List<String> (not Set<String>). The helper converts
-      // to a set for the existing excludeArgsFromEstimate contract;
-      // the ordering discipline lives in the implementation.
-      final tool = EditTool();
-      final list = (tool as LargePayloadTool).offloadableArgs;
-      expect(list, isA<List<String>>());
-      expect(list.first, 'oldString');
-      expect(list.last, 'newString');
-    });
-  });
-
   group('CollapsedSummary', () {
     test('WriteTool returns text + args-only + total tokens', () {
       final tool = WriteTool();
@@ -1382,27 +1292,6 @@ void main() {
       expect(summary.text, '1 replacement, +2 -4 lines');
     });
 
-    test('EditTool summary recovers line count from offload stand-in', () {
-      // If oldString was offloaded, the persisted args carry a
-      // stand-in pointer like the one produced by
-      // [ToolExecutor._buildOffloadStandIn]. The summary should
-      // pull the line count out of the pointer, not count the
-      // lines of the stand-in metadata string itself.
-      final tool = EditTool();
-      final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'oldString':
-              '[offloaded: 7 lines / 2.0KB; recall via offloaded_content(key="x_oldString")]',
-          'newString':
-              '[offloaded: 3 lines / 1.0KB; recall via offloaded_content(key="x_newString")]',
-          'intent': '...',
-          '_replaceCount': 1,
-        },
-        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
-      );
-      expect(summary.text, '1 replacement, +3 -7 lines');
-    });
 
     test('EditTool summary shows "new file" when oldString is empty', () {
       final tool = EditTool();

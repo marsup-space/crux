@@ -52,7 +52,7 @@ void main() {
         store,
         providerService,
         LlmClient(),
-        ToolExecutor(toolRegistry, store.messageStore),
+        ToolExecutor(toolRegistry),
       ),
       refresh: () {},
     );

@@ -12,7 +12,6 @@ import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
-import '../utils/offload_standin.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
@@ -41,19 +40,6 @@ class ChatResponse {
     this.promptCacheMissTokens = 0,
     this.queuedMessage,
   });
-}
-
-class _StreamingToolUseAccum {
-  String callId = '';
-  String name = '';
-  final StringBuffer inputBuffer = StringBuffer();
-}
-
-class _EarlyToolAbort {
-  final ToolCall call;
-  final ToolResult result;
-
-  const _EarlyToolAbort({required this.call, required this.result});
 }
 
 class ChatService {
@@ -263,9 +249,7 @@ class ChatService {
         userId: '${InstallSlug.slug}-$sessionId',
       );
 
-      final chunks = <LlmChunk>[];
-      final streamingToolAccums = <int, _StreamingToolUseAccum>{};
-      _EarlyToolAbort? earlyToolAbort;
+            final chunks = <LlmChunk>[];
 
       final useLerp = modelConfig.streamLerp;
       String lerpPendingText = '';
@@ -395,26 +379,12 @@ class ChatService {
                   toolUse.inputDelta,
                 );
               }
-              final acc = streamingToolAccums.putIfAbsent(
-                toolUse.index,
-                () => _StreamingToolUseAccum(),
-              );
-              if (toolUse.callId.isNotEmpty) acc.callId = toolUse.callId;
-              if (toolUse.name.isNotEmpty) acc.name = toolUse.name;
-              acc.inputBuffer.write(toolUse.inputDelta);
               // Forward the raw delta to the chat panel so the live
               // streaming bubble can show a per-tool "ToolName (~Nt)"
               // row that materializes as the JSON arguments stream
               // in. The chat panel folds this into
-              // [StreamingController] state and re-renders. We fire
-              // on *every* tool_use delta — including the very first
-              // one that may carry only the call id and name with no
-              // input yet (OpenAI splits id/name into one delta and
-              // arguments into a later one) — so the row appears the
-              // moment the LLM starts streaming a tool call rather
-              // than after the full JSON has been received and parsed.
+              // [StreamingController] state and re-renders.
               onToolUse?.call(toolUse);
-              earlyToolAbort ??= _checkEarlyOffloadStandInAbort(acc);
             }
             if (firstTokenEver &&
                 (chunk.textDelta != null || chunk.reasoningContent != null)) {
@@ -479,11 +449,6 @@ class ChatService {
               // running at that point (no pending text).
               onChunk();
             }
-          }
-
-          if (earlyToolAbort != null) {
-            lerpTimer?.cancel();
-            break;
           }
 
           if (chunk.promptTokens != null) {
@@ -601,9 +566,7 @@ class ChatService {
 
       runtime.pauseStreamingTimer();
 
-      final finishReason = earlyToolAbort != null
-          ? 'tool_use'
-          : ToolExecutor.parseFinishReason(chunks);
+      final finishReason = ToolExecutor.parseFinishReason(chunks);
 
       if (finishReason != 'tool_use') break;
 
@@ -620,32 +583,14 @@ class ChatService {
         return;
       }
 
-      final toolCalls = earlyToolAbort != null
-          ? [earlyToolAbort.call]
-          : ToolExecutor.parseToolUseFromChunks(chunks);
+      final toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       if (toolCalls.isEmpty) break;
 
       final roundText = roundTextBuffer.toString();
       final roundReasoning = roundReasoningBuffer.toString();
       final roundReasoningSignature = roundReasoningSignatureBuffer.toString();
 
-      // ── Execute EVERY tool BEFORE compressing any of them ──
-      //
-      // We must know whether the read-before-write guard fired on
-      // any LargePayloadTool call *before* deciding which args to
-      // offload.  When the guard fires the LLM needs the original
-      // args to re-evaluate its edit/write against the actual file
-      // content — compressing them to stand-ins would force an
-      // extra `recall` round-trip on the very next turn.
-      //
-      // The wire-format assistant message uses the original
-      // toolCalls (line 694 / 747), so the LLM receives the full
-      // args in the *current* turn regardless of compression.
-      // Compression only affects what the *next* turn sees when
-      // the history is rebuilt from the DB.
-
-      // Execute tools + record guard triggers.
-      final guardTriggers = <String>{};
+      // Execute tools.
       final assistantMsg = _toolExecutor.formatAssistantToolCallsMessage(
         toolCalls,
         roundText,
@@ -681,13 +626,8 @@ class ChatService {
             callId: call.callId,
             workingDirectory: session.projectPath,
           );
-          final result = earlyToolAbort?.call.callId == call.callId
-              ? earlyToolAbort!.result
-              : await _toolExecutor.executeTool(call, ctx);
+          final result = await _toolExecutor.executeTool(call, ctx);
           callResults[call.callId] = result;
-          if (result.metadata['guardTriggered'] == true) {
-            guardTriggers.add(call.callId);
-          }
           if (isAnthropic) {
             content!.add({
               'type': 'tool_result',
@@ -705,9 +645,6 @@ class ChatService {
             toolName: call.name,
             args: call.input,
             resultOutput: result.output,
-            excludeArgsFromEstimate: offloadableArgsFor(
-              _toolExecutor.lookupTool(call.name),
-            ),
           );
         }
         if (isAnthropic) {
@@ -723,47 +660,7 @@ class ChatService {
         return;
       }
 
-      // ── Compress (skip calls where the guard fired) ──
-      final compressedToolCalls = <ToolCall>[];
-      var preCompressTokens = 0;
-      try {
-        for (final call in toolCalls) {
-          final tool = _toolExecutor.lookupTool(call.name);
-          if (tool is LargePayloadTool && guardTriggers.contains(call.callId)) {
-            // Guard fired — keep the original args so the LLM can
-            // re-evaluate its edit/write without an extra recall.
-            compressedToolCalls.add(call);
-            continue;
-          }
-          if (tool is LargePayloadTool) {
-            // Include the OFFLOADABLE args in the pre-number. The
-            // strikethrough is meant to show what compression SAVES —
-            // if we exclude oldString/newString from the estimate,
-            // both numbers look the same and the user sees zero
-            // benefit. The post number (from collapsedSummary) also
-            // includes the args (which are now stand-ins), so the
-            // comparison is honest: big strikethrough = big saving.
-            preCompressTokens += estimateToolRoundTripTokens(
-              toolName: call.name,
-              args: call.input,
-              resultOutput: '',
-            );
-          }
-          compressedToolCalls.add(
-            await _toolExecutor.compressCallForPersistence(call, sessionId),
-          );
-        }
-      } catch (e) {
-        runtime.pauseStreamingTimer();
-        runtime.isResponding = false;
-        await _store.update(sessionId, status: SessionStatus.idle);
-        session.status = SessionStatus.idle;
-        _activeSessions.remove(sessionId);
-        onError('Compression error: $e');
-        return;
-      }
-
-      final toolCallData = compressedToolCalls
+      final toolCallData = toolCalls
           .map(
             (call) => ToolCallData(
               callId: call.callId,
@@ -774,13 +671,6 @@ class ChatService {
           .toList();
 
       // ── Persist (tool_call + tool_results in one transaction) ──
-      // The two writes used to be sequential `_messageStore.addMessage`
-      // calls; closing the terminal between them left the
-      // `tool_call` row stranded without its results, and every
-      // subsequent replay would be rejected by strict providers
-      // (e.g. MiniMax "tool call result does not follow tool
-      // call"). [addToolRound] wraps both writes in a SQLite
-      // transaction so the persist step is all-or-nothing.
       try {
         await _messageStore.addToolRound(
           sessionId,
@@ -796,7 +686,6 @@ class ChatService {
               ? null
               : runtime.reasoningEffort ?? 'normal',
           toolCalls: toolCallData,
-          preCompressTokens: preCompressTokens > 0 ? preCompressTokens : null,
           results: [
             for (final call in toolCalls)
               (callId: call.callId, output: callResults[call.callId]!.output),
@@ -1098,67 +987,10 @@ class ChatService {
         (completionTokens * rate.output);
   }
 
-  /// Argument keys whose values should be excluded from the
-  /// per-round token-count estimate for the given tool [name], or
-  /// `null` if the tool is unknown or has no offloadable args.
-  /// Exposed so the session controller (which computes the base
-  /// context from persisted messages) can ask the chat service —
-  /// which owns the tool registry — without taking on a direct
-  /// registry dependency.
-  Set<String>? offloadableArgsForTool(String name) {
-    return offloadableArgsFor(_toolExecutor.lookupTool(name));
-  }
-
   void dispose() {
     _cancelRequested.clear();
     _activeSessions.clear();
     _llmClient.dispose();
     _auxiliaryService.dispose();
   }
-}
-
-_EarlyToolAbort? _checkEarlyOffloadStandInAbort(_StreamingToolUseAccum acc) {
-  if (acc.callId.isEmpty || acc.name.isEmpty) return null;
-
-  final toolName = acc.name.toLowerCase();
-  final argName = switch (toolName) {
-    'write' => 'content',
-    'edit' => 'newString',
-    _ => null,
-  };
-  if (argName == null) return null;
-
-  if (!jsonStringArgContainsOffloadStandIn(
-    acc.inputBuffer.toString(),
-    argName,
-  )) {
-    return null;
-  }
-
-  final displayName = toolName.isEmpty
-      ? 'Tool'
-      : '${toolName[0].toUpperCase()}${toolName.substring(1)}';
-  return _EarlyToolAbort(
-    call: ToolCall(
-      callId: acc.callId,
-      name: toolName,
-      input: {
-        argName:
-            '[offloaded: ...; blocked before execution because this is a history placeholder]',
-      },
-    ),
-    result: ToolResult(
-      title: 'Offload stand-in guard triggered',
-      output:
-          '[GUARD] $displayName was BLOCKED — `$argName` contains an '
-          'offloaded-content stand-in pointer, not the original text. '
-          'No file was modified. Re-read the file or provide the real '
-          'content before calling `$toolName` again.',
-      metadata: const {
-        'guardTriggered': true,
-        'guardKind': 'offload_standin',
-        'earlyAbort': true,
-      },
-    ),
-  );
 }

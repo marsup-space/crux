@@ -90,9 +90,13 @@ Future<void> main(List<String> args) async {
     Directory(p.join(root, 'third_party', 'licenses')),
     Directory(p.join(bundle.path, 'third_party', 'licenses')),
   );
-  await File(
-    p.join(root, 'third_party', 'manifest.json'),
-  ).copy(p.join(bundle.path, 'third_party', 'manifest.json'));
+  // Copy manifest.toml (preferred format); JSON kept for backward compat.
+  for (final manifestName in ['manifest.toml', 'manifest.json']) {
+    final source = File(p.join(root, 'third_party', manifestName));
+    if (await source.exists()) {
+      await source.copy(p.join(bundle.path, 'third_party', manifestName));
+    }
+  }
 
   stdout.writeln('Release bundle: ${bundle.path}');
 }

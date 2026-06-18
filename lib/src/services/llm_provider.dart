@@ -47,6 +47,18 @@ abstract class LlmProvider {
   /// lifecycle.
   bool get isCodingPlan => false;
 
+  /// Whether this provider exposes a credit-balance endpoint.
+  /// The toolbar uses this to decide whether to render a live
+  /// credit balance readout next to the metrics.
+  ///
+  /// Default is `false`. Providers that want a credit-balance
+  /// display include the `CreditBalanceProvider` mixin
+  /// (declared in
+  /// `services/providers/credit_balance_provider.dart`),
+  /// which overrides this getter to `true` and provides the
+  /// polling lifecycle.
+  bool get isCreditBalance => false;
+
   /// Reasoning presets for a model, with TOML-driven label overrides applied.
   ///
   /// Resolution priority (highest wins on label conflicts):

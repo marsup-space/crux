@@ -22,8 +22,29 @@ class CruxDatabase extends _$CruxDatabase {
   /// otherwise race on parallel test runs (`database is locked`).
   CruxDatabase.forTesting(super.executor);
 
+  /// Schema history:
+  ///
+  ///   v1  – initial (sessions, messages)
+  ///   v2  – messages.reasoningContent
+  ///   v3  – messages.reasoningTokens, messages.thinkingDurationMs
+  ///   v4  – sessions.thinkingMode, sessions.reasoningEffort
+  ///   v5  – messages.reasoningEffort
+  ///   v6  – fileReadState table
+  ///   v7  – messages.toolCalls, messages.toolCallId
+  ///   v8  – messages.tldr
+  ///   v9  – sessions.ttftMs, sessions.tokPerSec, sessions.promptCacheHitTokens
+  ///   v10 – offloaded_content table
+  ///   v11 – messages.preCompressTokens
+  ///   v12 – messages.reasoningSignature
+  ///   v13 – fileReadState altered (session_id added to PK)
+  ///   v14 – offloaded_content.intent
+  ///   v15 – messages.images
+  ///   v16 – offloaded_content and preCompressTokens are now dead
+  ///         schema (the offloading infrastructure was removed).
+  ///         The table/column persist on disk for drift validation
+  ///         but no application code reads or writes them.
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -65,7 +86,6 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 11) {
         await m.addColumn(messages, messages.preCompressTokens);
-        // ignore: invalid_use_of_protected_member
       }
       if (from < 12) {
         await m.addColumn(messages, messages.reasoningSignature);
@@ -79,6 +99,9 @@ class CruxDatabase extends _$CruxDatabase {
       if (from < 15) {
         await m.addColumn(messages, messages.images);
       }
+      // v15 → v16: no structural changes. offloaded_content and
+      // pre_compress_tokens are dead schema — they remain on disk
+      // so drift's validation passes but are never read/written.
     },
   );
 }
