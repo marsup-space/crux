@@ -4,6 +4,7 @@ import '../commands/command_executor.dart';
 import '../commands/registry.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
+import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/llm_client.dart';
@@ -359,9 +360,7 @@ class _ChatPanelState extends State<ChatPanel> {
     // (composite key form: `providerName/modelId`).
     final modelKey = _sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');
-    final providerName = slashIdx > 0
-        ? modelKey.substring(0, slashIdx)
-        : null;
+    final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : null;
 
     // Look up the provider's LlmProvider instance and see if
     // it opted into the CodingPlanProvider mixin. Non-coding-
@@ -421,13 +420,13 @@ class _ChatPanelState extends State<ChatPanel> {
     _lastSyncedCpHasActiveSession = hasActive;
   }
 
-  /// True if any session in the panel is currently
-  /// `isResponding`. Covers non-current sessions too: a
-  /// background session that's still streaming is "active"
-  /// and the user wants the same freshness for it.
+  /// True if any session in the panel is currently marked running.
+  /// Covers non-current sessions too: a background session that's
+  /// still streaming is "active" and the user wants the same
+  /// freshness for it.
   bool _hasActiveSession() {
     for (final s in _sessionController.sessions) {
-      if (_sessionController.runtime(s.id).isResponding) return true;
+      if (s.status == SessionStatus.running) return true;
     }
     return false;
   }
@@ -441,9 +440,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
     final modelKey = _sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');
-    final providerName = slashIdx > 0
-        ? modelKey.substring(0, slashIdx)
-        : null;
+    final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : null;
 
     CreditBalanceProvider? provider;
     String? apiKey;
@@ -529,9 +526,7 @@ class _ChatPanelState extends State<ChatPanel> {
   /// the point of the profiler.
   Map<String, dynamic> _profilerSnapshot() {
     final sessionId = _sessionController.currentSessionId;
-    final rt = sessionId != null
-        ? _sessionController.runtime(sessionId)
-        : null;
+    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
     final messages = _sessionController.currentMessages;
     final anyResponding = _sessionController.sessions.any(
       (s) => _sessionController.runtime(s.id).isResponding,
@@ -544,8 +539,9 @@ class _ChatPanelState extends State<ChatPanel> {
       'interrupted': rt?.interrupted ?? false,
       'isGeneratingTitle': _sessionController.isGeneratingTitle,
       'messageCount': messages.length,
-      'reasoningMsgs':
-          messages.where((m) => m.reasoningContent.isNotEmpty).length,
+      'reasoningMsgs': messages
+          .where((m) => m.reasoningContent.isNotEmpty)
+          .length,
       'contextAnimActive': _streamingController.contextAnimTimerIsActive(),
       'anySessionResponding': anyResponding,
     };
@@ -626,11 +622,13 @@ class _ChatPanelState extends State<ChatPanel> {
     final modelId = slashIdx > 0 ? modelKey.substring(slashIdx + 1) : modelKey;
     final provider = _providerService.providerByName(providerName);
     final modelConfig = provider?.modelById(modelId);
-    final presets = llm?.reasoningPresetsFor(
-      modelId,
-      providerLabels: provider?.reasoningLabels ?? const {},
-      modelLabels: modelConfig?.reasoningLabels ?? const {},
-    ) ?? const [];
+    final presets =
+        llm?.reasoningPresetsFor(
+          modelId,
+          providerLabels: provider?.reasoningLabels ?? const {},
+          modelLabels: modelConfig?.reasoningLabels ?? const {},
+        ) ??
+        const [];
     if (presets.isEmpty) return;
 
     final current = rt.thinkingMode == 'disabled'
@@ -672,10 +670,8 @@ class _ChatPanelState extends State<ChatPanel> {
       return Fullpane(
         title: title,
         onClose: _closeFullpane,
-        contentBuilder: (context) => ToolDetailPane(
-          data: data,
-          key: ValueKey(data.toolCall.callId),
-        ),
+        contentBuilder: (context) =>
+            ToolDetailPane(data: data, key: ValueKey(data.toolCall.callId)),
       );
     }
     return Fullpane(
@@ -684,9 +680,7 @@ class _ChatPanelState extends State<ChatPanel> {
       contentBuilder: (context) => Center(
         child: Text(
           'Fullpane placeholder content',
-          style: TextStyle(
-            color: CruxTheme.of(context).onSurfaceDim,
-          ),
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
         ),
       ),
     );
@@ -725,8 +719,6 @@ class _ChatPanelState extends State<ChatPanel> {
     return SessionManagementPanel(
       sessions: _sessionController.sessions,
       currentSessionId: _sessionController.currentSessionId ?? 0,
-      isSessionResponding: (id) =>
-          _sessionController.runtime(id).isResponding,
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -781,8 +773,8 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     } else if (overlay.overlayMode == OverlayMode.parameter &&
         overlay.filteredSuggestions.isNotEmpty) {
-      final paramLabel = overlay.currentParamIndex <
-              overlay.activeCommand!.params.length
+      final paramLabel =
+          overlay.currentParamIndex < overlay.activeCommand!.params.length
           ? overlay.activeCommand!.params[overlay.currentParamIndex]
           : 'value';
       overlays.add(
@@ -848,12 +840,7 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     overlays.add(
-      Positioned(
-        bottom: 0,
-        left: 0,
-        right: 0,
-        child: ToastHub(key: _toastKey),
-      ),
+      Positioned(bottom: 0, left: 0, right: 0, child: ToastHub(key: _toastKey)),
     );
 
     return overlays;
@@ -877,145 +864,167 @@ class _ChatPanelState extends State<ChatPanel> {
     return FrameProfiler.instance.timed('chatPanel.build', () {
       return LayoutBuilder(
         builder: (context, constraints) {
-        final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
+          final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
 
-        final sessionId = _sessionController.currentSessionId;
-        final rt = sessionId != null
-            ? _sessionController.runtime(sessionId)
-            : null;
+          final sessionId = _sessionController.currentSessionId;
+          final rt = sessionId != null
+              ? _sessionController.runtime(sessionId)
+              : null;
 
-        final overlays = _buildOverlays();
+          final overlays = _buildOverlays();
 
-        final mainContent = Column(children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ChatHistory(
-                  scrollController: scrollController,
-                  sessionController: _sessionController,
-                  streamingController: _streamingController,
-                  turnOrchestrator: _turnOrchestrator,
-                  providerService: _providerService,
-                  toolRegistry: _toolRegistry,
-                  showToast: _showToast,
-                  refresh: _refresh,
-                  onToolCallTap: _openToolDetail,
-                ),
-                ...overlays,
-              ],
-            ),
-          ),
-          ChatToolbar(
-            sessionController: _sessionController,
-            streamingController: _streamingController,
-            providerService: _providerService,
-            providerServiceReady: _providerServiceReady,
-            codingPlanProvider: _activeCodingPlanProvider,
-            creditBalanceProvider: _activeCreditBalanceProvider,
-            runtime: rt,
-            contextMaxTokens: _contextMaxTokens,
-            onModelPressed: _onModelButtonPressed,
-            onCompactPressed: _onCompactButtonPressed,
-            onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
-            onCycleThinking: _cycleThinkingLevel,
-          ),
-          Divider(color: CruxTheme.of(context).divider, height: 1),
-          ChatInput(
-            key: _chatInputKey,
-            textController: textController,
-            overlayController: _overlayController,
-            sessionController: _sessionController,
-            streamingController: _streamingController,
-            turnOrchestrator: _turnOrchestrator,
-            providerService: _providerService,
-            providerServiceReady: _providerServiceReady,
-            themeController: component.themeController,
-            scrollController: scrollController,
-            refresh: _refresh,
-            projectPath: Directory.current.path,
-            recentProjectsStore: _recentProjectsStore,
-            onSendTurn: (text) {
-              final sid = _sessionController.currentSessionId;
-              final images = sid != null
-                  ? _sessionController.drainPendingImages(sid)
-                  : <ImageAttachment>[];
-              _turnOrchestrator.sendMessage(
-                text: text,
-                textController: textController,
-                images: images,
-              );
-              // Auto-scroll to bottom when the user submits a message.
-              // This is critical when previous turns had expanded thinking
-              // bubbles that collapse on the new turn — without this, the
-              // scroll position drifts above the bottom and auto-scroll
-              // won't engage for the new streaming content.
-              scrollController.scrollToBottom();
-            },
-            onExecuteCommand: _executeCommand,
-            onSwitchSession: _switchSession,
-            onInitSessions: _initSessions,
-            onCreateNewSession: _createNewSession,
-            onAttachClipboardImage: (image) {
-              final sid = _sessionController.currentSessionId;
-              if (sid != null) {
-                _sessionController.addPendingImage(sid, image);
-                // Insert an inline text marker at the cursor so the
-                // user sees where the image is referenced in their
-                // message (mirroring opencode's `[image:filename]`
-                // placeholder pattern). The marker is purely
-                // informational — the actual image data lives in
-                // `pendingImages` and is sent alongside the text.
-                final index =
-                    _sessionController.pendingImagesFor(sid).length;
-                _chatInputKey.currentState?.insertImageMarker(index);
-                _refresh();
-              }
-            },
-          ),
-        ]);
-
-        if (showInfoPanel) {
-          final panelWidth = (_infoPanelWidthMin +
-                  0.3 *
-                      (constraints.maxWidth -
-                          _infoPanelShowThreshold))
-              .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
-
-          final body = Row(
+          final mainContent = Column(
             children: [
-              Expanded(child: mainContent),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: CruxTheme.of(context).divider,
-              ),
-              SizedBox(
-                width: panelWidth,
-                child: ExtraInfoPanel(
-                  sessions: _sessionController.sessions,
-                  currentSessionId:
-                      _sessionController.currentSessionId ?? 0,
-                  onSwitchSession: _switchSession,
-                  archivedCount: _sessionController.archivedCount,
-                  isSessionResponding: (id) =>
-                      _sessionController.runtime(id).isResponding,
-                  onSessionTitleTap: () {
-                    setState(() {
-                      _overlayController.showSessionManager = true;
-                    });
-                  },
-                  onOpenProject: _openProjectInExplorer,
-                  onSwitchProject: _switchProject,
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ChatHistory(
+                      scrollController: scrollController,
+                      sessionController: _sessionController,
+                      streamingController: _streamingController,
+                      turnOrchestrator: _turnOrchestrator,
+                      providerService: _providerService,
+                      toolRegistry: _toolRegistry,
+                      showToast: _showToast,
+                      refresh: _refresh,
+                      onToolCallTap: _openToolDetail,
+                    ),
+                    ...overlays,
+                  ],
                 ),
+              ),
+              ChatToolbar(
+                sessionController: _sessionController,
+                streamingController: _streamingController,
+                providerService: _providerService,
+                providerServiceReady: _providerServiceReady,
+                codingPlanProvider: _activeCodingPlanProvider,
+                creditBalanceProvider: _activeCreditBalanceProvider,
+                onCodingPlanTap: _activeCodingPlanProvider?.refreshNow,
+                onCreditBalanceTap: _activeCreditBalanceProvider?.refreshNow,
+                runtime: rt,
+                contextMaxTokens: _contextMaxTokens,
+                onModelPressed: _onModelButtonPressed,
+                onCompactPressed: _onCompactButtonPressed,
+                onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
+                onCycleThinking: _cycleThinkingLevel,
+              ),
+              Divider(color: CruxTheme.of(context).divider, height: 1),
+              ChatInput(
+                key: _chatInputKey,
+                textController: textController,
+                overlayController: _overlayController,
+                sessionController: _sessionController,
+                streamingController: _streamingController,
+                turnOrchestrator: _turnOrchestrator,
+                providerService: _providerService,
+                providerServiceReady: _providerServiceReady,
+                themeController: component.themeController,
+                scrollController: scrollController,
+                refresh: _refresh,
+                projectPath: Directory.current.path,
+                recentProjectsStore: _recentProjectsStore,
+                onSendTurn: (text) {
+                  final sid = _sessionController.currentSessionId;
+                  final images = sid != null
+                      ? _sessionController.drainPendingImages(sid)
+                      : <ImageAttachment>[];
+                  _turnOrchestrator.sendMessage(
+                    text: text,
+                    textController: textController,
+                    images: images,
+                  );
+                  // Auto-scroll to bottom when the user submits a message.
+                  // This is critical when previous turns had expanded thinking
+                  // bubbles that collapse on the new turn — without this, the
+                  // scroll position drifts above the bottom and auto-scroll
+                  // won't engage for the new streaming content.
+                  scrollController.scrollToBottom();
+                },
+                onExecuteCommand: _executeCommand,
+                onSwitchSession: _switchSession,
+                onInitSessions: _initSessions,
+                onCreateNewSession: _createNewSession,
+                onAttachClipboardImage: (image) {
+                  final sid = _sessionController.currentSessionId;
+                  if (sid != null) {
+                    _sessionController.addPendingImage(sid, image);
+                    // Insert an inline text marker at the cursor so the
+                    // user sees where the image is referenced in their
+                    // message (mirroring opencode's `[image:filename]`
+                    // placeholder pattern). The marker is purely
+                    // informational — the actual image data lives in
+                    // `pendingImages` and is sent alongside the text.
+                    final index = _sessionController
+                        .pendingImagesFor(sid)
+                        .length;
+                    _chatInputKey.currentState?.insertImageMarker(index);
+                    _refresh();
+                  }
+                },
               ),
             ],
           );
 
+          if (showInfoPanel) {
+            final panelWidth =
+                (_infoPanelWidthMin +
+                        0.3 * (constraints.maxWidth - _infoPanelShowThreshold))
+                    .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
+
+            final body = Row(
+              children: [
+                Expanded(child: mainContent),
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: CruxTheme.of(context).divider,
+                ),
+                SizedBox(
+                  width: panelWidth,
+                  child: ExtraInfoPanel(
+                    sessions: _sessionController.sessions,
+                    currentSessionId: _sessionController.currentSessionId ?? 0,
+                    onSwitchSession: _switchSession,
+                    archivedCount: _sessionController.archivedCount,
+                    onSessionTitleTap: () {
+                      setState(() {
+                        _overlayController.showSessionManager = true;
+                      });
+                    },
+                    onOpenProject: _openProjectInExplorer,
+                    onSwitchProject: _switchProject,
+                  ),
+                ),
+              ],
+            );
+
+            if (_overlayController.showFullpane) {
+              return Stack(
+                children: [
+                  Positioned.fill(child: body),
+                  Positioned.fill(child: _buildFullpane()),
+                ],
+              );
+            }
+
+            if (_overlayController.showSessionManager) {
+              return Stack(
+                children: [
+                  Positioned.fill(child: body),
+                  Positioned.fill(child: _buildSessionManager()),
+                ],
+              );
+            }
+
+            return body;
+          }
+
           if (_overlayController.showFullpane) {
             return Stack(
               children: [
-                Positioned.fill(child: body),
+                Positioned.fill(child: mainContent),
                 Positioned.fill(child: _buildFullpane()),
               ],
             );
@@ -1024,36 +1033,15 @@ class _ChatPanelState extends State<ChatPanel> {
           if (_overlayController.showSessionManager) {
             return Stack(
               children: [
-                Positioned.fill(child: body),
+                Positioned.fill(child: mainContent),
                 Positioned.fill(child: _buildSessionManager()),
               ],
             );
           }
 
-          return body;
-        }
-
-        if (_overlayController.showFullpane) {
-          return Stack(
-            children: [
-              Positioned.fill(child: mainContent),
-              Positioned.fill(child: _buildFullpane()),
-            ],
-          );
-        }
-
-        if (_overlayController.showSessionManager) {
-          return Stack(
-            children: [
-              Positioned.fill(child: mainContent),
-              Positioned.fill(child: _buildSessionManager()),
-            ],
-          );
-        }
-
-        return mainContent;
-      },
-    );
+          return mainContent;
+        },
+      );
     });
   }
 }

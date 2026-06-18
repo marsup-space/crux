@@ -54,10 +54,15 @@ class CreditBalanceDisplay extends StatefulComponent {
   /// the first event lands.
   final CreditBalance? initialBalance;
 
+  /// Called when the user clicks the display to force an
+  /// immediate refresh of the credit balance data.
+  final VoidCallback? onTap;
+
   const CreditBalanceDisplay({
     super.key,
     required this.stream,
     this.initialBalance,
+    this.onTap,
   });
 
   @override
@@ -112,6 +117,23 @@ class _CreditBalanceDisplayState
   /// starts so each per-frame tick just lerps.
   Color _targetColor = Color.defaultColor;
 
+  // ─── Refresh-flash state ───────────────────────────────────
+
+  /// Whether a user-triggered refresh is in flight. While
+  /// true the cell shows `⟳` to give immediate feedback
+  /// that the click did something. Cleared when the
+  /// stream delivers the next snapshot (or the flash
+  /// animation times out).
+  bool _refreshing = false;
+
+  /// Monotonic start time for the refresh flash.
+  int _refreshStartMs = 0;
+
+  /// Duration of the refresh-flash spinner. Short so it
+  /// feels responsive.
+  static const Duration _refreshFlashDuration =
+      Duration(milliseconds: 600);
+
   @override
   void initState() {
     super.initState();
@@ -142,6 +164,9 @@ class _CreditBalanceDisplayState
     if (!mounted) return;
     final prev = _balance;
     _balance = balance;
+    // When the stream delivers fresh data, clear the
+    // refresh-flash state so normal rendering resumes.
+    _refreshing = false;
     if (prev != null) {
       _startAnimation(prev, balance);
     }
@@ -211,6 +236,8 @@ class _CreditBalanceDisplayState
     final ticker = _animationTicker;
     if (ticker != null && ticker.isActive) {
       _tickAnimation();
+    } else if (_refreshing) {
+      _pushRefreshFrame();
     } else {
       _pushSettledFrame();
     }
@@ -250,6 +277,53 @@ class _CreditBalanceDisplayState
     }
   }
 
+  // ─── Refresh-flash lifecycle ──────────────────────────────
+
+  /// Called from [build] when the user taps the display.
+  /// Kicks off the refresh-flash spinner and delegates
+  /// to [component.onTap] for the actual fetch.
+  void _onTap() {
+    if (_refreshing) return; // double-click guard
+    _refreshing = true;
+    _refreshStartMs = DateTime.now().millisecondsSinceEpoch;
+    // Push the spinner frame immediately so the user
+    // sees feedback on the very next paint.
+    _pushCurrentFrame();
+    // Fire the provider's refresh (invokes _tick(), which
+    // calls getCreditBalance(), which feeds the stream).
+    component.onTap?.call();
+  }
+
+  /// Render the refresh-flash spinner: `⟳` in the accent
+  /// colour, fading back to the settled colour over
+  /// [_refreshFlashDuration]. Called from
+  /// [_pushCurrentFrame] while [_refreshing] is true.
+  void _pushRefreshFrame() {
+    final ro = _renderObject;
+    if (ro == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = now - _refreshStartMs;
+    final t = (elapsed / _refreshFlashDuration.inMilliseconds)
+        .clamp(0.0, 1.0);
+    final theme = CruxTheme.of(context);
+
+    if (t >= 1.0) {
+      // Flash timed out — revert to settled.
+      _refreshing = false;
+      _pushSettledFrame();
+      return;
+    }
+
+    // Fade from accent (cyan) back to the normal balance
+    // colour. Linear fade works for a ~600ms span.
+    final settledFg = _balance?.isAvailable == true
+        ? theme.cyan
+        : theme.warning;
+    final fg = Color.lerp(theme.cyan, settledFg, t)!;
+
+    ro.update(text: '$_currencySymbol \u{27F3}', fg: fg);
+  }
+
   /// Build hover text for an intermediate animation value.
   /// Shows the ticking total plus a static topped-up
   /// breakdown from the latest snapshot.
@@ -272,22 +346,39 @@ class _CreditBalanceDisplayState
 
   @override
   Component build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hovered = true);
-        _pushCurrentFrame();
-      },
-      onExit: (_) {
-        setState(() => _hovered = false);
-        _pushCurrentFrame();
-      },
-      opaque: false,
-      child: _CreditBalanceBridge(
-        onRenderObject: (ro) {
-          ro.context = context;
-          _renderObject = ro;
+    final canTap = component.onTap != null;
+    final theme = CruxTheme.of(context);
+
+    // Button-style container: when clickable, show hover bg
+    // and bold on hover, same as the [Button] component.
+    final deco = _hovered && canTap
+        ? BoxDecoration(color: theme.buttonBackgroundHover)
+        : null;
+
+    return GestureDetector(
+      onTap: canTap ? _onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: MouseRegion(
+        onEnter: (_) {
+          if (canTap) setState(() => _hovered = true);
           _pushCurrentFrame();
         },
+        onExit: (_) {
+          setState(() => _hovered = false);
+          _pushCurrentFrame();
+        },
+        opaque: false,
+        child: Container(
+          decoration: deco,
+          padding: EdgeInsets.zero,
+          child: _CreditBalanceBridge(
+            onRenderObject: (ro) {
+              ro.context = context;
+              _renderObject = ro;
+              _pushCurrentFrame();
+            },
+          ),
+        ),
       ),
     );
   }

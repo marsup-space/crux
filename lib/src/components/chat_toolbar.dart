@@ -14,7 +14,6 @@ import 'context_bar.dart';
 import 'metrics_display.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
-import 'ui/bg_progress_bar.dart';
 import 'ui/button.dart';
 import 'ui/glossy_model_button.dart';
 
@@ -46,12 +45,14 @@ class ChatToolbar extends StatefulComponent {
   final StreamingController streamingController;
   final ProviderService providerService;
   final bool providerServiceReady;
+
   /// The active provider's coding-plan mixin instance, or null
   /// if the active provider doesn't have a coding plan (or no
   /// API key is set). The chat panel resolves this on every
   /// build and passes it through; the toolbar just plumbs it
   /// to the widget and budgets layout when it's non-null.
   final CodingPlanProvider? codingPlanProvider;
+
   /// The active provider's credit-balance mixin instance, or
   /// null if the active provider doesn't have a credit balance
   /// (or no API key is set). The chat panel resolves this on
@@ -59,6 +60,17 @@ class ChatToolbar extends StatefulComponent {
   /// plumbs it to the widget and budgets layout when it's
   /// non-null.
   final CreditBalanceProvider? creditBalanceProvider;
+
+  /// Called when the user clicks the coding-plan usage display
+  /// to force an immediate refresh via the provider's
+  /// [CodingPlanProvider.refreshNow].
+  final VoidCallback? onCodingPlanTap;
+
+  /// Called when the user clicks the credit balance display
+  /// to force an immediate refresh via the provider's
+  /// [CreditBalanceProvider.refreshNow].
+  final VoidCallback? onCreditBalanceTap;
+
   final SessionRuntimeState? runtime;
   final int contextMaxTokens;
   final void Function() onModelPressed;
@@ -80,6 +92,8 @@ class ChatToolbar extends StatefulComponent {
     required this.onCycleThinking,
     this.codingPlanProvider,
     this.creditBalanceProvider,
+    this.onCodingPlanTap,
+    this.onCreditBalanceTap,
   });
 
   @override
@@ -169,11 +183,12 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
     final isAuxBusy =
         _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
-    final isResponding = rt?.isResponding ?? false;
+    final isSessionRunning =
+        _sessionController.currentSession.status == SessionStatus.running;
     return GlossyModelButton(
       label: '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}',
       isAnimating: isAuxBusy,
-      onPressed: isResponding ? null : component.onAuxiliaryPressed,
+      onPressed: isSessionRunning ? null : component.onAuxiliaryPressed,
     );
   }
 
@@ -190,8 +205,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
   /// toolbar hides the balance cell when this is false so
   /// non-credit-balance providers (MiniMax, Local, custom)
   /// don't get a stray balance tag in their toolbar.
-  bool _hasCreditBalanceProvider() =>
-      component.creditBalanceProvider != null;
+  bool _hasCreditBalanceProvider() => component.creditBalanceProvider != null;
 
   @override
   Component build(BuildContext context) {
@@ -206,9 +220,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
         ? 'select model'
         : _sessionController.currentSession.model;
     final rt = _rt;
-    final isResponding = rt?.isResponding ?? false;
+    final isSessionRunning =
+        _sessionController.currentSession.status == SessionStatus.running;
 
-    final modelButton = isResponding
+    final modelButton = isSessionRunning
         ? GlossyModelButton(
             label: modelLabel,
             isAnimating: true,
@@ -231,13 +246,13 @@ class _ChatToolbarState extends State<ChatToolbar> {
         const smallSpacer = 1;
 
         final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
-        final imageW = _modelSupportsImages(
-                _sessionController.currentSession.model)
+        final imageW =
+            _modelSupportsImages(_sessionController.currentSession.model)
             ? UnicodeWidth.stringWidth(_kIconImage)
             : 0;
-        final thinkingLabel = (rt != null &&
-                _modelSupportsThinking(
-                    _sessionController.currentSession.model))
+        final thinkingLabel =
+            (rt != null &&
+                _modelSupportsThinking(_sessionController.currentSession.model))
             ? _thinkingLabel(rt)
             : null;
         final thinkingW = thinkingLabel != null
@@ -271,8 +286,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
             '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
 
-        var remaining =
-            constraints.maxWidth.toInt() - 2 - modelW - imageW;
+        var remaining = constraints.maxWidth.toInt() - 2 - modelW - imageW;
 
         final showThinking =
             thinkingLabel != null && (remaining - thinkingW) >= 0;
@@ -310,7 +324,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
               // the next click will switch to. The default
               // 500 ms delay is what we want for toolbar buttons.
               Hinted(
-                hint: isResponding
+                hint: isSessionRunning
                     ? 'Current model: $modelLabel\n(model cannot be changed while the agent is responding)'
                     : 'Current model: $modelLabel\n(click to change)',
                 child: modelButton,
@@ -379,12 +393,13 @@ class _ChatToolbarState extends State<ChatToolbar> {
                   hint:
                       'Coding-plan usage\n'
                       '5h: short-window remaining\n'
-                      '1w: weekly remaining',
+                      '1w: weekly remaining\n'
+                      'Click to refresh',
                   child: CodingPlanUsageDisplay(
-                    stream: component.codingPlanProvider!
-                        .codingPlanUsageStream,
-                    initialUsage: component.codingPlanProvider!
-                        .latestCodingPlanUsage,
+                    stream: component.codingPlanProvider!.codingPlanUsageStream,
+                    initialUsage:
+                        component.codingPlanProvider!.latestCodingPlanUsage,
+                    onTap: component.onCodingPlanTap,
                   ),
                 ),
               if (showCreditBalanceUsage &&
@@ -394,24 +409,26 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 Hinted(
                   hint:
                       'Credit balance\n'
-                      'Hover for granted / topped-up breakdown',
+                      'Hover for granted / topped-up breakdown\n'
+                      'Click to refresh',
                   child: CreditBalanceDisplay(
-                    stream: component.creditBalanceProvider!
-                        .creditBalanceStream,
-                    initialBalance: component.creditBalanceProvider!
-                        .latestCreditBalance,
+                    stream:
+                        component.creditBalanceProvider!.creditBalanceStream,
+                    initialBalance:
+                        component.creditBalanceProvider!.latestCreditBalance,
+                    onTap: component.onCreditBalanceTap,
                   ),
                 ),
               Expanded(child: SizedBox()),
               if (showAux)
                 Hinted(
-                  hint: isResponding
+                  hint: isSessionRunning
                       ? 'Auxiliary model: '
-                          '${_sessionController.auxiliaryModelShortName}\n'
-                          '(cannot be changed while the agent is responding)'
+                            '${_sessionController.auxiliaryModelShortName}\n'
+                            '(cannot be changed while the agent is responding)'
                       : 'Auxiliary model: '
-                          '${_sessionController.auxiliaryModelShortName}\n'
-                          '(used for /tldr summaries and title generation)',
+                            '${_sessionController.auxiliaryModelShortName}\n'
+                            '(used for /tldr summaries and title generation)',
                   child: _buildAuxiliaryModelButton(context),
                 ),
             ],

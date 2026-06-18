@@ -66,10 +66,15 @@ class CodingPlanUsageDisplay extends StatefulComponent {
   /// the first event lands.
   final CodingPlanUsage? initialUsage;
 
+  /// Called when the user clicks the display to force an
+  /// immediate refresh of the coding-plan usage data.
+  final VoidCallback? onTap;
+
   const CodingPlanUsageDisplay({
     super.key,
     required this.stream,
     this.initialUsage,
+    this.onTap,
   });
 
   @override
@@ -141,6 +146,23 @@ class _CodingPlanUsageDisplayState
   Color _targetIntervalColor = Color.defaultColor;
   Color _targetWeeklyColor = Color.defaultColor;
 
+  // ─── Refresh-flash state ───────────────────────────────────
+
+  /// Whether a user-triggered refresh is in flight. While
+  /// true the cell shows `⟳` to give immediate feedback
+  /// that the click did something. Cleared when the
+  /// stream delivers the next snapshot (or the flash
+  /// animation times out).
+  bool _refreshing = false;
+
+  /// Monotonic start time for the refresh flash.
+  int _refreshStartMs = 0;
+
+  /// Duration of the refresh-flash spinner. Short so it
+  /// feels responsive.
+  static const Duration _refreshFlashDuration =
+      Duration(milliseconds: 600);
+
   @override
   void initState() {
     super.initState();
@@ -177,6 +199,9 @@ class _CodingPlanUsageDisplayState
     if (!mounted) return;
     final prev = _usage;
     _usage = usage;
+    // When the stream delivers fresh data, clear the
+    // refresh-flash state so normal rendering resumes.
+    _refreshing = false;
     if (prev != null) {
       _startAnimation(prev, usage);
     }
@@ -323,6 +348,8 @@ class _CodingPlanUsageDisplayState
     final ticker = _animationTicker;
     if (ticker != null && ticker.isActive) {
       _tickAnimation();
+    } else if (_refreshing) {
+      _pushRefreshFrame();
     } else {
       _pushSettledFrame();
     }
@@ -394,6 +421,74 @@ class _CodingPlanUsageDisplayState
       weeklyText: '1w $weeklyInner',
       intervalFg: intervalColor,
       weeklyFg: weeklyColor,
+      hovered: _hovered,
+    );
+  }
+
+  // ─── Refresh-flash lifecycle ──────────────────────────────
+
+  /// Called from [build] when the user taps the display.
+  /// Kicks off the refresh-flash spinner and delegates
+  /// to [component.onTap] for the actual fetch.
+  void _onTap() {
+    if (_refreshing) return; // double-click guard
+    _refreshing = true;
+    _refreshStartMs = DateTime.now().millisecondsSinceEpoch;
+    // Push the spinner frame immediately so the user
+    // sees feedback on the very next paint.
+    _pushCurrentFrame();
+    // Fire the provider's refresh (invokes _tick(), which
+    // calls getCodingPlanUsage(), which feeds the stream).
+    component.onTap?.call();
+  }
+
+  /// Render the refresh-flash spinner: `⟳` in the accent
+  /// colour, fading back to the settled colours over
+  /// [_refreshFlashDuration]. Called from
+  /// [_pushCurrentFrame] while [_refreshing] is true.
+  void _pushRefreshFrame() {
+    final ro = _renderObject;
+    if (ro == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = now - _refreshStartMs;
+    final t = (elapsed / _refreshFlashDuration.inMilliseconds)
+        .clamp(0.0, 1.0);
+    final theme = CruxTheme.of(context);
+
+    if (t >= 1.0) {
+      // Flash timed out — revert to settled. The stream
+      // might deliver data on the next poll tick but
+      // the spinner shouldn't stay forever.
+      _refreshing = false;
+      _pushSettledFrame();
+      return;
+    }
+
+    // Fade from accent (cyan) back to the cell's normal
+    // colour. Linear fade looks clean for this tiny span.
+    final settledInterval = _ratioColor(
+      theme,
+      _ratio(
+        _usage?.intervalRemainingPct ?? 100,
+        _usage?.intervalRemains,
+        _kIntervalWindow,
+      ),
+    );
+    final settledWeekly = _ratioColor(
+      theme,
+      _ratio(
+        _usage?.weeklyRemainingPct ?? 100,
+        _usage?.weeklyRemains,
+        _kWeeklyWindow,
+      ),
+    );
+    final color = Color.lerp(theme.cyan, settledInterval, t)!;
+
+    ro.update(
+      intervalText: '5h  \u{27F3}',
+      weeklyText: '1w  \u{27F3}',
+      intervalFg: color,
+      weeklyFg: Color.lerp(theme.cyan, settledWeekly, t)!,
       hovered: _hovered,
     );
   }
@@ -519,23 +614,40 @@ class _CodingPlanUsageDisplayState
 
   @override
   Component build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hovered = true);
-        _pushCurrentFrame();
-      },
-      onExit: (_) {
-        setState(() => _hovered = false);
-        _pushCurrentFrame();
-      },
-      opaque: false,
-      child: _CodingPlanUsageBridge(
-        onRenderObject: (ro) {
-          ro.context = context;
-          _renderObject = ro;
-          // First mount: paint the initial frame.
+    final canTap = component.onTap != null;
+    final theme = CruxTheme.of(context);
+
+    // Button-style container: when clickable, show hover bg
+    // and bold on hover, same as the [Button] component.
+    final deco = _hovered && canTap
+        ? BoxDecoration(color: theme.buttonBackgroundHover)
+        : null;
+
+    return GestureDetector(
+      onTap: canTap ? _onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: MouseRegion(
+        onEnter: (_) {
+          if (canTap) setState(() => _hovered = true);
           _pushCurrentFrame();
         },
+        onExit: (_) {
+          setState(() => _hovered = false);
+          _pushCurrentFrame();
+        },
+        opaque: false,
+        child: Container(
+          decoration: deco,
+          padding: EdgeInsets.zero,
+          child: _CodingPlanUsageBridge(
+            onRenderObject: (ro) {
+              ro.context = context;
+              _renderObject = ro;
+              // First mount: paint the initial frame.
+              _pushCurrentFrame();
+            },
+          ),
+        ),
       ),
     );
   }

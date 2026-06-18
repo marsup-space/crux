@@ -126,6 +126,13 @@ mixin CodingPlanProvider on LlmProvider {
     }
   }
 
+  /// Force an immediate fetch, bypassing the timer. Useful
+  /// for click-to-refresh in the toolbar. Does nothing if
+  /// polling has never been started (no API key).
+  void refreshNow() {
+    unawaited(_tick());
+  }
+
   /// Release all resources. Call on app shutdown. After this
   /// the stream is closed and the provider must not be
   /// polled again.
