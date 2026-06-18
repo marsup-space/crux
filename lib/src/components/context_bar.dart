@@ -167,6 +167,21 @@ class _ContextBarState extends State<ContextBar> {
       _stopTimer();
       return;
     }
+
+    // Session-switch guard. `build()` has the same check, but
+    // it only fires on the next chat-panel rebuild (next frame
+    // at earliest). This tick path fires every 16ms, so it's
+    // the one that actually delivers the "immediate snap" the
+    // user expects on session switch. Without it, a tick that
+    // lands between `switchSession` updating `currentSessionId`
+    // and the next rebuild would lerp from the old session's
+    // final value toward the new one for one or more frames
+    // before the rebuild's snap corrected it.
+    if (_currentSessionId != sessionId) {
+      _snapToSession(sessionId);
+      return;
+    }
+
     final rt = component.sessionController.runtime(sessionId);
 
     // If we're in the post-stream grace period, check whether
@@ -230,6 +245,29 @@ class _ContextBarState extends State<ContextBar> {
     );
   }
 
+  /// Snap the bar to [sessionId]'s current context target and
+  /// stop the animation timer. Called from two places:
+  ///
+  /// 1. `build()` when the widget is rebuilt for a new session
+  ///    (next-frame path).
+  /// 2. `_tick()` when the 16ms timer fires after a session
+  ///    switch but before the rebuild (fast path — this is
+  ///    what delivers the "immediate snap" UX).
+  ///
+  /// Both paths converge on this helper so the snap behavior
+  /// can't drift: the displayed value becomes the new session's
+  /// `contextTargetTokens` exactly, and the lerp timer is
+  /// stopped so we don't continue animating toward the new
+  /// target (which would be visually misleading — it would
+  /// imply the new session is consuming those tokens).
+  void _snapToSession(int sessionId) {
+    final rt = component.sessionController.runtime(sessionId);
+    _currentSessionId = sessionId;
+    _displayTokens = rt.contextTargetTokens.toDouble();
+    _pushToRenderObject();
+    _stopTimer();
+  }
+
   @override
   void dispose() {
     _stopTimer();
@@ -245,18 +283,16 @@ class _ContextBarState extends State<ContextBar> {
       return const SizedBox();
     }
 
-    final rt = component.sessionController.runtime(sessionId);
-
     // Detect session switch — snap to the new session's
     // target without animating. Otherwise the bar would lerp
     // from session A's final value to session B's, which is
     // visually misleading (it implies session B is consuming
-    // those tokens).
+    // those tokens). The fast path of this same check lives
+    // in [_tick] so a 16ms timer tick between `switchSession`
+    // and the next rebuild also snaps immediately rather
+    // than animating from the old session's value.
     if (_currentSessionId != sessionId) {
-      _currentSessionId = sessionId;
-      _displayTokens = rt.contextTargetTokens.toDouble();
-      _stopTimer();
-      _pushToRenderObject();
+      _snapToSession(sessionId);
     }
 
     // Sync the timer with the streaming state. Runs only
