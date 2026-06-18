@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
+import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
 
 enum OverlayMode { off, command, parameter, wizard, atMention }
@@ -298,20 +299,25 @@ class OverlayController {
   /// rather than the query. The cursor is placed at the end of the
   /// inserted text.
   ///
-  /// If [atStart] is `null`, falls back to "find the last `@` in the
-  /// text" — this is the common case when the popover was just
-  /// dismissed by Enter and we know which `@` to replace.
+  /// If [atStart] is `null`, falls back to [findActiveMentionInText]
+  /// to locate the active `@` in the buffer — this is the common
+  /// case when the popover was just dismissed by Enter and we know
+  /// which `@` to replace. The mouse-tap path in `chat_panel.dart`
+  /// also passes `null` and relies on this fallback.
   void insertAtMention(int? atStart) {
     if (filteredFiles.isEmpty) return;
     final selected = filteredFiles[selectedFileIndex];
     final text = textController.text;
     final cursor = textController.selection.extentOffset;
 
-    // If the caller didn't tell us where the @ is, find the last
-    // occurrence at or before the cursor.
-    final resolvedStart =
-        atStart ?? _findLastAt(text, cursor);
-    if (resolvedStart < 0) return;
+    // If the caller didn't tell us where the @ is, find the
+    // in-progress mention ourselves. This honours the same rules
+    // the chat input uses (including the "allow whitespace inside
+    // a path component" rule for files in directories whose names
+    // contain spaces), and rejects email-style mentions.
+    final resolvedStart = atStart ??
+        findActiveMentionInText(text, cursor)?.atOffset;
+    if (resolvedStart == null || resolvedStart < 0) return;
 
     // Always append a trailing space — whether the user picked a
     // file or a directory — so the @-mention ends and they can
@@ -330,51 +336,5 @@ class OverlayController {
     );
 
     setOverlayOff();
-  }
-
-  /// Find the offset of the last `@` in [text] that is `<= [cursor]`
-  /// and is not preceded by an identifier char (so emails like
-  /// `foo@bar` don't trigger a mention). Returns `-1` if none.
-  ///
-  /// This is intentionally a best-effort heuristic — the chat input
-  /// already computed and passed the start offset to us; this is
-  /// just the safety-net path for when the popover is dismissed
-  /// without an explicit atStart.
-  static int _findLastAt(String text, int cursor) {
-    final clamped = cursor.clamp(0, text.length);
-    for (var i = clamped - 1; i >= 0; i--) {
-      final c = text[i];
-      if (c == '@') {
-        // Don't trigger on email-style mentions: the char before
-        // must not be alphanumeric or a path/word char.
-        if (i > 0) {
-          final prev = text[i - 1];
-          if (_isMentionChar(prev)) return -1;
-        }
-        return i;
-      }
-      if (_isMentionBlocker(c)) return -1;
-    }
-    return -1;
-  }
-
-  static bool _isMentionChar(String c) {
-    if (c.isEmpty) return false;
-    final cc = c.codeUnitAt(0);
-    // A–Z, a–z, 0–9, _, -
-    return (cc >= 0x30 && cc <= 0x39) ||
-        (cc >= 0x41 && cc <= 0x5A) ||
-        (cc >= 0x61 && cc <= 0x7A) ||
-        cc == 0x5F || // _
-        cc == 0x2D; // -
-  }
-
-  static bool _isMentionBlocker(String c) {
-    if (c.isEmpty) return true;
-    final cc = c.codeUnitAt(0);
-    // Whitespace, common punctuation that ends a mention.
-    return cc == 0x20 || cc == 0x09 || cc == 0x0A ||
-        cc == 0x28 || cc == 0x29 || cc == 0x5B || cc == 0x5D ||
-        cc == 0x7B || cc == 0x7D || cc == 0x2C || cc == 0x3B;
   }
 }

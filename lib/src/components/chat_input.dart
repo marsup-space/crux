@@ -9,6 +9,7 @@ import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/at_mention_parser.dart';
 import '../utils/clipboard_image.dart';
 import '../utils/clipboard_text.dart';
 import '../utils/cjk_word_boundary.dart';
@@ -89,35 +90,11 @@ class ChatInput extends StatefulComponent {
   State<ChatInput> createState() => ChatInputState();
 }
 
-/// Public state for [ChatInput], exposed via [GlobalKey] so that parent
-/// widgets can call [stashAndSetCommand].
-/// Bounds the cached state of an active @-mention. Found by
-/// [ChatInputState._findActiveMention] on every text change and
-/// passed to [_showAtMention] / [OverlayController.insertAtMention]
-/// so the popover knows both *which* `@` is active and *what* the
-/// user has typed so far.
-class _AtMention {
-  /// Offset of the `@` in the text.
-  final int atOffset;
-
-  /// Offset where the query begins (== atOffset + 1). Convenience
-  /// field — the code that uses [_AtMention] only needs one or the
-  /// other depending on context.
-  final int queryStart;
-
-  /// Current cursor position (== end of query).
-  final int cursor;
-
-  /// Text between the `@` and the cursor.
-  final String query;
-
-  const _AtMention({
-    required this.atOffset,
-    required this.queryStart,
-    required this.cursor,
-    required this.query,
-  });
-}
+/// Local alias for [AtMentionPosition], the value object returned by
+/// [findActiveMentionInText] (and previously the private `_AtMention`
+/// class). Used at the call sites inside [ChatInputState] to keep the
+/// rest of the file from leaking the parser's type name.
+typedef _AtMention = AtMentionPosition;
 
 /// Lightweight snapshot of just the [OverlayController] fields
 /// the chat panel actually reads when rendering the overlay
@@ -630,64 +607,19 @@ class ChatInputState extends State<ChatInput> {
   /// they typed whitespace inside the query, or there is no `@`).
   ///
   /// "Active" means: there's an `@` somewhere at or before the
-  /// cursor, no whitespace/closing-punctuation between it and the
-  /// cursor, and the char before the `@` is either nothing or a
-  /// non-identifier char (so `foo@bar` doesn't trigger).
+  /// cursor, no terminator between it and the cursor, and the
+  /// char before the `@` is either nothing or a non-identifier
+  /// char (so `foo@bar` doesn't trigger).
+  ///
+  /// Whitespace inside a multi-word path component (`My Documents`)
+  /// is allowed so users can @-mention files inside directories
+  /// whose names contain spaces. See [findActiveMentionInText] for
+  /// the exact rules.
   _AtMention? _findActiveMention() {
     final tc = component.textController;
-    final text = tc.text;
-    final cursor = tc.selection.extentOffset.clamp(0, text.length);
-
-    // Walk backwards from the cursor looking for an `@` that is
-    // the start of an in-progress mention. Stop at whitespace or
-    // closing punctuation (which terminates the query).
-    var atOffset = -1;
-    for (var i = cursor - 1; i >= 0; i--) {
-      final ch = text[i];
-      if (ch == '@') {
-        atOffset = i;
-        break;
-      }
-      // Whitespace, comma, semicolon, paren, bracket, brace all
-      // end the query — no mention here.
-      final cc = ch.codeUnitAt(0);
-      if (cc == 0x20 ||
-          cc == 0x09 ||
-          cc == 0x0A || // space, tab, newline
-          cc == 0x28 ||
-          cc == 0x29 || // ( )
-          cc == 0x5B ||
-          cc == 0x5D || // [ ]
-          cc == 0x7B ||
-          cc == 0x7D || // { }
-          cc == 0x2C ||
-          cc == 0x3B) {
-        // , ;
-        return null;
-      }
-    }
-    if (atOffset < 0) return null;
-
-    // Reject email-style mentions: the char immediately before the
-    // `@` must not be an identifier char (A–Z, a–z, 0–9, _, -).
-    if (atOffset > 0) {
-      final prev = text[atOffset - 1];
-      final pc = prev.codeUnitAt(0);
-      final isIdent =
-          (pc >= 0x30 && pc <= 0x39) ||
-          (pc >= 0x41 && pc <= 0x5A) ||
-          (pc >= 0x61 && pc <= 0x7A) ||
-          pc == 0x5F || // _
-          pc == 0x2D; // -
-      if (isIdent) return null;
-    }
-
-    final query = text.substring(atOffset + 1, cursor);
-    return _AtMention(
-      atOffset: atOffset,
-      queryStart: atOffset + 1,
-      cursor: cursor,
-      query: query,
+    return findActiveMentionInText(
+      tc.text,
+      tc.selection.extentOffset,
     );
   }
 
