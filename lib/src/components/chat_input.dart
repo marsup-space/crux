@@ -1522,8 +1522,8 @@ class ChatInputState extends State<ChatInput> {
   ///     `[ image N ]` marker at the cursor);
   ///   * an aggregated text insertion (via
   ///     [formatDroppedFilesForInput]) that puts file content /
-  ///     path references / directory listings into the input
-  ///     box at the current cursor position;
+  ///     path references into the input box at the current cursor
+  ///     position;
   ///   * a summary toast, plus an error toast for any missing
   ///     paths.
   ///

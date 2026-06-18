@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 /// (`ChatInput._handlePaste`) maps each kind to a UI action:
 ///   • [image]         → attach as image attachment (existing path)
 ///   • [file]          → insert path as a labeled reference
-///   • [directory]     → list a few entries and insert as reference
+///   • [directory]     → insert just the directory path as a reference
 ///   • [missing]       → show an error toast, do not insert
 enum DroppedFileKind {
   image,
@@ -156,9 +156,11 @@ List<DroppedFile> classifyDroppedPaths(
 /// Build the text to insert into the chat input for the
 /// non-image, non-missing entries in [files].
 ///
-/// Each file is inserted as a path reference — the AI agent will
-/// read file content on demand with its own tools. Directories
-/// get a lightweight listing so the user can see what's inside.
+/// Each entry is inserted as a path reference — the AI agent
+/// reads file content on demand with its own tools. Directories
+/// get a bare path reference (no inlined listing): the chat
+/// input is not the right place for a directory tree, and the
+/// agent can list it itself with its tools.
 ///
 /// Image and missing entries are skipped here; the caller handles
 /// them separately (attach / toast).
@@ -178,32 +180,11 @@ String formatDroppedFilesForInput(List<DroppedFile> files) {
         buf.writeln();
         break;
       case DroppedFileKind.directory:
+        // Just the path reference — no inlined listing. The agent
+        // can explore the directory with its own tools when it
+        // needs to, and the chat input stays a clean prompt
+        // instead of a one-shot directory dump.
         buf.writeln('[directory: ${f.absolutePath}]');
-        try {
-          final entries = Directory(f.absolutePath)
-              .listSync(followLinks: false)
-              .take(20)
-              .map((e) => p.basename(e.path))
-              .toList();
-          if (entries.isEmpty) {
-            buf.writeln('(empty directory)');
-          } else {
-            for (final name in entries) {
-              buf.writeln('  - $name');
-            }
-            // Only show the "more" hint when we actually hit the
-            // cap — otherwise the user gets a misleading "..." in
-            // a directory that genuinely has 20 entries.
-            final total = Directory(f.absolutePath)
-                .listSync(followLinks: false)
-                .length;
-            if (total > entries.length) {
-              buf.writeln('  ... and ${total - entries.length} more');
-            }
-          }
-        } on FileSystemException catch (e) {
-          buf.writeln('(could not list: ${e.message})');
-        }
         buf.writeln();
         break;
     }

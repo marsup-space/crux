@@ -213,15 +213,19 @@ void main() {
       expect(out, contains('128.0 KB'));
     });
 
-    test('renders a directory with a listing of its first entries', () {
+    test('renders a directory as a path reference only (no listing)', () {
       final files = classifyDroppedPaths(
         [fx.path('sub')],
         projectRoot: fx.root.path,
       );
       final out = formatDroppedFilesForInput(files);
       expect(out, contains('[directory:'));
-      expect(out, contains('a.md'));
-      expect(out, contains('b.md'));
+      expect(out, contains(fx.path('sub')));
+      // Contents must NOT be inlined — the agent lists the
+      // directory itself with its own tools when it needs to.
+      expect(out, isNot(contains('a.md')));
+      expect(out, isNot(contains('b.md')));
+      expect(out, isNot(contains('(empty directory)')));
     });
 
     test('skips image and missing kinds (caller handles them)', () {
