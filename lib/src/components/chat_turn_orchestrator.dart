@@ -576,9 +576,10 @@ class ChatTurnOrchestrator {
       return;
     }
 
-    if (rt.roundStreaming && rt.roundStartTime != null) {
+    if (rt.roundStreaming && rt.roundFirstTokenTime != null) {
       rt.cumulativeGenMs +=
-          DateTime.now().difference(rt.roundStartTime!).inMicroseconds / 1000.0;
+          DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
+          1000.0;
     }
     rt.roundStreaming = false;
     rt.roundStartTime = null;

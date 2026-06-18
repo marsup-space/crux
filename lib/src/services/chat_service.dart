@@ -303,9 +303,11 @@ class ChatService {
     void stopActiveRound({bool accumulate = false}) {
       if (accumulate &&
           runtime.roundStreaming &&
-          runtime.roundStartTime != null) {
+          runtime.roundFirstTokenTime != null) {
         runtime.cumulativeGenMs +=
-            DateTime.now().difference(runtime.roundStartTime!).inMicroseconds /
+            DateTime.now()
+                .difference(runtime.roundFirstTokenTime!)
+                .inMicroseconds /
             1000.0;
       }
       runtime.roundStreaming = false;

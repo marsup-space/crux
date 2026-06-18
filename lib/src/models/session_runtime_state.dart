@@ -21,12 +21,11 @@ class SessionRuntimeState {
   /// Reset to null at the start of each turn.
   DateTime? firstTokenTime;
 
-  /// Wall-clock time the LLM was actively emitting deltas, summed across
-  /// every model round of the current turn. Excludes (a) the TTFT wait
-  /// before the first delta of each round, and (b) the time spent
-  /// executing tools / waiting for the next round to start. Updated by
-  /// `chat_service` when a round ends; combined with the in-flight round
-  /// timing by `streaming_controller` to compute tok/s live.
+  /// Wall-clock time the LLM was actively emitting generated deltas, summed
+  /// across every model round of the current agent turn. Each round starts
+  /// counting at its first emitted delta, whether that delta is reasoning,
+  /// response text, or tool_use JSON. Excludes TTFT, local tool execution,
+  /// between-round waits, and idle UI time.
   double cumulativeGenMs = 0.0;
 
   /// Estimated completion tokens (text + reasoning + tool_use input
@@ -36,15 +35,16 @@ class SessionRuntimeState {
   int cumulativeCompletionTokens = 0;
 
   /// Wall-clock time the current LLM request round started. Null between
-  /// rounds, including while local tools execute. Together with
-  /// `cumulativeGenMs`, this lets the live tok/s readout include the LLM's
-  /// thinking/TTFT, response streaming, and tool-call generation time while
-  /// excluding local tool execution and idle UI time.
+  /// rounds, including while local tools execute. This remains useful for
+  /// lifecycle/debug timing; tok/s uses [roundFirstTokenTime] instead so TTFT
+  /// is excluded from the generation-rate denominator.
   DateTime? roundStartTime;
 
   /// First emitted delta time of the *current* round. This remains null
   /// while the LLM is thinking before it emits text, reasoning, or tool_use
-  /// chunks. TTFT uses this boundary; tok/s uses [roundStartTime].
+  /// chunks. TTFT and tok/s both use this boundary for different purposes:
+  /// TTFT measures the delay until it arrives; tok/s measures generation rate
+  /// from this point until the stream ends.
   DateTime? roundFirstTokenTime;
 
   /// True while an LLM request round is active: thinking before the first

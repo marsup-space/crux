@@ -173,11 +173,10 @@ class StreamingController {
       rt.ttftMs = elapsedMs;
     }
 
-    // Pause tok/s while we're outside an active LLM request round. The
-    // round is active while the model is thinking before the first delta,
-    // streaming response/reasoning, or generating tool_use chunks. It is
-    // inactive during local tool execution, between-round waits, and idle UI.
-    if (!rt.roundStreaming) return;
+    // Pause tok/s while we're outside active token generation. That means:
+    // before the first model delta arrives, during local tool execution,
+    // between LLM requests, and during idle UI time.
+    if (!rt.roundStreaming || rt.roundFirstTokenTime == null) return;
 
     // Live numerator: completed text/reasoning/tool_use tokens from prior
     // rounds, plus tool_use JSON deltas already emitted in this round, plus
@@ -189,19 +188,15 @@ class StreamingController {
     );
     final tokens = rt.cumulativeCompletionTokens + liveStreamingTokens;
 
-    // Live denominator: cumulative active LLM time of all completed rounds
-    // plus the wall-clock time elapsed in the current LLM round. Includes
-    // thinking/TTFT, response streaming, and tool-call generation; excludes
-    // local tool execution and idle UI time.
+    // Live denominator: cumulative generated-token time of all completed
+    // rounds plus the current round's elapsed time since its first emitted
+    // token/delta. The first delta can be reasoning, response text, or
+    // tool_use JSON. This excludes TTFT, local tool execution, between-round
+    // waits, and idle UI time.
     var genMs = rt.cumulativeGenMs;
-    if (rt.roundStartTime != null) {
-      genMs +=
-          DateTime.now().difference(rt.roundStartTime!).inMicroseconds / 1000.0;
-    } else {
-      // Defensive fallback for older runtime state or a race while a round is
-      // being initialized.
-      genMs = elapsedMs;
-    }
+    genMs +=
+        DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
+        1000.0;
 
     final elapsedSec = genMs / 1000.0;
     if (elapsedSec > 0) {
