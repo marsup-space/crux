@@ -33,9 +33,7 @@ class ShellProcessRegistry {
   /// Register a running [process] for [sessionId]. Returns the same
   /// [process] for convenience.
   Process register(int sessionId, Process process) {
-    _processes.putIfAbsent(sessionId, () => {}).add(
-      _TrackedProcess(process),
-    );
+    _processes.putIfAbsent(sessionId, () => {}).add(_TrackedProcess(process));
     return process;
   }
 
@@ -67,9 +65,13 @@ class ShellProcessRegistry {
         // Send SIGTERM to the process group so child processes are
         // also killed (e.g. a shell pipeline, background jobs).
         // We use the shell `kill` command with negative PGID because
-        // Dart's Process.killPid may not support negative PIDs.
+        // Dart's Process.killPid may not support negative PIDs. Never
+        // signal Crux's own process group: normally-started Unix
+        // children inherit it, and killing that group would deliver
+        // SIGTERM back to the TUI.
         final pgid = _getPgid(process.pid);
-        if (pgid != null) {
+        final ownPgid = _getPgid(pid);
+        if (pgid != null && pgid != ownPgid) {
           Process.runSync('kill', ['-TERM', '--', '-$pgid']);
         }
         // Also kill the process itself as a fallback.
@@ -109,6 +111,26 @@ class _TrackedProcess {
 abstract class ShellBase extends ToolDef with IntentionalTool {
   ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'});
 
+  ShellInvocation _prepareInvocation(ShellInvocation invocation) {
+    if (Platform.isWindows) return invocation;
+
+    // Dart's normal Process.start keeps Unix children in Crux's process
+    // group. Wrap the shell in a tiny Perl setsid trampoline so timeout /
+    // interrupt cleanup can signal the tool's group without signaling Crux.
+    final perl = File('/usr/bin/perl').existsSync() ? '/usr/bin/perl' : 'perl';
+    return ShellInvocation(
+      executable: perl,
+      args: [
+        '-MPOSIX=setsid',
+        '-e',
+        r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
+        invocation.executable,
+        ...invocation.args,
+      ],
+      cleanupPaths: invocation.cleanupPaths,
+    );
+  }
+
   /// Run a shell command using [Process.start] so it can be killed
   /// via the [abort] signal. The process is registered in the global
   /// [ShellProcessRegistry] so that an interrupt can kill it and all
@@ -120,7 +142,9 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     String encoding = 'utf8',
     AbortSignal? abort,
   }) async {
-    final invocation = resolveInvocation(command, encoding: encoding);
+    final invocation = _prepareInvocation(
+      resolveInvocation(command, encoding: encoding),
+    );
     final sessionId = abort?.sessionId;
     Process? process;
     try {
@@ -137,7 +161,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         invocation.executable,
         invocation.args,
         environment: environment,
-        runInShell: true,
+        runInShell: Platform.isWindows,
         mode: ProcessStartMode.normal,
       );
 
@@ -155,18 +179,15 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       Completer<void>? abortCompleter;
       if (abort != null) {
         abortCompleter = Completer<void>();
-        abortCheckTimer = Timer.periodic(
-          const Duration(milliseconds: 50),
-          (_) {
-            if (abort.isAborted) {
-              abortCheckTimer?.cancel();
-              ShellProcessRegistry._killProcessGroup(process!);
-              if (!abortCompleter!.isCompleted) {
-                abortCompleter.complete();
-              }
+        abortCheckTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+          if (abort.isAborted) {
+            abortCheckTimer?.cancel();
+            ShellProcessRegistry._killProcessGroup(process!);
+            if (!abortCompleter!.isCompleted) {
+              abortCompleter.complete();
             }
-          },
-        );
+          }
+        });
       }
 
       // Collect stdout and stderr.
@@ -188,8 +209,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         final results = await Future.any<List<dynamic>>([
           exitCodeFuture.then((code) => [code]),
           Future.delayed(timeout, () => [-1]),
-          if (abortCompleter != null)
-            abortCompleter.future.then((_) => [-2]),
+          if (abortCompleter != null) abortCompleter.future.then((_) => [-2]),
         ]);
 
         exitCode = results[0] as int;
@@ -206,16 +226,19 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         // short timeout so we don't hang on misbehaving processes.
         if (exitCode == -1 || exitCode == -2) {
           try {
-            exitCode = await process.exitCode
-                .timeout(const Duration(seconds: 2));
+            exitCode = await process.exitCode.timeout(
+              const Duration(seconds: 2),
+            );
           } catch (_) {
             exitCode = -1;
           }
         }
         // Always wait for output streams to finish, with a timeout.
         try {
-          await Future.wait([stdoutFuture, stderrFuture])
-              .timeout(const Duration(seconds: 2));
+          await Future.wait([
+            stdoutFuture,
+            stderrFuture,
+          ]).timeout(const Duration(seconds: 2));
         } catch (_) {
           // Streams may not close cleanly after kill; that's OK.
         }
@@ -367,7 +390,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       'command': {'type': 'string', 'description': 'Command to execute'},
       'intent': {
         'type': 'string',
-        'description': 'What this command accomplishes / why you are running it. Be concise.',
+        'description':
+            'What this command accomplishes / why you are running it. Be concise.',
       },
       'timeout': {
         'type': 'integer',
@@ -375,7 +399,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       },
       'encoding': {
         'type': 'string',
-        'description': 'Output encoding (default utf8). '
+        'description':
+            'Output encoding (default utf8). '
             'Also sets shell code page: for cmd, maps to chcp; '
             'for powershell, sets [Console]::OutputEncoding.',
       },
