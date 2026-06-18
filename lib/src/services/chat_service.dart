@@ -187,6 +187,19 @@ class ChatService {
 
     var firstTokenEver = true;
 
+    void stopActiveRound({bool accumulate = false}) {
+      if (accumulate &&
+          runtime.roundStreaming &&
+          runtime.roundStartTime != null) {
+        runtime.cumulativeGenMs +=
+            DateTime.now().difference(runtime.roundStartTime!).inMicroseconds /
+            1000.0;
+      }
+      runtime.roundStreaming = false;
+      runtime.roundStartTime = null;
+      runtime.roundFirstTokenTime = null;
+    }
+
     // Resolve the per-turn round-trip cap from provider/model TOML config.
     // Precedence: model-level max_rounds → provider default_max_rounds
     // → null (unbounded, the default). When set, the agentic loop bails
@@ -207,6 +220,7 @@ class ChatService {
 
       if (_cancelRequested.contains(sessionId)) {
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -216,11 +230,11 @@ class ChatService {
       }
 
       runtime.startStreamingTimer();
-      // Mark that the LLM is not currently streaming deltas — the first
-      // delta of this round will flip this on, and the metrics timer
-      // uses the flag to pause tok/s while we wait for the model to
-      // start emitting and while tools run.
-      runtime.roundStreaming = false;
+      // Mark this LLM request round as active immediately. tok/s should
+      // include the model's thinking/TTFT, response streaming, and tool-call
+      // generation time, then pause again while local tools execute.
+      runtime.roundStartTime = DateTime.now();
+      runtime.roundStreaming = true;
       runtime.roundFirstTokenTime = null;
 
       // Reset per-round thinking metrics so every tool_call message
@@ -336,6 +350,7 @@ class ChatService {
           if (chunk.error != null) {
             lerpTimer?.cancel();
             runtime.pauseStreamingTimer();
+            stopActiveRound();
             runtime.isResponding = false;
             await _store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
@@ -350,21 +365,16 @@ class ChatService {
             roundReasoningSignatureBuffer.write(chunk.reasoningSignatureDelta);
           }
 
-          // First delta of the current round (text, reasoning, or
-          // tool_use): mark the start of active generation for this
-          // round. The metrics timer uses roundFirstTokenTime to
-          // compute the live tok/s denominator. The cumulative
-          // completion-token counter also gets a small bump for
-          // tool_use JSON fragments so the LLM's tool-call generation
-          // is included in tok/s (text and reasoning are accounted
-          // for via estimateTokens in the metrics timer).
+          // First emitted delta of the current round (text, reasoning, or
+          // tool_use). The LLM round itself was marked active before the
+          // request so tok/s includes thinking/TTFT; this timestamp is kept
+          // for TTFT and reasoning-duration boundaries.
           if (chunk.textDelta != null ||
               chunk.reasoningContent != null ||
               chunk.toolUse != null) {
             final now = DateTime.now();
-            if (!runtime.roundStreaming) {
+            if (runtime.roundFirstTokenTime == null) {
               runtime.roundFirstTokenTime = now;
-              runtime.roundStreaming = true;
               roundFirstDeltaTime = now;
             }
             // Always track the last delta time so we can compute
@@ -470,6 +480,7 @@ class ChatService {
       } catch (e) {
         lerpTimer?.cancel();
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -484,6 +495,7 @@ class ChatService {
       // has already handled cleanup.
       if (_cancelRequested.contains(sessionId)) {
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -501,14 +513,7 @@ class ChatService {
       // BEFORE the lerp drain so the denominator reflects only the
       // LLM's actual generation time, not the visual lerp animation
       // (up to 10s of post-stream UI smoothing).
-      if (runtime.roundStreaming && runtime.roundFirstTokenTime != null) {
-        final roundMs =
-            DateTime.now()
-                .difference(runtime.roundFirstTokenTime!)
-                .inMicroseconds /
-            1000.0;
-        runtime.cumulativeGenMs += roundMs;
-      }
+      stopActiveRound(accumulate: true);
 
       // Compute per-round thinking duration from the wall-clock time
       // between the first and last reasoning tokens in the stream.
@@ -546,9 +551,6 @@ class ChatService {
       // overwrites the cumulative value.
       roundReasoningTokens = reasoningTokens;
 
-      runtime.roundStreaming = false;
-      runtime.roundFirstTokenTime = null;
-
       if (lerpTimer != null) {
         if (lerpPendingText.isEmpty && lerpPendingReasoning.isEmpty) {
           lerpTimer?.cancel();
@@ -575,6 +577,7 @@ class ChatService {
       // started executing.
       if (_cancelRequested.contains(sessionId)) {
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -609,6 +612,7 @@ class ChatService {
           // interrupted while tools are running.
           if (_cancelRequested.contains(sessionId)) {
             runtime.pauseStreamingTimer();
+            stopActiveRound();
             runtime.isResponding = false;
             await _store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
@@ -652,6 +656,7 @@ class ChatService {
         }
       } catch (e) {
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
@@ -693,6 +698,7 @@ class ChatService {
         );
       } catch (e) {
         runtime.pauseStreamingTimer();
+        stopActiveRound();
         runtime.isResponding = false;
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;

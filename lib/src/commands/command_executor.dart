@@ -948,6 +948,9 @@ class CommandExecutor {
       '  firstTokenTime:            ${rt.firstTokenTime?.toIso8601String() ?? "—"}',
     );
     buf.writeln(
+      '  roundStartTime:            ${rt.roundStartTime?.toIso8601String() ?? "—"}',
+    );
+    buf.writeln(
       '  roundFirstTokenTime:       ${rt.roundFirstTokenTime?.toIso8601String() ?? "—"}',
     );
     buf.writeln('  thinkingMode:              ${rt.thinkingMode}');

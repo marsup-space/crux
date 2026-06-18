@@ -177,6 +177,7 @@ class ChatTurnOrchestrator {
     rt.firstTokenTime = null;
     rt.cumulativeGenMs = 0.0;
     rt.cumulativeCompletionTokens = 0;
+    rt.roundStartTime = null;
     rt.roundFirstTokenTime = null;
     rt.roundStreaming = false;
 
@@ -453,8 +454,9 @@ class ChatTurnOrchestrator {
     rt.firstTokenTime = null;
     rt.cumulativeGenMs = 0.0;
     rt.cumulativeCompletionTokens = 0;
+    rt.roundStartTime = DateTime.now();
     rt.roundFirstTokenTime = null;
-    rt.roundStreaming = false;
+    rt.roundStreaming = true;
     rt.startStreamingTimer();
     _streamingController.startMetricsTimer(sessionId);
     _sessionController.appendPendingBtwTurn(sessionId, prompt);
@@ -490,10 +492,7 @@ class ChatTurnOrchestrator {
         final deltaText = chunk.textDelta;
         final deltaReasoning = chunk.reasoningContent;
         if (deltaText != null || deltaReasoning != null) {
-          if (!rt.roundStreaming) {
-            rt.roundFirstTokenTime = DateTime.now();
-            rt.roundStreaming = true;
-          }
+          rt.roundFirstTokenTime ??= DateTime.now();
           if (firstTokenEver &&
               (deltaText != null || deltaReasoning != null)) {
             final now = DateTime.now();
@@ -539,7 +538,13 @@ class ChatTurnOrchestrator {
       return;
     }
 
+    if (rt.roundStreaming && rt.roundStartTime != null) {
+      rt.cumulativeGenMs +=
+          DateTime.now().difference(rt.roundStartTime!).inMicroseconds /
+              1000.0;
+    }
     rt.roundStreaming = false;
+    rt.roundStartTime = null;
     rt.roundFirstTokenTime = null;
     rt.pauseStreamingTimer();
     _streamingController.stopMetricsTimer(sessionId);
@@ -631,6 +636,7 @@ class ChatTurnOrchestrator {
     rt.btwMode = false;
     rt.interrupted = true;
     rt.roundStreaming = false;
+    rt.roundStartTime = null;
     rt.roundFirstTokenTime = null;
     rt.pauseStreamingTimer();
     rt.cancelTimers();

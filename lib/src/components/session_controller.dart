@@ -364,6 +364,7 @@ class SessionController {
       rt.streamingDurationMs = 0;
       rt.cumulativeGenMs = 0.0;
       rt.cumulativeCompletionTokens = 0;
+      rt.roundStartTime = null;
       rt.roundFirstTokenTime = null;
       rt.roundStreaming = false;
     }

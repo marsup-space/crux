@@ -173,13 +173,10 @@ class StreamingController {
       rt.ttftMs = elapsedMs;
     }
 
-    // Pause tok/s while we're between rounds — that is, after the
-    // previous round's stream has ended and before the next round's
-    // first delta arrives. This covers (a) the TTFT wait at the
-    // start of a new round, (b) tool execution, and (c) the network
-    // round-trip sending the tool result back. Without this check,
-    // the displayed rate would keep ticking down through all of
-    // those phases, which is misleading.
+    // Pause tok/s while we're outside an active LLM request round. The
+    // round is active while the model is thinking before the first delta,
+    // streaming response/reasoning, or generating tool_use chunks. It is
+    // inactive during local tool execution, between-round waits, and idle UI.
     if (!rt.roundStreaming) return;
 
     // Live numerator: estimated tokens for the streaming text +
@@ -194,21 +191,17 @@ class StreamingController {
     );
     final tokens = rt.cumulativeCompletionTokens + liveStreamingTokens;
 
-    // Live denominator: cumulative gen time of all completed rounds
-    // plus the wall-clock time elapsed in the current round since
-    // its first delta. Excludes TTFT (the wait before the round's
-    // first delta) and the time spent on tool execution / waiting
-    // for the next round.
+    // Live denominator: cumulative active LLM time of all completed rounds
+    // plus the wall-clock time elapsed in the current LLM round. Includes
+    // thinking/TTFT, response streaming, and tool-call generation; excludes
+    // local tool execution and idle UI time.
     var genMs = rt.cumulativeGenMs;
-    if (rt.roundFirstTokenTime != null) {
+    if (rt.roundStartTime != null) {
       genMs +=
-          DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
-          1000.0;
+          DateTime.now().difference(rt.roundStartTime!).inMicroseconds / 1000.0;
     } else {
-      // Race during the first tick after roundStreaming flipped on
-      // but roundFirstTokenTime hadn't been written yet. Fall back
-      // to elapsed-since-responseStart to avoid a negative or huge
-      // denominator.
+      // Defensive fallback for older runtime state or a race while a round is
+      // being initialized.
       genMs = elapsedMs;
     }
 

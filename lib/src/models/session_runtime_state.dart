@@ -35,19 +35,21 @@ class SessionRuntimeState {
   /// part of its completion.
   int cumulativeCompletionTokens = 0;
 
-  /// First delta time of the *current* round (the round that is currently
-  /// receiving deltas). Null between rounds (i.e. while the previous
-  /// round is done and the next LLM call has not produced its first
-  /// delta yet, or while tools are executing). Together with
-  /// `cumulativeGenMs`, this lets the live tok/s readout exclude
-  /// tool-execution time and the wait-for-next-round.
+  /// Wall-clock time the current LLM request round started. Null between
+  /// rounds, including while local tools execute. Together with
+  /// `cumulativeGenMs`, this lets the live tok/s readout include the LLM's
+  /// thinking/TTFT, response streaming, and tool-call generation time while
+  /// excluding local tool execution and idle UI time.
+  DateTime? roundStartTime;
+
+  /// First emitted delta time of the *current* round. This remains null
+  /// while the LLM is thinking before it emits text, reasoning, or tool_use
+  /// chunks. TTFT uses this boundary; tok/s uses [roundStartTime].
   DateTime? roundFirstTokenTime;
 
-  /// True while the LLM is actively streaming deltas for the current
-  /// round. False during tool execution and the wait between rounds.
-  /// The metrics timer checks this so the displayed tok/s doesn't keep
-  /// ticking down while we're sending a tool result back and waiting for
-  /// the model to respond.
+  /// True while an LLM request round is active: thinking before the first
+  /// delta, streaming response/reasoning deltas, or generating tool_use
+  /// chunks. False during local tool execution and the wait between rounds.
   bool roundStreaming = false;
 
   double tokCount;
@@ -139,6 +141,7 @@ class SessionRuntimeState {
     firstTokenTime = null;
     cumulativeGenMs = 0.0;
     cumulativeCompletionTokens = 0;
+    roundStartTime = null;
     roundFirstTokenTime = null;
     roundStreaming = false;
     isResponding = false;
