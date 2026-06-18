@@ -22,6 +22,37 @@ import '../utils/ticker_registry.dart';
 /// lives on the `CodingPlanProvider` mixin; the widget just
 /// paints.
 ///
+/// ## Hover countdown ticker
+///
+/// When the user hovers and at least one cell's countdown
+/// shows a visible seconds digit (i.e. `remaining < 1 minute`
+/// per [formatCodingPlanRemains]), a separate
+/// [_countdownTicker] starts running at
+/// [_countdownTickInterval] (250ms) and the displayed
+/// countdown is computed from an anchor captured at hover-
+/// entry:
+///
+/// ```text
+/// displayed = anchor - (now - anchorMs)
+/// ```
+///
+/// where `anchor` is the snapshot's effective time-until-
+/// reset at hover-entry (`intervalRemains - (now - fetchedAt)`,
+/// clamped to `>= 0`). The 250ms cadence keeps the visible
+/// second digit within ~250ms of the actual transition —
+/// faster than the wall-clock second would let us perceive,
+/// and cheap because the ticker just decrements a [Duration]
+/// and pushes one paint. Ticks yield to the 3-second
+/// animation ticker when both fire in the same frame, so
+/// the punchy red/green flash stays clean.
+///
+/// When either cell's displayed countdown hits zero, the
+/// ticker reuses the click-to-refresh path ([_onTap]) so
+/// the same flash-spinner / `onTap` plumbing kicks in.
+/// The new snapshot the provider emits will replace the
+/// ticker's value via [_onUsage], which also re-anchors
+/// (or stops) the ticker.
+///
 /// ## Animation
 ///
 /// When a new snapshot arrives and the value differs from the
@@ -163,6 +194,48 @@ class _CodingPlanUsageDisplayState
   static const Duration _refreshFlashDuration =
       Duration(milliseconds: 600);
 
+  // ─── Hover-countdown ticker state ──────────────────────────
+
+  /// Cadence for the hover countdown ticker. 250ms is a
+  /// good balance: faster than the 1-second wall clock
+  /// (so the displayed second digit changes within ~250ms
+  /// of the actual transition), and cheap because each
+  /// tick just decrements a [Duration] and pushes one
+  /// paint — the render object's dirty check absorbs
+  /// no-op frames where the formatted string didn't
+  /// change (e.g. within the same second).
+  static const Duration _countdownTickInterval =
+      Duration(milliseconds: 250);
+
+  /// Ticker for the hover countdown. Started by
+  /// [_syncCountdownTicker] when the user hovers AND at
+  /// least one cell's countdown will show a visible
+  /// seconds digit (<1m remaining). Stopped on hover-
+  /// exit, when a new snapshot lands that no longer
+  /// qualifies, or when the displayed countdown hits
+  /// zero (in which case [_onTap] is invoked to trigger
+  /// a refresh).
+  TickerToken? _countdownTicker;
+
+  /// Wall-clock time captured when the countdown anchor
+  /// was last (re-)set. The displayed countdown is
+  /// computed as `_anchor*Remains - (now - _countdownAnchorMs)`,
+  /// so this is the "t=0" of the visible countdown.
+  int _countdownAnchorMs = 0;
+
+  /// Effective time-until-reset for the 5h window at the
+  /// moment [_syncCountdownTicker] captured the anchor.
+  /// Computed from the snapshot's `intervalRemains`
+  /// minus the elapsed time since `fetchedAt`, so the
+  /// countdown starts from the actual remaining time
+  /// (not the API's stale value) the instant the user
+  /// hovers.
+  Duration? _anchorIntervalRemains;
+
+  /// Same as [_anchorIntervalRemains] but for the weekly
+  /// window.
+  Duration? _anchorWeeklyRemains;
+
   @override
   void initState() {
     super.initState();
@@ -189,6 +262,8 @@ class _CodingPlanUsageDisplayState
     _subscription?.cancel();
     _animationTicker?.cancel();
     _animationTicker = null;
+    _countdownTicker?.cancel();
+    _countdownTicker = null;
     super.dispose();
   }
 
@@ -217,6 +292,22 @@ class _CodingPlanUsageDisplayState
     // structurally identical, and the render object
     // dirty-check absorbs no-op updates.
     setState(() {});
+    // Re-evaluate the hover countdown ticker. A new
+    // snapshot might:
+    //   * have reset the window (new intervalRemains
+    //     well above 1 minute → stop ticking);
+    //   * have a different remaining value mid-window
+    //     (re-anchor so the displayed countdown snaps
+    //     to the new value rather than drifting from
+    //     the old anchor);
+    //   * leave the countdown in the same regime
+    //     (no-op, ticker keeps running).
+    // We call this *after* setState so the render
+    // object is freshly attached (defensive — the
+    // bridge's createRenderObject runs during the
+    // first build, and the countdown ticker only
+    // starts after that on first hover anyway).
+    _syncCountdownTicker();
   }
 
   /// Begin a 3-second lerp from [from] to [to]. Picks the
@@ -429,11 +520,24 @@ class _CodingPlanUsageDisplayState
 
   /// Called from [build] when the user taps the display.
   /// Kicks off the refresh-flash spinner and delegates
-  /// to [component.onTap] for the actual fetch.
+  /// to [component.onTap] for the actual fetch. Also
+  /// invoked from [_tickCountdown] when the displayed
+  /// countdown reaches zero — same refresh path either
+  /// way.
   void _onTap() {
     if (_refreshing) return; // double-click guard
     _refreshing = true;
     _refreshStartMs = DateTime.now().millisecondsSinceEpoch;
+    // Stop the hover countdown ticker — the refresh
+    // flash takes over the display, and the new
+    // snapshot the stream delivers will restart (or
+    // leave stopped) the ticker via [_onUsage]. Without
+    // this, the countdown could tick down to zero
+    // mid-refresh and re-enter [_onTap], which would
+    // be silently dropped by the `_refreshing` guard
+    // but still wastes a tick.
+    _countdownTicker?.cancel();
+    _countdownTicker = null;
     // Push the spinner frame immediately so the user
     // sees feedback on the very next paint.
     _pushCurrentFrame();
@@ -489,6 +593,229 @@ class _CodingPlanUsageDisplayState
       weeklyText: '1w  \u{27F3}',
       intervalFg: color,
       weeklyFg: Color.lerp(theme.cyan, settledWeekly, t)!,
+      hovered: _hovered,
+    );
+  }
+
+  // ─── Hover-countdown ticker lifecycle ───────────────────────
+
+  /// Decide whether the hover countdown ticker should be
+  /// running and start/stop it accordingly. Called from
+  /// hover-enter, hover-exit, and every [_onUsage] so the
+  /// ticker stays in sync with the latest snapshot and
+  /// hover state.
+  ///
+  /// The ticker is started when the user is hovering AND
+  /// the current snapshot has at least one cell whose
+  /// countdown would show a visible seconds digit —
+  /// i.e. `remaining < 1 minute` per
+  /// [formatCodingPlanRemains]. When both cells are above
+  /// 1 minute (e.g. `4h 32m`, `6d 4h`) the formatted
+  /// label has no seconds and ticking would produce no
+  /// visible change.
+  void _syncCountdownTicker() {
+    final usage = _usage;
+    final shouldTick = _hovered && usage != null &&
+        _shouldCountdownTick(usage);
+    if (shouldTick) {
+      // Re-anchor every time: even if the ticker is
+      // already running, a fresh anchor captures the
+      // current effective remaining (which may have
+      // changed since the last snapshot or hover
+      // entry) so the displayed countdown doesn't
+      // drift from the true value.
+      _countdownAnchorMs = DateTime.now().millisecondsSinceEpoch;
+      _anchorIntervalRemains = _effectiveIntervalRemains(usage);
+      _anchorWeeklyRemains = _effectiveWeeklyRemains(usage);
+      _countdownTicker ??= TickerRegistry.instance.subscribe(
+        name: 'codingPlanCountdown',
+        interval: _countdownTickInterval,
+        onTick: _tickCountdown,
+      );
+    } else {
+      _countdownTicker?.cancel();
+      _countdownTicker = null;
+    }
+  }
+
+  /// True iff at least one cell's countdown would show a
+  /// visible seconds digit in [formatCodingPlanRemains].
+  /// The format rules are:
+  ///
+  ///   * `>= 1 day`  → `"6d 4h"`     — no seconds
+  ///   * `>= 1 hour` → `"4h 32m"`    — no seconds
+  ///   * `>= 1 min`  → `"23m 15s"`   — seconds visible
+  ///   * `>= 1 s`    → `"45s"`       — seconds visible
+  ///   * `else`      → `"<1s"`       — zero / saturated
+  ///
+  /// Both null (API didn't return a countdown) and
+  /// `>= 1 minute` short-circuit to false; either of
+  /// the two windows being `< 1 minute` is enough to
+  /// justify ticking (the other window's countdown is
+  /// still painted, just static).
+  bool _shouldCountdownTick(CodingPlanUsage usage) {
+    final i = usage.intervalRemains;
+    final w = usage.weeklyRemains;
+    final intervalHasSec = i != null && i > Duration.zero &&
+        i < const Duration(minutes: 1);
+    final weeklyHasSec = w != null && w > Duration.zero &&
+        w < const Duration(minutes: 1);
+    return intervalHasSec || weeklyHasSec;
+  }
+
+  /// Effective time-until-reset for the 5h window, i.e.
+  /// `intervalRemains - (now - fetchedAt)`, clamped to
+  /// `>= 0`. The snapshot's `intervalRemains` is the
+  /// value the API reported at `fetchedAt`; any time
+  /// between then and now has already elapsed, so the
+  /// true remaining is that much smaller. The clamp
+  /// protects against the (rare) case where the API
+  /// over-reports and `fetchedAt` is already past the
+  /// window's reset.
+  Duration? _effectiveIntervalRemains(CodingPlanUsage usage) {
+    final r = usage.intervalRemains;
+    if (r == null) return null;
+    final effective = r - DateTime.now().difference(usage.fetchedAt);
+    return effective.isNegative ? Duration.zero : effective;
+  }
+
+  /// Same as [_effectiveIntervalRemains] but for the
+  /// weekly window.
+  Duration? _effectiveWeeklyRemains(CodingPlanUsage usage) {
+    final r = usage.weeklyRemains;
+    if (r == null) return null;
+    final effective = r - DateTime.now().difference(usage.fetchedAt);
+    return effective.isNegative ? Duration.zero : effective;
+  }
+
+  /// Per-tick countdown callback. Decrements the anchor-
+  /// based countdown and pushes a fresh frame. Yields to
+  /// the animation ticker when both fire in the same
+  /// window so the 3-second percentage lerp isn't
+  /// interrupted by a seconds-tick flash. Fires the
+  /// refresh path when either cell's countdown reaches
+  /// zero.
+  void _tickCountdown() {
+    final ro = _renderObject;
+    final usage = _usage;
+    if (ro == null || usage == null) return;
+    // Defensive: hover-exit should have cancelled the
+    // ticker, but a late tick in the same frame is
+    // possible if the cancellation is racy.
+    if (!_hovered) {
+      _countdownTicker?.cancel();
+      _countdownTicker = null;
+      return;
+    }
+    // Yield to the 3-second animation ticker. The
+    // animation pushes percentage-based text
+    // (`5h 98.5%`) for its duration; letting the
+    // countdown also push `5h 4h 32m 14s` would make
+    // the cell flip between forms and read as
+    // flicker. The next tick (≤ 250ms later) will
+    // resume once the animation finishes.
+    if (_animationTicker?.isActive ?? false) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = Duration(milliseconds: now - _countdownAnchorMs);
+
+    Duration? intervalRemains = _anchorIntervalRemains == null
+        ? null
+        : _anchorIntervalRemains! - elapsed;
+    Duration? weeklyRemains = _anchorWeeklyRemains == null
+        ? null
+        : _anchorWeeklyRemains! - elapsed;
+
+    // Clamp to zero. Negative durations would format
+    // as `"<1s"` which is technically a valid label
+    // but reads as confusing — better to clamp and
+    // let the zero check below trigger the refresh.
+    if (intervalRemains != null && intervalRemains.isNegative) {
+      intervalRemains = Duration.zero;
+    }
+    if (weeklyRemains != null && weeklyRemains.isNegative) {
+      weeklyRemains = Duration.zero;
+    }
+
+    _pushHoverCountdownFrame(intervalRemains, weeklyRemains);
+
+    // Refresh when either window's countdown hits
+    // zero. [_onTap] handles the refresh-flash
+    // spinner + the provider's `refreshNow` call. The
+    // new snapshot the stream delivers will restart
+    // (or leave stopped) the ticker via [_onUsage].
+    final intervalHitZero = _anchorIntervalRemains != null &&
+        intervalRemains!.inMilliseconds <= 0;
+    final weeklyHitZero = _anchorWeeklyRemains != null &&
+        weeklyRemains!.inMilliseconds <= 0;
+    if (intervalHitZero || weeklyHitZero) {
+      _countdownTicker?.cancel();
+      _countdownTicker = null;
+      _onTap();
+    }
+  }
+
+  /// Push a hover frame whose countdown is the
+  /// anchor-based value rather than the raw
+  /// `usage.formatIntervalRemains()` value. The colour
+  /// stays the same ratio-based steady-state colour
+  /// ([_ratioColor]) — a cell that was "scarce"
+  /// before the countdown shouldn't drift into
+  /// "middleground" just because the seconds ticked
+  /// down. The render object's dirty check absorbs
+  /// frames where the formatted string is identical
+  /// to the previous one.
+  void _pushHoverCountdownFrame(
+    Duration? intervalRemains,
+    Duration? weeklyRemains,
+  ) {
+    final ro = _renderObject;
+    final usage = _usage;
+    if (ro == null || usage == null) return;
+    final theme = CruxTheme.of(context);
+
+    // Build the countdown label for each cell. If the
+    // snapshot didn't supply a countdown (null) we
+    // fall back to the percentage so the cell never
+    // goes blank — same fallback the settled frame
+    // uses on hover.
+    final intervalInner = intervalRemains != null
+        ? formatCodingPlanRemains(intervalRemains)
+        : (usage.formatIntervalRemains() ??
+            '${usage.intervalRemainingPct.toStringAsFixed(1)}%');
+    final weeklyInner = weeklyRemains != null
+        ? formatCodingPlanRemains(weeklyRemains)
+        : (usage.formatWeeklyRemains() ??
+            '${usage.weeklyRemainingPct.toStringAsFixed(1)}%');
+
+    // Same ratio-based colour as the settled frame
+    // (afluent / middleground / scarce) but computed
+    // against the tick-derived remaining time so the
+    // colour follows the countdown — useful when the
+    // remaining time approaches the scarce landmark
+    // even though the API's percentage hasn't moved.
+    final intervalColor = _ratioColor(
+      theme,
+      _ratio(
+        usage.intervalRemainingPct,
+        intervalRemains ?? usage.intervalRemains,
+        _kIntervalWindow,
+      ),
+    );
+    final weeklyColor = _ratioColor(
+      theme,
+      _ratio(
+        usage.weeklyRemainingPct,
+        weeklyRemains ?? usage.weeklyRemains,
+        _kWeeklyWindow,
+      ),
+    );
+
+    ro.update(
+      intervalText: '5h $intervalInner',
+      weeklyText: '1w $weeklyInner',
+      intervalFg: intervalColor,
+      weeklyFg: weeklyColor,
       hovered: _hovered,
     );
   }
@@ -630,10 +957,19 @@ class _CodingPlanUsageDisplayState
         onEnter: (_) {
           if (canTap) setState(() => _hovered = true);
           _pushCurrentFrame();
+          // Start the countdown ticker (if applicable)
+          // immediately on hover-enter. The first tick
+          // will fire 250ms later via the scheduler.
+          _syncCountdownTicker();
         },
         onExit: (_) {
           setState(() => _hovered = false);
           _pushCurrentFrame();
+          // Stop ticking on hover-exit. The settled
+          // frame above uses the raw snapshot values
+          // (no anchor), so un-hovering snaps back to
+          // the unmodified countdown.
+          _syncCountdownTicker();
         },
         opaque: false,
         child: Container(

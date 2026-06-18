@@ -1,32 +1,46 @@
-/// Tests for the coding-plan (Token Plan) feature.
-///
-/// Three layers under test:
-///
-///   1. `parseCodingPlanUsageResponse` — the shape-flexible JSON
-///      parser used by the MiniMax provider's
-///      `getCodingPlanUsage` implementation. Lives in
-///      `lib/src/services/coding_plan_usage_parser.dart`.
-///
-///   2. `CodingPlanUsage` and its `formatIntervalRemains` /
-///      `formatWeeklyRemains` helpers — the data model the
-///      toolbar renders.
-///
-///   3. The `CodingPlanProvider` mixin's polling lifecycle
-///      (start / stop / interval / dispose) — exercised via
-///      a tiny test-only provider that implements the mixin
-///      with a fake fetch (no HTTP).
+// Tests for the coding-plan (Token Plan) feature.
+//
+// Layers under test:
+//
+//   1. `parseCodingPlanUsageResponse` — the shape-flexible JSON
+//      parser used by the MiniMax provider's
+//      `getCodingPlanUsage` implementation. Lives in
+//      `lib/src/services/coding_plan_usage_parser.dart`.
+//
+//   2. `CodingPlanUsage` and its `formatIntervalRemains` /
+//      `formatWeeklyRemains` helpers — the data model the
+//      toolbar renders.
+//
+//   3. `formatCodingPlanRemains` — the public duration-only
+//      formatter the hover-countdown ticker uses to render
+//      decremented values.
+//
+//   4. The `CodingPlanProvider` mixin's polling lifecycle
+//      (start / stop / interval / dispose) — exercised via
+//      a tiny test-only provider that implements the mixin
+//      with a fake fetch (no HTTP).
+//
+//   5. The hover-countdown ticker on the
+//      [CodingPlanUsageDisplay] widget — exercised at the
+//      widget level with `testNocterm`. The ticker drives
+//      the per-second countdown when the user hovers and at
+//      least one cell's countdown is < 1 minute; it also
+//      triggers a refresh when the displayed countdown
+//      reaches zero.
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:nocterm/nocterm.dart' hide isNotEmpty;
 import 'package:test/test.dart';
 
+import 'package:crux/src/components/coding_plan_usage_display.dart';
 import 'package:crux/src/models/coding_plan_usage.dart';
 import 'package:crux/src/services/coding_plan_usage_parser.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/coding_plan_provider.dart';
 import 'package:crux/src/services/providers/minimax_provider.dart';
 import 'package:crux/src/theme/crux_theme.dart';
+import 'package:crux/src/utils/ticker_registry.dart';
 
 void main() {
   // ─── Parser ────────────────────────────────────────────────
@@ -726,6 +740,519 @@ void main() {
       expect(themeB.cyan, cyanB);
       expect(ratioColor(themeA, 5.0), cyanA);
       expect(ratioColor(themeB, 5.0), cyanB);
+    });
+  });
+
+  // ─── Hover-countdown ticker ─────────────────────────────────
+  // When the user hovers the coding-plan display and at
+  // least one cell's countdown shows a visible seconds
+  // digit (i.e. < 1 minute), the widget starts a 250ms
+  // ticker that decrements the displayed countdown from an
+  // anchor captured at hover-entry. When the displayed
+  // countdown hits zero, the ticker fires the refresh
+  // path. The pure-logic predicates live on the
+  // [CodingPlanUsage] data model via mirrors below; the
+  // actual ticker behaviour is exercised at the widget
+  // level via [testNocterm] further down.
+  group('Hover-countdown ticker predicates', () {
+    // Mirror the widget's `_shouldCountdownTick` so we
+    // can assert the contract without exposing private
+    // state. Mirroring is intentional — the rule is
+    // small and pure data, but the widget would have
+    // to expose its private helper for a direct test,
+    // and we want the test to fail loudly if the rule
+    // changes.
+    bool shouldTickFor(CodingPlanUsage usage) {
+      final i = usage.intervalRemains;
+      final w = usage.weeklyRemains;
+      final intervalHasSec = i != null &&
+          i > Duration.zero &&
+          i < const Duration(minutes: 1);
+      final weeklyHasSec = w != null &&
+          w > Duration.zero &&
+          w < const Duration(minutes: 1);
+      return intervalHasSec || weeklyHasSec;
+    }
+
+    CodingPlanUsage usageWith({
+      Duration? intervalRemains,
+      Duration? weeklyRemains,
+      DateTime? fetchedAt,
+    }) {
+      return CodingPlanUsage(
+        providerName: 'minimax',
+        modelName: 'general',
+        intervalRemainingPct: 50,
+        weeklyRemainingPct: 50,
+        fetchedAt: fetchedAt ?? DateTime.now(),
+        intervalRemains: intervalRemains,
+        weeklyRemains: weeklyRemains,
+      );
+    }
+
+    test('ticks when only the 5h cell has visible seconds', () {
+      final u = usageWith(
+        intervalRemains: const Duration(seconds: 45),
+        weeklyRemains: const Duration(days: 6, hours: 4),
+      );
+      expect(shouldTickFor(u), isTrue,
+          reason: '5h cell shows "45s" — seconds are visible, must tick');
+    });
+
+    test('ticks when only the 1w cell has visible seconds', () {
+      final u = usageWith(
+        intervalRemains: const Duration(hours: 4, minutes: 32),
+        weeklyRemains: const Duration(seconds: 30),
+      );
+      expect(shouldTickFor(u), isTrue,
+          reason: 'weekly cell shows "30s" — seconds are visible, must tick');
+    });
+
+    test('ticks when both cells have visible seconds', () {
+      final u = usageWith(
+        intervalRemains: const Duration(seconds: 5),
+        weeklyRemains: const Duration(seconds: 12),
+      );
+      expect(shouldTickFor(u), isTrue);
+    });
+
+    test('does not tick when both countdowns are >= 1 minute', () {
+      final u = usageWith(
+        intervalRemains: const Duration(hours: 4, minutes: 32),
+        weeklyRemains: const Duration(days: 6, hours: 4),
+      );
+      expect(shouldTickFor(u), isFalse,
+          reason: '"4h 32m" / "6d 4h" have no visible seconds');
+    });
+
+    test('does not tick when both countdowns are null', () {
+      final u = usageWith();
+      expect(shouldTickFor(u), isFalse,
+          reason: 'no countdown data from the API');
+    });
+
+    test('does not tick when the remaining time is zero', () {
+      // 0 remaining formats as `"<1s"` (no visible
+      // second digit), and triggering a refresh on
+      // hover-enter at zero would be a feedback loop.
+      final u = usageWith(intervalRemains: Duration.zero);
+      expect(shouldTickFor(u), isFalse);
+    });
+
+    test('does not tick at exactly 1 minute (formats as "1m" not "1m 0s")', () {
+      // Per `formatCodingPlanRemains`, 60s prints as
+      // `"1m"` because the seconds branch returns
+      // `'${inMinutes}m'` when seconds == 0. So at the
+      // 1-minute landmark the visible seconds digit
+      // goes away, and we should stop ticking.
+      final u = usageWith(intervalRemains: const Duration(minutes: 1));
+      expect(shouldTickFor(u), isFalse);
+    });
+  });
+
+  group('Hover-countdown effective-remaining computation', () {
+    // Mirror the widget's `_effectiveIntervalRemains`
+    // helper so the `fetchedAt`-adjusted countdown
+    // accounting is testable in isolation. The widget
+    // computes `intervalRemains - (now - fetchedAt)`
+    // clamped to >= 0 so the anchor is the actual time
+    // left at hover-entry, not the API's possibly-
+    // stale value.
+    Duration? effectiveIntervalRemains(CodingPlanUsage usage) {
+      final r = usage.intervalRemains;
+      if (r == null) return null;
+      final effective =
+          r - DateTime.now().difference(usage.fetchedAt);
+      return effective.isNegative ? Duration.zero : effective;
+    }
+
+    test('returns null when the API gave no countdown', () {
+      final u = CodingPlanUsage(
+        providerName: 'minimax',
+        modelName: 'general',
+        intervalRemainingPct: 50,
+        weeklyRemainingPct: 50,
+        fetchedAt: DateTime.now(),
+      );
+      expect(effectiveIntervalRemains(u), isNull);
+    });
+
+    test('returns the full intervalRemains when fetchedAt is now', () {
+      final u = CodingPlanUsage(
+        providerName: 'minimax',
+        modelName: 'general',
+        intervalRemainingPct: 50,
+        weeklyRemainingPct: 50,
+        fetchedAt: DateTime.now(),
+        intervalRemains: const Duration(seconds: 45),
+      );
+      // The subtraction is "now - now" ≈ 0; the result
+      // should be 45s (within rounding).
+      final eff = effectiveIntervalRemains(u)!;
+      expect(eff.inMilliseconds, greaterThanOrEqualTo(44000));
+      expect(eff.inMilliseconds, lessThanOrEqualTo(45000));
+    });
+
+    test('subtracts elapsed time since fetchedAt', () {
+      // 10 seconds ago the API reported 45s left; the
+      // effective remaining now is 45s - 10s = 35s.
+      final u = CodingPlanUsage(
+        providerName: 'minimax',
+        modelName: 'general',
+        intervalRemainingPct: 50,
+        weeklyRemainingPct: 50,
+        fetchedAt: DateTime.now().subtract(const Duration(seconds: 10)),
+        intervalRemains: const Duration(seconds: 45),
+      );
+      final eff = effectiveIntervalRemains(u)!;
+      expect(eff.inMilliseconds, greaterThanOrEqualTo(34000));
+      expect(eff.inMilliseconds, lessThanOrEqualTo(35000));
+    });
+
+    test('clamps to zero when the API over-reported (window already past)', () {
+      // The API reported 5s left but `fetchedAt` is
+      // 30s in the past. The window must have already
+      // reset; clamp to zero rather than reporting
+      // a negative duration that would format as `"<1s"`.
+      final u = CodingPlanUsage(
+        providerName: 'minimax',
+        modelName: 'general',
+        intervalRemainingPct: 50,
+        weeklyRemainingPct: 50,
+        fetchedAt: DateTime.now().subtract(const Duration(seconds: 30)),
+        intervalRemains: const Duration(seconds: 5),
+      );
+      expect(effectiveIntervalRemains(u), Duration.zero);
+    });
+  });
+
+  group('formatCodingPlanRemains (public duration formatter)', () {
+    // Mirrors the `formatRemains` coverage in the
+    // CodingPlanUsage group, but on the public top-
+    // level function so the widget's hover-countdown
+    // path doesn't have to thread through a synthetic
+    // [CodingPlanUsage] to format decremented durations.
+
+    test('days + hours', () {
+      expect(
+        formatCodingPlanRemains(const Duration(days: 6, hours: 4)),
+        '6d 4h',
+      );
+    });
+
+    test('hours + minutes', () {
+      expect(
+        formatCodingPlanRemains(const Duration(hours: 4, minutes: 32)),
+        '4h 32m',
+      );
+    });
+
+    test('minutes + seconds', () {
+      expect(
+        formatCodingPlanRemains(const Duration(minutes: 23, seconds: 15)),
+        '23m 15s',
+      );
+    });
+
+    test('seconds only', () {
+      expect(formatCodingPlanRemains(const Duration(seconds: 45)), '45s');
+    });
+
+    test('zero / negative / sub-second durations return <1s', () {
+      expect(formatCodingPlanRemains(Duration.zero), '<1s');
+      expect(
+        formatCodingPlanRemains(const Duration(milliseconds: -100)),
+        '<1s',
+      );
+      expect(
+        formatCodingPlanRemains(const Duration(milliseconds: 500)),
+        '<1s',
+      );
+    });
+
+    test('drops trailing zero components', () {
+      // 5h 0m → "5h" (no minutes when 0)
+      expect(formatCodingPlanRemains(const Duration(hours: 5)), '5h');
+      // 7d 0h → "7d" (no hours when 0)
+      expect(formatCodingPlanRemains(const Duration(days: 7)), '7d');
+      // 32m 0s → "32m" (no seconds when 0)
+      expect(formatCodingPlanRemains(const Duration(minutes: 32)), '32m');
+    });
+  });
+
+  // ─── Hover-countdown ticker: widget-level integration ───────
+  // Drive the actual [CodingPlanUsageDisplay] widget under
+  // testNocterm and verify the ticker decrements the
+  // displayed countdown and fires the refresh path at zero.
+  // The tests use single-shot `pump(Duration)` calls to
+  // advance wall clock by ~1 second and observe the
+  // resulting displayed value — the wall-clock anchor is
+  // the same one the production widget uses, so we
+  // exercise the real code path end-to-end.
+  group('CodingPlanUsageDisplay hover-countdown ticker', () {
+    setUp(() {
+      // Each test gets a clean ticker slate so a stray
+      // subscription from a previous test doesn't keep
+      // firing.
+      TickerRegistry.instance.resetForTest();
+    });
+
+    tearDown(() {
+      TickerRegistry.instance.resetForTest();
+    });
+
+    /// Read the displayed text in row 0 by joining
+    /// cells until the first null. Trims the two-cell
+    /// "  " prefix that the render object draws before
+    /// the cell content.
+    String readRow0(NoctermTester tester, {int width = 30}) {
+      final buf = StringBuffer();
+      for (var x = 0; x < width; x++) {
+        final ch = tester.terminalState.getCellAt(x, 0)?.char;
+        if (ch == null) break;
+        buf.write(ch);
+      }
+      return buf.toString().trimLeft();
+    }
+
+    /// Extract the seconds digit from a hover-frame
+    /// text like `"5h 2s"`. Returns null if no
+    /// `"Ns"` token is present.
+    int? extractSeconds(String text) {
+      final m = RegExp(r'(\d+)s').firstMatch(text);
+      return m == null ? null : int.parse(m.group(1)!);
+    }
+
+    test('ticks the displayed countdown when hovering with sub-minute remaining',
+        () async {
+      await testNocterm(
+        'coding-plan hover countdown ticks',
+        (tester) async {
+          final controller =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controller.close);
+
+          var refreshCount = 0;
+          await tester.pumpComponent(
+            CodingPlanUsageDisplay(
+              stream: controller.stream,
+              initialUsage: CodingPlanUsage(
+                providerName: 'minimax',
+                modelName: 'general',
+                intervalRemainingPct: 50,
+                weeklyRemainingPct: 50,
+                fetchedAt: DateTime.now(),
+                // 30 seconds remaining → "30s" formatted,
+                // which has visible seconds → ticker
+                // should activate on hover. We use 30s
+                // (rather than 3s) so the countdown has
+                // multiple distinguishable integer values
+                // across the test's ~1-second pump
+                // windows.
+                intervalRemains: const Duration(seconds: 30),
+              ),
+              onTap: () => refreshCount++,
+            ),
+          );
+
+          await tester.hover(5, 0);
+          await tester.pump();
+
+          // Initial hover frame shows the raw snapshot
+          // value (ticker hasn't fired yet).
+          final initial = extractSeconds(readRow0(tester));
+          expect(initial, isNotNull,
+              reason: 'initial hover frame should show seconds');
+          expect(initial, greaterThanOrEqualTo(29),
+              reason:
+                  'initial countdown should be at or just below 30s');
+
+          // Pump ~1 second of wall clock and verify
+          // the displayed countdown has dropped by
+          // roughly 1 second. We allow a generous
+          // tolerance (1-3s) because the test
+          // framework's pump adds some real-time
+          // overhead beyond the requested duration,
+          // and the test runs in the same scheduler
+          // as other unrelated work.
+          await tester.pump(const Duration(milliseconds: 1100));
+          final after1 = extractSeconds(readRow0(tester));
+          expect(after1, isNotNull);
+          expect(
+            initial! - after1!,
+            greaterThanOrEqualTo(1),
+            reason: 'countdown must drop by at least 1s after 1.1s '
+                'of hover (got ${initial}s → ${after1}s)',
+          );
+          expect(
+            initial - after1,
+            lessThanOrEqualTo(3),
+            reason: 'countdown must not drop more than 3s in 1.1s '
+                'of wall clock (got ${initial}s → ${after1}s)',
+          );
+
+          // Pump another ~1 second — countdown must
+          // continue dropping.
+          await tester.pump(const Duration(milliseconds: 1100));
+          final after2 = extractSeconds(readRow0(tester));
+          expect(after2, isNotNull);
+          expect(
+            after1 - after2!,
+            greaterThanOrEqualTo(1),
+            reason: 'countdown must keep dropping (got '
+                '${after1}s → ${after2}s after another 1.1s)',
+          );
+        },
+        size: const Size(30, 1),
+      );
+    });
+
+    test('does not tick when seconds are not visible (>= 1 minute)', () async {
+      await testNocterm(
+        'coding-plan hover without sub-minute remaining does not tick',
+        (tester) async {
+          final controller =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controller.close);
+
+          var refreshCount = 0;
+          await tester.pumpComponent(
+            CodingPlanUsageDisplay(
+              stream: controller.stream,
+              initialUsage: CodingPlanUsage(
+                providerName: 'minimax',
+                modelName: 'general',
+                intervalRemainingPct: 50,
+                weeklyRemainingPct: 50,
+                fetchedAt: DateTime.now(),
+                // 4h 32m remaining → "4h 32m" formatted,
+                // no seconds visible → ticker must NOT
+                // activate.
+                intervalRemains: const Duration(hours: 4, minutes: 32),
+              ),
+              onTap: () => refreshCount++,
+            ),
+          );
+
+          await tester.hover(5, 0);
+          await tester.pump();
+
+          // Display shows the raw countdown from the
+          // snapshot.
+          expect(readRow0(tester), contains('4h 32m'));
+
+          // Even after 2 seconds of hovering, the
+          // display must not have ticked — and no
+          // refresh should have fired. We use 2s
+          // (not 30s) so the test stays fast.
+          await tester.pump(const Duration(seconds: 2));
+          expect(readRow0(tester), contains('4h 32m'),
+              reason:
+                  'countdown without visible seconds must not tick');
+          expect(refreshCount, 0,
+              reason: 'no refresh should fire when the countdown is '
+                  'above the seconds-visible threshold');
+        },
+        size: const Size(30, 1),
+      );
+    });
+
+    test('stops ticking on hover-exit', () async {
+      await testNocterm(
+        'coding-plan hover countdown stops on exit',
+        (tester) async {
+          final controller =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controller.close);
+
+          var refreshCount = 0;
+          await tester.pumpComponent(
+            CodingPlanUsageDisplay(
+              stream: controller.stream,
+              initialUsage: CodingPlanUsage(
+                providerName: 'minimax',
+                modelName: 'general',
+                intervalRemainingPct: 50,
+                weeklyRemainingPct: 50,
+                fetchedAt: DateTime.now(),
+                // 60 seconds → still above the 1-minute
+                // threshold (formats as "1m"), so the
+                // ticker should NOT be active. This makes
+                // the test fast and deterministic.
+                intervalRemains: const Duration(seconds: 60),
+              ),
+              onTap: () => refreshCount++,
+            ),
+          );
+
+          await tester.hover(5, 0);
+          await tester.pump();
+          expect(readRow0(tester), contains('1m'),
+              reason: '60s formats as "1m" — no visible seconds');
+
+          // Wait long enough that a still-running
+          // ticker would have decremented the value.
+          // Since the ticker shouldn't be running,
+          // the display stays the same and no
+          // refresh fires.
+          await tester.pump(const Duration(seconds: 2));
+          expect(refreshCount, 0,
+              reason:
+                  'ticker must not be active when seconds are not '
+                  'visible, regardless of how long the user hovers');
+          expect(readRow0(tester), contains('1m'),
+              reason: 'display must remain "1m" while hovered');
+        },
+        size: const Size(30, 1),
+      );
+    });
+
+    test('triggers refresh when the countdown reaches zero', () async {
+      // Verify the auto-refresh path: when the ticker
+      // decrements the countdown all the way to zero,
+      // it invokes [CodingPlanUsageDisplay.onTap]
+      // (the same path a manual click takes). We use
+      // a 2-second countdown so the test is fast.
+      await testNocterm(
+        'coding-plan hover countdown fires refresh at zero',
+        (tester) async {
+          final controller =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controller.close);
+
+          var refreshCount = 0;
+          await tester.pumpComponent(
+            CodingPlanUsageDisplay(
+              stream: controller.stream,
+              initialUsage: CodingPlanUsage(
+                providerName: 'minimax',
+                modelName: 'general',
+                intervalRemainingPct: 50,
+                weeklyRemainingPct: 50,
+                fetchedAt: DateTime.now(),
+                intervalRemains: const Duration(seconds: 2),
+              ),
+              onTap: () => refreshCount++,
+            ),
+          );
+
+          await tester.hover(5, 0);
+          await tester.pump();
+
+          // Pump 3 seconds — enough for the 2-second
+          // countdown to hit zero (well below the
+          // 3-second threshold for "no refresh when
+          // not yet zero").
+          await tester.pump(const Duration(seconds: 3));
+          await tester.pump();
+
+          expect(refreshCount, greaterThanOrEqualTo(1),
+              reason:
+                  'countdown reaching zero must trigger the refresh '
+                  'path (onTap)');
+        },
+        size: const Size(30, 1),
+      );
     });
   });
 

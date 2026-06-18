@@ -55,14 +55,16 @@ class CodingPlanUsage {
   /// (e.g. `"4h 32m"`, `"23m 15s"`, `"<1s"`). Returns `null` when
   /// the snapshot has no countdown (e.g. provider didn't return
   /// `remains_time`).
-  String? formatIntervalRemains() =>
-      intervalRemains == null ? null : _formatRemains(intervalRemains!);
+  String? formatIntervalRemains() => intervalRemains == null
+      ? null
+      : formatCodingPlanRemains(intervalRemains!);
 
   /// Format the weekly window's remaining time as a short human
   /// label (e.g. `"6d 4h"`, `"18h 32m"`). Returns `null` when
   /// the snapshot has no countdown.
-  String? formatWeeklyRemains() =>
-      weeklyRemains == null ? null : _formatRemains(weeklyRemains!);
+  String? formatWeeklyRemains() => weeklyRemains == null
+      ? null
+      : formatCodingPlanRemains(weeklyRemains!);
 }
 
 /// Format a [Duration] as a compact countdown label. The pair of
@@ -74,7 +76,14 @@ class CodingPlanUsage {
 ///   * `>= 1 min`  →  `"23m 15s"` (or `"32m"` when 0 seconds left)
 ///   * `>= 1 s`    →  `"45s"`
 ///   * `else`      →  `"<1s"`
-String _formatRemains(Duration d) {
+///
+/// Public so the hover-countdown ticker in
+/// [CodingPlanUsageDisplay] can format decremented durations that
+/// aren't anchored to a snapshot's `intervalRemains` /
+/// `weeklyRemains` fields. The instance methods
+/// [CodingPlanUsage.formatIntervalRemains] and
+/// [CodingPlanUsage.formatWeeklyRemains] delegate here.
+String formatCodingPlanRemains(Duration d) {
   if (d.isNegative) return '<1s';
   if (d.inDays >= 1) {
     final hours = d.inHours - d.inDays * 24;
