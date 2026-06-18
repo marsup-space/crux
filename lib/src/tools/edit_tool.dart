@@ -22,8 +22,24 @@ class EditTool extends ToolDef with IntentionalTool {
   ) {
     final oldString = args['oldString'] as String? ?? '';
     final newString = args['newString'] as String? ?? '';
-    final replaceCount = (args['_replaceCount'] as int?) ?? 1;
     final replaceAll = (args['replaceAll'] as bool?) ?? false;
+    // The replacement count used to be stashed on the input
+    // args map (as `_replaceCount`) by execute() and read back
+    // here. That had two problems: (1) the args map is the
+    // LLM-controlled input — once the model saw the field in
+    // conversation history it would occasionally echo it back,
+    // sometimes as a string, and the JSON round-trip through
+    // SQLite preserved the bad type, crashing this bubble's
+    // build on a defensive `as int?` cast. (2) it conflated
+    // user input with tool internal state.
+    //
+    // The count is already in the human-readable output text
+    // (`"Replaced N occurrence(s) of oldString ..."`), which
+    // is set by execute() and never user-controlled. Parse it
+    // out instead. Falls back to 1 when the output doesn't
+    // match the expected shape (e.g. legacy or error output).
+    final replaceCount = _replaceCountFromOutput(result.output) ??
+        (replaceAll ? _allFallbackCount(args) : 1);
     final oldLines = oldString.isEmpty ? 0 : '\n'.allMatches(oldString).length + 1;
     final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
     final linesRemoved = oldLines * replaceCount;
@@ -42,8 +58,9 @@ class EditTool extends ToolDef with IntentionalTool {
     if (oldLines == 0) {
       text = 'new file, $newLines lines';
     } else {
-      final countLabel = args.containsKey('_replaceCount')
-          ? '$replaceCount'
+      final parsedCount = _replaceCountFromOutput(result.output);
+      final countLabel = parsedCount != null
+          ? '$parsedCount'
           : (replaceAll ? 'all' : '1');
       final replacementLabel = countLabel == '1'
           ? '1 replacement'
@@ -56,6 +73,29 @@ class EditTool extends ToolDef with IntentionalTool {
       totalTokens: totalTokens,
     );
   }
+
+  /// Parse the replacement count out of an EditTool success
+  /// message. Looks for the canonical
+  /// `"Replaced N occurrence(s) of oldString ..."` form that
+  /// `_doMutation` emits. Returns null for any other shape
+  /// (new-file, auto-read, error, future format changes) so
+  /// the caller can pick a sensible fallback.
+  static final RegExp _replacedCountPattern =
+      RegExp(r'Replaced (\d+) occurrence');
+
+  static int? _replaceCountFromOutput(String output) {
+    final match = _replacedCountPattern.firstMatch(output);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  /// Used only as a placeholder for the unreplaced count when
+  /// the output doesn't carry one and replaceAll is true. The
+  /// displayed diff is computed against a single replacement
+  /// (since the bubble doesn't actually know N) and the label
+  /// collapses to `"all"` so the user sees the qualitative
+  /// "multiple replacements" intent. Match prior behavior.
+  static int _allFallbackCount(Map<String, dynamic> args) => 1;
 
   @override
   String get description =>
@@ -188,7 +228,6 @@ class EditTool extends ToolDef with IntentionalTool {
       if (tracker != null) {
         await tracker!.recordRead(resolved, await _mtimeMs(file));
       }
-      args['_replaceCount'] = 1;
       final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
       return ToolResult(
         title: 'Edit file: $resolved',
@@ -249,7 +288,6 @@ class EditTool extends ToolDef with IntentionalTool {
     }
 
     final count = matchResult.positions.length;
-    args['_replaceCount'] = count;
     final oldLines = oldString.isEmpty ? 0 : '\n'.allMatches(oldString).length + 1;
     final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
     final linesRemoved = oldLines * count;

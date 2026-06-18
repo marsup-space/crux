@@ -1201,16 +1201,24 @@ void main() {
       expect(summary.totalTokens, greaterThan(0));
     });
 
-    test('WriteTool summary shows +N -M when _existingLineCount is set', () {
+    test('WriteTool summary shows +N -M when overwriting an existing file',
+        () {
       final tool = WriteTool();
+      // Realistic output shape that _doWrite emits for an
+      // overwrite: "File written: <path>, +added -removed lines, size".
+      // The prior line count is parsed out of the `-removed`
+      // half rather than stashed on the LLM-controlled args
+      // map (see EditTool collapsedSummary for the rationale).
       final summary = tool.collapsedSummary(
         {
           'filePath': 'foo.py',
           'content': 'a' * 5000,
           'intent': '...',
-          '_existingLineCount': 17,
         },
-        ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
+        ToolResult(
+          title: 'Write',
+          output: 'File written: foo.py (intent: \'...\'), +1 -17 lines, 4.9KB',
+        ),
       );
       // +1 line added (no newlines in the 5000-char string),
       // 17 lines removed (the prior file). The `, 4.9KB` size
@@ -1225,9 +1233,11 @@ void main() {
           'filePath': 'foo.py',
           'content': 'hello\nworld\n',
           'intent': '...',
-          '_existingLineCount': 0,
         },
-        ToolResult(title: 'Write', output: 'Wrote 12 chars'),
+        ToolResult(
+          title: 'Write',
+          output: 'File written: foo.py, +3 lines, 12B',
+        ),
       );
       // 'hello\nworld\n' is 3 lines (the trailing \n adds a
       // final empty line, matching how `read` counts). 3 added,
@@ -1235,6 +1245,32 @@ void main() {
       expect(summary.text, startsWith('+3 lines,'));
       expect(summary.text, isNot(contains('-')));
     });
+
+    test(
+      'WriteTool summary parses -M out of success message '
+      'even when LLM echoes a stale _existingLineCount in args',
+      () {
+        // Regression guard: the old code read `_existingLineCount`
+        // from args. The LLM can echo that field in its input
+        // (sometimes with a wrong value or wrong type). The
+        // refactor reads from output instead, so any value in
+        // args is ignored.
+        final tool = WriteTool();
+        final summary = tool.collapsedSummary(
+          {
+            'filePath': 'foo.py',
+            'content': 'new\n',
+            'intent': '...',
+            '_existingLineCount': '7', // poison from LLM echo
+          },
+          ToolResult(
+            title: 'Write',
+            output: 'File written: foo.py, +2 -5 lines, 4B',
+          ),
+        );
+        expect(summary.text, '+2 -5 lines, 4B');
+      },
+    );
 
     test('EditTool args-only includes the large args (stand-ins or full)', () {
       final tool = EditTool();
@@ -1260,7 +1296,16 @@ void main() {
       expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
     });
 
-    test('EditTool summary reflects actual replacement count from args', () {
+    test('EditTool summary reflects actual replacement count parsed from output',
+        () {
+      // Previously the count was stashed on args as `_replaceCount`
+      // by execute(). That round-tripped back to the LLM as part
+      // of the assistant message's tool_use input, where the
+      // model could echo it back in a shape that broke the
+      // consumer (string instead of int, etc). Now the count is
+      // parsed out of `result.output`'s canonical
+      // `"Replaced N occurrence(s)"` form, which is set by
+      // execute() and never user-controlled.
       final tool = EditTool();
       final summary = tool.collapsedSummary(
         {
@@ -1268,7 +1313,7 @@ void main() {
           'oldString': 'foo',
           'newString': 'bar',
           'intent': '...',
-          '_replaceCount': 3,
+          '_replaceCount': 3, // any value in args is now ignored
         },
         ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'),
       );
@@ -1308,6 +1353,52 @@ void main() {
       expect(summary.text, 'new file, 4 lines');
     });
 
+    test(
+      'EditTool summary tolerates String _replaceCount '
+      '(JSON round-trip / LLM echo)',
+      () {
+        // `_replaceCount` isn't in the schema but gets stashed on
+        // args by execute() and round-tripped back to the LLM as
+        // part of the assistant tool_use/input. Once the model
+        // sees the field in conversation history it occasionally
+        // echoes it — sometimes as a quoted number — and SQLite
+        // preserves the type on reload. A naive `as int?` here
+        // would crash the bubble build.
+        final tool = EditTool();
+        final summary = tool.collapsedSummary(
+          {
+            'filePath': 'foo.py',
+            'oldString': 'foo',
+            'newString': 'bar',
+            'intent': '...',
+            '_replaceCount': '3', // String, not int
+          },
+          ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'),
+        );
+        expect(summary.text, '3 replacements, +3 -3 lines');
+      },
+    );
+
+    test(
+      'EditTool summary ignores garbage _replaceCount '
+      'instead of crashing the bubble',
+      () {
+        final tool = EditTool();
+        final summary = tool.collapsedSummary(
+          {
+            'filePath': 'foo.py',
+            'oldString': 'foo',
+            'newString': 'bar',
+            'intent': '...',
+            '_replaceCount': 'not-a-number',
+          },
+          ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+        );
+        // Falls back to 1; doesn't throw.
+        expect(summary.text, '1 replacement, +1 -1 lines');
+      },
+    );
+
     test('ReadTool returns lines + size, args-only == total (not offloadable)',
         () {
       final tool = ReadTool();
@@ -1334,7 +1425,13 @@ void main() {
       expect(summary.totalTokens, summary.argsTokens);
     });
 
-    test('EditTool shows "all" when replaceAll is true', () {
+    test('EditTool shows "all" when replaceAll is true and output has no count',
+        () {
+      // The success message always includes "Replaced N occurrence(s)",
+      // so the count comes from the parsed output, not from a flag.
+      // The "all" label is a fallback for when parsing fails
+      // (e.g. an old/legacy or custom output shape). Force the
+      // fallback here by passing output without the canonical form.
       final tool = EditTool();
       final summary = tool.collapsedSummary(
         {
@@ -1344,13 +1441,8 @@ void main() {
           'replaceAll': true,
           'intent': '...',
         },
-        ToolResult(title: 'Edit', output: 'Replaced 5 occurrences'),
+        ToolResult(title: 'Edit', output: 'unparseable output'),
       );
-      // replaceAll without an _replaceCount falls back to "all
-      // replacements" with the +N -N line diff still computed
-      // from the single replacement (since the matcher may have
-      // matched 0 or 1 — we don't know the actual count at this
-      // point, so it shows the per-occurrence cost).
       expect(summary.text, startsWith('all replacements,'));
     });
 
@@ -1710,7 +1802,7 @@ void main() {
 
     test(
       'execute() emits +N -M line diff in the success message '
-      'and stashes _replaceCount for the bubble',
+      'and the bubble parses it back out for collapsedSummary',
       () async {
         // 3-line oldString, 2-line newString, single replacement.
         await fileHelper('test.txt', 'header\nold-a\nold-b\nold-c\nfooter\n');
@@ -1725,13 +1817,16 @@ void main() {
         expect(result.output, contains('Replaced 1 occurrence'));
         expect(result.output, contains('+2 -3 lines'));
 
-        // _replaceCount is stashed on the args so the bubble's
-        // collapsedSummary can render `+2 -3 lines` (which it
-        // would derive as newLines*count - oldLines*count).
-        expect(args['_replaceCount'], 1);
+        // The bubble renders the diff by parsing it out of the
+        // result output. The stash-on-args pattern was removed
+        // because it conflated LLM-controlled input with tool
+        // internal state (and the LLM could echo the stash back
+        // in a shape that broke the consumer).
+        expect(args['_replaceCount'], isNull,
+            reason: 'no internal state should leak into LLM input');
 
-        // The summary should pick up the stash and show the
-        // correct diff next to the token count.
+        // The summary should derive `+2 -3 lines` from the
+        // `Replaced N occurrence(s)` half of the result text.
         final summary = EditTool().collapsedSummary(
           args,
           ToolResult(title: 'Edit', output: result.output),
@@ -1742,7 +1837,7 @@ void main() {
 
     test(
       'execute() with replaceAll reports the actual count, '
-      'and the summary scales the diff by that count',
+      'and the summary parses it back out from the success message',
       () async {
         await fileHelper(
           'test.txt',
@@ -1759,14 +1854,14 @@ void main() {
         expect(result.output, contains('Replaced 4 occurrences'));
         // 4 occurrences * 1 line each → +4 -4.
         expect(result.output, contains('+4 -4 lines'));
-        expect(args['_replaceCount'], 4);
+        expect(args['_replaceCount'], isNull,
+            reason: 'no internal state should leak into LLM input');
 
         final summary = EditTool().collapsedSummary(
           args,
           ToolResult(title: 'Edit', output: result.output),
         );
-        // When _replaceCount is known, the summary shows the
-        // actual count rather than the "all" fallback.
+        // The summary parses "Replaced 4 occurrences" → 4.
         expect(summary.text, '4 replacements, +4 -4 lines');
       },
     );
@@ -1787,8 +1882,11 @@ void main() {
         expect(result.output, contains('Created file'));
         // 'one\ntwo\nthree\n' is 4 lines (trailing \n adds one).
         expect(result.output, contains('+4 lines'));
+        expect(args['_replaceCount'], isNull,
+            reason: 'new-file path also does not leak internal state');
         // The collapsedSummary uses the "new file" form when
-        // oldString was empty, regardless of _replaceCount.
+        // oldString is empty, regardless of any count that
+        // might appear in the output.
         final summary = EditTool().collapsedSummary(
           args,
           ToolResult(title: 'Edit', output: result.output),
@@ -1819,8 +1917,8 @@ void main() {
     );
 
     test(
-      'execute() emits +N -M in the success message and stashes '
-      '_existingLineCount for the bubble',
+      'execute() emits +N -M in the success message and the bubble '
+      'parses it back out for collapsedSummary',
       () async {
         // Pre-existing file with 6 lines (a\nb\nc\nd\ne\n);
         // we'll overwrite with 4 (x\ny\nz\n).
@@ -1837,9 +1935,11 @@ void main() {
         // Success message reports the diff.
         expect(result.output, contains('+4 -6 lines'));
 
-        // The stash survives execute so the bubble's
-        // collapsedSummary can render the same diff.
-        expect(args['_existingLineCount'], 6);
+        // No internal state should leak into the LLM-controlled
+        // args map. The bubble parses the diff back out of the
+        // success message at render time.
+        expect(args['_existingLineCount'], isNull,
+            reason: 'no internal state should leak into LLM input');
 
         final summary = WriteTool().collapsedSummary(
           args,
@@ -1862,7 +1962,8 @@ void main() {
         expect(result.output, contains('+4 lines'));
         // No `-N` half when the file didn't previously exist.
         expect(result.output, isNot(contains('-')));
-        expect(args['_existingLineCount'], 0);
+        expect(args['_existingLineCount'], isNull,
+            reason: 'no internal state should leak into LLM input');
 
         final summary = WriteTool().collapsedSummary(
           args,

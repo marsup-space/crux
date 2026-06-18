@@ -27,14 +27,23 @@ class WriteTool extends ToolDef with IntentionalTool {
     ToolResult result,
   ) {
     final content = args['content'] as String? ?? '';
-    // _existingLineCount is stashed in args by [execute] at the
-    // moment we read the file's prior contents (so the summary
-    // can show the actual `+added -removed` diff). When the
-    // call hasn't run yet — e.g. the result is being rendered
-    // before the tool has actually executed — we fall back to
-    // 0, which means "no prior content" (i.e. treat it as a
-    // new file) and show only the `+added lines` part.
-    final existingLineCount = (args['_existingLineCount'] as int?) ?? 0;
+    // The prior line count used to be stashed on the input args
+    // map by execute() (as `_existingLineCount`) so the summary
+    // could show the `+added -removed` diff. Same side-channel
+    // problem as EditTool's `_replaceCount`: the args map is the
+    // LLM-controlled input and gets round-tripped back to the
+    // model in conversation history, where it can be echoed in a
+    // shape that breaks the consumer.
+    //
+    // Parse the diff straight out of the success message
+    // (`"+N lines"` for new files, `"+N -M lines"` for existing
+    // files) — both shapes are emitted by [_doWrite] below and
+    // never user-controlled. When parsing fails (error output,
+    // auto-read, future format change) we fall back to 0
+    // existing lines, which renders as a new-file `+N lines`
+    // — same as before.
+    final existingLineCount =
+        _existingLineCountFromOutput(result.output);
     final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
     final size = content.length;
     final sizeStr = size > 1024
@@ -71,6 +80,24 @@ class WriteTool extends ToolDef with IntentionalTool {
       argsTokens: argsTokens,
       totalTokens: totalTokens,
     );
+  }
+
+  /// Extract the prior line count from a WriteTool success
+  /// message. Matches the two shapes [_doWrite] emits:
+  ///   - new file:        `"... +4 lines, ..."`
+  ///   - existing file:   `"... +4 -6 lines, ..."`
+  /// Returns 0 when no `-M` half is present (treats it as a
+  /// brand-new file) and 0 when nothing matches at all — same
+  /// behavior as the previous args-stash default.
+  static final RegExp _lineDiffPattern =
+      RegExp(r'\+\d+(?:\s*-(\d+))?\s*lines');
+
+  static int _existingLineCountFromOutput(String output) {
+    final match = _lineDiffPattern.firstMatch(output);
+    if (match == null) return 0;
+    // group(1) is the `-M` capture; absent on the new-file
+    // shape, in which case we want 0.
+    return int.tryParse(match.group(1) ?? '') ?? 0;
   }
 
   @override
@@ -202,17 +229,15 @@ class WriteTool extends ToolDef with IntentionalTool {
         byteLength: 0,
       );
     }
-    // Capture the prior line count for the bubble's
-    // collapsedSummary (which renders the actual
-    // `+added -removed` diff). Stashing it on `args` keeps the
-    // data on the tool_call's input, where it survives across
-    // rounds. We stash it BEFORE writing the file — once
-    // we've overwritten the bytes the "existing" count would
-    // be lost.
+    // Capture the prior line count for the success message
+    // (which embeds the actual `+added -removed` diff in the
+    // output text). The bubble's collapsedSummary then parses
+    // that diff back out of the result — no need to stash it
+    // on the LLM-controlled args map (see CollapsedSummary
+    // comment for the rationale).
     final existingLineCount = meta.content.isEmpty
         ? 0
         : '\n'.allMatches(meta.content).length + 1;
-    args['_existingLineCount'] = existingLineCount;
     final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
     // Respect the target line ending from .gitattributes. If
     // the file is declared binary, `targetLineEnding` is null

@@ -78,7 +78,6 @@ void main() {
   group('A. baseline: line endings match', () {
     late Directory tempDir;
     late CruxDatabase db;
-    late SessionStore store;
     late FileReadTracker tracker;
     late ToolRegistry registry;
     late ToolExecutor executor;
@@ -86,7 +85,6 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_A_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
-      store = SessionStore(db);
       tracker = FileReadTracker();
       registry = ToolRegistry()..registerDefaults(tracker);
       executor = ToolExecutor(registry);
@@ -187,7 +185,6 @@ void main() {
   group('B. line endings mismatch (no .gitattributes)', () {
     late Directory tempDir;
     late CruxDatabase db;
-    late SessionStore store;
     late FileReadTracker tracker;
     late ToolRegistry registry;
     late ToolExecutor executor;
@@ -195,7 +192,6 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_B_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
-      store = SessionStore(db);
       tracker = FileReadTracker();
       registry = ToolRegistry()..registerDefaults(tracker);
       executor = ToolExecutor(registry);
@@ -675,7 +671,6 @@ void main() {
   group('D. .gitattributes drives the target line ending', () {
     late Directory tempDir;
     late CruxDatabase db;
-    late SessionStore store;
     late FileReadTracker tracker;
     late ToolRegistry registry;
     late ToolExecutor executor;
@@ -686,7 +681,6 @@ void main() {
       gitAttributesLookup.clearCache();
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_D_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
-      store = SessionStore(db);
       tracker = FileReadTracker();
       registry = ToolRegistry()..registerDefaults(tracker);
       executor = ToolExecutor(registry);
