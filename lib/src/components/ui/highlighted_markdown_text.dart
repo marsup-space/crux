@@ -612,7 +612,11 @@ class _HighlightMarkdownVisitor {
     final headerLine = '┌─$headerContent${'─' * math.max(0, headerPadding)}';
     final footerLine = '└${'─' * (width - 1)}';
 
-    final codeLines = code.replaceAll(RegExp(r'\n$'), '').split('\n');
+    // Strip a single trailing newline (markdown code blocks always end in `\n`)
+    // so we don't render an extra empty line after the gutter.
+    final stripped = code.endsWith('\n')
+        ? code.substring(0, code.length - 1)
+        : code;
 
     final spans = <InlineSpan>[];
 
@@ -623,8 +627,19 @@ class _HighlightMarkdownVisitor {
       ),
     );
 
-    for (var i = 0; i < codeLines.length; i++) {
-      final line = codeLines[i];
+    // Emit a piece of text with the code-block background baked in.
+    void emitText(String text, {TextStyle? style}) {
+      if (text.isEmpty) return;
+      spans.add(
+        TextSpan(
+          text: text,
+          style: (style ?? const TextStyle()).copyWith(backgroundColor: bgColor),
+        ),
+      );
+    }
+
+    // Emit the gutter prefix for a new line.
+    void emitGutter() {
       spans.add(
         TextSpan(
           text: '│ ',
@@ -634,34 +649,115 @@ class _HighlightMarkdownVisitor {
           ),
         ),
       );
+    }
 
-      if (language != null && language.isNotEmpty) {
-        final highlighted = highlightCode(line, language, theme);
-        for (final span in highlighted) {
-          if (span is TextSpan) {
-            spans.add(
-              TextSpan(
-                text: span.text,
-                style: (span.style ?? const TextStyle()).copyWith(
-                  backgroundColor: bgColor,
-                ),
-                children: span.children,
-              ),
-            );
-          } else {
-            spans.add(span);
+    // Emit a chunk of [text] using [style], splitting at every newline so a
+    // gutter is re-emitted at the start of each new line.
+    void emitWithGutterAtNewlines(String text, TextStyle style) {
+      var idx = 0;
+      while (true) {
+        final nl = text.indexOf('\n', idx);
+        if (nl == -1) {
+          emitText(text.substring(idx), style: style);
+          return;
+        }
+        emitText(text.substring(idx, nl + 1), style: style);
+        if (idx + nl + 1 < stripped.length) emitGutter();
+        idx = nl + 1;
+      }
+    }
+
+    if (stripped.isEmpty) {
+      // Empty code block — still render a single gutter so the box has height.
+      emitGutter();
+    } else {
+      final highlightService = HighlightService.instance;
+      final highlighter = (highlightService != null &&
+              language != null &&
+              language.isNotEmpty)
+          ? highlightService.highlighterFor(language)
+          : null;
+
+      if (highlighter == null) {
+        // No highlighter available: render the whole block in [codeStyle],
+        // emitting a gutter at every newline.
+        emitGutter();
+        emitWithGutterAtNewlines(stripped, codeStyle);
+      } else {
+        // IMPORTANT: highlight the entire code block as a single string, not
+        // line-by-line. Dart's `///` doc-comment grammar (and many other
+        // grammars) uses `begin`/`while`/`end` pairs that span across lines,
+        // which only work when the highlighter sees the full context.
+        final styleService = highlightService!;
+        final tokens = highlighter.highlight(stripped);
+        emitGutter();
+
+        int cursor = 0;
+        int tokenIdx = 0;
+
+        // Advance past any tokens we have already emitted.
+        void skipFinishedTokens() {
+          while (tokenIdx < tokens.length &&
+              cursor >= tokens[tokenIdx].end) {
+            tokenIdx++;
           }
         }
-      } else {
-        spans.add(TextSpan(text: line, style: codeStyle));
-      }
 
-      spans.add(
-        TextSpan(
-          text: '\n',
-          style: TextStyle(backgroundColor: bgColor),
-        ),
-      );
+        while (cursor < stripped.length) {
+          skipFinishedTokens();
+          final token = tokenIdx < tokens.length ? tokens[tokenIdx] : null;
+
+          int boundary;
+          TextStyle segmentStyle;
+
+          if (token != null && cursor >= token.start && cursor < token.end) {
+            // Cursor sits inside the current token: emit up to the next
+            // newline or the end of the token, whichever comes first. This
+            // ensures we re-emit the gutter between every line, even when a
+            // multi-line token (e.g. a `///` doc comment or `/* ... */` block)
+            // spans several lines.
+            final nlInToken = stripped.indexOf('\n', cursor);
+            if (nlInToken != -1 && nlInToken < token.end) {
+              boundary = nlInToken + 1;
+            } else {
+              boundary = token.end;
+            }
+            final color = colorForScopes(token.scopes, theme);
+            final tmStyle = styleService.styleForScopes(token.scopes);
+            segmentStyle = TextStyle(
+              color: color,
+              fontWeight: tmStyle?.bold == true
+                  ? FontWeight.bold
+                  : FontWeight.normal,
+              fontStyle: tmStyle?.italic == true
+                  ? FontStyle.italic
+                  : FontStyle.normal,
+            );
+          } else if (token != null && cursor < token.start) {
+            // Cursor sits in a gap before the next token: emit unstyled
+            // fallback text up to the next newline or the token start.
+            final nlInGap = stripped.indexOf('\n', cursor);
+            if (nlInGap != -1 && nlInGap < token.start) {
+              boundary = nlInGap + 1;
+            } else {
+              boundary = token.start;
+            }
+            segmentStyle = codeStyle;
+          } else {
+            // No more tokens: emit the rest as unstyled, splitting at newlines.
+            emitWithGutterAtNewlines(stripped.substring(cursor), codeStyle);
+            cursor = stripped.length;
+            continue;
+          }
+
+          emitText(stripped.substring(cursor, boundary), style: segmentStyle);
+          cursor = boundary;
+          if (cursor < stripped.length &&
+              stripped[cursor - 1] == '\n') {
+            emitGutter();
+          }
+        }
+      }
     }
 
     spans.add(

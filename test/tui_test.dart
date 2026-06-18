@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/nocterm.dart' hide isNotEmpty;
 import 'package:crux/src/models/slash_command.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/components/ui/button.dart';
@@ -11,7 +11,9 @@ import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/write_tool.dart';
 
 import 'package:crux/src/components/ui/highlighted_markdown_text.dart';
+import 'package:crux/src/components/ui/highlight_service.dart';
 import 'package:crux/src/components/ui/response_link_text.dart';
+import 'package:crux/src/theme/crux_theme.dart';
 
 ToolRegistry _registryWithWriteTool() {
   final r = ToolRegistry();
@@ -139,6 +141,54 @@ void main() {
         expect(tester.terminalState, containsText('dart'));
         expect(tester.terminalState, containsText('│'));
         expect(tester.terminalState.containsText('```'), isFalse);
+      });
+    });
+
+    // Regression: the code-block renderer used to split the source into
+    // individual lines and highlight each one separately. That broke Dart's
+    // `///` doc-comment grammar, because the `begin`/`while` pair only works
+    // when the highlighter sees the full multi-line block. Symptom: the `///`
+    // markers were highlighted but everything after them on the same line
+    // silently disappeared.
+    test('code block preserves /// doc comments', () async {
+      await HighlightService.initialize();
+      final theme = CruxThemeData.draculaFallback;
+      await testNocterm('code block ///', (tester) async {
+        const source =
+            '```dart\n/// First line of doc.\n/// Second line.\nvoid main() {}\n```';
+        await tester.pumpComponent(
+          CruxTheme(
+            data: theme,
+            child: Container(
+              width: 80,
+              height: 24,
+              child: HighlightedMarkdownText(source),
+            ),
+          ),
+        );
+
+        // The full comment text must survive (not just the `///` markers).
+        expect(tester.terminalState, containsText('First line of doc.'));
+        expect(tester.terminalState, containsText('Second line.'));
+        expect(tester.terminalState, containsText('void main()'));
+        // Every line of the code block should still have a gutter.
+        final gutterCount = tester.terminalState
+            .getText()
+            .split('\n')
+            .where((line) => line.startsWith('│ '))
+            .length;
+        expect(gutterCount, greaterThanOrEqualTo(3));
+
+        // The `///` markers should be in the comment color (theme
+        // `highlightComment`), not the default code-block text color.
+        final commentMatches =
+            tester.terminalState.findText('/// First line of doc.');
+        expect(commentMatches, isNotEmpty);
+        final firstCell = tester.terminalState.getCellAt(
+          commentMatches.first.x,
+          commentMatches.first.y,
+        );
+        expect(firstCell?.style.color, theme.highlightComment);
       });
     });
 
