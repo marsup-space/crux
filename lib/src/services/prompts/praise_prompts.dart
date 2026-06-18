@@ -139,72 +139,233 @@ void injectParallelToolCallHintIntoLastTool(
 
 // =============================================================================
 // Single-call-hint: corrective nudge after drift
+//
+// The hint fires at multiples of `hint_parallel_calls_single_threshold`
+// (default 10, 20, 30, …). Each fire escalates in two ways:
+//
+//   1. **Wording** — three severity tiers (mild / firm / urgent) so
+//      the message stays informative at round 10, direct at round 20,
+//      and unambiguous at round 30+.
+//
+//   2. **Wire format** — mild and firm tiers append the hint inside
+//      the last tool's `content` field (the same place as the praise
+//      hint), framed with a tier-specific marker so the LLM can
+//      pattern-match the severity. The urgent tier (round 30+) breaks
+//      out of the tool-result and injects a fresh `user`-role message
+//      instead, so the hint is impossible to miss — the prior two
+//      tiers must not have landed, hence the escalation.
+//
+// The split reflects the design principle that milder hints are
+// meta-information about the round ("by the way, you serialised")
+// while urgent hints are a corrective interruption ("stop, fix your
+// behaviour"). The LLM treats a `user` message after a tool-result
+// block as a clear pivot point in the conversation.
 // =============================================================================
 
-/// Marker tag for the corrective single-call nudge. Distinct from
-/// the praise marker so the LLM can pattern-match which signal it's
-/// seeing. Praise fires on batching (≥2 calls); this fires after the
-/// model has serialized for too long (default 10 rounds in a row).
-const parallelSingleCallHintEmbeddedMarker =
-    '[Crux system note — single-tool-call hint]';
+/// Severity tier for the single-call reminder. Escalates with each
+/// multiple of the configured threshold; rounds 10/20/30 by default.
+///
+/// Picking a tier drives three things:
+///   * the body template (mild/firm/urgent wording),
+///   * the wire format (tool-result append vs. user-role message),
+///   * the marker tag the LLM pattern-matches.
+enum SingleCallHintSeverity { mild, firm, urgent }
 
-/// Template for the corrective single-call hint.
+/// Map a consecutive single-call round count to its severity tier.
 ///
-/// Distinct from the praise template in two ways:
+/// Tier boundaries (with the default threshold of 10):
+///   * `count == threshold`         → [SingleCallHintSeverity.mild]
+///   * `count == 2 * threshold`     → [SingleCallHintSeverity.firm]
+///   * `count >= 3 * threshold`     → [SingleCallHintSeverity.urgent]
 ///
-///   1. The opening sentence is a *factual observation* about the
-///      recent behaviour ("you emitted N consecutive single-tool-
-///      call rounds"), not a compliment — the goal is to make the
-///      drift visible, not to score it.
-///   2. The follow-up is a *suggestion* framed conditionally ("if
-///      those calls were independent, batching would have saved
-///      round trips"). We don't accuse the model of being wrong,
-///      because some tool calls genuinely have ordering dependencies
-///      — the nudge asks it to consider whether its recent calls did.
-///
-/// `{count}` is the consecutive single-tool-call round count (e.g.
-/// 10 with the default threshold; 20 if the model kept serializing
-/// past the first nudge).
-const parallelSingleCallHintTemplate =
-    'You have emitted {count} consecutive single-tool-call rounds in a row. '
-    'If those calls were independent, batching them into a single turn '
-    'would have saved round trips with the model. Consider bundling '
-    'independent reads, searches, and other queries going forward.';
+/// A threshold of 0 (TOML explicit `hint_parallel_calls_single_threshold
+/// = 0`) is treated defensively as mild — the modulo gate itself
+/// collapses to "always fire" but the tier formula would otherwise
+/// divide by zero.
+SingleCallHintSeverity singleCallHintSeverityFor(
+  int consecutiveCount, {
+  int threshold = 10,
+}) {
+  if (threshold <= 0) return SingleCallHintSeverity.mild;
+  final tier = consecutiveCount ~/ threshold;
+  if (tier <= 1) return SingleCallHintSeverity.mild;
+  if (tier == 2) return SingleCallHintSeverity.firm;
+  return SingleCallHintSeverity.urgent;
+}
 
-/// Render the single-call hint body with the consecutive-round count.
-String renderParallelSingleCallHint(int consecutiveCount) {
-  return parallelSingleCallHintTemplate.replaceAll(
-    '{count}',
-    consecutiveCount.toString(),
+/// Marker tag for the corrective single-call nudge. Tier-specific
+/// so the LLM can pattern-match both the *kind* of reminder and
+/// its severity from the bracket tag alone.
+///
+///   * mild   → "[Crux system note — single-tool-call hint]"
+///   * firm   → "[Crux system note — single-tool-call hint — firm]"
+///   * urgent → "[Crux system note — single-tool-call hint — urgent]"
+///
+/// Distinct from the praise marker so the model can tell which
+/// signal it's seeing in the first place; the tier suffix lets it
+/// tell escalation apart at a glance.
+String parallelSingleCallHintMarker(SingleCallHintSeverity severity) {
+  switch (severity) {
+    case SingleCallHintSeverity.mild:
+      return '[Crux system note — single-tool-call hint]';
+    case SingleCallHintSeverity.firm:
+      return '[Crux system note — single-tool-call hint — firm]';
+    case SingleCallHintSeverity.urgent:
+      return '[Crux system note — single-tool-call hint — urgent]';
+  }
+}
+
+// ---- Tiered body templates ----------------------------------------------
+//
+// Three templates, one per severity. `{count}` is substituted at
+// render time. All three use "parallel tool calls" terminology
+// (matching the parallel-praise hint) so the LLM sees one consistent
+// vocabulary across both signals.
+//
+//   * **mild** is an observation + soft suggestion. Asks the model
+//     to consider whether its recent calls were independent —
+//     doesn't accuse it of being wrong because some tool calls
+//     genuinely have ordering dependencies.
+//
+//   * **firm** drops the conditional framing ("if those calls were
+//     independent") — by round 20 it's overwhelmingly likely they
+//     were. Names the pattern ("serialisation drift") and tells the
+//     model to batch the independent ones going forward.
+//
+//   * **urgent** is an imperative. The two prior tiers evidently
+//     didn't land, so this one spells out the cost (round trips
+//     wasted) and the corrective action ("MUST be issued as parallel
+//     tool calls") without hedging. Paired with the user-role wire
+//     format (see [injectParallelSingleCallHintAsUserMessage]) so
+//     the LLM cannot miss it.
+
+const parallelSingleCallHintMildTemplate =
+    'You have emitted {count} consecutive single-tool-call rounds. '
+    'If those tool calls were independent, issuing them as parallel tool '
+    'calls in a single turn would have saved round trips with the model. '
+    'Going forward, consolidate independent reads, searches, and other '
+    'read-only queries into parallel tool calls per turn.';
+
+const parallelSingleCallHintFirmTemplate =
+    'You have emitted {count} consecutive single-tool-call rounds — '
+    'a clear serialisation drift pattern. Independent reads and searches '
+    'should be issued as parallel tool calls in a single turn. Going '
+    'forward, batch the independent ones into parallel tool calls and '
+    'only serialise when an explicit ordering dependency exists.';
+
+const parallelSingleCallHintUrgentTemplate =
+    'You have emitted {count} consecutive single-tool-call rounds — '
+    'severe serialisation drift. The previous, milder reminders '
+    '(appended to tool results) evidently did not adjust your behaviour. '
+    'Independent reads and searches MUST be issued as parallel tool calls '
+    'in a single turn; do not serialise them unless an explicit ordering '
+    'dependency exists. Every additional single-tool-call round wastes '
+    'a round trip with the model. Switch to parallel tool calls now.';
+
+/// Render the single-call hint body for the tier matching
+/// [consecutiveCount]. Pure string substitution — no wire-format
+/// concerns live here. The two helpers
+/// [renderParallelSingleCallHintEmbedded] and
+/// [renderParallelSingleCallHintUserMessage] wrap the body with the
+/// tier-specific marker and choose the wire format.
+String renderParallelSingleCallHint(
+  int consecutiveCount, {
+  int threshold = 10,
+}) {
+  final severity = singleCallHintSeverityFor(
+    consecutiveCount,
+    threshold: threshold,
   );
+  final template = switch (severity) {
+    SingleCallHintSeverity.mild => parallelSingleCallHintMildTemplate,
+    SingleCallHintSeverity.firm => parallelSingleCallHintFirmTemplate,
+    SingleCallHintSeverity.urgent => parallelSingleCallHintUrgentTemplate,
+  };
+  return template.replaceAll('{count}', consecutiveCount.toString());
 }
 
 /// Render the single-call hint wrapped in the embedded marker, ready
 /// to be appended to a tool's `content` field.
 ///
-/// Same wire-format choice as the praise hint: appended to the last
-/// tool's `content` (rather than a sibling `text` block or new `user`
-/// message) so the message stream stays unambiguous — every `tool`
-/// result still says "this came from a tool", and the hint is
-/// clearly a trailing system note.
-String renderParallelSingleCallHintEmbedded(int consecutiveCount) {
-  final body = renderParallelSingleCallHint(consecutiveCount);
-  return '\n\n$parallelSingleCallHintEmbeddedMarker\n$body\n';
+/// Used by the mild and firm tiers. The urgent tier does NOT use
+/// this — see [renderParallelSingleCallHintUserMessage] for the
+/// user-role wire format that breaks out of the tool-result.
+String renderParallelSingleCallHintEmbedded(
+  int consecutiveCount, {
+  int threshold = 10,
+}) {
+  final severity = singleCallHintSeverityFor(
+    consecutiveCount,
+    threshold: threshold,
+  );
+  if (severity == SingleCallHintSeverity.urgent) {
+    throw StateError(
+      'renderParallelSingleCallHintEmbedded called for urgent tier '
+      '(count=$consecutiveCount, threshold=$threshold). Urgent tier '
+      'must use renderParallelSingleCallHintUserMessage + '
+      'injectParallelSingleCallHintAsUserMessage — the chat service '
+      'picks the right injection based on severity.',
+    );
+  }
+  final body = renderParallelSingleCallHint(
+    consecutiveCount,
+    threshold: threshold,
+  );
+  final marker = parallelSingleCallHintMarker(severity);
+  return '\n\n$marker\n$body\n';
+}
+
+/// Render the single-call hint as a standalone user-role message
+/// body, ready to be added as a new `user` message in the wire format.
+///
+/// Used by the urgent tier only. The output is the bare hint body
+/// — **no `[Crux system note — …]` marker tag**, no leading
+/// `system`/`assistant` framing. The whole point of escalating to a
+/// `user`-role message is for the LLM to read it as the human
+/// speaking, not as Crux's own meta-commentary. A bracketed
+/// `[Crux system note — …]` prefix would re-introduce the
+/// "ignoreable system tag" pattern the urgent tier is designed to
+/// escape — the model would be free to mentally file the message
+/// alongside the other tool-result-appended hints and continue
+/// serialising.
+///
+/// The mild and firm tiers, by contrast, ARE wrapped in a
+/// `[Crux system note — single-tool-call hint]` (or `— firm`)
+/// marker — because they get *appended* to a tool's `content`
+/// field, the marker gives the LLM a clean boundary between the
+/// tool's real output and the injected note. The urgent tier has
+/// no such boundary to mark (it's its own message), so it skips
+/// the framing entirely.
+String renderParallelSingleCallHintUserMessage(
+  int consecutiveCount, {
+  int threshold = 10,
+}) {
+  return renderParallelSingleCallHint(
+    consecutiveCount,
+    threshold: threshold,
+  );
 }
 
 /// Append the embedded single-call hint to the *last* tool result in
 /// the accumulated wire-format message list. Mirrors
-/// [injectParallelToolCallHintIntoLastTool] exactly, except the body
-/// is the corrective nudge and the marker is
-/// [parallelSingleCallHintEmbeddedMarker]. The same no-new-message,
-/// no-sibling-block contract applies.
+/// [injectParallelToolCallHintIntoLastTool] in shape.
+///
+/// Only valid for the mild and firm tiers — calling this with the
+/// urgent tier throws (use
+/// [injectParallelSingleCallHintAsUserMessage] instead). The chat
+/// service picks the right injection based on severity; this
+/// function trusts that contract and enforces it with an exception.
 void injectParallelSingleCallHintIntoLastTool(
   List<dynamic> apiMessages, {
   required bool isAnthropic,
   required int consecutiveCount,
+  int threshold = 10,
 }) {
   if (apiMessages.isEmpty) return;
-  final hintAppend = renderParallelSingleCallHintEmbedded(consecutiveCount);
+  final hintAppend = renderParallelSingleCallHintEmbedded(
+    consecutiveCount,
+    threshold: threshold,
+  );
 
   if (isAnthropic) {
     final lastMessage = apiMessages.last as Map<String, dynamic>;
@@ -221,6 +382,59 @@ void injectParallelSingleCallHintIntoLastTool(
     lastToolMessage['content'] = existing is String
         ? '$existing$hintAppend'
         : hintAppend;
+  }
+}
+
+/// Inject the single-call hint as a fresh `user`-role message in
+/// the accumulated wire-format message list.
+///
+/// Only valid for the urgent tier. The chat service picks this
+/// injection when the modulo gate fires at `count >= 3 * threshold`
+/// (round 30+ by default). The result is a brand-new user message
+/// after the tool results, not an append to the last tool — the
+/// placement is itself the escalation signal, because the prior
+/// milder (tool-result-appended) tiers evidently didn't change
+/// behaviour.
+///
+/// Wire format (note: **no `[Crux system note — …]` marker** — the
+/// urgent-tier body is sent bare so the LLM reads it as a real user
+/// message, not as Crux meta-commentary it can mentally file away):
+///
+///   * OpenAI:
+///       `{'role': 'user', 'content': '{body}'}`
+///   * Anthropic:
+///       `{'role': 'user', 'content': [
+///           {'type': 'text', 'text': '{body}'},
+///         ]}`
+///
+/// Pushing a `user` message here intentionally breaks the
+/// "no-new-message, no-sibling-block" contract that the milder
+/// tiers honour. The two-tier split (mild/firm vs urgent) is the
+/// reason this contract exists in the first place — see the section
+/// header above for the design rationale.
+void injectParallelSingleCallHintAsUserMessage(
+  List<dynamic> apiMessages, {
+  required bool isAnthropic,
+  required int consecutiveCount,
+  int threshold = 10,
+}) {
+  final text = renderParallelSingleCallHintUserMessage(
+    consecutiveCount,
+    threshold: threshold,
+  );
+
+  if (isAnthropic) {
+    apiMessages.add({
+      'role': 'user',
+      'content': [
+        {'type': 'text', 'text': text},
+      ],
+    });
+  } else {
+    apiMessages.add({
+      'role': 'user',
+      'content': text,
+    });
   }
 }
 
@@ -259,11 +473,33 @@ String renderParallelPraiseBubbleLabel(int successfulCount) {
 /// batched well (praise, green) and which drifted toward
 /// serialisation (reminder, warning yellow).
 ///
+/// Like the in-context reminder, the bubble label also has three
+/// severity tiers (mild / firm / urgent), so the visible message
+/// escalates with the same wording trajectory as the in-context one.
+/// The bubble label is purely cosmetic for the user; the in-context
+/// text is what actually reaches the model.
+///
 /// [consecutiveCount] is the value of
 /// `SessionRuntimeState.consecutiveSingleToolCallRounds` at the
 /// moment the modulo gate fired — a positive multiple of the
 /// configured threshold (10, 20, 30, … by default).
-String renderSingleCallReminderBubbleLabel(int consecutiveCount) {
-  return '$consecutiveCount consecutive single-tool-call rounds · '
-      'consider batching independent reads/searches';
+String renderSingleCallReminderBubbleLabel(
+  int consecutiveCount, {
+  int threshold = 10,
+}) {
+  final severity = singleCallHintSeverityFor(
+    consecutiveCount,
+    threshold: threshold,
+  );
+  switch (severity) {
+    case SingleCallHintSeverity.mild:
+      return '$consecutiveCount consecutive single-tool-call rounds · '
+          'try parallel tool calls';
+    case SingleCallHintSeverity.firm:
+      return '$consecutiveCount consecutive single-tool-call rounds · '
+          'serialisation drift — use parallel tool calls';
+    case SingleCallHintSeverity.urgent:
+      return '$consecutiveCount consecutive single-tool-call rounds · '
+          'severe drift — switch to parallel tool calls';
+  }
 }

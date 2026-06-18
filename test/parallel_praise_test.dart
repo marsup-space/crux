@@ -139,10 +139,10 @@ void main() {
   });
 
   group('renderSingleCallReminderBubbleLabel (user-facing reminder)', () {
-    test('shows the consecutive count and a batching suggestion', () {
+    test('shows the consecutive count and a parallel-tool-call suggestion', () {
       final out = renderSingleCallReminderBubbleLabel(10);
       expect(out, contains('10 consecutive single-tool-call rounds'));
-      expect(out, contains('consider batching'));
+      expect(out, contains('try parallel tool calls'));
     });
 
     test('uses the actual count (no plural/singular branching needed)', () {
@@ -165,13 +165,16 @@ void main() {
     });
 
     test('uses neutral framing — not an accusation', () {
-      // The reminder is phrased conditionally ("if those calls were
+      // The mild-tier reminder (round == threshold, e.g. 10) is
+      // phrased conditionally ("if those tool calls were
       // independent") rather than as a complaint. Some serial
       // workflows are legitimate; the nudge is a suggestion, not a
-      // verdict.
-      final out = renderParallelSingleCallHint(20);
-      expect(out, contains('If those calls were independent'));
-      expect(out, contains('batching them'));
+      // verdict. The firm (round 20) and urgent (round 30+) tiers
+      // are more direct because the model has evidently not
+      // responded to softer nudges.
+      final out = renderParallelSingleCallHint(10);
+      expect(out, contains('If those tool calls were independent'));
+      expect(out, contains('parallel tool calls'));
       // No accusatory language — the model should not feel scolded.
       expect(out.toLowerCase(), isNot(contains('you should have')));
       expect(out.toLowerCase(), isNot(contains('you failed')));
@@ -183,11 +186,11 @@ void main() {
     () {
       test('wraps the bare reminder with its own system-note marker', () {
         final out = renderParallelSingleCallHintEmbedded(10);
-        expect(out, contains(parallelSingleCallHintEmbeddedMarker));
+        expect(out, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
         expect(out, contains('You have emitted 10 consecutive'));
         // The marker must come before the body.
         expect(
-          out.indexOf(parallelSingleCallHintEmbeddedMarker),
+          out.indexOf(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
           lessThan(out.indexOf('You have emitted')),
         );
       });
@@ -197,7 +200,7 @@ void main() {
         // distinct marker tags so the model can pattern-match
         // which signal it's seeing. Pinned by this test.
         expect(
-          parallelSingleCallHintEmbeddedMarker,
+          parallelSingleCallHintMarker(SingleCallHintSeverity.mild),
           isNot(equals(parallelHintEmbeddedMarker)),
         );
       });
@@ -376,7 +379,7 @@ void main() {
         expect(last['role'], 'tool');
         final content = last['content'] as String;
         expect(content, startsWith('file contents'));
-        expect(content, contains(parallelSingleCallHintEmbeddedMarker));
+        expect(content, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
         expect(content, contains('10 consecutive'));
         // And critically: NOT the praise marker. Same placement,
         // different signal.
@@ -423,7 +426,7 @@ void main() {
         final block = blocks.first;
         expect(block['type'], 'tool_result');
         final content = block['content'] as String;
-        expect(content, contains(parallelSingleCallHintEmbeddedMarker));
+        expect(content, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
         expect(content, contains('10 consecutive'));
       });
 
@@ -436,8 +439,228 @@ void main() {
         );
         expect(msgs, isEmpty);
       });
+
+      test('THROWS if called for the urgent tier (use the user-message helper)', () {
+        // Round 30 with default threshold → urgent tier. The
+        // tool-result-append helper refuses to render this and
+        // tells the caller to use the user-role helper instead.
+        // Without this guard, a regression in chat_service that
+        // routes urgent hints through the wrong helper would
+        // silently append the urgent text to a tool result — the
+        // exact behaviour the tier split exists to prevent.
+        final msgs = <Map<String, dynamic>>[
+          {'role': 'tool', 'tool_call_id': 'a', 'content': 'x'},
+        ];
+        expect(
+          () => injectParallelSingleCallHintIntoLastTool(
+            msgs,
+            isAnthropic: false,
+            consecutiveCount: 30,
+          ),
+          throwsA(isA<StateError>()),
+        );
+      });
     },
   );
+
+  // ─────────────────────────────────────────────────────────────────
+  // 2d. Single-call hint tier logic (mild / firm / urgent)
+  // ─────────────────────────────────────────────────────────────────
+  group('singleCallHintSeverityFor (tier boundary)', () {
+    test('count == threshold → mild', () {
+      expect(singleCallHintSeverityFor(10), SingleCallHintSeverity.mild);
+      expect(singleCallHintSeverityFor(5, threshold: 5),
+          SingleCallHintSeverity.mild);
+    });
+
+    test('count == 2 * threshold → firm', () {
+      expect(singleCallHintSeverityFor(20), SingleCallHintSeverity.firm);
+      expect(singleCallHintSeverityFor(6, threshold: 3),
+          SingleCallHintSeverity.firm);
+    });
+
+    test('count >= 3 * threshold → urgent', () {
+      expect(singleCallHintSeverityFor(30), SingleCallHintSeverity.urgent);
+      expect(singleCallHintSeverityFor(40), SingleCallHintSeverity.urgent);
+      expect(singleCallHintSeverityFor(100), SingleCallHintSeverity.urgent);
+    });
+
+    test('count below threshold (sub-tier 0) is still mild', () {
+      // The modulo gate only fires at multiples of threshold, but
+      // the tier function is forgiving — counts below threshold
+      // map to mild, never to firm/urgent.
+      expect(singleCallHintSeverityFor(1), SingleCallHintSeverity.mild);
+      expect(singleCallHintSeverityFor(9), SingleCallHintSeverity.mild);
+    });
+
+    test('threshold == 0 → mild (defensive — avoids div-by-zero)', () {
+      // The chat_service guards against `counter % 0` separately;
+      // the tier function must not throw.
+      expect(
+        singleCallHintSeverityFor(10, threshold: 0),
+        SingleCallHintSeverity.mild,
+      );
+    });
+  });
+
+  group('parallelSingleCallHintMarker (tier-specific tag)', () {
+    test('mild tag is the bare marker', () {
+      expect(
+        parallelSingleCallHintMarker(SingleCallHintSeverity.mild),
+        '[Crux system note — single-tool-call hint]',
+      );
+    });
+
+    test('firm tag has a tier suffix', () {
+      expect(
+        parallelSingleCallHintMarker(SingleCallHintSeverity.firm),
+        '[Crux system note — single-tool-call hint — firm]',
+      );
+    });
+
+    test('urgent tag has a tier suffix', () {
+      expect(
+        parallelSingleCallHintMarker(SingleCallHintSeverity.urgent),
+        '[Crux system note — single-tool-call hint — urgent]',
+      );
+    });
+
+    test('all three markers contain the base reminder kind', () {
+      // Pinned so a rename that drops "single-tool-call hint" from
+      // any tier trips the suite.
+      for (final m in [
+        parallelSingleCallHintMarker(SingleCallHintSeverity.mild),
+        parallelSingleCallHintMarker(SingleCallHintSeverity.firm),
+        parallelSingleCallHintMarker(SingleCallHintSeverity.urgent),
+      ]) {
+        expect(m, contains('single-tool-call hint'));
+      }
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // 2e. Urgent tier: user-role message injection
+  // ──────────────────────────────────────────────────────���──────────
+  group('injectParallelSingleCallHintAsUserMessage (urgent wire format)', () {
+    test('OpenAI: pushes a new user-role message after the tool results', () {
+      final msgs = <Map<String, dynamic>>[
+        {'role': 'user', 'content': 'go'},
+        {
+          'role': 'assistant',
+          'content': null,
+          'tool_calls': [
+            {
+              'id': 'a',
+              'type': 'function',
+              'function': {'name': 'read', 'arguments': '{}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'a', 'content': 'file contents'},
+      ];
+
+      injectParallelSingleCallHintAsUserMessage(
+        msgs,
+        isAnthropic: false,
+        consecutiveCount: 30,
+      );
+
+      // Length grew by exactly one — the new user message.
+      expect(msgs, hasLength(4));
+      final newMsg = msgs.last;
+      expect(newMsg['role'], 'user',
+          reason: 'urgent tier must surface as a user-role message');
+      final content = newMsg['content'] as String;
+      expect(content, contains('30 consecutive'));
+      expect(content, contains('parallel tool calls'));
+      // CRITICAL: the urgent-tier user message must NOT carry the
+      // `[Crux system note — …]` marker. The whole point of
+      // escalating to a user-role message is for the LLM to read
+      // it as the human speaking — a bracketed system tag would
+      // re-introduce the "ignoreable system tag" pattern the
+      // urgent tier exists to escape. See
+      // `renderParallelSingleCallHintUserMessage` docstring.
+      expect(
+        content,
+        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent))),
+        reason: 'urgent-tier user message must not carry a system-note marker',
+      );
+      expect(
+        content,
+        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild))),
+      );
+      expect(
+        content,
+        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.firm))),
+      );
+      // And NOT the praise marker — this is the corrective signal,
+      // not the positive one.
+      expect(content, isNot(contains(parallelHintEmbeddedMarker)));
+    });
+
+    test('Anthropic: pushes a user message with a single text block', () {
+      final msgs = <Map<String, dynamic>>[
+        {'role': 'user', 'content': 'go'},
+        {
+          'role': 'assistant',
+          'content': [
+            {
+              'type': 'tool_use',
+              'id': 'a',
+              'name': 'read',
+              'input': {},
+            },
+          ],
+        },
+        {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'a',
+              'content': 'file contents',
+            },
+          ],
+        },
+      ];
+
+      injectParallelSingleCallHintAsUserMessage(
+        msgs,
+        isAnthropic: true,
+        consecutiveCount: 30,
+      );
+
+      // Two user messages now: one with tool_results, one with the
+      // urgent hint as a text block.
+      expect(msgs, hasLength(4));
+      final newMsg = msgs.last;
+      expect(newMsg['role'], 'user');
+      final blocks = newMsg['content'] as List;
+      expect(blocks, hasLength(1), reason: 'exactly one text block');
+      final block = blocks.first;
+      expect(block['type'], 'text');
+      final text = block['text'] as String;
+      expect(text, contains('30 consecutive'));
+      // Same critical assertion as the OpenAI branch: no
+      // system-note marker on the urgent-tier user message.
+      expect(
+        text,
+        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent))),
+        reason: 'urgent-tier user message must not carry a system-note marker',
+      );
+      expect(text, isNot(contains(parallelHintEmbeddedMarker)));
+    });
+
+    test('count=30 (default threshold) routes to urgent, not mild', () {
+      // Sanity check that the tier math picks the urgent tier at
+      // round 30 with default threshold — without this, the chat
+      // service's branch would always pick the tool-result
+      // helper and the user-message helper would never be
+      // exercised in normal use.
+      expect(singleCallHintSeverityFor(30), SingleCallHintSeverity.urgent);
+      expect(singleCallHintSeverityFor(20), isNot(SingleCallHintSeverity.urgent));
+    });
+  });
 
   // ────────────────────��────────────────────────────────────────────────
   // 2. LLM-provider resolver (precedence)
