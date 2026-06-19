@@ -1446,12 +1446,26 @@ class ChatService {
           if (result == null) continue;
           final lsp = result.metadata['lsp'];
           if (lsp is! List || lsp.isEmpty) continue;
+          // The bubble's count and the tool detail pane's count
+          // must agree. `result.metadata['lsp']` carries the raw
+          // list from the LSP server (any severity); the detail
+          // pane filters to error-severity only via
+          // [errorDiagnostics], so we apply the same filter
+          // here. Crux only surfaces errors in the user-facing
+          // UI — warnings / info / hint stay in the embedded
+          // `<crux-lsp>` JSON for the model's own consumption.
+          // If the file produced zero errors (e.g. only warnings)
+          // there's nothing to bubble and we skip the row, which
+          // also keeps the bubble from disagreeing with an empty
+          // detail-pane section.
+          final errors = errorDiagnostics(lsp.cast());
+          if (errors.isEmpty) continue;
           final relPath = _relativeFilePathFromCall(call, session.projectPath);
           await _messageStore.addMessage(
             sessionId,
             role: 'lsp_diagnostics',
             content: relPath,
-            parallelCount: lsp.length,
+            parallelCount: errors.length,
           );
         }
 
@@ -1527,12 +1541,6 @@ class ChatService {
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();
       await onToolRound?.call(roundResultTokens);
-      if (guardAbort != null) {
-        onStatus?.call(
-          'Stream aborted: ${guardAbort.name} to ${guardAbort.filePath} '
-          'blocked by ${guardAbort.guard.reason ?? "guard"}.',
-        );
-      }
 
       // After the tool round completes, check if the user queued
       // any messages while the agent was streaming. If so, inject

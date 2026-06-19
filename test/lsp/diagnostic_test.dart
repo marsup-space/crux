@@ -105,4 +105,55 @@ void main() {
       expect(parsed.diagnostics.first.message, 'minimal');
     });
   });
+
+  group('errorDiagnostics', () {
+    LspDiagnostic makeDiag(LspDiagnosticSeverity? severity, String message) {
+      return LspDiagnostic(
+        range: const LspRange(LspPosition(0, 0), LspPosition(0, 1)),
+        message: message,
+        severity: severity,
+      );
+    }
+
+    test('keeps only error-severity diagnostics', () {
+      final result = errorDiagnostics([
+        makeDiag(LspDiagnosticSeverity.error, 'err1'),
+        makeDiag(LspDiagnosticSeverity.warning, 'warn1'),
+        makeDiag(LspDiagnosticSeverity.error, 'err2'),
+        makeDiag(LspDiagnosticSeverity.information, 'info1'),
+        makeDiag(LspDiagnosticSeverity.hint, 'hint1'),
+      ]);
+      expect(result, hasLength(2));
+      expect(result.map((d) => d.message), ['err1', 'err2']);
+    });
+
+    test('treats null severity as error (per LSP spec)', () {
+      // The LSP spec says missing `severity` defaults to Error
+      // (severity 1). Crux follows that here so the bubble count
+      // matches the tool detail pane's count.
+      final result = errorDiagnostics([
+        makeDiag(null, 'no-severity'),
+        makeDiag(LspDiagnosticSeverity.error, 'explicit-error'),
+        makeDiag(LspDiagnosticSeverity.warning, 'warn'),
+      ]);
+      expect(result, hasLength(2));
+      expect(result.map((d) => d.message),
+          containsAll(['no-severity', 'explicit-error']));
+    });
+
+    test('returns empty list for an all-warnings input', () {
+      // This is the case that triggered the bubble vs. detail
+      // mismatch: 1 warning in → bubble used to show "1 error"
+      // while the detail pane correctly showed 0 errors.
+      final result = errorDiagnostics([
+        makeDiag(LspDiagnosticSeverity.warning, 'warn1'),
+        makeDiag(LspDiagnosticSeverity.information, 'info1'),
+      ]);
+      expect(result, isEmpty);
+    });
+
+    test('empty input → empty output', () {
+      expect(errorDiagnostics(const []), isEmpty);
+    });
+  });
 }

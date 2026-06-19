@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';
-import '../lsp/diagnostic.dart' show extractLspPayload;
-import '../lsp/protocol.dart' show LspDiagnostic, LspDiagnosticSeverity;
+import '../lsp/diagnostic.dart' show errorDiagnostics, extractLspPayload;
+import '../lsp/protocol.dart' show LspDiagnostic;
 import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
@@ -1048,20 +1048,14 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     List<LspDiagnostic> diagnostics,
     CruxThemeData theme,
   ) {
-    final errors = diagnostics
-        .where(
-          (d) =>
-              (d.severity ?? LspDiagnosticSeverity.error) ==
-              LspDiagnosticSeverity.error,
-        )
-        .toList();
+    final errors = errorDiagnostics(diagnostics);
     final shown = errors.take(20).toList();
     final more = errors.length - shown.length;
-    final word = shown.length == 1 ? 'error' : 'errors';
+    final word = errors.length == 1 ? 'error' : 'errors';
 
     final children = <Component>[];
     children.add(
-      _sectionHeading('LSP · ${shown.length} $word', theme, color: theme.error),
+      _sectionHeading('LSP · ${errors.length} $word', theme, color: theme.error),
     );
     if (filePath.isNotEmpty) {
       children.add(_dimText('  in $filePath', theme));

@@ -40,6 +40,27 @@ const String lspTagClose = '</crux-lsp>';
 const String lspMarkerOpen = '\n$lspTagOpen\n';
 const String lspMarkerClose = '\n$lspTagClose';
 
+/// Return the subset of [diagnostics] that are error-severity.
+///
+/// Per the LSP spec, a missing/null `severity` field defaults to
+/// Error (severity 1), so null is treated as error here — same as
+/// the tool detail pane. Crux only surfaces errors in the
+/// user-facing UI: the chat-history `lsp_diagnostics` bubble and
+/// the tool detail pane's "LSP errors" section both count and
+/// render only this subset, so any drift between the two views
+/// would surface as a bubble vs. detail mismatch. Warnings / info
+/// / hint stay in the embedded `<crux-lsp>` JSON for the model's
+/// own consumption but are not user-facing.
+List<LspDiagnostic> errorDiagnostics(List<LspDiagnostic> diagnostics) {
+  return diagnostics
+      .where(
+        (d) =>
+            (d.severity ?? LspDiagnosticSeverity.error) ==
+            LspDiagnosticSeverity.error,
+      )
+      .toList(growable: false);
+}
+
 /// Pretty-print a single diagnostic for the agent. Lines are 1-based
 /// (LSP is 0-based; the LLM thinks in editor coordinates).
 String prettyDiagnostic(LspDiagnostic d) {
@@ -207,4 +228,3 @@ LspDiagnostic _diagnosticFromMap(Map<String, dynamic> json) {
     code: json['code'] as String?,
   );
 }
-
