@@ -5,11 +5,14 @@ import 'tool_def.dart';
 class FileReadTracker {
   final Map<String, int> _cache = {};
   int? _sessionId;
-  final Future<void> Function(int sessionId, String normalizedPath, int mtimeMs)?
-      onRecordRead;
+  final Future<void> Function(
+    int sessionId,
+    String normalizedPath,
+    int mtimeMs,
+  )?
+  onRecordRead;
 
-  FileReadTracker({int? sessionId, this.onRecordRead})
-      : _sessionId = sessionId;
+  FileReadTracker({int? sessionId, this.onRecordRead}) : _sessionId = sessionId;
 
   Future<void> recordRead(String filePath, int mtimeMs) async {
     final normalized = _normalize(filePath);
@@ -42,6 +45,7 @@ class FileReadTracker {
             'below; call edit or write again now and it will succeed '
             '(the file has been auto-read for you).',
         content: content,
+        reason: 'read-before-write',
       );
     }
 
@@ -55,6 +59,7 @@ class FileReadTracker {
             'read. Your write did NOT take effect. The new content is '
             'below; retry your edit with a pattern that matches this version.',
         content: content,
+        reason: 'read-before-write',
       );
     }
 

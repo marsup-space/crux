@@ -56,6 +56,7 @@ class ChatTurnOrchestrator {
   /// When the user interrupts, [interruptResponse] calls `abort()` on
   /// each signal, which kills any running subprocesses (bash, cmd, etc.).
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
+  final Set<int> _streamingGuardAbortedSessions = {};
 
   ChatTurnOrchestrator({
     required SessionStore store,
@@ -303,15 +304,43 @@ class ChatTurnOrchestrator {
                   _streamingController.streamingReasoningFor(sessionId),
             );
             rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
-            _streamingController.clearStreamingFor(sessionId);
             rt.contextTargetTokens =
                 rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
+            if (_streamingGuardAbortedSessions.remove(sessionId)) {
+              NoctermScheduler.instance.once(
+                (_) {
+                  if (_interruptedSessions.contains(sessionId)) return;
+                  _streamingController.clearStreamingFor(sessionId);
+                  _sessionController
+                      .loadMessages(sessionId)
+                      .then((_) => _refresh());
+                },
+                owner: this,
+                name: 'streamingGuardAbortTransition',
+                delay: const Duration(milliseconds: 64),
+                priority: SchedulePriority.animation,
+              );
+              return;
+            }
+            _streamingController.clearStreamingFor(sessionId);
             _sessionController.loadMessages(sessionId).then((_) => _refresh());
           },
           onToolUse: (ToolUseChunk chunk) {
             if (_interruptedSessions.contains(sessionId)) return;
             _streamingController.updateStreamingToolCall(sessionId, chunk);
+          },
+          onStreamingGuardAbort: (event) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            _streamingGuardAbortedSessions.add(sessionId);
+            _streamingController.markStreamingToolCallAborted(
+              sessionId,
+              index: event.index,
+              callId: event.callId,
+              name: event.name,
+              reason: event.reason,
+              abortedInputChars: event.abortedInputChars,
+            );
           },
           onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
           onAbortSignal: (signal) {
@@ -419,6 +448,10 @@ class ChatTurnOrchestrator {
                   if (changed) _refresh();
                 });
             _showToast(error, mode: ToastMode.error);
+          },
+          onStatus: (status) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            _showToast(status, mode: ToastMode.info);
           },
         )
         .catchError((e) {

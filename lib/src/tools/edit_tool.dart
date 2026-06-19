@@ -12,6 +12,7 @@ import 'matchers/exact_matcher.dart';
 import 'matchers/whitespace_matcher.dart';
 import 'matchers/indentation_matcher.dart';
 import 'tool_def.dart';
+import '../utils/tool_metrics_animator.dart';
 
 class EditTool extends ToolDef with IntentionalTool {
   @override
@@ -40,10 +41,15 @@ class EditTool extends ToolDef with IntentionalTool {
     // is set by execute() and never user-controlled. Parse it
     // out instead. Falls back to 1 when the output doesn't
     // match the expected shape (e.g. legacy or error output).
-    final replaceCount = _replaceCountFromOutput(result.output) ??
+    final replaceCount =
+        _replaceCountFromOutput(result.output) ??
         (replaceAll ? _allFallbackCount(args) : 1);
-    final oldLines = oldString.isEmpty ? 0 : '\n'.allMatches(oldString).length + 1;
-    final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
+    final oldLines = oldString.isEmpty
+        ? 0
+        : '\n'.allMatches(oldString).length + 1;
+    final newLines = newString.isEmpty
+        ? 0
+        : '\n'.allMatches(newString).length + 1;
     final linesRemoved = oldLines * replaceCount;
     final linesAdded = newLines * replaceCount;
     final totalTokens = estimateToolRoundTripTokens(
@@ -76,14 +82,45 @@ class EditTool extends ToolDef with IntentionalTool {
     );
   }
 
+  @override
+  ToolMetricsLineDelta? toolMetricsLineDelta(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    // Mirror the logic in [collapsedSummary] above so the
+    // post-call animation lands on the same `+added -removed`
+    // values the streaming bubble shows while the LLM is
+    // still emitting input. For new files (`oldLines == 0`)
+    // the `-N` half is omitted — matches the `git diff --stat`
+    // convention and the streaming bubble's all-null default
+    // for `edit` calls before the new content arrives.
+    final oldString = args['oldString'] as String? ?? '';
+    final newString = args['newString'] as String? ?? '';
+    final replaceAll = (args['replaceAll'] as bool?) ?? false;
+    final replaceCount =
+        _replaceCountFromOutput(result.output) ??
+        (replaceAll ? _allFallbackCount(args) : 1);
+    final oldLines = oldString.isEmpty
+        ? 0
+        : '\n'.allMatches(oldString).length + 1;
+    final newLines = newString.isEmpty
+        ? 0
+        : '\n'.allMatches(newString).length + 1;
+    return ToolMetricsLineDelta(
+      addedLines: newLines * replaceCount,
+      removedLines: oldLines == 0 ? null : oldLines * replaceCount,
+    );
+  }
+
   /// Parse the replacement count out of an EditTool success
   /// message. Looks for the canonical
   /// `"Replaced N occurrence(s) of oldString ..."` form that
   /// `_doMutation` emits. Returns null for any other shape
   /// (new-file, auto-read, error, future format changes) so
   /// the caller can pick a sensible fallback.
-  static final RegExp _replacedCountPattern =
-      RegExp(r'Replaced (\d+) occurrence');
+  static final RegExp _replacedCountPattern = RegExp(
+    r'Replaced (\d+) occurrence',
+  );
 
   static int? _replaceCountFromOutput(String output) {
     final match = _replacedCountPattern.firstMatch(output);
@@ -145,6 +182,53 @@ class EditTool extends ToolDef with IntentionalTool {
 
   EditTool({this.tracker, this.lsp});
 
+  Future<GuardResult?> checkStreamingGuard({
+    required String filePath,
+    required String oldString,
+    required String workingDirectory,
+  }) async {
+    if (oldString.isEmpty) return null;
+
+    final resolved = resolvePath(filePath, workingDirectory);
+    final t = tracker;
+    if (t != null) {
+      final writeGuard = await t.checkWriteGuard(resolved);
+      if (writeGuard != null) {
+        return GuardResult(
+          header: writeGuard.header,
+          content: writeGuard.content,
+          reason: writeGuard.reason ?? 'read-before-write',
+        );
+      }
+    }
+
+    final file = File(resolved);
+    if (!file.existsSync()) return null;
+
+    final bytes = await file.readAsBytes();
+    final meta = readFileWithMetadata(bytes);
+    final targetLineEnding = targetLineEndingFor(resolved, meta.lineEnding);
+    final content = targetLineEnding == null
+        ? meta.content
+        : normalizeToLineEnding(meta.content, targetLineEnding);
+    final oldStringForMatch = targetLineEnding == null
+        ? oldString
+        : normalizeToLineEnding(oldString, targetLineEnding);
+
+    if (_findMatch(content, oldStringForMatch, true) != null) {
+      return null;
+    }
+
+    return GuardResult(
+      header:
+          '[GUARD] Edit was BLOCKED — oldString does not match any text '
+          'in the file. Your edit did NOT take effect. The current file '
+          'content is below; pick a different oldString and try again.',
+      content: content,
+      reason: 'oldString-no-match',
+    );
+  }
+
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final filePath = args['filePath'] as String?;
@@ -195,6 +279,9 @@ class EditTool extends ToolDef with IntentionalTool {
     required bool replaceAll,
     required ToolContext ctx,
   }) async {
+    if (ctx.abort.isAborted) {
+      return ToolResult.error('Tool aborted');
+    }
     if (tracker != null) {
       final guard = await tracker!.checkWriteGuard(resolved);
       if (guard != null) {
@@ -208,8 +295,7 @@ class EditTool extends ToolDef with IntentionalTool {
 
     final bytes = await file.readAsBytes();
     final meta = readFileWithMetadata(bytes);
-    final targetLineEnding =
-        targetLineEndingFor(resolved, meta.lineEnding);
+    final targetLineEnding = targetLineEndingFor(resolved, meta.lineEnding);
     final content = targetLineEnding == null
         ? meta.content
         : normalizeToLineEnding(meta.content, targetLineEnding);
@@ -231,7 +317,9 @@ class EditTool extends ToolDef with IntentionalTool {
       if (tracker != null) {
         await tracker!.recordRead(resolved, await _mtimeMs(file));
       }
-      final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
+      final newLines = newString.isEmpty
+          ? 0
+          : '\n'.allMatches(newString).length + 1;
       final lspResult = await _collectLspDiagnostics(
         resolved,
         _successMessage(
@@ -253,8 +341,7 @@ class EditTool extends ToolDef with IntentionalTool {
       );
     }
 
-    final matchResult =
-        _findMatch(content, oldStringForMatch, replaceAll);
+    final matchResult = _findMatch(content, oldStringForMatch, replaceAll);
     if (matchResult == null) {
       return _autoReadResult(
         resolved,
@@ -286,8 +373,7 @@ class EditTool extends ToolDef with IntentionalTool {
       matchResult.matchLength,
     );
     if (targetLineEnding != null) {
-      final normalized =
-          normalizeToLineEnding(newContent, targetLineEnding);
+      final normalized = normalizeToLineEnding(newContent, targetLineEnding);
       await _writePreservingEncoding(
         file,
         normalized,
@@ -302,8 +388,12 @@ class EditTool extends ToolDef with IntentionalTool {
     }
 
     final count = matchResult.positions.length;
-    final oldLines = oldString.isEmpty ? 0 : '\n'.allMatches(oldString).length + 1;
-    final newLines = newString.isEmpty ? 0 : '\n'.allMatches(newString).length + 1;
+    final oldLines = oldString.isEmpty
+        ? 0
+        : '\n'.allMatches(oldString).length + 1;
+    final newLines = newString.isEmpty
+        ? 0
+        : '\n'.allMatches(newString).length + 1;
     final linesRemoved = oldLines * count;
     final linesAdded = newLines * count;
     final occLabel = count == 1 ? 'occurrence' : 'occurrences';
@@ -352,7 +442,7 @@ class EditTool extends ToolDef with IntentionalTool {
   /// response) returns ([baseOutput], const []). The tool must
   /// never fail because of LSP.
   Future<({String output, List<LspDiagnostic> diagnostics})>
-      _collectLspDiagnostics(
+  _collectLspDiagnostics(
     String filePath,
     String baseOutput,
     ToolContext ctx,
@@ -385,6 +475,7 @@ class EditTool extends ToolDef with IntentionalTool {
   /// The LSP count hint is now surfaced via [LspDiagnosticsBubble]
   /// in the chat history rather than appended to the collapsed
   /// summary.
+  // ignore: unused_element
   static String _appendLspHint(String text, Map<String, dynamic> metadata) {
     return text;
   }
@@ -451,7 +542,7 @@ class EditTool extends ToolDef with IntentionalTool {
 
   ToolResult _autoReadResult(String filePath, String reason, String content) {
     return ToolResult(
-      title: 'Edit file: $filePath',
+      title: 'Auto-read: $filePath',
       output:
           '[AUTOREAD] No changes were made — $reason\n\n'
           'We re-read the file for you (saved a round trip). '

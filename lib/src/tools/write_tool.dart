@@ -8,6 +8,7 @@ import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
 import 'file_read_tracker.dart';
 import 'tool_def.dart';
+import '../utils/tool_metrics_animator.dart';
 
 /// `write` intentionally does NOT extend [LargePayloadTool]: its
 /// `content` argument is the payload the LLM just produced and
@@ -44,8 +45,7 @@ class WriteTool extends ToolDef with IntentionalTool {
     // auto-read, future format change) we fall back to 0
     // existing lines, which renders as a new-file `+N lines`
     // — same as before.
-    final existingLineCount =
-        _existingLineCountFromOutput(result.output);
+    final existingLineCount = _existingLineCountFromOutput(result.output);
     final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
     final size = content.length;
     final sizeStr = size > 1024
@@ -84,6 +84,29 @@ class WriteTool extends ToolDef with IntentionalTool {
     );
   }
 
+  @override
+  ToolMetricsLineDelta? toolMetricsLineDelta(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    // The collapsed row + the tool detail pane render the same
+    // `+M -N lines` shape the streaming bubble shows while the
+    // LLM is still emitting input. Mirror the logic in
+    // [collapsedSummary] above so the post-call animation lands
+    // on the same final values: for a brand-new file the prior
+    // line count is 0, so we only render the `+N` half (matching
+    // the `git diff --stat` convention). The streaming bubble
+    // also has access to only the new `content` (it can't see
+    // the prior file state), so the two paths agree naturally.
+    final content = args['content'] as String? ?? '';
+    final existingLineCount = _existingLineCountFromOutput(result.output);
+    final newLines = content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
+    return ToolMetricsLineDelta(
+      addedLines: newLines,
+      removedLines: existingLineCount == 0 ? null : existingLineCount,
+    );
+  }
+
   /// Extract the prior line count from a WriteTool success
   /// message. Matches the two shapes [_doWrite] emits:
   ///   - new file:        `"... +4 lines, ..."`
@@ -91,8 +114,7 @@ class WriteTool extends ToolDef with IntentionalTool {
   /// Returns 0 when no `-M` half is present (treats it as a
   /// brand-new file) and 0 when nothing matches at all — same
   /// behavior as the previous args-stash default.
-  static final RegExp _lineDiffPattern =
-      RegExp(r'\+\d+(?:\s*-(\d+))?\s*lines');
+  static final RegExp _lineDiffPattern = RegExp(r'\+\d+(?:\s*-(\d+))?\s*lines');
 
   static int _existingLineCountFromOutput(String output) {
     final match = _lineDiffPattern.firstMatch(output);
@@ -144,6 +166,16 @@ class WriteTool extends ToolDef with IntentionalTool {
 
   WriteTool({this.tracker, this.lsp});
 
+  Future<GuardResult?> checkStreamingGuard({
+    required String filePath,
+    required String workingDirectory,
+  }) async {
+    final t = tracker;
+    if (t == null) return null;
+    final resolved = resolvePath(filePath, workingDirectory);
+    return t.checkWriteGuard(resolved);
+  }
+
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final filePath = args['filePath'] as String?;
@@ -184,6 +216,9 @@ class WriteTool extends ToolDef with IntentionalTool {
     required String content,
     required bool force,
   }) async {
+    if (ctx.abort.isAborted) {
+      return ToolResult.error('Tool aborted');
+    }
     final file = File(resolved);
 
     if (tracker != null && file.existsSync()) {
@@ -248,8 +283,7 @@ class WriteTool extends ToolDef with IntentionalTool {
     // — the agent would have to ask for a write that re-encodes
     // a binary file, which we should refuse on principle, but
     // for now we just don't break it).
-    final targetLineEnding =
-        targetLineEndingFor(resolved, meta.lineEnding);
+    final targetLineEnding = targetLineEndingFor(resolved, meta.lineEnding);
     final body = targetLineEnding == null
         ? content
         : normalizeToLineEnding(content, targetLineEnding);
@@ -297,7 +331,7 @@ class WriteTool extends ToolDef with IntentionalTool {
   /// Best-effort: any failure returns ([baseOutput], const []). The
   /// tool must never fail because of LSP.
   Future<({String output, List<LspDiagnostic> diagnostics})>
-      _collectLspDiagnostics(
+  _collectLspDiagnostics(
     String filePath,
     String baseOutput,
     ToolContext ctx,
@@ -330,6 +364,7 @@ class WriteTool extends ToolDef with IntentionalTool {
   /// [LspDiagnosticsBubble] in the chat history instead of being
   /// appended to the collapsed summary. Kept for backwards-compat
   /// with the test fixture; safe to delete in a follow-up.
+  // ignore: unused_element
   static String _appendLspHint(String text, Map<String, dynamic> metadata) {
     return text;
   }

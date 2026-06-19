@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import '../models/provider_config.dart';
+import '../tools/edit_tool.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
+import '../tools/write_tool.dart';
 import 'llm_client.dart';
 
 class ToolCall {
@@ -31,6 +33,32 @@ class ToolExecutor {
   ToolExecutor(this._registry);
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
+
+  Future<GuardResult?> checkWriteGuard({
+    required String filePath,
+    required String workingDirectory,
+  }) async {
+    final tool = _registry.lookup('write');
+    if (tool is! WriteTool) return null;
+    return tool.checkStreamingGuard(
+      filePath: filePath,
+      workingDirectory: workingDirectory,
+    );
+  }
+
+  Future<GuardResult?> checkEditGuard({
+    required String filePath,
+    required String oldString,
+    required String workingDirectory,
+  }) async {
+    final tool = _registry.lookup('edit');
+    if (tool is! EditTool) return null;
+    return tool.checkStreamingGuard(
+      filePath: filePath,
+      oldString: oldString,
+      workingDirectory: workingDirectory,
+    );
+  }
 
   Future<ToolResult> executeTool(ToolCall call, ToolContext ctx) async {
     if (call.parseError != null) {
@@ -146,18 +174,21 @@ class ToolExecutor {
           if (decoded is Map<String, dynamic>) {
             input = decoded;
           } else {
-            parseError = 'Tool input must be a JSON object, got ${decoded.runtimeType}';
+            parseError =
+                'Tool input must be a JSON object, got ${decoded.runtimeType}';
           }
         }
       } catch (e) {
         parseError = 'Failed to parse tool input JSON: $e';
       }
-      calls.add(ToolCall(
-        callId: acc.callId!,
-        name: acc.name!,
-        input: input,
-        parseError: parseError,
-      ));
+      calls.add(
+        ToolCall(
+          callId: acc.callId!,
+          name: acc.name!,
+          input: input,
+          parseError: parseError,
+        ),
+      );
     }
     return calls;
   }

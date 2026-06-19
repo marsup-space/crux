@@ -30,6 +30,11 @@ enum ToolGuardKind {
   /// should switch to `edit` for in-place changes, or pass
   /// `force: true` to override.
   sizeMismatch,
+
+  /// Crux stopped an edit/write tool call while the model was still
+  /// streaming its arguments because a guard could already prove
+  /// the call would fail or be unsafe.
+  streamingAbort,
 }
 
 /// Small inline bubble rendered when a tool call hit a guard
@@ -51,11 +56,7 @@ class ToolGuardBubble extends SystemHintBubble {
   final ToolGuardKind guardKind;
   final String? filePath;
 
-  const ToolGuardBubble({
-    super.key,
-    required this.guardKind,
-    this.filePath,
-  });
+  const ToolGuardBubble({super.key, required this.guardKind, this.filePath});
 
   @override
   SystemHintKind get kind => SystemHintKind.warning;
@@ -66,10 +67,9 @@ class ToolGuardBubble extends SystemHintBubble {
       ToolGuardKind.autoRead => 'auto-read',
       ToolGuardKind.readBeforeWrite => 'read-before-write',
       ToolGuardKind.sizeMismatch => 'refused: use edit or pass force',
+      ToolGuardKind.streamingAbort => 'streaming abort',
     };
-    final tail = filePath != null && filePath!.isNotEmpty
-        ? ': $filePath'
-        : '';
+    final tail = filePath != null && filePath!.isNotEmpty ? ': $filePath' : '';
     return 'guard: $label$tail';
   }
 
@@ -80,7 +80,8 @@ class ToolGuardBubble extends SystemHintBubble {
     // guard, but a future migration could leave a stale row.
     if (guardKind == ToolGuardKind.autoRead ||
         guardKind == ToolGuardKind.readBeforeWrite ||
-        guardKind == ToolGuardKind.sizeMismatch) {
+        guardKind == ToolGuardKind.sizeMismatch ||
+        guardKind == ToolGuardKind.streamingAbort) {
       return super.build(context);
     }
     return const SizedBox.shrink();

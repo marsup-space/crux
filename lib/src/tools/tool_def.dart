@@ -1,4 +1,5 @@
 import 'package:path/path.dart' as p;
+import '../utils/tool_metrics_animator.dart';
 
 class AbortSignal {
   final int? sessionId;
@@ -119,6 +120,27 @@ abstract class ToolDef {
   }) {
     return '${_capitalize(name)} (~$estimatedInputTokens t)';
   }
+
+  /// `+added -removed` line delta for a completed call, used by
+  /// the collapsed chat row + the tool detail pane to render
+  /// the same `+M lines · -K lines` animation the streaming
+  /// bubble shows while the LLM is still emitting input.
+  ///
+  /// The default is `null` — only `write` and `edit` have a
+  /// meaningful add/remove diff in their input. Tools that
+  /// return `null` (or that don't override) get a metric row
+  /// with just `~N t` and no line count, matching the streaming
+  /// bubble's behavior for non-line-bearing tools.
+  ///
+  /// The [args] map is the fully-parsed input the LLM emitted
+  /// (or whatever the tool received and stored in
+  /// `ToolCallData.input`); [result] is the final [ToolResult].
+  ToolMetricsLineDelta? toolMetricsLineDelta(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    return null;
+  }
 }
 
 String _capitalize(String s) {
@@ -152,5 +174,9 @@ class GuardResult {
   /// deciding whether to proceed with the write.
   final String content;
 
-  const GuardResult({required this.header, required this.content});
+  /// Machine-readable guard reason used by streaming-time aborts
+  /// and UI labels.
+  final String? reason;
+
+  const GuardResult({required this.header, required this.content, this.reason});
 }
