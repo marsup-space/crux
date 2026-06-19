@@ -349,7 +349,7 @@ class MessageBubble extends StatelessComponent {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: calls.map((tc) {
-              final result = resultByCallId[tc.callId] ?? pairedResult;
+              final result = resultByCallId[tc.callId];
               return _ClickableToolCall(
                 toolCall: tc,
                 pairedResult: result,
@@ -486,10 +486,7 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     // so the lerp still works — the value settles on the
     // rough token count of the error output.
     if (summary != null) {
-      _animator.setTarget(
-        tc.callId,
-        tokens: summary.totalTokens,
-      );
+      _animator.setTarget(tc.callId, tokens: summary.totalTokens);
     } else {
       // Paired result is gone (or the tool produced a
       // fallback text without a token count) — make sure the
@@ -649,12 +646,12 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
 
   String _guardAbortedLabel(String content) {
     final label = _guardLabel(content);
-    final charsMatch = RegExp(
-      r'Aborted after (\d+) characters of arguments had streamed in\.',
+    final tokenMatch = RegExp(
+      r'Aborted after ~(\d+) generated tool-argument tokens\.',
     ).firstMatch(content);
-    final chars = charsMatch?.group(1);
-    if (chars == null) return '$label, aborted mid-stream';
-    return '$label, aborted at $chars chars';
+    final tokenCount = tokenMatch?.group(1);
+    if (tokenCount == null) return '$label, aborted mid-stream';
+    return '$label, aborted after ~$tokenCount t';
   }
 
   String _autoReadLabel(String content) {
