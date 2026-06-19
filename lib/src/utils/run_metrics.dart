@@ -38,6 +38,9 @@
 /// alt-screen.
 library;
 
+import 'package:nocterm/nocterm.dart';
+
+import '../theme/crux_theme.dart';
 import 'terminal_symbols.dart';
 
 /// Immutable snapshot of the run metrics. Returned by
@@ -86,8 +89,70 @@ class RunMetricsSnapshot {
       cacheMissTokens == 0;
 }
 
-/// Process-wide aggregator. One instance per Crux run.
+/// One cell of the run-summary box.
+///
+/// The summary is structured as a grid: each row is a list
+/// of cells, and each cell carries a single grapheme plus
+/// a "kind" hint that tells the renderer how to style it.
+/// Two formatters consume the same grid:
+///
+///   - [_formatSummaryPlain] — emits the raw characters
+///     (current `formatSummary` behaviour, no ANSI codes).
+///   - [_formatSummaryStyled] — wraps each cell in the
+///     ANSI SGR codes that match its kind, picking colours
+///     from the supplied [CruxThemeData].
+///
+/// Splitting "what each cell means" from "how to draw it"
+/// keeps the column-aligned math in one place and makes it
+/// trivial to add new formatters (e.g. Markdown, HTML)
+/// without re-deriving the layout.
+enum _SummaryCellKind {
+  /// Box-drawing glyph (corner, edge, or vertical bar).
+  border,
+
+  /// The "Crux Run Summary" title in the top border.
+  title,
+
+  /// Row label, e.g. `Duration:`, `Turns:`, `Tokens in:`.
+  label,
+
+  /// Row value, e.g. `5m 23s`, `3`, `12.8K`.
+  value,
+
+  /// Muted row value used for the "no LLM calls this run"
+  /// status note in the empty-run case, so the renderer can
+  /// dim it slightly relative to a real value.
+  valueMuted,
+}
+
+class _SummaryCell {
+  final String char;
+  final _SummaryCellKind kind;
+  const _SummaryCell(this.char, this.kind);
+}
+
 class RunMetrics {
+  /// The most recent theme the chat panel saw at exit time.
+  /// Stashed by [ChatPanel._quitAndPrintSummary] right before
+  /// the TUI tears down, so the `bin/crux.dart` post-`runApp`
+  /// fallback path can produce a styled summary even though
+  /// the `ThemeController` has already been disposed.
+  ///
+  /// `null` when the chat panel never had a chance to stash
+  /// anything (e.g. the very early-boot `--doctor` path, or
+  /// `runApp` returning because of some other shutdown path
+  /// the chat panel didn't drive). In that case
+  /// [formatStyledSummary] falls back to plain output.
+  CruxThemeData? _lastKnownTheme;
+
+  /// Set the most recent theme. Called by the chat panel
+  /// right before [formatStyledSummary] so the post-`runApp`
+  /// fallback path can read it back. See [_lastKnownTheme]
+  /// for the full rationale.
+  void setLastKnownTheme(CruxThemeData theme) {
+    _lastKnownTheme = theme;
+  }
+
   RunMetrics._();
 
   /// Shared instance. Lazily captures `_startTime` on first
@@ -195,71 +260,56 @@ class RunMetrics {
     String indent = '',
     bool useAscii = false,
   }) {
-    final snap = snapshot ?? getSnapshot();
-    final rich = !useAscii && supportsRichTerminalSymbols();
+    final cells = _buildSummaryGrid(
+      snapshot ?? getSnapshot(),
+      useAscii: useAscii,
+    );
+    return _renderSummaryPlain(cells, indent: indent);
+  }
 
-    // Border characters. The Unicode variants render as a
-    // single rounded "box" character wide; the ASCII
-    // variants are two chars wide for the horizontal lines
-    // and one char wide for the corners, so a single
-    // dash-and-plus frame still aligns when piped through
-    // a non-UTF-8 pager.
-    final topLeft = rich ? '┌' : '+';
-    final topRight = rich ? '┐' : '+';
-    final bottomLeft = rich ? '└' : '+';
-    final bottomRight = rich ? '┘' : '+';
-    final horizontal = rich ? '─' : '-';
-    final vertical = rich ? '│' : '|';
-
-    final titleText = ' Crux Run Summary ';
-    final innerWidth = 42;
-
-    // Build the top border: `┌─ Crux Run Summary ─────────...─┐`
-    final topDashCount = (innerWidth - titleText.length).clamp(0, 200);
-    final top = indent +
-        topLeft +
-        horizontal +
-        titleText +
-        List.filled(topDashCount, horizontal).join() +
-        topRight;
-
-    final bottom = indent +
-        bottomLeft +
-        List.filled(innerWidth + 1, horizontal).join() +
-        bottomRight;
-
-    String row(String label, String value) {
-      // Two-space gutter on each side, then `label`, then a
-      // gap, then the value right-aligned to the inner edge.
-      final pad = innerWidth - 2 - label.length - value.length;
-      final padding = pad < 1 ? 1 : pad;
-      return '$indent$vertical  $label${' ' * padding}$value  $vertical';
+  /// Same as [formatSummary] but with ANSI SGR escape
+  /// sequences around each cell so the box is coloured
+  /// according to the active [CruxThemeData]. Colours are
+  /// sourced from the theme as follows:
+  ///
+  ///   - border: `theme.borderSubtle` (a muted line so the
+  ///     frame doesn't fight the text)
+  ///   - title:  `theme.primary` (the "Crux Run Summary"
+  ///     banner)
+  ///   - label:  `theme.textMuted` (so the labels read as
+  ///     secondary to the values)
+  ///   - value:  `theme.text`
+  ///   - valueMuted (the "no LLM calls this run" status):
+  ///     `theme.textMuted`
+  ///
+  /// When [useAscii] is true the box characters themselves
+  /// are also swapped for ASCII, even in styled mode — this
+  /// is what you'd want for piping the summary into a file
+  /// (`crux … > log.txt`) or any other context where the
+  /// terminal can't render Unicode.
+  String formatStyledSummary({
+    RunMetricsSnapshot? snapshot,
+    CruxThemeData? theme,
+    String indent = '',
+    bool useAscii = false,
+  }) {
+    final effectiveTheme = theme ?? _lastKnownTheme;
+    final cells = _buildSummaryGrid(
+      snapshot ?? getSnapshot(),
+      useAscii: useAscii,
+    );
+    if (effectiveTheme == null) {
+      // No theme stashed yet (very-early-boot `--doctor` or
+      // the bare `runApp`-returns path that bypassed the
+      // chat panel) — fall back to plain output so the
+      // summary still renders cleanly without colour codes.
+      return _renderSummaryPlain(cells, indent: indent);
     }
-
-    final lines = <String>[top];
-
-    if (snap.isEmpty) {
-      // No turns ran — still print the duration so the user
-      // can see how long the binary was open, but skip the
-      // zero-only token rows.
-      lines.add(row('Duration:', _formatDuration(snap.duration)));
-      lines.add(row('Turns:', '0'));
-      lines.add(row('Status:', 'no LLM calls this run'));
-    } else {
-      lines.add(row('Duration:', _formatDuration(snap.duration)));
-      lines.add(row('Turns:', snap.turnCount.toString()));
-      lines.add(
-        row(
-          'Tokens in:',
-          '${_formatTokenCount(snap.totalTokensIn)}  '
-              '${_formatCacheSuffix(snap)}',
-        ),
-      );
-      lines.add(row('Tokens out:', _formatTokenCount(snap.totalTokensOut)));
-    }
-
-    lines.add(bottom);
-    return lines.join('\n');
+    return _renderSummaryStyled(
+      cells,
+      theme: effectiveTheme,
+      indent: indent,
+    );
   }
 
   /// Reset all counters. Test-only — production code never
@@ -273,6 +323,214 @@ class RunMetrics {
     _totalTokensOut = 0;
     _cacheHitTokens = 0;
     _cacheMissTokens = 0;
+  }
+
+  // ── Cell grid + renderers ─────────────────────────────────────
+
+  /// Build the run-summary layout as a 2-D grid of cells.
+  ///
+  /// The grid has `boxWidth` columns per row. Every row's
+  /// contents (top border, content rows, bottom border) all
+  /// sum to the same width so the right edge lines up.
+  ///
+  /// Math derivation (each line is `boxWidth` cols wide):
+  ///   top:    `┌─<titleText>─…─┐`
+  ///            1 + 1 + titleText.length + N = boxWidth
+  ///   row:    `│  <label><padding><value>  │`
+  ///            2 + label.length + padding + value.length + 2 = boxWidth
+  ///   bottom: `└─…─┐` (well, └…┘ — the bottom-right is `┘`)
+  ///            1 + N = boxWidth
+  ///
+  /// Earlier revisions of this code used `innerWidth` for
+  /// the row math and `innerWidth + 1` for the bottom
+  /// border math, but the offset between those was a
+  /// classic off-by-one — the row landed 1 col to the right
+  /// of the borders, breaking the right edge of the box.
+  /// Centralising on `boxWidth` keeps all three formulas in
+  /// sync.
+  static List<List<_SummaryCell>> _buildSummaryGrid(
+    RunMetricsSnapshot snap, {
+    bool useAscii = false,
+  }) {
+    final rich = !useAscii && supportsRichTerminalSymbols();
+    final topLeft = rich ? '╭' : '+';
+    final topRight = rich ? '╮' : '+';
+    final bottomLeft = rich ? '╰' : '+';
+    final bottomRight = rich ? '╯' : '+';
+    final horizontal = rich ? '─' : '-';
+    final vertical = rich ? '│' : '|';
+
+    const boxWidth = 45;
+    final titleText = ' Crux Run Summary ';
+    final topDashCount = boxWidth - 3 - titleText.length;
+    final bottomDashCount = boxWidth - 2;
+
+    List<_SummaryCell> topRow() {
+      // ┌─ Crux Run Summary ─...─┐
+      return <_SummaryCell>[
+        _SummaryCell(topLeft, _SummaryCellKind.border),
+        _SummaryCell(horizontal, _SummaryCellKind.border),
+        for (final c in titleText.codeUnits)
+          _SummaryCell(String.fromCharCode(c), _SummaryCellKind.title),
+        for (var i = 0; i < topDashCount; i++)
+          _SummaryCell(horizontal, _SummaryCellKind.border),
+        _SummaryCell(topRight, _SummaryCellKind.border),
+      ];
+    }
+
+    List<_SummaryCell> bottomRow() {
+      // └─...─┘
+      return <_SummaryCell>[
+        _SummaryCell(bottomLeft, _SummaryCellKind.border),
+        for (var i = 0; i < bottomDashCount; i++)
+          _SummaryCell(horizontal, _SummaryCellKind.border),
+        _SummaryCell(bottomRight, _SummaryCellKind.border),
+      ];
+    }
+
+    List<_SummaryCell> contentRow(String label, String value,
+        _SummaryCellKind valueKind) {
+      // │  <label>...<value>  │
+      final pad = boxWidth - 2 - 4 - label.length - value.length;
+      final padding = pad < 1 ? 1 : pad;
+      return <_SummaryCell>[
+        _SummaryCell(vertical, _SummaryCellKind.border),
+        _SummaryCell(' ', _SummaryCellKind.border),
+        _SummaryCell(' ', _SummaryCellKind.border),
+        for (final c in label.codeUnits)
+          _SummaryCell(String.fromCharCode(c), _SummaryCellKind.label),
+        for (var i = 0; i < padding; i++)
+          _SummaryCell(' ', _SummaryCellKind.border),
+        for (final c in value.codeUnits)
+          _SummaryCell(String.fromCharCode(c), valueKind),
+        _SummaryCell(' ', _SummaryCellKind.border),
+        _SummaryCell(' ', _SummaryCellKind.border),
+        _SummaryCell(vertical, _SummaryCellKind.border),
+      ];
+    }
+
+    final rows = <List<_SummaryCell>>[topRow()];
+
+    if (snap.isEmpty) {
+      // No turns ran — still print the duration so the
+      // user can see how long the binary was open, but
+      // skip the zero-only token rows. The "no LLM calls
+      // this run" line uses `valueMuted` so the renderer
+      // can dim it.
+      rows.add(contentRow(
+        'Duration:',
+        _formatDuration(snap.duration),
+        _SummaryCellKind.value,
+      ));
+      rows.add(contentRow('Turns:', '0', _SummaryCellKind.value));
+      rows.add(contentRow(
+        'Status:',
+        'no LLM calls this run',
+        _SummaryCellKind.valueMuted,
+      ));
+    } else {
+      rows.add(contentRow(
+        'Duration:',
+        _formatDuration(snap.duration),
+        _SummaryCellKind.value,
+      ));
+      rows.add(contentRow(
+        'Turns:',
+        snap.turnCount.toString(),
+        _SummaryCellKind.value,
+      ));
+      rows.add(contentRow(
+        'Tokens in:',
+        '${_formatTokenCount(snap.totalTokensIn)}  '
+            '${_formatCacheSuffix(snap)}',
+        _SummaryCellKind.value,
+      ));
+      rows.add(contentRow(
+        'Tokens out:',
+        _formatTokenCount(snap.totalTokensOut),
+        _SummaryCellKind.value,
+      ));
+    }
+
+    rows.add(bottomRow());
+    return rows;
+  }
+
+  /// Flatten the cell grid into a plain string. Each cell
+  /// contributes exactly its character — no styling. Used
+  /// by [formatSummary] and by tests that want a stable,
+  /// platform-agnostic rendering of the summary (e.g. for
+  /// snapshot tests or piped output).
+  static String _renderSummaryPlain(
+    List<List<_SummaryCell>> grid, {
+    String indent = '',
+  }) {
+    return grid
+        .map((row) => indent + row.map((c) => c.char).join())
+        .join('\n');
+  }
+
+  /// Flatten the cell grid into a string with ANSI SGR
+  /// escape codes around each cell. Adjacent cells of the
+  /// same kind are wrapped in a single SGR span (so the
+  /// output doesn't emit a redundant `\x1B[…m` per
+  /// character), but every kind change still emits a fresh
+  /// "set style" code so the rendering is robust to any
+  /// unexpected state left in the terminal by the previous
+  /// TUI frame.
+  ///
+  /// The terminator after each cell is `\x1B[0m` (SGR
+  /// reset). That means the next cell always starts from a
+  /// known baseline, even if the terminal only partially
+  /// supports the codes our previous summary wrote.
+  static String _renderSummaryStyled(
+    List<List<_SummaryCell>> grid, {
+    required CruxThemeData theme,
+    String indent = '',
+  }) {
+    TextStyle styleFor(_SummaryCellKind kind) {
+      switch (kind) {
+        case _SummaryCellKind.border:
+          return TextStyle(color: theme.borderSubtle);
+        case _SummaryCellKind.title:
+          return TextStyle(
+            color: theme.primary,
+            fontWeight: FontWeight.bold,
+          );
+        case _SummaryCellKind.label:
+          return TextStyle(color: theme.textMuted);
+        case _SummaryCellKind.value:
+          return TextStyle(color: theme.text);
+        case _SummaryCellKind.valueMuted:
+          return TextStyle(color: theme.textMuted);
+      }
+    }
+
+    String renderRow(List<_SummaryCell> row) {
+      final buf = StringBuffer();
+      buf.write(indent);
+      var i = 0;
+      while (i < row.length) {
+        final cell = row[i];
+        final kind = cell.kind;
+        // Coalesce adjacent same-kind cells into a single
+        // SGR span — a label like "Duration:" is 9 chars
+        // but should be wrapped in one `\x1B[…m` … `\x1B[0m`
+        // pair, not nine.
+        var j = i;
+        while (j + 1 < row.length && row[j + 1].kind == kind) {
+          j++;
+        }
+        final span = row.sublist(i, j + 1).map((c) => c.char).join();
+        buf.write(styleFor(kind).toAnsi());
+        buf.write(span);
+        buf.write('\x1B[0m');
+        i = j + 1;
+      }
+      return buf.toString();
+    }
+
+    return grid.map(renderRow).join('\n');
   }
 
   // ── Formatters ───────────────────────────────────────────────

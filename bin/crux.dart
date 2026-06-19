@@ -184,7 +184,16 @@ void main(List<String> args) async {
 /// still render fine in a text file, and we don't have to
 /// worry about raw escape sequences polluting a pipe.
 void _printRunSummary() {
-  final summary = RunMetrics.instance.formatSummary();
+  // The chat panel's `_quitAndPrintSummary` stashed the
+  // active theme on the aggregator just before exit, so
+  // `formatStyledSummary` can produce a coloured version
+  // here without having to look at the (already-disposed)
+  // ThemeController. If the chat panel never ran (very
+  // early `--doctor` exit, or some future shutdown path
+  // that bypasses the panel), `formatStyledSummary`
+  // transparently falls back to the plain uncoloured
+  // string, so this call is safe in every situation.
+  final summary = RunMetrics.instance.formatStyledSummary();
   stdout.writeln();
   stdout.writeln(summary);
   stdout.writeln();
