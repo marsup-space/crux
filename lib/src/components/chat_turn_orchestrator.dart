@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 import '../models/image_attachment.dart';
@@ -141,11 +142,51 @@ class ChatTurnOrchestrator {
   Future<void> sendTurn({
     String? text,
     List<ImageAttachment> images = const [],
+    bool allowAutoCompact = true,
   }) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
+
+    if (allowAutoCompact && text != null && text.trim().isNotEmpty) {
+      final session = _sessionController.findSession(sessionId);
+      if (session != null) {
+        try {
+          final result = await _chatService.maybeAutoCompactIntoChildSession(
+            sessionId: sessionId,
+            session: session,
+            runtime: rt,
+            incomingUserContent: text,
+            toolDefs: _toolRegistry.toApiTools(),
+            onChildReady: (childSession, placeholderMessage) async {
+              await _switchToCompactingChild(childSession.id);
+            },
+          );
+          if (result != null) {
+            await _finishCompactingChild(
+              result.childSession.id,
+              status: SessionStatus.idle,
+            );
+            _showToast(
+              'Context compacted into ${result.childSession.displayId}',
+              mode: ToastMode.status,
+            );
+            _refresh();
+            await sendTurn(text: text, images: images, allowAutoCompact: false);
+            return;
+          }
+        } catch (e) {
+          await _finishCompactingChild(
+            _sessionController.currentSessionId,
+            status: SessionStatus.idle,
+          );
+          _showToast('Compaction failed: $e', mode: ToastMode.error);
+          _refresh();
+          return;
+        }
+      }
+    }
 
     // Bump the per-run turn counter as soon as we commit to
     // the turn. The actual token usage gets recorded in the
@@ -541,6 +582,95 @@ class ChatTurnOrchestrator {
               });
           _refresh();
         });
+  }
+
+  Future<void> compactCurrentSession() async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) {
+      _showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final rt = _sessionController.runtime(sessionId);
+    if (rt.isResponding) {
+      _showToast('Cannot compact while AI is responding');
+      return;
+    }
+    final session = _sessionController.findSession(sessionId);
+    if (session == null) {
+      _showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    try {
+      _showToast('Compacting context...', mode: ToastMode.status);
+      final result = await _chatService.compactIntoChildSession(
+        sessionId: sessionId,
+        session: session,
+        runtime: rt,
+        reason: CompactionReason.manual,
+        toolDefs: _toolRegistry.toApiTools(),
+        onChildReady: (childSession, placeholderMessage) async {
+          await _switchToCompactingChild(childSession.id);
+        },
+      );
+      await _finishCompactingChild(
+        result.childSession.id,
+        status: SessionStatus.idle,
+      );
+      _showToast('Context compacted', mode: ToastMode.status);
+      _refresh();
+    } catch (e) {
+      await _finishCompactingChild(
+        _sessionController.currentSessionId,
+        status: SessionStatus.idle,
+      );
+      _showToast('Compaction failed: $e', mode: ToastMode.error);
+    }
+  }
+
+  Future<void> _switchToCompactingChild(int childSessionId) async {
+    _sessionController.sessions = await _store.list(
+      projectPath: Directory.current.path,
+    );
+    await _sessionController.switchSession(childSessionId);
+    await _sessionController.loadMessages(childSessionId);
+    final childRt = _sessionController.runtime(childSessionId);
+    final base = _sessionController.computeBaseContext(childSessionId);
+    childRt.contextTargetTokens = base;
+    childRt.contextDisplayTokens = base.toDouble();
+    childRt.isResponding = true;
+    childRt.responseStartTime = DateTime.now();
+    childRt.ttftMs = 0.0;
+    childRt.ttftReceived = false;
+    childRt.tokPerSec = 0.0;
+    _streamingController.startMetricsTimer(childSessionId);
+    _refresh();
+  }
+
+  Future<void> _finishCompactingChild(
+    int? childSessionId, {
+    required SessionStatus status,
+  }) async {
+    if (childSessionId == null) return;
+    _streamingController.stopMetricsTimer(childSessionId);
+    _sessionController.sessions = await _store.list(
+      projectPath: Directory.current.path,
+    );
+    await _sessionController.loadMessages(childSessionId);
+    final session = _sessionController.findSession(childSessionId);
+    if (session != null) {
+      session.status = status;
+      session.updatedAt = DateTime.now();
+    }
+    final childRt = _sessionController.runtime(childSessionId);
+    final base = _sessionController.computeBaseContext(childSessionId);
+    childRt.contextTargetTokens = base;
+    childRt.contextDisplayTokens = base.toDouble();
+    childRt.isResponding = false;
+    childRt.roundStreaming = false;
+    childRt.roundStartTime = null;
+    childRt.roundFirstTokenTime = null;
+    childRt.responseStartTime = null;
+    _refresh();
   }
 
   /// Drive a single `/btw` turn. Nothing is written to the database.

@@ -47,6 +47,52 @@ class ChatResponse {
   });
 }
 
+enum CompactionReason { auto, manual }
+
+class CompactionResult {
+  final Session childSession;
+  final Message summaryMessage;
+  final int preTokens;
+  final int postEstimateTokens;
+  final int toolcallRetryCount;
+
+  const CompactionResult({
+    required this.childSession,
+    required this.summaryMessage,
+    required this.preTokens,
+    required this.postEstimateTokens,
+    required this.toolcallRetryCount,
+  });
+}
+
+class ResolvedChatTarget {
+  final String providerName;
+  final String modelId;
+  final ProviderConfig provider;
+  final String apiKey;
+  final ModelConfig modelConfig;
+  final String? systemPrompt;
+
+  const ResolvedChatTarget({
+    required this.providerName,
+    required this.modelId,
+    required this.provider,
+    required this.apiKey,
+    required this.modelConfig,
+    required this.systemPrompt,
+  });
+}
+
+class _CompactionSummaryAttempt {
+  final String summary;
+  final int toolcallRetryCount;
+
+  const _CompactionSummaryAttempt({
+    required this.summary,
+    required this.toolcallRetryCount,
+  });
+}
+
 class StreamingGuardAbortEvent {
   final int index;
   final String callId;
@@ -162,6 +208,196 @@ class ChatService {
     String responseContent, {
     TldrDetail detail = TldrDetail.defaultLevel,
   }) => _auxiliaryService.generateTldr(responseContent, detail: detail);
+
+  Future<CompactionResult?> maybeAutoCompactIntoChildSession({
+    required int sessionId,
+    required Session session,
+    required SessionRuntimeState runtime,
+    required String incomingUserContent,
+    required List<Map<String, dynamic>> toolDefs,
+    Future<void> Function(Session childSession, Message placeholderMessage)?
+    onChildReady,
+  }) async {
+    if (_envTruthy('CRUX_DISABLE_COMPACT') ||
+        _envTruthy('CRUX_DISABLE_AUTO_COMPACT')) {
+      return null;
+    }
+    if (runtime.consecutiveCompactionFailures >= 3) return null;
+
+    final resolved = await _resolveChatTarget(session);
+    if (resolved == null) return null;
+    final history = await _messageStore.getMessages(sessionId);
+    if (!_hasCompactableHistory(history)) return null;
+
+    final projectedTokens = _estimateProjectedContextTokens(
+      systemPrompt: resolved.systemPrompt,
+      history: history,
+      incomingUserContent: incomingUserContent,
+      toolDefs: toolDefs,
+    );
+    final outputReserve = resolved.modelConfig.maxTokens ?? 16384;
+    final desiredReserve = outputReserve > 20000 ? outputReserve : 20000;
+    final maxReserve = (resolved.modelConfig.contextSize * 0.25).round();
+    final reserve = desiredReserve > maxReserve ? maxReserve : desiredReserve;
+    final threshold = resolved.modelConfig.contextSize - reserve;
+    if (projectedTokens <= threshold) return null;
+
+    var childCreated = false;
+    try {
+      final result = await compactIntoChildSession(
+        sessionId: sessionId,
+        session: session,
+        runtime: runtime,
+        reason: CompactionReason.auto,
+        toolDefs: toolDefs,
+        resolved: resolved,
+        preTokensOverride: projectedTokens,
+        onChildReady: (childSession, placeholderMessage) async {
+          childCreated = true;
+          await onChildReady?.call(childSession, placeholderMessage);
+        },
+      );
+      runtime.consecutiveCompactionFailures = 0;
+      return result;
+    } catch (_) {
+      runtime.consecutiveCompactionFailures += 1;
+      if (childCreated) rethrow;
+      return null;
+    }
+  }
+
+  Future<CompactionResult> compactIntoChildSession({
+    required int sessionId,
+    required Session session,
+    required SessionRuntimeState runtime,
+    required CompactionReason reason,
+    required List<Map<String, dynamic>> toolDefs,
+    ResolvedChatTarget? resolved,
+    int? preTokensOverride,
+    Future<void> Function(Session childSession, Message placeholderMessage)?
+    onChildReady,
+  }) async {
+    if (_envTruthy('CRUX_DISABLE_COMPACT')) {
+      throw StateError('Compaction is disabled by CRUX_DISABLE_COMPACT');
+    }
+    final target = resolved ?? await _resolveChatTarget(session);
+    if (target == null) {
+      throw StateError('No API key for provider in "${session.model}"');
+    }
+
+    final history = await _messageStore.getMessages(sessionId);
+    if (!_hasCompactableHistory(history)) {
+      throw StateError('Nothing to compact');
+    }
+
+    final sourceStartId = history.first.id;
+    final sourceEndId = history.last.id;
+    final preTokens =
+        preTokensOverride ??
+        _estimateProjectedContextTokens(
+          systemPrompt: target.systemPrompt,
+          history: history,
+          incomingUserContent: null,
+          toolDefs: toolDefs,
+        );
+
+    final title = _continuedTitle(session);
+    final child = await _store.create(
+      title: title,
+      model: session.model,
+      projectPath: session.projectPath,
+      agent: session.agent,
+      parentId: session.id,
+    );
+    await _store.update(
+      child.id,
+      thinkingMode: session.thinkingMode,
+      reasoningEffort: session.reasoningEffort,
+      systemPrompt: target.systemPrompt,
+    );
+    await _store.update(child.id, status: SessionStatus.running);
+
+    final placeholderMeta = jsonEncode({
+      'status': 'compacting',
+      'reason': reason.name,
+      'sourceSessionId': session.id,
+      'sourceStartMessageId': sourceStartId,
+      'sourceEndMessageId': sourceEndId,
+      'preTokens': preTokens,
+      'model': session.model,
+    });
+    final placeholderMessage = await _messageStore.addMessage(
+      child.id,
+      role: 'compaction',
+      content: 'Compacting context...',
+      model: session.model,
+      meta: placeholderMeta,
+    );
+    await onChildReady?.call(child, placeholderMessage);
+
+    late final _CompactionSummaryAttempt summaryAttempt;
+    try {
+      summaryAttempt = await _generateCompactionSummary(
+        target: target,
+        history: history,
+        toolDefs: toolDefs,
+      );
+    } catch (e) {
+      final failedMeta = jsonEncode({
+        'status': 'failed',
+        'reason': reason.name,
+        'sourceSessionId': session.id,
+        'sourceStartMessageId': sourceStartId,
+        'sourceEndMessageId': sourceEndId,
+        'preTokens': preTokens,
+        'model': session.model,
+        'error': '$e',
+      });
+      await _messageStore.updateMessage(
+        placeholderMessage.id,
+        content: 'Compaction failed: $e',
+        meta: failedMeta,
+        error: '$e',
+      );
+      await _store.update(child.id, status: SessionStatus.idle);
+      rethrow;
+    }
+
+    final postEstimateTokens =
+        estimateTokens(summaryAttempt.summary) +
+        estimateTokens(target.systemPrompt ?? '') +
+        estimateToolDefsTokens(toolDefs);
+    final meta = jsonEncode({
+      'status': 'complete',
+      'reason': reason.name,
+      'sourceSessionId': session.id,
+      'sourceStartMessageId': sourceStartId,
+      'sourceEndMessageId': sourceEndId,
+      'preTokens': preTokens,
+      'postEstimateTokens': postEstimateTokens,
+      'model': session.model,
+      'toolcallRetryCount': summaryAttempt.toolcallRetryCount,
+    });
+    await _messageStore.updateMessage(
+      placeholderMessage.id,
+      content: summaryAttempt.summary,
+      meta: meta,
+    );
+    await _store.update(child.id, status: SessionStatus.idle);
+    final summaryMessage = placeholderMessage.copyWith(
+      content: summaryAttempt.summary,
+      meta: meta,
+    );
+
+    final reloaded = await _store.getById(child.id);
+    return CompactionResult(
+      childSession: reloaded ?? child,
+      summaryMessage: summaryMessage,
+      preTokens: preTokens,
+      postEstimateTokens: postEstimateTokens,
+      toolcallRetryCount: summaryAttempt.toolcallRetryCount,
+    );
+  }
 
   /// Run a single chat turn for [sessionId].
   ///
@@ -1451,6 +1687,13 @@ class ChatService {
           } else {
             result.add({'role': 'user', 'content': m.content});
           }
+        case 'compaction':
+          if (_isCompleteCompactionMessage(m)) {
+            result.add({
+              'role': 'user',
+              'content': _renderCompactionSummaryForModel(m.content),
+            });
+          }
         case 'system':
           result.add({'role': 'system', 'content': m.content});
         case 'ai':
@@ -1545,6 +1788,257 @@ class ChatService {
     }
 
     return result;
+  }
+
+  Future<ResolvedChatTarget?> _resolveChatTarget(Session session) async {
+    final compositeKey = session.model;
+    final slashIndex = compositeKey.indexOf('/');
+    final providerName = slashIndex > 0
+        ? compositeKey.substring(0, slashIndex)
+        : '';
+    final modelId = slashIndex > 0
+        ? compositeKey.substring(slashIndex + 1)
+        : compositeKey;
+
+    final provider = _providerService.providerByName(providerName);
+    final apiKey = _providerService.getApiKey(providerName);
+    final modelConfig = provider?.modelById(modelId);
+    if (provider == null ||
+        apiKey == null ||
+        apiKey.isEmpty ||
+        modelConfig == null) {
+      return null;
+    }
+
+    String? systemPrompt = session.systemPrompt;
+    if (systemPrompt == null || systemPrompt.isEmpty) {
+      systemPrompt = buildSystemPrompt(
+        provider: provider,
+        model: modelConfig,
+        cwd: session.projectPath,
+        worktree: session.projectPath,
+        sessionStarted: session.createdAt,
+      );
+      session.systemPrompt = systemPrompt;
+      await _store.update(session.id, systemPrompt: systemPrompt);
+    }
+
+    return ResolvedChatTarget(
+      providerName: providerName,
+      modelId: modelId,
+      provider: provider,
+      apiKey: apiKey,
+      modelConfig: modelConfig,
+      systemPrompt: systemPrompt,
+    );
+  }
+
+  bool _hasCompactableHistory(List<Message> history) {
+    return history.any((m) {
+      switch (m.role) {
+        case 'user':
+        case 'ai':
+        case 'tool_call':
+        case 'tool':
+        case 'compaction':
+          return true;
+        default:
+          return false;
+      }
+    });
+  }
+
+  int _estimateProjectedContextTokens({
+    required String? systemPrompt,
+    required List<Message> history,
+    required String? incomingUserContent,
+    required List<Map<String, dynamic>> toolDefs,
+  }) {
+    var total =
+        estimateTokens(systemPrompt ?? '') + estimateToolDefsTokens(toolDefs);
+    for (final message in history) {
+      total += _estimateMessageTokens(message);
+    }
+    if (incomingUserContent != null && incomingUserContent.isNotEmpty) {
+      total += estimateTokens(incomingUserContent);
+    }
+    return total;
+  }
+
+  int _estimateMessageTokens(Message message) {
+    if (message.tokensIn + message.tokensOut > 0) {
+      return (message.tokensIn + message.tokensOut - message.reasoningTokens)
+          .clamp(0, 1 << 31);
+    }
+    var total = estimateTokens(message.content);
+    if (message.reasoningContent.isNotEmpty) {
+      total += estimateTokens(message.reasoningContent);
+    }
+    for (final call in message.toolCalls) {
+      total += estimateToolRoundTripTokens(
+        toolName: call.name,
+        args: call.input,
+        resultOutput: '',
+      );
+    }
+    return total;
+  }
+
+  Future<_CompactionSummaryAttempt> _generateCompactionSummary({
+    required ResolvedChatTarget target,
+    required List<Message> history,
+    required List<Map<String, dynamic>> toolDefs,
+  }) async {
+    final baseMessages = buildApiMessages(
+      history,
+      target.provider.wireFamily,
+      systemPrompt: target.systemPrompt,
+    );
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final prompt = _buildCompactionPrompt(retryAfterToolcall: attempt > 0);
+      final messages = <Map<String, dynamic>>[
+        ...baseMessages,
+        {'role': 'user', 'content': prompt},
+      ];
+      final buffer = StringBuffer();
+      var sawToolcall = false;
+      String? streamError;
+      final stream = _llmClient.streamChat(
+        endpointUrl: target.provider.endpointUrl,
+        config: target.provider,
+        apiKey: target.apiKey,
+        modelId: target.modelId,
+        messages: messages,
+        thinkingMode: 'disabled',
+        reasoningEffort: null,
+        maxTokens: 8192,
+        temperature: 0,
+        tools: toolDefs.isNotEmpty ? toolDefs : null,
+        userId: '${InstallSlug.slug}-compact',
+      );
+      await for (final chunk in stream) {
+        if (chunk.error != null) {
+          streamError = chunk.error;
+          break;
+        }
+        if (chunk.toolUse != null || chunk.finishReason == 'tool_use') {
+          sawToolcall = true;
+          break;
+        }
+        if (chunk.textDelta != null) buffer.write(chunk.textDelta);
+      }
+      if (streamError != null) {
+        throw StateError(streamError);
+      }
+      if (sawToolcall) {
+        if (attempt == 0) continue;
+        throw StateError('Compaction model attempted a tool call');
+      }
+      final summary = buffer.toString().trim();
+      if (summary.isEmpty) {
+        throw StateError('Compaction summary was empty');
+      }
+      return _CompactionSummaryAttempt(
+        summary: summary,
+        toolcallRetryCount: attempt,
+      );
+    }
+    throw StateError('Compaction failed');
+  }
+
+  String _buildCompactionPrompt({required bool retryAfterToolcall}) {
+    final retry = retryAfterToolcall
+        ? '''
+Your previous attempt called a tool. That is forbidden. This is your final retry. Output text only.
+
+'''
+        : '';
+    return '''
+${retry}CRITICAL: Respond with TEXT ONLY. Do NOT call any tools in this turn.
+
+- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or any other tool.
+- You already have all the context you need in the conversation above.
+- Tool calls will be rejected and will make this compaction fail.
+- Your entire response must be plain Markdown text.
+
+Create an anchored summary of the conversation so far for continuing a coding session in a new child session. Preserve exact file paths, commands, identifiers, user preferences, current progress, unresolved questions, and next steps.
+
+Output exactly this Markdown structure and keep the section order:
+
+## Goal
+- [single-sentence task summary]
+
+## Constraints & Preferences
+- [user constraints, preferences, specs, or "(none)"]
+
+## Progress
+### Done
+- [completed work or "(none)"]
+### In Progress
+- [current work or "(none)"]
+### Blocked
+- [blockers or "(none)"]
+
+## Key Decisions
+- [decision and why, or "(none)"]
+
+## Next Steps
+- [ordered next actions or "(none)"]
+
+## Critical Context
+- [important technical facts, errors, open questions, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, commands, error strings, and identifiers when known.
+- Do not mention the summary process or that context was compacted.
+- REMINDER: Do NOT call tools. Output text only.
+''';
+  }
+
+  static String _renderCompactionSummaryForModel(String summary) {
+    return '''
+The previous session was compacted. Treat this summary as the only available context from before the current session:
+
+<compacted-session-summary>
+$summary
+</compacted-session-summary>
+''';
+  }
+
+  static bool _isCompleteCompactionMessage(Message message) {
+    if (message.meta.isEmpty) return true;
+    try {
+      final decoded = jsonDecode(message.meta);
+      if (decoded is Map<String, dynamic>) {
+        return (decoded['status'] as String? ?? 'complete') == 'complete';
+      }
+    } catch (_) {
+      return true;
+    }
+    return true;
+  }
+
+  String _continuedTitle(Session session) {
+    final base = session.title.trim().isEmpty
+        ? 'New Session'
+        : session.title.trim();
+    return 'continued from ${session.displayId}: $base';
+  }
+
+  bool _envTruthy(String key) {
+    final value = Platform.environment[key];
+    if (value == null) return false;
+    final normalized = value.trim().toLowerCase();
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'yes' ||
+        normalized == 'on';
   }
 
   double _estimateCost(

@@ -113,6 +113,11 @@ class SessionRuntimeState {
   /// effectively a fresh session.
   int consecutiveSingleToolCallRounds;
 
+  /// Consecutive automatic compaction failures for this in-memory
+  /// session run. Manual `/compact` is still allowed; this only gates
+  /// repeated automatic attempts.
+  int consecutiveCompactionFailures;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -135,6 +140,7 @@ class SessionRuntimeState {
     this.btwMode = false,
     this.interrupted = false,
     this.consecutiveSingleToolCallRounds = 0,
+    this.consecutiveCompactionFailures = 0,
   });
 
   double get thinkingDurationMs {

@@ -796,7 +796,7 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onCompactButtonPressed() {
-    _chatInputKey.currentState?.stashAndSetCommand('/compact ');
+    unawaited(_executeCommand('/compact'));
   }
 
   void _onAuxiliaryModelButtonPressed() {

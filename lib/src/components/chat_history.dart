@@ -142,6 +142,17 @@ class _ChatHistoryState extends State<ChatHistory> {
           highlightText: msg.id == _highlightMessageId ? _highlightText : null,
           reasoningPresets: _currentReasoningPresets(),
           onToolCallTap: component.onToolCallTap,
+          onOpenPreviousSession: (targetSessionId) {
+            component.sessionController.switchSession(targetSessionId).then((
+              error,
+            ) {
+              if (error != null) {
+                component.showToast(error, mode: ToastMode.error);
+                return;
+              }
+              component.refresh();
+            });
+          },
         ),
       );
 

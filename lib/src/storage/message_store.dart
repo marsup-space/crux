@@ -174,6 +174,23 @@ class MessageStore {
         .write(db.MessagesCompanion(tldr: Value(tldr)));
   }
 
+  Future<void> updateMessage(
+    int messageId, {
+    String? content,
+    String? meta,
+    String? error,
+  }) async {
+    await (_db.update(
+      _db.messages,
+    )..where((t) => t.id.equals(messageId))).write(
+      db.MessagesCompanion(
+        content: content != null ? Value(content) : const Value.absent(),
+        meta: meta != null ? Value(meta) : const Value.absent(),
+        error: error != null ? Value(error) : const Value.absent(),
+      ),
+    );
+  }
+
   /// Delete every message in [sessionId] whose id is `>=` [fromId].
   /// Used by `/retry` to wipe the last "round" (the user prompt plus
   /// the AI response, tool calls, and tool results that came after
@@ -181,13 +198,13 @@ class MessageStore {
   /// on `messageId`, so a plain DELETE here is enough to clean up
   /// attachment rows too.
   Future<int> deleteMessagesFrom(int sessionId, int fromId) async {
-    final deleted = await (_db.delete(
-      _db.messages,
-    )..where(
-        (t) =>
-            t.sessionId.equals(sessionId) & t.id.isBiggerOrEqualValue(fromId),
-      ))
-        .go();
+    final deleted =
+        await (_db.delete(_db.messages)..where(
+              (t) =>
+                  t.sessionId.equals(sessionId) &
+                  t.id.isBiggerOrEqualValue(fromId),
+            ))
+            .go();
     if (deleted > 0) {
       await sessionStore.touchSession(sessionId);
     }

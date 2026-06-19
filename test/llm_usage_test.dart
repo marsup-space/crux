@@ -83,6 +83,39 @@ void main() {
       expect(resultContent.single['type'], 'tool_result');
     });
 
+    test('renders compaction summaries as user context', () {
+      final wireMessages = ChatService.buildApiMessages([
+        Message(
+          id: 1,
+          sessionId: 1,
+          role: 'compaction',
+          content: '## Goal\n- Continue the refactor.',
+          meta: '{"status":"complete"}',
+        ),
+      ], WireFamily.openaiCompatible);
+
+      expect(wireMessages.single['role'], 'user');
+      expect(
+        wireMessages.single['content'],
+        contains('<compacted-session-summary>'),
+      );
+      expect(wireMessages.single['content'], contains('Continue the refactor'));
+    });
+
+    test('skips in-progress compaction placeholders in model context', () {
+      final wireMessages = ChatService.buildApiMessages([
+        Message(
+          id: 1,
+          sessionId: 1,
+          role: 'compaction',
+          content: 'Compacting context...',
+          meta: '{"status":"compacting"}',
+        ),
+      ], WireFamily.openaiCompatible);
+
+      expect(wireMessages, isEmpty);
+    });
+
     test('persists reasoning signatures', () async {
       final database = CruxDatabase.forTesting(NativeDatabase.memory());
       final store = SessionStore(database);

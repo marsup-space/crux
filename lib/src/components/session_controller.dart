@@ -264,6 +264,7 @@ class SessionController {
           case 'user':
           case 'system':
           case 'ai':
+          case 'compaction':
             if (m.content.isNotEmpty) {
               total += estimateTokens(m.content);
             }

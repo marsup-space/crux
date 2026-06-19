@@ -54,6 +54,9 @@ class CommandContext {
   /// toast) when the session is already responding.
   final Future<void> Function({String? text}) sendTurn;
 
+  /// Compact the current session into a child session and switch to it.
+  final Future<void> Function()? compactSession;
+
   /// Return the most recent user-role message in the current session,
   /// or `null` if no such message exists. The implementation must
   /// return the real DB id for the message (not the in-memory
@@ -132,6 +135,7 @@ class CommandContext {
     this.triggerTldr,
     this.themeController,
     required this.sendTurn,
+    this.compactSession,
     required this.findLastUserMessage,
     required this.deleteMessagesFrom,
     required this.sendBtwTurn,
@@ -165,6 +169,8 @@ class CommandExecutor {
         await executeThink(parts, ctx);
       case '/tldr':
         await executeTldr(parts, ctx);
+      case '/compact':
+        await executeCompact(ctx);
       case '/continue':
       case '/继续':
         await executeContinue(ctx);
@@ -549,6 +555,19 @@ class CommandExecutor {
     if (ctx.triggerTldr != null) {
       ctx.triggerTldr!(ctx.currentSessionId!, lastAi, detail);
     }
+  }
+
+  Future<void> executeCompact(CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final compact = ctx.compactSession;
+    if (compact == null) {
+      ctx.showToast('Compaction unavailable', mode: ToastMode.error);
+      return;
+    }
+    await compact();
   }
 
   /// `/continue` (alias `/继续`) — resubmit the current conversation
