@@ -252,8 +252,14 @@ abstract class LspServerActor {
       // Server probably already dead; ignore.
     }
     server.peer.cancelAll(peer_lib.ShuttingDown('$id:$root'));
-    // Give the process a moment to exit cleanly; then signal.
-    unawaited(_killAfter(server.process, const Duration(seconds: 1)));
+    // Wait for the process to actually exit before returning.
+    // The `process.exitCode.then(...)` listener registered in
+    // [_runStart] fires when exitCode resolves; it emits
+    // [LspEventProcessExited] via [_emit]. If we returned without
+    // waiting, the channel could close its outbound stream while
+    // the listener still wanted to emit, raising
+    // `Bad state: Cannot add new events after calling close`.
+    await _killAfter(server.process, const Duration(seconds: 1));
   }
 
   Future<void> _killAfter(Process process, Duration grace) async {
@@ -261,6 +267,13 @@ abstract class LspServerActor {
       await process.exitCode.timeout(grace);
     } on TimeoutException {
       process.kill(ProcessSignal.sigterm);
+      // Give the OS a moment to deliver the signal; the exit
+      // listener will fire when [process.exitCode] resolves.
+      try {
+        await process.exitCode.timeout(const Duration(milliseconds: 200));
+      } catch (_) {
+        // Process ignored SIGTERM; nothing more we can do here.
+      }
     } catch (_) {
       // Already exited.
     }

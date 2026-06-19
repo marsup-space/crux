@@ -8,9 +8,10 @@
 //   - Aggregates diagnostics across all matching servers and waits
 //     for them (with timeout) before returning
 //
-// Phase 2.0: actors run in the manager's isolate (InProcessChannel).
-// Phase 2.x: actors can run in their own isolates via IsolateChannel.
-// The manager's API doesn't change either way.
+// Each server type lives behind a [LspChannel] (in-process or
+// per-server isolate; default in-process). The manager's API is
+// channel-agnostic — switching modes is a constructor-time
+// decision.
 
 import 'dart:async';
 import 'dart:io';
@@ -18,10 +19,11 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'actor.dart';
+import 'channel.dart';
 import 'protocol.dart';
 
-/// Map of `serverId` → factory that creates a fresh actor instance.
-typedef LspActorFactory = LspServerActor Function();
+// Re-export so call sites can keep importing `manager.dart` only.
+export 'channel.dart' show LspActorFactory, LspChannel;
 
 /// Callback to check if a long-running operation has been cancelled.
 /// Returns true if the caller should abort. Used in place of an
@@ -48,8 +50,13 @@ class LspManager {
   /// Available actor types, keyed by their `id`.
   final Map<String, LspActorFactory> _factories;
 
-  /// Active slots, one per server type. Each slot wraps an actor and
-  /// multiplexes its events into per-(serverId, root) streams.
+  /// Whether each actor runs in its own isolate. Defaults to false
+  /// (in-process) for now; flip to true once per-isolate overhead
+  /// is acceptable for TUI workloads.
+  final bool _useIsolates;
+
+  /// Active slots, one per server type. Each slot wraps a
+  /// [LspChannel] (in-process or per-server isolate).
   final Map<String, _Slot> _slots = {};
 
   /// Tracks (serverId, root) pairs that failed to start, so we don't
@@ -60,40 +67,32 @@ class LspManager {
   /// Coalesces concurrent _ensureSlot calls.
   final Map<String, Future<_Slot>> _starting = {};
 
-  /// All incoming events, deduped across slots. Tools subscribe to
-  /// filtered slices of this stream.
-  final StreamController<LspEvent> _events =
-      StreamController<LspEvent>.broadcast();
-
   /// Set when shutdown() has been called.
   bool _shutdown = false;
 
   LspManager({
     required this.workingDirectory,
     required Map<String, LspActorFactory> actorFactories,
-  }) : _factories = actorFactories;
+    bool useIsolates = false,
+  })  : _factories = actorFactories,
+        _useIsolates = useIsolates;
 
-  /// Construct an [LspManager] and return it once all actor slots
-  /// have been spawned and handshake-completed with the host.
+  /// Construct an [LspManager]. Always returns immediately — slots
+  /// are spawned lazily on the first matching request.
   ///
-  /// Phase 2.0: actors run in-process. `IsolateChannel` will be
-  /// wired through here in Phase 2.x.
+  /// Kept async (`create`) for source compatibility with existing
+  /// callers; the in-process path has nothing to await, and the
+  /// isolate path spawns on demand rather than up-front.
   static Future<LspManager> create({
     required String workingDirectory,
     required Map<String, LspActorFactory> actorFactories,
+    bool useIsolates = false,
   }) async {
-    final manager = LspManager(
+    return LspManager(
       workingDirectory: workingDirectory,
       actorFactories: actorFactories,
+      useIsolates: useIsolates,
     );
-    // In-process: nothing to spawn. Slots are created on demand.
-    return manager;
-  }
-
-  /// Subscribe to events filtered to [serverId]. The returned stream
-  /// stays open until [shutdown] is called.
-  Stream<LspEvent> eventsFor(String serverId) {
-    return _events.stream.where((e) => e.serverId == serverId);
   }
 
   /// Find the actor type that handles [filePath]'s extension or
@@ -128,7 +127,7 @@ class LspManager {
       throw StateError('unknown LSP server id: $serverId');
     }
 
-    final future = _spawnSlot(factory);
+    final future = _spawnSlot(serverId, factory);
     _starting[serverId] = future;
     try {
       return await future;
@@ -137,10 +136,13 @@ class LspManager {
     }
   }
 
-  Future<_Slot> _spawnSlot(LspActorFactory factory) async {
-    final slot = _Slot._(factory: factory);
-    _slots[slot.actor.id] = slot;
-    slot.start();
+  Future<_Slot> _spawnSlot(String serverId, LspActorFactory factory) async {
+    final slot = await _Slot.create(
+      serverId,
+      factory,
+      useIsolates: _useIsolates,
+    );
+    _slots[serverId] = slot;
     return slot;
   }
 
@@ -325,40 +327,40 @@ class LspManager {
     if (_shutdown) return;
     _shutdown = true;
     for (final slot in _slots.values) {
-      slot.shutdown();
+      await slot.shutdown();
     }
-    await _events.close();
+    _slots.clear();
   }
 }
 
-/// Per-server-type slot. Wraps a single actor instance and exposes
-/// its events as a stream filtered to this slot.
+/// Per-server-type slot. Wraps a [LspChannel] (in-process or
+/// per-server isolate) and tracks its id for the manager's slot
+/// map.
 class _Slot {
-  late final LspServerActor actor;
-  final StreamController<LspEvent> _outbound =
-      StreamController<LspEvent>.broadcast();
+  final String serverId;
+  final LspChannel channel;
 
-  _Slot._({required LspActorFactory factory}) {
-    actor = factory();
-    actor.attach(_onEvent);
+  _Slot._({required this.serverId, required this.channel});
+
+  /// Construct a slot using the in-process channel or the per-server
+  /// isolate channel as requested.
+  static Future<_Slot> create(
+    String serverId,
+    LspActorFactory factory, {
+    required bool useIsolates,
+  }) async {
+    final LspChannel channel;
+    if (useIsolates) {
+      channel = await IsolateChannel.spawn(factory);
+    } else {
+      channel = InProcessChannel(factory());
+    }
+    return _Slot._(serverId: serverId, channel: channel);
   }
 
-  Stream<LspEvent> get events => _outbound.stream;
+  Stream<LspEvent> get events => channel.events;
 
-  void start() {
-    // Nothing to do in-process; actor is alive on construction.
-  }
+  void send(LspCommand cmd) => channel.send(cmd);
 
-  void send(LspCommand cmd) {
-    unawaited(actor.handle(cmd));
-  }
-
-  void _onEvent(LspEvent event) {
-    if (!_outbound.isClosed) _outbound.add(event);
-  }
-
-  Future<void> shutdown() async {
-    await actor.handle(const LspCmdShutdown());
-    await _outbound.close();
-  }
+  Future<void> shutdown() => channel.shutdown();
 }
