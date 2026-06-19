@@ -55,8 +55,13 @@ class CruxDatabase extends _$CruxDatabase {
   ///         `role: 'system'` message), computed once at session
   ///         start and re-attached verbatim on every subsequent
   ///         turn. See `docs/design-system-prompt.md`.
+  ///   v20 – messages.meta: free-form JSON for inline UI metadata
+  ///         attached to tool results (e.g. `{"routing":"system-proxy"}`
+  ///         on a `webfetch` that fell back to the system proxy).
+  ///         Read by the chat-history bubble renderer; never sent
+  ///         to the LLM.
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -123,6 +128,9 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 19) {
         await m.addColumn(sessions, sessions.systemPrompt);
+      }
+      if (from < 20) {
+        await m.addColumn(messages, messages.meta);
       }
     },
   );

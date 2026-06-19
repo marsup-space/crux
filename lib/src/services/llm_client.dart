@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/provider_config.dart';
+import '../utils/proxy_aware_http.dart';
+import '../utils/system_proxy.dart' show SystemProxyDetector;
 import 'llm_provider.dart';
 
 class ToolUseChunk {
@@ -30,6 +32,8 @@ class LlmChunk {
   final int? promptCacheMissTokens;
   final int? reasoningTokens;
   final String? error;
+  final String? abortReason;
+  final bool guardAbort;
   final ToolUseChunk? toolUse;
 
   const LlmChunk({
@@ -43,8 +47,50 @@ class LlmChunk {
     this.promptCacheMissTokens,
     this.reasoningTokens,
     this.error,
+    this.abortReason,
+    this.guardAbort = false,
     this.toolUse,
   });
+}
+
+class LlmStreamCancelToken {
+  HttpClientResponse? _response;
+  bool _isCancelled = false;
+  String? _reason;
+  bool _guardAbort = false;
+
+  bool get isCancelled => _isCancelled;
+  String? get reason => _reason;
+  bool get guardAbort => _guardAbort;
+
+  void _attachResponse(HttpClientResponse response) {
+    _response = response;
+    if (_isCancelled) {
+      unawaited(_destroyResponse(response));
+    }
+  }
+
+  Future<void> cancelActiveStream({
+    required String reason,
+    bool guardAbort = false,
+  }) async {
+    _isCancelled = true;
+    _reason = reason;
+    _guardAbort = guardAbort;
+    final response = _response;
+    if (response != null) {
+      await _destroyResponse(response);
+    }
+  }
+
+  Future<void> _destroyResponse(HttpClientResponse response) async {
+    try {
+      final socket = await response.detachSocket();
+      socket.destroy();
+    } catch (_) {
+      // The response may already be closed. Cancellation is best-effort.
+    }
+  }
 }
 
 LlmChunk? contentBlockDeltaToChunk(
@@ -82,6 +128,30 @@ LlmChunk? contentBlockDeltaToChunk(
 class LlmClient {
   final HttpClient _httpClient = HttpClient();
 
+  /// `true` once this client has switched to using the system proxy
+  /// for all subsequent requests. Flipped on the first connection
+  /// failure; once flipped, stays flipped for the life of this
+  /// `LlmClient` instance. The user can restart Crux to retry
+  /// direct.
+  bool _useSystemProxy = false;
+
+  /// Configure [_httpClient] to use the system proxy for all
+  /// subsequent requests. Called on the first connection failure
+  /// in `streamChat`; once flipped, stays flipped for the life of
+  /// this `LlmClient` instance. The user can restart Crux to retry
+  /// direct.
+  void _enableSystemProxyFallback() {
+    if (_useSystemProxy) return;
+    final proxy = SystemProxyDetector.detect();
+    if (proxy == null || proxy.isEmpty) return;
+    _useSystemProxy = true;
+    _httpClient.findProxy = (uri) => proxy.findProxyFor(uri);
+  }
+
+  /// Whether system-proxy fallback is enabled for this LlmClient.
+  /// Read by [streamChat] (and by the integration tests).
+  bool get isUsingSystemProxy => _useSystemProxy;
+
   Stream<LlmChunk> streamChat({
     required String endpointUrl,
     required ProviderConfig config,
@@ -95,6 +165,7 @@ class LlmClient {
     double temperature = 0,
     List<Map<String, dynamic>>? tools,
     String? userId,
+    LlmStreamCancelToken? cancelToken,
   }) {
     final controller = StreamController<LlmChunk>();
     final resolved = resolveProvider(config.type);
@@ -106,38 +177,62 @@ class LlmClient {
       try {
         final provider = resolved.provider;
         final uri = _buildUri(endpointUrl, wireFamily);
-        final request = await _httpClient.postUrl(uri);
 
-        request.headers.set('Content-Type', 'application/json; charset=utf-8');
-        _setAuthHeaders(request, authStyle, apiKey);
+        // The full request is wrapped in withProxyRetry. The wrapper
+        // tries the request direct first; if any step from
+        // `postUrl` through `request.close()` throws a connection
+        // error (SocketException / HandshakeException / Timeout /
+        // HttpException), it retries once through the system proxy.
+        // We can't wrap just `postUrl` because Dart's HttpClient
+        // establishes the connection lazily — a refused port often
+        // doesn't surface as an error until the request is actually
+        // sent (i.e. at `request.close()`).
+        final response = await withProxyRetry<HttpClientResponse>(
+          enabled: isSystemProxyFallbackGloballyEnabled(),
+          attempt: (proxy) async {
+            // First call: proxy == null → no findProxy set, direct.
+            // Retry call:  proxy != null → flip the HttpClient to
+            // route through the system proxy and remember it for the
+            // rest of this LlmClient's life.
+            if (proxy != null && !_useSystemProxy) {
+              _enableSystemProxyFallback();
+            }
 
-        // Provider-specific wire-format sanitization (default no-op).
-        // DeepSeek uses this to backfill `reasoning_content: ''` on
-        // assistant messages that were produced by a different
-        // provider and would otherwise trip DeepSeek's 400 "reasoning
-        // context must be passed back" check. Runs per-request (not
-        // per-turn) so it also catches `tool_call` assistant messages
-        // that ChatService adds inside the agentic loop on rounds
-        // 2+. The no-op default returns the same list reference, so
-        // providers that don't need it pay zero allocation cost.
-        final sanitizedMessages = provider.sanitizeMessages(messages);
+            final request = await _httpClient.postUrl(uri);
+            request.headers
+                .set('Content-Type', 'application/json; charset=utf-8');
+            _setAuthHeaders(request, authStyle, apiKey);
 
-        final bodyMap = provider.buildRequestBody(
-          modelId,
-          sanitizedMessages,
-          thinkingMode: thinkingMode,
-          reasoningEffort: reasoningEffort,
-          thinkingBudget: thinkingBudget,
-          maxTokens: maxTokens,
-          temperature: temperature,
-          tools: tools,
-          userId: userId,
+            // Provider-specific wire-format sanitization (default no-op).
+            // DeepSeek uses this to backfill `reasoning_content: ''` on
+            // assistant messages that were produced by a different
+            // provider and would otherwise trip DeepSeek's 400 "reasoning
+            // context must be passed back" check. Runs per-request (not
+            // per-turn) so it also catches `tool_call` assistant messages
+            // that ChatService adds inside the agentic loop on rounds
+            // 2+. The no-op default returns the same list reference, so
+            // providers that don't need it pay zero allocation cost.
+            final sanitizedMessages = provider.sanitizeMessages(messages);
+
+            final bodyMap = provider.buildRequestBody(
+              modelId,
+              sanitizedMessages,
+              thinkingMode: thinkingMode,
+              reasoningEffort: reasoningEffort,
+              thinkingBudget: thinkingBudget,
+              maxTokens: maxTokens,
+              temperature: temperature,
+              tools: tools,
+              userId: userId,
+            );
+            final body = jsonEncode(bodyMap);
+            final bodyBytes = utf8.encode(body);
+            request.headers.set('Content-Length', bodyBytes.length.toString());
+            request.add(bodyBytes);
+            return request.close();
+          },
         );
-        final body = jsonEncode(bodyMap);
-        final bodyBytes = utf8.encode(body);
-        request.headers.set('Content-Length', bodyBytes.length.toString());
-        request.add(bodyBytes);
-        final response = await request.close();
+        cancelToken?._attachResponse(response);
 
         if (response.statusCode != 200) {
           final errorBody = await response.transform(utf8.decoder).join();
@@ -153,13 +248,23 @@ class LlmClient {
             response,
             controller,
             anthropicToolBlocks,
+            cancelToken,
           );
         } else {
-          await _handleOpenAiStream(response, controller);
+          await _handleOpenAiStream(response, controller, cancelToken);
         }
       } catch (e) {
         if (!controller.isClosed) {
-          controller.add(LlmChunk(error: e.toString()));
+          if (cancelToken?.isCancelled ?? false) {
+            controller.add(
+              LlmChunk(
+                abortReason: cancelToken?.reason ?? 'cancelled',
+                guardAbort: cancelToken?.guardAbort ?? false,
+              ),
+            );
+          } else {
+            controller.add(LlmChunk(error: e.toString()));
+          }
           await controller.close();
         }
       }
@@ -171,9 +276,20 @@ class LlmClient {
   Future<void> _handleOpenAiStream(
     HttpClientResponse response,
     StreamController<LlmChunk> controller,
+    LlmStreamCancelToken? cancelToken,
   ) async {
     String buffer = '';
     await for (final chunk in response) {
+      if (cancelToken?.isCancelled ?? false) {
+        controller.add(
+          LlmChunk(
+            abortReason: cancelToken?.reason ?? 'cancelled',
+            guardAbort: cancelToken?.guardAbort ?? false,
+          ),
+        );
+        await controller.close();
+        return;
+      }
       buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();
@@ -266,6 +382,7 @@ class LlmClient {
     HttpClientResponse response,
     StreamController<LlmChunk> controller,
     Map<int, ({String callId, String name})> toolBlocks,
+    LlmStreamCancelToken? cancelToken,
   ) async {
     String buffer = '';
     String? eventType;
@@ -280,6 +397,16 @@ class LlmClient {
     final usageAccumulator = AnthropicUsageAccumulator();
 
     await for (final chunk in response) {
+      if (cancelToken?.isCancelled ?? false) {
+        controller.add(
+          LlmChunk(
+            abortReason: cancelToken?.reason ?? 'cancelled',
+            guardAbort: cancelToken?.guardAbort ?? false,
+          ),
+        );
+        await controller.close();
+        return;
+      }
       buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../utils/proxy_aware_http.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -76,41 +77,57 @@ class WebFetchTool extends ToolDef {
       effectiveUrl = 'https://${effectiveUrl.substring(7)}';
     }
 
-    try {
-      final client = HttpClient();
-      client.userAgent = 'Mozilla/5.0 (compatible; CruxBot/1.0)';
-      client.connectionTimeout = Duration(seconds: timeoutSec);
+    return withProxyRetry<ToolResult>(
+      enabled: isSystemProxyFallbackGloballyEnabled(),
+      attempt: (proxy) async {
+        final client = HttpClient();
+        client.userAgent = 'Mozilla/5.0 (compatible; CruxBot/1.0)';
+        client.connectionTimeout = Duration(seconds: timeoutSec);
+        if (proxy != null) {
+          client.findProxy = proxy.findProxyFor;
+        }
+        try {
+          final request = await client.getUrl(Uri.parse(effectiveUrl));
+          final response = await request.close();
 
-      final request = await client.getUrl(Uri.parse(effectiveUrl));
-      final response = await request.close();
+          if (response.statusCode != 200) {
+            return ToolResult.error(
+              'HTTP ${response.statusCode}: Failed to fetch $effectiveUrl',
+            );
+          }
 
-      if (response.statusCode != 200) {
-        client.close();
-        return ToolResult.error(
-          'HTTP ${response.statusCode}: Failed to fetch $effectiveUrl',
-        );
-      }
+          final body = await response.transform(utf8.decoder).join();
 
-      final body = await response.transform(utf8.decoder).join();
+          if (body.length > 5 * 1024 * 1024) {
+            return ToolResult.error(
+              'Response too large (>5MB). Content may be summarized.',
+            );
+          }
 
-      if (body.length > 5 * 1024 * 1024) {
-        client.close();
-        return ToolResult.error(
-          'Response too large (>5MB). Content may be summarized.',
-        );
-      }
+          final content =
+              format == 'text' ? _stripHtml(body) : _toMarkdown(body);
 
-      final content = format == 'text' ? _stripHtml(body) : _toMarkdown(body);
-      client.close();
-
-      return ToolResult(
-        title: 'Fetch: $effectiveUrl',
-        output: content,
-        metadata: {'url': effectiveUrl, 'format': format},
-      );
-    } catch (e) {
+          return ToolResult(
+            title: 'Fetch: $effectiveUrl',
+            output: content,
+            metadata: {
+              'url': effectiveUrl,
+              'format': format,
+              // 'routing' is read by `_buildToolResultForPersist`
+              // and forwarded to `messages.meta` for the
+              // chat-history bubble / detail view to render. It is
+              // **not** part of the LLM's view of the tool result
+              // — the LLM only ever sees `output` above.
+              if (proxy != null) 'routing': 'system-proxy',
+            },
+          );
+        } finally {
+          client.close(force: true);
+        }
+      },
+    ).catchError((Object e) {
       return ToolResult.error('Failed to fetch URL: $e');
-    }
+    });
   }
 
   String _stripHtml(String html) {

@@ -48,23 +48,30 @@ class Message {
   final String tldr;
   final List<ImageAttachment> images;
 
+  /// Free-form JSON metadata for inline UI affordances (e.g.
+  /// `{"routing":"system-proxy"}` on a `webfetch` that fell back
+  /// to the system proxy). Read by the chat-history bubble
+  /// renderer; **never** sent to the LLM as part of the tool
+  /// result body. Empty string when no UI metadata applies.
+  final String meta;
+
   /// Telemetry-int column for system-role bubbles. Always `0` for
-/// content-bearing roles (`user`, `assistant`, `tool`, `tool_call`).
-/// Carries role-specific count data for the two system bubbles:
-///
-///   * `parallel_praise` rows — number of *successful* tool calls
-///     in the round. Drives the "N tool calls parallelized" bubble
-///     label and the ⚡ glyph's success text.
-///   * `single_call_reminder` rows — number of *consecutive*
-///     single-tool-call rounds at the moment the modulo gate fired
-///     (≥ threshold, so ≥ 10 with default). Drives the
-///     "N consecutive single-tool-call rounds" bubble label.
-///
-/// Same column, different meaning per role — the renderer dispatches
-/// on `role` and reads this field with the role-appropriate
-/// interpretation. Kept as a single column (rather than two
-/// role-specific ones) to avoid a schema migration and to mirror the
-/// existing pattern of one int payload column for system bubbles.
+  /// content-bearing roles (`user`, `assistant`, `tool`, `tool_call`).
+  /// Carries role-specific count data for the two system bubbles:
+  ///
+  ///   * `parallel_praise` rows — number of *successful* tool calls
+  ///     in the round. Drives the "N tool calls parallelized" bubble
+  ///     label and the ⚡ glyph's success text.
+  ///   * `single_call_reminder` rows — number of *consecutive*
+  ///     single-tool-call rounds at the moment the modulo gate fired
+  ///     (≥ threshold, so ≥ 10 with default). Drives the
+  ///     "N consecutive single-tool-call rounds" bubble label.
+  ///
+  /// Same column, different meaning per role — the renderer dispatches
+  /// on `role` and reads this field with the role-appropriate
+  /// interpretation. Kept as a single column (rather than two
+  /// role-specific ones) to avoid a schema migration and to mirror the
+  /// existing pattern of one int payload column for system bubbles.
   final int parallelCount;
 
   Message({
@@ -89,6 +96,7 @@ class Message {
     this.tldr = '',
     this.images = const [],
     this.parallelCount = 0,
+    this.meta = '',
   }) : createdAt = createdAt ?? DateTime.now();
 
   static List<ToolCallData> parseToolCallsJson(String json) {
@@ -128,6 +136,7 @@ class Message {
     String? tldr,
     List<ImageAttachment>? images,
     int? parallelCount,
+    String? meta,
   }) {
     return Message(
       id: id ?? this.id,
@@ -151,6 +160,7 @@ class Message {
       tldr: tldr ?? this.tldr,
       images: images ?? this.images,
       parallelCount: parallelCount ?? this.parallelCount,
+      meta: meta ?? this.meta,
     );
   }
 

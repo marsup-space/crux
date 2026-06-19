@@ -42,6 +42,7 @@ class MessageStore {
     String tldr = '',
     List<ImageAttachment> images = const [],
     int parallelCount = 0,
+    String meta = '',
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -68,6 +69,7 @@ class MessageStore {
             tldr: Value(tldr),
             images: Value(ImageAttachment.encodeList(images)),
             parallelCount: Value(parallelCount),
+            meta: Value(meta),
           ),
         );
 
@@ -94,6 +96,7 @@ class MessageStore {
       tldr: tldr,
       images: images,
       parallelCount: parallelCount,
+      meta: meta,
     );
   }
 
@@ -103,6 +106,11 @@ class MessageStore {
   /// Wrapping both writes in [_db.transaction] makes the persist
   /// step all-or-nothing: SQLite rolls back on any failure and the
   /// next turn sees either the full round or no round at all.
+  ///
+  /// Each [results] entry's `meta` (if non-empty) is persisted on
+  /// the tool row alongside `output`. The meta is read by the
+  /// chat-history bubble renderer; it is **not** part of what the
+  /// LLM sees — the LLM only ever receives `output`.
   Future<Message> addToolRound(
     int sessionId, {
     String roundText = '',
@@ -112,7 +120,7 @@ class MessageStore {
     int thinkingDurationMs = 0,
     String? reasoningEffort,
     required List<ToolCallData> toolCalls,
-    required List<({String callId, String output})> results,
+    required List<({String callId, String output, String meta})> results,
   }) {
     return _db.transaction(() async {
       final assistant = await addMessage(
@@ -132,6 +140,7 @@ class MessageStore {
           role: 'tool',
           content: r.output,
           toolCallId: r.callId,
+          meta: r.meta,
         );
       }
       return assistant;
@@ -259,6 +268,7 @@ class MessageStore {
       tldr: row.tldr,
       images: ImageAttachment.decodeList(row.images),
       parallelCount: row.parallelCount,
+      meta: row.meta,
     );
   }
 

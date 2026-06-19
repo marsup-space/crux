@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../../models/coding_plan_usage.dart';
 import '../../models/provider_config.dart';
+import '../../utils/proxy_aware_http.dart';
 import '../coding_plan_usage_parser.dart';
 import 'anthropic_compatible_provider.dart';
 import 'coding_plan_provider.dart';
@@ -67,48 +68,66 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
       );
     }
 
-    final client = HttpClient();
-    try {
-      final request = await client
-          .getUrl(Uri.parse(_codingPlanApiUrl))
-          .timeout(const Duration(seconds: 10));
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $key');
-      request.headers
-          .set(HttpHeaders.contentTypeHeader, 'application/json');
-      final response = await request.close().timeout(
-            const Duration(seconds: 10),
+    // The translation from raw `SocketException` / `TimeoutException`
+    // to `CodingPlanUsageError` happens *outside* the wrapper so that
+    // `withProxyRetry` can see the original connection error and
+    // decide whether to retry through the system proxy. Translating
+    // inside the attempt would hide the error class and the wrapper
+    // would never trigger.
+    return withProxyRetry<CodingPlanUsage>(
+      enabled: isSystemProxyFallbackGloballyEnabled(),
+      attempt: (proxy) async {
+        final client = HttpClient();
+        if (proxy != null) client.findProxy = proxy.findProxyFor;
+        try {
+          final request = await client
+              .getUrl(Uri.parse(_codingPlanApiUrl))
+              .timeout(const Duration(seconds: 10));
+          request.headers
+              .set(HttpHeaders.authorizationHeader, 'Bearer $key');
+          request.headers
+              .set(HttpHeaders.contentTypeHeader, 'application/json');
+          final response = await request.close().timeout(
+                const Duration(seconds: 10),
+              );
+          if (response.statusCode != 200) {
+            throw CodingPlanUsageError(
+              CodingPlanUsageErrorKind.network,
+              'HTTP ${response.statusCode} from $_codingPlanApiUrl',
+            );
+          }
+          final body = await response
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 10));
+          return parseCodingPlanUsageResponse(
+            body,
+            providerName: name,
+            preferredModelName: 'general',
           );
-      if (response.statusCode != 200) {
+        } finally {
+          client.close(force: true);
+        }
+      },
+    ).catchError((Object e) {
+      if (e is CodingPlanUsageError) throw e;
+      if (e is SocketException) {
         throw CodingPlanUsageError(
           CodingPlanUsageErrorKind.network,
-          'HTTP ${response.statusCode} from $_codingPlanApiUrl',
+          'Network error: ${e.message}',
         );
       }
-      final body = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(const Duration(seconds: 10));
-      return parseCodingPlanUsageResponse(
-        body,
-        providerName: name,
-        preferredModelName: 'general',
-      );
-    } on CodingPlanUsageError {
-      rethrow;
-    } on SocketException catch (e) {
+      if (e is TimeoutException) {
+        throw const CodingPlanUsageError(
+          CodingPlanUsageErrorKind.network,
+          'Request timed out',
+        );
+      }
       throw CodingPlanUsageError(
         CodingPlanUsageErrorKind.network,
-        'Network error: ${e.message}',
+        'Coding-plan usage fetch failed: $e',
       );
-    } on TimeoutException {
-      throw const CodingPlanUsageError(
-        CodingPlanUsageErrorKind.network,
-        'Request timed out',
-      );
-    } finally {
-      client.close(force: true);
-    }
+    });
   }
 
   /// The API endpoint the mixin's [getCodingPlanUsage] calls.

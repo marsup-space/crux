@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../models/credit_balance.dart';
+import '../../utils/proxy_aware_http.dart';
 import '../providers/openai_compatible_provider.dart';
 import 'credit_balance_provider.dart';
 
@@ -126,44 +127,65 @@ class DeepSeekProvider extends OpenAICompatibleProvider
       );
     }
 
-    final client = HttpClient();
-    try {
-      final request = await client
-          .getUrl(Uri.parse(_balanceApiUrl))
-          .timeout(const Duration(seconds: 10));
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $key');
-      request.headers
-          .set(HttpHeaders.contentTypeHeader, 'application/json');
-      final response = await request.close().timeout(
-            const Duration(seconds: 10),
-          );
-      if (response.statusCode != 200) {
+    // The translation from raw `SocketException` / `TimeoutException`
+    // to `CreditBalanceError` happens *outside* the wrapper so that
+    // `withProxyRetry` can see the original connection error and
+    // decide whether to retry through the system proxy. Translating
+    // inside the attempt would hide the error class and the wrapper
+    // would never trigger.
+    return withProxyRetry<CreditBalance>(
+      enabled: isSystemProxyFallbackGloballyEnabled(),
+      attempt: (proxy) async {
+        final client = HttpClient();
+        if (proxy != null) client.findProxy = proxy.findProxyFor;
+        try {
+          final request = await client
+              .getUrl(Uri.parse(_balanceApiUrl))
+              .timeout(const Duration(seconds: 10));
+          request.headers
+              .set(HttpHeaders.authorizationHeader, 'Bearer $key');
+          request.headers
+              .set(HttpHeaders.contentTypeHeader, 'application/json');
+          final response = await request.close().timeout(
+                const Duration(seconds: 10),
+              );
+          if (response.statusCode != 200) {
+            throw CreditBalanceError(
+              CreditBalanceErrorKind.network,
+              'HTTP ${response.statusCode} from $_balanceApiUrl',
+            );
+          }
+          final body = await response
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 10));
+          return _parseBalanceResponse(body);
+        } finally {
+          client.close(force: true);
+        }
+      },
+    ).catchError((Object e) {
+      if (e is CreditBalanceError) throw e;
+      if (e is SocketException) {
         throw CreditBalanceError(
           CreditBalanceErrorKind.network,
-          'HTTP ${response.statusCode} from $_balanceApiUrl',
+          'Network error: ${e.message}',
         );
       }
-      final body = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(const Duration(seconds: 10));
-      return _parseBalanceResponse(body);
-    } on CreditBalanceError {
-      rethrow;
-    } on SocketException catch (e) {
+      if (e is TimeoutException) {
+        throw const CreditBalanceError(
+          CreditBalanceErrorKind.network,
+          'Request timed out',
+        );
+      }
+      // Anything else (e.g. FormatException from a parse failure) —
+      // surface as a network error so the UI doesn't show a stack
+      // trace. The original behaviour was a silent empty CreditBalance.
       throw CreditBalanceError(
         CreditBalanceErrorKind.network,
-        'Network error: ${e.message}',
+        'Balance fetch failed: $e',
       );
-    } on TimeoutException {
-      throw const CreditBalanceError(
-        CreditBalanceErrorKind.network,
-        'Request timed out',
-      );
-    } finally {
-      client.close(force: true);
-    }
+    });
   }
 
   /// Parse the JSON body of the `/user/balance` response into a

@@ -1509,6 +1509,16 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _metaMeta = const VerificationMeta('meta');
+  @override
+  late final GeneratedColumn<String> meta = GeneratedColumn<String>(
+    'meta',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1543,6 +1553,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     preCompressTokens,
     images,
     parallelCount,
+    meta,
     createdAt,
   ];
   @override
@@ -1711,6 +1722,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('meta')) {
+      context.handle(
+        _metaMeta,
+        meta.isAcceptableOrUnknown(data['meta']!, _metaMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1812,6 +1829,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}parallel_count'],
       )!,
+      meta: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}meta'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1855,6 +1876,13 @@ class Message extends DataClass implements Insertable<Message> {
   /// "N tool calls parallelized" without re-deriving the number.
   /// Always `0` for every other role.
   final int parallelCount;
+
+  /// Free-form JSON metadata for inline UI affordances attached to
+  /// this tool result. Read by the chat-history bubble renderer —
+  /// **never** sent to the LLM as part of the tool result body.
+  /// Default keys: `routing` (`"direct"` | `"system-proxy"`).
+  /// Empty string = no UI metadata, render normally.
+  final String meta;
   final int createdAt;
   const Message({
     required this.id,
@@ -1878,6 +1906,7 @@ class Message extends DataClass implements Insertable<Message> {
     this.preCompressTokens,
     required this.images,
     required this.parallelCount,
+    required this.meta,
     required this.createdAt,
   });
   @override
@@ -1912,6 +1941,7 @@ class Message extends DataClass implements Insertable<Message> {
     }
     map['images'] = Variable<String>(images);
     map['parallel_count'] = Variable<int>(parallelCount);
+    map['meta'] = Variable<String>(meta);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -1947,6 +1977,7 @@ class Message extends DataClass implements Insertable<Message> {
           : Value(preCompressTokens),
       images: Value(images),
       parallelCount: Value(parallelCount),
+      meta: Value(meta),
       createdAt: Value(createdAt),
     );
   }
@@ -1980,6 +2011,7 @@ class Message extends DataClass implements Insertable<Message> {
       preCompressTokens: serializer.fromJson<int?>(json['preCompressTokens']),
       images: serializer.fromJson<String>(json['images']),
       parallelCount: serializer.fromJson<int>(json['parallelCount']),
+      meta: serializer.fromJson<String>(json['meta']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -2008,6 +2040,7 @@ class Message extends DataClass implements Insertable<Message> {
       'preCompressTokens': serializer.toJson<int?>(preCompressTokens),
       'images': serializer.toJson<String>(images),
       'parallelCount': serializer.toJson<int>(parallelCount),
+      'meta': serializer.toJson<String>(meta),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -2034,6 +2067,7 @@ class Message extends DataClass implements Insertable<Message> {
     Value<int?> preCompressTokens = const Value.absent(),
     String? images,
     int? parallelCount,
+    String? meta,
     int? createdAt,
   }) => Message(
     id: id ?? this.id,
@@ -2061,6 +2095,7 @@ class Message extends DataClass implements Insertable<Message> {
         : this.preCompressTokens,
     images: images ?? this.images,
     parallelCount: parallelCount ?? this.parallelCount,
+    meta: meta ?? this.meta,
     createdAt: createdAt ?? this.createdAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -2104,6 +2139,7 @@ class Message extends DataClass implements Insertable<Message> {
       parallelCount: data.parallelCount.present
           ? data.parallelCount.value
           : this.parallelCount,
+      meta: data.meta.present ? data.meta.value : this.meta,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -2132,6 +2168,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
           ..write('parallelCount: $parallelCount, ')
+          ..write('meta: $meta, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -2160,6 +2197,7 @@ class Message extends DataClass implements Insertable<Message> {
     preCompressTokens,
     images,
     parallelCount,
+    meta,
     createdAt,
   ]);
   @override
@@ -2187,6 +2225,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.preCompressTokens == this.preCompressTokens &&
           other.images == this.images &&
           other.parallelCount == this.parallelCount &&
+          other.meta == this.meta &&
           other.createdAt == this.createdAt);
 }
 
@@ -2212,6 +2251,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int?> preCompressTokens;
   final Value<String> images;
   final Value<int> parallelCount;
+  final Value<String> meta;
   final Value<int> createdAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -2235,6 +2275,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
     this.parallelCount = const Value.absent(),
+    this.meta = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -2259,6 +2300,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
     this.parallelCount = const Value.absent(),
+    this.meta = const Value.absent(),
     required int createdAt,
   }) : sessionId = Value(sessionId),
        role = Value(role),
@@ -2285,6 +2327,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? preCompressTokens,
     Expression<String>? images,
     Expression<int>? parallelCount,
+    Expression<String>? meta,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -2310,6 +2353,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (preCompressTokens != null) 'pre_compress_tokens': preCompressTokens,
       if (images != null) 'images': images,
       if (parallelCount != null) 'parallel_count': parallelCount,
+      if (meta != null) 'meta': meta,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -2336,6 +2380,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int?>? preCompressTokens,
     Value<String>? images,
     Value<int>? parallelCount,
+    Value<String>? meta,
     Value<int>? createdAt,
   }) {
     return MessagesCompanion(
@@ -2360,6 +2405,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       preCompressTokens: preCompressTokens ?? this.preCompressTokens,
       images: images ?? this.images,
       parallelCount: parallelCount ?? this.parallelCount,
+      meta: meta ?? this.meta,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -2430,6 +2476,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (parallelCount.present) {
       map['parallel_count'] = Variable<int>(parallelCount.value);
     }
+    if (meta.present) {
+      map['meta'] = Variable<String>(meta.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -2460,6 +2509,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
           ..write('parallelCount: $parallelCount, ')
+          ..write('meta: $meta, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -4686,6 +4736,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<int?> preCompressTokens,
       Value<String> images,
       Value<int> parallelCount,
+      Value<String> meta,
       required int createdAt,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -4711,6 +4762,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<int?> preCompressTokens,
       Value<String> images,
       Value<int> parallelCount,
+      Value<String> meta,
       Value<int> createdAt,
     });
 
@@ -4861,6 +4913,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get parallelCount => $composableBuilder(
     column: $table.parallelCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get meta => $composableBuilder(
+    column: $table.meta,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5027,6 +5084,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get meta => $composableBuilder(
+    column: $table.meta,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -5143,6 +5205,9 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get meta =>
+      $composableBuilder(column: $table.meta, builder: (column) => column);
+
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -5244,6 +5309,7 @@ class $$MessagesTableTableManager
                 Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
                 Value<int> parallelCount = const Value.absent(),
+                Value<String> meta = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -5267,6 +5333,7 @@ class $$MessagesTableTableManager
                 preCompressTokens: preCompressTokens,
                 images: images,
                 parallelCount: parallelCount,
+                meta: meta,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -5292,6 +5359,7 @@ class $$MessagesTableTableManager
                 Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
                 Value<int> parallelCount = const Value.absent(),
+                Value<String> meta = const Value.absent(),
                 required int createdAt,
               }) => MessagesCompanion.insert(
                 id: id,
@@ -5315,6 +5383,7 @@ class $$MessagesTableTableManager
                 preCompressTokens: preCompressTokens,
                 images: images,
                 parallelCount: parallelCount,
+                meta: meta,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0

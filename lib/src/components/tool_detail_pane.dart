@@ -7,7 +7,9 @@ import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
+import '../utils/tool_meta.dart';
 import '../utils/token_estimate.dart';
+import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
 
 /// Data needed to render a tool detail fullpane.
@@ -29,10 +31,7 @@ class ToolDetailData {
 class ToolDetailPane extends StatefulComponent {
   final ToolDetailData data;
 
-  const ToolDetailPane({
-    required this.data,
-    super.key,
-  });
+  const ToolDetailPane({required this.data, super.key});
 
   @override
   State<ToolDetailPane> createState() => _ToolDetailPaneState();
@@ -46,15 +45,44 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   final _prettyScrollController = ScrollController();
   final _rawScrollController = ScrollController();
 
+  /// Lerps the `~N tokens` value in the tab-bar header from 0
+  /// → final when the pane opens (or when the user navigates
+  /// between calls with a different token cost). Same shared
+  /// module that drives the streaming bubble and the
+  /// collapsed chat row, so the cadence and the format match.
+  final ToolMetricsAnimator _animator = ToolMetricsAnimator(
+    tickerName: 'toolDetailPane',
+  );
+
   @override
   void initState() {
     super.initState();
+    _animator.onAdvance = () {
+      if (mounted) setState(() {});
+    };
+  }
+
+  @override
+  void didUpdateComponent(ToolDetailPane old) {
+    super.didUpdateComponent(old);
+    // The pane is reused across navigations (the parent just
+    // swaps `data` and rebuilds). When the user clicks a
+    // different tool call in the chat history, forget the
+    // previous callId from the animator so the new call's
+    // `~N tokens` lerps from 0 instead of inheriting the
+    // previous call's settled value.
+    final oldCallId = old.data.toolCall.callId;
+    final newCallId = component.data.toolCall.callId;
+    if (oldCallId != newCallId) {
+      _animator.forget(oldCallId);
+    }
   }
 
   @override
   void dispose() {
     _prettyScrollController.dispose();
     _rawScrollController.dispose();
+    _animator.dispose();
     super.dispose();
   }
 
@@ -81,9 +109,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
         // ── Content area ──
         Expanded(
-          child: _activeTab == 0
-              ? _buildPrettyTab(theme)
-              : _buildRawTab(theme),
+          child: _activeTab == 0 ? _buildPrettyTab(theme) : _buildRawTab(theme),
         ),
       ],
     );
@@ -151,19 +177,48 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           tc.input,
           ToolResult(title: '', output: output),
         );
+        // Drive the shared animator with the final value so
+        // the `~N tokens` half lerps from 0 → summary.totalTokens
+        // when the pane opens. The static `summary.text` half
+        // (which already carries the `+M -N lines, 1.2KB`
+        // shape for write/edit) stays in the same text and
+        // is the leading part of the metric; only the `N`
+        // animates.
+        _animator.setTarget(tc.callId, tokens: summary.totalTokens);
+        final metrics = _animator.read(tc.callId);
+        final tokensText = metrics == null
+            ? '~0 tokens'
+            : '~${metrics.displayTokens.round()} tokens';
         // The summary text already encodes the meaningful
         // tool-specific line diff for edit/write (e.g. "+5 -2
         // lines, 1.2KB"). For tools that don't have a custom
         // summary the text falls back to a generic "N lines,
         // size" string which we don't want to duplicate next to
         // the token count, so we suppress it in that case.
-        final tokens = '~${summary.totalTokens} tokens';
         metric = summary.text.isNotEmpty
-            ? '${summary.text}, $tokens'
-            : tokens;
+            ? '${summary.text}, $tokensText'
+            : tokensText;
+      } else {
+        // Guard / auto-read — same as the streaming bubble:
+        // render nothing in the header. Forget the entry so
+        // the animator doesn't keep a stale target around.
+        _animator.forget(tc.callId);
       }
     } else if (result != null) {
-      metric = '~${estimateTokens(result.content)} tokens';
+      // Tool without a registered handler — fall back to a
+      // rough char-based token estimate of the result. Same
+      // animation treatment so the value lerps from 0 →
+      // estimate when the pane opens.
+      final estimated = estimateTokens(result.content);
+      _animator.setTarget(tc.callId, tokens: estimated);
+      final metrics = _animator.read(tc.callId);
+      final shown = metrics == null ? 0 : metrics.displayTokens.round();
+      metric = '~$shown tokens';
+    } else {
+      // No result yet — nothing to animate. Forget the entry
+      // so the per-frame scheduler can pause if this is the
+      // only thing it was tracking.
+      _animator.forget(tc.callId);
     }
 
     if (metric == null) return const SizedBox.shrink();
@@ -224,9 +279,11 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (lsp.visible.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
-      children.add(Expanded(
-        child: _scrollableCodeBlock(lsp.visible, language ?? '', theme),
-      ));
+      children.add(
+        Expanded(
+          child: _scrollableCodeBlock(lsp.visible, language ?? '', theme),
+        ),
+      );
     }
 
     if (lsp.diagnostics.isNotEmpty) {
@@ -263,10 +320,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (oldStr.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
-      children.add(Container(
-        padding: const EdgeInsets.only(left: 1),
-        child: _inlineCodeBlock(oldStr, language ?? '', theme),
-      ));
+      children.add(
+        Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: _inlineCodeBlock(oldStr, language ?? '', theme),
+        ),
+      );
     }
 
     children.add(Divider(color: theme.dividerDim, height: 1));
@@ -274,10 +333,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (newStr.isEmpty) {
       children.add(_dimText('  (empty)', theme));
     } else {
-      children.add(Container(
-        padding: const EdgeInsets.only(left: 1),
-        child: _inlineCodeBlock(newStr, language ?? '', theme),
-      ));
+      children.add(
+        Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: _inlineCodeBlock(newStr, language ?? '', theme),
+        ),
+      );
     }
 
     // LSP errors section (if any diagnostics were attached to the
@@ -325,37 +386,37 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final children = <Component>[];
 
     // Header: command + intent
-    children.add(Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          Text(
-            '\$ ',
-            style: TextStyle(
-              color: theme.success,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              command,
+    children.add(
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          children: [
+            Text(
+              '\$ ',
               style: TextStyle(
-                color: theme.foreground,
+                color: theme.success,
                 fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Text(
+                command,
+                style: TextStyle(
+                  color: theme.foreground,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ));
+    );
     if (intent.isNotEmpty) {
       children.add(_labelValue('Intent', intent, theme, valueItalic: true));
     }
 
     // Exit code from metadata
-    final exitCode = result != null
-        ? _extractExitCode(result.content)
-        : null;
+    final exitCode = result != null ? _extractExitCode(result.content) : null;
     if (exitCode != null && exitCode != 0) {
       children.add(_banner('✗ Exit code: $exitCode', theme.error, theme));
     } else if (result != null) {
@@ -368,9 +429,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (output.isNotEmpty) {
       // Strip the [exit code: N] trailer that the tool appends
       final displayOutput = _stripExitCodeLine(output);
-      children.add(Expanded(
-        child: _scrollableCodeBlock(displayOutput, '', theme),
-      ));
+      children.add(
+        Expanded(child: _scrollableCodeBlock(displayOutput, '', theme)),
+      );
     } else {
       children.add(_dimText('  (no output)', theme));
     }
@@ -397,9 +458,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // File content (output already has line numbers from the tool)
     if (output.isNotEmpty) {
-      children.add(Expanded(
-        child: _scrollableCodeBlock(output, language ?? '', theme),
-      ));
+      children.add(
+        Expanded(child: _scrollableCodeBlock(output, language ?? '', theme)),
+      );
     } else {
       children.add(_dimText('  (no content)', theme));
     }
@@ -424,32 +485,49 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // Header
     final headerParts = <TextSpan>[];
-    headerParts.add(TextSpan(
-      text: 'Pattern: ',
-      style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
-    ));
-    headerParts.add(TextSpan(
-      text: '/$pattern/',
-      style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
-    ));
+    headerParts.add(
+      TextSpan(
+        text: 'Pattern: ',
+        style: TextStyle(
+          color: theme.onSurfaceDim,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    headerParts.add(
+      TextSpan(
+        text: '/$pattern/',
+        style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
+      ),
+    );
     if (path.isNotEmpty) {
-      headerParts.add(TextSpan(
-        text: '  in $path',
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
+      headerParts.add(
+        TextSpan(
+          text: '  in $path',
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
     }
     if (include.isNotEmpty) {
-      headerParts.add(TextSpan(
-        text: '  filter: $include',
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
+      headerParts.add(
+        TextSpan(
+          text: '  filter: $include',
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
     }
-    children.add(Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [Expanded(child: RichText(text: TextSpan(children: headerParts)))],
+    children.add(
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: RichText(text: TextSpan(children: headerParts)),
+            ),
+          ],
+        ),
       ),
-    ));
+    );
 
     // Match count
     final totalMatches = result?.content.isNotEmpty == true
@@ -461,9 +539,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // Results
     if (output.isNotEmpty) {
-      children.add(Expanded(
-        child: _scrollableCodeBlock(output, '', theme),
-      ));
+      children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
       children.add(_dimText('  (no matches)', theme));
     }
@@ -487,26 +563,41 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // Header
     final headerParts = <TextSpan>[];
-    headerParts.add(TextSpan(
-      text: 'Pattern: ',
-      style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
-    ));
-    headerParts.add(TextSpan(
-      text: pattern,
-      style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
-    ));
-    if (path.isNotEmpty) {
-      headerParts.add(TextSpan(
-        text: '  in $path',
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
-    }
-    children.add(Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [Expanded(child: RichText(text: TextSpan(children: headerParts)))],
+    headerParts.add(
+      TextSpan(
+        text: 'Pattern: ',
+        style: TextStyle(
+          color: theme.onSurfaceDim,
+          fontWeight: FontWeight.bold,
+        ),
       ),
-    ));
+    );
+    headerParts.add(
+      TextSpan(
+        text: pattern,
+        style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
+      ),
+    );
+    if (path.isNotEmpty) {
+      headerParts.add(
+        TextSpan(
+          text: '  in $path',
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
+    }
+    children.add(
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: RichText(text: TextSpan(children: headerParts)),
+            ),
+          ],
+        ),
+      ),
+    );
 
     final fileCount = output.isNotEmpty
         ? '\n'.allMatches(output).length + 1
@@ -516,9 +607,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     children.add(Divider(color: theme.dividerDim, height: 1));
 
     if (output.isNotEmpty) {
-      children.add(Expanded(
-        child: _scrollableCodeBlock(output, '', theme),
-      ));
+      children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
       children.add(_dimText('  (no files matched)', theme));
     }
@@ -540,49 +629,68 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final children = <Component>[];
 
     // Header
-    children.add(Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          Text(
-            'URL: ',
-            style: TextStyle(
-              color: theme.onSurfaceDim,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              url,
+    children.add(
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          children: [
+            Text(
+              'URL: ',
               style: TextStyle(
-                color: theme.mdLink,
-                decoration: TextDecoration.underline,
+                color: theme.onSurfaceDim,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Text(
+                url,
+                style: TextStyle(
+                  color: theme.mdLink,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ));
+    );
+
+    // Inline UI hints from `messages.meta`. The LLM never sees
+    // these — they're rendered only here and in the collapsed
+    // bubble so the user knows the response came back through
+    // the system proxy (or whatever the tool layer wants to
+    // surface). Surfaces as a colored badge above the body.
+    final metaHint = _metaHint(result?.meta, theme);
+    if (metaHint != null) {
+      children.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: metaHint,
+        ),
+      );
+    }
 
     children.add(Divider(color: theme.dividerDim, height: 1));
 
     // Content
     if (output.isNotEmpty) {
-      children.add(Expanded(
-        child: Scrollbar(
-          controller: _prettyScrollController,
-          thumbVisibility: true,
-          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-          trackColor: theme.surfaceVariant.withOpacity(0.3),
-          child: SingleChildScrollView(
+      children.add(
+        Expanded(
+          child: Scrollbar(
             controller: _prettyScrollController,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-              child: HighlightedMarkdownText(output),
+            thumbVisibility: true,
+            thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+            trackColor: theme.surfaceVariant.withOpacity(0.3),
+            child: SingleChildScrollView(
+              controller: _prettyScrollController,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                child: HighlightedMarkdownText(output),
+              ),
             ),
           ),
         ),
-      ));
+      );
     } else {
       children.add(_dimText('  (no content)', theme));
     }
@@ -591,6 +699,46 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: children,
     );
+  }
+
+  /// Builds the user-visible hint badge for a tool result whose
+  /// persisted `meta` blob carries routing (or other) information.
+  /// Returns `null` when there is nothing to surface. Mirrors the
+  /// same parser used by the collapsed bubble in
+  /// `message_bubble.dart` so both views agree.
+  Component? _metaHint(String? meta, CruxThemeData theme) {
+    final routing = parseToolRouting(meta);
+    if (routing == null) return null;
+    switch (routing.value) {
+      case 'system-proxy':
+        return Row(
+          children: [
+            Text(
+              '  ·  ',
+              style: TextStyle(color: theme.onSurfaceDim),
+            ),
+            Text(
+              'via system proxy ',
+              style: TextStyle(
+                color: theme.warning,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              '(direct connection failed; retried through the system proxy)',
+              style: TextStyle(
+                color: theme.onSurfaceDim,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        );
+      default:
+        return Text(
+          '  ·  ${routing.value}',
+          style: TextStyle(color: theme.onSurfaceDim),
+        );
+    }
   }
 
   // ── Generic fallback ─────────────────────────────────────────────────
@@ -602,13 +750,15 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     final children = <Component>[];
 
-    children.add(_labelValue(
-      'Tool',
-      _capitalize(tc.name),
-      theme,
-      valueColor: theme.toolPrefix,
-      valueBold: true,
-    ));
+    children.add(
+      _labelValue(
+        'Tool',
+        _capitalize(tc.name),
+        theme,
+        valueColor: theme.toolPrefix,
+        valueBold: true,
+      ),
+    );
     if (intent.isNotEmpty) {
       children.add(_labelValue('Intent', intent, theme, valueItalic: true));
     }
@@ -629,10 +779,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (result != null && result.content.isNotEmpty) {
       children.add(Divider(color: theme.dividerDim, height: 1));
       children.add(_sectionHeading('Result', theme));
-      children.add(Container(
-        padding: const EdgeInsets.only(left: 1),
-        child: HighlightedMarkdownText(result.content),
-      ));
+      children.add(
+        Container(
+          padding: const EdgeInsets.only(left: 1),
+          child: HighlightedMarkdownText(result.content),
+        ),
+      );
     }
 
     return Scrollbar(
@@ -640,10 +792,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       thumbVisibility: true,
       thumbColor: theme.onSurfaceDim.withOpacity(0.4),
       trackColor: theme.surfaceVariant.withOpacity(0.3),
-      child: ListView(
-        controller: _prettyScrollController,
-        children: children,
-      ),
+      child: ListView(controller: _prettyScrollController, children: children),
     );
   }
 
@@ -660,13 +809,15 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     // ── Input section ──
     children.add(_sectionLabel('Input', theme));
-    children.add(_labelValue(
-      'Tool',
-      _capitalize(tc.name),
-      theme,
-      valueColor: theme.toolPrefix,
-      valueBold: true,
-    ));
+    children.add(
+      _labelValue(
+        'Tool',
+        _capitalize(tc.name),
+        theme,
+        valueColor: theme.toolPrefix,
+        valueBold: true,
+      ),
+    );
 
     final intent = _intentLabel(tc, tool);
     if (intent.isNotEmpty) {
@@ -688,18 +839,31 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
       final output = result.content;
       final isGuard = output.startsWith('[GUARD]');
+      final isGuardAborted = output.contains(
+        '[Crux system note — tool-call early abort]',
+      );
       final isAutoRead = output.startsWith('[AUTOREAD]');
-      if (isGuard) {
-        children.add(_banner('⚠ ${_guardReason(output)}', theme.warning, theme));
+      if (isGuardAborted) {
+        children.add(
+          _banner('Aborted mid-stream by Crux (early abort)', theme.warning, theme),
+        );
+      } else if (isGuard) {
+        children.add(
+          _banner('⚠ ${_guardReason(output)}', theme.warning, theme),
+        );
       } else if (isAutoRead) {
-        children.add(_banner('↻ ${_autoReadReason(output)}', theme.info, theme));
+        children.add(
+          _banner('↻ ${_autoReadReason(output)}', theme.info, theme),
+        );
       }
 
       if (output.isNotEmpty) {
-        children.add(Container(
-          padding: const EdgeInsets.only(left: 1),
-          child: HighlightedMarkdownText(output),
-        ));
+        children.add(
+          Container(
+            padding: const EdgeInsets.only(left: 1),
+            child: HighlightedMarkdownText(output),
+          ),
+        );
       } else {
         children.add(_dimText('  (empty)', theme));
       }
@@ -714,10 +878,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       thumbVisibility: true,
       thumbColor: theme.onSurfaceDim.withOpacity(0.4),
       trackColor: theme.surfaceVariant.withOpacity(0.3),
-      child: ListView(
-        controller: _rawScrollController,
-        children: children,
-      ),
+      child: ListView(controller: _rawScrollController, children: children),
     );
   }
 
@@ -728,30 +889,37 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   /// File path header used by write, edit, read.
   Component _fileHeader(String filePath, String intent, CruxThemeData theme) {
     final spans = <TextSpan>[];
-    spans.add(TextSpan(
-      text: '📄 ', // file icon
-      style: TextStyle(color: theme.foreground),
-    ));
-    spans.add(TextSpan(
-      text: filePath,
-      style: TextStyle(
-        color: theme.foreground,
-        fontWeight: FontWeight.bold,
+    spans.add(
+      TextSpan(
+        text: '📄 ', // file icon
+        style: TextStyle(color: theme.foreground),
       ),
-    ));
+    );
+    spans.add(
+      TextSpan(
+        text: filePath,
+        style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
+      ),
+    );
     if (intent.isNotEmpty) {
-      spans.add(TextSpan(
-        text: '  $intent',
-        style: TextStyle(
-          color: theme.onSurfaceDim,
-          fontStyle: FontStyle.italic,
+      spans.add(
+        TextSpan(
+          text: '  $intent',
+          style: TextStyle(
+            color: theme.onSurfaceDim,
+            fontStyle: FontStyle.italic,
+          ),
         ),
-      ));
+      );
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Row(
-        children: [Expanded(child: RichText(text: TextSpan(children: spans)))],
+        children: [
+          Expanded(
+            child: RichText(text: TextSpan(children: spans)),
+          ),
+        ],
       ),
     );
   }
@@ -763,10 +931,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Text(
         label,
-        style: TextStyle(
-          color: theme.foreground,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -777,7 +942,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     String language,
     CruxThemeData theme,
   ) {
-    final fence = language.isNotEmpty ? '```$language\n$content\n```' : '```\n$content\n```';
+    final fence = language.isNotEmpty
+        ? '```$language\n$content\n```'
+        : '```\n$content\n```';
     return Scrollbar(
       controller: _prettyScrollController,
       thumbVisibility: true,
@@ -803,7 +970,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     String language,
     CruxThemeData theme,
   ) {
-    final fence = language.isNotEmpty ? '```$language\n$content\n```' : '```\n$content\n```';
+    final fence = language.isNotEmpty
+        ? '```$language\n$content\n```'
+        : '```\n$content\n```';
     return HighlightedMarkdownText(
       fence,
       styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
@@ -826,15 +995,19 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final language = _languageForArgKey(key);
 
     final headerSpans = <TextSpan>[];
-    headerSpans.add(TextSpan(
-      text: '$key ',
-      style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
-    ));
+    headerSpans.add(
+      TextSpan(
+        text: '$key ',
+        style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
+      ),
+    );
     if (!isLong) {
-      headerSpans.add(TextSpan(
-        text: valueStr,
-        style: TextStyle(color: theme.foreground),
-      ));
+      headerSpans.add(
+        TextSpan(
+          text: valueStr,
+          style: TextStyle(color: theme.foreground),
+        ),
+      );
     }
 
     return Column(
@@ -845,7 +1018,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: RichText(text: TextSpan(children: headerSpans))),
+              Expanded(
+                child: RichText(text: TextSpan(children: headerSpans)),
+              ),
             ],
           ),
         ),
@@ -874,19 +1049,20 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     CruxThemeData theme,
   ) {
     final errors = diagnostics
-        .where((d) => (d.severity ?? LspDiagnosticSeverity.error) ==
-            LspDiagnosticSeverity.error)
+        .where(
+          (d) =>
+              (d.severity ?? LspDiagnosticSeverity.error) ==
+              LspDiagnosticSeverity.error,
+        )
         .toList();
     final shown = errors.take(20).toList();
     final more = errors.length - shown.length;
     final word = shown.length == 1 ? 'error' : 'errors';
 
     final children = <Component>[];
-    children.add(_sectionHeading(
-      'LSP · ${shown.length} $word',
-      theme,
-      color: theme.error,
-    ));
+    children.add(
+      _sectionHeading('LSP · ${shown.length} $word', theme, color: theme.error),
+    );
     if (filePath.isNotEmpty) {
       children.add(_dimText('  in $filePath', theme));
     }
@@ -916,10 +1092,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
             '✗ ',
             style: TextStyle(color: theme.error, fontWeight: FontWeight.bold),
           ),
-          Text(
-            '[$where ',
-            style: TextStyle(color: theme.onSurfaceDim),
-          ),
+          Text('[$where ', style: TextStyle(color: theme.onSurfaceDim)),
           Text(
             '$line:$col',
             style: TextStyle(
@@ -927,10 +1100,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          Text(
-            '] $message',
-            style: TextStyle(color: theme.foreground),
-          ),
+          Text('] $message', style: TextStyle(color: theme.foreground)),
         ],
       ),
     );
@@ -951,7 +1121,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         children: [
           Text(
             '$label: ',
-            style: TextStyle(color: theme.onSurfaceDim, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: theme.onSurfaceDim,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           Expanded(
             child: Text(
@@ -984,14 +1157,23 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _banner(String text, Color color, CruxThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold),
+      ),
     );
   }
 
   Component _dimText(String text, CruxThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Text(text, style: TextStyle(color: theme.onSurfaceDim, fontStyle: FontStyle.italic)),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: theme.onSurfaceDim,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
     );
   }
 
@@ -1068,7 +1250,8 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       return 'Guard: ${reason.substring(0, dash2).trim()}';
     }
     final period = reason.indexOf('.');
-    final trimmed = (period == -1 ? reason : reason.substring(0, period)).trim();
+    final trimmed = (period == -1 ? reason : reason.substring(0, period))
+        .trim();
     return trimmed.isEmpty ? 'Guard triggered' : 'Guard: $trimmed';
   }
 
@@ -1080,7 +1263,8 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (dash == -1) return 'Auto-read';
     final reason = rest.substring(dash + 1);
     final period = reason.indexOf('.');
-    final trimmed = (period == -1 ? reason : reason.substring(0, period)).trim();
+    final trimmed = (period == -1 ? reason : reason.substring(0, period))
+        .trim();
     return trimmed.isEmpty ? 'Auto-read' : 'Auto-read: $trimmed';
   }
 

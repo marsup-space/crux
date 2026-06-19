@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:toml/toml.dart';
 
 import '../models/provider_config.dart';
+import '../utils/proxy_aware_http.dart';
 import '../utils/user_data_directory.dart';
 import 'llm_provider.dart';
 import 'provider_config_loader.dart';
@@ -205,6 +206,11 @@ class ProviderService {
   /// Sends an HTTP GET to `<endpoint_url>/models` with the appropriate
   /// auth header if an API key is available. Parses the `{data: [...]}`
   /// JSON response into a list of [DiscoveredModel] objects.
+  ///
+  /// If the direct connection fails, retries once through the system
+  /// proxy (see `withProxyRetry` in `proxy_aware_http.dart`). This
+  /// makes model discovery work out of the box on machines whose only
+  /// path to the LLM provider's API is a local Clash / Surge / etc.
   Future<List<DiscoveredModel>> _discoverOpenAIModels(
     ProviderConfig provider,
   ) async {
@@ -212,44 +218,57 @@ class ProviderService {
     final baseUri = Uri.parse(provider.endpointUrl);
     final modelsUri = baseUri.resolve('models');
 
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(modelsUri);
+    final List<DiscoveredModel>? result = await withProxyRetry<
+      List<DiscoveredModel>?>(
+      enabled: isSystemProxyFallbackGloballyEnabled(),
+      attempt: (proxy) async {
+        final client = HttpClient();
+        if (proxy != null) client.findProxy = proxy.findProxyFor;
+        try {
+          final request = await client.getUrl(modelsUri);
 
-      // Header format varies by auth style:
-      //   Bearer:             Authorization: Bearer <key>
-      //   Anthropic API key:  x-api-key: <key>
-      if (apiKey != null && apiKey.isNotEmpty) {
-        final authStyle = resolveProvider(provider.type).authStyle;
-        if (authStyle == AuthStyle.bearer) {
-          request.headers.set('Authorization', 'Bearer $apiKey');
-        } else if (authStyle == AuthStyle.anthropicApiKey) {
-          request.headers.set('x-api-key', apiKey);
+          // Header format varies by auth style:
+          //   Bearer:             Authorization: Bearer <key>
+          //   Anthropic API key:  x-api-key: <key>
+          if (apiKey != null && apiKey.isNotEmpty) {
+            final authStyle = resolveProvider(provider.type).authStyle;
+            if (authStyle == AuthStyle.bearer) {
+              request.headers.set('Authorization', 'Bearer $apiKey');
+            } else if (authStyle == AuthStyle.anthropicApiKey) {
+              request.headers.set('x-api-key', apiKey);
+            }
+          }
+
+          final response = await request.close();
+          if (response.statusCode != 200) return const [];
+
+          final responseBody =
+              await response.transform(utf8.decoder).join();
+          final json = jsonDecode(responseBody) as Map<String, dynamic>;
+          final data = json['data'] as List<dynamic>?;
+
+          if (data == null) return const [];
+
+          return data.map((item) {
+            final obj = item as Map<String, dynamic>;
+            return DiscoveredModel(
+              id: obj['id'] as String? ?? '',
+              name: obj['name'] as String? ?? obj['id'] as String?,
+            );
+          }).toList();
+        } finally {
+          client.close(force: true);
         }
-      }
+      },
+    ).catchError((Object _) {
+      // Network errors, parse failures, etc. — fall back gracefully.
+      // The proxy retry path is also caught here (no usable proxy, or
+      // proxy itself failed): we just report "no models discovered" so
+      // the UI doesn't show a hard error on a discovery call.
+      return const <DiscoveredModel>[];
+    });
 
-      final response = await request.close();
-      if (response.statusCode != 200) return [];
-
-      final responseBody = await response.transform(utf8.decoder).join();
-      final json = jsonDecode(responseBody) as Map<String, dynamic>;
-      final data = json['data'] as List<dynamic>?;
-
-      if (data == null) return [];
-
-      return data.map((item) {
-        final obj = item as Map<String, dynamic>;
-        return DiscoveredModel(
-          id: obj['id'] as String? ?? '',
-          name: obj['name'] as String? ?? obj['id'] as String?,
-        );
-      }).toList();
-    } catch (_) {
-      // Network errors, parse failures, etc. — fall back gracefully
-      return [];
-    } finally {
-      client.close();
-    }
+    return result ?? const <DiscoveredModel>[];
   }
 
   // ---------------------------------------------------------------------------

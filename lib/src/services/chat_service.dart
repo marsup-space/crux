@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
@@ -15,6 +14,7 @@ import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
+import '../utils/partial_json_field_extractor.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
@@ -44,6 +44,31 @@ class ChatResponse {
     this.promptCacheHitTokens = 0,
     this.promptCacheMissTokens = 0,
     this.queuedMessage,
+  });
+}
+
+class StreamingGuardAbortEvent {
+  final int index;
+  final String callId;
+  final String name;
+  final String filePath;
+  final String reason;
+
+  /// Length (in characters) of the tool-call's partial JSON
+  /// arguments that had streamed in by the moment we aborted.
+  /// Counts only this tool call's own `input_delta` chunks —
+  /// not earlier rounds' text/reasoning, not other tool calls in
+  /// the same round, not any tokenization estimate. Char count is
+  /// exact and provider-agnostic; a token count would be a guess.
+  final int abortedInputChars;
+
+  const StreamingGuardAbortEvent({
+    required this.index,
+    required this.callId,
+    required this.name,
+    required this.filePath,
+    required this.reason,
+    required this.abortedInputChars,
   });
 }
 
@@ -160,8 +185,10 @@ class ChatService {
     required void Function() onChunk,
     required FutureOr<void> Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
+    void Function(String status)? onStatus,
     void Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
+    void Function(StreamingGuardAbortEvent event)? onStreamingGuardAbort,
     String? Function()? onQueueDrain,
     void Function(AbortSignal)? onAbortSignal,
     String? userContent,
@@ -177,8 +204,10 @@ class ChatService {
         onChunk: onChunk,
         onComplete: onComplete,
         onError: onError,
+        onStatus: onStatus,
         onToolRound: onToolRound,
         onToolUse: onToolUse,
+        onStreamingGuardAbort: onStreamingGuardAbort,
         onQueueDrain: onQueueDrain,
         onAbortSignal: onAbortSignal,
         userContent: userContent,
@@ -241,8 +270,10 @@ class ChatService {
     required void Function() onChunk,
     required FutureOr<void> Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
+    void Function(String status)? onStatus,
     void Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
+    void Function(StreamingGuardAbortEvent event)? onStreamingGuardAbort,
     String? Function()? onQueueDrain,
     void Function(AbortSignal)? onAbortSignal,
     String? userContent,
@@ -440,6 +471,10 @@ class ChatService {
       roundLastReasoningTime = null;
       roundLastDeltaTime = null;
 
+      final streamCancelToken = LlmStreamCancelToken();
+      final streamingGuard = _StreamingGuardAccumulator();
+      _PendingStreamingGuardAbort? pendingGuardAbort;
+
       final stream = _llmClient.streamChat(
         endpointUrl: provider.endpointUrl,
         config: provider,
@@ -453,6 +488,7 @@ class ChatService {
         temperature: modelConfig.temperature,
         tools: toolDefs.isNotEmpty ? toolDefs : null,
         userId: '${InstallSlug.slug}-$sessionId',
+        cancelToken: streamCancelToken,
       );
 
       final chunks = <LlmChunk>[];
@@ -551,6 +587,12 @@ class ChatService {
             return;
           }
 
+          if (chunk.guardAbort) {
+            lerpTimer?.cancel();
+            pendingGuardAbort ??= streamingGuard.pendingAbort;
+            break;
+          }
+
           chunks.add(chunk);
 
           if (chunk.reasoningSignatureDelta != null) {
@@ -587,6 +629,30 @@ class ChatService {
               // in. The chat panel folds this into
               // [StreamingController] state and re-renders.
               onToolUse?.call(toolUse);
+              final guardAbort = await streamingGuard.accumulateAndCheck(
+                toolUse,
+                toolExecutor: _toolExecutor,
+                workingDirectory: session.projectPath,
+              );
+              if (guardAbort != null) {
+                pendingGuardAbort = guardAbort;
+                onStreamingGuardAbort?.call(
+                  StreamingGuardAbortEvent(
+                    index: guardAbort.index,
+                    callId: guardAbort.callId,
+                    name: guardAbort.name,
+                    filePath: guardAbort.filePath,
+                    reason: guardAbort.guard.reason ?? 'guard',
+                    abortedInputChars: guardAbort.abortedInputChars,
+                  ),
+                );
+                await streamCancelToken.cancelActiveStream(
+                  reason: guardAbort.guard.reason ?? 'guard',
+                  guardAbort: true,
+                );
+                lerpTimer?.cancel();
+                break;
+              }
             }
             if (firstTokenEver &&
                 (chunk.textDelta != null || chunk.reasoningContent != null)) {
@@ -766,25 +832,44 @@ class ChatService {
 
       runtime.pauseStreamingTimer();
 
-      final finishReason = ToolExecutor.parseFinishReason(chunks);
+      final precomputedCallResults = <String, ToolResult>{};
+      final List<ToolCall> toolCalls;
+      final guardAbort = pendingGuardAbort;
+      if (guardAbort != null) {
+        toolCalls = _completeToolCallsBeforeIndex(chunks, guardAbort.index);
+        final stubCall = ToolCall(
+          callId: guardAbort.callId,
+          name: guardAbort.name,
+          input: {
+            '_aborted_by_guard': guardAbort.guard.reason ?? 'guard',
+            'filePath': guardAbort.filePath,
+          },
+        );
+        toolCalls.add(stubCall);
+        precomputedCallResults[stubCall.callId] = _buildGuardAbortedToolResult(
+          guardAbort,
+        );
+      } else {
+        final finishReason = ToolExecutor.parseFinishReason(chunks);
 
-      if (finishReason != 'tool_use') break;
+        if (finishReason != 'tool_use') break;
 
-      // Check for cancel before executing tools — the user may have
-      // interrupted after the LLM finished streaming but before tools
-      // started executing.
-      if (_cancelRequested.contains(sessionId)) {
-        runtime.pauseStreamingTimer();
-        stopActiveRound();
-        runtime.isResponding = false;
-        await _store.update(sessionId, status: SessionStatus.idle);
-        session.status = SessionStatus.idle;
-        _markSessionInactive(sessionId);
-        _cancelRequested.remove(sessionId);
-        return;
+        // Check for cancel before executing tools — the user may have
+        // interrupted after the LLM finished streaming but before tools
+        // started executing.
+        if (_cancelRequested.contains(sessionId)) {
+          runtime.pauseStreamingTimer();
+          stopActiveRound();
+          runtime.isResponding = false;
+          await _store.update(sessionId, status: SessionStatus.idle);
+          session.status = SessionStatus.idle;
+          _markSessionInactive(sessionId);
+          _cancelRequested.remove(sessionId);
+          return;
+        }
+
+        toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       }
-
-      final toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       if (toolCalls.isEmpty) break;
 
       final roundText = roundTextBuffer.toString();
@@ -831,40 +916,71 @@ class ChatService {
         reasoningSignature: roundReasoningSignature,
       );
       apiMessages.add(assistantMsg);
-      final callResults = <String, ToolResult>{};
+      final callResults = <String, ToolResult>{...precomputedCallResults};
       var roundResultTokens = 0;
       // Hoisted so the post-persist `addMessage` for the user-facing
       // praise bubble (below) can re-check the count. Filled by the
-      // for-loop body.
+      // parallel dispatch below.
       var successfulCalls = 0;
       try {
         final isAnthropic = wireFamily == WireFamily.anthropicCompatible;
         final content = isAnthropic ? <Map<String, dynamic>>[] : null;
+        final abortSignalsByCallId = <String, AbortSignal>{};
         for (final call in toolCalls) {
-          // Check for cancel between tool executions — the user may have
-          // interrupted while tools are running.
-          if (_cancelRequested.contains(sessionId)) {
-            runtime.pauseStreamingTimer();
-            stopActiveRound();
-            runtime.isResponding = false;
-            await _store.update(sessionId, status: SessionStatus.idle);
-            session.status = SessionStatus.idle;
-            _markSessionInactive(sessionId);
-            _cancelRequested.remove(sessionId);
-            return;
-          }
-
           final abortSignal = AbortSignal(sessionId: sessionId);
+          abortSignalsByCallId[call.callId] = abortSignal;
           onAbortSignal?.call(abortSignal);
-          final ctx = ToolContext(
-            sessionId: sessionId,
-            messageId: -1,
-            abort: abortSignal,
-            callId: call.callId,
-            workingDirectory: session.projectPath,
-          );
-          final result = await _toolExecutor.executeTool(call, ctx);
-          callResults[call.callId] = result;
+        }
+
+        final toolResultEntries = await Future.wait([
+          for (final call in toolCalls)
+            if (!precomputedCallResults.containsKey(call.callId))
+              () async {
+                final abortSignal = abortSignalsByCallId[call.callId]!;
+                if (_cancelRequested.contains(sessionId)) {
+                  abortSignal.abort();
+                  return MapEntry(
+                    call.callId,
+                    ToolResult.error('Tool aborted'),
+                  );
+                }
+                final ctx = ToolContext(
+                  sessionId: sessionId,
+                  messageId: -1,
+                  abort: abortSignal,
+                  callId: call.callId,
+                  workingDirectory: session.projectPath,
+                );
+                final result = await _toolExecutor.executeTool(call, ctx);
+                if (_shouldAbortParallelToolSiblings(result)) {
+                  for (final sibling in abortSignalsByCallId.entries) {
+                    if (sibling.key != call.callId) sibling.value.abort();
+                  }
+                }
+                return MapEntry(call.callId, result);
+              }(),
+        ]);
+
+        if (_cancelRequested.contains(sessionId)) {
+          for (final signal in abortSignalsByCallId.values) {
+            signal.abort();
+          }
+          runtime.pauseStreamingTimer();
+          stopActiveRound();
+          runtime.isResponding = false;
+          await _store.update(sessionId, status: SessionStatus.idle);
+          session.status = SessionStatus.idle;
+          _markSessionInactive(sessionId);
+          _cancelRequested.remove(sessionId);
+          return;
+        }
+
+        for (final entry in toolResultEntries) {
+          callResults[entry.key] = entry.value;
+        }
+
+        for (final call in toolCalls) {
+          final result = callResults[call.callId]!;
           if (isAnthropic) {
             content!.add({
               'type': 'tool_result',
@@ -886,7 +1002,9 @@ class ChatService {
           // Tally a successful call (no parse error and the tool didn't
           // throw). Used after the loop to gate both the in-context
           // praise and the user-facing bubble.
-          if (call.parseError == null && result.title != 'Error') {
+          if (call.parseError == null &&
+              result.title != 'Error' &&
+              result.metadata['guardTriggered'] != true) {
             successfulCalls++;
           }
         }
@@ -956,13 +1074,14 @@ class ChatService {
         if (isAnthropic) {
           apiMessages.add({'role': 'user', 'content': content});
         }
-        if (hintEnabled && successfulCalls >= 2) {
+        if (guardAbort == null && hintEnabled && successfulCalls >= 2) {
           injectParallelToolCallHintIntoLastTool(
             apiMessages,
             isAnthropic: isAnthropic,
             count: successfulCalls,
           );
-        } else if (hintEnabled &&
+        } else if (guardAbort == null &&
+            hintEnabled &&
             successfulCalls == 1 &&
             runtime.consecutiveSingleToolCallRounds > 0 &&
             runtime.consecutiveSingleToolCallRounds % hintSingleThreshold ==
@@ -1112,7 +1231,7 @@ class ChatService {
         // under the matching tool-call list. Same `hintEnabled`
         // gate as the in-context praise hint so the two never
         // disagree.
-        if (hintEnabled && successfulCalls >= 2) {
+        if (guardAbort == null && hintEnabled && successfulCalls >= 2) {
           await _messageStore.addMessage(
             sessionId,
             role: 'parallel_praise',
@@ -1128,7 +1247,8 @@ class ChatService {
         // as the telemetry-int column for system-role bubbles — see
         // the dispatch in `message_bubble.dart` and the
         // `Message.parallelCount` docstring.
-        if (hintEnabled &&
+        if (guardAbort == null &&
+            hintEnabled &&
             successfulCalls == 1 &&
             runtime.consecutiveSingleToolCallRounds > 0 &&
             runtime.consecutiveSingleToolCallRounds % hintSingleThreshold ==
@@ -1157,6 +1277,12 @@ class ChatService {
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();
       onToolRound?.call(roundResultTokens);
+      if (guardAbort != null) {
+        onStatus?.call(
+          'Stream aborted: ${guardAbort.name} to ${guardAbort.filePath} '
+          'blocked by ${guardAbort.guard.reason ?? "guard"}.',
+        );
+      }
 
       // After the tool round completes, check if the user queued
       // any messages while the agent was streaming. If so, inject
@@ -1487,19 +1613,41 @@ String _relativeFilePathFromCall(ToolCall call, String projectPath) {
 /// detail view can extract it. The marker content is structured
 /// JSON so the model can also use it directly to self-correct on
 /// the next turn.
-({String callId, String output}) _buildToolResultForPersist(
+({String callId, String output, String meta}) _buildToolResultForPersist(
   String callId,
   ToolResult result,
 ) {
+  // Pick the UI metadata we want to surface in the chat-history
+  // bubble (and any future detail view). We only forward
+  // well-known, agent-invisible keys here — anything else in
+  // `result.metadata` is *not* persisted and is consumed only by
+  // the LLM-API request path. See [Message.meta].
+  String? meta;
+  final routing = result.metadata['routing'];
+  if (routing is String && routing.isNotEmpty) {
+    meta = '{"routing":${_jsonString(routing)}}';
+  }
+
   final lsp = result.metadata['lsp'];
   if (lsp is! List || lsp.isEmpty) {
-    return (callId: callId, output: result.output);
+    return (callId: callId, output: result.output, meta: meta ?? '');
   }
   final payload = buildLspPayload(lsp.cast());
   if (payload.isEmpty) {
-    return (callId: callId, output: result.output);
+    return (callId: callId, output: result.output, meta: meta ?? '');
   }
-  return (callId: callId, output: '${result.output}$payload');
+  return (
+    callId: callId,
+    output: '${result.output}$payload',
+    meta: meta ?? '',
+  );
+}
+
+/// Minimal JSON string escaping — only the characters that show
+/// up in our well-known meta values. Avoids pulling in a jsonEncode
+/// dependency for a one-line literal.
+String _jsonString(String s) {
+  return '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
 }
 
 /// Map a tool result's metadata into a [ToolGuardKind] for the
@@ -1508,6 +1656,9 @@ String _relativeFilePathFromCall(ToolCall call, String projectPath) {
 /// `parallelCount` int in the persisted `tool_guard` message.
 ToolGuardKind? _guardKindFromResult(ToolResult result) {
   final meta = result.metadata;
+  if (meta['guardAbortedMidStream'] == true) {
+    return ToolGuardKind.streamingAbort;
+  }
   if (meta['autoRead'] == true) {
     return ToolGuardKind.autoRead;
   }
@@ -1525,4 +1676,163 @@ ToolGuardKind? _guardKindFromResult(ToolResult result) {
     }
   }
   return null;
+}
+
+/// Results that mean the current tool round should stop still-running
+/// sibling tools as early as possible. This stays deliberately narrower
+/// than "anything non-zero": shell commands often return useful non-zero
+/// statuses during investigation, while guard-triggered writes and
+/// executor-level errors mean continuing the round is likely wasteful
+/// or unsafe.
+bool _shouldAbortParallelToolSiblings(ToolResult result) {
+  return result.title == 'Error' || result.metadata['guardTriggered'] == true;
+}
+
+const earlyAbortSystemNoteMarker = '[Crux system note — tool-call early abort]';
+
+List<ToolCall> _completeToolCallsBeforeIndex(List<LlmChunk> chunks, int index) {
+  final priorChunks = [
+    for (final chunk in chunks)
+      if (chunk.toolUse == null || chunk.toolUse!.index < index) chunk,
+  ];
+  return ToolExecutor.parseToolUseFromChunks(
+    priorChunks,
+  ).where((call) => call.parseError == null).toList();
+}
+
+ToolResult _buildGuardAbortedToolResult(_PendingStreamingGuardAbort pending) {
+  final reason = pending.guard.reason ?? 'guard';
+  return ToolResult(
+    title: 'Tool call aborted by guard',
+    output:
+        '${pending.guard.header}\n\n'
+        '${pending.guard.content}\n\n'
+        '$earlyAbortSystemNoteMarker\n'
+        'Crux stopped this ${pending.name} tool call while its arguments '
+        'were still streaming. The tool was not executed. Reason: $reason. '
+        'Aborted after ${pending.abortedInputChars} characters of arguments '
+        'had streamed in for this tool call. '
+        'Use the current file content above to retry with a valid tool call.',
+    metadata: {
+      'guardTriggered': true,
+      'guardAbortedMidStream': true,
+      'guardReason': reason,
+      'abortedInputChars': pending.abortedInputChars,
+    },
+  );
+}
+
+class _PendingStreamingGuardAbort {
+  final int index;
+  final String callId;
+  final String name;
+  final String filePath;
+  final GuardResult guard;
+
+  /// Exact character count of this tool call's `input_delta`
+  /// chunks at the moment of abort. Counts only this tool call's
+  /// own partial JSON — not the turn's text/reasoning, not
+  /// sibling tool calls, not a tokenizer estimate. The LLM's
+  /// token count for the same bytes depends on its tokenizer
+  /// (and would diverge sharply for Chinese / escaped JSON /
+  /// etc.), so we report characters and let the UI render an
+  /// honest "this much streamed in" label.
+  final int abortedInputChars;
+
+  const _PendingStreamingGuardAbort({
+    required this.index,
+    required this.callId,
+    required this.name,
+    required this.filePath,
+    required this.guard,
+    required this.abortedInputChars,
+  });
+}
+
+class _StreamingToolAccum {
+  String? callId;
+  String? name;
+  final input = StringBuffer();
+  String? filePath;
+  String? oldString;
+  bool checkedWriteGuard = false;
+  bool checkedEditGuard = false;
+
+  /// Running character count of this tool call's streamed
+  /// `input_delta`. Bumped on every chunk alongside
+  /// [input]. Used as the "how far did this tool call get before
+  /// the guard fired" metric for the aborted-stream UI.
+  int inputChars = 0;
+}
+
+class _StreamingGuardAccumulator {
+  final Map<int, _StreamingToolAccum> _byIndex = {};
+  int _maxSeenIndex = -1;
+  _PendingStreamingGuardAbort? pendingAbort;
+
+  Future<_PendingStreamingGuardAbort?> accumulateAndCheck(
+    ToolUseChunk chunk, {
+    required ToolExecutor toolExecutor,
+    required String workingDirectory,
+  }) async {
+    final acc = _byIndex.putIfAbsent(chunk.index, _StreamingToolAccum.new);
+    if (chunk.callId.isNotEmpty) acc.callId = chunk.callId;
+    if (chunk.name.isNotEmpty) acc.name = chunk.name;
+    acc.input.write(chunk.inputDelta);
+    acc.inputChars += chunk.inputDelta.length;
+    if (chunk.index > _maxSeenIndex) _maxSeenIndex = chunk.index;
+
+    final toolName = acc.name;
+    if (toolName != 'write' && toolName != 'edit') return null;
+    if (chunk.index != _maxSeenIndex) return null;
+
+    final partial = acc.input.toString();
+    acc.filePath ??= PartialJsonFieldExtractor.extractStringField(
+      partial,
+      'filePath',
+    );
+    final filePath = acc.filePath;
+    if (filePath == null || filePath.isEmpty) return null;
+
+    if (toolName == 'write') {
+      if (acc.checkedWriteGuard) return null;
+      acc.checkedWriteGuard = true;
+      final guard = await toolExecutor.checkWriteGuard(
+        filePath: filePath,
+        workingDirectory: workingDirectory,
+      );
+      if (guard == null) return null;
+      return pendingAbort = _PendingStreamingGuardAbort(
+        index: chunk.index,
+        callId: acc.callId ?? '',
+        name: toolName!,
+        filePath: filePath,
+        guard: guard,
+        abortedInputChars: acc.inputChars,
+      );
+    }
+
+    acc.oldString ??= PartialJsonFieldExtractor.extractStringField(
+      partial,
+      'oldString',
+    );
+    final oldString = acc.oldString;
+    if (oldString == null || oldString.isEmpty) return null;
+    if (acc.checkedEditGuard) return null;
+    acc.checkedEditGuard = true;
+    final guard = await toolExecutor.checkEditGuard(
+      filePath: filePath,
+      oldString: oldString,
+      workingDirectory: workingDirectory,
+    );
+    if (guard == null) return null;
+    return pendingAbort = _PendingStreamingGuardAbort(
+      index: chunk.index,
+      callId: acc.callId ?? '',
+      name: toolName!,
+      filePath: filePath,
+      guard: guard,
+      abortedInputChars: acc.inputChars,
+    );
+  }
 }

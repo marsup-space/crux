@@ -8,8 +8,10 @@ import '../utils/frame_profiler.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
+import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
 import '../lsp/language.dart';
+import '../utils/tool_meta.dart';
 import 'parallel_praise_bubble.dart';
 import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
@@ -19,6 +21,7 @@ class MessageBubble extends StatelessComponent {
   final Message message;
   final bool reasoningCollapsed;
   final Message? pairedResult;
+  final Map<String, Message> resultByCallId;
   final ToolRegistry? toolRegistry;
   final String? highlightText;
 
@@ -31,12 +34,13 @@ class MessageBubble extends StatelessComponent {
   /// Callback when a tool call bubble is tapped. Receives the
   /// [ToolCallData] and the paired result [Message] (if any).
   final void Function(ToolCallData toolCall, Message? pairedResult)?
-      onToolCallTap;
+  onToolCallTap;
 
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
     this.pairedResult,
+    this.resultByCallId = const {},
     this.toolRegistry,
     this.highlightText,
     this.reasoningPresets,
@@ -102,9 +106,7 @@ class MessageBubble extends StatelessComponent {
       // for `parallel_praise` rows and the consecutive single-call
       // round count for `single_call_reminder` rows. Same column,
       // different meaning per role — see Message.parallelCount.
-      return SingleCallReminderBubble(
-        consecutiveCount: message.parallelCount,
-      );
+      return SingleCallReminderBubble(consecutiveCount: message.parallelCount);
     }
     if (message.role == 'lsp_diagnostics') {
       // Same `parallelCount` column reused for the error count of
@@ -221,8 +223,8 @@ class MessageBubble extends StatelessComponent {
                     ? Text(
                         message.images.isNotEmpty
                             ? (message.content.isEmpty
-                                ? '📎 ${message.images.length} image(s)'
-                                : '📎 ${message.images.length} • ${message.content}')
+                                  ? '📎 ${message.images.length} image(s)'
+                                  : '📎 ${message.images.length} • ${message.content}')
                             : message.content,
                         style: TextStyle(
                           color: CruxTheme.of(context).foreground,
@@ -346,14 +348,15 @@ class MessageBubble extends StatelessComponent {
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: calls
-                .map((tc) => _ClickableToolCall(
-                      toolCall: tc,
-                      pairedResult: pairedResult,
-                      toolRegistry: toolRegistry,
-                      onTap: onToolCallTap,
-                    ))
-                .toList(),
+            children: calls.map((tc) {
+              final result = resultByCallId[tc.callId] ?? pairedResult;
+              return _ClickableToolCall(
+                toolCall: tc,
+                pairedResult: result,
+                toolRegistry: toolRegistry,
+                onTap: onToolCallTap,
+              );
+            }).toList(),
           ),
         ),
       );
@@ -386,6 +389,37 @@ class _ClickableToolCall extends StatefulComponent {
 class _ClickableToolCallState extends State<_ClickableToolCall> {
   bool _hovered = false;
 
+  /// Lerps the displayed `~N t` token count from 0 → final when
+  /// the paired result lands (or the result's token count
+  /// changes between rebuilds). Auto-driven — the shared
+  /// module's scheduler pauses once the value settles, so the
+  /// post-call row doesn't keep a per-frame callback running
+  /// for the rest of the session.
+  ///
+  /// We key by `tc.callId` so two parallel calls in the same
+  /// round don't stomp on each other. The same shared
+  /// [ToolMetricsAnimator] class also drives the streaming
+  /// bubble (manually-driven) and the tool detail pane header,
+  /// so the per-frame math, the line-delta extraction, and the
+  /// `~N t` formatter all live in one place.
+  final ToolMetricsAnimator _animator = ToolMetricsAnimator(
+    tickerName: 'clickableToolCall',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _animator.onAdvance = () {
+      if (mounted) setState(() {});
+    };
+  }
+
+  @override
+  void dispose() {
+    _animator.dispose();
+    super.dispose();
+  }
+
   @override
   Component build(BuildContext context) {
     return FrameProfiler.instance.timed(
@@ -403,10 +437,16 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     String? fallbackText;
     final resultContent = component.pairedResult?.content ?? '';
     final isGuard = resultContent.startsWith('[GUARD]');
+    final isGuardAborted = resultContent.contains(
+      '[Crux system note — tool-call early abort]',
+    );
     final isAutoRead = resultContent.startsWith('[AUTOREAD]');
-    if (isGuard || isAutoRead) {
-      final label =
-          isGuard ? _guardLabel(resultContent) : _autoReadLabel(resultContent);
+    if (isGuard || isGuardAborted || isAutoRead) {
+      final label = isGuardAborted
+          ? _guardAbortedLabel(resultContent)
+          : isGuard
+          ? _guardLabel(resultContent)
+          : _autoReadLabel(resultContent);
       final tokens = estimateTokens(resultContent);
       summary = CollapsedSummary(
         text: label,
@@ -416,8 +456,45 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     } else if (tool != null && component.pairedResult != null) {
       final result = ToolResult(title: '', output: resultContent);
       summary = tool.collapsedSummary(tc.input, result);
+      // Append inline UI hints persisted in `messages.meta`. The LLM
+      // never sees this — it's read only by the bubble renderer to
+      // surface things like proxy-routing in the chat history.
+      final hint = routingBubbleHint(
+        parseToolRouting(component.pairedResult!.meta),
+      );
+      if (hint != null) {
+        summary = CollapsedSummary(
+          text: '${summary.text}  · $hint',
+          argsTokens: summary.argsTokens,
+          totalTokens: summary.totalTokens,
+        );
+      }
     } else if (component.pairedResult != null) {
       fallbackText = _resultMetrics(resultContent);
+    }
+
+    // Update the shared animator's target from the freshly
+    // computed summary. The animator decides whether anything
+    // actually changed; if not, this is a no-op and the
+    // per-frame scheduler stays paused. The displayed
+    // `~N t` (read via [formatToolMetricsToken] below) will
+    // lerp from the current displayed value toward the new
+    // target over a few hundred milliseconds.
+    //
+    // Guard/auto-read rows have a synthetic summary with
+    // `argsTokens == totalTokens == estimateTokens(result)`,
+    // so the lerp still works — the value settles on the
+    // rough token count of the error output.
+    if (summary != null) {
+      _animator.setTarget(
+        tc.callId,
+        tokens: summary.totalTokens,
+      );
+    } else {
+      // Paired result is gone (or the tool produced a
+      // fallback text without a token count) — make sure the
+      // animator doesn't keep a stale per-callId entry.
+      _animator.forget(tc.callId);
     }
 
     // For intentional tools, prefer displaying the intent over the
@@ -427,48 +504,68 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     // Build body as TextSpans — everything after the prefix.
     final bodySpans = <TextSpan>[];
     if (intentLabel != null) {
-      bodySpans.add(TextSpan(
-        text: '$intentLabel ',
-        style: TextStyle(
-          color: theme.foreground,
-          fontStyle: FontStyle.italic,
+      bodySpans.add(
+        TextSpan(
+          text: '$intentLabel ',
+          style: TextStyle(
+            color: theme.foreground,
+            fontStyle: FontStyle.italic,
+          ),
         ),
-      ));
+      );
     } else if (keyArg.isNotEmpty) {
-      bodySpans.add(TextSpan(
-        text: '$keyArg ',
-        style: TextStyle(color: theme.foreground),
-      ));
+      bodySpans.add(
+        TextSpan(
+          text: '$keyArg ',
+          style: TextStyle(color: theme.foreground),
+        ),
+      );
     }
     if (summary != null) {
-      bodySpans.add(TextSpan(
-        text: '${summary.text}, ',
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
-      bodySpans.add(TextSpan(
-        text: '~${summary.totalTokens} t',
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
+      bodySpans.add(
+        TextSpan(
+          text: '${summary.text}, ',
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
+      // The token count comes from the shared animator so it
+      // lerps from 0 → summary.totalTokens when the result
+      // first lands, and stays put on subsequent rebuilds
+      // (the shared module's `setTarget` is a no-op when the
+      // target didn't change). The line-delta half of the
+      // format is intentionally omitted here — the static
+      // `summary.text` already carries the `+M -N lines`
+      // shape for write/edit (encoded by each tool's
+      // `collapsedSummary`), so we just lerp the `~N t` part.
+      bodySpans.add(
+        TextSpan(
+          text: formatToolMetricsToken(_animator.read(tc.callId)),
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
     } else if (fallbackText != null && fallbackText.isNotEmpty) {
-      bodySpans.add(TextSpan(
-        text: fallbackText,
-        style: TextStyle(color: theme.onSurfaceDim),
-      ));
+      bodySpans.add(
+        TextSpan(
+          text: fallbackText,
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      );
     }
 
     // Hover indicator — show ▸ on hover to signal clickability.
     final prefixSpans = <TextSpan>[];
-    prefixSpans.add(TextSpan(
-      text: _hovered ? '▸ ' : ' ',
-      style: TextStyle(color: theme.toolPrefix),
-    ));
-    prefixSpans.add(TextSpan(
-      text: '${_capitalize(tc.name)}: ',
-      style: TextStyle(
-        color: theme.toolPrefix,
-        fontWeight: FontWeight.bold,
+    prefixSpans.add(
+      TextSpan(
+        text: _hovered ? '▸ ' : ' ',
+        style: TextStyle(color: theme.toolPrefix),
       ),
-    ));
+    );
+    prefixSpans.add(
+      TextSpan(
+        text: '${_capitalize(tc.name)}: ',
+        style: TextStyle(color: theme.toolPrefix, fontWeight: FontWeight.bold),
+      ),
+    );
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -515,10 +612,9 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     for (final key in priorityKeys) {
       if (tc.input.containsKey(key)) {
         final value = tc.input[key].toString();
-        final display =
-            (key != 'command' && key != 'query' && key != 'url')
-                ? relativePath(value, Directory.current.path)
-                : value;
+        final display = (key != 'command' && key != 'query' && key != 'url')
+            ? relativePath(value, Directory.current.path)
+            : value;
         return _truncateArg(display, 40);
       }
     }
@@ -543,12 +639,22 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
       if (dash != -1) {
         final reason = rest.substring(dash + 1);
         final newline = reason.indexOf('\n');
-        final trimmed =
-            (newline == -1 ? reason : reason.substring(0, newline)).trim();
+        final trimmed = (newline == -1 ? reason : reason.substring(0, newline))
+            .trim();
         if (trimmed.isNotEmpty) return trimmed;
       }
     }
     return 'guard triggered (auto read)';
+  }
+
+  String _guardAbortedLabel(String content) {
+    final label = _guardLabel(content);
+    final charsMatch = RegExp(
+      r'Aborted after (\d+) characters of arguments had streamed in\.',
+    ).firstMatch(content);
+    final chars = charsMatch?.group(1);
+    if (chars == null) return '$label, aborted mid-stream';
+    return '$label, aborted at $chars chars';
   }
 
   String _autoReadLabel(String content) {
@@ -559,8 +665,8 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     if (dash == -1) return 'auto read';
     final reason = rest.substring(dash + 1);
     final newline = reason.indexOf('\n');
-    final trimmed =
-        (newline == -1 ? reason : reason.substring(0, newline)).trim();
+    final trimmed = (newline == -1 ? reason : reason.substring(0, newline))
+        .trim();
     return trimmed.isEmpty ? 'auto read' : trimmed;
   }
 

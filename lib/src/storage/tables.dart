@@ -80,6 +80,14 @@ class Messages extends Table {
   /// "N tool calls parallelized" without re-deriving the number.
   /// Always `0` for every other role.
   IntColumn get parallelCount => integer().withDefault(const Constant(0))();
+
+  /// Free-form JSON metadata for inline UI affordances attached to
+  /// this tool result. Read by the chat-history bubble renderer —
+  /// **never** sent to the LLM as part of the tool result body.
+  /// Default keys: `routing` (`"direct"` | `"system-proxy"`).
+  /// Empty string = no UI metadata, render normally.
+  TextColumn get meta => text().withDefault(const Constant(''))();
+
   IntColumn get createdAt => integer()();
 }
 
