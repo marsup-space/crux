@@ -1263,4 +1263,143 @@ void main() {
       expect(recents.entries, isEmpty);
     });
   });
+
+  group('CommandExecutor — /quit', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+    // Capture every toast the executor fires so a test can
+    // assert on its text + mode (most importantly: that an
+    // attempted quit while the agent is busy was rejected
+    // with the "press Ctrl+C×2" message rather than
+    // actually calling the quit callback).
+    final List<({String message, ToastMode? mode})> toasts = [];
+
+    setUp(() async {
+      toasts.clear();
+      tempDir = await Directory.systemTemp.createTemp('crux_quit_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext({
+      required bool quitAppInvoked,
+      required void Function() onQuitApp,
+    }) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const [],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add((message: message, mode: mode));
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        quitApp: onQuitApp,
+      );
+    }
+
+    test('invokes quitApp when the session is idle', () async {
+      var quitCalls = 0;
+      final ctx = buildContext(
+        quitAppInvoked: false,
+        onQuitApp: () => quitCalls++,
+      );
+      // Runtime is not responding (default) — /quit should
+      // call back immediately.
+      await CommandExecutor().execute('/quit', ctx);
+      expect(quitCalls, 1, reason: 'quitApp should fire when idle');
+      expect(toasts, isEmpty, reason: 'no toast on the happy path');
+    });
+
+    test('also accepts the /exit alias', () async {
+      var quitCalls = 0;
+      final ctx = buildContext(
+        quitAppInvoked: false,
+        onQuitApp: () => quitCalls++,
+      );
+      await CommandExecutor().execute('/exit', ctx);
+      expect(quitCalls, 1);
+    });
+
+    test('rejects /quit while the agent is responding', () async {
+      var quitCalls = 0;
+      runtime.isResponding = true;
+      final ctx = buildContext(
+        quitAppInvoked: false,
+        onQuitApp: () => quitCalls++,
+      );
+      await CommandExecutor().execute('/quit', ctx);
+      expect(quitCalls, 0, reason: 'must not quit while streaming');
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('Ctrl+C'));
+      expect(toasts.first.mode, ToastMode.error);
+    });
+
+    test('surfaces an error toast when quitApp is not bound', () async {
+      // Build a context with quitApp omitted (null) —
+      // mirrors the legacy test harness / --doctor path
+      // where no TUI panel is mounted.
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const [],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add((message: message, mode: mode));
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        // quitApp intentionally omitted → null
+      );
+      await CommandExecutor().execute('/quit', ctx);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('Quit unavailable'));
+      expect(toasts.first.mode, ToastMode.error);
+    });
+  });
 }

@@ -152,6 +152,42 @@ void main(List<String> args) async {
       ],
     ),
   );
+
+  // `runApp` has returned, which means the TUI tore down
+  // the alt-screen and the terminal is back in the user's
+  // shell's "main buffer". Print the per-run summary here
+  // so the user sees it in the same place they'd see the
+  // output of any other command — not inside the now-defunct
+  // alt-screen.
+  //
+  // The summary aggregates tokens, turn count, and duration
+  // across every session the user touched in this Crux run
+  // (see `RunMetrics`). The `--doctor` path returns before
+  // this line, so doctor runs never see the summary.
+  _printRunSummary();
+}
+
+/// Write the per-run summary block to stdout. Called once, after
+/// `runApp()` returns, so the TUI has already restored the
+/// terminal to its normal mode — the text lands in the user's
+/// shell buffer (the "main buffer"), not inside the now-defunct
+/// alt-screen.
+///
+/// Force ASCII on Windows consoles that don't support rich
+/// terminal symbols so the box-drawing characters don't
+/// degrade into a wall of `?`. Other platforms (macOS, Linux,
+/// Windows Terminal / ConEmu / WSL) get the Unicode variant.
+///
+/// Quiet the ANSI noise on non-TTY stdout (e.g. when the user
+/// pipes `crux ... > out.txt` or runs under a CI capture) by
+/// just using the ASCII frame even on POSIX — the box chars
+/// still render fine in a text file, and we don't have to
+/// worry about raw escape sequences polluting a pipe.
+void _printRunSummary() {
+  final summary = RunMetrics.instance.formatSummary();
+  stdout.writeln();
+  stdout.writeln(summary);
+  stdout.writeln();
 }
 
 /// Detect if the Dart VM service is active and return startup warnings

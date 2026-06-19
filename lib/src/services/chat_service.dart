@@ -54,13 +54,11 @@ class StreamingGuardAbortEvent {
   final String filePath;
   final String reason;
 
-  /// Length (in characters) of the tool-call's partial JSON
-  /// arguments that had streamed in by the moment we aborted.
-  /// Counts only this tool call's own `input_delta` chunks —
-  /// not earlier rounds' text/reasoning, not other tool calls in
-  /// the same round, not any tokenization estimate. Char count is
-  /// exact and provider-agnostic; a token count would be a guess.
-  final int abortedInputChars;
+  /// Estimated tokens of the tool-call's partial JSON arguments
+  /// that had streamed in by the moment we aborted. Counts only
+  /// this tool call's own `input_delta` chunks — not earlier
+  /// text/reasoning and not sibling tool calls in the same round.
+  final int abortedInputTokensEstimate;
 
   const StreamingGuardAbortEvent({
     required this.index,
@@ -68,7 +66,7 @@ class StreamingGuardAbortEvent {
     required this.name,
     required this.filePath,
     required this.reason,
-    required this.abortedInputChars,
+    required this.abortedInputTokensEstimate,
   });
 }
 
@@ -186,8 +184,9 @@ class ChatService {
     required FutureOr<void> Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
     void Function(String status)? onStatus,
-    void Function(int toolResultTokens)? onToolRound,
+    FutureOr<void> Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
+    void Function(List<ToolCallData> toolCalls)? onToolExecutionStart,
     void Function(StreamingGuardAbortEvent event)? onStreamingGuardAbort,
     String? Function()? onQueueDrain,
     void Function(AbortSignal)? onAbortSignal,
@@ -207,6 +206,7 @@ class ChatService {
         onStatus: onStatus,
         onToolRound: onToolRound,
         onToolUse: onToolUse,
+        onToolExecutionStart: onToolExecutionStart,
         onStreamingGuardAbort: onStreamingGuardAbort,
         onQueueDrain: onQueueDrain,
         onAbortSignal: onAbortSignal,
@@ -271,8 +271,9 @@ class ChatService {
     required FutureOr<void> Function(ChatResponse response) onComplete,
     required void Function(String error) onError,
     void Function(String status)? onStatus,
-    void Function(int toolResultTokens)? onToolRound,
+    FutureOr<void> Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
+    void Function(List<ToolCallData> toolCalls)? onToolExecutionStart,
     void Function(StreamingGuardAbortEvent event)? onStreamingGuardAbort,
     String? Function()? onQueueDrain,
     void Function(AbortSignal)? onAbortSignal,
@@ -643,7 +644,8 @@ class ChatService {
                     name: guardAbort.name,
                     filePath: guardAbort.filePath,
                     reason: guardAbort.guard.reason ?? 'guard',
-                    abortedInputChars: guardAbort.abortedInputChars,
+                    abortedInputTokensEstimate:
+                        guardAbort.abortedInputTokensEstimate,
                   ),
                 );
                 await streamCancelToken.cancelActiveStream(
@@ -916,6 +918,18 @@ class ChatService {
         reasoningSignature: roundReasoningSignature,
       );
       apiMessages.add(assistantMsg);
+      final executingToolCalls = [
+        for (final call in toolCalls)
+          if (!precomputedCallResults.containsKey(call.callId))
+            ToolCallData(
+              callId: call.callId,
+              name: call.name,
+              input: call.input,
+            ),
+      ];
+      if (executingToolCalls.isNotEmpty) {
+        onToolExecutionStart?.call(executingToolCalls);
+      }
       final callResults = <String, ToolResult>{...precomputedCallResults};
       var roundResultTokens = 0;
       // Hoisted so the post-persist `addMessage` for the user-facing
@@ -1276,7 +1290,7 @@ class ChatService {
 
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();
-      onToolRound?.call(roundResultTokens);
+      await onToolRound?.call(roundResultTokens);
       if (guardAbort != null) {
         onStatus?.call(
           'Stream aborted: ${guardAbort.name} to ${guardAbort.filePath} '
@@ -1636,11 +1650,7 @@ String _relativeFilePathFromCall(ToolCall call, String projectPath) {
   if (payload.isEmpty) {
     return (callId: callId, output: result.output, meta: meta ?? '');
   }
-  return (
-    callId: callId,
-    output: '${result.output}$payload',
-    meta: meta ?? '',
-  );
+  return (callId: callId, output: '${result.output}$payload', meta: meta ?? '');
 }
 
 /// Minimal JSON string escaping — only the characters that show
@@ -1710,14 +1720,14 @@ ToolResult _buildGuardAbortedToolResult(_PendingStreamingGuardAbort pending) {
         '$earlyAbortSystemNoteMarker\n'
         'Crux stopped this ${pending.name} tool call while its arguments '
         'were still streaming. The tool was not executed. Reason: $reason. '
-        'Aborted after ${pending.abortedInputChars} characters of arguments '
-        'had streamed in for this tool call. '
+        'Aborted after ~${pending.abortedInputTokensEstimate} generated '
+        'tool-argument tokens. '
         'Use the current file content above to retry with a valid tool call.',
     metadata: {
       'guardTriggered': true,
       'guardAbortedMidStream': true,
       'guardReason': reason,
-      'abortedInputChars': pending.abortedInputChars,
+      'tokensBeforeAbortEstimate': pending.abortedInputTokensEstimate,
     },
   );
 }
@@ -1729,15 +1739,11 @@ class _PendingStreamingGuardAbort {
   final String filePath;
   final GuardResult guard;
 
-  /// Exact character count of this tool call's `input_delta`
+  /// Estimated token count of this tool call's `input_delta`
   /// chunks at the moment of abort. Counts only this tool call's
-  /// own partial JSON — not the turn's text/reasoning, not
-  /// sibling tool calls, not a tokenizer estimate. The LLM's
-  /// token count for the same bytes depends on its tokenizer
-  /// (and would diverge sharply for Chinese / escaped JSON /
-  /// etc.), so we report characters and let the UI render an
-  /// honest "this much streamed in" label.
-  final int abortedInputChars;
+  /// own partial JSON — not the turn's text/reasoning and not
+  /// sibling tool calls.
+  final int abortedInputTokensEstimate;
 
   const _PendingStreamingGuardAbort({
     required this.index,
@@ -1745,7 +1751,7 @@ class _PendingStreamingGuardAbort {
     required this.name,
     required this.filePath,
     required this.guard,
-    required this.abortedInputChars,
+    required this.abortedInputTokensEstimate,
   });
 }
 
@@ -1757,12 +1763,6 @@ class _StreamingToolAccum {
   String? oldString;
   bool checkedWriteGuard = false;
   bool checkedEditGuard = false;
-
-  /// Running character count of this tool call's streamed
-  /// `input_delta`. Bumped on every chunk alongside
-  /// [input]. Used as the "how far did this tool call get before
-  /// the guard fired" metric for the aborted-stream UI.
-  int inputChars = 0;
 }
 
 class _StreamingGuardAccumulator {
@@ -1779,7 +1779,6 @@ class _StreamingGuardAccumulator {
     if (chunk.callId.isNotEmpty) acc.callId = chunk.callId;
     if (chunk.name.isNotEmpty) acc.name = chunk.name;
     acc.input.write(chunk.inputDelta);
-    acc.inputChars += chunk.inputDelta.length;
     if (chunk.index > _maxSeenIndex) _maxSeenIndex = chunk.index;
 
     final toolName = acc.name;
@@ -1808,7 +1807,7 @@ class _StreamingGuardAccumulator {
         name: toolName!,
         filePath: filePath,
         guard: guard,
-        abortedInputChars: acc.inputChars,
+        abortedInputTokensEstimate: estimateTokens(acc.input.toString()),
       );
     }
 
@@ -1832,7 +1831,7 @@ class _StreamingGuardAccumulator {
       name: toolName!,
       filePath: filePath,
       guard: guard,
-      abortedInputChars: acc.inputChars,
+      abortedInputTokensEstimate: estimateTokens(acc.input.toString()),
     );
   }
 }

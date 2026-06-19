@@ -89,6 +89,16 @@ class CommandContext {
   /// btw context is guaranteed to never leak into a "real" turn.
   final void Function(int sessionId) clearBtwTurns;
 
+  /// Tear down the TUI and exit. Wired by `ChatPanel` to
+  /// `shutdownApp()` from nocterm — when the executor calls
+  /// this, the alt-screen is restored, `runApp()` returns, and
+  /// `bin/crux.dart` prints the per-run summary. Optional
+  /// because legacy test harnesses and the `--doctor` path
+  /// don't mount a panel; the executor treats `null` as a
+  /// no-op (with an error toast) so the command surfaces
+  /// something useful even in those environments.
+  final VoidCallback? quitApp;
+
   /// Open the fullpane overlay. Implemented by ChatPanel via
   /// setState + overlayController.showFullpane.
   final VoidCallback? showFullpane;
@@ -126,6 +136,7 @@ class CommandContext {
     required this.deleteMessagesFrom,
     required this.sendBtwTurn,
     required this.clearBtwTurns,
+    this.quitApp,
     this.showFullpane,
     this.recentProjectsStore,
   });
@@ -169,6 +180,9 @@ class CommandExecutor {
       case '/rename':
       case '/重命名':
         await executeRename(parts, ctx);
+      case '/quit':
+      case '/exit':
+        await executeQuit(ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':
@@ -809,6 +823,43 @@ class CommandExecutor {
       'Renamed "$oldTitle" → "$newTitle"',
       mode: ToastMode.status,
     );
+  }
+
+  /// `/quit` (alias `/exit`) — cleanly exit Crux and print the
+  /// per-run summary to stdout.
+  ///
+  /// "Cleanly" means: defer the actual `shutdownApp()` call
+  /// until the current agent turn (if any) is done streaming,
+  /// so the user doesn't lose a half-written response just
+  /// because they ran `/quit` a moment too early. Same
+  /// affordance as the in-input Ctrl+C×2 guard: when the
+  /// agent is busy, surface a toast that points the user at
+  /// the force-quit path instead of yanking the rug out from
+  /// under the in-flight LLM call.
+  ///
+  /// When no turn is running, the callback fires
+  /// synchronously; `shutdownApp()` causes `runApp()` to
+  /// return and `bin/crux.dart` then prints the summary to
+  /// the now-restored main buffer.
+  Future<void> executeQuit(CommandContext ctx) async {
+    if (ctx.currentSessionId != null) {
+      final rt = ctx.runtime(ctx.currentSessionId!);
+      if (rt.isResponding) {
+        ctx.showToast(
+          'Agent is running — press Ctrl+C×2 to force quit',
+          mode: ToastMode.error,
+        );
+        return;
+      }
+    }
+    if (ctx.quitApp == null) {
+      ctx.showToast(
+        'Quit unavailable (no TUI bound)',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+    ctx.quitApp!();
   }
 
   // ─────────────────────────────────────────────────────────────────────

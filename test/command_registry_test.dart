@@ -115,7 +115,11 @@ void main() {
     test('removed commands stay removed when debug is off', () {
       final names = CommandRegistry.instance.all.map((c) => c.name).toList();
       expect(names, isNot(contains('/config')));
-      expect(names, isNot(contains('/quit')));
+      // `/quit` is registered as a base command (not in
+      // the debug set), so it stays present in both modes.
+      // The check is here to make sure no future change
+      // accidentally moves it into the debug list.
+      expect(names, contains('/quit'));
     });
   });
 

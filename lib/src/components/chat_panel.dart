@@ -744,6 +744,15 @@ class _ChatPanelState extends State<ChatPanel> {
       deleteMessagesFrom: _turnOrchestrator.deleteMessagesFrom,
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
+      // Hook `/quit` (and its alias `/exit`) to nocterm's
+      // `shutdownApp()`. The call is fire-and-forget — it
+      // tears down the alt-screen, the event loop exits,
+      // `runApp()` returns, and `bin/crux.dart` prints the
+      // per-run summary to stdout. We do not need to flush
+      // any UI state here; the panel's `dispose` path
+      // handles the in-process cleanup when the runApp
+      // future resolves.
+      quitApp: () => shutdownApp(0),
       showFullpane: _openFullpane,
       recentProjectsStore: _recentProjectsStore,
     );

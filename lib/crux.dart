@@ -25,6 +25,7 @@ export 'src/theme/theme_loader.dart';
 export 'src/theme/theme_registry.dart';
 export 'src/utils/bundled_directory.dart';
 export 'src/utils/bundled_executable.dart';
+export 'src/utils/run_metrics.dart';
 export 'src/models/provider_config.dart';
 export 'src/services/chat_service.dart';
 export 'src/services/llm_client.dart';

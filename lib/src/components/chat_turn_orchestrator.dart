@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:nocterm/nocterm.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
@@ -12,6 +14,7 @@ import '../storage/session_store.dart';
 import '../tools/registry.dart';
 import '../tools/shell_base.dart';
 import '../tools/tool_def.dart';
+import '../utils/run_metrics.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -143,6 +146,23 @@ class ChatTurnOrchestrator {
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
+
+    // Bump the per-run turn counter as soon as we commit to
+    // the turn. The actual token usage gets recorded in the
+    // `onComplete` callback below once the LLM stream ends
+    // and we have the final `ChatResponse` in hand. The
+    // counter is bumped up front (not on completion) so the
+    // summary always reflects "the user kicked off N turns",
+    // even if some of them were interrupted before any tokens
+    // got reported.
+    if (text != null) {
+      RunMetrics.instance.recordTurnStart();
+    } else {
+      // `/continue`, `/retry` etc. — these are continuations
+      // of an existing user message rather than a fresh
+      // turn, so they don't count as a new "agent turn
+      // conversation" in the run summary.
+    }
 
     // Guard: if the chat service still considers this session active
     // (e.g. after a recent interrupt that hasn't fully propagated),
@@ -277,10 +297,12 @@ class ChatTurnOrchestrator {
           },
           onChunk: () {
             if (_interruptedSessions.contains(sessionId)) return;
-            final streamingTokens = estimateTokens(
-              _streamingController.streamingContentFor(sessionId) +
-                  _streamingController.streamingReasoningFor(sessionId),
-            );
+            final streamingTokens =
+                estimateTokens(
+                  _streamingController.streamingContentFor(sessionId) +
+                      _streamingController.streamingReasoningFor(sessionId),
+                ) +
+                _streamingController.streamingToolInputTokensFor(sessionId);
             // The context bar's [ContextBar] widget polls
             // `rt.contextTargetTokens` on every frame and starts
             // its own lerp animation when the value changes, so
@@ -297,38 +319,69 @@ class ChatTurnOrchestrator {
               _streamingController.startContextAnimation();
             }
           },
-          onToolRound: (int toolResultTokens) {
+          onToolRound: (int toolResultTokens) async {
             if (_interruptedSessions.contains(sessionId)) return;
-            final streamingTokens = estimateTokens(
-              _streamingController.streamingContentFor(sessionId) +
-                  _streamingController.streamingReasoningFor(sessionId),
-            );
+            final streamingTokens =
+                estimateTokens(
+                  _streamingController.streamingContentFor(sessionId) +
+                      _streamingController.streamingReasoningFor(sessionId),
+                ) +
+                _streamingController.streamingToolInputTokensFor(sessionId);
             rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
             rt.contextTargetTokens =
                 rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
             if (_streamingGuardAbortedSessions.remove(sessionId)) {
+              final transition = Completer<void>();
               NoctermScheduler.instance.once(
                 (_) {
-                  if (_interruptedSessions.contains(sessionId)) return;
-                  _streamingController.clearStreamingFor(sessionId);
-                  _sessionController
-                      .loadMessages(sessionId)
-                      .then((_) => _refresh());
+                  if (!transition.isCompleted) transition.complete();
                 },
                 owner: this,
                 name: 'streamingGuardAbortTransition',
                 delay: const Duration(milliseconds: 64),
                 priority: SchedulePriority.animation,
               );
+              await transition.future;
+              if (_interruptedSessions.contains(sessionId)) return;
+              _streamingController.clearStreamingFor(sessionId);
+              await _sessionController.loadMessages(sessionId);
+              if (_interruptedSessions.contains(sessionId)) return;
+              _streamingController.beginWaitingForModel(sessionId);
               return;
             }
             _streamingController.clearStreamingFor(sessionId);
-            _sessionController.loadMessages(sessionId).then((_) => _refresh());
+            await _sessionController.loadMessages(sessionId);
+            if (_interruptedSessions.contains(sessionId)) return;
+            _streamingController.beginWaitingForModel(sessionId);
           },
           onToolUse: (ToolUseChunk chunk) {
             if (_interruptedSessions.contains(sessionId)) return;
             _streamingController.updateStreamingToolCall(sessionId, chunk);
+          },
+          onToolExecutionStart: (toolCalls) {
+            if (_interruptedSessions.contains(sessionId)) return;
+            final streamingTokens =
+                estimateTokens(
+                  _streamingController.streamingContentFor(sessionId) +
+                      _streamingController.streamingReasoningFor(sessionId),
+                ) +
+                _streamingController.streamingToolInputTokensFor(sessionId);
+            rt.accumulatedToolTokens += streamingTokens;
+            rt.contextTargetTokens =
+                rt.turnBaseTokens + rt.accumulatedToolTokens;
+            rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
+            final projectPath =
+                _sessionController.findSession(sessionId)?.projectPath ??
+                _sessionController.currentSession.projectPath;
+            _streamingController.beginExecutingTools(sessionId, [
+              for (final call in toolCalls)
+                ExecutingToolCall(
+                  callId: call.callId,
+                  name: call.name,
+                  inputPreview: _toolExecutionPreview(call, projectPath),
+                ),
+            ]);
           },
           onStreamingGuardAbort: (event) {
             if (_interruptedSessions.contains(sessionId)) return;
@@ -339,7 +392,7 @@ class ChatTurnOrchestrator {
               callId: event.callId,
               name: event.name,
               reason: event.reason,
-              abortedInputChars: event.abortedInputChars,
+              abortedInputTokensEstimate: event.abortedInputTokensEstimate,
             );
           },
           onQueueDrain: () => _sessionController.drainMessageQueue(sessionId),
@@ -352,6 +405,25 @@ class ChatTurnOrchestrator {
               _activeAbortSignals.remove(sessionId);
               return;
             }
+
+            // Roll the per-turn token usage into the
+            // per-run aggregator. Done before the rest of
+            // the completion bookkeeping so the counters
+            // are accurate even if a later step (TLDR
+            // generation, queued-message drain) throws —
+            // the user already paid for these tokens.
+            //
+            // Interrupted turns are filtered out above (the
+            // early return path), so the values here are
+            // always the *final* usage reported by the
+            // LLM's `usage` block, not partial numbers
+            // from a cancelled stream.
+            RunMetrics.instance.recordTurnUsage(
+              tokensIn: response.promptTokens,
+              tokensOut: response.completionTokens,
+              cacheHit: response.promptCacheHitTokens,
+              cacheMiss: response.promptCacheMissTokens,
+            );
 
             await _sessionController.reconcileInactiveRunningSessions(
               refresh: false,
@@ -540,6 +612,19 @@ class ChatTurnOrchestrator {
     final llmClient = LlmClient();
     final buffer = StringBuffer();
     String? streamError;
+
+    // Btw turns don't go through ChatService.sendMessage, so
+    // they don't get a ChatResponse with the final token
+    // counts — we have to capture them straight from the
+    // streaming chunks. The LLM only emits these in its
+    // `usage` block (usually on the last chunk), so the
+    // values stay 0 for the bulk of the stream and snap to
+    // the real numbers at the end.
+    int btwTokensIn = 0;
+    int btwTokensOut = 0;
+    int btwCacheHit = 0;
+    int btwCacheMiss = 0;
+
     try {
       final modelConfig = provider.modelById(modelId);
       final stream = llmClient.streamChat(
@@ -563,6 +648,22 @@ class ChatTurnOrchestrator {
         if (chunk.error != null) {
           streamError = chunk.error;
           break;
+        }
+        // Capture the LLM-reported usage. The `usage` block
+        // is the only authoritative source of token counts —
+        // we don't try to estimate from deltas because the
+        // accumulated completion tokens would double-count
+        // any reasoning or tool-call JSON the LLM emitted
+        // alongside the visible text.
+        if (chunk.promptTokens != null) btwTokensIn = chunk.promptTokens!;
+        if (chunk.completionTokens != null) {
+          btwTokensOut = chunk.completionTokens!;
+        }
+        if (chunk.promptCacheHitTokens != null) {
+          btwCacheHit = chunk.promptCacheHitTokens!;
+        }
+        if (chunk.promptCacheMissTokens != null) {
+          btwCacheMiss = chunk.promptCacheMissTokens!;
         }
         final deltaText = chunk.textDelta;
         final deltaReasoning = chunk.reasoningContent;
@@ -605,7 +706,16 @@ class ChatTurnOrchestrator {
 
     // If the user interrupted this btw turn, interruptResponse already
     // handled all cleanup. Skip the normal post-stream cleanup.
+    // We still record any usage the LLM reported before the
+    // interrupt — the prompt was sent and (often) the cache
+    // was hit, so the tokens were spent.
     if (rt.interrupted && !rt.isResponding) {
+      RunMetrics.instance.recordBtwUsage(
+        tokensIn: btwTokensIn,
+        tokensOut: btwTokensOut,
+        cacheHit: btwCacheHit,
+        cacheMiss: btwCacheMiss,
+      );
       return;
     }
 
@@ -641,6 +751,15 @@ class ChatTurnOrchestrator {
         }
       }
       _showToast(streamError, mode: ToastMode.error);
+      // Still roll whatever usage the LLM did report into
+      // the per-run totals — the user paid for the prompt
+      // even if the response errored out before completing.
+      RunMetrics.instance.recordBtwUsage(
+        tokensIn: btwTokensIn,
+        tokensOut: btwTokensOut,
+        cacheHit: btwCacheHit,
+        cacheMiss: btwCacheMiss,
+      );
       _refresh();
       return;
     }
@@ -657,10 +776,27 @@ class ChatTurnOrchestrator {
     if (queued != null && queued.isNotEmpty) {
       _sessionController.clearBtwTurnsFor(sessionId);
       _refresh();
+      // Hand the captured usage to the run aggregator
+      // *before* we kick off the next turn, so the
+      // queued turn's eventual completion is its own
+      // line item in the summary (added via
+      // `recordTurnUsage` in its own onComplete).
+      RunMetrics.instance.recordBtwUsage(
+        tokensIn: btwTokensIn,
+        tokensOut: btwTokensOut,
+        cacheHit: btwCacheHit,
+        cacheMiss: btwCacheMiss,
+      );
       await sendTurn(text: queued);
       return;
     }
 
+    RunMetrics.instance.recordBtwUsage(
+      tokensIn: btwTokensIn,
+      tokensOut: btwTokensOut,
+      cacheHit: btwCacheHit,
+      cacheMiss: btwCacheMiss,
+    );
     _refresh();
   }
 
@@ -881,6 +1017,38 @@ class ChatTurnOrchestrator {
   // ─────────────────────────────────────────────────────────────────────
   // Private helpers
   // ─────────────────────────────────────────────────────────────────────
+
+  /// Returns true when the session's chat model and the configured
+  /// auxiliary model resolve to the same provider/model.
+  String _toolExecutionPreview(ToolCallData call, String projectPath) {
+    const priorityKeys = [
+      'filePath',
+      'path',
+      'command',
+      'query',
+      'url',
+      'directory',
+      'pattern',
+    ];
+    for (final key in priorityKeys) {
+      final value = call.input[key];
+      if (value == null) continue;
+      final text = value.toString();
+      if (text.isEmpty) continue;
+      final display = (key == 'command' || key == 'query' || key == 'url')
+          ? text
+          : relativePath(text, projectPath);
+      return _truncateToolPreview(display);
+    }
+    if (call.input.isEmpty) return '';
+    return _truncateToolPreview(call.input.values.first.toString());
+  }
+
+  String _truncateToolPreview(String value) {
+    const max = 60;
+    if (value.length <= max) return value;
+    return '${value.substring(0, max - 3)}...';
+  }
 
   /// Returns true when the session's chat model and the configured
   /// auxiliary model resolve to the same provider/model.

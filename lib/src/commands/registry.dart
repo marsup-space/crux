@@ -320,6 +320,20 @@ const List<SlashCommand> _baseCommands = [
     aliases: ['/重命名'],
     availableDuringResponse: true,
   ),
+  // Exit Crux cleanly. When the agent is streaming, the
+  // command is rejected with a toast that tells the user to
+  // press Ctrl+C×2 to force-quit (same affordance as
+  // Ctrl+C). Otherwise it calls `shutdownApp()` from
+  // nocterm, which tears down the alt-screen, then
+  // `runApp()` returns to `bin/crux.dart` and the per-run
+  // summary is printed to stdout. `/exit` is registered as
+  // an alias for muscle-memory parity with other shells.
+  SlashCommand(
+    name: '/quit',
+    description: 'Exit Crux (prints a run summary)',
+    aliases: ['/exit'],
+    availableDuringResponse: false,
+  ),
 ];
 
 /// Debug command set — only registered when debug mode is on.

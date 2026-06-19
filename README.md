@@ -96,7 +96,7 @@ dart run bin/crux.dart /path/to/your/project
 | `/project` | 切换项目目录 |
 | `/btw` | 临时侧问 — 不入对话记录，下次正常消息时丢弃 |
 | `/rename` | 重命名当前会话 |
-| `/quit` | 退出 ||
+| `/quit` | 退出 Crux — 在终端主缓冲区打印本次运行的总结(时长 / 轮数 / token / 缓存命中率) ||
 
 ### 快捷键
 
@@ -215,7 +215,7 @@ SDK reports that a target is unsupported.
 | `/project` | Switch project directory |
 | `/btw` | Ephemeral side-question — never persisted, dropped on next real turn |
 | `/rename` | Rename the current session |
-| `/quit` | Exit ||
+| `/quit` | Exit Crux — prints a run summary (duration / turns / tokens / cache hit %) to the terminal's main buffer |
 
 ### Themes
 
