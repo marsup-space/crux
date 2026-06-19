@@ -10,6 +10,7 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
+import '../services/git_status_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/providers/coding_plan_provider.dart';
@@ -24,6 +25,7 @@ import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/frame_profiler.dart';
+import '../utils/run_metrics.dart';
 import '../utils/url_launcher.dart';
 import 'chat_history.dart';
 import 'chat_input.dart';
@@ -203,6 +205,15 @@ class _ChatPanelState extends State<ChatPanel> {
   /// the TUI (and so `/d-paths` can surface its on-disk location).
   late final RecentProjectsStore _recentProjectsStore;
 
+  /// Live git-status snapshot of the project root. Owned by the
+  /// panel (not by `_CruxApp`) so its lifetime exactly matches the
+  /// chat panel's. The polling timer is started in [initState] and
+  /// cancelled in [dispose]. The same instance is handed down to
+  /// [ExtraInfoPanel] for both the status widget and the project
+  /// widget's `path:branch ↑N ↓N` label, so a single timer drives
+  /// both consumers.
+  late final GitStatusService _gitStatusService;
+
   /// When non-null, a tool detail fullpane is shown for this tool call.
   ToolDetailData? _toolDetailData;
 
@@ -370,6 +381,21 @@ class _ChatPanelState extends State<ChatPanel> {
     // listener below, so the autocomplete overlay stays live.
     _recentProjectsStore = component.recentProjectsStore;
     _recentProjectsStore.addListener(_refresh);
+    // The recent-projects store fires `notifyListeners()` after a
+    // successful `/project <path>` switch (and also during
+    // initial seeding by `bin/crux.dart`). We piggyback on that
+    // signal to kick off a *synchronous* git-status refresh —
+    // without it the user would see stale branch info for up to
+    // 5s after switching projects.
+    _recentProjectsStore.addListener(_refreshGitStatus);
+    // Spin up the git-status poller. The service resolves its
+    // target directory lazily (via `Directory.current.path`) so a
+    // later `/project <path>` switch is picked up automatically on
+    // the next timer tick — no need for the command executor to
+    // poke us. We do call [GitStatusService.refresh] explicitly
+    // right after [start] for fast first-paint data.
+    _gitStatusService = GitStatusService();
+    _gitStatusService.start();
     if (bootState == null) {
       _initSessions();
       _providerService.initialize().then((_) {
@@ -639,6 +665,7 @@ class _ChatPanelState extends State<ChatPanel> {
     // when the panel is torn down independently of the app
     // (relevant for tests that mount the panel in isolation).
     _recentProjectsStore.removeListener(_refresh);
+    _recentProjectsStore.removeListener(_refreshGitStatus);
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -658,6 +685,10 @@ class _ChatPanelState extends State<ChatPanel> {
     _activeCodingPlanProvider = null;
     _activeCreditBalanceProvider?.stopCreditBalancePolling();
     _activeCreditBalanceProvider = null;
+    // Stop the git-status poller. [GitStatusService.dispose]
+    // cancels the timer AND clears listeners, so any subscriber
+    // that outlives the panel won't keep firing into the void.
+    _gitStatusService.dispose();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
@@ -1146,6 +1177,7 @@ class _ChatPanelState extends State<ChatPanel> {
                     currentSessionId: _sessionController.currentSessionId ?? 0,
                     onSwitchSession: _switchSession,
                     archivedCount: _sessionController.archivedCount,
+                    gitStatusService: _gitStatusService,
                     onSessionTitleTap: () {
                       setState(() {
                         _overlayController.showSessionManager = true;

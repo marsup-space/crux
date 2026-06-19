@@ -3,11 +3,13 @@ import 'dart:math';
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
+import '../services/git_status_service.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
+import 'git_status_widget.dart';
 import 'ui/fps_counter.dart';
 import 'ui/multi_button.dart';
 
@@ -54,11 +56,20 @@ class ExtraInfoPanel extends StatefulComponent {
   /// the user can type a new project path and submit it.
   final VoidCallback? onSwitchProject;
 
+  /// Live git status of the project root. Powers both the
+  /// [GitStatusWidget] rendered just above the project widget and
+  /// the branch / sync annotations on the project widget itself.
+  /// Must be the same instance owned by [ChatPanel] so the polling
+  /// timer keeps running after panel rebuilds; passing a fresh
+  /// instance here would orphan the timer (and leak it on dispose).
+  final GitStatusService gitStatusService;
+
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
     required this.onSwitchSession,
     required this.archivedCount,
+    required this.gitStatusService,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
@@ -73,6 +84,14 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   double _phase = 0.0;
   final Set<int> _hoveredIds = {};
   bool _titleHovered = false;
+
+  // Bumped on every git-status change so the panel's own
+  // MultiButton (which renders `path:branch ↑N ↓N` in its idle
+  // label) re-renders in lock-step with the [GitStatusWidget].
+  // The widget subscribes independently for its own rows; this
+  // is a separate subscription because the project widget is
+  // rendered by *this* state, not by the child widget.
+  int _gitTick = 0;
 
   /// Floor for the per-row title truncation. Used when the panel is
   /// narrower than expected (defensive — shouldn't normally trigger).
@@ -181,18 +200,41 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   void initState() {
     super.initState();
     _startAnimIfNeeded();
+    // Subscribe to git-status changes so the project widget's
+    // `path:branch ↑N ↓N` label stays in sync with the
+    // [GitStatusWidget] rendered above it. We could share a
+    // subscription with that widget, but the wiring is simpler
+    // if each component manages its own listener — and the cost
+    // is one extra `setState` every ~5s when the repo is
+    // changing.
+    component.gitStatusService.addListener(_onGitStatusChanged);
   }
 
   @override
   void didUpdateComponent(ExtraInfoPanel old) {
     super.didUpdateComponent(old);
+    if (!identical(old.gitStatusService, component.gitStatusService)) {
+      old.gitStatusService.removeListener(_onGitStatusChanged);
+      component.gitStatusService.addListener(_onGitStatusChanged);
+    }
     _startAnimIfNeeded();
   }
 
   @override
   void dispose() {
     _animTicker?.cancel();
+    component.gitStatusService.removeListener(_onGitStatusChanged);
     super.dispose();
+  }
+
+  void _onGitStatusChanged() {
+    // Bump the tick so the build method reads the fresh snapshot
+    // without us having to plumb the value through props. The
+    // widget tree already short-circuits no-op repaints via
+    // [GitStatus.==], so the only cost of an unconditional
+    // setState here is the widget-element diff itself.
+    _gitTick++;
+    if (mounted) setState(() {});
   }
 
   bool _hasRespondingSession() {
@@ -303,6 +345,38 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return '${chars.take(count)}~';
   }
 
+  /// Build the idle label for the project [MultiButton]. Shape:
+  ///
+  ///   `~/path/to/project`               (not a git repo)
+  ///   `~/path/to/project:main`          (clean, in sync)
+  ///   `~/path/to/project:main ↑3`       (3 commits to push)
+  ///   `~/path/to/project:main ↓2`       (2 commits to pull)
+  ///   `~/path/to/project:main ↑3 ↓2`    (both)
+  ///
+  /// The result is *not* truncated here — the surrounding
+  /// `MultiButton` widens to fit it via [LayoutBuilder] at the
+  /// call site. We still pass a single, self-contained string so
+  /// the widget can compute its minimum width correctly.
+  String _composeProjectLabel(String path, GitStatus git) {
+    if (!git.isRepo || git.branch.isEmpty) return path;
+    final buf = StringBuffer(path)
+      ..write(':')
+      ..write(git.branch);
+    if (git.ahead > 0) {
+      buf
+        ..write(' ')
+        ..write(terminalSymbol('↑', '^'))
+        ..write(git.ahead);
+    }
+    if (git.behind > 0) {
+      buf
+        ..write(' ')
+        ..write(terminalSymbol('↓', 'v'))
+        ..write(git.behind);
+    }
+    return buf.toString();
+  }
+
   @override
   Component build(BuildContext context) {
     return FrameProfiler.instance.timed(
@@ -370,6 +444,21 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         final displayPath = home.isNotEmpty && cwd.startsWith(home)
             ? '~${cwd.substring(home.length)}'
             : cwd;
+        // Compose the project widget's idle label so it identifies
+        // both the directory *and* the git state. Layout:
+        //
+        //   `path[:branch [↑N ↓M]]`
+        //
+        // The branch + sync arrows are omitted when the project
+        // isn't a git repo (`isRepo` false) so the widget still
+        // works for non-tracked directories. `_gitTick` is read
+        // here purely to force this build to re-run when the
+        // service emits a new snapshot — the value itself is
+        // discarded.
+        // ignore: unused_local_variable
+        final _ = _gitTick;
+        final git = component.gitStatusService.current;
+        final projectLabel = _composeProjectLabel(displayPath, git);
 
         return Stack(
           children: [
@@ -396,8 +485,24 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     },
                   ),
                 ),
+                // Horizontal separator that visually isolates the
+                // bottom block (git status + project widget) from
+                // the scrolling session list. Without it the two
+                // sections blur into each other, especially when
+                // the list is short and the expanded session takes
+                // up the full panel height.
+                Divider(color: CruxTheme.of(context).outline, height: 1),
+                // Git status: file-level info (branch is also
+                // surfaced here, but the project widget below
+                // repeats it as part of `path:branch`). The widget
+                // collapses to zero height outside a repo, so the
+                // layout stays tight.
+                GitStatusWidget(
+                  service: component.gitStatusService,
+                  onTap: () => component.gitStatusService.refresh(),
+                ),
                 MultiButton(
-                  label: displayPath,
+                  label: projectLabel,
                   color: CruxTheme.of(context).onSurfaceVariant,
                   hoverColor: CruxTheme.of(context).foreground,
                   segments: [

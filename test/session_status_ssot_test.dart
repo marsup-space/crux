@@ -1,6 +1,7 @@
 import 'package:crux/src/components/extra_info_panel.dart';
 import 'package:crux/src/components/session_management_panel.dart';
 import 'package:crux/src/models/session.dart';
+import 'package:crux/src/services/git_status_service.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
@@ -15,6 +16,11 @@ void main() {
           model: 'test/model',
           status: SessionStatus.idle,
         );
+        // A throwaway service so the panel renders. We never start
+        // the timer — the service's default snapshot has
+        // `isRepo: false`, and the panel collapses the widget to
+        // zero height in that case.
+        final git = GitStatusService();
 
         await tester.pumpComponent(
           Container(
@@ -25,6 +31,7 @@ void main() {
               currentSessionId: session.id,
               onSwitchSession: (_) {},
               archivedCount: 0,
+              gitStatusService: git,
             ),
           ),
         );
