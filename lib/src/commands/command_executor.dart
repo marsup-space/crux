@@ -416,11 +416,13 @@ class CommandExecutor {
     final llm = ctx.providerServiceReady
         ? ctx.providerService.llmProviderByName(providerName)
         : null;
-    final presets = llm?.reasoningPresetsFor(
-      modelId,
-      providerLabels: provider?.reasoningLabels ?? const {},
-      modelLabels: modelConfig?.reasoningLabels ?? const {},
-    ) ?? const [];
+    final presets =
+        llm?.reasoningPresetsFor(
+          modelId,
+          providerLabels: provider?.reasoningLabels ?? const {},
+          modelLabels: modelConfig?.reasoningLabels ?? const {},
+        ) ??
+        const [];
 
     // Map a display label back to its internal value (e.g. "adaptive" →
     // "normal"). If the user types a display label that differs from
@@ -838,10 +840,7 @@ class CommandExecutor {
     // updates the sidebar entry too — no separate lookup needed.
     ctx.currentSession.title = newTitle;
     ctx.refresh();
-    ctx.showToast(
-      'Renamed "$oldTitle" → "$newTitle"',
-      mode: ToastMode.status,
-    );
+    ctx.showToast('Renamed "$oldTitle" → "$newTitle"', mode: ToastMode.status);
   }
 
   /// `/quit` (alias `/exit`) — cleanly exit Crux and print the
@@ -851,31 +850,38 @@ class CommandExecutor {
   /// until the current agent turn (if any) is done streaming,
   /// so the user doesn't lose a half-written response just
   /// because they ran `/quit` a moment too early. Same
-  /// affordance as the in-input Ctrl+C×2 guard: when the
-  /// agent is busy, surface a toast that points the user at
+  /// affordance as the in-input Ctrl+C×2 guard: when any
+  /// session is busy, surface a toast that points the user at
   /// the force-quit path instead of yanking the rug out from
-  /// under the in-flight LLM call.
+  /// under an in-flight LLM call (in any session — a
+  /// background agent running while the user is browsing a
+  /// different session still deserves the same protection).
   ///
-  /// When no turn is running, the callback fires
+  /// When nothing is running, the callback fires
   /// synchronously; `shutdownApp()` causes `runApp()` to
   /// return and `bin/crux.dart` then prints the summary to
   /// the now-restored main buffer.
+  ///
+  /// Note: the previous version scoped this check to
+  /// `currentSessionId` + `isResponding`, which let `/quit`
+  /// sneak through whenever a non-current session was the
+  /// one still working, or while the current session was
+  /// between token flushes (tool calls, awaited tool
+  /// results, etc.). Mirrors the bug fixed in `chat_input.dart`
+  /// for the Ctrl+C handler.
   Future<void> executeQuit(CommandContext ctx) async {
-    if (ctx.currentSessionId != null) {
-      final rt = ctx.runtime(ctx.currentSessionId!);
-      if (rt.isResponding) {
-        ctx.showToast(
-          'Agent is running — press Ctrl+C×2 to force quit',
-          mode: ToastMode.error,
-        );
-        return;
-      }
-    }
-    if (ctx.quitApp == null) {
+    final anyRunning = ctx.sessions.any(
+      (s) => s.status == SessionStatus.running,
+    );
+    if (anyRunning) {
       ctx.showToast(
-        'Quit unavailable (no TUI bound)',
+        'A session is running — press Ctrl+C×2 to force quit',
         mode: ToastMode.error,
       );
+      return;
+    }
+    if (ctx.quitApp == null) {
+      ctx.showToast('Quit unavailable (no TUI bound)', mode: ToastMode.error);
       return;
     }
     ctx.quitApp!();
@@ -1220,14 +1226,17 @@ class CommandExecutor {
     // immediately and the user can interact with the UI
     // while the recording runs.
     unawaited(
-      profiler.recordFor(duration, outputPath: path).then((result) {
-        // Show a toast with the summary once the recording
-        // completes. The toast will be no-op if the chat
-        // panel has been disposed by then, which is fine.
-        _showProfilerSummary(ctx, result.report, result.path);
-      }).catchError((Object e, StackTrace st) {
-        ctx.showToast('Profiler failed: $e', mode: ToastMode.error);
-      }),
+      profiler
+          .recordFor(duration, outputPath: path)
+          .then((result) {
+            // Show a toast with the summary once the recording
+            // completes. The toast will be no-op if the chat
+            // panel has been disposed by then, which is fine.
+            _showProfilerSummary(ctx, result.report, result.path);
+          })
+          .catchError((Object e, StackTrace st) {
+            ctx.showToast('Profiler failed: $e', mode: ToastMode.error);
+          }),
     );
   }
 

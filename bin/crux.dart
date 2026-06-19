@@ -91,6 +91,30 @@ void main(List<String> args) async {
   );
   final results = await _showSplashLoading(bootFuture);
 
+  // Disable nocterm's default Ctrl+C handler. Without this,
+  // an unhandled Ctrl+C (e.g. while the chat input isn't
+  // focused, or in any other component that doesn't return
+  // `true` for it) would hit `CtrlCBehavior.immediateExit`,
+  // which calls `StdioBackend.requestExit(0)` → bare
+  // `exit(0)`. That kills the process before the per-run
+  // summary can be printed — exactly the bug we hit on the
+  // first cut of this feature.
+  //
+  // With `disabled`, the synthetic Ctrl+C keyboard event
+  // nocterm synthesises from SIGINT is still routed through
+  // the component tree as before, but if no component
+  // handles it nocterm does *nothing*. The chat input is
+  // the canonical consumer; it returns `true` (consumed)
+  // and triggers `ChatPanel._quitAndPrintSummary`, which
+  // writes the summary, flushes stdout, and then calls
+  // `shutdownApp(0)` for a clean terminal teardown. Any
+  // in-flight OS-level SIGINT that does manage to escape
+  // (e.g. closing the terminal window) is a SIGKILL and
+  // there's nothing we can do about it; the user gets no
+  // summary in that case, which matches every other CLI
+  // tool's behaviour.
+  TerminalBinding.setCtrlCBehavior(CtrlCBehavior.disabled);
+
   // Log seeder/theme warnings after the splash is done, so stderr lines
   // don't interleave with the logo frames.
   for (final r in results.providerSeedResults) {
@@ -164,6 +188,19 @@ void main(List<String> args) async {
   // across every session the user touched in this Crux run
   // (see `RunMetrics`). The `--doctor` path returns before
   // this line, so doctor runs never see the summary.
+  //
+  // Note: with `setCtrlCBehavior(disabled)` set above, the
+  // Ctrl+C exit path goes through
+  // `ChatPanel._quitAndPrintSummary` rather than `runApp`
+  // returning — that path prints the summary itself and
+  // then calls `shutdownApp(0)`, which still routes
+  // through this same `await runApp(...)` because the
+  // binding's event loop breaks. So this line is the
+  // fallback for the case where something else (e.g. the
+  // user closes stdin, or a future feature wires another
+  // exit path) makes `runApp` return without going through
+  // the panel's quit callback. Both paths are idempotent:
+  // printing the summary twice is harmless.
   _printRunSummary();
 }
 

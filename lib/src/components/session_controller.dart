@@ -248,6 +248,17 @@ class SessionController {
     });
   }
 
+  /// True iff at least one session (current or background) is in
+  /// [SessionStatus.running]. Use this from anywhere that needs the
+  /// "any agent is busy" signal — quit guards, sidebar activity
+  /// dots, animation tickers. The previous check in callers was
+  /// scoped to `currentSessionId` + `isResponding`, which missed
+  /// background sessions entirely and also missed windows between
+  /// token flushes while a session was still working (tool calls,
+  /// awaited tool results, etc.).
+  bool get hasAnyRunningSession =>
+      sessions.any((s) => s.status == SessionStatus.running);
+
   int computeBaseContext(int sessionId) {
     final session = findSession(sessionId);
     if (session != null && session.contextTokens > 0) {

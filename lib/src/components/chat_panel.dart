@@ -594,12 +594,14 @@ class _ChatPanelState extends State<ChatPanel> {
   /// Covers non-current sessions too: a background session that's
   /// still streaming is "active" and the user wants the same
   /// freshness for it.
-  bool _hasActiveSession() {
-    for (final s in _sessionController.sessions) {
-      if (s.status == SessionStatus.running) return true;
-    }
-    return false;
-  }
+  ///
+  /// Delegates to [SessionController.hasAnyRunningSession] so the
+  /// Ctrl+C and `/quit` guards in [ChatInput] /
+  /// [CommandExecutor] can't drift out of sync with this — they
+  /// were once three independent copies of the same predicate,
+  /// and the chat-input copy had been scoped to the current
+  /// session by mistake.
+  bool _hasActiveSession() => _sessionController.hasAnyRunningSession;
 
   /// Resolve the active model's [CreditBalanceProvider] mixin
   /// (if any) and re-align polling state with it. Parallel to
@@ -1135,6 +1137,14 @@ class _ChatPanelState extends State<ChatPanel> {
                 onSwitchSession: _switchSession,
                 onInitSessions: _initSessions,
                 onCreateNewSession: _createNewSession,
+                // Same exit path the `/quit` command uses
+                // — see [_quitAndPrintSummary] for the
+                // load-bearing reason we don't just call
+                // `shutdownApp` here. The chat input always
+                // returns `true` from its Ctrl+C handler so
+                // nocterm's default `immediateExit` doesn't
+                // race us to `exit(0)`.
+                onQuitRequest: _quitAndPrintSummary,
                 onAttachClipboardImage: (image) {
                   final sid = _sessionController.currentSessionId;
                   if (sid != null) {

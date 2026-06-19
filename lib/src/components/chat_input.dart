@@ -52,6 +52,16 @@ class ChatInput extends StatefulComponent {
   final Future<void> Function() onCreateNewSession;
   final void Function(ImageAttachment image)? onAttachClipboardImage;
 
+  /// Quit-with-summary callback. Invoked when the user presses
+  /// Ctrl+C while no session is streaming, or presses Ctrl+C the
+  /// *second* time within the 3-second window while a session
+  /// *is* streaming. Wired by `ChatPanel` to a closure that
+  /// flushes the per-run summary to stdout and then calls
+  /// `shutdownApp(0)` — see the long comment on
+  /// `_handleKeyEvent` below for why this lives here rather
+  /// than letting nocterm's default Ctrl+C handler do the work.
+  final VoidCallback? onQuitRequest;
+
   /// Absolute path of the project root, used by the @-mention file
   /// browser to scope its fuzzy search. Defaults to the current
   /// working directory when not provided.
@@ -82,6 +92,7 @@ class ChatInput extends StatefulComponent {
     required this.onInitSessions,
     required this.onCreateNewSession,
     this.onAttachClipboardImage,
+    this.onQuitRequest,
     this.projectPath = '.',
     this.recentProjectsStore,
   });
@@ -713,37 +724,75 @@ class ChatInputState extends State<ChatInput> {
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {
-    // --- Ctrl+C double-press-to-quit guard ---
-    // When any session is currently streaming/responding, the first Ctrl+C
-    // shows a toast warning instead of quitting. A second Ctrl+C within
-    // 3 seconds (while the toast is active) really quits. When no session
-    // is streaming, Ctrl+C passes through and quits immediately (the
-    // default TerminalBinding.immediateExit behaviour).
+    // --- Ctrl+C quit handler (intercepts all presses) ---
+    //
+    // We deliberately do NOT return `false` here so nocterm's
+    // default handler can fire. nocterm's default
+    // (CtrlCBehavior.immediateExit) calls `exit(0)` directly,
+    // which terminates the process before `runApp()` returns
+    // — so the per-run summary that `bin/crux.dart` prints
+    // after `runApp()` never gets a chance to run. The summary
+    // is the whole point of quitting through Crux rather than
+    // killing the process, so we own the exit path:
+    //
+    //   1. First Ctrl+C while ANY session is running → toast
+    //      warning, don't quit (the "press Ctrl+C again"
+    //      affordance). Covers the current session AND any
+    //      background session — a background agent that's
+    //      still working deserves the same protection as the
+    //      one in front of the user.
+    //   2. Second Ctrl+C within 3s → invoke
+    //      `component.onQuitRequest`, which prints the summary
+    //      + flushes stdout + calls `shutdownApp(0)`.
+    //   3. First Ctrl+C when nothing is running → invoke
+    //      `component.onQuitRequest` immediately.
+    //
+    // In every case we return `true` to tell nocterm we
+    // consumed the event. Otherwise the binding's default
+    // handler would fire alongside ours, double-quitting the
+    // process.
+    //
+    // For the `bin/crux.dart` side to fully suppress the
+    // binding's default behaviour, it also calls
+    // `TerminalBinding.setCtrlCBehavior(CtrlCBehavior.disabled)`
+    // before `runApp` — defence in depth so an in-flight
+    // OS-level SIGINT (e.g. user clicks the terminal's
+    // close button) doesn't bypass this handler either.
+    //
+    // Why `hasAnyRunningSession` and not the previous
+    // `currentSessionId + isResponding` check: `isResponding`
+    // is only true while the LLM is actively streaming
+    // tokens. Between token flushes — during tool execution,
+    // while awaiting a tool result, etc. — the session is
+    // still `SessionStatus.running` but `isResponding` is
+    // `false`, which used to let the guard slip and quit
+    // straight through. And the old check was scoped to the
+    // current session, so a background agent running in
+    // another tab was invisible to it.
     if (event.logicalKey == LogicalKey.keyC &&
         event.isControlPressed &&
         !event.isShiftPressed &&
         !event.isAltPressed &&
         !event.isMetaPressed) {
-      final sessionId = component.sessionController.currentSessionId;
-      final isStreaming =
-          sessionId != null &&
-          component.sessionController.runtime(sessionId).isResponding;
+      final anyRunning =
+          component.sessionController.hasAnyRunningSession;
 
-      if (isStreaming) {
+      if (anyRunning) {
         final now = DateTime.now();
         if (_lastCtrlCPressTime != null &&
             now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
             _ctrlCQuitHint) {
-          // Second press within 3s — let it through so the app exits.
+          // Second press within 3s — fire the quit request.
           _lastCtrlCPressTime = null;
           _ctrlCQuitHint = false;
-          return false;
+          component.onQuitRequest?.call();
+          return true; // consumed — don't let nocterm re-handle
         } else {
           // First press — show warning toast, don't quit.
           _lastCtrlCPressTime = now;
           _ctrlCQuitHint = true;
           component.turnOrchestrator.showToast(
-            'Agent is running. Press Ctrl+C again to quit.',
+            'A session is running. Press Ctrl+C again to quit.',
             mode: ToastMode.info,
           );
           Future.delayed(const Duration(seconds: 3), () {
@@ -757,8 +806,12 @@ class ChatInputState extends State<ChatInput> {
         }
       }
 
-      // No session streaming — let Ctrl+C bubble up (app exits).
-      return false;
+      // No session running — fire the quit request right
+      // away. Returning `true` so nocterm's default
+      // `CtrlCBehavior.immediateExit` doesn't race us to
+      // `exit(0)`.
+      component.onQuitRequest?.call();
+      return true;
     }
 
     // Any other key resets the Ctrl+C quit hint.
