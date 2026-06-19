@@ -285,15 +285,27 @@ class _MultiButtonState extends State<MultiButton> {
       visible = Container(
         decoration: BoxDecoration(color: hoverBgColor),
         padding: btn.padding,
-        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+        // Fill the Container's width and centre the segments so the
+        // button reads as a balanced pair of half-buttons, not a
+        // left-anchored cluster trailing empty space. The Container
+        // is itself forced to at least `minWidth` by the outer
+        // ConstrainedBox, so the row's effective width is bounded
+        // from below even when the segments are short.
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: children,
+        ),
       );
     }
 
     // Constrain the visible child to be at least as wide as the
     // idle label. When the hovered row is narrower than the label,
-    // the extra space sits on the right and the row stays
-    // left-aligned, which keeps the cursor's x position stable
-    // across the transition.
+    // the segments are centred within that minimum width (the
+    // hovered [Row] uses [MainAxisAlignment.center]); when they
+    // are wider, the row grows past the idle label and stays
+    // left-anchored to the same edge as the idle state, so the
+    // left edge of the button doesn't shift on hover.
     final constrained = ConstrainedBox(
       constraints: BoxConstraints(minWidth: minWidth),
       child: visible,
