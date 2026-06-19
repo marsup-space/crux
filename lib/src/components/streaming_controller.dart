@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../services/llm_client.dart';
-import '../utils/frame_profiler.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
 
@@ -21,17 +20,51 @@ class StreamingToolCall {
   final String callId;
   final String name;
   final String accumulatedInputJson;
+  final StreamingToolAbortInfo? abortInfo;
 
   const StreamingToolCall({
     required this.callId,
     required this.name,
     required this.accumulatedInputJson,
+    this.abortInfo,
   });
 
   /// Rough token-count of the in-flight input. Cheap to compute
   /// (no JSON parsing) and good enough for "this is growing"
   /// preview labels.
   int get estimatedInputTokens => estimateTokens(accumulatedInputJson);
+
+  StreamingToolCall copyWith({
+    String? callId,
+    String? name,
+    String? accumulatedInputJson,
+    StreamingToolAbortInfo? abortInfo,
+  }) {
+    return StreamingToolCall(
+      callId: callId ?? this.callId,
+      name: name ?? this.name,
+      accumulatedInputJson: accumulatedInputJson ?? this.accumulatedInputJson,
+      abortInfo: abortInfo ?? this.abortInfo,
+    );
+  }
+}
+
+class StreamingToolAbortInfo {
+  final String reason;
+
+  /// Exact character count of this tool call's streamed
+  /// `input_delta` at the moment the guard fired. Lives on the
+  /// live-row data so the streaming bubble can show an honest
+  /// "aborted at N chars" suffix while the round is still
+  /// unwinding (the persisted message bubble reads the same
+  /// value back out of `metadata['abortedInputChars']` after
+  /// the round persists).
+  final int abortedInputChars;
+
+  const StreamingToolAbortInfo({
+    required this.reason,
+    required this.abortedInputChars,
+  });
 }
 
 class StreamingController {
@@ -56,8 +89,7 @@ class StreamingController {
       _streamingReasoning[sessionId] ?? '';
 
   void appendStreamingContent(int sessionId, String delta) {
-    _streamingContent[sessionId] =
-        (_streamingContent[sessionId] ?? '') + delta;
+    _streamingContent[sessionId] = (_streamingContent[sessionId] ?? '') + delta;
   }
 
   void appendStreamingReasoning(int sessionId, String delta) {
@@ -87,12 +119,48 @@ class StreamingController {
         accumulatedInputJson: chunk.inputDelta,
       );
     } else {
-      perSession[chunk.index] = StreamingToolCall(
-        callId: existing.callId,
-        name: existing.name,
+      perSession[chunk.index] = existing.copyWith(
         accumulatedInputJson: existing.accumulatedInputJson + chunk.inputDelta,
       );
     }
+  }
+
+  void markStreamingToolCallAborted(
+    int sessionId, {
+    required int index,
+    required String callId,
+    required String name,
+    required String reason,
+    required int abortedInputChars,
+  }) {
+    final perSession = _streamingToolCalls.putIfAbsent(
+      sessionId,
+      () => <int, StreamingToolCall>{},
+    );
+    final existing = perSession[index];
+    final abortInfo = StreamingToolAbortInfo(
+      reason: reason,
+      abortedInputChars: abortedInputChars,
+    );
+    perSession[index] = existing == null
+        ? StreamingToolCall(
+            callId: callId,
+            name: name,
+            accumulatedInputJson: '',
+            abortInfo: abortInfo,
+          )
+        : existing.copyWith(
+            callId: existing.callId.isEmpty ? callId : existing.callId,
+            name: existing.name.isEmpty ? name : existing.name,
+            abortInfo: abortInfo,
+          );
+    _refresh();
+  }
+
+  bool hasStreamingToolAbort(int sessionId) {
+    final perSession = _streamingToolCalls[sessionId];
+    if (perSession == null) return false;
+    return perSession.values.any((tc) => tc.abortInfo != null);
   }
 
   /// Snapshot of in-progress tool calls for a session, in the
@@ -134,8 +202,6 @@ class StreamingController {
   // longer have any effect — the real animation lives in
   // the widget that actually paints the bar.
   Timer? _contextAnimTimer;
-  DateTime? _lastContextTick;
-  static const double _contextLerpSpeed = 6.0;
 
   StreamingController({
     required SessionController sessionController,

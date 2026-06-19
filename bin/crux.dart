@@ -79,46 +79,19 @@ void main(List<String> args) async {
     p.join(_resolveUserConfigDir().path, 'config.toml'),
   );
 
-  // Run the splash and the loading work in the same isolate. The splash
-  // runs as a Future that takes a `loadingDone` callback; it renders the
-  // full animation unless loading beats it, in which case it bails out
-  // and we still get the 904ms minimum (504ms sweep + 400ms pause).
-  //
-  // Why a single isolate (and not two with `Isolate.spawn`):
-  //   The TUI's startup sequence writes `\x1B[?1049h` (alt screen) and
-  //   other CSI codes to stdout. If those writes interleave with a
-  //   still-flushing splash from another isolate, conhost in vanilla
-  //   CMD/PowerShell can split the escape sequences and end up in a
-  //   bad state (blank screen, alt screen ignored). Tabby is more
-  //   tolerant; the legacy Windows console is not. Single-isolate
-  //   sequencing avoids the race entirely.
-  //
-  // Behavior:
-  //   - Fast loading (< 504ms): splash runs to completion (504ms) +
-  //     400ms post-pause = 904ms wall time. App starts.
-  //   - Slow loading (>= 504ms): splash bails out at the frame where
-  //     loading completes, then `await loadingDone` extends the hold
-  //     on the static logo until loading is done. Total wall time =
-  //     loading_time (animation ≤ loading_time ≤ 904ms).
-  final results = await _runSplashAndLoading(
-    builtInDir: builtInDir,
-    userDir: userDir,
-    builtInThemesDir: builtInThemesDir,
-    userThemesDir: userThemesDir,
-    themeConfigFile: themeConfigFile,
+  // Start the loading work before rendering the main-buffer splash so
+  // sessions warm up while the logo animation is visible.
+  final bootFuture = _doLoading(
+    builtInDir,
+    userDir,
+    builtInThemesDir,
+    userThemesDir,
+    themeConfigFile,
+    recentProjectsStoreFuture,
   );
+  final results = await _showSplashLoading(bootFuture);
 
-  // Block on the recent-projects work *after* the splash so the
-  // user sees the splash animation even on a slow disk read. By
-  // this point the future has either already resolved (the read +
-  // write fit inside the splash window) or is about to. Crucially,
-  // we don't pass a *separate* store into the chat panel — sharing
-  // this instance means a `/project <path>` switch executed later
-  // in the session writes to the same in-memory list the
-  // autocomplete overlay is observing.
-  final recentProjectsStore = await recentProjectsStoreFuture;
-
-  // Log seeder changes after the splash is done, so the stderr lines
+  // Log seeder/theme warnings after the splash is done, so stderr lines
   // don't interleave with the logo frames.
   for (final r in results.providerSeedResults) {
     if (r.action == SeedAction.unchanged) continue;
@@ -159,7 +132,8 @@ void main(List<String> args) async {
       userProvidersDir: userDir.path,
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
       themeController: results.themeController,
-      recentProjectsStore: recentProjectsStore,
+      bootState: results.chatPanelBootState,
+      recentProjectsStore: results.recentProjectsStore,
       startupWarnings: [
         ...results.themeController.registry.loadErrors.entries.map(
           (entry) => 'Theme ${p.basename(entry.key)}: ${entry.value}',
@@ -220,51 +194,18 @@ Future<RecentProjectsStore> _loadAndRecordCurrentProject() async {
   }
 }
 
-/// Run the splash animation and the loading work concurrently in the
-/// current isolate. Returns provider seeding and initialized theme state.
-///
-/// The animation always runs for at least 504ms (the sweep). If loading
-/// finishes during the sweep, the sweep bails out and we run a 400ms
-/// post-pause. If loading takes longer than the sweep, we hold the
-/// static logo until loading is done — no post-pause, just the wait.
-///
-/// Total wall time is `max(loading_time, 904ms)` when loading < 504ms,
-/// or just `loading_time` when loading >= 504ms.
-Future<_LoadingResults> _runSplashAndLoading({
-  required Directory builtInDir,
-  required Directory userDir,
-  required Directory builtInThemesDir,
-  required Directory userThemesDir,
-  required File themeConfigFile,
-}) async {
-  // Start the loading work as a Future. It's mostly I/O (file reads,
-  // SHA computation, and HighlightService's grammar compile) so it
-  // cooperates with the splash's `Future.delayed` between frames.
-  final loadingFuture = _doLoading(
-    builtInDir,
-    userDir,
-    builtInThemesDir,
-    userThemesDir,
-    themeConfigFile,
-  );
-
-  // Run the splash, with a callback that lets it know when loading is
-  // done so it can bail out early.
-  await _showSplashLoading(loadingFuture);
-
-  // Defensive: the splash only returns after both it and loading are
-  // done, but `await` again is cheap insurance.
-  return await loadingFuture;
-}
-
 /// All the warmup work the app needs before the UI appears.
 class _LoadingResults {
   final List<SeedResult> providerSeedResults;
   final ThemeController themeController;
+  final ChatPanelBootState chatPanelBootState;
+  final RecentProjectsStore recentProjectsStore;
 
   const _LoadingResults({
     required this.providerSeedResults,
     required this.themeController,
+    required this.chatPanelBootState,
+    required this.recentProjectsStore,
   });
 }
 
@@ -274,10 +215,15 @@ Future<_LoadingResults> _doLoading(
   Directory builtInThemesDir,
   Directory userThemesDir,
   File themeConfigFile,
+  Future<RecentProjectsStore> recentProjectsStoreFuture,
 ) async {
   final providerSeedResults = await seedExampleProviders(
     builtInDir: builtInDir,
     userDir: userDir,
+  );
+  final chatPanelBootState = await loadChatPanelBootState(
+    userProvidersDir: userDir.path,
+    builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
   );
   final themeRegistry = await ThemeLoader(
     bundledDirectory: builtInThemesDir,
@@ -288,30 +234,24 @@ Future<_LoadingResults> _doLoading(
     configStore: ThemeConfigStore(themeConfigFile),
   );
   await HighlightService.initialize();
+  final recentProjectsStore = await recentProjectsStoreFuture;
   return _LoadingResults(
     providerSeedResults: providerSeedResults,
     themeController: themeController,
+    chatPanelBootState: chatPanelBootState,
+    recentProjectsStore: recentProjectsStore,
   );
 }
 
 // ── Splash renderer ──────────────────────────────────────────────────
 
-/// Run the splash logo animation concurrently with [loading].
+/// Render the Crux boot logo in the terminal's main buffer while [loading]
+/// warms up providers, themes, sessions, and message state.
 ///
-/// The two run in parallel via the event loop (no isolates needed — the
-/// splash's `Future.delayed` yields control between frames, so the
-/// loading work can run in the gaps).
-///
-/// Behavior:
-/// - If [loading] completes during the ~1s animation: animation finishes
-///   normally, brief post-pause, then return.
-/// - If [loading] is still running after the animation: the static logo
-///   stays on screen (cursor hidden, no more redraws) until [loading]
-///   completes, then return.
-/// - This function only returns after BOTH the animation cycle and
-///   [loading] have finished — so the caller can safely call `runApp`
-///   right after, knowing the warmup work is done.
-Future<void> _showSplashLoading(Future<void> loading) async {
+/// This returns only after both the full logo animation and [loading] finish.
+Future<_LoadingResults> _showSplashLoading(
+  Future<_LoadingResults> loading,
+) async {
   const art = [
     '  ██████╗   ██████╗  ██╗   ██╗ ██╗  ██╗',
     ' ██╔════╝  ██╔══██╗ ██║   ██║  ██╗██╔╝',
@@ -334,16 +274,12 @@ Future<void> _showSplashLoading(Future<void> loading) async {
   stdout.writeln();
   stdout.writeln();
 
-  // Bail out of the sweep early if loading finishes while the animation
-  // is running. The Future is shared with the loading task — when it
-  // completes, this loop's `&& !loadingDone` flips false and we drop
-  // into the post-animation hold below.
   var loadingDone = false;
   loading.whenComplete(() => loadingDone = true);
 
   for (
     int sweep = -bandWidth;
-    sweep <= artWidth + bandWidth && !loadingDone;
+    sweep <= artWidth + bandWidth;
     sweep += sweepStep
   ) {
     for (int l = 0; l < art.length; l++) {
@@ -394,24 +330,16 @@ Future<void> _showSplashLoading(Future<void> loading) async {
     await Future.delayed(Duration(milliseconds: frameDelayMs));
   }
 
-  // Move cursor below the logo and restore it. This is the "last write"
-  // of the splash — the TUI's first write (`\x1B[?1049h` for alt screen)
-  // will follow immediately. Both go to the same file descriptor in
-  // the same isolate, so there's no inter-isolate race.
   stdout.write('\x1B[${art.length}B');
   stdout.write('\x1B[?25h');
   await stdout.flush();
 
   if (!loadingDone) {
-    // Animation ended naturally but loading is still in flight — hold
-    // the static logo on screen (no more redraws) until it finishes.
-    await loading;
-  } else {
-    // Animation bailed out because loading completed mid-sweep, OR
-    // finished naturally and loading was already done. Give the user
-    // a brief post-pause so they register the final frame.
-    await Future.delayed(Duration(milliseconds: postAnimationPauseMs));
+    return await loading;
   }
+
+  await Future.delayed(Duration(milliseconds: postAnimationPauseMs));
+  return await loading;
 }
 
 // ── User directory resolution ─────────────────────────────────────────
@@ -486,6 +414,7 @@ class _CruxApp extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+  final ChatPanelBootState bootState;
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
 
@@ -493,6 +422,7 @@ class _CruxApp extends StatefulComponent {
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    required this.bootState,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
@@ -550,6 +480,7 @@ class _CruxAppState extends State<_CruxApp> {
             userProvidersDir: component.userProvidersDir,
             builtInProvidersDir: component.builtInProvidersDir,
             themeController: component.themeController,
+            bootState: component.bootState,
             recentProjectsStore: component.recentProjectsStore,
             startupWarnings: component.startupWarnings,
           ),

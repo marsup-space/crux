@@ -52,10 +52,111 @@ import 'ui/fullpane.dart';
 const Duration _kCodingPlanActiveInterval = Duration(seconds: 30);
 const Duration _kCodingPlanIdleInterval = Duration(seconds: 180);
 
+class ChatPanelBootState {
+  final ProviderService providerService;
+  final SessionStore store;
+  final List<Session> sessions;
+  final int currentSessionId;
+  final int archivedCount;
+  final Map<int, List<Message>> messageCache;
+  final Map<String, int> currentFileReadState;
+
+  const ChatPanelBootState({
+    required this.providerService,
+    required this.store,
+    required this.sessions,
+    required this.currentSessionId,
+    required this.archivedCount,
+    required this.messageCache,
+    required this.currentFileReadState,
+  });
+}
+
+Future<ChatPanelBootState> loadChatPanelBootState({
+  required String userProvidersDir,
+  String? builtInProvidersDir,
+  ProviderService? providerService,
+  SessionStore? store,
+  String? projectPath,
+}) async {
+  final resolvedProviderService =
+      providerService ??
+      ProviderService(
+        userProvidersDir: userProvidersDir,
+        builtInProvidersDir: builtInProvidersDir,
+      );
+  await resolvedProviderService.initialize();
+
+  final resolvedStore = store ?? SessionStore(CruxDatabase());
+  final resolvedProjectPath = projectPath ?? Directory.current.path;
+
+  await resolvedStore.markOrphanedRunningSessionsAsInterrupted(
+    projectPath: resolvedProjectPath,
+  );
+  await resolvedStore.autoArchive(
+    projectPath: resolvedProjectPath,
+    olderThan: const Duration(days: 3),
+  );
+
+  var sessions = await resolvedStore.list(projectPath: resolvedProjectPath);
+  var archivedCount = await resolvedStore.archivedCount(
+    projectPath: resolvedProjectPath,
+  );
+
+  Future<Session> createStartupSession() {
+    final model = resolvedProviderService.resolveDefaultModel() ?? '';
+    return resolvedStore.create(
+      title: 'New Session',
+      model: model,
+      projectPath: resolvedProjectPath,
+    );
+  }
+
+  if (sessions.isEmpty) {
+    final session = await createStartupSession();
+    sessions = [session];
+  }
+
+  Session? initialSession;
+  for (final session in sessions) {
+    if (session.status == SessionStatus.idle ||
+        session.status == SessionStatus.done) {
+      initialSession = session;
+      break;
+    }
+  }
+
+  if (initialSession == null) {
+    final session = await createStartupSession();
+    sessions = [session, ...sessions];
+    initialSession = session;
+    archivedCount = await resolvedStore.archivedCount(
+      projectPath: resolvedProjectPath,
+    );
+  }
+
+  final currentSessionId = initialSession.id;
+  final messages = await resolvedStore.messageStore.getMessages(
+    currentSessionId,
+  );
+  final fileReadState = await resolvedStore.loadFileReadState(currentSessionId);
+
+  return ChatPanelBootState(
+    providerService: resolvedProviderService,
+    store: resolvedStore,
+    sessions: sessions,
+    currentSessionId: currentSessionId,
+    archivedCount: archivedCount,
+    messageCache: {currentSessionId: messages},
+    currentFileReadState: fileReadState,
+  );
+}
+
 class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+  final ChatPanelBootState? bootState;
 
   /// Shared store of recently-opened project directories. Owned by
   /// the binary (`bin/crux.dart`) and threaded through `_CruxApp`
@@ -72,6 +173,7 @@ class ChatPanel extends StatefulComponent {
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    this.bootState,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
@@ -167,20 +269,14 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void initState() {
     super.initState();
-    _providerService = ProviderService(
-      userProvidersDir: component.userProvidersDir,
-      builtInProvidersDir: component.builtInProvidersDir,
-    );
-    final db = CruxDatabase();
-    _store = SessionStore(db);
-    // Reconcile any sessions left in `running` from a previous Crux
-    // process that didn't shut down cleanly. Fire-and-forget — the
-    // UI's session list is loaded async by `_initSessions` below, and
-    // the (very small) write will land before the user can navigate
-    // to a session that was affected.
-    _store.markOrphanedRunningSessionsAsInterrupted(
-      projectPath: Directory.current.path,
-    );
+    final bootState = component.bootState;
+    _providerService =
+        bootState?.providerService ??
+        ProviderService(
+          userProvidersDir: component.userProvidersDir,
+          builtInProvidersDir: component.builtInProvidersDir,
+        );
+    _store = bootState?.store ?? SessionStore(CruxDatabase());
     final tracker = FileReadTracker(
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);
@@ -240,6 +336,23 @@ class _ChatPanelState extends State<ChatPanel> {
       refresh: _refresh,
     );
 
+    if (bootState != null) {
+      _providerServiceReady = true;
+      _sessionController.sessions = List<Session>.from(bootState.sessions);
+      _sessionController.currentSessionId = bootState.currentSessionId;
+      _sessionController.archivedCount = bootState.archivedCount;
+      _sessionController.messageCache.addAll(
+        bootState.messageCache.map(
+          (id, messages) => MapEntry(id, List<Message>.from(messages)),
+        ),
+      );
+      _sessionController.resolveAuxiliaryModel();
+      _tracker.loadSession(
+        bootState.currentSessionId,
+        bootState.currentFileReadState,
+      );
+    }
+
     CommandRegistry.instance.addListener(_refresh);
     // Expose a per-frame snapshot of "what's running right now"
     // to the optional frame profiler. The snapshot is read at
@@ -257,13 +370,15 @@ class _ChatPanelState extends State<ChatPanel> {
     // listener below, so the autocomplete overlay stays live.
     _recentProjectsStore = component.recentProjectsStore;
     _recentProjectsStore.addListener(_refresh);
-    _initSessions();
-    _providerService.initialize().then((_) {
-      setState(() {
-        _providerServiceReady = true;
-        _sessionController.resolveAuxiliaryModel();
+    if (bootState == null) {
+      _initSessions();
+      _providerService.initialize().then((_) {
+        setState(() {
+          _providerServiceReady = true;
+          _sessionController.resolveAuxiliaryModel();
+        });
       });
-    });
+    }
     Future<void>.delayed(const Duration(milliseconds: 100), () {
       if (!mounted) return;
       for (final warning in component.startupWarnings) {

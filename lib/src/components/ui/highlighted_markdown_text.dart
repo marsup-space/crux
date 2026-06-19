@@ -82,10 +82,88 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           softWrap: component.softWrap,
           overflow: component.overflow,
           maxLines: component.maxLines,
+          selectionTextTransformer: _stripCodeBlockSelectionChrome,
+          selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
         );
       },
     );
   }
+}
+
+bool _shouldHighlightMarkdownSelection(String text) {
+  if (text.isEmpty) return true;
+  if (_isCodeBlockTopBorder(text) || _isCodeBlockBottomBorder(text)) {
+    return false;
+  }
+  if (text == '│' || text == '│ ' || text == ' │') {
+    return false;
+  }
+  if (RegExp(r'^[┌└─┐┘ ]+$').hasMatch(text) &&
+      (text.contains('┌') || text.contains('└') || text.contains('─'))) {
+    return false;
+  }
+  return true;
+}
+
+String _stripCodeBlockSelectionChrome(String text) {
+  if (!text.contains('│') && !text.contains('┌') && !text.contains('└')) {
+    return text;
+  }
+
+  final endsWithNewline = text.endsWith('\n');
+  final lines = text.split('\n');
+  if (endsWithNewline && lines.isNotEmpty && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+
+  final cleaned = <String>[];
+  var inCodeBlock = false;
+  for (final line in lines) {
+    if (_isCodeBlockTopBorder(line)) {
+      inCodeBlock = true;
+      continue;
+    }
+    if (_isCodeBlockBottomBorder(line)) {
+      inCodeBlock = false;
+      continue;
+    }
+    if (inCodeBlock || _looksLikePartialCodeBlockRow(line)) {
+      cleaned.add(_stripCodeBlockRowChrome(line));
+    } else {
+      cleaned.add(line);
+    }
+  }
+
+  final result = cleaned.join('\n');
+  return endsWithNewline ? '$result\n' : result;
+}
+
+bool _isCodeBlockTopBorder(String line) =>
+    line.startsWith('┌') && line.contains('─');
+
+bool _isCodeBlockBottomBorder(String line) =>
+    line.startsWith('└') && line.contains('─');
+
+bool _looksLikePartialCodeBlockRow(String line) {
+  if (!line.startsWith('│ ')) return false;
+  final rest = line.substring(2);
+  return !rest.contains('│') || rest.endsWith(' │');
+}
+
+String _stripCodeBlockRowChrome(String line) {
+  var result = line;
+  if (result.startsWith('│ ')) {
+    result = result.substring(2);
+  } else if (result.startsWith('│')) {
+    result = result.substring(1);
+  }
+
+  if (result.endsWith(' │')) {
+    result = result.substring(0, result.length - 2).trimRight();
+  } else if (result.endsWith('│')) {
+    result = result.substring(0, result.length - 1).trimRight();
+  }
+  return result;
 }
 
 List<InlineSpan> _applyHighlight(
@@ -595,9 +673,6 @@ class _HighlightMarkdownVisitor {
     }
 
     final bgColor = styleSheet.codeBlockBackground ?? theme.codeBlockBackground;
-    final headerStyle =
-        styleSheet.codeBlockHeaderStyle ??
-        TextStyle(color: theme.codeBlockHeader);
     final codeStyle =
         styleSheet.codeBlockStyle ??
         TextStyle(
@@ -605,12 +680,14 @@ class _HighlightMarkdownVisitor {
           backgroundColor: theme.codeBlockBackground,
         );
 
-    final width = maxWidth ?? 80;
+    final width = math.max(4, maxWidth ?? 80);
+    final codeLineWidth = math.max(0, width - 4);
     final langLabel = language ?? '';
     final headerContent = langLabel.isNotEmpty ? ' $langLabel ' : '';
-    final headerPadding = width - 3 - headerContent.length;
-    final headerLine = '┌─$headerContent${'─' * math.max(0, headerPadding)}';
-    final footerLine = '└${'─' * (width - 1)}';
+    final headerPrefix = '┌─$headerContent';
+    final headerPadding = width - headerPrefix.length - 1;
+    final headerLine = '$headerPrefix${'─' * math.max(0, headerPadding)}┐';
+    final footerLine = '└${'─' * math.max(0, width - 2)}┘';
 
     // Strip a single trailing newline (markdown code blocks always end in `\n`)
     // so we don't render an extra empty line after the gutter.
@@ -623,66 +700,106 @@ class _HighlightMarkdownVisitor {
     spans.add(
       TextSpan(
         text: '$headerLine\n',
-        style: headerStyle.copyWith(backgroundColor: bgColor),
+        style: TextStyle(
+          color: theme.codeBlockGutter,
+          backgroundColor: bgColor,
+        ),
       ),
     );
 
-    // Emit a piece of text with the code-block background baked in.
-    void emitText(String text, {TextStyle? style}) {
+    void emitSpan(String text, {TextStyle? style}) {
       if (text.isEmpty) return;
       spans.add(
         TextSpan(
           text: text,
-          style: (style ?? const TextStyle()).copyWith(backgroundColor: bgColor),
-        ),
-      );
-    }
-
-    // Emit the gutter prefix for a new line.
-    void emitGutter() {
-      spans.add(
-        TextSpan(
-          text: '│ ',
-          style: TextStyle(
+          style: (style ?? const TextStyle()).copyWith(
             backgroundColor: bgColor,
-            color: theme.codeBlockGutter,
           ),
         ),
       );
     }
 
-    // Emit a chunk of [text] using [style], splitting at every newline so a
-    // gutter is re-emitted at the start of each new line.
-    void emitWithGutterAtNewlines(String text, TextStyle style) {
-      var idx = 0;
-      while (true) {
-        final nl = text.indexOf('\n', idx);
-        if (nl == -1) {
-          emitText(text.substring(idx), style: style);
-          return;
+    void emitBorderSpan(String text, TextStyle style) {
+      if (text.isEmpty) return;
+      spans.add(
+        TextSpan(
+          text: text,
+          style: style.copyWith(backgroundColor: bgColor),
+        ),
+      );
+    }
+
+    final gutterStyle = TextStyle(
+      backgroundColor: bgColor,
+      color: theme.codeBlockGutter,
+    );
+
+    void emitCodeRows(List<_FlatSpan> segments) {
+      var lineWidth = 0;
+      var lineOpen = false;
+
+      void openLine() {
+        if (lineOpen) return;
+        emitBorderSpan('│ ', gutterStyle);
+        lineOpen = true;
+        lineWidth = 0;
+      }
+
+      void closeLine() {
+        openLine();
+        final padding = codeLineWidth - lineWidth;
+        if (padding > 0) {
+          emitSpan(' ' * padding, style: codeStyle);
         }
-        emitText(text.substring(idx, nl + 1), style: style);
-        if (idx + nl + 1 < stripped.length) emitGutter();
-        idx = nl + 1;
+        emitBorderSpan(' │\n', gutterStyle);
+        lineOpen = false;
+        lineWidth = 0;
+      }
+
+      for (final segment in segments) {
+        final text = segment.$1;
+        final style = segment.$2 ?? codeStyle;
+        for (final grapheme in text.characters) {
+          if (grapheme == '\n') {
+            closeLine();
+            continue;
+          }
+
+          final graphemeWidth = UnicodeWidth.graphemeWidth(grapheme);
+          if (graphemeWidth == 0) continue;
+          openLine();
+
+          if (codeLineWidth > 0 &&
+              lineWidth > 0 &&
+              lineWidth + graphemeWidth > codeLineWidth) {
+            closeLine();
+            openLine();
+          }
+
+          emitSpan(grapheme, style: style);
+          lineWidth += graphemeWidth;
+        }
+      }
+
+      if (segments.isEmpty || lineOpen) {
+        closeLine();
       }
     }
 
     if (stripped.isEmpty) {
       // Empty code block — still render a single gutter so the box has height.
-      emitGutter();
+      emitCodeRows(const []);
     } else {
       final highlightService = HighlightService.instance;
-      final highlighter = (highlightService != null &&
-              language != null &&
-              language.isNotEmpty)
+      final highlighter =
+          (highlightService != null && language != null && language.isNotEmpty)
           ? highlightService.highlighterFor(language)
           : null;
 
       if (highlighter == null) {
         // No highlighter available: render the whole block in [codeStyle],
-        // emitting a gutter at every newline.
-        emitGutter();
-        emitWithGutterAtNewlines(stripped, codeStyle);
+        // emitting a complete bordered row at every newline.
+        emitCodeRows([(stripped, codeStyle)]);
       } else {
         // IMPORTANT: highlight the entire code block as a single string, not
         // line-by-line. Dart's `///` doc-comment grammar (and many other
@@ -690,15 +807,14 @@ class _HighlightMarkdownVisitor {
         // which only work when the highlighter sees the full context.
         final styleService = highlightService!;
         final tokens = highlighter.highlight(stripped);
-        emitGutter();
+        final codeSegments = <_FlatSpan>[];
 
         int cursor = 0;
         int tokenIdx = 0;
 
         // Advance past any tokens we have already emitted.
         void skipFinishedTokens() {
-          while (tokenIdx < tokens.length &&
-              cursor >= tokens[tokenIdx].end) {
+          while (tokenIdx < tokens.length && cursor >= tokens[tokenIdx].end) {
             tokenIdx++;
           }
         }
@@ -745,25 +861,28 @@ class _HighlightMarkdownVisitor {
             segmentStyle = codeStyle;
           } else {
             // No more tokens: emit the rest as unstyled, splitting at newlines.
-            emitWithGutterAtNewlines(stripped.substring(cursor), codeStyle);
+            codeSegments.add((stripped.substring(cursor), codeStyle));
             cursor = stripped.length;
             continue;
           }
 
-          emitText(stripped.substring(cursor, boundary), style: segmentStyle);
+          codeSegments.add((
+            stripped.substring(cursor, boundary),
+            segmentStyle,
+          ));
           cursor = boundary;
-          if (cursor < stripped.length &&
-              stripped[cursor - 1] == '\n') {
-            emitGutter();
-          }
         }
+        emitCodeRows(codeSegments);
       }
     }
 
     spans.add(
       TextSpan(
         text: '$footerLine\n\n',
-        style: headerStyle.copyWith(backgroundColor: bgColor),
+        style: TextStyle(
+          color: theme.codeBlockGutter,
+          backgroundColor: bgColor,
+        ),
       ),
     );
 
@@ -838,9 +957,35 @@ class _HighlightMarkdownVisitor {
       wrappedRows.add(wrappedCells);
     }
 
-    final buffer = StringBuffer();
+    final spans = <InlineSpan>[];
+    final borderStyle = TextStyle(color: theme.outline);
+    final textStyle =
+        styleSheet.paragraphStyle ?? TextStyle(color: theme.markdownText);
+    final headerStyle = textStyle.copyWith(
+      fontWeight: FontWeight.bold,
+      backgroundColor: theme.surfaceVariant.withOpacity(0.5),
+    );
 
-    _writeHorizontalBorder(buffer, columnWidths, '┌', '─', '┬', '┐');
+    void addBorder(String text) {
+      spans.add(TextSpan(text: text, style: borderStyle));
+    }
+
+    void addText(String text, TextStyle style) {
+      spans.add(TextSpan(text: text, style: style));
+    }
+
+    void addHorizontalBorder(
+      String left,
+      String fill,
+      String middle,
+      String right,
+    ) {
+      addBorder(
+        '${_horizontalBorderString(columnWidths, left, fill, middle, right)}\n',
+      );
+    }
+
+    addHorizontalBorder('┌', '─', '┬', '┐');
 
     for (int r = 0; r < wrappedRows.length; r++) {
       final rowCells = wrappedRows[r];
@@ -848,32 +993,42 @@ class _HighlightMarkdownVisitor {
         1,
         (max, cell) => math.max(max, cell.length),
       );
+      final isHeader = r == 0;
+      final rowBackground = isHeader
+          ? theme.surfaceVariant.withOpacity(0.5)
+          : ((r - 1).isEven ? theme.surface : theme.surfaceVariant).withOpacity(
+              0.5,
+            );
+      final rowTextStyle = (isHeader ? headerStyle : textStyle).copyWith(
+        backgroundColor: rowBackground,
+      );
 
       for (int l = 0; l < rowHeight; l++) {
-        buffer.write('│');
+        addBorder('│');
         for (int c = 0; c < columnWidths.length; c++) {
           final lines = c < rowCells.length ? rowCells[c] : const [''];
           final line = l < lines.length ? lines[l] : '';
           final displayWidth = UnicodeWidth.stringWidth(line);
           final paddingNeeded = columnWidths[c] - displayWidth;
-          buffer.write(' ');
-          buffer.write(line);
+          addText(' ', rowTextStyle);
+          addText(line, rowTextStyle);
           if (paddingNeeded > 0) {
-            buffer.write(' ' * paddingNeeded);
+            addText(' ' * paddingNeeded, rowTextStyle);
           }
-          buffer.write(' │');
+          addText(' ', rowTextStyle);
+          addBorder('│');
         }
-        buffer.write('\n');
+        spans.add(const TextSpan(text: '\n'));
       }
 
       if (r == 0 && wrappedRows.length > 1) {
-        _writeHorizontalBorder(buffer, columnWidths, '├', '─', '┼', '┤');
+        addHorizontalBorder('├', '─', '┼', '┤');
       }
     }
 
-    _writeHorizontalBorder(buffer, columnWidths, '└', '─', '┴', '┘');
+    addHorizontalBorder('└', '─', '┴', '┘');
 
-    return TextSpan(text: buffer.toString());
+    return TextSpan(children: spans);
   }
 
   List<int> _distributeColumnWidths(List<int> naturalWidths) {
@@ -1012,7 +1167,20 @@ class _HighlightMarkdownVisitor {
     String middle,
     String right,
   ) {
-    buffer.write(left);
+    buffer.write(
+      _horizontalBorderString(columnWidths, left, fill, middle, right),
+    );
+    buffer.write('\n');
+  }
+
+  static String _horizontalBorderString(
+    List<int> columnWidths,
+    String left,
+    String fill,
+    String middle,
+    String right,
+  ) {
+    final buffer = StringBuffer(left);
     for (int i = 0; i < columnWidths.length; i++) {
       buffer.write(fill * (columnWidths[i] + 2));
       if (i < columnWidths.length - 1) {
@@ -1020,6 +1188,6 @@ class _HighlightMarkdownVisitor {
       }
     }
     buffer.write(right);
-    buffer.write('\n');
+    return buffer.toString();
   }
 }

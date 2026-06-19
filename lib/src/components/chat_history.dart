@@ -33,7 +33,8 @@ class ChatHistory extends StatefulComponent {
 
   /// Callback when a tool call bubble is tapped. Receives the
   /// [ToolCallData] and the paired result [Message] (if any).
-  final void Function(ToolCallData toolCall, Message? pairedResult)? onToolCallTap;
+  final void Function(ToolCallData toolCall, Message? pairedResult)?
+  onToolCallTap;
 
   const ChatHistory({
     super.key,
@@ -93,7 +94,8 @@ class _ChatHistoryState extends State<ChatHistory> {
     }
 
     if (messages.isEmpty && !isStreaming) {
-      final hasBtwTurns = sessionId != null &&
+      final hasBtwTurns =
+          sessionId != null &&
           component.sessionController.btwTurnsFor(sessionId).isNotEmpty;
       if (!hasBtwTurns) {
         return Center(
@@ -113,11 +115,13 @@ class _ChatHistoryState extends State<ChatHistory> {
       final msg = messages[i];
       final collapsed = i < lastRoundStart;
       Message? pairedResult;
+      final pairedResultsByCallId = <String, Message>{};
       if (msg.role == 'tool_call') {
         for (final tc in msg.toolCalls) {
-          if (resultByCallId.containsKey(tc.callId)) {
-            pairedResult = resultByCallId[tc.callId]!;
-            break;
+          final result = resultByCallId[tc.callId];
+          if (result != null) {
+            pairedResultsByCallId[tc.callId] = result;
+            pairedResult ??= result;
           }
         }
       }
@@ -133,9 +137,9 @@ class _ChatHistoryState extends State<ChatHistory> {
           message: msg,
           reasoningCollapsed: collapsed,
           pairedResult: pairedResult,
+          resultByCallId: pairedResultsByCallId,
           toolRegistry: component.toolRegistry,
-          highlightText:
-              msg.id == _highlightMessageId ? _highlightText : null,
+          highlightText: msg.id == _highlightMessageId ? _highlightText : null,
           reasoningPresets: _currentReasoningPresets(),
           onToolCallTap: component.onToolCallTap,
         ),
@@ -148,8 +152,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           final aiMessageItemIndex = items.length - 1;
           final aiMessageId = msg.id;
           final aiMessageContent = msg.content;
-          items.add(
-              Divider(color: CruxTheme.of(context).divider, height: 1));
+          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
           items.add(
             TldrBubble(
               tldrText: msg.tldr,
@@ -157,7 +160,7 @@ class _ChatHistoryState extends State<ChatHistory> {
               isGenerating: rt.isGeneratingTldr && !hasTldr,
               hasAuxiliaryModel:
                   component.providerService.auxiliaryModel != null &&
-                      component.providerService.auxiliaryModel != 'none',
+                  component.providerService.auxiliaryModel != 'none',
               onHeadingTap: (heading, url) => _handleTldrReferenceTap(
                 itemIndex: aiMessageItemIndex,
                 messageId: aiMessageId,
@@ -167,14 +170,12 @@ class _ChatHistoryState extends State<ChatHistory> {
               ),
             ),
           );
-          items.add(
-              Divider(color: CruxTheme.of(context).divider, height: 1));
+          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
         } else {
           final nextIsUser =
               i + 1 < messages.length && messages[i + 1].role == 'user';
           if (nextIsUser) {
-            items.add(
-                Divider(color: CruxTheme.of(context).divider, height: 1));
+            items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
           }
         }
       }
@@ -223,10 +224,10 @@ class _ChatHistoryState extends State<ChatHistory> {
             // round boundaries.
             streamingController: component.streamingController,
             sessionId: component.sessionController.currentSessionId ?? 0,
-            streamingToolCalls:
-                component.streamingController.streamingToolCallsFor(
-              component.sessionController.currentSessionId ?? 0,
-            ),
+            streamingToolCalls: component.streamingController
+                .streamingToolCallsFor(
+                  component.sessionController.currentSessionId ?? 0,
+                ),
             toolRegistry: component.toolRegistry,
             runtimeState: rt,
           ),
@@ -236,16 +237,17 @@ class _ChatHistoryState extends State<ChatHistory> {
 
     // Queued messages bubble.
     if (sessionId != null && isStreaming) {
-      final queue =
-          component.sessionController.messageQueueFor(sessionId);
+      final queue = component.sessionController.messageQueueFor(sessionId);
       if (queue.isNotEmpty) {
         items.add(SizedBox(height: 1));
         items.add(
           QueuedMessagesBubble(
             messages: queue.messages,
             onDiscard: (queueId) {
-              component.sessionController
-                  .discardQueuedMessage(sessionId, queueId);
+              component.sessionController.discardQueuedMessage(
+                sessionId,
+                queueId,
+              );
               component.refresh();
             },
           ),
@@ -300,10 +302,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           );
           return;
         case UrlLaunchResult.failed:
-          component.showToast(
-            "Couldn't open url: $url",
-            mode: ToastMode.error,
-          );
+          component.showToast("Couldn't open url: $url", mode: ToastMode.error);
           return;
       }
     }
@@ -314,11 +313,11 @@ class _ChatHistoryState extends State<ChatHistory> {
     });
     _clearHighlightAfterDelay();
 
-    final itemInfo =
-        component.scrollController.getItemIndexOffsetAndExtent(itemIndex);
+    final itemInfo = component.scrollController.getItemIndexOffsetAndExtent(
+      itemIndex,
+    );
     if (itemInfo != null) {
-      final lineOffset =
-          _findExcerptLineOffset(messageContent, heading);
+      final lineOffset = _findExcerptLineOffset(messageContent, heading);
       component.scrollController.jumpTo(itemInfo.$1 + lineOffset);
     }
   }
@@ -326,10 +325,8 @@ class _ChatHistoryState extends State<ChatHistory> {
   double _findExcerptLineOffset(String content, String excerpt) {
     int idx = content.indexOf(excerpt);
     if (idx < 0) {
-      final normContent =
-          content.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-      final normExcerpt =
-          excerpt.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      final normContent = content.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      final normExcerpt = excerpt.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
       final normIdx = normContent.indexOf(normExcerpt);
       if (normIdx < 0) return 0;
       int charPos = 0;
@@ -376,15 +373,11 @@ class _ChatHistoryState extends State<ChatHistory> {
   List<ReasoningPreset> _currentReasoningPresets() {
     final modelKey = component.sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');
-    final providerName =
-        slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
-    final llm =
-        component.providerService.llmProviderByName(providerName);
+    final providerName = slashIdx > 0 ? modelKey.substring(0, slashIdx) : '';
+    final llm = component.providerService.llmProviderByName(providerName);
     if (llm == null) return const [];
-    final modelId =
-        slashIdx > 0 ? modelKey.substring(slashIdx + 1) : modelKey;
-    final provider =
-        component.providerService.providerByName(providerName);
+    final modelId = slashIdx > 0 ? modelKey.substring(slashIdx + 1) : modelKey;
+    final provider = component.providerService.providerByName(providerName);
     final modelConfig = provider?.modelById(modelId);
     return llm.reasoningPresetsFor(
       modelId,
