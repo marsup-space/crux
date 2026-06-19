@@ -239,28 +239,53 @@ String parallelSingleCallHintMarker(SingleCallHintSeverity severity) {
 //     format (see [injectParallelSingleCallHintAsUserMessage]) so
 //     the LLM cannot miss it.
 
+// The templates scope the parallelisation suggestion to
+// "independent tool calls" deliberately — not "reads, searches, and
+// other read-only queries". Earlier wording scoped the suggestion to
+// read-only operations, which the model could (and did) read as
+// permission to keep serialising write/edit/exec calls one-at-a-time.
+// In practice almost any tool call is parallelisable as long as its
+// output isn't required as input to the next; the suggestion has to
+// cover that case or the drift never breaks.
+//
+// All three tiers also include a short *how-to* — the wire-format
+// mechanism the LLM needs to actually emit parallel calls. Naming
+// `tool_use` blocks (Anthropic) and the `tool_calls` array (OpenAI)
+// removes the model's guesswork: it knows exactly what "parallel
+// tool calls in a single turn" looks like on the wire.
+
 const parallelSingleCallHintMildTemplate =
     'You have emitted {count} consecutive single-tool-call rounds. '
-    'If those tool calls were independent, issuing them as parallel tool '
-    'calls in a single turn would have saved round trips with the model. '
-    'Going forward, consolidate independent reads, searches, and other '
-    'read-only queries into parallel tool calls per turn.';
+    'If those tool calls were independent, they could have been issued '
+    'as parallel tool calls in a single turn — saving round trips with '
+    'the model. To do this, include all independent tool calls in the '
+    'same assistant response (multiple tool_use blocks for Anthropic, '
+    'multiple entries in the tool_calls array for OpenAI), not one per '
+    'turn. Going forward, batch independent tool calls together and '
+    'only serialise when a call\'s output is genuinely required as '
+    'input to the next.';
 
 const parallelSingleCallHintFirmTemplate =
     'You have emitted {count} consecutive single-tool-call rounds — '
-    'a clear serialisation drift pattern. Independent reads and searches '
-    'should be issued as parallel tool calls in a single turn. Going '
-    'forward, batch the independent ones into parallel tool calls and '
-    'only serialise when an explicit ordering dependency exists.';
+    'a clear serialisation drift pattern. Independent tool calls should '
+    'be issued as parallel tool calls in a single turn: multiple '
+    'tool_use blocks (Anthropic) or multiple tool_calls array entries '
+    '(OpenAI) in one assistant response, then read the results '
+    'together on the next turn. Going forward, batch the independent '
+    'ones into a single turn and only serialise when an explicit '
+    'ordering dependency exists.';
 
 const parallelSingleCallHintUrgentTemplate =
     'You have emitted {count} consecutive single-tool-call rounds — '
     'severe serialisation drift. The previous, milder reminders '
-    '(appended to tool results) evidently did not adjust your behaviour. '
-    'Independent reads and searches MUST be issued as parallel tool calls '
-    'in a single turn; do not serialise them unless an explicit ordering '
-    'dependency exists. Every additional single-tool-call round wastes '
-    'a round trip with the model. Switch to parallel tool calls now.';
+    'evidently did not adjust your behaviour. Independent tool calls '
+    'MUST be issued as parallel tool calls in a single turn — emit '
+    'multiple tool_use blocks (Anthropic) or multiple tool_calls '
+    'array entries (OpenAI) in one assistant response, not one per '
+    'turn; do not serialise them unless an explicit ordering '
+    'dependency exists. Every additional single-tool-call round '
+    'wastes a round trip with the model. Switch to parallel tool '
+    'calls now.';
 
 /// Render the single-call hint body for the tier matching
 /// [consecutiveCount]. Pure string substitution — no wire-format

@@ -144,6 +144,108 @@ void main() {
       });
     });
 
+    test('code block paints complete themed rows', () async {
+      final theme = CruxThemeData.draculaFallback;
+      await testNocterm('code block themed rows', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: theme,
+            child: Container(
+              width: 32,
+              height: 8,
+              child: const HighlightedMarkdownText(
+                '```dart\nfinal x = 1;\n```',
+              ),
+            ),
+          ),
+        );
+
+        final topLeft = tester.terminalState.getCellAt(0, 0)!;
+        final topRight = tester.terminalState.getCellAt(31, 0)!;
+        final codeLeft = tester.terminalState.getCellAt(0, 1)!;
+        final codeRight = tester.terminalState.getCellAt(31, 1)!;
+        final paddedInterior = tester.terminalState.getCellAt(20, 1)!;
+        final bottomRight = tester.terminalState.getCellAt(31, 2)!;
+
+        expect(topLeft.char, '┌');
+        expect(topRight.char, '┐');
+        expect(codeLeft.char, '│');
+        expect(codeRight.char, '│');
+        expect(bottomRight.char, '┘');
+
+        for (final cell in [
+          topLeft,
+          topRight,
+          codeLeft,
+          codeRight,
+          bottomRight,
+        ]) {
+          expect(cell.style.color, theme.codeBlockGutter);
+          expect(cell.style.backgroundColor, theme.codeBlockBackground);
+        }
+        expect(paddedInterior.char, ' ');
+        expect(paddedInterior.style.backgroundColor, theme.codeBlockBackground);
+      }, size: const Size(32, 8));
+    });
+
+    test('code block selection omits visual border chrome', () async {
+      final theme = CruxThemeData.draculaFallback;
+      String? completed;
+      await testNocterm('code block selection text', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: theme,
+            child: Container(
+              width: 32,
+              height: 8,
+              child: SelectionArea(
+                onSelectionCompleted: (text) => completed = text,
+                child: const HighlightedMarkdownText(
+                  '```dart\nfinal x = 1;\nprint(x);\n```',
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.press(0, 0);
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.left,
+            x: 31,
+            y: 3,
+            pressed: true,
+            isMotion: true,
+          ),
+        );
+        await tester.release(31, 3);
+
+        expect(completed, isNotNull);
+        expect(completed, contains('final x = 1;'));
+        expect(completed, contains('print(x);'));
+        expect(completed, isNot(contains('│')));
+        expect(completed, isNot(contains('┌')));
+        expect(completed, isNot(contains('└')));
+        expect(completed, isNot(contains('┐')));
+        expect(completed, isNot(contains('┘')));
+
+        final topBorder = tester.terminalState.getCellAt(0, 0)!;
+        final leftBorder = tester.terminalState.getCellAt(0, 1)!;
+        final rightBorder = tester.terminalState.getCellAt(31, 1)!;
+        final bottomBorder = tester.terminalState.getCellAt(0, 3)!;
+        final codeText = tester.terminalState.getCellAt(2, 1)!;
+
+        expect(topBorder.style.backgroundColor, theme.codeBlockBackground);
+        expect(leftBorder.style.backgroundColor, theme.codeBlockBackground);
+        expect(rightBorder.style.backgroundColor, theme.codeBlockBackground);
+        expect(bottomBorder.style.backgroundColor, theme.codeBlockBackground);
+        expect(
+          codeText.style.backgroundColor,
+          isNot(theme.codeBlockBackground),
+        );
+      }, size: const Size(32, 8));
+    });
+
     // Regression: the code-block renderer used to split the source into
     // individual lines and highlight each one separately. That broke Dart's
     // `///` doc-comment grammar, because the `begin`/`while` pair only works
@@ -181,8 +283,9 @@ void main() {
 
         // The `///` markers should be in the comment color (theme
         // `highlightComment`), not the default code-block text color.
-        final commentMatches =
-            tester.terminalState.findText('/// First line of doc.');
+        final commentMatches = tester.terminalState.findText(
+          '/// First line of doc.',
+        );
         expect(commentMatches, isNotEmpty);
         final firstCell = tester.terminalState.getCellAt(
           commentMatches.first.x,
@@ -269,7 +372,10 @@ void main() {
         expect(tester.terminalState, containsText('returns early'));
         final matches = tester.terminalState.findText('returns early');
         expect(matches.length, greaterThan(0));
-        final cell = tester.terminalState.getCellAt(matches.first.x, matches.first.y);
+        final cell = tester.terminalState.getCellAt(
+          matches.first.x,
+          matches.first.y,
+        );
         expect(cell?.style.backgroundColor, isNotNull);
       });
     });
@@ -313,6 +419,53 @@ void main() {
         expect(tester.terminalState, containsText('B'));
         expect(tester.terminalState, containsText('1'));
         expect(tester.terminalState, containsText('2'));
+      });
+    });
+
+    test('table body rows alternate background colors', () async {
+      final theme = CruxThemeData.draculaFallback;
+      final headerBg = Color.alphaBlend(
+        theme.surfaceVariant.withOpacity(0.5),
+        theme.background,
+      );
+      final firstBodyBg = Color.alphaBlend(
+        theme.surface.withOpacity(0.5),
+        theme.background,
+      );
+      final secondBodyBg = Color.alphaBlend(
+        theme.surfaceVariant.withOpacity(0.5),
+        theme.background,
+      );
+      await testNocterm('table alternating rows', (tester) async {
+        await tester.pumpComponent(
+          NoctermApp(
+            theme: theme.toTuiThemeData(),
+            child: CruxTheme(
+              data: theme,
+              child: Container(
+                width: 80,
+                height: 24,
+                child: const HighlightedMarkdownText(
+                  '| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |',
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final headerCell = tester.terminalState.getCellAt(2, 1)!;
+        final firstBodyCell = tester.terminalState.getCellAt(2, 3)!;
+        final secondBodyCell = tester.terminalState.getCellAt(2, 4)!;
+        final firstBodyBorder = tester.terminalState.getCellAt(0, 3)!;
+        final secondBodyBorder = tester.terminalState.getCellAt(0, 4)!;
+
+        expect(headerCell.style.backgroundColor, headerBg);
+        expect(firstBodyCell.style.backgroundColor, firstBodyBg);
+        expect(secondBodyCell.style.backgroundColor, secondBodyBg);
+        expect(firstBodyBorder.style.color, theme.outline);
+        expect(secondBodyBorder.style.color, theme.outline);
+        expect(firstBodyBorder.style.backgroundColor, theme.background);
+        expect(secondBodyBorder.style.backgroundColor, theme.background);
       });
     });
 
@@ -395,11 +548,7 @@ void main() {
       await testNocterm('toast renders', (tester) async {
         final toastKey = GlobalKey<ToastHubState>();
         await tester.pumpComponent(
-          Container(
-            width: 80,
-            height: 24,
-            child: ToastHub(key: toastKey),
-          ),
+          Container(width: 80, height: 24, child: ToastHub(key: toastKey)),
         );
         // No toast visible yet.
         expect(tester.terminalState, isNot(containsText('Model switched')));
@@ -415,11 +564,7 @@ void main() {
       await testNocterm('toast modes render', (tester) async {
         final toastKey = GlobalKey<ToastHubState>();
         await tester.pumpComponent(
-          Container(
-            width: 80,
-            height: 24,
-            child: ToastHub(key: toastKey),
-          ),
+          Container(width: 80, height: 24, child: ToastHub(key: toastKey)),
         );
         toastKey.currentState?.show('something failed', mode: ToastMode.error);
         await tester.pump();
@@ -552,6 +697,59 @@ void main() {
       });
     });
 
+    test('pairs each tool row with its own result', () async {
+      await testNocterm('message bubble per-call result tap', (tester) async {
+        final message = Message(
+          id: 1,
+          sessionId: 1,
+          role: 'tool_call',
+          content: '',
+          toolCalls: const [
+            ToolCallData(callId: 'call_1', name: 'write', input: {}),
+            ToolCallData(callId: 'call_2', name: 'edit', input: {}),
+          ],
+        );
+        final firstResult = Message(
+          id: 2,
+          sessionId: 1,
+          role: 'tool',
+          content: 'first result',
+          toolCallId: 'call_1',
+        );
+        final secondResult = Message(
+          id: 3,
+          sessionId: 1,
+          role: 'tool',
+          content: 'second result',
+          toolCallId: 'call_2',
+        );
+
+        String? tappedCallId;
+        String? tappedContent;
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 10,
+            child: MessageBubble(
+              message: message,
+              resultByCallId: {
+                firstResult.toolCallId: firstResult,
+                secondResult.toolCallId: secondResult,
+              },
+              onToolCallTap: (toolCall, pairedResult) {
+                tappedCallId = toolCall.callId;
+                tappedContent = pairedResult?.content;
+              },
+            ),
+          ),
+        );
+
+        await tester.tap(2, 1);
+
+        expect(tappedCallId, 'call_2');
+        expect(tappedContent, 'second result');
+      });
+    });
   });
 
   group('AI Agent Debug Workflow', () {

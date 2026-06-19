@@ -1184,8 +1184,8 @@ context_size = 1000
           ToolCallData(callId: 'b', name: 'read', input: {}),
         ],
         results: [
-          (callId: 'a', output: 'match'),
-          (callId: 'b', output: 'contents'),
+          (callId: 'a', output: 'match', meta: ''),
+          (callId: 'b', output: 'contents', meta: ''),
         ],
       );
       await store.messageStore.addMessage(
@@ -1266,7 +1266,7 @@ context_size = 1000
           ToolCallData(callId: 'a', name: 'read', input: {}),
         ],
         results: [
-          (callId: 'a', output: 'contents'),
+          (callId: 'a', output: 'contents', meta: ''),
         ],
       );
       await store.messageStore.addMessage(
@@ -1300,8 +1300,8 @@ context_size = 1000
           ToolCallData(callId: 'b', name: 'read', input: {}),
         ],
         results: [
-          (callId: 'a', output: 'match'),
-          (callId: 'b', output: 'contents'),
+          (callId: 'a', output: 'match', meta: ''),
+          (callId: 'b', output: 'contents', meta: ''),
         ],
       );
       await store.messageStore.addMessage(
@@ -1319,7 +1319,7 @@ context_size = 1000
           ToolCallData(callId: 'c', name: 'read', input: {}),
         ],
         results: [
-          (callId: 'c', output: 'contents'),
+          (callId: 'c', output: 'contents', meta: ''),
         ],
       );
       await store.messageStore.addMessage(

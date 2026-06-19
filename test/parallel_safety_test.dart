@@ -62,11 +62,11 @@ void main() {
   });
 
   ToolContext ctx() => ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
+    sessionId: 1,
+    messageId: 1,
+    abort: AbortSignal(),
+    workingDirectory: tempDir.path,
+  );
 
   /// Mark a file as already read by the agent, mimicking the
   /// real-world flow where the model calls `read` first and then
@@ -88,147 +88,129 @@ void main() {
     Future<List<ToolResult>> runEdits(List<Map<String, dynamic>> inputs) {
       final calls = <ToolCall>[];
       for (var i = 0; i < inputs.length; i++) {
-        calls.add(ToolCall(
-          callId: 'call_$i',
-          name: 'edit',
-          input: inputs[i],
-        ));
+        calls.add(ToolCall(callId: 'call_$i', name: 'edit', input: inputs[i]));
       }
-      return Future.wait(
-        calls.map((c) => executor.executeTool(c, ctx())),
-      );
+      return Future.wait(calls.map((c) => executor.executeTool(c, ctx())));
     }
 
-    test(
-      'five concurrent edits to the same file all apply '
-      '(Future.wait simulates parallel dispatch)',
-      () async {
-        // Build a file with five distinct, non-overlapping markers.
-        // Each edit targets exactly one marker; if all five edits
-        // apply, the file's final content has all five replacements
-        // and zero original markers remaining.
-        final filePath = '${tempDir.path}/combo.txt';
-        final original = [
-          'MARK_ALPHA keep',
-          'MARK_BETA keep',
-          'MARK_GAMMA keep',
-          'MARK_DELTA keep',
-          'MARK_EPSILON keep',
-        ].join('\n');
-        await File(filePath).writeAsString(original);
-        await markRead(filePath);
+    test('five concurrent edits to the same file all apply '
+        '(Future.wait simulates parallel dispatch)', () async {
+      // Build a file with five distinct, non-overlapping markers.
+      // Each edit targets exactly one marker; if all five edits
+      // apply, the file's final content has all five replacements
+      // and zero original markers remaining.
+      final filePath = '${tempDir.path}/combo.txt';
+      final original = [
+        'MARK_ALPHA keep',
+        'MARK_BETA keep',
+        'MARK_GAMMA keep',
+        'MARK_DELTA keep',
+        'MARK_EPSILON keep',
+      ].join('\n');
+      await File(filePath).writeAsString(original);
+      await markRead(filePath);
 
-        final edits = <Map<String, dynamic>>[
-          {
-            'filePath': filePath,
-            'oldString': 'MARK_ALPHA',
-            'newString': 'GONE_A',
-            'intent': 'replace marker alpha',
-          },
-          {
-            'filePath': filePath,
-            'oldString': 'MARK_BETA',
-            'newString': 'GONE_B',
-            'intent': 'replace marker beta',
-          },
-          {
-            'filePath': filePath,
-            'oldString': 'MARK_GAMMA',
-            'newString': 'GONE_C',
-            'intent': 'replace marker gamma',
-          },
-          {
-            'filePath': filePath,
-            'oldString': 'MARK_DELTA',
-            'newString': 'GONE_D',
-            'intent': 'replace marker delta',
-          },
-          {
-            'filePath': filePath,
-            'oldString': 'MARK_EPSILON',
-            'newString': 'GONE_E',
-            'intent': 'replace marker epsilon',
-          },
-        ];
+      final edits = <Map<String, dynamic>>[
+        {
+          'filePath': filePath,
+          'oldString': 'MARK_ALPHA',
+          'newString': 'GONE_A',
+          'intent': 'replace marker alpha',
+        },
+        {
+          'filePath': filePath,
+          'oldString': 'MARK_BETA',
+          'newString': 'GONE_B',
+          'intent': 'replace marker beta',
+        },
+        {
+          'filePath': filePath,
+          'oldString': 'MARK_GAMMA',
+          'newString': 'GONE_C',
+          'intent': 'replace marker gamma',
+        },
+        {
+          'filePath': filePath,
+          'oldString': 'MARK_DELTA',
+          'newString': 'GONE_D',
+          'intent': 'replace marker delta',
+        },
+        {
+          'filePath': filePath,
+          'oldString': 'MARK_EPSILON',
+          'newString': 'GONE_E',
+          'intent': 'replace marker epsilon',
+        },
+      ];
 
-        final results = await runEdits(edits);
+      final results = await runEdits(edits);
 
-        // Each call must report a successful replacement.
-        for (final r in results) {
-          expect(
-            r.output,
-            contains('Replaced'),
-            reason: 'every parallel edit must report success, got: ${r.output}',
-          );
-        }
-
-        // File contents: every original marker gone, every new
-        // replacement present.
-        final after = await File(filePath).readAsString();
-        expect(after, isNot(contains('MARK_ALPHA')));
-        expect(after, isNot(contains('MARK_BETA')));
-        expect(after, isNot(contains('MARK_GAMMA')));
-        expect(after, isNot(contains('MARK_DELTA')));
-        expect(after, isNot(contains('MARK_EPSILON')));
-        expect(after, contains('GONE_A'));
-        expect(after, contains('GONE_B'));
-        expect(after, contains('GONE_C'));
-        expect(after, contains('GONE_D'));
-        expect(after, contains('GONE_E'));
-
-        // Sanity: line count preserved (no edits accidentally
-        // dropped or duplicated lines).
+      // Each call must report a successful replacement.
+      for (final r in results) {
         expect(
-          '\n'.allMatches(after).length + 1,
-          5,
-          reason: 'line count should be unchanged, got:\n$after',
+          r.output,
+          contains('Replaced'),
+          reason: 'every parallel edit must report success, got: ${r.output}',
         );
-      },
-    );
+      }
 
-    test(
-      'the chat_service dispatch pattern (sequential for-await) '
-      'applies all edits — confirming the production path is safe',
-      () async {
-        // Belt-and-suspenders: prove that the exact code shape used
-        // by chat_service.dart (a `for` loop with `await` on each
-        // iteration) applies every edit when targeting the same
-        // file. This is the property that makes the production
-        // loop safe; the previous test probes the upper bound of
-        // what the executor can survive.
-        final filePath = '${tempDir.path}/seq.txt';
-        await File(filePath).writeAsString(
-          'one\ntwo\nthree\nfour\nfive',
-        );
-        await markRead(filePath);
+      // File contents: every original marker gone, every new
+      // replacement present.
+      final after = await File(filePath).readAsString();
+      expect(after, isNot(contains('MARK_ALPHA')));
+      expect(after, isNot(contains('MARK_BETA')));
+      expect(after, isNot(contains('MARK_GAMMA')));
+      expect(after, isNot(contains('MARK_DELTA')));
+      expect(after, isNot(contains('MARK_EPSILON')));
+      expect(after, contains('GONE_A'));
+      expect(after, contains('GONE_B'));
+      expect(after, contains('GONE_C'));
+      expect(after, contains('GONE_D'));
+      expect(after, contains('GONE_E'));
 
-        final edits = <Map<String, dynamic>>[
-          {'filePath': filePath, 'oldString': 'one', 'newString': 'ONE'},
-          {'filePath': filePath, 'oldString': 'two', 'newString': 'TWO'},
-          {'filePath': filePath, 'oldString': 'three', 'newString': 'THREE'},
-          {'filePath': filePath, 'oldString': 'four', 'newString': 'FOUR'},
-          {'filePath': filePath, 'oldString': 'five', 'newString': 'FIVE'},
-        ];
+      // Sanity: line count preserved (no edits accidentally
+      // dropped or duplicated lines).
+      expect(
+        '\n'.allMatches(after).length + 1,
+        5,
+        reason: 'line count should be unchanged, got:\n$after',
+      );
+    });
 
-        // Mirror chat_service.dart's dispatch loop exactly.
-        final results = <ToolResult>[];
-        for (var i = 0; i < edits.length; i++) {
-          final call = ToolCall(
-            callId: 'seq_$i',
-            name: 'edit',
-            input: edits[i],
-          );
-          results.add(await executor.executeTool(call, ctx()));
-        }
+    test('the chat_service dispatch pattern (sequential for-await) '
+        'applies all edits — confirming the production path is safe', () async {
+      // Belt-and-suspenders: prove that the exact code shape used
+      // by chat_service.dart (a `for` loop with `await` on each
+      // iteration) applies every edit when targeting the same
+      // file. This is the property that makes the production
+      // loop safe; the previous test probes the upper bound of
+      // what the executor can survive.
+      final filePath = '${tempDir.path}/seq.txt';
+      await File(filePath).writeAsString('one\ntwo\nthree\nfour\nfive');
+      await markRead(filePath);
 
-        for (final r in results) {
-          expect(r.output, contains('Replaced'));
-        }
+      final edits = <Map<String, dynamic>>[
+        {'filePath': filePath, 'oldString': 'one', 'newString': 'ONE'},
+        {'filePath': filePath, 'oldString': 'two', 'newString': 'TWO'},
+        {'filePath': filePath, 'oldString': 'three', 'newString': 'THREE'},
+        {'filePath': filePath, 'oldString': 'four', 'newString': 'FOUR'},
+        {'filePath': filePath, 'oldString': 'five', 'newString': 'FIVE'},
+      ];
 
-        final after = await File(filePath).readAsString();
-        expect(after, 'ONE\nTWO\nTHREE\nFOUR\nFIVE');
-      },
-    );
+      // Mirror chat_service.dart's dispatch loop exactly.
+      final results = <ToolResult>[];
+      for (var i = 0; i < edits.length; i++) {
+        final call = ToolCall(callId: 'seq_$i', name: 'edit', input: edits[i]);
+        results.add(await executor.executeTool(call, ctx()));
+      }
+
+      for (final r in results) {
+        expect(r.output, contains('Replaced'));
+      }
+
+      final after = await File(filePath).readAsString();
+      expect(after, 'ONE\nTWO\nTHREE\nFOUR\nFIVE');
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────
@@ -239,75 +221,113 @@ void main() {
     Future<List<ToolResult>> runWrites(List<Map<String, dynamic>> inputs) {
       final calls = <ToolCall>[];
       for (var i = 0; i < inputs.length; i++) {
-        calls.add(ToolCall(
-          callId: 'call_$i',
-          name: 'write',
-          input: inputs[i],
-        ));
+        calls.add(ToolCall(callId: 'call_$i', name: 'write', input: inputs[i]));
       }
       // Fire all writes concurrently — the worst case for a
       // read-then-write cycle that lacks serialization.
-      return Future.wait(
-        calls.map((c) => executor.executeTool(c, ctx())),
-      );
+      return Future.wait(calls.map((c) => executor.executeTool(c, ctx())));
     }
 
-    test(
-      'five concurrent writes to the same file all apply in '
-      'emission order (Future.wait simulates parallel dispatch)',
-      () async {
-        // Build a file with five distinct payloads. Each write
-        // targets the same path; if all five writes apply in
-        // emission order, the file's final content is the LAST
-        // payload written (later writes win, but every payload
-        // was at least *applied* — the lock guarantees no write
-        // is silently dropped). The intermediate `result.output`
-        // strings should each show a successful write.
-        final filePath = '${tempDir.path}/overwrite.txt';
-        await File(filePath).writeAsString('initial');
-        await markRead(filePath);
+    test('five concurrent writes to the same file all apply in '
+        'emission order (Future.wait simulates parallel dispatch)', () async {
+      // Build a file with five distinct payloads. Each write
+      // targets the same path; if all five writes apply in
+      // emission order, the file's final content is the LAST
+      // payload written (later writes win, but every payload
+      // was at least *applied* — the lock guarantees no write
+      // is silently dropped). The intermediate `result.output`
+      // strings should each show a successful write.
+      final filePath = '${tempDir.path}/overwrite.txt';
+      await File(filePath).writeAsString('initial');
+      await markRead(filePath);
 
-        const payloads = [
-          'PAYLOAD_A',
-          'PAYLOAD_B',
-          'PAYLOAD_C',
-          'PAYLOAD_D',
-          'PAYLOAD_E',
-        ];
+      const payloads = [
+        'PAYLOAD_A',
+        'PAYLOAD_B',
+        'PAYLOAD_C',
+        'PAYLOAD_D',
+        'PAYLOAD_E',
+      ];
 
-        final inputs = payloads
-            .map(
-              (p) => <String, dynamic>{
-                'filePath': filePath,
-                'content': p,
-                'intent': 'write $p',
-              },
-            )
-            .toList();
+      final inputs = payloads
+          .map(
+            (p) => <String, dynamic>{
+              'filePath': filePath,
+              'content': p,
+              'intent': 'write $p',
+            },
+          )
+          .toList();
 
-        final results = await runWrites(inputs);
+      final results = await runWrites(inputs);
 
-        // Every write must report success.
-        for (final r in results) {
-          expect(
-            r.output,
-            contains('File written'),
-            reason: 'every parallel write must report success, got: ${r.output}',
-          );
-        }
-
-        // Final content is exactly the LAST payload (emission
-        // order = application order). If the lock failed, the
-        // final content would be one of the earlier payloads
-        // (whichever wrote last in the race).
-        final after = await File(filePath).readAsString();
+      // Every write must report success.
+      for (final r in results) {
         expect(
-          after,
-          payloads.last,
-          reason: 'final file content must be the last emitted payload, got: $after',
+          r.output,
+          contains('File written'),
+          reason: 'every parallel write must report success, got: ${r.output}',
         );
-      },
-    );
+      }
+
+      // Final content is exactly the LAST payload (emission
+      // order = application order). If the lock failed, the
+      // final content would be one of the earlier payloads
+      // (whichever wrote last in the race).
+      final after = await File(filePath).readAsString();
+      expect(
+        after,
+        payloads.last,
+        reason:
+            'final file content must be the last emitted payload, got: $after',
+      );
+    });
+
+    test('guard-triggered parallel tool aborts cancellable sibling', () async {
+      registry.register(_GuardTool());
+      registry.register(_AbortAwareTool());
+
+      final calls = [
+        const ToolCall(callId: 'call_guard', name: 'test_guard', input: {}),
+        const ToolCall(
+          callId: 'call_sibling',
+          name: 'test_abort_aware',
+          input: {},
+        ),
+      ];
+      final signals = {
+        for (final call in calls) call.callId: AbortSignal(sessionId: 1),
+      };
+
+      final entries = await Future.wait([
+        for (final call in calls)
+          () async {
+            final signal = signals[call.callId]!;
+            final result = await executor.executeTool(
+              call,
+              ToolContext(
+                sessionId: 1,
+                messageId: 1,
+                abort: signal,
+                callId: call.callId,
+                workingDirectory: tempDir.path,
+              ),
+            );
+            if (result.metadata['guardTriggered'] == true ||
+                result.title == 'Error') {
+              for (final sibling in signals.entries) {
+                if (sibling.key != call.callId) sibling.value.abort();
+              }
+            }
+            return MapEntry(call.callId, result);
+          }(),
+      ]);
+      final results = Map.fromEntries(entries);
+
+      expect(results['call_guard']!.metadata['guardTriggered'], isTrue);
+      expect(results['call_sibling']!.title, 'Error');
+      expect(results['call_sibling']!.output, 'Tool aborted');
+    });
 
     test(
       'the chat_service dispatch pattern (sequential for-await) '
@@ -343,4 +363,52 @@ void main() {
       },
     );
   });
+}
+
+class _GuardTool extends ToolDef {
+  @override
+  String get name => 'test_guard';
+
+  @override
+  String get description => 'Test-only guard tool';
+
+  @override
+  Map<String, dynamic> get parametersSchema => const {
+    'type': 'object',
+    'properties': {},
+  };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
+    return const ToolResult(
+      title: 'Guard triggered',
+      output: 'guard',
+      metadata: {'guardTriggered': true},
+    );
+  }
+}
+
+class _AbortAwareTool extends ToolDef {
+  @override
+  String get name => 'test_abort_aware';
+
+  @override
+  String get description => 'Test-only abort-aware tool';
+
+  @override
+  Map<String, dynamic> get parametersSchema => const {
+    'type': 'object',
+    'properties': {},
+  };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
+    for (var i = 0; i < 50; i++) {
+      if (ctx.abort.isAborted) {
+        return ToolResult.error('Tool aborted');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    return const ToolResult(title: 'Finished', output: 'finished');
+  }
 }
