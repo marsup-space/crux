@@ -52,18 +52,25 @@ class StreamingToolCall {
 class StreamingToolAbortInfo {
   final String reason;
 
-  /// Exact character count of this tool call's streamed
-  /// `input_delta` at the moment the guard fired. Lives on the
-  /// live-row data so the streaming bubble can show an honest
-  /// "aborted at N chars" suffix while the round is still
-  /// unwinding (the persisted message bubble reads the same
-  /// value back out of `metadata['abortedInputChars']` after
-  /// the round persists).
-  final int abortedInputChars;
+  /// Estimated token count of this tool call's streamed
+  /// `input_delta` at the moment the guard fired.
+  final int abortedInputTokensEstimate;
 
   const StreamingToolAbortInfo({
     required this.reason,
-    required this.abortedInputChars,
+    required this.abortedInputTokensEstimate,
+  });
+}
+
+class ExecutingToolCall {
+  final String callId;
+  final String name;
+  final String inputPreview;
+
+  const ExecutingToolCall({
+    required this.callId,
+    required this.name,
+    required this.inputPreview,
   });
 }
 
@@ -73,6 +80,9 @@ class StreamingController {
 
   final Map<int, String> _streamingContent = {};
   final Map<int, String> _streamingReasoning = {};
+  final Map<int, DateTime> _waitingForModelSince = {};
+  final Map<int, DateTime> _executingToolsSince = {};
+  final Map<int, List<ExecutingToolCall>> _executingToolCalls = {};
 
   /// Per-session, per-tool-call-index accumulator for streaming
   /// `tool_use` chunks. Keyed first by session id, then by the
@@ -89,10 +99,14 @@ class StreamingController {
       _streamingReasoning[sessionId] ?? '';
 
   void appendStreamingContent(int sessionId, String delta) {
+    _waitingForModelSince.remove(sessionId);
+    _clearExecutingTools(sessionId);
     _streamingContent[sessionId] = (_streamingContent[sessionId] ?? '') + delta;
   }
 
   void appendStreamingReasoning(int sessionId, String delta) {
+    _waitingForModelSince.remove(sessionId);
+    _clearExecutingTools(sessionId);
     _streamingReasoning[sessionId] =
         (_streamingReasoning[sessionId] ?? '') + delta;
   }
@@ -107,6 +121,8 @@ class StreamingController {
   /// `text_delta` handler) is what calls `setState`, so the
   /// controller's update piggybacks on the existing render tick.
   void updateStreamingToolCall(int sessionId, ToolUseChunk chunk) {
+    _waitingForModelSince.remove(sessionId);
+    _clearExecutingTools(sessionId);
     final perSession = _streamingToolCalls.putIfAbsent(
       sessionId,
       () => <int, StreamingToolCall>{},
@@ -120,9 +136,71 @@ class StreamingController {
       );
     } else {
       perSession[chunk.index] = existing.copyWith(
+        callId: existing.callId.isEmpty ? chunk.callId : existing.callId,
+        name: existing.name.isEmpty ? chunk.name : existing.name,
         accumulatedInputJson: existing.accumulatedInputJson + chunk.inputDelta,
       );
     }
+  }
+
+  void beginWaitingForModel(int sessionId) {
+    _streamingContent.remove(sessionId);
+    _streamingReasoning.remove(sessionId);
+    _streamingToolCalls.remove(sessionId);
+    _clearExecutingTools(sessionId);
+    _waitingForModelSince[sessionId] = DateTime.now();
+    _refresh();
+  }
+
+  double? waitingForModelSeconds(int sessionId) {
+    final since = _waitingForModelSince[sessionId];
+    if (since == null) return null;
+    return DateTime.now().difference(since).inMilliseconds / 1000.0;
+  }
+
+  void beginExecutingTools(int sessionId, List<ExecutingToolCall> calls) {
+    _streamingContent.remove(sessionId);
+    _streamingReasoning.remove(sessionId);
+    _streamingToolCalls.remove(sessionId);
+    _waitingForModelSince.remove(sessionId);
+    _executingToolsSince[sessionId] = DateTime.now();
+    _executingToolCalls[sessionId] = calls;
+    _refresh();
+  }
+
+  double? executingToolsSeconds(int sessionId) {
+    final since = _executingToolsSince[sessionId];
+    if (since == null) return null;
+    return DateTime.now().difference(since).inMilliseconds / 1000.0;
+  }
+
+  List<ExecutingToolCall> executingToolCallsFor(int sessionId) {
+    return _executingToolCalls[sessionId] ?? const [];
+  }
+
+  void finishExecutingTools(int sessionId) {
+    if (!_executingToolsSince.containsKey(sessionId) &&
+        !_executingToolCalls.containsKey(sessionId)) {
+      return;
+    }
+    _clearExecutingTools(sessionId);
+    _refresh();
+  }
+
+  int streamingToolInputTokensFor(int sessionId) {
+    final perSession = _streamingToolCalls[sessionId];
+    if (perSession == null || perSession.isEmpty) return 0;
+    return perSession.values.fold<int>(
+      0,
+      (sum, call) => sum + call.estimatedInputTokens,
+    );
+  }
+
+  bool hasLiveStreamingFor(int sessionId) {
+    return (_streamingContent[sessionId]?.isNotEmpty ?? false) ||
+        (_streamingReasoning[sessionId]?.isNotEmpty ?? false) ||
+        (_streamingToolCalls[sessionId]?.isNotEmpty ?? false) ||
+        (_executingToolCalls[sessionId]?.isNotEmpty ?? false);
   }
 
   void markStreamingToolCallAborted(
@@ -131,7 +209,7 @@ class StreamingController {
     required String callId,
     required String name,
     required String reason,
-    required int abortedInputChars,
+    required int abortedInputTokensEstimate,
   }) {
     final perSession = _streamingToolCalls.putIfAbsent(
       sessionId,
@@ -140,7 +218,7 @@ class StreamingController {
     final existing = perSession[index];
     final abortInfo = StreamingToolAbortInfo(
       reason: reason,
-      abortedInputChars: abortedInputChars,
+      abortedInputTokensEstimate: abortedInputTokensEstimate,
     );
     perSession[index] = existing == null
         ? StreamingToolCall(
@@ -178,6 +256,13 @@ class StreamingController {
     _streamingContent.remove(sessionId);
     _streamingReasoning.remove(sessionId);
     _streamingToolCalls.remove(sessionId);
+    _waitingForModelSince.remove(sessionId);
+    _clearExecutingTools(sessionId);
+  }
+
+  void _clearExecutingTools(int sessionId) {
+    _executingToolsSince.remove(sessionId);
+    _executingToolCalls.remove(sessionId);
   }
 
   // The metricsTimer was previously held here in a per-session

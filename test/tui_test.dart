@@ -750,6 +750,57 @@ void main() {
         expect(tappedContent, 'second result');
       });
     });
+
+    test('does not reuse another tool result when callId is missing', () async {
+      await testNocterm('message bubble missing result no fallback', (
+        tester,
+      ) async {
+        final message = Message(
+          id: 1,
+          sessionId: 1,
+          role: 'tool_call',
+          content: '',
+          toolCalls: const [
+            ToolCallData(
+              callId: 'call_read',
+              name: 'read',
+              input: {'filePath': 'lib/a.dart'},
+            ),
+            ToolCallData(
+              callId: 'call_edit',
+              name: 'edit',
+              input: {'filePath': 'lib/a.dart'},
+            ),
+          ],
+        );
+        final editGuardResult = Message(
+          id: 2,
+          sessionId: 1,
+          role: 'tool',
+          content: '[GUARD] Edit was BLOCKED — oldString does not match',
+          toolCallId: 'call_edit',
+        );
+
+        await tester.pumpComponent(
+          Container(
+            width: 120,
+            height: 10,
+            child: MessageBubble(
+              message: message,
+              resultByCallId: {editGuardResult.toolCallId: editGuardResult},
+            ),
+          ),
+        );
+
+        expect(tester.terminalState, containsText('Read:'));
+        expect(
+          tester.terminalState,
+          isNot(containsText('Read: lib/a.dart guard triggered')),
+        );
+        expect(tester.terminalState, containsText('Edit:'));
+        expect(tester.terminalState, containsText('Edit: lib/a.dart guard'));
+      });
+    });
   });
 
   group('AI Agent Debug Workflow', () {

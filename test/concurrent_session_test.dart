@@ -34,8 +34,7 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('crux_concurrent_');
     providerService = ProviderService(userProvidersDir: tempDir.path);
     store = SessionStore(CruxDatabase());
-    final toolRegistry = ToolRegistry()
-      ..registerDefaults(FileReadTracker());
+    final toolRegistry = ToolRegistry()..registerDefaults(FileReadTracker());
     sessionController = SessionController(
       store: store,
       providerService: providerService,
@@ -109,6 +108,69 @@ void main() {
 
       streaming.appendStreamingContent(1, 'second');
       expect(streaming.streamingContentFor(1), 'second');
+    });
+
+    test('tool input tokens are tracked for any streaming tool', () {
+      streaming.updateStreamingToolCall(
+        1,
+        const ToolUseChunk(
+          index: 0,
+          callId: '',
+          name: '',
+          inputDelta: '{"filePath":"lib/a.dart"',
+        ),
+      );
+      streaming.updateStreamingToolCall(
+        1,
+        const ToolUseChunk(
+          index: 0,
+          callId: 'call_1',
+          name: 'read',
+          inputDelta: ',"limit":20}',
+        ),
+      );
+
+      final calls = streaming.streamingToolCallsFor(1);
+      expect(calls, hasLength(1));
+      expect(calls.single.callId, 'call_1');
+      expect(calls.single.name, 'read');
+      expect(streaming.streamingToolInputTokensFor(1), greaterThan(0));
+    });
+
+    test('waiting-for-model state is cleared by the next stream delta', () {
+      streaming.beginWaitingForModel(1);
+      expect(streaming.waitingForModelSeconds(1), isNotNull);
+
+      streaming.updateStreamingToolCall(
+        1,
+        const ToolUseChunk(
+          index: 0,
+          callId: 'call_1',
+          name: 'grep',
+          inputDelta: '{"pattern":"foo"}',
+        ),
+      );
+
+      expect(streaming.waitingForModelSeconds(1), isNull);
+      expect(streaming.streamingToolInputTokensFor(1), greaterThan(0));
+    });
+
+    test('executing tools state tracks running tool calls', () {
+      streaming.beginExecutingTools(1, const [
+        ExecutingToolCall(
+          callId: 'call_bash',
+          name: 'bash',
+          inputPreview: 'sleep 10',
+        ),
+      ]);
+
+      expect(streaming.executingToolsSeconds(1), isNotNull);
+      expect(streaming.executingToolCallsFor(1), hasLength(1));
+      expect(streaming.executingToolCallsFor(1).single.name, 'bash');
+
+      streaming.finishExecutingTools(1);
+      expect(streaming.executingToolsSeconds(1), isNull);
+      expect(streaming.executingToolCallsFor(1), isEmpty);
     });
 
     test('nonexistent session returns empty string', () {

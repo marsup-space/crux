@@ -83,7 +83,11 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   /// so it runs inside Nocterm's frame pipeline.
   String _content = '';
   String _reasoning = '';
+  double? _waitingForModelSeconds;
+  double? _executingToolsSeconds;
+  List<ExecutingToolCall> _executingToolCalls = const [];
   List<StreamingToolCall> _toolCalls = const [];
+
   /// Per-callId animated metrics, driven manually from the
   /// 16ms scheduler below. The shared module also powers the
   /// collapsed post-call row + the tool detail pane header, so
@@ -148,18 +152,33 @@ class _StreamingBubbleState extends State<StreamingBubble> {
     final c = component.streamingController;
     final newContent = c.streamingContentFor(component.sessionId);
     final newReasoning = c.streamingReasoningFor(component.sessionId);
+    final newWaitingForModelSeconds = c.waitingForModelSeconds(
+      component.sessionId,
+    );
+    final newExecutingToolsSeconds = c.executingToolsSeconds(
+      component.sessionId,
+    );
+    final newExecutingToolCalls = c.executingToolCallsFor(component.sessionId);
     final newToolCalls = c.streamingToolCallsFor(component.sessionId);
     final effectiveToolCalls = newToolCalls.isNotEmpty
         ? newToolCalls
         : component.streamingToolCalls;
 
-    var changed = newContent != _content || newReasoning != _reasoning;
+    var changed =
+        newContent != _content ||
+        newReasoning != _reasoning ||
+        newWaitingForModelSeconds != _waitingForModelSeconds ||
+        newExecutingToolsSeconds != _executingToolsSeconds ||
+        !_sameExecutingToolCalls(_executingToolCalls, newExecutingToolCalls);
     changed = _syncToolMetrics(effectiveToolCalls, elapsed) || changed;
 
     if (!changed) return;
     setState(() {
       _content = newContent;
       _reasoning = newReasoning;
+      _waitingForModelSeconds = newWaitingForModelSeconds;
+      _executingToolsSeconds = newExecutingToolsSeconds;
+      _executingToolCalls = newExecutingToolCalls;
       _toolCalls = effectiveToolCalls;
     });
   }
@@ -214,8 +233,26 @@ class _StreamingBubbleState extends State<StreamingBubble> {
           left.name != right.name ||
           left.accumulatedInputJson != right.accumulatedInputJson ||
           left.abortInfo?.reason != right.abortInfo?.reason ||
-          left.abortInfo?.abortedInputChars !=
-              right.abortInfo?.abortedInputChars) {
+          left.abortInfo?.abortedInputTokensEstimate !=
+              right.abortInfo?.abortedInputTokensEstimate) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameExecutingToolCalls(
+    List<ExecutingToolCall> a,
+    List<ExecutingToolCall> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.callId != right.callId ||
+          left.name != right.name ||
+          left.inputPreview != right.inputPreview) {
         return false;
       }
     }
@@ -238,6 +275,8 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   @override
   Component build(BuildContext context) {
     final hasReasoning = _reasoning.isNotEmpty;
+    final waitingSeconds = _waitingForModelSeconds;
+    final executingSeconds = _executingToolsSeconds;
 
     final children = <Component>[];
 
@@ -286,7 +325,21 @@ class _StreamingBubbleState extends State<StreamingBubble> {
               ),
             ),
             Expanded(
-              child: _content.isEmpty
+              child: _content.isEmpty && waitingSeconds != null
+                  ? Text(
+                      '(waiting for ${_formatSeconds(waitingSeconds)})',
+                      style: TextStyle(
+                        color: CruxTheme.of(context).onSurfaceDim,
+                      ),
+                    )
+                  : _content.isEmpty && executingSeconds != null
+                  ? Text(
+                      '(executing tools for ${_formatSeconds(executingSeconds)})',
+                      style: TextStyle(
+                        color: CruxTheme.of(context).onSurfaceDim,
+                      ),
+                    )
+                  : _content.isEmpty
                   ? Text(
                       '...',
                       style: TextStyle(color: CruxTheme.of(context).foreground),
@@ -297,6 +350,25 @@ class _StreamingBubbleState extends State<StreamingBubble> {
         ),
       ),
     );
+
+    if (_executingToolCalls.isNotEmpty) {
+      children.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final call in _executingToolCalls)
+                _buildExecutingToolCallRow(
+                  call,
+                  executingSeconds ?? 0,
+                  context,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (_toolCalls.isNotEmpty) {
       children.add(
@@ -382,7 +454,40 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   }
 
   String _formatAbortedMetrics(StreamingToolAbortInfo abortInfo) {
-    return ' · aborted at ${abortInfo.abortedInputChars} chars';
+    return ' · aborted after ~${abortInfo.abortedInputTokensEstimate} t';
+  }
+
+  Component _buildExecutingToolCallRow(
+    ExecutingToolCall call,
+    double elapsedSeconds,
+    BuildContext context,
+  ) {
+    final preview = call.inputPreview.isEmpty ? '' : '${call.inputPreview} ';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          ' ${_capitalize(call.name)}: ',
+          style: TextStyle(
+            color: CruxTheme.of(context).toolPrefix,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            '${preview}executing for ${_formatSeconds(elapsedSeconds)}',
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatSeconds(double seconds) {
+    if (seconds < 60) return '${seconds.toStringAsFixed(2)}s';
+    final minutes = seconds ~/ 60;
+    final rest = seconds - minutes * 60;
+    return '${minutes}m ${rest.toStringAsFixed(2)}s';
   }
 
   /// Attempt to extract the `intent` value from a possibly-partial
