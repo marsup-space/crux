@@ -37,7 +37,6 @@ class Message {
   final int thinkingDurationMs;
   final String? reasoningEffort;
   final String model;
-  final double cost;
   final int tokensIn;
   final int tokensOut;
   final String? error;
@@ -85,7 +84,6 @@ class Message {
     this.thinkingDurationMs = 0,
     this.reasoningEffort,
     this.model = '',
-    this.cost = 0.0,
     this.tokensIn = 0,
     this.tokensOut = 0,
     this.error,
@@ -125,7 +123,6 @@ class Message {
     int? thinkingDurationMs,
     String? reasoningEffort,
     String? model,
-    double? cost,
     int? tokensIn,
     int? tokensOut,
     String? error,
@@ -149,7 +146,6 @@ class Message {
       thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       model: model ?? this.model,
-      cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
       error: error ?? this.error,

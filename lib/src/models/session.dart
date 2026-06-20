@@ -9,7 +9,6 @@ class Session {
   final String agent;
   final int? parentId;
   final String projectPath;
-  double cost;
   int tokensIn;
   int tokensOut;
   int contextTokens;
@@ -40,7 +39,6 @@ class Session {
     this.agent = '',
     this.parentId,
     this.projectPath = '',
-    this.cost = 0.0,
     this.tokensIn = 0,
     this.tokensOut = 0,
     this.contextTokens = 0,

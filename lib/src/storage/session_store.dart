@@ -195,7 +195,6 @@ class SessionStore implements SessionStoreAccessor {
     String? title,
     String? model,
     SessionStatus? status,
-    double? cost,
     int? tokensIn,
     int? tokensOut,
     int? contextTokens,
@@ -225,7 +224,6 @@ class SessionStore implements SessionStoreAccessor {
         title: title != null ? Value(title) : const Value.absent(),
         model: model != null ? Value(model) : const Value.absent(),
         status: status != null ? Value(status) : const Value.absent(),
-        cost: cost != null ? Value(cost) : const Value.absent(),
         tokensIn: tokensIn != null ? Value(tokensIn) : const Value.absent(),
         tokensOut: tokensOut != null ? Value(tokensOut) : const Value.absent(),
         contextTokens: contextTokens != null
@@ -444,7 +442,6 @@ WHERE status = ?
       agent: row.agent,
       parentId: row.parentId,
       projectPath: row.projectPath,
-      cost: row.cost,
       tokensIn: row.tokensIn,
       tokensOut: row.tokensOut,
       contextTokens: row.contextTokens,

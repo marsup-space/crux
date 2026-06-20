@@ -60,8 +60,14 @@ class CruxDatabase extends _$CruxDatabase {
   ///         on a `webfetch` that fell back to the system proxy).
   ///         Read by the chat-history bubble renderer; never sent
   ///         to the LLM.
+  ///   v21 – dropped `sessions.cost` and `messages.cost`. Cost tracking
+  ///         was a half-built feature with a hardcoded rate table for
+  ///         5 model IDs that mostly returned 0.0 for real-world
+  ///         usage, and was never wired into any user-facing UI.
+  ///         Existing rows lose whatever value they had at the time
+  ///         of the migration; new rows have no `cost` column at all.
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -131,6 +137,21 @@ class CruxDatabase extends _$CruxDatabase {
       }
       if (from < 20) {
         await m.addColumn(messages, messages.meta);
+      }
+      if (from < 21) {
+        // Drop the orphaned `cost` columns from both tables. SQLite
+        // 3.35.0+ supports `ALTER TABLE ... DROP COLUMN` natively,
+        // and every supported platform (macOS, modern Linux distros,
+        // Windows 10/11) ships a version at or above that. If a
+        // user somehow hits an older SQLite, the migration will
+        // throw and the app will refuse to start — same failure
+        // mode as any other migration error.
+        await m.database.customStatement(
+          'ALTER TABLE sessions DROP COLUMN cost',
+        );
+        await m.database.customStatement(
+          'ALTER TABLE messages DROP COLUMN cost',
+        );
       }
     },
   );

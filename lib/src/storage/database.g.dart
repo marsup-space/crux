@@ -93,16 +93,6 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
-  static const VerificationMeta _costMeta = const VerificationMeta('cost');
-  @override
-  late final GeneratedColumn<double> cost = GeneratedColumn<double>(
-    'cost',
-    aliasedName,
-    false,
-    type: DriftSqlType.double,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0.0),
-  );
   static const VerificationMeta _tokensInMeta = const VerificationMeta(
     'tokensIn',
   );
@@ -270,7 +260,6 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     agent,
     parentId,
     projectPath,
-    cost,
     tokensIn,
     tokensOut,
     contextTokens,
@@ -338,12 +327,6 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
           data['project_path']!,
           _projectPathMeta,
         ),
-      );
-    }
-    if (data.containsKey('cost')) {
-      context.handle(
-        _costMeta,
-        cost.isAcceptableOrUnknown(data['cost']!, _costMeta),
       );
     }
     if (data.containsKey('tokens_in')) {
@@ -498,10 +481,6 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.string,
         data['${effectivePrefix}project_path'],
       )!,
-      cost: attachedDatabase.typeMapping.read(
-        DriftSqlType.double,
-        data['${effectivePrefix}cost'],
-      )!,
       tokensIn: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}tokens_in'],
@@ -579,7 +558,6 @@ class Session extends DataClass implements Insertable<Session> {
   final String agent;
   final int? parentId;
   final String projectPath;
-  final double cost;
   final int tokensIn;
   final int tokensOut;
   final int contextTokens;
@@ -621,7 +599,6 @@ class Session extends DataClass implements Insertable<Session> {
     required this.agent,
     this.parentId,
     required this.projectPath,
-    required this.cost,
     required this.tokensIn,
     required this.tokensOut,
     required this.contextTokens,
@@ -654,7 +631,6 @@ class Session extends DataClass implements Insertable<Session> {
       map['parent_id'] = Variable<int>(parentId);
     }
     map['project_path'] = Variable<String>(projectPath);
-    map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
     map['tokens_out'] = Variable<int>(tokensOut);
     map['context_tokens'] = Variable<int>(contextTokens);
@@ -694,7 +670,6 @@ class Session extends DataClass implements Insertable<Session> {
           ? const Value.absent()
           : Value(parentId),
       projectPath: Value(projectPath),
-      cost: Value(cost),
       tokensIn: Value(tokensIn),
       tokensOut: Value(tokensOut),
       contextTokens: Value(contextTokens),
@@ -738,7 +713,6 @@ class Session extends DataClass implements Insertable<Session> {
       agent: serializer.fromJson<String>(json['agent']),
       parentId: serializer.fromJson<int?>(json['parentId']),
       projectPath: serializer.fromJson<String>(json['projectPath']),
-      cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
       tokensOut: serializer.fromJson<int>(json['tokensOut']),
       contextTokens: serializer.fromJson<int>(json['contextTokens']),
@@ -771,7 +745,6 @@ class Session extends DataClass implements Insertable<Session> {
       'agent': serializer.toJson<String>(agent),
       'parentId': serializer.toJson<int?>(parentId),
       'projectPath': serializer.toJson<String>(projectPath),
-      'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
       'tokensOut': serializer.toJson<int>(tokensOut),
       'contextTokens': serializer.toJson<int>(contextTokens),
@@ -798,7 +771,6 @@ class Session extends DataClass implements Insertable<Session> {
     String? agent,
     Value<int?> parentId = const Value.absent(),
     String? projectPath,
-    double? cost,
     int? tokensIn,
     int? tokensOut,
     int? contextTokens,
@@ -822,7 +794,6 @@ class Session extends DataClass implements Insertable<Session> {
     agent: agent ?? this.agent,
     parentId: parentId.present ? parentId.value : this.parentId,
     projectPath: projectPath ?? this.projectPath,
-    cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
     tokensOut: tokensOut ?? this.tokensOut,
     contextTokens: contextTokens ?? this.contextTokens,
@@ -856,7 +827,6 @@ class Session extends DataClass implements Insertable<Session> {
       projectPath: data.projectPath.present
           ? data.projectPath.value
           : this.projectPath,
-      cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
       tokensOut: data.tokensOut.present ? data.tokensOut.value : this.tokensOut,
       contextTokens: data.contextTokens.present
@@ -901,7 +871,6 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('agent: $agent, ')
           ..write('parentId: $parentId, ')
           ..write('projectPath: $projectPath, ')
-          ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
@@ -930,7 +899,6 @@ class Session extends DataClass implements Insertable<Session> {
     agent,
     parentId,
     projectPath,
-    cost,
     tokensIn,
     tokensOut,
     contextTokens,
@@ -958,7 +926,6 @@ class Session extends DataClass implements Insertable<Session> {
           other.agent == this.agent &&
           other.parentId == this.parentId &&
           other.projectPath == this.projectPath &&
-          other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
           other.tokensOut == this.tokensOut &&
           other.contextTokens == this.contextTokens &&
@@ -984,7 +951,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<String> agent;
   final Value<int?> parentId;
   final Value<String> projectPath;
-  final Value<double> cost;
   final Value<int> tokensIn;
   final Value<int> tokensOut;
   final Value<int> contextTokens;
@@ -1008,7 +974,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.agent = const Value.absent(),
     this.parentId = const Value.absent(),
     this.projectPath = const Value.absent(),
-    this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
@@ -1033,7 +998,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.agent = const Value.absent(),
     this.parentId = const Value.absent(),
     this.projectPath = const Value.absent(),
-    this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.contextTokens = const Value.absent(),
@@ -1060,7 +1024,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<String>? agent,
     Expression<int>? parentId,
     Expression<String>? projectPath,
-    Expression<double>? cost,
     Expression<int>? tokensIn,
     Expression<int>? tokensOut,
     Expression<int>? contextTokens,
@@ -1085,7 +1048,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (agent != null) 'agent': agent,
       if (parentId != null) 'parent_id': parentId,
       if (projectPath != null) 'project_path': projectPath,
-      if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
       if (tokensOut != null) 'tokens_out': tokensOut,
       if (contextTokens != null) 'context_tokens': contextTokens,
@@ -1114,7 +1076,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<String>? agent,
     Value<int?>? parentId,
     Value<String>? projectPath,
-    Value<double>? cost,
     Value<int>? tokensIn,
     Value<int>? tokensOut,
     Value<int>? contextTokens,
@@ -1139,7 +1100,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       agent: agent ?? this.agent,
       parentId: parentId ?? this.parentId,
       projectPath: projectPath ?? this.projectPath,
-      cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
       contextTokens: contextTokens ?? this.contextTokens,
@@ -1185,9 +1145,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     }
     if (projectPath.present) {
       map['project_path'] = Variable<String>(projectPath.value);
-    }
-    if (cost.present) {
-      map['cost'] = Variable<double>(cost.value);
     }
     if (tokensIn.present) {
       map['tokens_in'] = Variable<int>(tokensIn.value);
@@ -1247,7 +1204,6 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('agent: $agent, ')
           ..write('parentId: $parentId, ')
           ..write('projectPath: $projectPath, ')
-          ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('contextTokens: $contextTokens, ')
@@ -1387,16 +1343,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
-  );
-  static const VerificationMeta _costMeta = const VerificationMeta('cost');
-  @override
-  late final GeneratedColumn<double> cost = GeneratedColumn<double>(
-    'cost',
-    aliasedName,
-    false,
-    type: DriftSqlType.double,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0.0),
   );
   static const VerificationMeta _tokensInMeta = const VerificationMeta(
     'tokensIn',
@@ -1542,7 +1488,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     thinkingDurationMs,
     reasoningEffort,
     model,
-    cost,
     tokensIn,
     tokensOut,
     toolCalls,
@@ -1642,12 +1587,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
       context.handle(
         _modelMeta,
         model.isAcceptableOrUnknown(data['model']!, _modelMeta),
-      );
-    }
-    if (data.containsKey('cost')) {
-      context.handle(
-        _costMeta,
-        cost.isAcceptableOrUnknown(data['cost']!, _costMeta),
       );
     }
     if (data.containsKey('tokens_in')) {
@@ -1785,10 +1724,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}model'],
       )!,
-      cost: attachedDatabase.typeMapping.read(
-        DriftSqlType.double,
-        data['${effectivePrefix}cost'],
-      )!,
       tokensIn: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}tokens_in'],
@@ -1857,7 +1792,6 @@ class Message extends DataClass implements Insertable<Message> {
   final int thinkingDurationMs;
   final String? reasoningEffort;
   final String model;
-  final double cost;
   final int tokensIn;
   final int tokensOut;
   final String toolCalls;
@@ -1895,7 +1829,6 @@ class Message extends DataClass implements Insertable<Message> {
     required this.thinkingDurationMs,
     this.reasoningEffort,
     required this.model,
-    required this.cost,
     required this.tokensIn,
     required this.tokensOut,
     required this.toolCalls,
@@ -1924,7 +1857,6 @@ class Message extends DataClass implements Insertable<Message> {
       map['reasoning_effort'] = Variable<String>(reasoningEffort);
     }
     map['model'] = Variable<String>(model);
-    map['cost'] = Variable<double>(cost);
     map['tokens_in'] = Variable<int>(tokensIn);
     map['tokens_out'] = Variable<int>(tokensOut);
     map['tool_calls'] = Variable<String>(toolCalls);
@@ -1960,7 +1892,6 @@ class Message extends DataClass implements Insertable<Message> {
           ? const Value.absent()
           : Value(reasoningEffort),
       model: Value(model),
-      cost: Value(cost),
       tokensIn: Value(tokensIn),
       tokensOut: Value(tokensOut),
       toolCalls: Value(toolCalls),
@@ -2000,7 +1931,6 @@ class Message extends DataClass implements Insertable<Message> {
       thinkingDurationMs: serializer.fromJson<int>(json['thinkingDurationMs']),
       reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       model: serializer.fromJson<String>(json['model']),
-      cost: serializer.fromJson<double>(json['cost']),
       tokensIn: serializer.fromJson<int>(json['tokensIn']),
       tokensOut: serializer.fromJson<int>(json['tokensOut']),
       toolCalls: serializer.fromJson<String>(json['toolCalls']),
@@ -2029,7 +1959,6 @@ class Message extends DataClass implements Insertable<Message> {
       'thinkingDurationMs': serializer.toJson<int>(thinkingDurationMs),
       'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'model': serializer.toJson<String>(model),
-      'cost': serializer.toJson<double>(cost),
       'tokensIn': serializer.toJson<int>(tokensIn),
       'tokensOut': serializer.toJson<int>(tokensOut),
       'toolCalls': serializer.toJson<String>(toolCalls),
@@ -2056,7 +1985,6 @@ class Message extends DataClass implements Insertable<Message> {
     int? thinkingDurationMs,
     Value<String?> reasoningEffort = const Value.absent(),
     String? model,
-    double? cost,
     int? tokensIn,
     int? tokensOut,
     String? toolCalls,
@@ -2082,7 +2010,6 @@ class Message extends DataClass implements Insertable<Message> {
         ? reasoningEffort.value
         : this.reasoningEffort,
     model: model ?? this.model,
-    cost: cost ?? this.cost,
     tokensIn: tokensIn ?? this.tokensIn,
     tokensOut: tokensOut ?? this.tokensOut,
     toolCalls: toolCalls ?? this.toolCalls,
@@ -2120,7 +2047,6 @@ class Message extends DataClass implements Insertable<Message> {
           ? data.reasoningEffort.value
           : this.reasoningEffort,
       model: data.model.present ? data.model.value : this.model,
-      cost: data.cost.present ? data.cost.value : this.cost,
       tokensIn: data.tokensIn.present ? data.tokensIn.value : this.tokensIn,
       tokensOut: data.tokensOut.present ? data.tokensOut.value : this.tokensOut,
       toolCalls: data.toolCalls.present ? data.toolCalls.value : this.toolCalls,
@@ -2157,7 +2083,6 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('reasoningEffort: $reasoningEffort, ')
           ..write('model: $model, ')
-          ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('toolCalls: $toolCalls, ')
@@ -2186,7 +2111,6 @@ class Message extends DataClass implements Insertable<Message> {
     thinkingDurationMs,
     reasoningEffort,
     model,
-    cost,
     tokensIn,
     tokensOut,
     toolCalls,
@@ -2214,7 +2138,6 @@ class Message extends DataClass implements Insertable<Message> {
           other.thinkingDurationMs == this.thinkingDurationMs &&
           other.reasoningEffort == this.reasoningEffort &&
           other.model == this.model &&
-          other.cost == this.cost &&
           other.tokensIn == this.tokensIn &&
           other.tokensOut == this.tokensOut &&
           other.toolCalls == this.toolCalls &&
@@ -2240,7 +2163,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int> thinkingDurationMs;
   final Value<String?> reasoningEffort;
   final Value<String> model;
-  final Value<double> cost;
   final Value<int> tokensIn;
   final Value<int> tokensOut;
   final Value<String> toolCalls;
@@ -2264,7 +2186,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.thinkingDurationMs = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
     this.model = const Value.absent(),
-    this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.toolCalls = const Value.absent(),
@@ -2289,7 +2210,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.thinkingDurationMs = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
     this.model = const Value.absent(),
-    this.cost = const Value.absent(),
     this.tokensIn = const Value.absent(),
     this.tokensOut = const Value.absent(),
     this.toolCalls = const Value.absent(),
@@ -2316,7 +2236,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? thinkingDurationMs,
     Expression<String>? reasoningEffort,
     Expression<String>? model,
-    Expression<double>? cost,
     Expression<int>? tokensIn,
     Expression<int>? tokensOut,
     Expression<String>? toolCalls,
@@ -2342,7 +2261,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
         'thinking_duration_ms': thinkingDurationMs,
       if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (model != null) 'model': model,
-      if (cost != null) 'cost': cost,
       if (tokensIn != null) 'tokens_in': tokensIn,
       if (tokensOut != null) 'tokens_out': tokensOut,
       if (toolCalls != null) 'tool_calls': toolCalls,
@@ -2369,7 +2287,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int>? thinkingDurationMs,
     Value<String?>? reasoningEffort,
     Value<String>? model,
-    Value<double>? cost,
     Value<int>? tokensIn,
     Value<int>? tokensOut,
     Value<String>? toolCalls,
@@ -2394,7 +2311,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       model: model ?? this.model,
-      cost: cost ?? this.cost,
       tokensIn: tokensIn ?? this.tokensIn,
       tokensOut: tokensOut ?? this.tokensOut,
       toolCalls: toolCalls ?? this.toolCalls,
@@ -2442,9 +2358,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
-    }
-    if (cost.present) {
-      map['cost'] = Variable<double>(cost.value);
     }
     if (tokensIn.present) {
       map['tokens_in'] = Variable<int>(tokensIn.value);
@@ -2498,7 +2411,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('thinkingDurationMs: $thinkingDurationMs, ')
           ..write('reasoningEffort: $reasoningEffort, ')
           ..write('model: $model, ')
-          ..write('cost: $cost, ')
           ..write('tokensIn: $tokensIn, ')
           ..write('tokensOut: $tokensOut, ')
           ..write('toolCalls: $toolCalls, ')
@@ -3769,7 +3681,6 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<String> agent,
       Value<int?> parentId,
       Value<String> projectPath,
-      Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
@@ -3795,7 +3706,6 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<String> agent,
       Value<int?> parentId,
       Value<String> projectPath,
-      Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<int> contextTokens,
@@ -3944,11 +3854,6 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get projectPath => $composableBuilder(
     column: $table.projectPath,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<double> get cost => $composableBuilder(
-    column: $table.cost,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4172,11 +4077,6 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<double> get cost => $composableBuilder(
-    column: $table.cost,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<int> get tokensIn => $composableBuilder(
     column: $table.tokensIn,
     builder: (column) => ColumnOrderings(column),
@@ -4282,9 +4182,6 @@ class $$SessionsTableAnnotationComposer
     column: $table.projectPath,
     builder: (column) => column,
   );
-
-  GeneratedColumn<double> get cost =>
-      $composableBuilder(column: $table.cost, builder: (column) => column);
 
   GeneratedColumn<int> get tokensIn =>
       $composableBuilder(column: $table.tokensIn, builder: (column) => column);
@@ -4486,7 +4383,6 @@ class $$SessionsTableTableManager
                 Value<String> agent = const Value.absent(),
                 Value<int?> parentId = const Value.absent(),
                 Value<String> projectPath = const Value.absent(),
-                Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
@@ -4510,7 +4406,6 @@ class $$SessionsTableTableManager
                 agent: agent,
                 parentId: parentId,
                 projectPath: projectPath,
-                cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
@@ -4536,7 +4431,6 @@ class $$SessionsTableTableManager
                 Value<String> agent = const Value.absent(),
                 Value<int?> parentId = const Value.absent(),
                 Value<String> projectPath = const Value.absent(),
-                Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<int> contextTokens = const Value.absent(),
@@ -4560,7 +4454,6 @@ class $$SessionsTableTableManager
                 agent: agent,
                 parentId: parentId,
                 projectPath: projectPath,
-                cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 contextTokens: contextTokens,
@@ -4725,7 +4618,6 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<int> thinkingDurationMs,
       Value<String?> reasoningEffort,
       Value<String> model,
-      Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<String> toolCalls,
@@ -4751,7 +4643,6 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<int> thinkingDurationMs,
       Value<String?> reasoningEffort,
       Value<String> model,
-      Value<double> cost,
       Value<int> tokensIn,
       Value<int> tokensOut,
       Value<String> toolCalls,
@@ -4858,11 +4749,6 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get model => $composableBuilder(
     column: $table.model,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<double> get cost => $composableBuilder(
-    column: $table.cost,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5029,11 +4915,6 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<double> get cost => $composableBuilder(
-    column: $table.cost,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<int> get tokensIn => $composableBuilder(
     column: $table.tokensIn,
     builder: (column) => ColumnOrderings(column),
@@ -5163,9 +5044,6 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get model =>
       $composableBuilder(column: $table.model, builder: (column) => column);
-
-  GeneratedColumn<double> get cost =>
-      $composableBuilder(column: $table.cost, builder: (column) => column);
 
   GeneratedColumn<int> get tokensIn =>
       $composableBuilder(column: $table.tokensIn, builder: (column) => column);
@@ -5298,7 +5176,6 @@ class $$MessagesTableTableManager
                 Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> model = const Value.absent(),
-                Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<String> toolCalls = const Value.absent(),
@@ -5322,7 +5199,6 @@ class $$MessagesTableTableManager
                 thinkingDurationMs: thinkingDurationMs,
                 reasoningEffort: reasoningEffort,
                 model: model,
-                cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 toolCalls: toolCalls,
@@ -5348,7 +5224,6 @@ class $$MessagesTableTableManager
                 Value<int> thinkingDurationMs = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> model = const Value.absent(),
-                Value<double> cost = const Value.absent(),
                 Value<int> tokensIn = const Value.absent(),
                 Value<int> tokensOut = const Value.absent(),
                 Value<String> toolCalls = const Value.absent(),
@@ -5372,7 +5247,6 @@ class $$MessagesTableTableManager
                 thinkingDurationMs: thinkingDurationMs,
                 reasoningEffort: reasoningEffort,
                 model: model,
-                cost: cost,
                 tokensIn: tokensIn,
                 tokensOut: tokensOut,
                 toolCalls: toolCalls,

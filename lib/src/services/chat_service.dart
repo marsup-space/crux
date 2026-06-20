@@ -1572,13 +1572,6 @@ class ChatService {
     final content = roundTextBuffer.toString();
     final reasoningContent = roundReasoningBuffer.toString();
     final reasoningSignature = roundReasoningSignatureBuffer.toString();
-    final cost = _estimateCost(
-      provider,
-      modelId,
-      promptTokens,
-      completionTokens,
-      promptCacheHitTokens: promptCacheHitTokens,
-    );
 
     final thinkingMs = (reasoningContent.isNotEmpty || reasoningTokens > 0)
         ? roundThinkingDurationMs.round()
@@ -1596,7 +1589,6 @@ class ChatService {
           ? null
           : runtime.reasoningEffort ?? 'normal',
       model: compositeKey,
-      cost: cost,
       tokensIn: promptTokens,
       tokensOut: completionTokens,
     );
@@ -1604,7 +1596,6 @@ class ChatService {
     await _store.update(
       sessionId,
       status: SessionStatus.done,
-      cost: session.cost + cost,
       tokensIn: session.tokensIn + promptTokens,
       tokensOut: session.tokensOut + completionTokens,
       contextTokens: promptTokens + completionTokens - reasoningTokens,
@@ -1614,7 +1605,6 @@ class ChatService {
     );
 
     session.status = SessionStatus.done;
-    session.cost += cost;
     session.tokensIn += promptTokens;
     session.tokensOut += completionTokens;
     session.contextTokens = promptTokens + completionTokens - reasoningTokens;

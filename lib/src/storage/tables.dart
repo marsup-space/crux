@@ -11,7 +11,6 @@ class Sessions extends Table {
   TextColumn get agent => text().withDefault(const Constant(''))();
   IntColumn get parentId => integer().nullable()();
   TextColumn get projectPath => text().withDefault(const Constant(''))();
-  RealColumn get cost => real().withDefault(const Constant(0.0))();
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();
   IntColumn get tokensOut => integer().withDefault(const Constant(0))();
   IntColumn get contextTokens => integer().withDefault(const Constant(0))();
@@ -61,7 +60,6 @@ class Messages extends Table {
       integer().withDefault(const Constant(0))();
   TextColumn get reasoningEffort => text().nullable()();
   TextColumn get model => text().withDefault(const Constant(''))();
-  RealColumn get cost => real().withDefault(const Constant(0.0))();
   IntColumn get tokensIn => integer().withDefault(const Constant(0))();
   IntColumn get tokensOut => integer().withDefault(const Constant(0))();
   TextColumn get toolCalls => text().withDefault(const Constant(''))();

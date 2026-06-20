@@ -1007,7 +1007,6 @@ class CommandExecutor {
     buf.writeln('  agent:           ${s.agent}');
     buf.writeln('  parentId:        ${s.parentId}');
     buf.writeln('  projectPath:     ${s.projectPath}');
-    buf.writeln('  cost:            ${s.cost.toStringAsFixed(4)}');
     buf.writeln('  tokensIn:        ${s.tokensIn}');
     buf.writeln('  tokensOut:       ${s.tokensOut}');
     buf.writeln('  contextTokens:   ${s.contextTokens}');
@@ -1035,7 +1034,6 @@ class CommandExecutor {
         '  #${m.id} [${m.role}] '
         '${m.model.isEmpty ? "" : "model=${m.model} "}'
         'in=${m.tokensIn} out=${m.tokensOut} '
-        'cost=${m.cost.toStringAsFixed(4)} '
         'reason=${m.reasoningTokens}t '
         'thinkMs=${m.thinkingDurationMs} '
         'effort=${m.reasoningEffort ?? "—"} '
