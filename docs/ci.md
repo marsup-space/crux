@@ -50,9 +50,17 @@ File: `.github/workflows/release.yml`
 Runs automatically when you push a version tag:
 
 ```bash
-git tag v0.7.0
-git push origin v0.7.0
+dart run tool/prepare_release.dart 0.7.1
+git add pubspec.yaml bin/crux.dart README.md
+git commit -m "Release v0.7.1"
+git tag v0.7.1
+git push origin master
+git push origin v0.7.1
 ```
+
+The final `git push origin v0.7.1` triggers the release workflow. You can also
+pass `--tag` to `tool/prepare_release.dart` if you want the script to create the
+tag after updating the version files.
 
 Tag builds package these targets and publish the archives to the GitHub Release
 for that tag:
