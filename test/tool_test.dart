@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/registry.dart';
@@ -17,6 +18,7 @@ import 'package:crux/src/tools/write_tool.dart';
 import 'package:crux/src/tools/matchers/exact_matcher.dart';
 import 'package:crux/src/tools/matchers/whitespace_matcher.dart';
 import 'package:crux/src/tools/matchers/indentation_matcher.dart';
+import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/utils/token_estimate.dart';
 
 void main() {
@@ -81,8 +83,10 @@ void main() {
 
     test('registerDefaults registers all 7 tools', () {
       final tracker = FileReadTracker();
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
       final registry = ToolRegistry();
-      registry.registerDefaults(tracker);
+      registry.registerDefaults(tracker, sessionStore: SessionStore(db));
       final names = registry.all.map((t) => t.name).toList();
       final expectedShell = Platform.isWindows ? 'cmd' : 'bash';
       expect(
@@ -95,15 +99,16 @@ void main() {
           'grep',
           'glob',
           'webfetch',
+          'session',
         ]),
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 8);
+        expect(registry.all.length, 9);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 7);
+        expect(registry.all.length, 8);
       }
     });
   });

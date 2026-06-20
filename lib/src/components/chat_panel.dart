@@ -312,7 +312,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
     );
     final registry = ToolRegistry();
-    registry.registerDefaults(tracker, lsp: _lspManager);
+    registry.registerDefaults(tracker, sessionStore: _store, lsp: _lspManager);
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
     _chatService = ChatService(

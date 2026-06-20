@@ -7,6 +7,7 @@ export 'grep_tool.dart';
 export 'powershell_tool.dart';
 export 'read_tool.dart';
 export 'registry.dart';
+export 'session_tool.dart';
 export 'shell_base.dart';
 export 'tool_def.dart';
 export 'webfetch_tool.dart';

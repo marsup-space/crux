@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../storage/session_store.dart';
 import 'bash_tool.dart';
 import 'cmd_tool.dart';
 import 'edit_tool.dart';
@@ -8,6 +9,7 @@ import 'glob_tool.dart';
 import 'grep_tool.dart';
 import 'powershell_tool.dart';
 import 'read_tool.dart';
+import 'session_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
 import 'write_tool.dart';
@@ -40,7 +42,15 @@ class ToolRegistry {
   /// each successful mutation, and the read tool warms the server
   /// in the background so subsequent edits are fast. Pass null to
   /// disable LSP feedback.
-  void registerDefaults(FileReadTracker tracker, {dynamic lsp}) {
+  ///
+  /// [sessionStore] powers the read-only `session` tool, which lets
+  /// the agent list sessions, page through messages, and search
+  /// across conversations without shelling out to sqlite3.
+  void registerDefaults(
+    FileReadTracker tracker, {
+    required SessionStore sessionStore,
+    dynamic lsp,
+  }) {
     if (Platform.isWindows) {
       register(CmdTool());
       register(PowerShellTool());
@@ -53,5 +63,6 @@ class ToolRegistry {
     register(GrepTool());
     register(GlobTool());
     register(WebFetchTool());
+    register(SessionTool(store: sessionStore));
   }
 }

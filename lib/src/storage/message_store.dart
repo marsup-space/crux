@@ -147,6 +147,40 @@ class MessageStore {
     });
   }
 
+  /// Number of messages in [sessionId]. Used by the `session` tool to
+  /// render the message-count column on a `list` and to bound the
+  /// "showing N of M" hint on a `show`.
+  Future<int> countBySession(int sessionId) async {
+    final count = countAll();
+    final query = _db.selectOnly(_db.messages)
+      ..addColumns([count])
+      ..where(_db.messages.sessionId.equals(sessionId));
+    final row = await query.getSingle();
+    return row.read(count) ?? 0;
+  }
+
+  /// Count for each session in [sessionIds] in a single query. Returns
+  /// an empty map for an empty input. Missing sessions map to 0.
+  ///
+  /// Used by the `session list` action — fetching N sessions and then
+  /// N separate `countBySession` round-trips is wasteful, so we batch.
+  Future<Map<int, int>> countBySessions(List<int> sessionIds) async {
+    if (sessionIds.isEmpty) return const {};
+    final count = countAll();
+    final query = _db.selectOnly(_db.messages)
+      ..addColumns([count, _db.messages.sessionId])
+      ..where(_db.messages.sessionId.isIn(sessionIds))
+      ..groupBy([_db.messages.sessionId]);
+    final rows = await query.get();
+    final result = <int, int>{for (final id in sessionIds) id: 0};
+    for (final row in rows) {
+      final sid = row.read(_db.messages.sessionId);
+      final c = row.read(count);
+      if (sid != null && c != null) result[sid] = c;
+    }
+    return result;
+  }
+
   Future<List<Message>> getMessages(
     int sessionId, {
     int limit = 1000,
