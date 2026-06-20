@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    name: Dart checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Cache third-party tools
+        uses: actions/cache@v4
+        with:
+          path: third_party/bin
+          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/manifest.toml', 'third_party/manifest.json') }}
+          restore-keys: |
+            ${{ runner.os }}-third-party-
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Fetch native tools
+        run: dart run tool/third_party.dart fetch
+
+      - name: Check formatting (report only)
+        run: |
+          dart format --output=none --set-exit-if-changed bin lib test tool || {
+            echo "::warning::Formatting drift found. Run: dart format bin lib test tool"
+          }
+
+      - name: Analyze
+        run: dart analyze --no-fatal-warnings
+
+      - name: Smoke tests
+        run: >
+          dart test
+          test/tool_test.dart
+          test/llm_client_test.dart
+          test/llm_usage_test.dart
+          test/proxy_aware_http_test.dart
+          test/provider_config_test.dart
+          test/coding_plan_usage_test.dart
+          test/parallel_praise_test.dart
+          test/services/prompts/system_prompt_test.dart
+          test/services/prompts/project_notes_discovery_test.dart
