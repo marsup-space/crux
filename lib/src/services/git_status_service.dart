@@ -162,8 +162,9 @@ class GitStatusService extends ChangeNotifier {
   /// How often the timer fires a background refresh. 60s is
   /// intentionally lazy — the user typically edits files via the
   /// agent (which triggers an event-driven refresh in
-  /// [ChatTurnOrchestrator.onToolRound] after an `edit`/`write`
-  /// call), so a 1-minute tick is enough to catch out-of-band
+  /// [ChatTurnOrchestrator] after an `edit`/`write` tool round, and
+  /// again unconditionally on agent turn end to catch shell-driven
+  /// mutations), so a 1-minute tick is enough to catch out-of-band
   /// mutations (manual edits in another window, a `git` command
   /// run by hand, branch switches). Drops the idle-repo
   /// `git status` cost by 12x versus the original 5s interval.

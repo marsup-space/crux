@@ -490,6 +490,23 @@ class ChatTurnOrchestrator {
               return;
             }
 
+            // The agent turn is done. Fire a final fire-and-forget
+            // git-status refresh to catch any working-tree mutations
+            // the agent made via `bash` / `cmd` — e.g. `git mv`,
+            // `mv foo bar`, `rm foo`, `echo x > foo`. The per-round
+            // latch above deliberately skips those because we can't
+            // reliably know whether a shell call touched the tree,
+            // but at turn end we *do* know the agent is done mutating
+            // and the working tree is in its final state.
+            //
+            // [GitStatusService.refresh] is internally guarded by an
+            // `_refreshing` flag, so this call is free when a refresh
+            // is already in flight (e.g. we just refreshed after the
+            // last `edit`/`write` round). When the only mutations came
+            // from `bash`, no earlier refresh fired and this one is
+            // what actually catches the change.
+            unawaited(_gitStatusService.refresh());
+
             // Roll the per-turn token usage into the
             // per-run aggregator. Done before the rest of
             // the completion bookkeeping so the counters
