@@ -62,7 +62,6 @@ for that tag:
 - `macos-x64`
 - `macos-arm64`
 - `windows-x64`
-- `windows-arm64`
 
 It can also be started manually from GitHub:
 
@@ -122,5 +121,7 @@ When the repository is ready, upgrade CI in this order:
 3. Fix the full-suite failure and replace the smoke-test list with `dart test`.
 4. Add per-platform smoke tests after release packaging.
 5. Add release checksums once the artifact set stabilizes.
+6. Add `windows-arm64` once GitHub makes private-repo Windows ARM runners
+   generally available, or after moving release builds to a paid larger runner.
 
 The current workflows are a practical starting point, not the final ceiling.
