@@ -36,7 +36,12 @@ class CommandContext {
   final SessionRuntimeState Function(int) runtime;
   final void Function(SessionRuntimeState) persistThinkingLevel;
   final void Function() resolveAuxiliaryModel;
-  final void Function(int, Message, TldrDetail)? triggerTldr;
+  /// Trigger a TLDR summary for [aiMsg]. The fourth positional
+  /// argument is the user-role message that preceded [aiMsg] —
+  /// surfaced to the auxiliary model so the summary can prioritize
+  /// what the user actually asked and match their language. May
+  /// be null when [aiMsg] has no real preceding user turn.
+  final void Function(int, Message, TldrDetail, String?)? triggerTldr;
   final ThemeController? themeController;
 
   /// Re-trigger the chat pipeline for a single turn. When [text] is
@@ -554,8 +559,23 @@ class CommandExecutor {
         return;
     }
 
+    // Find the user message that immediately precedes lastAi so the
+    // summarizer knows what was being asked. Walk currentMessages
+    // backwards from lastAi and stop at the first user-role row —
+    // any user rows *after* lastAi are unrelated to this turn.
+    String? lastUserContent;
+    final lastAiIndex = ctx.currentMessages.indexOf(lastAi);
+    if (lastAiIndex > 0) {
+      for (var i = lastAiIndex - 1; i >= 0; i--) {
+        if (ctx.currentMessages[i].role == 'user') {
+          lastUserContent = ctx.currentMessages[i].content;
+          break;
+        }
+      }
+    }
+
     if (ctx.triggerTldr != null) {
-      ctx.triggerTldr!(ctx.currentSessionId!, lastAi, detail);
+      ctx.triggerTldr!(ctx.currentSessionId!, lastAi, detail, lastUserContent);
     }
   }
 

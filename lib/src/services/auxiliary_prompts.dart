@@ -46,22 +46,34 @@ const _headingRefInstruction =
     'copy. Do not paraphrase, truncate, or alter it in any way; it can be as '
     'long as needed. Use markdown formatting (tables, lists, headings, etc.) '
     'if it helps present the summary clearly. '
-    'You MUST use the same language as the response.';
+    'Language: write the prose in the same language as the user\'s question '
+    '(provided just before the assistant response in the messages). Code '
+    'identifiers, file paths, symbol names, and the bracketed verbatim quotes '
+    'from the response must stay exactly as they appear in the source — do '
+    'NOT translate them. If no user question is provided, fall back to the '
+    'language of the response.';
+
+/// Shared preamble for every TLDR detail level. Teaches the
+/// auxiliary model that the user's question precedes the
+/// assistant response in the message list, so it should anchor
+/// the summary to what the user actually asked (and to the
+/// user's language, see [_headingRefInstruction]).
+const _tldrQuestionContext =
+    'Generate a "Too Long Didn\'t Read" summary of the assistant\'s response '
+    'below. The user\'s question (when present) appears as the user-role '
+    'message just above the assistant response in the conversation — use it '
+    'to understand what the user actually asked and prioritize the parts of '
+    'the response that answer that question. If no user question is provided, '
+    'summarize the response on its own merits. ';
 
 String tldrSystemPromptFor(TldrDetail detail) {
-  switch (detail) {
-    case TldrDetail.concise:
-      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
-          'response. Be as concise as possible — only the essentials. '
-          '$_headingRefInstruction';
-    case TldrDetail.detailed:
-      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
-          'response. Make it easy to read and do not skip any topic from the '
-          'original. $_headingRefInstruction';
-    case TldrDetail.defaultLevel:
-      return 'Generate a "Too Long Didn\'t Read" summary of the following AI '
-          'response. $_headingRefInstruction';
-  }
+  final level = switch (detail) {
+    TldrDetail.concise => 'Be as concise as possible — only the essentials. ',
+    TldrDetail.detailed => 'Make it easy to read and do not skip any topic '
+        'from the original. ',
+    TldrDetail.defaultLevel => '',
+  };
+  return '$_tldrQuestionContext$level$_headingRefInstruction';
 }
 
 /// Backwards-compatible alias for the default-level prompt. Kept for any

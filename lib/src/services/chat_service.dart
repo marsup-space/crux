@@ -208,8 +208,14 @@ class ChatService {
 
   Future<String?> generateTldr(
     String responseContent, {
+    String? userQuestion,
     TldrDetail detail = TldrDetail.defaultLevel,
-  }) => _auxiliaryService.generateTldr(responseContent, detail: detail);
+  }) =>
+      _auxiliaryService.generateTldr(
+        responseContent,
+        userQuestion: userQuestion,
+        detail: detail,
+      );
 
   Future<CompactionResult?> maybeAutoCompactIntoChildSession({
     required int sessionId,

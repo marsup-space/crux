@@ -592,7 +592,27 @@ class ChatTurnOrchestrator {
               ),
             );
             if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
-              maybeGenerateTldr(sessionId, lastAiMsg);
+              // Walk msgs backwards from the last AI row to find the
+              // user question that triggered this response. The
+              // auxiliary model uses it to focus the summary on what
+              // the user actually asked and to pick the right
+              // language. Stops at lastAiMsg itself (any user rows
+              // *after* it would be unrelated).
+              String? lastUserContent;
+              final lastAiIndex = msgs.indexOf(lastAiMsg);
+              if (lastAiIndex > 0) {
+                for (var i = lastAiIndex - 1; i >= 0; i--) {
+                  if (msgs[i].role == 'user') {
+                    lastUserContent = msgs[i].content;
+                    break;
+                  }
+                }
+              }
+              maybeGenerateTldr(
+                sessionId,
+                lastAiMsg,
+                userQuestion: lastUserContent,
+              );
             }
             // If the user queued a message during the final response,
             // persist it and kick off a new turn.
@@ -1133,11 +1153,21 @@ class ChatTurnOrchestrator {
   }
 
   /// Maybe generate a TLDR summary for the given AI message.
+  ///
+  /// [userQuestion] is the user-role message that preceded
+  /// [aiMsg]. When provided it is sent to the auxiliary model
+  /// alongside the response so the summary can prioritize what
+  /// actually answers the user's question and so the summary's
+  /// language can follow the user's input language (see
+  /// [tldrSystemPromptFor]). Pass null when the AI message has
+  /// no real preceding user turn (e.g. synthetic bubbles) — the
+  /// summarizer falls back to the response alone in that case.
   Future<void> maybeGenerateTldr(
     int sessionId,
     Message aiMsg, {
     bool force = false,
     TldrDetail detail = TldrDetail.defaultLevel,
+    String? userQuestion,
   }) async {
     final rt = _sessionController.runtime(sessionId);
     final hasAuxModel =
@@ -1184,6 +1214,7 @@ class ChatTurnOrchestrator {
     try {
       final tldrText = await _chatService.generateTldr(
         aiMsg.content,
+        userQuestion: userQuestion,
         detail: detail,
       );
       if (tldrText != null && tldrText.isNotEmpty) {

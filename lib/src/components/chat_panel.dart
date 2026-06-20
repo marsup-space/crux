@@ -850,12 +850,13 @@ class _ChatPanelState extends State<ChatPanel> {
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
       resolveAuxiliaryModel: _sessionController.resolveAuxiliaryModel,
-      triggerTldr: (sessionId, aiMsg, detail) {
+      triggerTldr: (sessionId, aiMsg, detail, userQuestion) {
         _turnOrchestrator.maybeGenerateTldr(
           sessionId,
           aiMsg,
           force: true,
           detail: detail,
+          userQuestion: userQuestion,
         );
       },
       themeController: component.themeController,

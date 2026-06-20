@@ -42,14 +42,30 @@ class AuxiliaryService {
   /// Stream a single-shot auxiliary call (no tools, no thinking).
   /// Collects the full text response and returns it, or null on
   /// error / empty / too long.
+  ///
+  /// By default builds a two-message `[system, user]` exchange
+  /// from [systemPrompt] + [userMessage]. When [messages] is
+  /// provided it is used verbatim instead — callers that need a
+  /// richer conversation shape (e.g. TLDR, which passes the
+  /// user question + assistant response as a Q→A pair) pass
+  /// the full list and we skip the default builder. In that
+  /// mode [systemPrompt] is unused.
   Future<String?> _streamAuxiliaryCall({
     required String systemPrompt,
-    required String userMessage,
+    String? userMessage,
+    List<Map<String, dynamic>>? messages,
     required String logTag,
     int? maxLength,
   }) async {
     final aux = _resolve();
     if (aux == null) return null;
+
+    final effectiveMessages = messages ??
+        <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'system', 'content': systemPrompt},
+          if (userMessage != null && userMessage.isNotEmpty)
+            <String, dynamic>{'role': 'user', 'content': userMessage},
+        ];
 
     try {
       final stream = _client.streamChat(
@@ -57,10 +73,7 @@ class AuxiliaryService {
         config: aux.provider,
         apiKey: aux.apiKey,
         modelId: aux.modelId,
-        messages: <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'system', 'content': systemPrompt},
-          <String, dynamic>{'role': 'user', 'content': userMessage},
-        ],
+        messages: effectiveMessages,
         thinkingMode: 'disabled',
         reasoningEffort: null,
       );
@@ -123,11 +136,29 @@ class AuxiliaryService {
 
   Future<String?> generateTldr(
     String responseContent, {
+    String? userQuestion,
     TldrDetail detail = TldrDetail.defaultLevel,
   }) async {
+    // Build a tiny Q→A exchange so the auxiliary model has the
+    // user's question in its context window. This lets it (a)
+    // prioritize the parts of the long response that actually
+    // answer what was asked and (b) anchor the language of the
+    // summary to the user's question (see the system prompt).
+    // Falls back to the historical single-user-message layout
+    // when no question is supplied (e.g. summarising a synthetic
+    // AI bubble).
+    final messages = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'system',
+        'content': tldrSystemPromptFor(detail),
+      },
+      if (userQuestion != null && userQuestion.trim().isNotEmpty)
+        <String, dynamic>{'role': 'user', 'content': userQuestion},
+      <String, dynamic>{'role': 'assistant', 'content': responseContent},
+    ];
     final tldr = await _streamAuxiliaryCall(
       systemPrompt: tldrSystemPromptFor(detail),
-      userMessage: responseContent,
+      messages: messages,
       logTag: 'tldr',
     );
     if (tldr == null) return null;
