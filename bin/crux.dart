@@ -8,7 +8,7 @@ import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 
-const _version = 'v0.1.0';
+const _version = 'v0.7.0';
 
 void main(List<String> args) async {
   // Enable ANSI/VT escape processing on the Windows stdout console BEFORE
