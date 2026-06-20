@@ -603,6 +603,91 @@ class _ChatPanelState extends State<ChatPanel> {
   /// session by mistake.
   bool _hasActiveSession() => _sessionController.hasAnyRunningSession;
 
+  void _refreshGitStatus() {
+    unawaited(_gitStatusService.refresh());
+  }
+
+  /// Single exit path used by both `/quit` and the Ctrl+C handler.
+  ///
+  /// This is the load-bearing reason [ChatPanel] owns the exit
+  /// rather than letting nocterm's default `CtrlCBehavior.immediateExit`
+  /// do the work: that default calls `StdioBackend.requestExit(0)`,
+  /// which schedules an `exit(0)` on a microtask — and that microtask
+  /// runs before `runApp()`'s `runEventLoop` can notice `_shouldExit`
+  /// (its `Timer.periodic(seconds: 1)` only fires once per second).
+  /// Result: the process terminates without ever returning from
+  /// `runApp()`, and the per-run summary that `bin/crux.dart` prints
+  /// after `runApp()` returns never gets a chance to run.
+  ///
+  /// Doing the work ourselves lets us side-step the microtask race:
+  ///
+  ///   1. Stash the active theme on `RunMetrics` so any post-`runApp`
+  ///      fallback in `bin/crux.dart` (only triggered by non-quit
+  ///      exits like EOF on stdin) can still produce a styled summary.
+  ///   2. Render the summary into the alt-screen so the user catches
+  ///      a glimpse of it before the TUI tears down.
+  ///   3. Manually emit the terminal-teardown escape codes that
+  ///      `_performImmediateShutdown` would otherwise write, in the
+  ///      same order nocterm uses internally — disable mouse/keyboard
+  ///      tracking *before* leaving alt-screen, and pop the kitty
+  ///      keyboard stack to match what nocterm enabled at startup.
+  ///      Reversing any of these can leave the user's shell in a
+  ///      state where the next prompt looks subtly wrong.
+  ///   4. Re-print the styled summary into the main buffer so the
+  ///      user sees it in the same place every other CLI tool's
+  ///      output lands.
+  ///   5. Chain `exit(0)` onto `stdout.flush()` so the flush
+  ///      completes before the process terminates. Without the
+  ///      explicit flush, dart:io's line-buffered stdout could drop
+  ///      the box on a fast exit — especially when stdout is a TTY.
+  ///
+  /// We deliberately skip the public `shutdownApp()` entry point
+  /// here because it funnels through the same microtask path we're
+  /// trying to avoid. The fallback in `bin/crux.dart:_printRunSummary`
+  /// still covers the rare cases where the exit is driven by
+  /// something other than this method (e.g. the user closes stdin,
+  /// or a future feature wires another shutdown path) — that's why
+  /// step 1 above stashes the theme.
+  void _quitAndPrintSummary() {
+    RunMetrics.instance.setLastKnownTheme(
+      component.themeController.activeTheme,
+    );
+
+    // Step 2: alt-screen copy. Best-effort — if formatting somehow
+    // throws (it shouldn't, `_lastKnownTheme` was just set), keep
+    // the main-buffer copy below safe.
+    try {
+      stdout.writeln();
+      stdout.writeln(RunMetrics.instance.formatStyledSummary());
+    } catch (_) {}
+
+    // Step 3: terminal teardown escape codes, written directly to
+    // stdout. Mirror the sequence in
+    // `TerminalBinding._performImmediateShutdown` so the terminal
+    // ends up in the same state it would after a normal exit.
+    stdout.write('\x1B[?1003l'); // disable all motion tracking
+    stdout.write('\x1B[?1006l'); // disable SGR mouse mode
+    stdout.write('\x1B[?1002l'); // disable button event tracking
+    stdout.write('\x1B[?1000l'); // disable basic mouse tracking
+    stdout.write('\x1B[>4;0m'); // reset modifyOtherKeys
+    stdout.write('\x1B[<u');    // pop kitty keyboard mode
+    stdout.write('\x1B[?2004l'); // disable bracketed paste mode
+    stdout.write('\x1B[?25h');   // show cursor
+    stdout.write('\x1B[?1049l'); // leave alt-screen (main buffer)
+    stdout.write('\x1B[0m');     // reset attributes
+
+    // Step 4: re-print the styled summary into the main buffer
+    // where every other CLI tool's output lands.
+    stdout.writeln();
+    stdout.writeln(RunMetrics.instance.formatStyledSummary());
+    stdout.writeln();
+
+    // Step 5: flush, then exit. The flush-then-exit chain is the
+    // load-bearing piece — without it, dart:io's stdout buffer
+    // can lose the last few bytes of the box on a fast exit.
+    stdout.flush().then((_) => exit(0));
+  }
+
   /// Resolve the active model's [CreditBalanceProvider] mixin
   /// (if any) and re-align polling state with it. Parallel to
   /// [_syncCodingPlanPolling] but for credit-balance providers
@@ -777,15 +862,10 @@ class _ChatPanelState extends State<ChatPanel> {
       deleteMessagesFrom: _turnOrchestrator.deleteMessagesFrom,
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
-      // Hook `/quit` (and its alias `/exit`) to nocterm's
-      // `shutdownApp()`. The call is fire-and-forget — it
-      // tears down the alt-screen, the event loop exits,
-      // `runApp()` returns, and `bin/crux.dart` prints the
-      // per-run summary to stdout. We do not need to flush
-      // any UI state here; the panel's `dispose` path
-      // handles the in-process cleanup when the runApp
-      // future resolves.
-      quitApp: () => shutdownApp(0),
+      // Hook `/quit` (and its alias `/exit`) to the same exit
+      // path as Ctrl+C so the run-summary renderer sees the
+      // current theme before the TUI tears down.
+      quitApp: _quitAndPrintSummary,
       showFullpane: _openFullpane,
       recentProjectsStore: _recentProjectsStore,
     );
