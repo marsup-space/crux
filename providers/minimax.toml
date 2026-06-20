@@ -29,12 +29,43 @@ stream_lerp = true
 # project notes / env meta. Effective only for this model; the
 # other MiniMax models below inherit the provider-level value
 # (none defined here).
+#
+# NOTE: M3's `normal` reasoning effort uses `thinking: {type:
+# "adaptive"}` with no budget_tokens (see minimax_provider.dart).
+# This is the *only* knob that influences how much the model
+# deliberates on `normal` — so the wording here matters. Keep
+# it specific and quantified; vague "avoid ..." phrasing has
+# been observed to be ignored.
 system_prompt_addition = """
-Avoid thinking for too long. When the user's request is
-ambiguous or you need a decision to proceed, ask the user for
-clarification rather than guessing. The exception: if the
-user explicitly asks you to work autonomously, then proceed
-without asking and surface decisions in your final reply.
+## Thinking style (M3, normal effort)
+
+M3 uses adaptive thinking — the model decides how much to
+deliberate. The goal is **no fluff, not no depth**: cut the
+obvious, keep the reasoning that actually helps.
+
+- **Trivial turns** (greetings, yes/no, one-line replies,
+  short acknowledgements): keep thinking minimal or skip it
+  entirely — just answer.
+- **Normal work** (the usual case): prefer a few sentences or
+  a short bullet list. Skip the parts that don't add value:
+  don't restate the user's request, don't enumerate steps
+  that are obvious from the task, don't write a "plan" before
+  every tool call.
+- **Hard problems** (multi-step debugging, design tradeoffs,
+  unfamiliar code, ambiguous requirements): take the
+  thinking room you actually need. There's no word cap here
+  — depth is welcome, just keep it on the parts that pay
+  for themselves.
+
+The think block is your scratch space, not the user's prose.
+Write less in the think block and more in the final answer.
+
+## Ambiguity
+
+When the user's request is ambiguous and you can't reasonably
+infer intent, ask one short clarifying question. The
+exception: if the user explicitly asks for autonomous work,
+proceed and surface the decisions you made in the final reply.
 """
 
 [models.reasoning_labels]
