@@ -670,11 +670,11 @@ class _ChatPanelState extends State<ChatPanel> {
     stdout.write('\x1B[?1002l'); // disable button event tracking
     stdout.write('\x1B[?1000l'); // disable basic mouse tracking
     stdout.write('\x1B[>4;0m'); // reset modifyOtherKeys
-    stdout.write('\x1B[<u');    // pop kitty keyboard mode
+    stdout.write('\x1B[<u'); // pop kitty keyboard mode
     stdout.write('\x1B[?2004l'); // disable bracketed paste mode
-    stdout.write('\x1B[?25h');   // show cursor
+    stdout.write('\x1B[?25h'); // show cursor
     stdout.write('\x1B[?1049l'); // leave alt-screen (main buffer)
-    stdout.write('\x1B[0m');     // reset attributes
+    stdout.write('\x1B[0m'); // reset attributes
 
     // Step 4: re-print the styled summary into the main buffer
     // where every other CLI tool's output lands.
