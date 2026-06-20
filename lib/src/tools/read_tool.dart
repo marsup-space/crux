@@ -14,8 +14,8 @@ class ReadTool extends ToolDef {
   final LspManager? _lsp;
 
   ReadTool({FileReadTracker? tracker, LspManager? lsp})
-      : _tracker = tracker,
-        _lsp = lsp;
+    : _tracker = tracker,
+      _lsp = lsp;
   @override
   String get name => 'read';
 
@@ -131,8 +131,6 @@ class ReadTool extends ToolDef {
     String workingDirectory,
   ) async {
     final file = File(path);
-    final mtimeMs = file.statSync().modified.millisecondsSinceEpoch;
-    await _tracker?.recordRead(path, mtimeMs);
 
     final binaryExts = {
       '.exe',
@@ -173,8 +171,8 @@ class ReadTool extends ToolDef {
       final sizeStr = size > 1024 * 1024
           ? '${(size / (1024 * 1024)).toStringAsFixed(1)} MB'
           : size > 1024
-              ? '${(size / 1024).toStringAsFixed(1)} KB'
-              : '$size B';
+          ? '${(size / 1024).toStringAsFixed(1)} KB'
+          : '$size B';
       return ToolResult(
         title: 'Image file: $path',
         output:
@@ -185,7 +183,12 @@ class ReadTool extends ToolDef {
       );
     }
 
-    final lines = await file.readAsLines();
+    final snapshot = await _readStableLines(file);
+    final lines = snapshot.lines;
+    final mtimeMs = snapshot.mtimeMs;
+    if (mtimeMs != null) {
+      await _tracker?.recordRead(path, mtimeMs);
+    }
     final totalLines = lines.length;
 
     final startLine = offset.clamp(1, totalLines) - 1;
@@ -219,6 +222,26 @@ class ReadTool extends ToolDef {
     return ToolResult(title: 'Read file: $path', output: output);
   }
 
+  Future<_TextFileSnapshot> _readStableLines(File file) async {
+    FileStat afterStat;
+    List<String> lines;
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final beforeStat = file.statSync();
+      lines = await file.readAsLines();
+      afterStat = file.statSync();
+      if (afterStat.modified == beforeStat.modified &&
+          afterStat.size == beforeStat.size) {
+        return _TextFileSnapshot(
+          lines: lines,
+          mtimeMs: afterStat.modified.millisecondsSinceEpoch,
+        );
+      }
+    }
+
+    return _TextFileSnapshot(lines: await file.readAsLines(), mtimeMs: null);
+  }
+
   String _suggestSimilarFiles(String path) {
     final sep = Platform.pathSeparator;
     final lastSep = path.lastIndexOf(sep);
@@ -237,4 +260,11 @@ class ReadTool extends ToolDef {
         .join('\n');
     return candidates;
   }
+}
+
+class _TextFileSnapshot {
+  final List<String> lines;
+  final int? mtimeMs;
+
+  const _TextFileSnapshot({required this.lines, required this.mtimeMs});
 }
