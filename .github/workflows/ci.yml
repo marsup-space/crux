@@ -61,7 +61,7 @@ jobs:
           }
 
       - name: Analyze
-        run: dart analyze --no-fatal-warnings
+        run: dart analyze --no-fatal-warnings bin lib test tool
 
       - name: Smoke tests
         run: >

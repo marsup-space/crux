@@ -28,7 +28,7 @@ What it does:
 - Runs `dart pub get`
 - Runs `dart run tool/third_party.dart fetch`
 - Reports formatting drift
-- Runs `dart analyze --no-fatal-warnings`
+- Runs `dart analyze --no-fatal-warnings bin lib test tool`
 - Runs a stable smoke-test suite
 
 Current policy:
