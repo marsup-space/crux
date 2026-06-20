@@ -34,7 +34,6 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == matrix.target
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -55,20 +54,24 @@ jobs:
             os: windows-latest
     env:
       TARGET: ${{ matrix.target }}
+      SHOULD_BUILD: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == matrix.target }}
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.publish_tag }}
 
     steps:
       - name: Check out repository
+        if: env.SHOULD_BUILD == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Set up Dart
+        if: env.SHOULD_BUILD == 'true'
         uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
 
       - name: Cache pub packages
+        if: env.SHOULD_BUILD == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -77,6 +80,7 @@ jobs:
             ${{ runner.os }}-pub-
 
       - name: Cache third-party tools
+        if: env.SHOULD_BUILD == 'true'
         uses: actions/cache@v4
         with:
           path: third_party/bin
@@ -85,16 +89,20 @@ jobs:
             ${{ runner.os }}-third-party-
 
       - name: Install dependencies
+        if: env.SHOULD_BUILD == 'true'
         run: dart pub get
 
       - name: Build release bundle
+        if: env.SHOULD_BUILD == 'true'
         run: dart run tool/build_release.dart --target "$TARGET"
         shell: bash
 
       - name: Pack release bundle
+        if: env.SHOULD_BUILD == 'true'
         run: python -c "import shutil; shutil.make_archive('build/releases/crux-${{ env.TARGET }}', 'zip', 'build/releases', 'crux-${{ env.TARGET }}')"
 
       - name: Upload release artifact
+        if: env.SHOULD_BUILD == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: crux-${{ env.TARGET }}
@@ -102,7 +110,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: env.RELEASE_TAG != ''
+        if: env.SHOULD_BUILD == 'true' && env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
