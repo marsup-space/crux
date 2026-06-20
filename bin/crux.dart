@@ -157,6 +157,7 @@ void main(List<String> args) async {
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
       themeController: results.themeController,
       bootState: results.chatPanelBootState,
+      gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
       startupWarnings: [
         ...results.themeController.registry.loadErrors.entries.map(
@@ -281,12 +282,14 @@ class _LoadingResults {
   final List<SeedResult> providerSeedResults;
   final ThemeController themeController;
   final ChatPanelBootState chatPanelBootState;
+  final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
 
   const _LoadingResults({
     required this.providerSeedResults,
     required this.themeController,
     required this.chatPanelBootState,
+    required this.gitStatusService,
     required this.recentProjectsStore,
   });
 }
@@ -299,6 +302,8 @@ Future<_LoadingResults> _doLoading(
   File themeConfigFile,
   Future<RecentProjectsStore> recentProjectsStoreFuture,
 ) async {
+  final gitStatusService = GitStatusService();
+  final gitStatusFuture = gitStatusService.refresh();
   final providerSeedResults = await seedExampleProviders(
     builtInDir: builtInDir,
     userDir: userDir,
@@ -316,11 +321,14 @@ Future<_LoadingResults> _doLoading(
     configStore: ThemeConfigStore(themeConfigFile),
   );
   await HighlightService.initialize();
+  await gitStatusFuture;
+  gitStatusService.start(refreshImmediately: false);
   final recentProjectsStore = await recentProjectsStoreFuture;
   return _LoadingResults(
     providerSeedResults: providerSeedResults,
     themeController: themeController,
     chatPanelBootState: chatPanelBootState,
+    gitStatusService: gitStatusService,
     recentProjectsStore: recentProjectsStore,
   );
 }
@@ -497,6 +505,7 @@ class _CruxApp extends StatefulComponent {
   final String? builtInProvidersDir;
   final ThemeController themeController;
   final ChatPanelBootState bootState;
+  final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
 
@@ -505,6 +514,7 @@ class _CruxApp extends StatefulComponent {
     this.builtInProvidersDir,
     required this.themeController,
     required this.bootState,
+    required this.gitStatusService,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
@@ -563,6 +573,7 @@ class _CruxAppState extends State<_CruxApp> {
             builtInProvidersDir: component.builtInProvidersDir,
             themeController: component.themeController,
             bootState: component.bootState,
+            gitStatusService: component.gitStatusService,
             recentProjectsStore: component.recentProjectsStore,
             startupWarnings: component.startupWarnings,
           ),

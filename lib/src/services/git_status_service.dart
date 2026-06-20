@@ -159,10 +159,15 @@ class GitStatusService extends ChangeNotifier {
   /// snapshot instead of blocking the timer forever.
   static const Duration kCommandTimeout = Duration(seconds: 4);
 
-  /// How often the timer fires a background refresh. 5s balances
-  /// freshness (the user is editing files) with cost (a full
-  /// `git status` walk).
-  static const Duration kDefaultRefreshInterval = Duration(seconds: 5);
+  /// How often the timer fires a background refresh. 60s is
+  /// intentionally lazy — the user typically edits files via the
+  /// agent (which triggers an event-driven refresh in
+  /// [ChatTurnOrchestrator.onToolRound] after an `edit`/`write`
+  /// call), so a 1-minute tick is enough to catch out-of-band
+  /// mutations (manual edits in another window, a `git` command
+  /// run by hand, branch switches). Drops the idle-repo
+  /// `git status` cost by 12x versus the original 5s interval.
+  static const Duration kDefaultRefreshInterval = Duration(seconds: 60);
 
   /// Resolves the directory to query. Invoked on every refresh, so
   /// a `/project <path>` switch is picked up automatically on the
@@ -188,15 +193,15 @@ class GitStatusService extends ChangeNotifier {
   GitStatus get current => _status;
 
   /// Start the periodic refresh. Idempotent — calling [start] while
-  /// already running is a no-op. Fires one immediate refresh so the
-  /// UI has real data as soon as possible after mount.
-  void start() {
+  /// already running is a no-op. Fires one immediate refresh by default
+  /// so the UI has real data as soon as possible after mount.
+  void start({bool refreshImmediately = true}) {
     if (_disposed || _timer != null) return;
     _timer = Timer.periodic(_interval, (_) => refresh());
     // Kick off an immediate refresh. We don't `await` here — the
     // caller is typically the panel's initState, and we don't want
     // the constructor to block on a git subprocess.
-    refresh();
+    if (refreshImmediately) refresh();
   }
 
   /// Stop the periodic refresh. Idempotent. Safe to call multiple

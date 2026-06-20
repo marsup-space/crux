@@ -159,6 +159,7 @@ class ChatPanel extends StatefulComponent {
   final String? builtInProvidersDir;
   final ThemeController themeController;
   final ChatPanelBootState? bootState;
+  final GitStatusService? gitStatusService;
 
   /// Shared store of recently-opened project directories. Owned by
   /// the binary (`bin/crux.dart`) and threaded through `_CruxApp`
@@ -176,6 +177,7 @@ class ChatPanel extends StatefulComponent {
     this.builtInProvidersDir,
     required this.themeController,
     this.bootState,
+    this.gitStatusService,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
   });
@@ -319,6 +321,13 @@ class _ChatPanelState extends State<ChatPanel> {
       LlmClient(),
       toolExecutor,
     );
+    // Initialize the git-status service before handing it to collaborators.
+    // `late final` reads throw during mount if this moves below the
+    // `ChatTurnOrchestrator` construction.
+    _gitStatusService = component.gitStatusService ?? GitStatusService();
+    if (component.gitStatusService == null) {
+      _gitStatusService.start();
+    }
 
     _sessionController = SessionController(
       store: _store,
@@ -345,6 +354,7 @@ class _ChatPanelState extends State<ChatPanel> {
       toolRegistry: _toolRegistry,
       showToast: _showToast,
       refresh: _refresh,
+      gitStatusService: _gitStatusService,
     );
 
     if (bootState != null) {
@@ -388,14 +398,6 @@ class _ChatPanelState extends State<ChatPanel> {
     // without it the user would see stale branch info for up to
     // 5s after switching projects.
     _recentProjectsStore.addListener(_refreshGitStatus);
-    // Spin up the git-status poller. The service resolves its
-    // target directory lazily (via `Directory.current.path`) so a
-    // later `/project <path>` switch is picked up automatically on
-    // the next timer tick — no need for the command executor to
-    // poke us. We do call [GitStatusService.refresh] explicitly
-    // right after [start] for fast first-paint data.
-    _gitStatusService = GitStatusService();
-    _gitStatusService.start();
     if (bootState == null) {
       _initSessions();
       _providerService.initialize().then((_) {

@@ -7,6 +7,7 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
+import '../services/git_status_service.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
@@ -44,6 +45,14 @@ class ChatTurnOrchestrator {
   final ShowToastCallback _showToast;
   final void Function() _refresh;
 
+  /// Git status service for the project root. Used to force a
+  /// refresh right after the agent mutates a file via `edit` or
+  /// `write`, so the right-panel git status widget doesn't have
+  /// to wait up to [GitStatusService.kDefaultRefreshInterval]
+  /// before reflecting the change. Owned by [ChatPanel] and
+  /// outlives this orchestrator.
+  final GitStatusService _gitStatusService;
+
   /// Per-session cancellation flags for btw turns. When the user
   /// interrupts a btw stream, the flag is set to true so the
   /// `await for` loop in [sendBtwTurn] breaks out immediately.
@@ -62,6 +71,17 @@ class ChatTurnOrchestrator {
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
   final Set<int> _streamingGuardAbortedSessions = {};
 
+  /// Set to `true` in [onToolExecutionStart] when any of the
+  /// tool calls in the current round is a file-mutating tool
+  /// (`edit` / `write`). Consumed — and cleared — in
+  /// [onToolRound], which fires right after the tool round
+  /// finishes and just before we go back to waiting for the
+  /// LLM. We latch this across the round boundary so we can
+  /// also capture batches of mixed `edit` + `read` + `grep`
+  /// calls in a single round: only the mutation matters for
+  /// git status.
+  bool _fileMutatedThisRound = false;
+
   ChatTurnOrchestrator({
     required SessionStore store,
     required ChatService chatService,
@@ -71,6 +91,7 @@ class ChatTurnOrchestrator {
     required ToolRegistry toolRegistry,
     required ShowToastCallback showToast,
     required void Function() refresh,
+    required GitStatusService gitStatusService,
   }) : _store = store,
        _messageStore = store.messageStore,
        _chatService = chatService,
@@ -79,7 +100,8 @@ class ChatTurnOrchestrator {
        _streamingController = streamingController,
        _toolRegistry = toolRegistry,
        _showToast = showToast,
-       _refresh = refresh;
+       _refresh = refresh,
+       _gitStatusService = gitStatusService;
 
   // ─────────────────────────────────────────────────────────────────────
   // Public API
@@ -394,6 +416,18 @@ class ChatTurnOrchestrator {
             _streamingController.clearStreamingFor(sessionId);
             await _sessionController.loadMessages(sessionId);
             if (_interruptedSessions.contains(sessionId)) return;
+            // If the round included an `edit` or `write`, the
+            // working tree just changed. Kick off a fire-and-forget
+            // git-status refresh *now* — the user is about to
+            // stare at the right panel while waiting for the LLM,
+            // and we don't want them to see stale counts for up
+            // to a minute. [GitStatusService.refresh] is internally
+            // guarded by an `_refreshing` flag so multiple rapid
+            // tool rounds collapse into a single in-flight fetch.
+            if (_fileMutatedThisRound) {
+              _fileMutatedThisRound = false;
+              unawaited(_gitStatusService.refresh());
+            }
             _streamingController.beginWaitingForModel(sessionId);
           },
           onToolUse: (ToolUseChunk chunk) {
@@ -415,6 +449,15 @@ class ChatTurnOrchestrator {
             final projectPath =
                 _sessionController.findSession(sessionId)?.projectPath ??
                 _sessionController.currentSession.projectPath;
+            // Latch a "file was mutated" flag if any call in this
+            // round is a file-mutating tool. We only care about
+            // `edit` and `write` — `bash` / `cmd` are out of scope
+            // because they may or may not touch the working tree
+            // and we don't want to fire a `git status` on every
+            // shell command. Consumed in [onToolRound] below.
+            _fileMutatedThisRound = toolCalls.any(
+              (c) => c.name == 'edit' || c.name == 'write',
+            );
             _streamingController.beginExecutingTools(sessionId, [
               for (final call in toolCalls)
                 ExecutingToolCall(
