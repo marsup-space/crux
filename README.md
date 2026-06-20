@@ -97,7 +97,7 @@ dart run tool/build_release.dart --target linux-x64
 
 ### CI
 
-GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私有仓库友好的省额度策略：push/PR 只跑 Ubuntu 上的 Dart 检查和稳定 smoke tests；推送 `v*` tag 会自动构建 `linux-x64` release bundle 并上传到 GitHub Release，Linux 手动出包也可在 Actions 页面触发。
+GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私有仓库友好的省额度策略：push/PR 只跑 Ubuntu 上的 Dart 检查和稳定 smoke tests；推送 `v*` tag 会自动构建 Linux、macOS、Windows release bundles 并上传到 GitHub Release，手动出包也可在 Actions 页面触发。
 
 ### 主题
 
@@ -265,9 +265,9 @@ SDK reports that a target is unsupported.
 
 See [`docs/ci.md`](docs/ci.md) for the GitHub Actions setup. The current
 configuration is private-repo friendly: push/PR runs only Ubuntu Dart checks and
-a stable smoke-test suite; pushing a `v*` tag automatically builds a `linux-x64`
-release bundle and uploads it to GitHub Releases, while manual Linux packaging
-is also available from the Actions page.
+a stable smoke-test suite; pushing a `v*` tag automatically builds Linux,
+macOS, and Windows release bundles and uploads them to GitHub Releases, while
+manual packaging is also available from the Actions page.
 
 ### Commands
 

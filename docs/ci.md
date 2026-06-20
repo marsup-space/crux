@@ -43,9 +43,9 @@ The current full suite has a known failure in
 `test/run_metrics_test.dart` around themed summary ANSI color output. Once that
 is fixed, the CI can be tightened to run the full suite.
 
-### Release Linux
+### Release
 
-File: `.github/workflows/release-linux.yml`
+File: `.github/workflows/release.yml`
 
 Runs automatically when you push a version tag:
 
@@ -54,16 +54,25 @@ git tag v0.7.0
 git push origin v0.7.0
 ```
 
-Tag builds currently package `linux-x64` and publish the archive to the GitHub
-Release for that tag.
+Tag builds package these targets and publish the archives to the GitHub Release
+for that tag:
+
+- `linux-x64`
+- `linux-arm64`
+- `macos-x64`
+- `macos-arm64`
+- `windows-x64`
+- `windows-arm64`
 
 It can also be started manually from GitHub:
 
 1. Open the repository on GitHub.
 2. Go to the **Actions** tab.
-3. Select **Release Linux**.
+3. Select **Release**.
 4. Click **Run workflow**.
-5. Choose `linux-x64` or `linux-arm64`.
+5. Choose `all` or a single target.
+6. Optionally set `publish_tag` to an existing tag such as `v0.7.0` if you want
+   the manual run to upload assets to that GitHub Release.
 
 What it does:
 
@@ -72,13 +81,13 @@ What it does:
 - Restores pub and third-party tool caches
 - Runs `dart pub get`
 - Runs `dart run tool/build_release.dart --target <target>`
-- Packs the release directory into `crux-<target>.tar.gz`
+- Packs the release directory into `crux-<target>.zip`
 - Uploads the archive as a workflow artifact
 - Publishes the archive to GitHub Releases when the workflow was triggered by a
-  `v*` tag
+  `v*` tag, or when a manual run provides `publish_tag`
 
-Manual runs do not publish GitHub Releases. They only upload workflow artifacts,
-so you can test packaging without creating a release.
+Manual runs without `publish_tag` only upload workflow artifacts, so you can test
+packaging without creating a release.
 
 ## Private Repository Cost
 
@@ -111,7 +120,7 @@ When the repository is ready, upgrade CI in this order:
 1. Fix analyzer warnings and make `dart analyze` strict again.
 2. Format the codebase and make formatting fail CI.
 3. Fix the full-suite failure and replace the smoke-test list with `dart test`.
-4. Add manual macOS and Windows release workflows.
-5. Extend tag-based release publishing to macOS and Windows artifacts.
+4. Add per-platform smoke tests after release packaging.
+5. Add release checksums once the artifact set stabilizes.
 
 The current workflows are a practical starting point, not the final ceiling.

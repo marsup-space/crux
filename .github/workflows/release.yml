@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Release target
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - linux-x64
+          - linux-arm64
+          - macos-x64
+          - macos-arm64
+          - windows-x64
+          - windows-arm64
+      publish_tag:
+        description: Optional existing tag to publish assets to, e.g. v0.7.0
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == matrix.target
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+          - target: linux-arm64
+            os: ubuntu-latest
+          - target: macos-x64
+            os: macos-latest
+          - target: macos-arm64
+            os: macos-latest
+          - target: windows-x64
+            os: windows-latest
+          - target: windows-arm64
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.publish_tag }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Cache third-party tools
+        uses: actions/cache@v4
+        with:
+          path: third_party/bin
+          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/manifest.toml', 'third_party/manifest.json') }}
+          restore-keys: |
+            ${{ runner.os }}-third-party-
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Build release bundle
+        run: dart run tool/build_release.dart --target "$TARGET"
+        shell: bash
+
+      - name: Pack release bundle
+        run: python -c "import shutil; shutil.make_archive('build/releases/crux-${{ env.TARGET }}', 'zip', 'build/releases', 'crux-${{ env.TARGET }}')"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crux-${{ env.TARGET }}
+          path: build/releases/crux-${{ env.TARGET }}.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: env.RELEASE_TAG != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Crux ${{ env.RELEASE_TAG }}
+          files: build/releases/crux-${{ env.TARGET }}.zip
+          overwrite_files: true
