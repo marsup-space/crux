@@ -61,7 +61,7 @@ class Message {
   ///
   ///   * `parallel_praise` rows — number of *successful* tool calls
   ///     in the round. Drives the "N tool calls parallelized" bubble
-  ///     label and the ⚡ glyph's success text.
+  ///     label and the ✦ glyph's success text.
   ///   * `single_call_reminder` rows — number of *consecutive*
   ///     single-tool-call rounds at the moment the modulo gate fired
   ///     (≥ threshold, so ≥ 10 with default). Drives the

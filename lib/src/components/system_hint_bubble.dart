@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
+import '../utils/terminal_symbols.dart';
 
 /// Semantic categories for system-hint bubbles. Drives the colour
 /// the bubble renders in — picked by subclass via the [SystemHintBubble.kind]
@@ -48,7 +49,7 @@ enum SystemHintKind { success, info, warning, error }
 ///   * [kind] — the [SystemHintKind] enum value, which the base
 ///     class resolves to a theme colour.
 ///   * [body] — the body text after the glyph.
-///   * (optional) [glyph] — defaults to `' ⚡ '`; override only
+///   * (optional) [glyph] — defaults to `' ✦ '`; override only
 ///     when a different visual is needed.
 ///
 /// Subclasses override [build] when they need a data-validity guard
@@ -83,10 +84,18 @@ abstract class SystemHintBubble extends StatelessComponent {
   /// pad the glyph to match the bubble's column alignment in the
   /// chat history.
   ///
-  /// Defaults to the lightning bolt `' ⚡ '`, which most bubbles
+  /// Defaults to the four-pointed star `' ✦ '`, which most bubbles
   /// want. Override only when a different visual fits better
   /// (e.g. a future cache-hit bubble might want a different icon).
-  String get glyph => ' ⚡ ';
+  ///
+  /// Routed through [terminalSymbol] so the glyph falls back to
+  /// ASCII (`*`) on terminals where Unicode glyphs don't render
+  /// cleanly — notably stock `cmd.exe` on Windows — instead of
+  /// showing tofu boxes. `✦` (U+2726, Dingbats block) is
+  /// text-presentation-only, so it draws as exactly one terminal
+  /// cell in every monospace font: no double-width surprise on
+  /// emoji-aware terminals the way the previous `⚡` had.
+  String get glyph => ' ${terminalSymbol('✦', '*')} ';
 
   @override
   Component build(BuildContext context) {

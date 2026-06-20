@@ -16,7 +16,7 @@ import 'system_hint_bubble.dart';
 /// user; this one is a persisted, rendered UI affordance.
 ///
 /// Visual pairing with [ParallelPraiseBubble]: both bubbles inherit
-/// the default ⚡ glyph and shared layout from [SystemHintBubble],
+/// the default ✦ glyph and shared layout from [SystemHintBubble],
 /// so they read as a pair when scanning chat history. Colour
 /// carries the signal — praise is success/green, reminder is
 /// warning/yellow — so the user can distinguish them at a glance
