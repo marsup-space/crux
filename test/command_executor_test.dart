@@ -545,6 +545,11 @@ void main() {
         role: 'user',
         content: userText,
       );
+      await store.messageStore.addMessage(
+        session.id,
+        role: 'ai',
+        content: 'Sure, hello to you too.',
+      );
       final currentMessages = await store.messageStore.getMessages(session.id);
 
       var sendTurnCalls = 0;
@@ -585,6 +590,312 @@ void main() {
       expect(sendTurnCalls, equals(1));
       expect(lastTextSent, equals(userText));
       expect(deleteFromId, equals(userMsg.id));
+    });
+  });
+
+  group('CommandExecutor — /undo', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_undo_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('wipes the last round and copies the user text into the input box',
+        () async {
+      // Mirrors the /retry happy-path test, but expects setInputText
+      // to fire with the original user text instead of sendTurn. The
+      // user wanted to edit their prompt before resending, so we
+      // never kick off a new turn.
+      const userText = 'reword this for me';
+      final userMsg = await store.messageStore.addMessage(
+        session.id,
+        role: 'user',
+        content: userText,
+      );
+      await store.messageStore.addMessage(
+        session.id,
+        role: 'ai',
+        content: 'Sure, here is a rewrite...',
+      );
+      final currentMessages = await store.messageStore.getMessages(session.id);
+
+      final events = <String>[];
+      String? inputText;
+      await CommandExecutor().execute(
+        '/undo',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: currentMessages,
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {},
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {
+            events.add('sendTurn:${text ?? '<null>'}');
+          },
+          findLastUserMessage: () async {
+            events.add('findLastUserMessage');
+            return userMsg;
+          },
+          deleteMessagesFrom: (fromId) async {
+            events.add('deleteMessagesFrom:$fromId');
+          },
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+          setInputText: (text) {
+            events.add('setInputText:$text');
+            inputText = text;
+          },
+        ),
+      );
+
+      expect(
+        events,
+        equals(<String>[
+          'findLastUserMessage',
+          'deleteMessagesFrom:${userMsg.id}',
+          'setInputText:$userText',
+        ]),
+      );
+      // Critical: /undo must NOT call sendTurn, otherwise we'd
+      // race the freshly-cleared message cache with a re-fire of
+      // the same prompt.
+      expect(events, isNot(contains(matches(RegExp(r'^sendTurn:')))));
+      expect(inputText, equals(userText));
+    });
+
+    test('is a no-op (no wipe, no input change) when AI is responding',
+        () async {
+      runtime.isResponding = true;
+
+      var deleteCalls = 0;
+      var sendTurnCalls = 0;
+      String? inputText;
+      await CommandExecutor().execute(
+        '/undo',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: const <Message>[],
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {},
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {
+            sendTurnCalls++;
+          },
+          findLastUserMessage: () async => null,
+          deleteMessagesFrom: (fromId) async {
+            deleteCalls++;
+          },
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+          setInputText: (text) {
+            inputText = text;
+          },
+        ),
+      );
+
+      expect(deleteCalls, equals(0));
+      expect(sendTurnCalls, equals(0));
+      // No prior user message was found, so the input box should
+      // not be touched at all (the responding-state toast wins).
+      expect(inputText, isNull);
+    });
+
+    test('is a no-op when there is no user message to undo', () async {
+      var deleteCalls = 0;
+      var sendTurnCalls = 0;
+      String? inputText;
+      await CommandExecutor().execute(
+        '/undo',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: const <Message>[],
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {},
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {
+            sendTurnCalls++;
+          },
+          findLastUserMessage: () async => null,
+          deleteMessagesFrom: (fromId) async {
+            deleteCalls++;
+          },
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+          setInputText: (text) {
+            inputText = text;
+          },
+        ),
+      );
+
+      expect(deleteCalls, equals(0));
+      expect(sendTurnCalls, equals(0));
+      expect(inputText, isNull);
+    });
+
+    test('also works for the Chinese alias /撤销', () async {
+      const userText = '请帮我重写一下';
+      final userMsg = await store.messageStore.addMessage(
+        session.id,
+        role: 'user',
+        content: userText,
+      );
+      await store.messageStore.addMessage(
+        session.id,
+        role: 'ai',
+        content: '好的,这是改写后的版本...',
+      );
+      final currentMessages = await store.messageStore.getMessages(session.id);
+
+      var deleteFromId = -1;
+      String? inputText;
+      var sendTurnCalls = 0;
+      await CommandExecutor().execute(
+        '/撤销',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: currentMessages,
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {},
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {
+            sendTurnCalls++;
+          },
+          findLastUserMessage: () async => userMsg,
+          deleteMessagesFrom: (fromId) async {
+            deleteFromId = fromId;
+          },
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+          setInputText: (text) {
+            inputText = text;
+          },
+        ),
+      );
+
+      expect(deleteFromId, equals(userMsg.id));
+      expect(inputText, equals(userText));
+      expect(sendTurnCalls, equals(0));
+    });
+
+    test('still wipes and restores the input when setInputText is null',
+        () async {
+      // Backwards-compat: a caller that doesn't wire setInputText
+      // (e.g. a legacy test harness) should still get the DB wipe
+      // and the btw-chain clear. The input-box side-effect simply
+      // becomes a no-op, mirroring how other optional callbacks
+      // degrade.
+      const userText = 'draft me a release note';
+      final userMsg = await store.messageStore.addMessage(
+        session.id,
+        role: 'user',
+        content: userText,
+      );
+      await store.messageStore.addMessage(
+        session.id,
+        role: 'ai',
+        content: 'Here is your release note...',
+      );
+      final currentMessages = await store.messageStore.getMessages(session.id);
+
+      var deleteFromId = -1;
+      var clearBtwCalls = 0;
+      await CommandExecutor().execute(
+        '/undo',
+        CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: false,
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: currentMessages,
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {},
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (id) => runtime,
+          persistThinkingLevel: (_) {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {},
+          findLastUserMessage: () async => userMsg,
+          deleteMessagesFrom: (fromId) async {
+            deleteFromId = fromId;
+          },
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {
+            clearBtwCalls++;
+          },
+          // setInputText intentionally omitted.
+        ),
+      );
+
+      expect(deleteFromId, equals(userMsg.id));
+      expect(clearBtwCalls, equals(1));
     });
   });
 

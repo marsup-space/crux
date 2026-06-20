@@ -97,6 +97,17 @@ class CommandContext {
   /// btw context is guaranteed to never leak into a "real" turn.
   final void Function(int sessionId) clearBtwTurns;
 
+  /// Replace the contents of the chat input box with [text]. Used
+  /// by `/undo` to drop the user's previous prompt back into the
+  /// input box after wiping the round from the session, so the user
+  /// can edit it before resubmitting. Implementation is owned by the
+  /// chat panel (the executor doesn't know about the text
+  /// controller). Optional so legacy test harnesses can omit it —
+  /// `/undo` treats `null` as a no-op for the input side-effect and
+  /// still performs the DB wipe, mirroring how other callbacks
+  /// degrade gracefully when not mounted.
+  final void Function(String text)? setInputText;
+
   /// Tear down the TUI and exit. Wired by `ChatPanel` to
   /// `shutdownApp()` from nocterm — when the executor calls
   /// this, the alt-screen is restored, `runApp()` returns, and
@@ -145,6 +156,7 @@ class CommandContext {
     required this.deleteMessagesFrom,
     required this.sendBtwTurn,
     required this.clearBtwTurns,
+    this.setInputText,
     this.quitApp,
     this.showFullpane,
     this.recentProjectsStore,
@@ -182,6 +194,9 @@ class CommandExecutor {
       case '/retry':
       case '/重试':
         await executeRetry(ctx);
+      case '/undo':
+      case '/撤销':
+        await executeUndo(ctx);
       case '/btw':
         await executeBtw(parts, ctx);
       case '/archive':
@@ -708,6 +723,56 @@ class CommandExecutor {
     // stream of any subsequent turns) starts from a clean slate.
     ctx.clearBtwTurns(sessionId);
     await ctx.sendTurn(text: lastUser.content);
+  }
+
+  /// `/undo` (alias `/撤销`) — discard the last agent round (user
+  /// message + AI response + tool calls/result) and put the user's
+  /// original prompt back into the input box for editing, instead
+  /// of re-sending it like `/retry` does.
+  ///
+  /// "Discard" uses the same persistence path as `/retry`: locate
+  /// the most recent user-role message, ask the orchestrator to
+  /// delete every persisted message with id `>=` that row, and
+  /// reload the in-memory cache so the UI reflects the wipe before
+  /// the input is repopulated. After the wipe we hand the user
+  /// text back via [CommandContext.setInputText] — at that point
+  /// the previous prompt is sitting in the chat input box, ready
+  /// for the user to tweak and resend.
+  ///
+  /// Mirrors `/retry`'s safety guards: rejected when the session
+  /// is currently responding (would race the in-flight stream) and
+  /// when there is no user message to undo. The btw chain is also
+  /// cleared for the same reason as `/retry` — any scratch space
+  /// from before the round we're undoing is no longer relevant.
+  Future<void> executeUndo(CommandContext ctx) async {
+    if (ctx.currentSessionId == null) {
+      ctx.showToast('No active session', mode: ToastMode.error);
+      return;
+    }
+    final sessionId = ctx.currentSessionId!;
+    final rt = ctx.runtime(sessionId);
+    if (rt.isResponding) {
+      ctx.showToast('Cannot undo while AI is responding', mode: ToastMode.error);
+      return;
+    }
+    final lastUser = await ctx.findLastUserMessage();
+    if (lastUser == null) {
+      ctx.showToast('Nothing to undo — no user message yet', mode: ToastMode.info);
+      return;
+    }
+    // Wipe the last round first, then copy the prompt into the
+    // input box. Doing it in this order (rather than the reverse)
+    // means the in-memory message cache is already clean by the
+    // time the chat panel re-renders the now-populated input —
+    // there's no flash of the old bubbles staying on screen
+    // alongside the restored draft text.
+    await ctx.deleteMessagesFrom(lastUser.id);
+    ctx.clearBtwTurns(sessionId);
+    ctx.setInputText?.call(lastUser.content);
+    ctx.showToast(
+      'Undone — edit the prompt and press Enter to resend',
+      mode: ToastMode.status,
+    );
   }
 
   /// `/btw <prompt>` — fire a one-shot, ephemeral AI response.
