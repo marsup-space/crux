@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../services/prompts/praise_prompts.dart';
 import 'system_hint_bubble.dart';
 
 /// Small inline bubble rendered when the chat service detected drift
@@ -39,8 +40,13 @@ class SingleCallReminderBubble extends SystemHintBubble {
 
   @override
   String get body =>
-      '$consecutiveCount consecutive single-tool-call rounds · '
-      'consider batching independent reads/searches';
+      // Delegate to the canonical label so the rendered bubble
+      // matches the `content` persisted by `chat_service`. Keeping
+      // a second copy here used to drift ("consider batching
+      // independent reads/searches") and read ambiguously to users;
+      // the renderer carries the clearer "try/use/switch to parallel
+      // tool calls" phrasing across the three severity tiers.
+      renderSingleCallReminderBubbleLabel(consecutiveCount);
 
   @override
   Component build(BuildContext context) {
