@@ -238,15 +238,18 @@ class ChatService {
     if (!_hasCompactableHistory(history)) return null;
 
     final projectedTokens = _estimateProjectedContextTokens(
+      session: session,
       systemPrompt: resolved.systemPrompt,
       history: history,
       incomingUserContent: incomingUserContent,
       toolDefs: toolDefs,
     );
-    final outputReserve = resolved.modelConfig.maxTokens ?? 16384;
-    final desiredReserve = outputReserve > 20000 ? outputReserve : 20000;
-    final maxReserve = (resolved.modelConfig.contextSize * 0.25).round();
-    final reserve = desiredReserve > maxReserve ? maxReserve : desiredReserve;
+    // Reserve 2× the expected compaction-summary output. The summary
+    // itself fits comfortably in 20k tokens; doubling gives us
+    // headroom for both the incoming turn we're about to send and the
+    // summary the compaction pass will need to emit.
+    const expectedSummaryTokens = 20000;
+    final reserve = expectedSummaryTokens * 2;
     final threshold = resolved.modelConfig.contextSize - reserve;
     if (projectedTokens <= threshold) return null;
 
@@ -303,6 +306,7 @@ class ChatService {
     final preTokens =
         preTokensOverride ??
         _estimateProjectedContextTokens(
+          session: session,
           systemPrompt: target.systemPrompt,
           history: history,
           incomingUserContent: null,
@@ -1865,15 +1869,37 @@ class ChatService {
   }
 
   int _estimateProjectedContextTokens({
+    required Session session,
     required String? systemPrompt,
     required List<Message> history,
     required String? incomingUserContent,
     required List<Map<String, dynamic>> toolDefs,
   }) {
+    // Prefer the actual prompt size the API processed on the last
+    // turn. It is set at the end of every AI response to
+    // `promptTokens + completionTokens - reasoningTokens`, which
+    // includes the system prompt, tool definitions, all prior
+    // history, and the user message that triggered that turn.
+    //
+    // Summing `tokensIn` across history messages would be wildly
+    // wrong because each AI message's `tokensIn` is *cumulative* —
+    // it equals the full prompt size at the time that turn ran —
+    // so summing N turns approximates N × finalPromptTokens.
+    if (session.contextTokens > 0) {
+      return session.contextTokens +
+          (incomingUserContent != null && incomingUserContent.isNotEmpty
+              ? estimateTokens(incomingUserContent)
+              : 0);
+    }
+    // Fallback for sessions without a reported token count yet
+    // (fresh sessions, imported sessions, etc.). This still suffers
+    // from the cumulative-tokensIn problem for AI messages with
+    // recorded counts, but it's the best we can do without a
+    // real API measurement.
     var total =
         estimateTokens(systemPrompt ?? '') + estimateToolDefsTokens(toolDefs);
-    for (final message in history) {
-      total += _estimateMessageTokens(message);
+    for (final m in history) {
+      total += _estimateMessageTokens(m);
     }
     if (incomingUserContent != null && incomingUserContent.isNotEmpty) {
       total += estimateTokens(incomingUserContent);

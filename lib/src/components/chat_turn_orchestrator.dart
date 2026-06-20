@@ -191,7 +191,7 @@ class ChatTurnOrchestrator {
               status: SessionStatus.idle,
             );
             _showToast(
-              'Context compacted into ${result.childSession.displayId}',
+              'Context was getting full — summarized and continued as ${result.childSession.displayId}',
               mode: ToastMode.status,
             );
             _refresh();
@@ -696,7 +696,7 @@ class ChatTurnOrchestrator {
         result.childSession.id,
         status: SessionStatus.idle,
       );
-      _showToast('Context compacted', mode: ToastMode.status);
+      _showToast('Compacted — continued as ${result.childSession.displayId}', mode: ToastMode.status);
       _refresh();
     } catch (e) {
       await _finishCompactingChild(
