@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 import '../components/tool_guard_bubble.dart' show ToolGuardKind;
-import '../lsp/diagnostic.dart' show buildLspPayload;
+import '../lsp/diagnostic.dart' show buildLspPayload, errorDiagnostics;
+import '../lsp/protocol.dart' show LspDiagnostic;
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/provider_config.dart';
@@ -1458,7 +1460,7 @@ class ChatService {
           // there's nothing to bubble and we skip the row, which
           // also keeps the bubble from disagreeing with an empty
           // detail-pane section.
-          final errors = errorDiagnostics(lsp.cast());
+          final errors = errorDiagnostics(lsp.cast<LspDiagnostic>());
           if (errors.isEmpty) continue;
           final relPath = _relativeFilePathFromCall(call, session.projectPath);
           await _messageStore.addMessage(
