@@ -25,3 +25,7 @@ pubspec.lock
 # Research references (external repos)
 .research/
 design/
+
+# Local scratch output
+.worktrees/
+warmup.log
