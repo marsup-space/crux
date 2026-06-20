@@ -232,12 +232,20 @@ String parallelSingleCallHintMarker(SingleCallHintSeverity severity) {
 //     were. Names the pattern ("serialisation drift") and tells the
 //     model to batch the independent ones going forward.
 //
-//   * **urgent** is an imperative. The two prior tiers evidently
-//     didn't land, so this one spells out the cost (round trips
-//     wasted) and the corrective action ("MUST be issued as parallel
-//     tool calls") without hedging. Paired with the user-role wire
-//     format (see [injectParallelSingleCallHintAsUserMessage]) so
-//     the LLM cannot miss it.
+//   * **urgent** is user-voice coaching rather than system
+//     commentary. By round 30 the prior two tiers evidently didn't
+//     land, so the urgent tier abandons the meta-cognitive framing
+//     ("you have emitted N consecutive rounds") — which the model
+//     can pattern-match as Crux-internal jargon — and instead reads
+//     as a developer note: "do these things in one response; here's
+//     what 'parallel tool calls' actually means on the wire."
+//     Crucially the body also defines the term rather than just
+//     naming it, since the model has evidently not been inferring
+//     the right wire format from context. Paired with the
+//     user-role wire format (see
+//     [injectParallelSingleCallHintAsUserMessage]) so the message
+//     lands as conversationally weighty as a real follow-up user
+//     turn — not as another meta-commentary tag.
 
 // The templates scope the parallelisation suggestion to
 // "independent tool calls" deliberately — not "reads, searches, and
@@ -276,16 +284,16 @@ const parallelSingleCallHintFirmTemplate =
     'ordering dependency exists.';
 
 const parallelSingleCallHintUrgentTemplate =
-    'You have emitted {count} consecutive single-tool-call rounds — '
-    'severe serialisation drift. The previous, milder reminders '
-    'evidently did not adjust your behaviour. Independent tool calls '
-    'MUST be issued as parallel tool calls in a single turn — emit '
-    'multiple tool_use blocks (Anthropic) or multiple tool_calls '
-    'array entries (OpenAI) in one assistant response, not one per '
-    'turn; do not serialise them unless an explicit ordering '
-    'dependency exists. Every additional single-tool-call round '
-    'wastes a round trip with the model. Switch to parallel tool '
-    'calls now.';
+    'When you have several independent things to do — multiple reads, '
+    'a grep plus a read, edits to different files — please write all '
+    'the tool calls in one response rather than one per turn. That\'s '
+    'what "parallel tool calls" means: writing multiple tool calls in '
+    'a single round (multiple tool_use blocks for Anthropic, or '
+    'multiple entries in the tool_calls array for OpenAI, all in the '
+    'same assistant message). Bundling independent calls into one '
+    'response saves a round trip per call; you only need to split '
+    'them across turns when a later call genuinely depends on an '
+    'earlier call\'s output.';
 
 /// Render the single-call hint body for the tier matching
 /// [consecutiveCount]. Pure string substitution — no wire-format
@@ -343,16 +351,35 @@ String renderParallelSingleCallHintEmbedded(
 /// Render the single-call hint as a standalone user-role message
 /// body, ready to be added as a new `user` message in the wire format.
 ///
-/// Used by the urgent tier only. The output is the bare hint body
-/// — **no `[Crux system note — …]` marker tag**, no leading
-/// `system`/`assistant` framing. The whole point of escalating to a
-/// `user`-role message is for the LLM to read it as the human
-/// speaking, not as Crux's own meta-commentary. A bracketed
-/// `[Crux system note — …]` prefix would re-introduce the
-/// "ignoreable system tag" pattern the urgent tier is designed to
-/// escape — the model would be free to mentally file the message
-/// alongside the other tool-result-appended hints and continue
-/// serialising.
+/// Used by the urgent tier only. Two things disguise the body as
+/// a real user follow-up rather than Crux meta-commentary:
+///
+///   1. **No `[Crux system note — …]` marker tag** and no leading
+///      `system`/`assistant` framing. A bracketed prefix would
+///      re-introduce the "ignoreable system tag" pattern the urgent
+///      tier is designed to escape — the model would be free to
+///      mentally file the message alongside the other tool-result
+///      hints and continue serialising.
+///
+///   2. **The wording itself is user-voice.** The body drops the
+///      meta-cognitive phrasing the mild/firm tiers use
+///      ("you have emitted N consecutive single-tool-call rounds",
+///      "serialisation drift", "MUST be issued as parallel tool
+///      calls") and instead reads as a developer note: please do
+///      these things in one response; here is what "parallel tool
+///      calls" actually means on the wire (multiple tool_use blocks
+///      for Anthropic, multiple entries in the tool_calls array
+///      for OpenAI, all in the same assistant message).
+///
+/// The model may still pattern-match the message as system feedback
+/// via content cues (precise internal counters would have done
+/// that, but those are now removed; the message slot after tool
+/// results still hints at meta-injection). The remaining lever —
+/// and the one that matters for action — is conversational weight:
+/// a `user`-role follow-up with no system-tag framing reads as
+/// higher-priority than a tool-result-appended note, so the model
+/// is more likely to actually adjust behaviour rather than file
+/// the hint away.
 ///
 /// The mild and firm tiers, by contrast, ARE wrapped in a
 /// `[Crux system note — single-tool-call hint]` (or `— firm`)

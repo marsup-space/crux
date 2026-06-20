@@ -104,7 +104,8 @@ calls like this in future turns.
 
 ```
 
-Single-call:
+Single-call (mild/firm tiers — wrapped in the system-note marker, appended to the last tool's content):
+
 ```text
 
 [Crux system note — single-tool-call hint]
@@ -114,6 +115,34 @@ would have saved round trips with the model. Consider bundling
 independent reads, searches, and other queries going forward.
 
 ```
+
+Single-call (urgent tier — bare user-voice coaching, no marker, sent as a fresh `user`-role message after the tool results):
+
+```text
+When you have several independent things to do — multiple reads, a
+grep plus a read, edits to different files — please write all the
+tool calls in one response rather than one per turn. That's what
+"parallel tool calls" means: writing multiple tool calls in a
+single round (multiple tool_use blocks for Anthropic, or multiple
+entries in the tool_calls array for OpenAI, all in the same
+assistant message). Bundling independent calls into one response
+saves a round trip per call; you only need to split them across
+turns when a later call genuinely depends on an earlier call's
+output.
+
+```
+
+The urgent tier abandons the meta-cognitive framing the other tiers
+use ("you have emitted N consecutive single-tool-call rounds",
+"serialisation drift", "MUST be issued as parallel tool calls") and
+instead reads as a developer note. The body also defines "parallel
+tool calls" explicitly and names the Anthropic/OpenAI wire shapes,
+since the model has evidently not been inferring the right wire
+format from context. The model may still pattern-match the message
+as system feedback via content cues, but the conversational weight
+of a `user`-role follow-up with no system-tag framing is what
+matters for action — it's harder to mentally file as another
+ignoreable meta-commentary than the marker-wrapped tiers.
 
 So the last tool's `content` becomes:
 

@@ -571,8 +571,18 @@ void main() {
       expect(newMsg['role'], 'user',
           reason: 'urgent tier must surface as a user-role message');
       final content = newMsg['content'] as String;
-      expect(content, contains('30 consecutive'));
+      // The urgent-tier body is user-voice coaching rather than
+      // meta-commentary, so the integer counter is gone. Pin the
+      // educational definition of "parallel tool calls" instead —
+      // that's the load-bearing content the urgent tier was
+      // rewritten to deliver.
+      expect(content, contains('"parallel tool calls"'));
       expect(content, contains('parallel tool calls'));
+      // And the wire-format guidance that names the Anthropic /
+      // OpenAI shape directly, since the model has evidently not
+      // been inferring it from context.
+      expect(content, contains('tool_use blocks'));
+      expect(content, contains('tool_calls array'));
       // CRITICAL: the urgent-tier user message must NOT carry the
       // `[Crux system note — …]` marker. The whole point of
       // escalating to a user-role message is for the LLM to read
@@ -640,7 +650,9 @@ void main() {
       final block = blocks.first;
       expect(block['type'], 'text');
       final text = block['text'] as String;
-      expect(text, contains('30 consecutive'));
+      expect(text, contains('"parallel tool calls"'));
+      expect(text, contains('tool_use blocks'));
+      expect(text, contains('tool_calls array'));
       // Same critical assertion as the OpenAI branch: no
       // system-note marker on the urgent-tier user message.
       expect(
