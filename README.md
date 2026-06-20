@@ -18,7 +18,62 @@
 
 </div>
 
+## ⚡ Quick Install
+
+一行命令，所有平台都一样：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
+```
+
+默认装到 `~/.crux/bin`（Windows 下是 `C:\Users\<你>\.crux\bin`）。flags / env vars / PATH 策略见下方各语言章节的 **安装** / **Installation** 部分。
+
 ## <a name="chinese"></a>🇨🇳 中文
+
+### 安装
+
+**Crux 的安装逻辑只有一份**：`install.sh`——它会从 GitHub Releases 拉取预编译 AOT 二进制、装到 `~/.crux/bin`、自动加 PATH。覆盖 macOS / Linux / Windows 全平台。**你只需要知道 `install.sh` 一个文件**。
+
+一行命令，所有平台都一样：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
+```
+
+脚本是纯 bash——macOS / Linux 上原生运行；Windows 上要有一个 bash 环境（WSL、Cygwin、MSYS2 都能跑；开发者机器上基本都有），install.sh 会自动检测 `MINGW*` / `MSYS*` / `CYGWIN*` 拉 Windows 二进制，并调 `setx` 把安装目录加到 Windows user PATH，让 cmd / PowerShell 也能直接 `crux`。
+
+可选参数（任何平台都用 `-s --` 传给 bash）：
+
+```bash
+curl -fsSL .../install.sh | bash -s -- --version v0.7.0
+curl -fsSL .../install.sh | bash -s -- --binary /path/to/crux
+curl -fsSL .../install.sh | bash -s -- --no-modify-path
+```
+
+环境变量（与参数等效，CI / Docker 场景常用）：
+
+- `CRUX_VERSION=v0.7.0` 锁定版本（默认 `latest`）
+- `CRUX_INSTALL_DIR=...` 改安装目录（默认 `~/.crux/bin`）
+- `CRUX_REPO=marsup-space/crux` 改源仓库
+- `CRUX_NO_PATH_UPDATE=1` 跳过自动改 PATH（CI、Docker 场景）
+
+特性：
+
+- 自动检测 OS 与架构：macOS arm64/x64、Linux arm64/x64、Windows x64/arm64；在 macOS x64 下检测到 Rosetta 会自动切到 arm64
+- 把 `providers/`、`themes/`、`third_party/` 复制到二进制同目录，确保 Crux 能找到这些资源
+- **自动把安装目录加到 PATH**：
+  - 按 `$SHELL` 在候选 rc 文件列表里选**第一个已存在的**（bash → `~/.bashrc`/`.bash_profile`/`.profile`/XDG；zsh → `~/.zshrc`/`.zshenv`/XDG；fish → `~/.config/fish/config.fish`，写入 `fish_add_path` 命令）
+  - 在 Windows 下额外用 `setx` 把目录加到当前用户的 Windows PATH，让 cmd / PowerShell 也能找到 `crux`
+  - 如果 `GITHUB_ACTIONS=true`，自动追加到 `$GITHUB_PATH`（CI 场景）
+  - 幂等：再次运行 install 不会重复写
+- 装完跑一次 `crux --version` 验证
+- 本地已装同版本直接退出
+
+> 想先看脚本再跑？[`install.sh`](install.sh) ~280 行 bash——**整个项目里唯一的安装脚本**。无第三方依赖，只要求 `curl` + `unzip` + `bash`。
+
+**手动下载**：所有平台的 zip 都在 [Releases 页面](https://github.com/marsup-space/crux/releases)。Scoop / winget / Homebrew manifest 后续会补上。
+
+---
 
 ### 十字星 — 跨越关键，如星指引
 
@@ -190,6 +245,51 @@ MIT
 ---
 
 ## <a name="english"></a>🇬🇧 English
+
+### Installation
+
+**Crux has one install script.** `install.sh` pulls the prebuilt AOT binary from GitHub Releases, installs to `~/.crux/bin`, and configures PATH. It works on macOS, Linux, and Windows. **You only ever need to remember one filename: `install.sh`.**
+
+One line, every platform:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
+```
+
+The script is plain bash. It runs natively on macOS / Linux. On Windows you need a bash environment (WSL, Cygwin, or MSYS2 — any of them) — install.sh auto-detects `MINGW*` / `MSYS*` / `CYGWIN*` to fetch the Windows binary, and calls `setx` to register the install dir in your Windows user PATH so `crux` is reachable from cmd and PowerShell too.
+
+Optional flags (every platform passes them with `-s --` to bash):
+
+```bash
+curl -fsSL .../install.sh | bash -s -- --version v0.7.0
+curl -fsSL .../install.sh | bash -s -- --binary /path/to/crux
+curl -fsSL .../install.sh | bash -s -- --no-modify-path
+```
+
+Environment variables (equivalent to flags; common in CI / Docker):
+
+- `CRUX_VERSION=v0.7.0` — pin a version (default: `latest`)
+- `CRUX_INSTALL_DIR=...` — override the install directory (default `~/.crux/bin`)
+- `CRUX_REPO=marsup-space/crux` — change the source repository
+- `CRUX_NO_PATH_UPDATE=1` — skip the automatic PATH modification (useful for CI / Docker)
+
+What they do:
+
+- Auto-detect OS and architecture: macOS arm64/x64, Linux arm64/x64, Windows x64/arm64 — also detects Rosetta on macOS x64 and switches to arm64
+- Copy `providers/`, `themes/`, and `third_party/` next to the binary so Crux can find them
+- **Auto-add the install directory to PATH**:
+  - Picks the **first existing** rc file from a per-shell candidate list (bash → `~/.bashrc`/`.bash_profile`/`.profile`/XDG; zsh → `~/.zshrc`/`.zshenv`/XDG; fish → `~/.config/fish/config.fish`, writing a `fish_add_path` command)
+  - On Windows, additionally calls `setx` to register the install dir in the user PATH so cmd and PowerShell can find `crux` too
+  - When `GITHUB_ACTIONS=true`, appends to `$GITHUB_PATH` automatically
+  - Idempotent — re-running the installer doesn't duplicate entries
+- Run `crux --version` after install to verify
+- Exit immediately if the same version is already installed
+
+> Want to read it first? [`install.sh`](install.sh) is ~280 lines of plain bash — **the only install script in the project**. No third-party dependencies — only `curl` + `unzip` + `bash`.
+
+**Manual download**: per-platform zips live on the [Releases page](https://github.com/marsup-space/crux/releases). Scoop / winget / Homebrew manifests will follow.
+
+---
 
 ### Crux — Cross the crux, guided by the star
 
