@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
+import 'shell_guard.dart';
 import 'tool_def.dart';
 
 const _maxLines = 2000;
@@ -302,6 +303,60 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       return ToolResult.error('Missing required parameter: intent');
     }
 
+    // ── Shell-tool fallback guard ─────────────────────────────────
+    // Detect bash+cat/sed/rg fallbacks and apply the three-tier
+    // escalation (mild / firm / reject). The detector runs BEFORE
+    // the subprocess so the reject tier can short-circuit before
+    // any work happens. The mild/firm tiers run the command
+    // normally and append an embedded reminder to the result.
+    //
+    // State lives on the session runtime (passed via ToolContext).
+    // If no runtime is attached (e.g. a unit-test invocation that
+    // synthesises its own ToolContext), the detector still runs
+    // with `currentStreak = 0` so it returns a mild verdict and
+    // the call runs + appends a reminder — never a hard reject.
+    // That keeps the guard harmless in test setups while still
+    // correct for production sessions.
+    //
+    // Env override: `CRUX_DISABLE_SHELL_GUARD=1` short-circuits the
+    // detector entirely so users who find the reminder noisy can
+    // opt out without code changes.
+    final runtime = ctx.sessionRuntime;
+    final currentStreak = runtime?.consecutiveShellViolations ?? 0;
+    final ShellGuardVerdict? verdict;
+    if (_shellGuardDisabled()) {
+      verdict = null;
+    } else {
+      verdict = detectShellGuard(
+        command,
+        isWindows: Platform.isWindows,
+        currentStreak: currentStreak,
+      );
+    }
+
+    if (verdict != null && verdict.severity == ShellGuardSeverity.reject) {
+      // Third (or later) consecutive violation: refuse to execute.
+      // Increment the streak so a fourth attempt is also rejected
+      // and the user-facing bubble's ordinal ("3rd", "4th", …)
+      // stays accurate. Title is `'Error'` so the chat service's
+      // existing `_shouldAbortParallelToolSiblings` aborts sibling
+      // tool calls in the same round — the LLM should reflect on
+      // the rejection before issuing more commands.
+      if (runtime != null) {
+        runtime.consecutiveShellViolations = verdict.streakAfter;
+      }
+      return ToolResult(
+        title: 'Error',
+        output: renderShellGuardRejection(verdict),
+        metadata: {
+          'shellGuard': true,
+          'shellGuardKind': verdict.kind.name,
+          'shellGuardSeverity': verdict.severity.name,
+          'shellGuardStreakAfter': verdict.streakAfter,
+        },
+      );
+    }
+
     try {
       final result = await _run(
         command,
@@ -346,15 +401,54 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         tail.write('\n[exit code: $exitCode]');
       }
 
+      var finalOutput = output + tail.toString();
+
+      // Shell-tool guard (mild / firm tier): append the embedded
+      // reminder so the LLM sees it on the next round. Increment
+      // the streak in the same atomic write so a future
+      // parallel-call sibling running concurrently can't race the
+      // counter (Dart is single-threaded per isolate, so the
+      // runtime read+write is safe without a lock).
+      Map<String, dynamic>? extraMetadata;
+      if (verdict != null) {
+        finalOutput = finalOutput + renderShellGuardEmbedded(verdict);
+        if (runtime != null) {
+          runtime.consecutiveShellViolations = verdict.streakAfter;
+        }
+        extraMetadata = {
+          'shellGuard': true,
+          'shellGuardKind': verdict.kind.name,
+          'shellGuardSeverity': verdict.severity.name,
+          'shellGuardStreakAfter': verdict.streakAfter,
+        };
+      }
+
       return ToolResult(
         title: 'Ran: $command (intent: \'$intent\')',
-        output: output + tail.toString(),
+        output: finalOutput,
         truncated: truncated,
         outputPath: outputPath,
-        metadata: {'exitCode': exitCode},
+        metadata: {
+          'exitCode': exitCode,
+          ...?extraMetadata,
+        },
       );
     } catch (e) {
       return ToolResult.error('Failed to execute command: $e');
+    }
+  }
+
+  /// Check the env for the shell-guard opt-out. Exposed as a
+  /// separate method (rather than inlined) so tests can stub it
+  /// without monkey-patching global state.
+  static bool _shellGuardDisabled() {
+    try {
+      const env = String.fromEnvironment('CRUX_DISABLE_SHELL_GUARD');
+      if (env.isEmpty) return false;
+      final lower = env.toLowerCase();
+      return lower == '1' || lower == 'true' || lower == 'yes';
+    } catch (_) {
+      return false;
     }
   }
 

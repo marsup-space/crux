@@ -1,4 +1,5 @@
 import 'package:path/path.dart' as p;
+import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
 
 class AbortSignal {
@@ -21,12 +22,27 @@ class ToolContext {
   final String? callId;
   final String workingDirectory;
 
+  /// Optional reference to the session's runtime state. Used by
+  /// the shell tool to read/write the consecutive-shell-violations
+  /// counter (see `lib/src/tools/shell_guard.dart` and
+  /// [SessionRuntimeState.consecutiveShellViolations]).
+  ///
+  /// Optional so non-shell tools don't need to know about it; tools
+  /// that don't care about shell-violation state can pass `null`
+  /// (and tests / internal callers can omit it). The shell base
+  /// (`lib/src/tools/shell_base.dart`) reads the current counter
+  /// from this field when deciding the guard's severity tier and
+  /// increments it on every detected violation; the chat service
+  /// resets the counter to 0 when a proper-tool call succeeds.
+  final SessionRuntimeState? sessionRuntime;
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
     required this.abort,
     this.callId,
     required this.workingDirectory,
+    this.sessionRuntime,
   });
 }
 

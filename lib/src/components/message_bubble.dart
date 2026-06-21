@@ -7,6 +7,7 @@ import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../utils/frame_profiler.dart';
 import '../tools/tool_def.dart';
+import '../tools/shell_guard.dart' show ShellGuardSeverity;
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
@@ -16,6 +17,7 @@ import '../utils/tool_meta.dart';
 import 'parallel_praise_bubble.dart';
 import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
+import 'shell_guard_bubble.dart';
 import 'tool_guard_bubble.dart';
 import 'ui/button.dart';
 
@@ -141,6 +143,37 @@ class MessageBubble extends StatelessComponent {
       final kind = ToolGuardKind.values[kindIndex];
       final filePath = message.content.isEmpty ? null : message.content;
       return ToolGuardBubble(guardKind: kind, filePath: filePath);
+    }
+    if (message.role == 'shell_guard') {
+      // `parallelCount` carries the post-call streak (1, 2, 3, …)
+      // for shell_guard rows — same multi-purpose telemetry-int
+      // column used by the other system-role bubbles. The
+      // canonical label (including the ordinal and the
+      // recommended tool name) is in `content`, produced by
+      // `renderShellGuardBubbleLabel(verdict)` in
+      // `lib/src/tools/shell_guard.dart`. The bubble reads the
+      // label verbatim so the in-context reminder and the
+      // visible bubble never drift.
+      //
+      // The severity is reconstructed from the streak value
+      // (mild=1, firm=2, reject=3+) — kept in sync with
+      // `_severityForStreak` in `shell_guard.dart`. We can't
+      // persist a separate severity column without a schema
+      // migration, and the streak is the only signal that
+      // uniquely identifies the tier anyway.
+      final streak = message.parallelCount;
+      final severity = streak >= 3
+          ? ShellGuardSeverity.reject
+          : streak == 2
+              ? ShellGuardSeverity.firm
+              : streak == 1
+                  ? ShellGuardSeverity.mild
+                  : ShellGuardSeverity.none;
+      return ShellGuardBubble(
+        label: message.content,
+        severity: severity,
+        streakAfter: streak,
+      );
     }
 
     final isUser = message.role == 'user';
