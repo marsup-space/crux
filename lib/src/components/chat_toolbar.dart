@@ -170,11 +170,20 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // chat-panel-wide `_refresh()`. That caused an 80ms full
     // relayout on every tick — the 12-FPS bottleneck the
     // profiler exposed via `byLayout`.
+    //
+    // While the session is running, manual compaction is
+    // unsafe (it would tear down mid-flight tokens). Disable
+    // the click here at the UX level so the bar doesn't
+    // advertise an action it can't perform; the runtime guard
+    // in `compactCurrentSession` is a backstop.
+    final isSessionRunning =
+        _sessionController.currentSession.status == SessionStatus.running;
     return ContextBar(
       sessionController: _sessionController,
       streamingController: _streamingController,
       contextMaxTokens: component.contextMaxTokens,
       onTap: component.onCompactPressed,
+      disabled: isSessionRunning,
     );
   }
 
@@ -370,9 +379,12 @@ class _ChatToolbarState extends State<ChatToolbar> {
                   style: TextStyle(color: CruxTheme.of(context).divider),
                 ),
                 Hinted(
-                  hint:
-                      'Context window usage.\n'
-                      'Click to compact the session history.',
+                  hint: isSessionRunning
+                      ? 'Context window usage.\n'
+                            'Compaction unavailable while the agent '
+                            'is responding.'
+                      : 'Context window usage.\n'
+                            'Click to compact the session history.',
                   child: _buildContextBar(context),
                 ),
               ],

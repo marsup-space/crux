@@ -31,12 +31,21 @@ class ContextBar extends StatefulComponent {
   final int contextMaxTokens;
   final VoidCallback? onTap;
 
+  /// When true, the bar is rendered but not clickable — the
+  /// [GestureDetector] gets `onTap: null` and hover effects
+  /// are suppressed so the widget doesn't look interactive.
+  /// Used to lock out manual compaction while the session is
+  /// responding (the runtime guard in `compactCurrentSession`
+  /// is a backstop; this is the UX-level gate).
+  final bool disabled;
+
   const ContextBar({
     super.key,
     required this.sessionController,
     required this.streamingController,
     required this.contextMaxTokens,
     this.onTap,
+    this.disabled = false,
   });
 
   @override
@@ -144,7 +153,11 @@ class _ContextBarState extends State<ContextBar> {
   }
 
   String _formatLabel(int displayTokens, int maxTokens, bool hovered) {
-    if (hovered) return 'Compact';
+    // Hover swap to "Compact" is an affordance — it tells the
+    // user what the click does. Only show it when the bar is
+    // actually clickable; otherwise the hover label would
+    // advertise an action that's been disabled.
+    if (hovered && !component.disabled) return 'Compact';
     return '${_fmtNum(displayTokens)} / ${_fmtCtx(maxTokens)}';
   }
 
@@ -307,13 +320,18 @@ class _ContextBarState extends State<ContextBar> {
     _hovered = component.streamingController.contextBarHovered;
 
     final theme = CruxTheme.of(context);
+    // Hover-driven color swap advertises "this is clickable".
+    // When the bar is disabled (session is running), force the
+    // non-hover palette so the widget doesn't visually pretend
+    // to be a button.
+    final showHovered = _hovered && !component.disabled;
     final fillColor =
-        _hovered ? theme.metricsActive : theme.progressFill;
+        showHovered ? theme.metricsActive : theme.progressFill;
     final emptyColor = theme.progressEmpty;
     final labelFillFg =
-        _hovered ? theme.outlineDim : theme.buttonBackground;
+        showHovered ? theme.outlineDim : theme.buttonBackground;
     final labelEmptyFg =
-        _hovered ? theme.metricsActive : theme.progressLabelEmpty;
+        showHovered ? theme.metricsActive : theme.progressLabelEmpty;
 
     return MouseRegion(
       onEnter: (_) {
@@ -328,7 +346,12 @@ class _ContextBarState extends State<ContextBar> {
       },
       opaque: false,
       child: GestureDetector(
-        onTap: component.onTap,
+        // `onTap: null` makes the GestureDetector a no-op for
+        // taps — the runtime guard in `compactCurrentSession`
+        // remains as a backstop, but the UX-level gate lives
+        // here so the click never reaches the orchestrator
+        // while the session is running.
+        onTap: component.disabled ? null : component.onTap,
         behavior: HitTestBehavior.opaque,
         child: _ContextBarBridge(
           width: 20,
