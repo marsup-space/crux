@@ -14,6 +14,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
+import '../tools/shell_guard.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/partial_json_field_extractor.dart';
@@ -1209,6 +1210,14 @@ class ChatService {
                   abort: abortSignal,
                   callId: call.callId,
                   workingDirectory: session.projectPath,
+                  // Pass the runtime so the shell tool can read/write
+                  // the consecutive-shell-violations counter. Other
+                  // tools ignore the field. Without this, the shell
+                  // guard's detector would never see the streak and
+                  // every violation would land at the mild tier — the
+                  // firm/reject escalation that motivates the feature
+                  // would never fire.
+                  sessionRuntime: runtime,
                 );
                 final result = await _toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {
@@ -1266,6 +1275,48 @@ class ChatService {
               result.metadata['guardTriggered'] != true) {
             successfulCalls++;
           }
+        }
+
+        // ── Shell-tool fallback guard: streak maintenance ────────
+        // The detector + state machine in `shell_base.dart` /
+        // `shell_guard.dart` increments the consecutive-violations
+        // counter on every detected fallback. Here we reset it
+        // whenever a "proper" tool succeeded — one of grep / read /
+        // glob / code_search. Resetting here (after
+        // the tool loop, when every result has landed) means the
+        // streak is broken by ANY successful proper-tool call in
+        // the round, even if it ran in parallel with a shell call.
+        //
+        // We use the same "successful" predicate as
+        // `successfulCalls` (no parse error, not an Error title,
+        // not a guard-triggered result) so a `read` that errored
+        // out doesn't accidentally reset the streak.
+        //
+        // Reset BEFORE the in-context hint injection below so the
+        // helper that persists the shell_guard bubble sees the
+        // post-reset counter value (it would otherwise show a
+        // stale "2nd" ordinal when the LLM just used read + bash
+        // in the same round).
+        const properToolsForShellGuardReset = <String>{
+          'grep',
+          'read',
+          'glob',
+          'code_search',
+        };
+        var hadProperToolSuccess = false;
+        for (final call in toolCalls) {
+          if (call.parseError != null) continue;
+          final lower = call.name.toLowerCase();
+          if (!properToolsForShellGuardReset.contains(lower)) continue;
+          final result = callResults[call.callId];
+          if (result == null) continue;
+          if (result.title == 'Error') continue;
+          if (result.metadata['guardTriggered'] == true) continue;
+          hadProperToolSuccess = true;
+          break;
+        }
+        if (hadProperToolSuccess) {
+          runtime.consecutiveShellViolations = 0;
         }
 
         // In-context hint injection. Two complementary signals, both gated
@@ -1535,6 +1586,76 @@ class ChatService {
             ),
             parallelCount: runtime.consecutiveSingleToolCallRounds,
           );
+        }
+
+        // ── Shell-tool fallback guard: user-facing bubble ─────────
+        // For every tool call whose result carries the `shellGuard`
+        // metadata key (set by ShellBase when the detector flagged
+        // a violation at any severity), persist a `shell_guard`
+        // bubble right after the tool_call row. Mirrors the
+        // `parallel_praise` / `single_call_reminder` pattern: a
+        // small visible affordance that fires for every
+        // violation, so the user can scan chat history and see
+        // exactly which rounds drifted toward bash+cat fallbacks.
+        //
+        // Same `hintEnabled` gate as the in-context hints above
+        // so all three surfaces (in-context reminder, DB bubble,
+        // user-facing UI) fire and stay silent together. The
+        // severity / streak after the call comes from the result
+        // metadata (the shell tool set it before returning), so
+        // we don't re-derive it here.
+        if (guardAbort == null && hintEnabled) {
+          for (final call in toolCalls) {
+            final result = callResults[call.callId];
+            if (result == null) continue;
+            if (result.metadata['shellGuard'] != true) continue;
+            final kindName = result.metadata['shellGuardKind'] as String?;
+            final severityName =
+                result.metadata['shellGuardSeverity'] as String?;
+            final streakAfter =
+                result.metadata['shellGuardStreakAfter'] as int?;
+            if (kindName == null ||
+                severityName == null ||
+                streakAfter == null) {
+              continue;
+            }
+            // Re-parse the verdict fields through the same enum
+            // values the shell tool used, then render via the
+            // canonical helper in `shell_guard.dart` so the
+            // bubble's `content` matches the in-context reminder.
+            final kind = ShellGuardKind.values.firstWhere(
+              (k) => k.name == kindName,
+              orElse: () => ShellGuardKind.none,
+            );
+            final severity = ShellGuardSeverity.values.firstWhere(
+              (s) => s.name == severityName,
+              orElse: () => ShellGuardSeverity.none,
+            );
+            if (kind == ShellGuardKind.none ||
+                severity == ShellGuardSeverity.none) {
+              continue;
+            }
+            final verdict = ShellGuardVerdict(
+              kind: kind,
+              severity: severity,
+              what: '',
+              toolName: _shellGuardToolNameForKind(kind),
+              example: '',
+              command: '',
+              streakAfter: streakAfter,
+            );
+            await _messageStore.addMessage(
+              sessionId,
+              role: 'shell_guard',
+              content: renderShellGuardBubbleLabel(verdict),
+              // Reuse `parallelCount` as the multi-purpose
+              // telemetry-int column for system-role bubbles.
+              // For `shell_guard` rows it carries the post-call
+              // streak value (1, 2, 3+) so the bubble can pick
+              // the right ordinal without re-parsing the label.
+              parallelCount: streakAfter,
+            );
+          }
         }
       } catch (e) {
         runtime.pauseStreamingTimer();
@@ -2191,6 +2312,27 @@ String _relativeFilePathFromCall(ToolCall call, String projectPath) {
 /// dependency for a one-line literal.
 String _jsonString(String s) {
   return '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
+}
+
+/// Map a [ShellGuardKind] back to its dedicated-tool name. Mirrors
+/// the private `_toolForKind` helper in `shell_guard.dart` — kept
+/// here as a one-line switch so we don't have to plumb the
+/// `toolName` field through the persisted metadata. Used by the
+/// `shell_guard` bubble persistence block above to render the
+/// "use `<tool>` instead" hint without rebuilding the verdict.
+String _shellGuardToolNameForKind(ShellGuardKind kind) {
+  switch (kind) {
+    case ShellGuardKind.read:
+      return 'read';
+    case ShellGuardKind.glob:
+      return 'glob';
+    case ShellGuardKind.grep:
+      return 'grep';
+    case ShellGuardKind.codeSearch:
+      return 'code_search';
+    case ShellGuardKind.none:
+      return '';
+  }
 }
 
 /// Map a tool result's metadata into a [ToolGuardKind] for the

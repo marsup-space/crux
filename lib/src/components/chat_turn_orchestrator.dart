@@ -447,8 +447,10 @@ class ChatTurnOrchestrator {
               _fileMutatedThisRound = false;
               unawaited(_gitStatusService.refresh());
               // Re-index any files changed by the tool round, so the
-              // next `semble_search` is fresh. Idempotent / non-blocking
+              // next `code_search` is fresh. Idempotent / non-blocking
               // — same fire-and-forget pattern as git-status above.
+              // The SembleWarmup class is internal infra — the tool
+              // surface name is `code_search`.
               SembleWarmup.instance.refresh(Directory.current.path);
             }
             _streamingController.beginWaitingForModel(sessionId);

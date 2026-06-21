@@ -133,6 +133,31 @@ class SessionRuntimeState {
   /// at N>=4, or we never entered it).
   int turnsSinceLastCompact;
 
+  /// Number of consecutive shell-tool fallback violations in this
+  /// session. Powers the `shell-tool fallback` guard in
+  /// `lib/src/tools/shell_guard.dart` — catches the model using
+  /// `bash`/`cmd`/`powershell` for operations that have a dedicated
+  /// tool (`read` / `grep` / `glob` / `code_search`) and escalates
+  /// through three tiers: mild (run + reminder), firm (run + firmer
+  /// reminder), reject (block the call).
+  ///
+  /// Lifecycle (managed by `ShellBase` and `chat_service`):
+  ///   - `+1` when a shell call is detected as a fallback violation
+  ///     (see `shell_guard.dart` for the detection rules)
+  ///   - reset to `0` when a "proper" tool call succeeds — i.e. one
+  ///   of `grep`, `read`, `glob`, `code_search`.
+  ///     The chat service does this reset after each tool round so
+  ///     a single `read` between two bash+cat fallbacks breaks the
+  ///     streak.
+  ///   - reset to `0` when a new user turn starts (the drift
+  ///     detector is per-attempt; a fresh prompt is a fresh slate)
+  ///
+  /// In-memory only — resets to 0 on app restart. That matches the
+  /// parallel-call drift detector's behaviour: the signal is
+  /// session-scoped and a fresh app launch is effectively a fresh
+  /// session.
+  int consecutiveShellViolations;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -157,6 +182,7 @@ class SessionRuntimeState {
     this.consecutiveSingleToolCallRounds = 0,
     this.consecutiveCompactionFailures = 0,
     this.turnsSinceLastCompact = 0,
+    this.consecutiveShellViolations = 0,
   });
 
   double get thinkingDurationMs {

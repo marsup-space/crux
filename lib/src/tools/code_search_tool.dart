@@ -9,13 +9,13 @@ import 'tool_def.dart';
 const _defaultTopK = 8;
 const _maxSnippetLineLength = 200;
 
-/// Semantic code search via the `semble` CLI (hybrid BM25 + model2vec).
+/// Semantic code search: finds code by CONCEPT, not exact regex match.
 ///
-/// Use this for CONCEPT questions where the answer isn't a known identifier.
-/// For exact symbol or pattern matching, prefer the [GrepTool] instead.
-class SembleSearchTool extends ToolDef {
+/// Use this for "what does X do / how does Y work" questions. For
+/// known identifiers or exact patterns, prefer the `grep` tool.
+class CodeSearchTool extends ToolDef {
   @override
-  String get name => 'semble_search';
+  String get name => 'code_search';
 
   @override
   CollapsedSummary collapsedSummary(
@@ -39,25 +39,43 @@ class SembleSearchTool extends ToolDef {
 
   @override
   String get description =>
-      'Semantic code search using hybrid BM25 + static embeddings '
-      '(via the `semble` CLI). '
-      'USE FOR CONCEPT QUESTIONS: "how does authentication work", '
-      '"where is YAML parsed", "find code that handles errors". '
-      'Returns ranked code snippets (file:line + content) with similarity '
-      'scores. '
-      'DO NOT USE for exact identifier lookups ("where is FunctionX '
-      'defined") or known regex patterns — semantic search is slower and '
-      'less precise than grep for symbol names. Use grep for those. '
-      'CALL MULTIPLE IN PARALLEL — when investigating several concepts, '
-      'issue all the semble_search calls in the same turn rather than '
-      'sequentially. Mixing with grep, glob, and read in the same turn is '
-      'encouraged when the calls are independent (e.g. semantic search to '
-      'narrow down, then grep to find references, then read the relevant '
-      'files — issue them together when you already know what you need). '
-      'Do NOT shell out to semble via bash to do this — call this tool '
-      'directly. Requires `semble` on PATH or in third_party/bin/. '
-      'First call on a new directory indexes it (~250ms-12min depending on '
-      'size); subsequent queries are sub-second.';
+      'Default tool for "what does this code do" questions. '
+      'Semantic code search that finds code by CONCEPT, not by exact '
+      'regex match — single call returns ranked snippets in ~600ms '
+      'instead of the bash+rg+read dance. '
+      ''
+      'PREFER THIS over `bash` for code exploration. Default agent '
+      'behaviour — bash("rg ..."), read 3-5 files, repeat — burns '
+      'tool calls and tokens. One code_search call replaces the whole '
+      'loop: '
+      '   ❌ bash(rg "auth") → read(top 5) → read(imports) → ... '
+      '   ✅ code_search(query="how is authentication handled") '
+      '      → 8 ranked snippets with source, single tool call. '
+      ''
+      'TRIGGER PHRASES — use this tool when the user asks: '
+      '"how does X work / how is X implemented", '
+      '"where is X handled / where do we do X", '
+      '"find code that does X / find the X logic", '
+      '"explain the X system / what\'s the X flow", '
+      '"show me how X works in this codebase". '
+      ''
+      'DO NOT use this tool for: '
+      '• Exact symbol lookups ("where is `OAuthHandler` defined") '
+      '  — use grep with that identifier. '
+      '• Known file patterns ("find all *_test.dart") — use glob. '
+      '• Reading a file you already have a path to — use read. '
+      '• Commands like `git status`, package installs, builds — '
+      '  use bash for those (this tool only searches code). '
+      ''
+      'NEVER shell out to rg/find/grep (or any equivalent) via bash '
+      'for code exploration. This tool is the right surface. '
+      ''
+      'CALL MULTIPLE IN PARALLEL — when investigating several '
+      'concepts, issue all the code_search calls in one turn. Mix '
+      'with grep and read when independent. '
+      ''
+      'First call on a new directory may be slow (indexing). '
+      'Subsequent queries are sub-second.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -74,7 +92,7 @@ class SembleSearchTool extends ToolDef {
         'type': 'string',
         'description':
             'Directory to search in (default: working directory). '
-            'Indexes are cached per-directory in .semble/.',
+            'Indexes are cached per-directory.',
       },
       'k': {
         'type': 'integer',
@@ -118,20 +136,21 @@ class SembleSearchTool extends ToolDef {
       if (result.exitCode != 0) {
         final stderr = (result.stderr as String).trim();
         if (stderr.isEmpty) {
-          return ToolResult.error('semble exited with code ${result.exitCode}');
+          return ToolResult.error('code_search exited with code ${result.exitCode}');
         }
         return ToolResult.error(
-          'semble error: $stderr\n\n'
-          'Tip: install avec `pip install semble` (or `uv tool install semble`) '
-          'and ensure `semble` is on PATH or symlinked into third_party/bin/.',
+          'code_search error: $stderr\n\n'
+          'The underlying search engine is unavailable. '
+          'Install it (e.g. `pip install semble`) and ensure the '
+          '`semble` binary is on PATH or in third_party/bin/.',
         );
       }
 
       final stdout = result.stdout as String;
       if (stdout.isEmpty) {
         return ToolResult(
-          title: 'semble: no matches',
-          output: '(no output from semble)',
+          title: 'code_search: no matches',
+          output: '(no output from code_search)',
           metadata: {'totalMatches': 0},
         );
       }
@@ -141,7 +160,7 @@ class SembleSearchTool extends ToolDef {
         parsed = jsonDecode(stdout) as Map<String, dynamic>;
       } on FormatException catch (e) {
         return ToolResult.error(
-          'Failed to parse semble JSON output: $e\n\n'
+          'Failed to parse code_search output: $e\n\n'
           'Raw output (first 500 chars):\n'
           '${stdout.substring(0, stdout.length.clamp(0, 500))}',
         );
@@ -151,7 +170,7 @@ class SembleSearchTool extends ToolDef {
           (parsed['results'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
       if (results.isEmpty) {
         return ToolResult(
-          title: 'semble: no matches',
+          title: 'code_search: no matches',
           output: 'No code matches "$query" in $path',
           metadata: {'totalMatches': 0},
         );
@@ -182,15 +201,15 @@ class SembleSearchTool extends ToolDef {
       }
 
       return ToolResult(
-        title: 'semble: ${results.length} matches',
+        title: 'code_search: ${results.length} matches',
         output: lines.join('\n'),
         metadata: {'totalMatches': results.length},
       );
     } on ProcessException catch (e) {
       return ToolResult.error(
-        'Unable to start semble: ${e.message}\n\n'
-        'Install avec `pip install semble` (or `uv tool install semble`) '
-        'and ensure `semble` is on PATH or symlinked into third_party/bin/. '
+        'Unable to start code_search: ${e.message}\n\n'
+        'Install the underlying search engine (e.g. `pip install semble`) '
+        'and ensure its binary is on PATH or in third_party/bin/. '
         'Set CRUX_THIRD_PARTY_BIN to override the search path.',
       );
     }

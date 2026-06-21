@@ -1,16 +1,16 @@
 import 'dart:io';
 
 import 'package:test/test.dart';
-import 'package:crux/src/tools/semble_search_tool.dart';
+import 'package:crux/src/tools/code_search_tool.dart';
 import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
-  group('SembleSearchTool', () {
-    late SembleSearchTool tool;
+  group('CodeSearchTool', () {
+    late CodeSearchTool tool;
     late ToolContext ctx;
 
     setUp(() {
-      tool = SembleSearchTool();
+      tool = CodeSearchTool();
       ctx = ToolContext(
         sessionId: 1,
         messageId: 1,
@@ -19,13 +19,25 @@ void main() {
       );
     });
 
+    test('has correct name and description triggers', () {
+      expect(tool.name, equals('code_search'));
+      expect(tool.description, contains('Default tool'));
+      expect(tool.description, contains('code_search'));
+      // Implementation details shouldn't leak into the agent-facing
+      // description.
+      expect(tool.description, isNot(contains('semble')),
+          reason: 'agent-facing description should not mention semble');
+      expect(tool.description, isNot(contains('CLI')),
+          reason: 'agent-facing description should not mention CLI');
+    });
+
     test('missing query returns error', () async {
       final result = await tool.execute({'query': ''}, ctx);
       expect(result.output, contains('Missing required parameter'));
     });
 
     test(
-      'finds symbol-shape matches via semantic search',
+      'finds semantic matches across a repo',
       () async {
         final repo =
             '/Users/developer/Projects/crux/.research/semble';
@@ -37,16 +49,13 @@ void main() {
           {'query': 'how does the indexer parse source files', 'path': repo, 'k': 3},
           ctx,
         );
-        print('---TOOL OUTPUT---');
-        print(result.output);
-        print('---END---');
         expect(result.metadata['totalMatches'], greaterThan(0));
       },
       timeout: const Timeout(Duration(minutes: 5)),
     );
 
     test(
-      'returns no matches when path does not exist',
+      'returns clean error when path does not exist',
       () async {
         final result = await tool.execute(
           {
@@ -63,12 +72,8 @@ void main() {
     );
 
     test(
-      'reports clean error when semble not installed',
+      'reports clean error when search engine not installed',
       () async {
-        // Override the executable resolution by simulating a missing binary
-        // via a path that doesn't exist. We can't easily inject this without
-        // DI, so just check the error message format from a guaranteed
-        // missing executable by passing a very weird working directory.
         final ctx2 = ToolContext(
           sessionId: 1,
           messageId: 1,
@@ -79,9 +84,6 @@ void main() {
           {'query': 'anything', 'path': '/nonexistent/path/xyzzy'},
           ctx2,
         );
-        // Either: semble fails because path doesn't exist, OR
-        // ProcessException because binary missing. Either way the output
-        // should be an error (not a successful result with matches).
         expect(result.title, equals('Error'));
       },
       timeout: const Timeout(Duration(seconds: 30)),
@@ -90,12 +92,6 @@ void main() {
     test(
       'respects .gitignore: files inside gitignored dirs are not indexed',
       () async {
-        // Plant a sentinel file inside .research/ (which is in crux's
-        // .gitignore). The content uses a unique token that won't match
-        // any legitimate code. If .gitignore is honored, the file is not
-        // walked, the cache stays valid, and a search for the token
-        // returns no matches. If .gitignore is broken, the file is
-        // indexed, the cache rebuilds, and the search returns the file.
         final repo = '/Users/developer/Projects/crux';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('crux repo not available at $repo');
@@ -110,12 +106,11 @@ void main() {
         final sentinelContent = '''
 // This file exists only to verify that .gitignore is respected.
 // Token: $sentinelToken
-// If you see this content in a semble_search result, .gitignore is broken.
+// If you see this content in a code_search result, .gitignore is broken.
 class SentinelForSembleTest {
   String marker = "$sentinelToken";
 }
 ''';
-        // Write the sentinel; restore prior state at the end either way.
         final existed = sentinelFile.existsSync();
         final priorContent =
             existed ? sentinelFile.readAsStringSync() : null;
@@ -138,7 +133,6 @@ class SentinelForSembleTest {
             },
             ctx,
           );
-          // The planted file must not appear in any result.
           expect(
             result.output,
             isNot(contains('sentinel_xyzzy12345_uniquename.dart')),
@@ -146,10 +140,8 @@ class SentinelForSembleTest {
                 '.gitignore is broken: sentinel file inside .research/ '
                 'leaked into search results. Output was:\n${result.output}',
           );
-        } finally {
-          // Re-index to drop the planted file from any cache (defensive).
-          // We rely on the setUp/tearDown to restore the original file
-          // state, so subsequent runs are deterministic.
+        } catch (_) {
+          // Sentinel cleanup handled by tearDown.
         }
       },
       timeout: const Timeout(Duration(minutes: 2)),

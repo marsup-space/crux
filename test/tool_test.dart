@@ -98,7 +98,7 @@ void main() {
           'edit',
           'grep',
           'glob',
-          'semble_search',
+          'code_search',
           'webfetch',
           'session',
         ]),
