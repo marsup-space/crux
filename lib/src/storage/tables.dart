@@ -67,10 +67,6 @@ class Messages extends Table {
   TextColumn get tldr => text().withDefault(const Constant(''))();
   TextColumn get error => text().nullable()();
   IntColumn get parentMsgId => integer().nullable()();
-
-  /// Orphaned column — the offloading infrastructure was removed.
-  /// Kept in the schema so drift's codegen compiles, but never read.
-  IntColumn get preCompressTokens => integer().nullable()();
   TextColumn get images => text().withDefault(const Constant(''))();
 
   /// Count of successful tool calls in the round, persisted on
@@ -108,23 +104,4 @@ class Parts extends Table {
   TextColumn get type => text()();
   TextColumn get data => text().withDefault(const Constant('{}'))();
   IntColumn get createdAt => integer()();
-}
-
-/// Orphaned table — the offloading infrastructure was removed.
-/// Kept in the schema so drift's codegen compiles and past
-/// migrations work, but the actual on-disk table is dropped at
-/// schema v16 via [CruxDatabase._dropOffloadedContent].
-class OffloadedContent extends Table {
-  IntColumn get sessionId =>
-      integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
-  TextColumn get callId => text()();
-  TextColumn get toolName => text()();
-  IntColumn get byteSize => integer()();
-  IntColumn get lineCount => integer()();
-  TextColumn get content => text()();
-  TextColumn get intent => text().withDefault(const Constant(''))();
-  IntColumn get createdAt => integer()();
-
-  @override
-  Set<Column> get primaryKey => {sessionId, callId};
 }

@@ -1422,17 +1422,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _preCompressTokensMeta = const VerificationMeta(
-    'preCompressTokens',
-  );
-  @override
-  late final GeneratedColumn<int> preCompressTokens = GeneratedColumn<int>(
-    'pre_compress_tokens',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
   static const VerificationMeta _imagesMeta = const VerificationMeta('images');
   @override
   late final GeneratedColumn<String> images = GeneratedColumn<String>(
@@ -1495,7 +1484,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     tldr,
     error,
     parentMsgId,
-    preCompressTokens,
     images,
     parallelCount,
     meta,
@@ -1637,15 +1625,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
-    if (data.containsKey('pre_compress_tokens')) {
-      context.handle(
-        _preCompressTokensMeta,
-        preCompressTokens.isAcceptableOrUnknown(
-          data['pre_compress_tokens']!,
-          _preCompressTokensMeta,
-        ),
-      );
-    }
     if (data.containsKey('images')) {
       context.handle(
         _imagesMeta,
@@ -1752,10 +1731,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}parent_msg_id'],
       ),
-      preCompressTokens: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}pre_compress_tokens'],
-      ),
       images: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}images'],
@@ -1799,10 +1774,6 @@ class Message extends DataClass implements Insertable<Message> {
   final String tldr;
   final String? error;
   final int? parentMsgId;
-
-  /// Orphaned column — the offloading infrastructure was removed.
-  /// Kept in the schema so drift's codegen compiles, but never read.
-  final int? preCompressTokens;
   final String images;
 
   /// Count of successful tool calls in the round, persisted on
@@ -1836,7 +1807,6 @@ class Message extends DataClass implements Insertable<Message> {
     required this.tldr,
     this.error,
     this.parentMsgId,
-    this.preCompressTokens,
     required this.images,
     required this.parallelCount,
     required this.meta,
@@ -1867,9 +1837,6 @@ class Message extends DataClass implements Insertable<Message> {
     }
     if (!nullToAbsent || parentMsgId != null) {
       map['parent_msg_id'] = Variable<int>(parentMsgId);
-    }
-    if (!nullToAbsent || preCompressTokens != null) {
-      map['pre_compress_tokens'] = Variable<int>(preCompressTokens);
     }
     map['images'] = Variable<String>(images);
     map['parallel_count'] = Variable<int>(parallelCount);
@@ -1903,9 +1870,6 @@ class Message extends DataClass implements Insertable<Message> {
       parentMsgId: parentMsgId == null && nullToAbsent
           ? const Value.absent()
           : Value(parentMsgId),
-      preCompressTokens: preCompressTokens == null && nullToAbsent
-          ? const Value.absent()
-          : Value(preCompressTokens),
       images: Value(images),
       parallelCount: Value(parallelCount),
       meta: Value(meta),
@@ -1938,7 +1902,6 @@ class Message extends DataClass implements Insertable<Message> {
       tldr: serializer.fromJson<String>(json['tldr']),
       error: serializer.fromJson<String?>(json['error']),
       parentMsgId: serializer.fromJson<int?>(json['parentMsgId']),
-      preCompressTokens: serializer.fromJson<int?>(json['preCompressTokens']),
       images: serializer.fromJson<String>(json['images']),
       parallelCount: serializer.fromJson<int>(json['parallelCount']),
       meta: serializer.fromJson<String>(json['meta']),
@@ -1966,7 +1929,6 @@ class Message extends DataClass implements Insertable<Message> {
       'tldr': serializer.toJson<String>(tldr),
       'error': serializer.toJson<String?>(error),
       'parentMsgId': serializer.toJson<int?>(parentMsgId),
-      'preCompressTokens': serializer.toJson<int?>(preCompressTokens),
       'images': serializer.toJson<String>(images),
       'parallelCount': serializer.toJson<int>(parallelCount),
       'meta': serializer.toJson<String>(meta),
@@ -1992,7 +1954,6 @@ class Message extends DataClass implements Insertable<Message> {
     String? tldr,
     Value<String?> error = const Value.absent(),
     Value<int?> parentMsgId = const Value.absent(),
-    Value<int?> preCompressTokens = const Value.absent(),
     String? images,
     int? parallelCount,
     String? meta,
@@ -2017,9 +1978,6 @@ class Message extends DataClass implements Insertable<Message> {
     tldr: tldr ?? this.tldr,
     error: error.present ? error.value : this.error,
     parentMsgId: parentMsgId.present ? parentMsgId.value : this.parentMsgId,
-    preCompressTokens: preCompressTokens.present
-        ? preCompressTokens.value
-        : this.preCompressTokens,
     images: images ?? this.images,
     parallelCount: parallelCount ?? this.parallelCount,
     meta: meta ?? this.meta,
@@ -2058,9 +2016,6 @@ class Message extends DataClass implements Insertable<Message> {
       parentMsgId: data.parentMsgId.present
           ? data.parentMsgId.value
           : this.parentMsgId,
-      preCompressTokens: data.preCompressTokens.present
-          ? data.preCompressTokens.value
-          : this.preCompressTokens,
       images: data.images.present ? data.images.value : this.images,
       parallelCount: data.parallelCount.present
           ? data.parallelCount.value
@@ -2090,7 +2045,6 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
-          ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
           ..write('parallelCount: $parallelCount, ')
           ..write('meta: $meta, ')
@@ -2118,7 +2072,6 @@ class Message extends DataClass implements Insertable<Message> {
     tldr,
     error,
     parentMsgId,
-    preCompressTokens,
     images,
     parallelCount,
     meta,
@@ -2145,7 +2098,6 @@ class Message extends DataClass implements Insertable<Message> {
           other.tldr == this.tldr &&
           other.error == this.error &&
           other.parentMsgId == this.parentMsgId &&
-          other.preCompressTokens == this.preCompressTokens &&
           other.images == this.images &&
           other.parallelCount == this.parallelCount &&
           other.meta == this.meta &&
@@ -2170,7 +2122,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> tldr;
   final Value<String?> error;
   final Value<int?> parentMsgId;
-  final Value<int?> preCompressTokens;
   final Value<String> images;
   final Value<int> parallelCount;
   final Value<String> meta;
@@ -2193,7 +2144,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
-    this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
     this.parallelCount = const Value.absent(),
     this.meta = const Value.absent(),
@@ -2217,7 +2167,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tldr = const Value.absent(),
     this.error = const Value.absent(),
     this.parentMsgId = const Value.absent(),
-    this.preCompressTokens = const Value.absent(),
     this.images = const Value.absent(),
     this.parallelCount = const Value.absent(),
     this.meta = const Value.absent(),
@@ -2243,7 +2192,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? tldr,
     Expression<String>? error,
     Expression<int>? parentMsgId,
-    Expression<int>? preCompressTokens,
     Expression<String>? images,
     Expression<int>? parallelCount,
     Expression<String>? meta,
@@ -2268,7 +2216,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (tldr != null) 'tldr': tldr,
       if (error != null) 'error': error,
       if (parentMsgId != null) 'parent_msg_id': parentMsgId,
-      if (preCompressTokens != null) 'pre_compress_tokens': preCompressTokens,
       if (images != null) 'images': images,
       if (parallelCount != null) 'parallel_count': parallelCount,
       if (meta != null) 'meta': meta,
@@ -2294,7 +2241,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? tldr,
     Value<String?>? error,
     Value<int?>? parentMsgId,
-    Value<int?>? preCompressTokens,
     Value<String>? images,
     Value<int>? parallelCount,
     Value<String>? meta,
@@ -2318,7 +2264,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       tldr: tldr ?? this.tldr,
       error: error ?? this.error,
       parentMsgId: parentMsgId ?? this.parentMsgId,
-      preCompressTokens: preCompressTokens ?? this.preCompressTokens,
       images: images ?? this.images,
       parallelCount: parallelCount ?? this.parallelCount,
       meta: meta ?? this.meta,
@@ -2380,9 +2325,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (parentMsgId.present) {
       map['parent_msg_id'] = Variable<int>(parentMsgId.value);
     }
-    if (preCompressTokens.present) {
-      map['pre_compress_tokens'] = Variable<int>(preCompressTokens.value);
-    }
     if (images.present) {
       map['images'] = Variable<String>(images.value);
     }
@@ -2418,7 +2360,6 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('tldr: $tldr, ')
           ..write('error: $error, ')
           ..write('parentMsgId: $parentMsgId, ')
-          ..write('preCompressTokens: $preCompressTokens, ')
           ..write('images: $images, ')
           ..write('parallelCount: $parallelCount, ')
           ..write('meta: $meta, ')
@@ -3095,521 +3036,6 @@ class FileReadStateCompanion extends UpdateCompanion<FileReadStateData> {
   }
 }
 
-class $OffloadedContentTable extends OffloadedContent
-    with TableInfo<$OffloadedContentTable, OffloadedContentData> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $OffloadedContentTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
-    'sessionId',
-  );
-  @override
-  late final GeneratedColumn<int> sessionId = GeneratedColumn<int>(
-    'session_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES sessions (id) ON DELETE CASCADE',
-    ),
-  );
-  static const VerificationMeta _callIdMeta = const VerificationMeta('callId');
-  @override
-  late final GeneratedColumn<String> callId = GeneratedColumn<String>(
-    'call_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _toolNameMeta = const VerificationMeta(
-    'toolName',
-  );
-  @override
-  late final GeneratedColumn<String> toolName = GeneratedColumn<String>(
-    'tool_name',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _byteSizeMeta = const VerificationMeta(
-    'byteSize',
-  );
-  @override
-  late final GeneratedColumn<int> byteSize = GeneratedColumn<int>(
-    'byte_size',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _lineCountMeta = const VerificationMeta(
-    'lineCount',
-  );
-  @override
-  late final GeneratedColumn<int> lineCount = GeneratedColumn<int>(
-    'line_count',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _contentMeta = const VerificationMeta(
-    'content',
-  );
-  @override
-  late final GeneratedColumn<String> content = GeneratedColumn<String>(
-    'content',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _intentMeta = const VerificationMeta('intent');
-  @override
-  late final GeneratedColumn<String> intent = GeneratedColumn<String>(
-    'intent',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(''),
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    sessionId,
-    callId,
-    toolName,
-    byteSize,
-    lineCount,
-    content,
-    intent,
-    createdAt,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'offloaded_content';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<OffloadedContentData> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('session_id')) {
-      context.handle(
-        _sessionIdMeta,
-        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_sessionIdMeta);
-    }
-    if (data.containsKey('call_id')) {
-      context.handle(
-        _callIdMeta,
-        callId.isAcceptableOrUnknown(data['call_id']!, _callIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_callIdMeta);
-    }
-    if (data.containsKey('tool_name')) {
-      context.handle(
-        _toolNameMeta,
-        toolName.isAcceptableOrUnknown(data['tool_name']!, _toolNameMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_toolNameMeta);
-    }
-    if (data.containsKey('byte_size')) {
-      context.handle(
-        _byteSizeMeta,
-        byteSize.isAcceptableOrUnknown(data['byte_size']!, _byteSizeMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_byteSizeMeta);
-    }
-    if (data.containsKey('line_count')) {
-      context.handle(
-        _lineCountMeta,
-        lineCount.isAcceptableOrUnknown(data['line_count']!, _lineCountMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_lineCountMeta);
-    }
-    if (data.containsKey('content')) {
-      context.handle(
-        _contentMeta,
-        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_contentMeta);
-    }
-    if (data.containsKey('intent')) {
-      context.handle(
-        _intentMeta,
-        intent.isAcceptableOrUnknown(data['intent']!, _intentMeta),
-      );
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_createdAtMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {sessionId, callId};
-  @override
-  OffloadedContentData map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return OffloadedContentData(
-      sessionId: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}session_id'],
-      )!,
-      callId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}call_id'],
-      )!,
-      toolName: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}tool_name'],
-      )!,
-      byteSize: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}byte_size'],
-      )!,
-      lineCount: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}line_count'],
-      )!,
-      content: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}content'],
-      )!,
-      intent: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}intent'],
-      )!,
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}created_at'],
-      )!,
-    );
-  }
-
-  @override
-  $OffloadedContentTable createAlias(String alias) {
-    return $OffloadedContentTable(attachedDatabase, alias);
-  }
-}
-
-class OffloadedContentData extends DataClass
-    implements Insertable<OffloadedContentData> {
-  final int sessionId;
-  final String callId;
-  final String toolName;
-  final int byteSize;
-  final int lineCount;
-  final String content;
-  final String intent;
-  final int createdAt;
-  const OffloadedContentData({
-    required this.sessionId,
-    required this.callId,
-    required this.toolName,
-    required this.byteSize,
-    required this.lineCount,
-    required this.content,
-    required this.intent,
-    required this.createdAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['session_id'] = Variable<int>(sessionId);
-    map['call_id'] = Variable<String>(callId);
-    map['tool_name'] = Variable<String>(toolName);
-    map['byte_size'] = Variable<int>(byteSize);
-    map['line_count'] = Variable<int>(lineCount);
-    map['content'] = Variable<String>(content);
-    map['intent'] = Variable<String>(intent);
-    map['created_at'] = Variable<int>(createdAt);
-    return map;
-  }
-
-  OffloadedContentCompanion toCompanion(bool nullToAbsent) {
-    return OffloadedContentCompanion(
-      sessionId: Value(sessionId),
-      callId: Value(callId),
-      toolName: Value(toolName),
-      byteSize: Value(byteSize),
-      lineCount: Value(lineCount),
-      content: Value(content),
-      intent: Value(intent),
-      createdAt: Value(createdAt),
-    );
-  }
-
-  factory OffloadedContentData.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return OffloadedContentData(
-      sessionId: serializer.fromJson<int>(json['sessionId']),
-      callId: serializer.fromJson<String>(json['callId']),
-      toolName: serializer.fromJson<String>(json['toolName']),
-      byteSize: serializer.fromJson<int>(json['byteSize']),
-      lineCount: serializer.fromJson<int>(json['lineCount']),
-      content: serializer.fromJson<String>(json['content']),
-      intent: serializer.fromJson<String>(json['intent']),
-      createdAt: serializer.fromJson<int>(json['createdAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'sessionId': serializer.toJson<int>(sessionId),
-      'callId': serializer.toJson<String>(callId),
-      'toolName': serializer.toJson<String>(toolName),
-      'byteSize': serializer.toJson<int>(byteSize),
-      'lineCount': serializer.toJson<int>(lineCount),
-      'content': serializer.toJson<String>(content),
-      'intent': serializer.toJson<String>(intent),
-      'createdAt': serializer.toJson<int>(createdAt),
-    };
-  }
-
-  OffloadedContentData copyWith({
-    int? sessionId,
-    String? callId,
-    String? toolName,
-    int? byteSize,
-    int? lineCount,
-    String? content,
-    String? intent,
-    int? createdAt,
-  }) => OffloadedContentData(
-    sessionId: sessionId ?? this.sessionId,
-    callId: callId ?? this.callId,
-    toolName: toolName ?? this.toolName,
-    byteSize: byteSize ?? this.byteSize,
-    lineCount: lineCount ?? this.lineCount,
-    content: content ?? this.content,
-    intent: intent ?? this.intent,
-    createdAt: createdAt ?? this.createdAt,
-  );
-  OffloadedContentData copyWithCompanion(OffloadedContentCompanion data) {
-    return OffloadedContentData(
-      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
-      callId: data.callId.present ? data.callId.value : this.callId,
-      toolName: data.toolName.present ? data.toolName.value : this.toolName,
-      byteSize: data.byteSize.present ? data.byteSize.value : this.byteSize,
-      lineCount: data.lineCount.present ? data.lineCount.value : this.lineCount,
-      content: data.content.present ? data.content.value : this.content,
-      intent: data.intent.present ? data.intent.value : this.intent,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('OffloadedContentData(')
-          ..write('sessionId: $sessionId, ')
-          ..write('callId: $callId, ')
-          ..write('toolName: $toolName, ')
-          ..write('byteSize: $byteSize, ')
-          ..write('lineCount: $lineCount, ')
-          ..write('content: $content, ')
-          ..write('intent: $intent, ')
-          ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    sessionId,
-    callId,
-    toolName,
-    byteSize,
-    lineCount,
-    content,
-    intent,
-    createdAt,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is OffloadedContentData &&
-          other.sessionId == this.sessionId &&
-          other.callId == this.callId &&
-          other.toolName == this.toolName &&
-          other.byteSize == this.byteSize &&
-          other.lineCount == this.lineCount &&
-          other.content == this.content &&
-          other.intent == this.intent &&
-          other.createdAt == this.createdAt);
-}
-
-class OffloadedContentCompanion extends UpdateCompanion<OffloadedContentData> {
-  final Value<int> sessionId;
-  final Value<String> callId;
-  final Value<String> toolName;
-  final Value<int> byteSize;
-  final Value<int> lineCount;
-  final Value<String> content;
-  final Value<String> intent;
-  final Value<int> createdAt;
-  final Value<int> rowid;
-  const OffloadedContentCompanion({
-    this.sessionId = const Value.absent(),
-    this.callId = const Value.absent(),
-    this.toolName = const Value.absent(),
-    this.byteSize = const Value.absent(),
-    this.lineCount = const Value.absent(),
-    this.content = const Value.absent(),
-    this.intent = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  OffloadedContentCompanion.insert({
-    required int sessionId,
-    required String callId,
-    required String toolName,
-    required int byteSize,
-    required int lineCount,
-    required String content,
-    this.intent = const Value.absent(),
-    required int createdAt,
-    this.rowid = const Value.absent(),
-  }) : sessionId = Value(sessionId),
-       callId = Value(callId),
-       toolName = Value(toolName),
-       byteSize = Value(byteSize),
-       lineCount = Value(lineCount),
-       content = Value(content),
-       createdAt = Value(createdAt);
-  static Insertable<OffloadedContentData> custom({
-    Expression<int>? sessionId,
-    Expression<String>? callId,
-    Expression<String>? toolName,
-    Expression<int>? byteSize,
-    Expression<int>? lineCount,
-    Expression<String>? content,
-    Expression<String>? intent,
-    Expression<int>? createdAt,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (sessionId != null) 'session_id': sessionId,
-      if (callId != null) 'call_id': callId,
-      if (toolName != null) 'tool_name': toolName,
-      if (byteSize != null) 'byte_size': byteSize,
-      if (lineCount != null) 'line_count': lineCount,
-      if (content != null) 'content': content,
-      if (intent != null) 'intent': intent,
-      if (createdAt != null) 'created_at': createdAt,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  OffloadedContentCompanion copyWith({
-    Value<int>? sessionId,
-    Value<String>? callId,
-    Value<String>? toolName,
-    Value<int>? byteSize,
-    Value<int>? lineCount,
-    Value<String>? content,
-    Value<String>? intent,
-    Value<int>? createdAt,
-    Value<int>? rowid,
-  }) {
-    return OffloadedContentCompanion(
-      sessionId: sessionId ?? this.sessionId,
-      callId: callId ?? this.callId,
-      toolName: toolName ?? this.toolName,
-      byteSize: byteSize ?? this.byteSize,
-      lineCount: lineCount ?? this.lineCount,
-      content: content ?? this.content,
-      intent: intent ?? this.intent,
-      createdAt: createdAt ?? this.createdAt,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (sessionId.present) {
-      map['session_id'] = Variable<int>(sessionId.value);
-    }
-    if (callId.present) {
-      map['call_id'] = Variable<String>(callId.value);
-    }
-    if (toolName.present) {
-      map['tool_name'] = Variable<String>(toolName.value);
-    }
-    if (byteSize.present) {
-      map['byte_size'] = Variable<int>(byteSize.value);
-    }
-    if (lineCount.present) {
-      map['line_count'] = Variable<int>(lineCount.value);
-    }
-    if (content.present) {
-      map['content'] = Variable<String>(content.value);
-    }
-    if (intent.present) {
-      map['intent'] = Variable<String>(intent.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<int>(createdAt.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('OffloadedContentCompanion(')
-          ..write('sessionId: $sessionId, ')
-          ..write('callId: $callId, ')
-          ..write('toolName: $toolName, ')
-          ..write('byteSize: $byteSize, ')
-          ..write('lineCount: $lineCount, ')
-          ..write('content: $content, ')
-          ..write('intent: $intent, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
@@ -3617,9 +3043,6 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   late final $MessagesTable messages = $MessagesTable(this);
   late final $PartsTable parts = $PartsTable(this);
   late final $FileReadStateTable fileReadState = $FileReadStateTable(this);
-  late final $OffloadedContentTable offloadedContent = $OffloadedContentTable(
-    this,
-  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3629,7 +3052,6 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     messages,
     parts,
     fileReadState,
-    offloadedContent,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3660,13 +3082,6 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('file_read_state', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
-        'sessions',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('offloaded_content', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -3777,30 +3192,6 @@ final class $$SessionsTableReferences
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_fileReadStateRefsTable($_db));
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
-
-  static MultiTypedResultKey<$OffloadedContentTable, List<OffloadedContentData>>
-  _offloadedContentRefsTable(_$CruxDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.offloadedContent,
-        aliasName: $_aliasNameGenerator(
-          db.sessions.id,
-          db.offloadedContent.sessionId,
-        ),
-      );
-
-  $$OffloadedContentTableProcessedTableManager get offloadedContentRefs {
-    final manager = $$OffloadedContentTableTableManager(
-      $_db,
-      $_db.offloadedContent,
-    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _offloadedContentRefsTable($_db),
-    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3993,31 +3384,6 @@ class $$SessionsTableFilterComposer
           }) => $$FileReadStateTableFilterComposer(
             $db: $db,
             $table: $db.fileReadState,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
-
-  Expression<bool> offloadedContentRefs(
-    Expression<bool> Function($$OffloadedContentTableFilterComposer f) f,
-  ) {
-    final $$OffloadedContentTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.offloadedContent,
-      getReferencedColumn: (t) => t.sessionId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$OffloadedContentTableFilterComposer(
-            $db: $db,
-            $table: $db.offloadedContent,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4315,31 +3681,6 @@ class $$SessionsTableAnnotationComposer
     );
     return f(composer);
   }
-
-  Expression<T> offloadedContentRefs<T extends Object>(
-    Expression<T> Function($$OffloadedContentTableAnnotationComposer a) f,
-  ) {
-    final $$OffloadedContentTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.offloadedContent,
-      getReferencedColumn: (t) => t.sessionId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$OffloadedContentTableAnnotationComposer(
-            $db: $db,
-            $table: $db.offloadedContent,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
 class $$SessionsTableTableManager
@@ -4359,7 +3700,6 @@ class $$SessionsTableTableManager
             bool messagesRefs,
             bool partsRefs,
             bool fileReadStateRefs,
-            bool offloadedContentRefs,
           })
         > {
   $$SessionsTableTableManager(_$CruxDatabase db, $SessionsTable table)
@@ -4482,7 +3822,6 @@ class $$SessionsTableTableManager
                 messagesRefs = false,
                 partsRefs = false,
                 fileReadStateRefs = false,
-                offloadedContentRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -4490,7 +3829,6 @@ class $$SessionsTableTableManager
                     if (messagesRefs) db.messages,
                     if (partsRefs) db.parts,
                     if (fileReadStateRefs) db.fileReadState,
-                    if (offloadedContentRefs) db.offloadedContent,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -4558,27 +3896,6 @@ class $$SessionsTableTableManager
                               ),
                           typedResults: items,
                         ),
-                      if (offloadedContentRefs)
-                        await $_getPrefetchedData<
-                          Session,
-                          $SessionsTable,
-                          OffloadedContentData
-                        >(
-                          currentTable: table,
-                          referencedTable: $$SessionsTableReferences
-                              ._offloadedContentRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$SessionsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).offloadedContentRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.sessionId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
                     ];
                   },
                 );
@@ -4603,7 +3920,6 @@ typedef $$SessionsTableProcessedTableManager =
         bool messagesRefs,
         bool partsRefs,
         bool fileReadStateRefs,
-        bool offloadedContentRefs,
       })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -4625,7 +3941,6 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
-      Value<int?> preCompressTokens,
       Value<String> images,
       Value<int> parallelCount,
       Value<String> meta,
@@ -4650,7 +3965,6 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> tldr,
       Value<String?> error,
       Value<int?> parentMsgId,
-      Value<int?> preCompressTokens,
       Value<String> images,
       Value<int> parallelCount,
       Value<String> meta,
@@ -4784,11 +4098,6 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get parentMsgId => $composableBuilder(
     column: $table.parentMsgId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get preCompressTokens => $composableBuilder(
-    column: $table.preCompressTokens,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4950,11 +4259,6 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get preCompressTokens => $composableBuilder(
-    column: $table.preCompressTokens,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get images => $composableBuilder(
     column: $table.images,
     builder: (column) => ColumnOrderings(column),
@@ -5070,11 +4374,6 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<int> get preCompressTokens => $composableBuilder(
-    column: $table.preCompressTokens,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<String> get images =>
       $composableBuilder(column: $table.images, builder: (column) => column);
 
@@ -5183,7 +4482,6 @@ class $$MessagesTableTableManager
                 Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
-                Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
                 Value<int> parallelCount = const Value.absent(),
                 Value<String> meta = const Value.absent(),
@@ -5206,7 +4504,6 @@ class $$MessagesTableTableManager
                 tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
-                preCompressTokens: preCompressTokens,
                 images: images,
                 parallelCount: parallelCount,
                 meta: meta,
@@ -5231,7 +4528,6 @@ class $$MessagesTableTableManager
                 Value<String> tldr = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int?> parentMsgId = const Value.absent(),
-                Value<int?> preCompressTokens = const Value.absent(),
                 Value<String> images = const Value.absent(),
                 Value<int> parallelCount = const Value.absent(),
                 Value<String> meta = const Value.absent(),
@@ -5254,7 +4550,6 @@ class $$MessagesTableTableManager
                 tldr: tldr,
                 error: error,
                 parentMsgId: parentMsgId,
-                preCompressTokens: preCompressTokens,
                 images: images,
                 parallelCount: parallelCount,
                 meta: meta,
@@ -6038,395 +5333,6 @@ typedef $$FileReadStateTableProcessedTableManager =
       FileReadStateData,
       PrefetchHooks Function({bool sessionId})
     >;
-typedef $$OffloadedContentTableCreateCompanionBuilder =
-    OffloadedContentCompanion Function({
-      required int sessionId,
-      required String callId,
-      required String toolName,
-      required int byteSize,
-      required int lineCount,
-      required String content,
-      Value<String> intent,
-      required int createdAt,
-      Value<int> rowid,
-    });
-typedef $$OffloadedContentTableUpdateCompanionBuilder =
-    OffloadedContentCompanion Function({
-      Value<int> sessionId,
-      Value<String> callId,
-      Value<String> toolName,
-      Value<int> byteSize,
-      Value<int> lineCount,
-      Value<String> content,
-      Value<String> intent,
-      Value<int> createdAt,
-      Value<int> rowid,
-    });
-
-final class $$OffloadedContentTableReferences
-    extends
-        BaseReferences<
-          _$CruxDatabase,
-          $OffloadedContentTable,
-          OffloadedContentData
-        > {
-  $$OffloadedContentTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $SessionsTable _sessionIdTable(_$CruxDatabase db) =>
-      db.sessions.createAlias(
-        $_aliasNameGenerator(db.offloadedContent.sessionId, db.sessions.id),
-      );
-
-  $$SessionsTableProcessedTableManager get sessionId {
-    final $_column = $_itemColumn<int>('session_id')!;
-
-    final manager = $$SessionsTableTableManager(
-      $_db,
-      $_db.sessions,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
-
-class $$OffloadedContentTableFilterComposer
-    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
-  $$OffloadedContentTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get callId => $composableBuilder(
-    column: $table.callId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get toolName => $composableBuilder(
-    column: $table.toolName,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get byteSize => $composableBuilder(
-    column: $table.byteSize,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get lineCount => $composableBuilder(
-    column: $table.lineCount,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get intent => $composableBuilder(
-    column: $table.intent,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  $$SessionsTableFilterComposer get sessionId {
-    final $$SessionsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableFilterComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$OffloadedContentTableOrderingComposer
-    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
-  $$OffloadedContentTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get callId => $composableBuilder(
-    column: $table.callId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get toolName => $composableBuilder(
-    column: $table.toolName,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get byteSize => $composableBuilder(
-    column: $table.byteSize,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get lineCount => $composableBuilder(
-    column: $table.lineCount,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get intent => $composableBuilder(
-    column: $table.intent,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  $$SessionsTableOrderingComposer get sessionId {
-    final $$SessionsTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableOrderingComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$OffloadedContentTableAnnotationComposer
-    extends Composer<_$CruxDatabase, $OffloadedContentTable> {
-  $$OffloadedContentTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get callId =>
-      $composableBuilder(column: $table.callId, builder: (column) => column);
-
-  GeneratedColumn<String> get toolName =>
-      $composableBuilder(column: $table.toolName, builder: (column) => column);
-
-  GeneratedColumn<int> get byteSize =>
-      $composableBuilder(column: $table.byteSize, builder: (column) => column);
-
-  GeneratedColumn<int> get lineCount =>
-      $composableBuilder(column: $table.lineCount, builder: (column) => column);
-
-  GeneratedColumn<String> get content =>
-      $composableBuilder(column: $table.content, builder: (column) => column);
-
-  GeneratedColumn<String> get intent =>
-      $composableBuilder(column: $table.intent, builder: (column) => column);
-
-  GeneratedColumn<int> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  $$SessionsTableAnnotationComposer get sessionId {
-    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$OffloadedContentTableTableManager
-    extends
-        RootTableManager<
-          _$CruxDatabase,
-          $OffloadedContentTable,
-          OffloadedContentData,
-          $$OffloadedContentTableFilterComposer,
-          $$OffloadedContentTableOrderingComposer,
-          $$OffloadedContentTableAnnotationComposer,
-          $$OffloadedContentTableCreateCompanionBuilder,
-          $$OffloadedContentTableUpdateCompanionBuilder,
-          (OffloadedContentData, $$OffloadedContentTableReferences),
-          OffloadedContentData,
-          PrefetchHooks Function({bool sessionId})
-        > {
-  $$OffloadedContentTableTableManager(
-    _$CruxDatabase db,
-    $OffloadedContentTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$OffloadedContentTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$OffloadedContentTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$OffloadedContentTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<int> sessionId = const Value.absent(),
-                Value<String> callId = const Value.absent(),
-                Value<String> toolName = const Value.absent(),
-                Value<int> byteSize = const Value.absent(),
-                Value<int> lineCount = const Value.absent(),
-                Value<String> content = const Value.absent(),
-                Value<String> intent = const Value.absent(),
-                Value<int> createdAt = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => OffloadedContentCompanion(
-                sessionId: sessionId,
-                callId: callId,
-                toolName: toolName,
-                byteSize: byteSize,
-                lineCount: lineCount,
-                content: content,
-                intent: intent,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required int sessionId,
-                required String callId,
-                required String toolName,
-                required int byteSize,
-                required int lineCount,
-                required String content,
-                Value<String> intent = const Value.absent(),
-                required int createdAt,
-                Value<int> rowid = const Value.absent(),
-              }) => OffloadedContentCompanion.insert(
-                sessionId: sessionId,
-                callId: callId,
-                toolName: toolName,
-                byteSize: byteSize,
-                lineCount: lineCount,
-                content: content,
-                intent: intent,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$OffloadedContentTableReferences(db, table, e),
-                ),
-              )
-              .toList(),
-          prefetchHooksCallback: ({sessionId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable:
-                                    $$OffloadedContentTableReferences
-                                        ._sessionIdTable(db),
-                                referencedColumn:
-                                    $$OffloadedContentTableReferences
-                                        ._sessionIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ),
-      );
-}
-
-typedef $$OffloadedContentTableProcessedTableManager =
-    ProcessedTableManager<
-      _$CruxDatabase,
-      $OffloadedContentTable,
-      OffloadedContentData,
-      $$OffloadedContentTableFilterComposer,
-      $$OffloadedContentTableOrderingComposer,
-      $$OffloadedContentTableAnnotationComposer,
-      $$OffloadedContentTableCreateCompanionBuilder,
-      $$OffloadedContentTableUpdateCompanionBuilder,
-      (OffloadedContentData, $$OffloadedContentTableReferences),
-      OffloadedContentData,
-      PrefetchHooks Function({bool sessionId})
-    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -6439,6 +5345,4 @@ class $CruxDatabaseManager {
       $$PartsTableTableManager(_db, _db.parts);
   $$FileReadStateTableTableManager get fileReadState =>
       $$FileReadStateTableTableManager(_db, _db.fileReadState);
-  $$OffloadedContentTableTableManager get offloadedContent =>
-      $$OffloadedContentTableTableManager(_db, _db.offloadedContent);
 }
