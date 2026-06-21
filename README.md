@@ -52,7 +52,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 环境变量（与参数等效，CI / Docker 场景常用）：
 
-- `CRUX_VERSION=v0.7.0` 锁定版本（默认 `latest`）
+- `CRUX_VERSION=v0.7.1` 锁定版本（默认 `latest`）
 - `CRUX_INSTALL_DIR=...` 改安装目录（默认 `~/.crux/bin`）
 - `CRUX_REPO=marsup-space/crux` 改源仓库
 - `CRUX_NO_PATH_UPDATE=1` 跳过自动改 PATH（CI、Docker 场景）
@@ -81,7 +81,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 **十字星（Crux）** 是一个运行在终端中的 AI 编程助手（AI Coding Agent），通过智能体编排（Agentic Orchestration）帮助你更高效地编写代码、管理项目。
 
-当前版本：**0.7.0**。项目已经进入日常可用状态，仍保持快速迭代。
+当前版本：**0.7.1**。项目已经进入日常可用状态，仍保持快速迭代。
 
 | 中文名 | 十字星 |
 |--------|--------|
@@ -268,7 +268,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 Environment variables (equivalent to flags; common in CI / Docker):
 
-- `CRUX_VERSION=v0.7.0` — pin a version (default: `latest`)
+- `CRUX_VERSION=v0.7.1` — pin a version (default: `latest`)
 - `CRUX_INSTALL_DIR=...` — override the install directory (default `~/.crux/bin`)
 - `CRUX_REPO=marsup-space/crux` — change the source repository
 - `CRUX_NO_PATH_UPDATE=1` — skip the automatic PATH modification (useful for CI / Docker)
@@ -295,7 +295,7 @@ What they do:
 
 **Crux** is a terminal-based AI coding agent with agentic orchestration. Named after the Southern Cross constellation (Latin for "cross"), it embodies both the guiding star and the core challenge — helping you cross the crux of development.
 
-Current version: **0.7.0**. Crux is now considered usable for daily work, while still moving quickly.
+Current version: **0.7.1**. Crux is now considered usable for daily work, while still moving quickly.
 
 | Chinese name | 十字星 (Cross Star) |
 |-------------|--------------------|
