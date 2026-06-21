@@ -8,6 +8,7 @@ import '../models/session.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
+import '../tools/semble_warmup.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
@@ -445,6 +446,10 @@ class ChatTurnOrchestrator {
             if (_fileMutatedThisRound) {
               _fileMutatedThisRound = false;
               unawaited(_gitStatusService.refresh());
+              // Re-index any files changed by the tool round, so the
+              // next `semble_search` is fresh. Idempotent / non-blocking
+              // — same fire-and-forget pattern as git-status above.
+              SembleWarmup.instance.refresh(Directory.current.path);
             }
             _streamingController.beginWaitingForModel(sessionId);
           },

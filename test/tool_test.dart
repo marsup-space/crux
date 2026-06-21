@@ -81,7 +81,7 @@ void main() {
       expect(apiTools[0]['parameters'], isNotNull);
     });
 
-    test('registerDefaults registers all 7 tools', () {
+    test('registerDefaults registers all 8 tools', () {
       final tracker = FileReadTracker();
       final db = CruxDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -98,17 +98,18 @@ void main() {
           'edit',
           'grep',
           'glob',
+          'semble_search',
           'webfetch',
           'session',
         ]),
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 9);
+        expect(registry.all.length, 10);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 8);
+        expect(registry.all.length, 9);
       }
     });
   });
