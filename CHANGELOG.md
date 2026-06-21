@@ -10,6 +10,8 @@ below the version header. Each version has at most two categories:
 
 ## [0.7.1] - 2026-06-21
 
+710a9d3
+
 ### Features
 
 - Add macOS and Windows release builds (alongside existing Linux builds)
