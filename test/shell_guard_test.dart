@@ -438,6 +438,119 @@ echo "(should be empty)"''';
       );
       expect(v2, isNull);
     });
+
+    group('quote-aware segmentation (the false-positive bug fix)', () {
+      // Regression test for the case where a multi-line commit
+      // message containing `|` characters (as prose like
+      // `pipes (|)`, `| head`, etc.) was mis-split by the
+      // naive splitter, triggering false-positive guard fires
+      // on parts of the commit message text.
+      test(
+        'does NOT flag git commit with multi-line message containing | as prose',
+        () {
+          final cmd = '''git commit -m 'feat(tools): shell-tool fallback guard
+
+Catches the LLM using bash/cmd/powershell for ops that have a dedicated
+tool (read/grep/glob/code_search) and applies a three-tier escalation.
+
+The detector covers:
+  * read:    cat/head/tail/less/sed/wc/file/stat/diff/…
+  * glob:    ls/find/tree/du + Get-ChildItem/dir on Windows
+  * grep:    grep/rg/ack/ag + Select-String/findstr on Windows
+  * codeSearch: rg "concept" | head, find … | head → code_search
+
+Smart skips: input redirects/heredocs (< anywhere), no-arg tail,
+env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
+          final v = detectShellGuard(
+            cmd,
+            isWindows: false,
+            currentStreak: 0,
+          );
+          expect(v, isNull, reason: 'should not flag a commit message');
+        },
+      );
+
+      test('does NOT flag double-quoted strings with pipes', () {
+        // `echo "hello | world"` — the `|` is inside double
+        // quotes, not an actual pipe. The whole thing is one
+        // segment, verb is `echo` (not a violation).
+        final v = detectShellGuard(
+          'echo "hello | world"',
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNull);
+      });
+
+      test('does NOT flag single-quoted strings with pipes', () {
+        final v = detectShellGuard(
+          "echo 'rg \"x\" lib/ | head'",
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNull);
+      });
+
+      test(
+        'still flags when pipe is OUTSIDE quotes (mixed quoted/unquoted)',
+        () {
+          // The OUTER `|` is unquoted and should split; the
+          // INNER `|` is inside single quotes and should NOT.
+          // Result: two segments: `cmd 'a|b'` and `cat file`.
+          // cat has a path argument → flagged as read.
+          final v = detectShellGuard(
+            "cmd 'a|b' | cat file.txt",
+            isWindows: false,
+            currentStreak: 0,
+          );
+          expect(v, isNotNull);
+          expect(v!.kind, ShellGuardKind.read);
+        },
+      );
+
+      test(
+        'code_search pipe anti-pattern does NOT match when pipe is inside quotes',
+        () {
+          // Without quote-awareness, the inner `|` would split
+          // the segments and `rg ... | head` would match.
+          // With quote-awareness, the whole `'rg ... | head'`
+          // is one segment with verb `rg`, not `head`, so the
+          // left/right adjacency check doesn't fire.
+          final v = detectShellGuard(
+            "echo 'rg \"concept\" lib/ | head'",
+            isWindows: false,
+            currentStreak: 0,
+          );
+          expect(v, isNull);
+        },
+      );
+
+      test('handles escaped pipe outside quotes (\\| does not split)', () {
+        // Backslash-escaped pipe outside any string: POSIX
+        // shell treats `\|` as a literal `|` argument, not a
+        // pipe. The detector should respect this and not
+        // split.
+        final v = detectShellGuard(
+          r'echo a \| b',
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNull);
+      });
+
+      test('handles && and || correctly even inside quotes', () {
+        // The `&&` inside quotes is NOT an operator; the
+        // `||` outside quotes IS an operator. Result: two
+        // segments (`echo 'a && b'`) and (`cat file`).
+        final v = detectShellGuard(
+          "echo 'a && b' || cat file.txt",
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, ShellGuardKind.read);
+      });
+    });
   });
 
   group('detectShellGuard — Windows (cmd + PowerShell)', () {

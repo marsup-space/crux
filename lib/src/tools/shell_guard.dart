@@ -430,28 +430,230 @@ ShellGuardKind? _classifySegment(
 // =============================================================================
 
 /// Split a shell command into top-level segments separated by
-/// `|`, `;`, `&&`, `||`, or newlines. The split deliberately
-/// ignores quoting — quoted strings can contain operators, and
-/// a tokenizer that respected quotes would be both slower and
-/// more permissive (false-negative risk). The conservative
-/// detector doesn't need perfect accuracy; a `cat "a|b"` pipeline
-/// is rare and flagging it as a violation is acceptable.
+/// `|`, `;`, `&&`, `||`, or newlines.
 ///
-/// We DO honour `&&` / `||` because those separate distinct
-/// commands with short-circuit semantics, while `|` chains
-/// always flow into the next stage (which is what we care
-/// about — finding the verb that *initiates* the pipeline).
+/// **Quote-aware.** Operators inside `'...'` or `"..."` strings
+/// don't split segments — `git commit -m 'pipes (|) here'` stays
+/// as one segment. Without quote-awareness, the detector fires
+/// false positives on commands whose arguments legitimately
+/// contain operator characters (commit messages, long
+/// explanations, user-supplied strings). This is the
+/// `bash+cat/sed/rg` fallback detector's most common source of
+/// false positives in practice.
+///
+/// Not a full shell parser. Here-docs (`<<EOF`), command
+/// substitution (`$(...)`), and process substitution (`<(...)`)
+/// are still misread — those patterns are rare in the LLM's
+/// bash calls and the gain from full parsing wouldn't justify
+/// the complexity. Backslash escapes are honoured outside
+/// strings and inside double-quoted strings (matching POSIX
+/// shell semantics); inside single-quoted strings, backslash
+/// is literal (single quotes preserve everything except the
+/// closing quote).
+///
+/// Operator precedence: `&&` and `||` are matched before `&`
+/// and `|` so the multi-char tokens win the race. Newlines and
+/// `;` are single-char separators, no precedence issue.
+///
+/// Returns the segments in source order. Empty segments (from
+/// adjacent separators or leading/trailing separators) are
+/// preserved as empty strings; callers handle them.
 List<String> _splitSegments(String command) {
-  // Replace operator tokens with a common sentinel so we can
-  // split on a single character. The tokens are matched in
-  // order — `&&` and `||` must be tried before `&` / `|`.
-  var s = command;
-  s = s.replaceAll('&&', '\x00');
-  s = s.replaceAll('||', '\x00');
-  s = s.replaceAll(';', '\x00');
-  s = s.replaceAll('\n', '\x00');
-  s = s.replaceAll('|', '\x00');
-  return s.split('\x00');
+  final result = <String>[];
+  final current = StringBuffer();
+  var inSingle = false;
+  var inDouble = false;
+  var escapeNext = false;
+
+  for (var i = 0; i < command.length; i++) {
+    final ch = command[i];
+
+    // Inside single quotes: every char is literal until the
+    // closing single quote. No escape handling, no operator
+    // interpretation — POSIX semantics.
+    if (inSingle) {
+      if (ch == "'") {
+        inSingle = false;
+      }
+      current.write(ch);
+      continue;
+    }
+
+    // Inside double quotes: backslash escapes the next char,
+    // closing `"` exits the state, everything else is literal.
+    if (inDouble) {
+      if (escapeNext) {
+        current.write(ch);
+        escapeNext = false;
+        continue;
+      }
+      if (ch == r'\') {
+        current.write(ch);
+        escapeNext = true;
+        continue;
+      }
+      if (ch == '"') {
+        inDouble = false;
+        current.write(ch);
+        continue;
+      }
+      current.write(ch);
+      continue;
+    }
+
+    // Outside quotes: standard shell semantics. Backslash
+    // escapes the next char; single and double quotes enter
+    // their respective states; operator characters split.
+    if (escapeNext) {
+      current.write(ch);
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch == r'\') {
+      current.write(ch);
+      escapeNext = true;
+      continue;
+    }
+
+    if (ch == "'") {
+      inSingle = true;
+      current.write(ch);
+      continue;
+    }
+
+    if (ch == '"') {
+      inDouble = true;
+      current.write(ch);
+      continue;
+    }
+
+    // Operator split. `&&` / `||` are checked before `&` / `|`
+    // so the multi-char tokens win the race — `i++` consumes
+    // the second char.
+    if (ch == ';' || ch == '\n') {
+      result.add(current.toString());
+      current.clear();
+      continue;
+    }
+    if (ch == '&' &&
+        i + 1 < command.length &&
+        command[i + 1] == '&') {
+      result.add(current.toString());
+      current.clear();
+      i++;
+      continue;
+    }
+    if (ch == '|' &&
+        i + 1 < command.length &&
+        command[i + 1] == '|') {
+      result.add(current.toString());
+      current.clear();
+      i++;
+      continue;
+    }
+    if (ch == '|') {
+      result.add(current.toString());
+      current.clear();
+      continue;
+    }
+
+    current.write(ch);
+  }
+  result.add(current.toString());
+  return result;
+}
+
+/// Quote-aware pipe split. Same quoting rules as
+/// [_splitSegments], but only splits on `|` — used by
+/// [_isCodeSearchPipe] to find `search-verb | truncator`
+/// patterns without false positives from operators inside
+/// quoted strings (commit messages, user-supplied strings).
+///
+/// `||` (logical OR) is treated as a single pipe for the
+/// purposes of this check: when `||` appears in source, the
+/// `|` in `_isCodeSearchPipe`'s left/right adjacency check
+/// wouldn't fire anyway (because the segments wouldn't be
+/// adjacent — `||` would be a segment separator in the
+/// verb-classifier's view). For symmetry and to keep the
+/// helper focused, we still skip `||` here rather than
+/// splitting on it.
+List<String> _splitOnPipes(String command) {
+  final result = <String>[];
+  final current = StringBuffer();
+  var inSingle = false;
+  var inDouble = false;
+  var escapeNext = false;
+
+  for (var i = 0; i < command.length; i++) {
+    final ch = command[i];
+
+    if (inSingle) {
+      if (ch == "'") {
+        inSingle = false;
+      }
+      current.write(ch);
+      continue;
+    }
+
+    if (inDouble) {
+      if (escapeNext) {
+        current.write(ch);
+        escapeNext = false;
+        continue;
+      }
+      if (ch == r'\') {
+        current.write(ch);
+        escapeNext = true;
+        continue;
+      }
+      if (ch == '"') {
+        inDouble = false;
+        current.write(ch);
+        continue;
+      }
+      current.write(ch);
+      continue;
+    }
+
+    if (escapeNext) {
+      current.write(ch);
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch == r'\') {
+      current.write(ch);
+      escapeNext = true;
+      continue;
+    }
+
+    if (ch == "'") {
+      inSingle = true;
+      current.write(ch);
+      continue;
+    }
+
+    if (ch == '"') {
+      inDouble = true;
+      current.write(ch);
+      continue;
+    }
+
+    // Only split on `|` here — other operators pass through.
+    // `||` is preserved (kept inside the segment) so the
+    // left/right adjacency check in _isCodeSearchPipe works
+    // naturally on the surrounding segments.
+    if (ch == '|') {
+      result.add(current.toString());
+      current.clear();
+      continue;
+    }
+
+    current.write(ch);
+  }
+  result.add(current.toString());
+  return result;
 }
 
 /// Return the first verb of a segment (the first whitespace-
@@ -526,7 +728,11 @@ bool _isCodeSearchPipe(
     'Get-Unique', 'gu',
   };
 
-  final segments = command.split('|');
+  // Quote-aware pipe split — operators inside `'...'` or `"..."`
+  // don't count as pipes. Delegates to [_splitOnPipes] so this
+  // detector stays consistent with the verb-classifier's
+  // [_splitSegments] (both honour the same quoting rules).
+  final segments = _splitOnPipes(command);
   if (segments.length < 2) return false;
 
   for (var i = 0; i < segments.length - 1; i++) {
