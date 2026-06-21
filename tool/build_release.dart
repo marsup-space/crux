@@ -4,13 +4,13 @@ import 'package:path/path.dart' as p;
 
 import 'package:crux/src/utils/bundled_executable.dart';
 
-const _targetSettings = <String, ({String os, String arch})>{
-  'macos-arm64': (os: 'macos', arch: 'arm64'),
-  'macos-x64': (os: 'macos', arch: 'x64'),
-  'linux-arm64': (os: 'linux', arch: 'arm64'),
-  'linux-x64': (os: 'linux', arch: 'x64'),
-  'windows-arm64': (os: 'windows', arch: 'arm64'),
-  'windows-x64': (os: 'windows', arch: 'x64'),
+const _targetSettings = <String, ({String os})>{
+  'macos-arm64': (os: 'macos'),
+  'macos-x64': (os: 'macos'),
+  'linux-arm64': (os: 'linux'),
+  'linux-x64': (os: 'linux'),
+  'windows-arm64': (os: 'windows'),
+  'windows-x64': (os: 'windows'),
 };
 
 Future<void> main(List<String> args) async {
@@ -38,6 +38,15 @@ Future<void> main(List<String> args) async {
     exitCode = 64;
     return;
   }
+  final runtimeTarget = currentRuntimeTarget();
+  if (target != runtimeTarget) {
+    stderr.writeln(
+      'dart build cli builds for the current runtime only: $runtimeTarget.',
+    );
+    stderr.writeln('Run this target on a compatible host to build $target.');
+    exitCode = 64;
+    return;
+  }
 
   final root = p.normalize(
     p.join(p.dirname(Platform.script.toFilePath()), '..'),
@@ -54,25 +63,32 @@ Future<void> main(List<String> args) async {
   if (bundle.existsSync()) await bundle.delete(recursive: true);
   await bundle.create(recursive: true);
 
-  final executableName = settings.os == 'windows' ? 'crux.exe' : 'crux';
-  await _run(
-    Platform.resolvedExecutable,
-    [
-      'compile',
-      'exe',
-      '--target-os',
-      settings.os,
-      '--target-arch',
-      settings.arch,
-      '-o',
-      p.join(bundle.path, executableName),
-      'bin/crux.dart',
-    ],
-    root,
-    failureHint:
-        'Build $target on a compatible ${settings.os} host when this Dart SDK '
-        'does not support that cross-target.',
+  final cliOutput = Directory(p.join(root, 'build', 'cli', target));
+  if (cliOutput.existsSync()) await cliOutput.delete(recursive: true);
+  await _run(Platform.resolvedExecutable, [
+    'build',
+    'cli',
+    '--target',
+    'bin/crux.dart',
+    '-o',
+    cliOutput.path,
+    '--verbosity',
+    'warning',
+  ], root);
+
+  await _copyDirectory(Directory(p.join(cliOutput.path, 'bundle')), bundle);
+  final executable = File(
+    p.join(bundle.path, 'bin', settings.os == 'windows' ? 'crux.exe' : 'crux'),
   );
+  if (!await executable.exists()) {
+    stderr.writeln('Missing dart build cli executable: ${executable.path}');
+    exit(1);
+  }
+  if (settings.os != 'windows') {
+    await _run('chmod', ['+x', executable.path], root);
+  }
+
+  await cliOutput.delete(recursive: true);
 
   await _copyDirectory(
     Directory(p.join(root, 'providers')),

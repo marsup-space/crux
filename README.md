@@ -147,8 +147,9 @@ dart run tool/build_release.dart
 dart run tool/build_release.dart --target linux-x64
 ```
 
-构建脚本会下载缺失工具、校验 SHA-256、编译 Crux，并将 providers、themes、二进制工具和许可证复制到
-`build/releases/crux-<target>/`。部分目标可由 Dart 交叉编译；如果本地 SDK 不支持目标平台，发布自动化应在兼容宿主机上运行。
+构建脚本会下载缺失工具、校验 SHA-256、通过 `dart build cli` 编译 Crux，并将
+providers、themes、二进制工具和许可证复制到 `build/releases/crux-<target>/`。
+`dart build cli` 会构建当前宿主平台，因此指定目标时需要在对应 OS/架构的宿主机上运行。
 
 ### CI
 
@@ -355,11 +356,10 @@ dart run tool/build_release.dart
 dart run tool/build_release.dart --target linux-x64
 ```
 
-The build script downloads missing tools, verifies their SHA-256 hashes,
-compiles Crux, and copies providers, themes, binaries, and licenses into
-`build/releases/crux-<target>/`. Dart can cross-compile some targets, but
-release automation should run each target on a compatible host when the local
-SDK reports that a target is unsupported.
+The build script downloads missing tools, verifies their SHA-256 hashes, builds
+Crux with `dart build cli`, and copies providers, themes, binaries, and licenses
+into `build/releases/crux-<target>/`. `dart build cli` builds for the current
+host platform, so explicit targets must run on a matching OS/architecture host.
 
 ### CI
 

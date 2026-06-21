@@ -87,7 +87,8 @@ What it does:
 - Installs Dart
 - Restores pub and third-party tool caches
 - Runs `dart pub get`
-- Runs `dart run tool/build_release.dart --target <target>`
+- Runs `dart run tool/build_release.dart --target <target>`, which uses
+  `dart build cli` on the matching platform runner
 - Packs the release directory into `crux-<target>.zip`
 - Uploads the archive as a workflow artifact
 - Publishes the archive to GitHub Releases when the workflow was triggered by a
