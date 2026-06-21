@@ -114,6 +114,9 @@ class CruxDatabase extends _$CruxDatabase {
         await m.addColumn(messages, messages.reasoningSignature);
       }
       if (from < 13) {
+        // TableMigration is experimental in drift; the migration path
+        // requires it, so suppress here rather than rewriting the schema.
+        // ignore: experimental_member_use
         await m.alterTable(TableMigration(fileReadState));
       }
       if (from < 14) {

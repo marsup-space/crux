@@ -1159,20 +1159,6 @@ class _HighlightMarkdownVisitor {
     return parts.isEmpty ? [''] : parts;
   }
 
-  static void _writeHorizontalBorder(
-    StringBuffer buffer,
-    List<int> columnWidths,
-    String left,
-    String fill,
-    String middle,
-    String right,
-  ) {
-    buffer.write(
-      _horizontalBorderString(columnWidths, left, fill, middle, right),
-    );
-    buffer.write('\n');
-  }
-
   static String _horizontalBorderString(
     List<int> columnWidths,
     String left,

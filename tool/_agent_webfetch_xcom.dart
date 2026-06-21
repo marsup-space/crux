@@ -10,6 +10,9 @@ import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/utils/system_proxy.dart';
 
+import 'package:drift/native.dart';
+import 'package:crux/src/storage/storage.dart';
+
 class _Ctx extends ToolContext {
   _Ctx(String cwd)
       : super(
@@ -28,7 +31,12 @@ Future<void> main(List<String> args) async {
   stderr.writeln('');
 
   final registry = ToolRegistry();
-  registry.registerDefaults(FileReadTracker());
+  registry.registerDefaults(
+    FileReadTracker(),
+    sessionStore: SessionStore(
+      CruxDatabase.forTesting(NativeDatabase.memory()),
+    ),
+  );
 
   final tool = registry.lookup('webfetch');
   if (tool == null) {

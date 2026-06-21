@@ -54,7 +54,7 @@ void main() {
       await providerService.initialize();
       store = SessionStore(CruxDatabase());
       final toolRegistry = ToolRegistry()
-        ..registerDefaults(FileReadTracker());
+        ..registerDefaults(FileReadTracker(), sessionStore: store);
       sessionController = SessionController(
         store: store,
         providerService: providerService,

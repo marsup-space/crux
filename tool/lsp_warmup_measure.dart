@@ -13,7 +13,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:crux/src/lsp/actors/dart.dart';
 import 'package:crux/src/lsp/manager.dart' show LspManager;
-import 'package:path/path.dart' as p;
 
 Future<int> _measureColdEdit(String projectRoot, String filePath) async {
   final manager = LspManager(
@@ -71,7 +70,6 @@ Future<void> main() async {
     print('expected $filePath to exist');
     exit(1);
   }
-  final target = filePath;
   // ignore: avoid_print
   print('Target: $filePath\n');
 

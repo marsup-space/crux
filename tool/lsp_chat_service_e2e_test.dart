@@ -19,7 +19,6 @@ import 'dart:io';
 import 'package:crux/src/components/lsp_diagnostics_bubble.dart';
 import 'package:crux/src/lsp/actors/dart.dart';
 import 'package:crux/src/lsp/manager.dart' show LspManager;
-import 'package:crux/src/models/session.dart';
 import 'package:crux/src/storage/database.dart';
 import 'package:crux/src/storage/session_store.dart';
 import 'package:crux/src/tools/edit_tool.dart';

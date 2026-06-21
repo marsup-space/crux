@@ -34,7 +34,8 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('crux_concurrent_');
     providerService = ProviderService(userProvidersDir: tempDir.path);
     store = SessionStore(CruxDatabase());
-    final toolRegistry = ToolRegistry()..registerDefaults(FileReadTracker());
+    final toolRegistry =
+        ToolRegistry()..registerDefaults(FileReadTracker(), sessionStore: store);
     sessionController = SessionController(
       store: store,
       providerService: providerService,

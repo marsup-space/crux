@@ -86,7 +86,8 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_A_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
-      registry = ToolRegistry()..registerDefaults(tracker);
+      registry = ToolRegistry()
+        ..registerDefaults(tracker, sessionStore: SessionStore(db));
       executor = ToolExecutor(registry);
     });
 
@@ -193,7 +194,8 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_B_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
-      registry = ToolRegistry()..registerDefaults(tracker);
+      registry = ToolRegistry()
+        ..registerDefaults(tracker, sessionStore: SessionStore(db));
       executor = ToolExecutor(registry);
     });
 
@@ -642,7 +644,11 @@ void main() {
   // accidentally exercising a different tool implementation).
   // -----------------------------------------------------------------
   test('sanity: EditTool is registered under the name "edit"', () {
-    final registry = ToolRegistry()..registerDefaults(FileReadTracker());
+    final registry = ToolRegistry()
+      ..registerDefaults(
+        FileReadTracker(),
+        sessionStore: SessionStore(CruxDatabase.forTesting(NativeDatabase.memory())),
+      );
     expect(registry.lookup('edit'), isA<EditTool>());
   });
 
@@ -682,7 +688,8 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('crux_edit_le_D_');
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
-      registry = ToolRegistry()..registerDefaults(tracker);
+      registry = ToolRegistry()
+        ..registerDefaults(tracker, sessionStore: SessionStore(db));
       executor = ToolExecutor(registry);
     });
 

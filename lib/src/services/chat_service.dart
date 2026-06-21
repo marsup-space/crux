@@ -2073,49 +2073,6 @@ $summary
         normalized == 'on';
   }
 
-  double _estimateCost(
-    ProviderConfig provider,
-    String modelId,
-    int promptTokens,
-    int completionTokens, {
-    int promptCacheHitTokens = 0,
-  }) {
-    final rates = <String, ({double input, double cacheHit, double output})>{
-      'deepseek-v4-flash': (
-        input: 0.10 / 1_000_000,
-        cacheHit: 0.01 / 1_000_000,
-        output: 0.40 / 1_000_000,
-      ),
-      'deepseek-v4-pro': (
-        input: 2.0 / 1_000_000,
-        cacheHit: 0.20 / 1_000_000,
-        output: 8.0 / 1_000_000,
-      ),
-      'gpt-4o': (
-        input: 2.50 / 1_000_000,
-        cacheHit: 1.25 / 1_000_000,
-        output: 10.0 / 1_000_000,
-      ),
-      'gpt-4.1': (
-        input: 2.0 / 1_000_000,
-        cacheHit: 0.50 / 1_000_000,
-        output: 8.0 / 1_000_000,
-      ),
-      'claude-3-5-sonnet': (
-        input: 3.0 / 1_000_000,
-        cacheHit: 0.30 / 1_000_000,
-        output: 15.0 / 1_000_000,
-      ),
-    };
-
-    final rate = rates[modelId];
-    if (rate == null) return 0.0;
-    final cacheMissTokens = promptTokens - promptCacheHitTokens;
-    return (cacheMissTokens * rate.input) +
-        (promptCacheHitTokens * rate.cacheHit) +
-        (completionTokens * rate.output);
-  }
-
   void dispose() {
     _cancelRequested.clear();
     for (final timer in _leaseHeartbeatTimers.values) {

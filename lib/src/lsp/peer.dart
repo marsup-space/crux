@@ -20,7 +20,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'protocol.dart';
 
@@ -29,12 +28,6 @@ import 'protocol.dart';
 /// a misbehaving server (a 5 MB diagnostic payload is unheard of
 /// for real code).
 const int _kMaxMessageBytes = 5 * 1024 * 1024;
-
-/// Threshold above which we serialize the JSON parse through
-/// Isolate.run. Below this we parse inline (faster, no isolate
-/// spawn cost). 256 KB chosen empirically: small enough that
-/// inline jsonDecode takes well under 1 ms on typical hardware.
-const int _kIsolateThreshold = 256 * 1024;
 
 /// A pending outgoing request. The completer resolves when the
 /// matching response arrives; it errors if the peer dies or if

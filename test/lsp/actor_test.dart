@@ -175,7 +175,6 @@ class _FakeSink implements IOSink {
   Future flush() async {}
   @override
   Future get done => _controller.done;
-  @override
   void writeCharCodes(Iterable<int> codes) =>
       _controller.add(codes.toList(growable: false));
   @override
@@ -191,7 +190,6 @@ class _FakeSink implements IOSink {
   }
   @override
   void writeln([Object? object = '']) => write('$object\n');
-  @override
   bool get isClosed => _controller.isClosed;
 }
 

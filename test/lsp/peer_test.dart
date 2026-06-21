@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:crux/src/lsp/peer.dart';
 import 'package:crux/src/lsp/protocol.dart';
@@ -136,9 +135,8 @@ class _FakeServer {
   }
 
   void _send(Map<String, dynamic> body) {
-    if (_pipe.bOutput is StreamSink<List<int>> &&
-        (identical(_pipe.bOutput, _pipe.controllerA) &&
-            _pipe.controllerA.isClosed)) {
+    if (identical(_pipe.bOutput, _pipe.controllerA) &&
+        _pipe.controllerA.isClosed) {
       return;
     }
     final bytes = utf8.encode(jsonEncode(body));
@@ -204,15 +202,6 @@ void main() {
 
     test('handles a single message split across multiple chunks', () async {
       final pipe = _PipePair();
-      final server = _FakeServer(pipe)
-        ..handleRequest((params, reply) => reply({'ok': true}));
-
-      final peer = RpcPeer.create(
-        input: pipe.aInput,
-        output: pipe.aOutput,
-        tag: 'test',
-        onFatal: (_, __) {},
-      );
 
       // Force the response to arrive in two chunks: header + body separately.
       // We do this by feeding bytes manually into the peer's input.
@@ -361,7 +350,7 @@ void main() {
       final pipe = _PipePair();
       final server = _FakeServer(pipe);
 
-      final peer = RpcPeer.create(
+      RpcPeer.create(
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
@@ -388,7 +377,7 @@ void main() {
       final pipe = _PipePair();
       final server = _FakeServer(pipe);
 
-      final peer = RpcPeer.create(
+      RpcPeer.create(
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
@@ -470,7 +459,7 @@ void main() {
     test('calls onFatal when input stream errors', () async {
       final pipe = _PipePair();
       final fatalErrors = <Object>[];
-      final peer = RpcPeer.create(
+      RpcPeer.create(
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',

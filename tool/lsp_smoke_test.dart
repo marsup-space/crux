@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:crux/src/lsp/actors/dart.dart';
 import 'package:crux/src/lsp/diagnostic.dart';
 import 'package:crux/src/lsp/manager.dart';
-import 'package:crux/src/lsp/protocol.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main() async {

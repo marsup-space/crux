@@ -7,7 +7,6 @@
 // Run a few iterations to get min/avg/max.
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:crux/src/lsp/peer.dart' show RpcPeer;
 import 'package:path/path.dart' as p;

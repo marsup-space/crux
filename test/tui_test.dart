@@ -6,26 +6,11 @@ import 'package:crux/src/components/ui/button.dart';
 import 'package:crux/src/components/ui/toast.dart';
 import 'package:crux/src/components/command_overlay.dart';
 import 'package:crux/src/components/message_bubble.dart';
-import 'package:crux/src/tools/bash_tool.dart';
-import 'package:crux/src/tools/registry.dart';
-import 'package:crux/src/tools/write_tool.dart';
 
 import 'package:crux/src/components/ui/highlighted_markdown_text.dart';
 import 'package:crux/src/components/ui/highlight_service.dart';
 import 'package:crux/src/components/ui/response_link_text.dart';
 import 'package:crux/src/theme/crux_theme.dart';
-
-ToolRegistry _registryWithWriteTool() {
-  final r = ToolRegistry();
-  r.register(WriteTool());
-  return r;
-}
-
-ToolRegistry _registryWithBashTool() {
-  final r = ToolRegistry();
-  r.register(BashTool());
-  return r;
-}
 
 void main() {
   group('HighlightedMarkdownText', () {

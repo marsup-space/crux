@@ -7,22 +7,13 @@
 // 4. Sample RSS over 30s.
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'package:crux/src/lsp/peer.dart' as peer_lib;
 import 'package:crux/src/lsp/peer.dart' show RpcPeer;
-import 'package:crux/src/lsp/protocol.dart';
 import 'package:path/path.dart' as p;
-
-const _kMax = 5 * 1024 * 1024;
 
 Future<int> _rssKb(int pid) async {
   final r = await Process.run('ps', ['-o', 'rss=', '-p', '$pid']);
   return int.tryParse(r.stdout.toString().trim()) ?? 0;
-}
-
-void _send(RpcPeer peer, String json) {
-  // RpcPeer exposes `request` / `notify`; we just use those.
 }
 
 Future<int> main() async {

@@ -9,7 +9,6 @@ import 'dart:io';
 
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/webfetch_tool.dart';
-import 'package:crux/src/utils/system_proxy.dart';
 import 'package:crux/src/utils/tool_meta.dart';
 
 class _Ctx extends ToolContext {
@@ -41,7 +40,7 @@ void main() async {
   }
 
   print('=== Tool detail view — what the user sees ===\n');
-  for (final (label, meta) in [
+  for (final (label, _) in [
     ('direct', ''),
     ('system-proxy', '{"routing":"system-proxy"}'),
   ]) {
