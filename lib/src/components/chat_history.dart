@@ -19,6 +19,20 @@ import 'streaming_bubble.dart';
 import 'streaming_controller.dart';
 import 'tldr_bubble.dart';
 
+/// Lazy item-builder: produces the widget for items[index] only when
+/// the ListView actually lays out that index. Lets us defer the
+/// per-message expensive work (`extractHeadings`, the inner
+/// `MessageBubble` tree build, the `StreamingBubble` construction,
+/// the `TldrBubble` markdown scan) to the few items that are
+/// actually on-screen, instead of running them for every message
+/// up front.
+///
+/// Without this, a 500-message session would call
+/// `extractHeadings(content)` for every AI message that has a TLDR
+/// during `_buildInner` — even if only ~4 of those TLDRs are ever
+/// visible. That's the cold-start cost the user noticed.
+typedef LazyChatItem = Component Function(BuildContext context);
+
 /// The scrollable message list that displays the chat history,
 /// streaming bubbles, btw turns, queued messages, and tldr summaries.
 class ChatHistory extends StatefulComponent {
@@ -74,6 +88,12 @@ class _ChatHistoryState extends State<ChatHistory> {
     );
   }
 
+  /// Build the inner widget tree for the chat history. The expensive
+  /// per-message work (markdown parsing in `MessageBubble`, heading
+  /// extraction in `TldrBubble`, the streaming/queued bubble
+  /// construction) is deferred to layout time via the [LazyChatItem]
+  /// closures in `items` — so for an N-message session, only the
+  /// ~20 visible items pay the full cost, not all N.
   Component _buildInner(BuildContext context) {
     final messages = component.sessionController.currentMessages;
     final sessionId = component.sessionController.currentSessionId;
@@ -94,6 +114,22 @@ class _ChatHistoryState extends State<ChatHistory> {
     }
 
     if (messages.isEmpty && !isStreaming) {
+      // Switching to a session whose message cache is empty (i.e.
+      // never visited in this Crux instance). If the controller has
+      // already kicked off a chunked load for this session, show a
+      // progress line so the user sees instant feedback ("Loading N
+      // messages…" or "Loading 247 messages… (48%)") instead of the
+      // misleading "No messages yet." which would imply the session
+      // is genuinely empty.
+      if (sessionId != null &&
+          component.sessionController.isLoadingMessages(sessionId)) {
+        return Center(
+          child: Text(
+            _loadingLabel(component.sessionController, sessionId),
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
+          ),
+        );
+      }
       final hasBtwTurns =
           sessionId != null &&
           component.sessionController.btwTurnsFor(sessionId).isNotEmpty;
@@ -107,9 +143,17 @@ class _ChatHistoryState extends State<ChatHistory> {
       }
     }
 
-    final items = <Component>[];
+    final items = <LazyChatItem>[];
     final userItemIndices = <int>[];
     final userItemLabels = <String>[];
+
+    // Resolve the reasoning-effort display mapping once for the
+    // entire build. The mapping depends only on the current
+    // session's model/provider (see [_currentReasoningPresets]),
+    // not on the individual message, so calling it per-message in
+    // the loop was redundant — N redundant provider/model lookups
+    // for an N-message session.
+    final reasoningPresets = _currentReasoningPresets();
 
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
@@ -132,15 +176,22 @@ class _ChatHistoryState extends State<ChatHistory> {
         userItemLabels.add(text);
       }
 
-      items.add(
-        MessageBubble(
+      // Build the MessageBubble inside a closure so the inner
+      // widget tree (and the markdown parse in
+      // [HighlightedMarkdownText.build]) only runs when
+      // `itemBuilder` is called for this index — i.e. when the
+      // bubble is actually laid out. Off-screen bubbles stay
+      // un-built, which is the whole point of the change.
+      items.add((ctx) {
+        return MessageBubble(
           message: msg,
           reasoningCollapsed: collapsed,
           pairedResult: pairedResult,
           resultByCallId: pairedResultsByCallId,
           toolRegistry: component.toolRegistry,
-          highlightText: msg.id == _highlightMessageId ? _highlightText : null,
-          reasoningPresets: _currentReasoningPresets(),
+          highlightText:
+              msg.id == _highlightMessageId ? _highlightText : null,
+          reasoningPresets: reasoningPresets,
           onToolCallTap: component.onToolCallTap,
           onOpenPreviousSession: (targetSessionId) {
             component.sessionController.switchSession(targetSessionId).then((
@@ -153,21 +204,27 @@ class _ChatHistoryState extends State<ChatHistory> {
               component.refresh();
             });
           },
-        ),
-      );
+        );
+      });
 
       if (msg.role == 'ai' && msg.id > 0 && rt != null) {
         final hasTldr = msg.tldr.isNotEmpty;
         if (hasTldr || rt.isGeneratingTldr) {
-          final headings = extractHeadings(msg.content);
           final aiMessageItemIndex = items.length - 1;
           final aiMessageId = msg.id;
           final aiMessageContent = msg.content;
-          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
           items.add(
-            TldrBubble(
+            (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+          );
+          items.add((ctx) {
+            // Defer [extractHeadings] until the TldrBubble is
+            // actually laid out. For a 500-message session with
+            // ~80 TLDR bubbles, the eager path was parsing 80
+            // markdown ASTs up front — now only the 2–4 that fit
+            // in the viewport pay that cost.
+            return TldrBubble(
               tldrText: msg.tldr,
-              headings: headings,
+              headings: extractHeadings(msg.content),
               isGenerating: rt.isGeneratingTldr && !hasTldr,
               hasAuxiliaryModel:
                   component.providerService.auxiliaryModel != null &&
@@ -179,14 +236,18 @@ class _ChatHistoryState extends State<ChatHistory> {
                 heading: heading,
                 url: url,
               ),
-            ),
+            );
+          });
+          items.add(
+            (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
           );
-          items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
         } else {
           final nextIsUser =
               i + 1 < messages.length && messages[i + 1].role == 'user';
           if (nextIsUser) {
-            items.add(Divider(color: CruxTheme.of(context).divider, height: 1));
+            items.add(
+              (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+            );
           }
         }
       }
@@ -198,41 +259,36 @@ class _ChatHistoryState extends State<ChatHistory> {
       final lastIndex = btwTurns.length - 1;
       for (var i = 0; i < btwTurns.length; i++) {
         final turn = btwTurns[i];
-        items.add(BtwBubble.user(content: turn.userText));
+        items.add((ctx) => BtwBubble.user(content: turn.userText));
         final isPendingLast =
             i == lastIndex && (rt?.btwMode ?? false) && isStreaming;
         if (!isPendingLast) {
-          items.add(BtwBubble.ai(content: turn.aiText));
+          items.add((ctx) => BtwBubble.ai(content: turn.aiText));
         }
-        items.add(SizedBox(height: 1));
+        items.add((ctx) => const SizedBox(height: 1));
       }
     }
 
     // Streaming bubble.
     if (isStreaming) {
       if (rt?.btwMode ?? false) {
-        items.add(
-          BtwBubble.ai(
+        items.add((ctx) {
+          return BtwBubble.ai(
             content: component.streamingController.streamingContentFor(
               component.sessionController.currentSessionId ?? 0,
             ),
             streaming: true,
-          ),
-        );
+          );
+        });
       } else {
-        items.add(
-          StreamingBubble(
-            // The streaming bubble now owns its own [State]
-            // and a 33ms poll Timer — the chat history no
-            // longer needs to feed the current content in
-            // on every build. That removes the dependency
-            // on the chat panel rebuilding during streaming,
-            // which is what was causing 30ms of layout per
-            // 16ms chunk arrival. The session id is passed
-            // so the bubble can look up the right
-            // controller maps; tool-call snapshots still
-            // come in via prop because they only change on
-            // round boundaries.
+        items.add((ctx) {
+          return StreamingBubble(
+            // The streaming bubble owns its own [State] and a 33ms
+            // poll Timer — the chat history no longer needs to feed
+            // the current content in on every build. The session id
+            // is passed so the bubble can look up the right
+            // controller maps; tool-call snapshots still come in via
+            // prop because they only change on round boundaries.
             streamingController: component.streamingController,
             sessionId: component.sessionController.currentSessionId ?? 0,
             streamingToolCalls: component.streamingController
@@ -241,8 +297,8 @@ class _ChatHistoryState extends State<ChatHistory> {
                 ),
             toolRegistry: component.toolRegistry,
             runtimeState: rt,
-          ),
-        );
+          );
+        });
       }
     }
 
@@ -250,9 +306,9 @@ class _ChatHistoryState extends State<ChatHistory> {
     if (sessionId != null && isStreaming) {
       final queue = component.sessionController.messageQueueFor(sessionId);
       if (queue.isNotEmpty) {
-        items.add(SizedBox(height: 1));
-        items.add(
-          QueuedMessagesBubble(
+        items.add((ctx) => const SizedBox(height: 1));
+        items.add((ctx) {
+          return QueuedMessagesBubble(
             messages: queue.messages,
             onDiscard: (queueId) {
               component.sessionController.discardQueuedMessage(
@@ -261,8 +317,8 @@ class _ChatHistoryState extends State<ChatHistory> {
               );
               component.refresh();
             },
-          ),
-        );
+          );
+        });
       }
     }
 
@@ -288,7 +344,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           controller: component.scrollController,
           padding: EdgeInsets.all(1),
           itemCount: items.length,
-          itemBuilder: (context, index) => items[index],
+          itemBuilder: (ctx, index) => items[index](ctx),
         ),
       ),
     );
@@ -377,6 +433,34 @@ class _ChatHistoryState extends State<ChatHistory> {
         });
       }
     });
+  }
+
+  /// Build the progress label for the empty-state branch when the
+  /// session's message cache is being filled in by a chunked load.
+  ///
+  /// Three shapes, in order of preference:
+  ///   1. "Loading 247 messages… (48%)" — once at least one chunk has
+  ///      landed (so `loaded > 0`) and the total is known.
+  ///   2. "Loading 247 messages…" — total known but no chunk yet
+  ///      (the very first paint after `completeSwitchSession` fires
+  ///      its COUNT(*) callback before the first chunk query).
+  ///   3. "Loading messages…" — total not known yet (rare; the
+  ///      COUNT(*) query is in flight but hasn't returned).
+  ///
+  /// `loaded` is the *post-cap* count — sessions with more than the
+  /// 1000-message cap will show "… (100%)" once the cap is hit and
+  /// the loop exits, even if the underlying DB has more rows.
+  String _loadingLabel(SessionController controller, int sessionId) {
+    final total = controller.loadingMessageTotal(sessionId);
+    final loaded = controller.loadingMessageLoaded(sessionId);
+    if (total != null && total > 0 && loaded != null && loaded > 0) {
+      final pct = ((loaded * 100) / total).clamp(0, 100).round();
+      return 'Loading $total messages… ($pct%)';
+    }
+    if (total != null && total > 0) {
+      return 'Loading $total messages…';
+    }
+    return 'Loading messages…';
   }
 
   /// Resolve the display label for an internal reasoning effort value,

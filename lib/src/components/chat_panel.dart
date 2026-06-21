@@ -63,6 +63,13 @@ class ChatPanelBootState {
   final Map<int, List<Message>> messageCache;
   final Map<String, int> currentFileReadState;
 
+  /// Total number of messages in [currentSessionId]'s history, or null
+  /// when the boot loader didn't run a COUNT(*) (e.g. empty session).
+  /// When strictly greater than the size of `messageCache[currentSessionId]`,
+  /// the chat panel kicks off the chunked loader in the background to
+  /// fill in the older messages that boot skipped — see [loadChatPanelBootState].
+  final int? messagesTotal;
+
   const ChatPanelBootState({
     required this.providerService,
     required this.store,
@@ -71,8 +78,19 @@ class ChatPanelBootState {
     required this.archivedCount,
     required this.messageCache,
     required this.currentFileReadState,
+    this.messagesTotal,
   });
 }
+
+/// Number of messages to load synchronously at boot. Tuned to be small
+/// enough for a fast cold-cache first paint (with the v23/v24 indexes
+/// on `messages.session_id`, this query reads only a few MB of pages),
+/// but big enough that the user sees meaningful context (the bottom
+/// of the chat with the most recent assistant turn). The remaining
+/// older messages fill in via [SessionController.completeSwitchSession]
+/// kicked off by [ChatPanel.initState] — same path as a mid-session
+/// switch, so the boot UX matches the switch UX.
+const int _kBootFirstChunkSize = 50;
 
 Future<ChatPanelBootState> loadChatPanelBootState({
   required String userProvidersDir,
@@ -138,9 +156,26 @@ Future<ChatPanelBootState> loadChatPanelBootState({
   }
 
   final currentSessionId = initialSession.id;
-  final messages = await resolvedStore.messageStore.getMessages(
+
+  // Load only the first chunk synchronously. The previous single-fetch
+  // `getMessages(limit: 1000)` blocked the splash screen until the full
+  // session's worth of rows returned — and even with the v23 index on
+  // `messages.session_id`, a 1000-row cold-cache read can still take
+  // seconds. Loading just the latest 50 gets the chat panel mounted
+  // quickly (typically <200ms with the index), and the remaining older
+  // messages fill in via [SessionController.completeSwitchSession]
+  // kicked off by the chat panel — same progressive flow as a mid-
+  // session switch.
+  final countFuture = resolvedStore.messageStore.countBySession(
     currentSessionId,
   );
+  final firstChunkFuture = resolvedStore.messageStore.getMessages(
+    currentSessionId,
+    limit: _kBootFirstChunkSize,
+  );
+  final messagesTotal = await countFuture;
+  final firstChunk = await firstChunkFuture;
+
   final fileReadState = await resolvedStore.loadFileReadState(currentSessionId);
 
   return ChatPanelBootState(
@@ -149,8 +184,11 @@ Future<ChatPanelBootState> loadChatPanelBootState({
     sessions: sessions,
     currentSessionId: currentSessionId,
     archivedCount: archivedCount,
-    messageCache: {currentSessionId: messages},
+    messageCache: {currentSessionId: firstChunk},
     currentFileReadState: fileReadState,
+    // Surface the total so the chat panel knows whether the rest of
+    // the session needs to be filled in via chunked loading.
+    messagesTotal: messagesTotal,
   );
 }
 
@@ -378,6 +416,30 @@ class _ChatPanelState extends State<ChatPanel> {
         bootState.currentSessionId,
         bootState.currentFileReadState,
       );
+
+      // Boot loader only fetches the first chunk (~50 rows) so the
+      // splash screen clears fast. If the session has more messages
+      // than that, kick off the chunked loader in the background to
+      // fill in the rest — same path a mid-session switch uses, so
+      // the older history streams in via the same setState pipeline
+      // (each chunk rebuilds the chat panel and the visible bubble
+      // count grows). The chat panel's pre-existing onProgress
+      // handler in [_switchSession] already proves the pattern
+      // works; we're just applying it to the boot path.
+      final bootMessagesLoaded =
+          bootState.messageCache[bootState.currentSessionId]?.length ?? 0;
+      final bootTotal = bootState.messagesTotal;
+      if (bootTotal != null && bootTotal > bootMessagesLoaded) {
+        unawaited(
+          _sessionController.completeSwitchSession(
+            bootState.currentSessionId,
+            onProgress: () {
+              if (!mounted) return;
+              setState(() {});
+            },
+          ),
+        );
+      }
     }
 
     CommandRegistry.instance.addListener(_refresh);
@@ -494,7 +556,16 @@ class _ChatPanelState extends State<ChatPanel> {
       }
     }
 
-    final error = await _sessionController.switchSession(id);
+    // Split the old single-`await switchSession` path so the chat
+    // panel can paint the new session's header + "Loading N
+    // messages…" placeholder before any DB work happens. The
+    // begin/complete split on SessionController also lets the chat
+    // panel repaint between chunks via the onProgress callback,
+    // turning a single blocking SELECT into a progressive fill-in
+    // — the perceived latency for huge sessions drops from
+    // "load all then paint" to "first paint in a few ms, then
+    // messages stream in".
+    final error = _sessionController.beginSwitchSession(id);
     if (error != null) {
       _showToast(error, mode: ToastMode.error);
       if (oldId != null && oldId != id) {
@@ -507,7 +578,28 @@ class _ChatPanelState extends State<ChatPanel> {
       return;
     }
 
-    final savedState = await _store.loadFileReadState(id);
+    // First paint: new session header + the loading line in the
+    // chat history's empty-state branch (or the cached messages if
+    // this session was previously visited — the empty-state
+    // branch only fires when the cache is actually empty).
+    setState(() {});
+
+    // Complete the switch: chunked message load + file-read state.
+    // The two are independent reads, so kick them off in parallel
+    // — file-read state is small (one keyed table) and finishes
+    // quickly, but there's no reason to serialise it behind the
+    // message load on the critical path.
+    final fileReadStateFuture = _store.loadFileReadState(id);
+    await _sessionController.completeSwitchSession(
+      id,
+      onProgress: () {
+        if (!mounted) return;
+        setState(() {});
+      },
+    );
+    if (!mounted) return;
+    final savedState = await fileReadStateFuture;
+    if (!mounted) return;
     _tracker.loadSession(id, savedState);
 
     // Restore the input text from the new session's stash (if any).

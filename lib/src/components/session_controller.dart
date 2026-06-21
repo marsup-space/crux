@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
@@ -35,6 +36,20 @@ class SessionController {
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
+
+  // ─── Switch-session loading state ───────────────────────────
+  //
+  // When a session switch happens, [beginSwitchSession] flips the
+  // current session id synchronously and adds the target id to this
+  // set so the chat history's empty-state branch can show a progress
+  // indicator instead of "No messages yet.". [completeSwitchSession]
+  // updates [_loadingTotalCounts] (set after the COUNT(*) query) and
+  // [_loadingLoadedCounts] (after each chunk arrives) and clears all
+  // three maps in its `finally` block so the loading UI is gone
+  // before the chat panel does its final post-load setState.
+  final Set<int> _loadingSessionIds = {};
+  final Map<int, int> _loadingTotalCounts = {};
+  final Map<int, int> _loadingLoadedCounts = {};
 
   /// Per-session pending image attachments. When the user runs `/image`,
   /// the image is loaded and stored here. When the user sends their next
@@ -422,7 +437,67 @@ class SessionController {
     messageCache[sessionId] = await _messageStore.getMessages(sessionId);
   }
 
+  /// True while the message list for [sessionId] is being filled in
+  /// by a chunked load (i.e. the user just switched to it and the
+  /// first paint hasn't landed yet). The chat history's empty-state
+  /// branch uses this to render a progress line instead of
+  /// "No messages yet.".
+  bool isLoadingMessages(int sessionId) =>
+      _loadingSessionIds.contains(sessionId);
+
+  /// Total number of messages that will be loaded for [sessionId], or
+  /// null while the COUNT(*) query is still in flight. Capped at
+  /// 1000 by [loadMessagesChunked] — sessions with more than 1000
+  /// messages report only the count that will actually land in
+  /// `messageCache`.
+  int? loadingMessageTotal(int sessionId) =>
+      _loadingTotalCounts[sessionId];
+
+  /// Number of messages already loaded into the cache for [sessionId]
+  /// during the current chunked load. Used by the chat history's
+  /// loading line to render `… (NN%)` once at least one chunk has
+  /// arrived.
+  int? loadingMessageLoaded(int sessionId) =>
+      _loadingLoadedCounts[sessionId];
+
   Future<String?> switchSession(int id) async {
+    final error = beginSwitchSession(id);
+    if (error != null) return error;
+    await completeSwitchSession(id);
+    return null;
+  }
+
+  /// Synchronous half of [switchSession]: validate the target,
+  /// flip [currentSessionId], set the context-bar target to a
+  /// sensible placeholder, reset streaming metrics, and mark the
+  /// session as "loading messages" so the chat history's empty-state
+  /// branch can render a progress line.
+  ///
+  /// Crucially, **no awaits happen between the `currentSessionId`
+  /// flip and the target reset** — the context bar's 16ms lerp
+  /// ticker reads both fields on every tick and uses a
+  /// `_currentSessionId != sessionId` guard to snap on session
+  /// switches. If the id flipped before the target reset, a tick in
+  /// that window would snap to the OLD session's `contextTargetTokens`,
+  /// then once the reset finally landed the bar would lerp from the
+  /// stale snap value toward the new base — the "still seems wrong"
+  /// lerp the original [switchSession] was structured to avoid.
+  ///
+  /// The placeholder target is `session.contextTokens` (the value
+  /// persisted on the session row by the last AI turn). For sessions
+  /// that have ever reported context tokens, this is exactly what
+  /// [computeBaseContext] would return — so the bar's value never
+  /// changes between begin and the eventual refine in
+  /// [completeSwitchSession]. For sessions where
+  /// `session.contextTokens == 0`, [computeBaseContext] may walk the
+  /// message cache in [completeSwitchSession] and pick up a
+  /// different value (the last AI message's token sum, or 0); the
+  /// bar will smoothly move to that final value once the first
+  /// chunk lands.
+  ///
+  /// Returns `null` on success or a human-readable error string.
+  /// On error, no state has been mutated.
+  String? beginSwitchSession(int id) {
     final session = findSession(id);
     if (session == null) {
       return 'Session #$id not found';
@@ -432,46 +507,16 @@ class SessionController {
       return 'Session #$id is running in another Crux instance';
     }
 
-    if (session.status == SessionStatus.done ||
-        session.status == SessionStatus.interrupted) {
-      await _store.update(id, status: SessionStatus.idle);
-      session.status = SessionStatus.idle;
-    }
+    // Mark loading BEFORE flipping the id so the chat history's
+    // first paint (between this return and the first chunk from
+    // [completeSwitchSession]) shows a progress line instead of
+    // "No messages yet.".
+    _loadingSessionIds.add(id);
 
-    // The in-memory `/btw` chain is *per session* and is NOT
-    // cleared on session switch. Each session has its own
-    // independent chain (keyed by session id), so navigating
-    // between sessions doesn't leak one session's scratch space
-    // into another's. The chain also survives a session switch:
-    // when the user navigates back to a session that has a
-    // pending chain, the renderer picks it up from
-    // [btwTurnsFor] and the user sees the same boxed bubbles
-    // they left behind. The chain is only dropped on a non-`/btw`
-    // real turn (see the chat panel's `_sendMessage`) or when
-    // the session itself is deleted (see [deleteSession]).
-
-    // CRITICAL ordering: [currentSessionId] and the new
-    // session's `contextTargetTokens` MUST be set in the same
-    // microtask — with no awaits between them. The context
-    // bar's 16ms lerp ticker reads both fields on every tick
-    // and uses a `_currentSessionId != sessionId` guard to
-    // detect session switches and snap instead of lerp. If
-    // `currentSessionId` flips to the new id *before* the
-    // target is reset, a tick that lands in that window will
-    // snap to the OLD session's target (still in
-    // `rt.contextTargetTokens`), then once the target reset
-    // finally lands the bar will lerp from that stale snap
-    // value toward the new base — exactly the "still seems
-    // wrong" lerp the user sees on session switch.
-    //
-    // Loading messages first, computing the base, then
-    // committing both the target reset and the
-    // `currentSessionId` flip together closes that window.
-    await loadMessages(id);
     final rt = runtime(id);
-    final base = computeBaseContext(id);
-    rt.contextTargetTokens = base;
-    rt.contextDisplayTokens = base.toDouble();
+    rt.contextTargetTokens = session.contextTokens;
+    rt.contextDisplayTokens = session.contextTokens.toDouble();
+
     currentSessionId = id;
 
     if (!rt.isResponding) {
@@ -488,6 +533,221 @@ class SessionController {
 
     return null;
   }
+
+  /// Async half of [switchSession]: load the new session's messages
+  /// in chunks (so the chat history paints the first chunk within a
+  /// few ms instead of freezing on a single `SELECT *`), update the
+  /// progress counters between chunks, and refine the context-bar
+  /// target with the computed base once everything is loaded.
+  ///
+  /// Must be called only after [beginSwitchSession] returns null for
+  /// the same [id]. The `onProgress` callback fires after each chunk
+  /// arrives (and once more at the end) so the chat panel can
+  /// `setState` between chunks and the user sees the loading line
+  /// tick down `… (12%)` → `… (48%)` → `… (100%)`.
+  ///
+  /// The in-memory `/btw` chain is per-session and intentionally
+  /// NOT cleared here — the renderer picks the chain back up via
+  /// [btwTurnsFor] when the user returns.
+  Future<void> completeSwitchSession(
+    int id, {
+    void Function()? onProgress,
+  }) async {
+    try {
+      final session = findSession(id);
+      if (session != null &&
+          (session.status == SessionStatus.done ||
+              session.status == SessionStatus.interrupted)) {
+        // In-memory flip first so any subsequent reads (e.g. the
+        // chat panel's polling loops) see the right status without
+        // waiting for the DB. The DB write is best-effort and
+        // unawaited — if it fails the worst case is the status
+        // drifts back to `done`/`interrupted` on next launch, which
+        // [markOrphanedRunningSessionsAsInterrupted] would correct.
+        session.status = SessionStatus.idle;
+        unawaited(_store.update(id, status: SessionStatus.idle));
+      }
+
+      await _loadMessagesChunked(id, onProgress: onProgress);
+
+      // Refine the context-bar target with the computed base now
+      // that we have the real messages. For sessions that already
+      // reported context tokens, this is a no-op (the placeholder
+      // set in [beginSwitchSession] was already the right value).
+      final rt = runtime(id);
+      final base = computeBaseContext(id);
+      rt.contextTargetTokens = base;
+      rt.contextDisplayTokens = base.toDouble();
+    } finally {
+      _loadingSessionIds.remove(id);
+      _loadingTotalCounts.remove(id);
+      _loadingLoadedCounts.remove(id);
+      onProgress?.call();
+    }
+  }
+
+  /// Chunked loader behind [completeSwitchSession]. Loads the
+  /// latest messages first (so the chat history's bottom — the
+  /// most recent conversation — paints within a single DB
+  /// round-trip), then walks backwards with `beforeId` to fill in
+  /// older history on top.
+  ///
+  /// Two critical-path optimisations matter for "huge session
+  /// switch is sluggish":
+  ///
+  /// 1. COUNT(*) and the first chunk are issued **in parallel**.
+  ///    Both hit the messages table; running them concurrently
+  ///    means the first paint is gated by whichever returns last,
+  ///    not by the sum of the two. The COUNT is only used for the
+  ///    "Loading N messages… (X%)" label, so the user always sees
+  ///    *some* content as soon as the first chunk lands — even if
+  ///    COUNT is still in flight, the label degrades gracefully
+  ///    from "Loading messages…" (initial tick) to "Loading 247
+  ///    messages…" (after COUNT) to "Loading 247 messages… (24%)"
+  ///    (after each subsequent chunk).
+  ///
+  /// 2. The first chunk is 4× the size of later chunks (200 vs 50).
+  ///    Most sessions fit entirely in one round-trip — the user
+  ///    gets the full latest-200 window on first paint, no
+  ///    background fill needed. Sessions with >200 messages get
+  ///    smaller chunks for the older tail so each round-trip stays
+  ///    short and the per-tick event-loop yield (`Duration.zero`)
+  ///    keeps the UI responsive.
+  ///
+  /// Order of messages in the cache is oldest → newest (matching
+  /// how [currentMessages] is rendered). Newer chunks are appended
+  /// to the right, older chunks are prepended to the left.
+  ///
+  /// Caps total loaded messages at [_kMessageCap] (1000) — matches
+  /// the previous single-fetch behaviour for sessions that fit, and
+  /// surfaces `… (loaded / total)` honestly for sessions with more.
+  /// Once the cap is hit the loop exits and the chat history shows
+  /// the loaded window; older messages stay on disk but aren't
+  /// rendered, which is the same behaviour users had before.
+  Future<void> _loadMessagesChunked(
+    int sessionId, {
+    void Function()? onProgress,
+  }) async {
+    // The boot path ([loadChatPanelBootState]) pre-loads the first
+    // chunk synchronously so the splash screen clears fast, then
+    // calls [completeSwitchSession] to fill in the rest. If we
+    // detect that the cache already has messages for [sessionId],
+    // skip the first-chunk fetch and resume from the oldest id in
+    // the cache — avoids a wasted ~200ms re-fetching the same rows.
+    final preloaded = messageCache[sessionId];
+    final resumedFromBoot =
+        preloaded != null && preloaded.isNotEmpty;
+
+    // Kick off COUNT(*) and the first chunk (or a no-op if we're
+    // resuming from the boot pre-load) concurrently. Both return
+    // Futures without waiting — drift will schedule them on its
+    // connection pool, and the await below picks up whichever is
+    // ready first. The first chunk is the bigger query (more rows
+    // → more SQLite work), so it tends to win the race, but even
+    // in the worst case we save COUNT's latency from the critical
+    // path.
+    final firstChunkFuture = resumedFromBoot
+        ? Future<List<Message>>.value(const <Message>[])
+        : _messageStore.getMessages(
+            sessionId,
+            limit: _kFirstChunkSize,
+          );
+    final totalFuture = _messageStore.countBySession(sessionId);
+
+    final firstChunk = await firstChunkFuture;
+    // First chunk is the LATEST `_kFirstChunkSize` messages in
+    // chronological order (oldest first within). When resuming
+    // from the boot pre-load, [preloaded] is already the latest
+    // chunk — the empty [firstChunk] just keeps the loop below
+    // consistent.
+    final accumulated = <Message>[
+      if (resumedFromBoot) ...preloaded,
+      ...firstChunk,
+    ];
+    messageCache[sessionId] = List<Message>.unmodifiable(accumulated);
+    _loadingLoadedCounts[sessionId] = accumulated.length;
+    // First progress tick: the chat history can now render real
+    // bubbles instead of the loading label. If COUNT hasn't
+    // returned yet, the label still says "Loading messages…"
+    // (without a count) — that's the graceful-degradation path.
+    onProgress?.call();
+
+    final total = await totalFuture;
+    _loadingTotalCounts[sessionId] = total;
+    // Second progress tick: now the label can show "Loading N
+    // messages…" with the actual total, and the `(X%)` suffix
+    // becomes meaningful as subsequent chunks arrive.
+    onProgress?.call();
+
+    if (accumulated.length >= total || accumulated.length >= _kMessageCap) {
+      // Entire session (or as much as we cap at) loaded in one
+      // round-trip. Common case for typical sessions.
+      return;
+    }
+
+    // Walk backwards from the oldest id in the cache to fill in
+    // older messages. When resuming from boot, this starts from the
+    // oldest id in the pre-loaded chunk; otherwise from the oldest
+    // id in the first chunk we just fetched. Either way, each chunk
+    // is prepended so the final list reads oldest → newest, with
+    // the latest messages (from the boot pre-load or the first
+    // chunk) staying at the bottom of the rendered chat — exactly
+    // what the user wants to see first.
+    int? beforeId = accumulated.first.id;
+    var loaded = accumulated.length;
+    while (loaded < total && loaded < _kMessageCap) {
+      final remaining =
+          loaded + _kLaterChunkSize <= _kMessageCap
+              ? _kLaterChunkSize
+              : _kMessageCap - loaded;
+      final chunk = await _messageStore.getMessages(
+        sessionId,
+        limit: remaining,
+        beforeId: beforeId,
+      );
+      if (chunk.isEmpty) break;
+      accumulated.insertAll(0, chunk);
+      loaded += chunk.length;
+      // `chunk.first` is the OLDEST id in the chunk (the loader
+      // reverses the DESC result back to chronological order), so
+      // `beforeId = chunk.first.id` is the right cursor for the
+      // next round of older messages.
+      beforeId = chunk.first.id;
+      _loadingLoadedCounts[sessionId] = loaded;
+      messageCache[sessionId] = List<Message>.unmodifiable(accumulated);
+      onProgress?.call();
+      // Yield to the event loop so the chat panel can paint the
+      // just-arrived chunk before we queue the next DB round-trip.
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  /// Size of the first message batch. Deliberately small so the
+  /// cold-cache disk read for "Loading N messages…" → first-paint
+  /// is bounded. With no index on `messages.session_id` (prior to
+  /// the v23 migration) and sessions whose message table spans
+  /// tens of MB, a 200-row first chunk read ~6MB of data — which
+  /// on HDD / NFS / slow USB produced a 6–7s loading flash before
+  /// the first paint. 50 rows keeps the cold read under 1.5MB
+  /// while still being big enough to show the user the full
+  /// bottom-of-chat context on first paint (the 20 or so most
+  /// recent bubbles).
+  static const int _kFirstChunkSize = 50;
+
+  /// Size of every batch after the first. Larger than the first
+  /// because by the time we're past chunk 1, the relevant table
+  /// pages are already warm in the OS file cache — the cold-read
+  /// cost that motivated the small first chunk doesn't apply. 200
+  /// here means a 1000-message session loads in 6 chunks
+  /// (50 + 5×200) instead of 17 (50 + 17×50), so the background
+  /// fill is ~3× faster once the user sees content.
+  static const int _kLaterChunkSize = 200;
+
+  /// Hard cap on total loaded messages per session — matches the
+  /// previous single-fetch behaviour. Sessions with more than this
+  /// show the latest [_kMessageCap] messages; older rows stay on
+  /// disk but aren't rendered.
+  static const int _kMessageCap = 1000;
 
   Future<void> deleteSession(int sessionId) async {
     final wasCurrent = sessionId == currentSessionId;
