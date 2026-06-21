@@ -239,9 +239,43 @@ void main() {
     expect(result.output, isNot(contains('the lsp hangs')));
   });
 
-  test('action=messages paginates with beforeId', () async {
-    // `beforeId` is exclusive: returns messages with id < beforeId.
-    // Session A has ids 1..4. With beforeId=3, we get ids 1 and 2.
+  test('action=messages default returns the latest N messages, not the oldest',
+      () async {
+    // Session A has 4 messages, in this order:
+    //   1: user "the lsp hangs..."
+    //   2: assistant "Let me check the language server status."
+    //   3: tool_call bash with "ps aux | grep dart"
+    //   4: tool result "developer 12345 ... dart --observe bin/crux.dart"
+    // With limit=2 we expect the LATEST two (ids 3 and 4), not the
+    // first two (ids 1 and 2). This locks in the "tail of the
+    // session" semantic.
+    final tail = await tool.execute(
+      {
+        'action': 'messages',
+        'sessionId': sessionA,
+        'limit': 2,
+      },
+      ctxOf(sessionB),
+    );
+    expect(tail.metadata['returned'], 2);
+    expect(tail.metadata['total'], 4);
+    // The earliest two must NOT be present.
+    expect(tail.output, isNot(contains('the lsp hangs on /Users/developer')));
+    expect(tail.output, isNot(contains('language server status')));
+    // The latest two MUST be present.
+    expect(tail.output, contains('ps aux | grep dart'));
+    expect(tail.output, contains('developer 12345'));
+    // And the footer should point the caller at the next page
+    // (the oldest id on this page = the cursor to walk back from).
+    expect(tail.output, contains('beforeId=3'));
+  });
+
+  test('action=messages beforeId excludes the cursor message', () async {
+    // `beforeId` is exclusive: returns messages with id < beforeId,
+    // still the latest N of that subset, in chronological order.
+    // Session A has ids 1..4. With beforeId=3, limit=10 we get
+    // everything with id<3 (ids 1 and 2) — and no footer, because
+    // we got everything available.
     final head = await tool.execute(
       {
         'action': 'messages',
@@ -255,9 +289,136 @@ void main() {
     expect(head.output, contains('the lsp hangs on /Users/developer'));
     expect(head.output, contains('Let me check the language server status'));
     expect(head.output, isNot(contains('ps aux | grep dart')));
+    // Nothing more to show below the cursor, so no pagination hint.
+    expect(head.output, isNot(contains('more messages exist')));
+  });
 
-    // And the footer should suggest the next page using the last id.
-    expect(head.output, contains('beforeId=2'));
+  test('action=messages beforeId + tight limit paginates correctly',
+      () async {
+    // Same session (ids 1..4). With beforeId=3, limit=1 we get the
+    // latest 1 with id<3 → id=2, and the footer points at id=2 so
+    // the caller walks back one more step.
+    final page = await tool.execute(
+      {
+        'action': 'messages',
+        'sessionId': sessionA,
+        'beforeId': 3,
+        'limit': 1,
+      },
+      ctxOf(sessionB),
+    );
+    expect(page.metadata['returned'], 1);
+    expect(page.output, contains('Let me check the language server status'));
+    expect(page.output, isNot(contains('the lsp hangs')));
+    expect(page.output, isNot(contains('ps aux')));
+    // The next-page cursor is the oldest id on this page (the only
+    // id), so the next call beforeId=2 returns id=1.
+    expect(page.output, contains('beforeId=2'));
+  });
+
+  test('action=messages pagination walks a long session correctly', () async {
+    // Add 5 more assistant messages. Note that `Messages.id` is a
+    // global auto-increment, not per-session, so we can't hard-
+    // code the new ids — but we can assert structural invariants
+    // across a backward walk.
+    for (var i = 0; i < 5; i++) {
+      await store.messageStore.addMessage(
+        sessionA,
+        role: 'assistant',
+        content: 'follow-up reply $i',
+      );
+    }
+
+    // Sanity: sessionA has 9 messages.
+    final totalA = await store.messageStore.countBySession(sessionA);
+    expect(totalA, 9);
+
+    // Walk the session backwards in pages of 3.
+    final seenIds = <int>[];
+    int? beforeId;
+    while (true) {
+      final result = await tool.execute(
+        {
+          'action': 'messages',
+          'sessionId': sessionA,
+          'limit': 3,
+          // ignore: use_null_aware_elements
+          if (beforeId != null) 'beforeId': beforeId,
+        },
+        ctxOf(sessionB),
+      );
+      final returned = result.metadata['returned'] as int;
+      final idRegex = RegExp(r'\[#(\d+)\]');
+      for (final m in idRegex.allMatches(result.output)) {
+        seenIds.add(int.parse(m.group(1)!));
+      }
+      if (returned < 3) break;
+      final footerMatch =
+          RegExp(r'beforeId=(\d+)').firstMatch(result.output);
+      if (footerMatch == null) break;
+      beforeId = int.parse(footerMatch.group(1)!);
+    }
+
+    // Structural invariants:
+    //   - every id was visited exactly once,
+    //   - the order within each page is chronological (ascending),
+    //   - the first page is the tail (ids strictly decreasing across
+    //     page boundaries, so the walk goes from newest to oldest).
+    expect(seenIds.length, 9);
+    expect(seenIds.toSet().length, 9, reason: 'no duplicate ids');
+    for (var i = 0; i < seenIds.length; i += 3) {
+      final page = seenIds.skip(i).take(3).toList();
+      expect(page, orderedEquals([...page]..sort()),
+          reason: 'page $i is chronological: $page');
+    }
+    for (var i = 3; i < seenIds.length; i += 3) {
+      expect(seenIds[i], lessThan(seenIds[i - 1]),
+          reason: 'page boundary $i: tail-first walk');
+    }
+  });
+
+  test('action=show returns the most recent messages, not the oldest',
+      () async {
+    // Add 3 more assistant messages so the session is long enough
+    // that "show" with a tight limit has to truncate, and we can
+    // verify it truncates the head, not the tail.
+    for (var i = 0; i < 3; i++) {
+      await store.messageStore.addMessage(
+        sessionA,
+        role: 'assistant',
+        content: 'tail reply $i',
+      );
+    }
+    final result = await tool.execute(
+      {'action': 'show', 'sessionId': sessionA, 'limit': 2},
+      ctxOf(sessionB),
+    );
+    expect(result.metadata['totalMessages'], 7);
+    // The two oldest must NOT be present.
+    expect(result.output, isNot(contains('the lsp hangs on /Users/developer')));
+    expect(result.output, isNot(contains('language server status')));
+    // The two latest MUST be present.
+    expect(result.output, contains('tail reply 1'));
+    expect(result.output, contains('tail reply 2'));
+    // The footer should be honest about the truncation and point
+    // at the next page (oldest id on the shown page).
+    expect(result.output, contains('most recent'));
+    final m = RegExp(r'beforeId=(\d+)').firstMatch(result.output);
+    expect(m, isNotNull);
+    final beforeIdFromFooter = int.parse(m!.group(1)!);
+    // Following that cursor should return older messages and NOT
+    // the ones we just saw.
+    final followup = await tool.execute(
+      {
+        'action': 'messages',
+        'sessionId': sessionA,
+        'beforeId': beforeIdFromFooter,
+        'limit': 5,
+      },
+      ctxOf(sessionB),
+    );
+    expect(followup.output, contains('tail reply 0'));
+    expect(followup.output, isNot(contains('tail reply 2')));
   });
 
   // ── action: search ────────────────────────────────────────────────

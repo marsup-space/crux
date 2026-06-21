@@ -392,9 +392,9 @@ class SessionTool extends ToolDef {
         _appendMessageBody(buf, m);
       }
       if (total > showing) {
-        buf.writeln('Use action=`messages` with limit=$messageLimit '
-            'to page through earlier messages (or pass `beforeId=${recent.first.id}` '
-            'to walk backwards).');
+        buf.writeln('Showing the $showing most recent of $total messages. '
+            'Use action=`messages` with `beforeId=${recent.first.id}` '
+            'to read earlier messages.');
       }
     }
 
@@ -448,10 +448,19 @@ class SessionTool extends ToolDef {
         _appendMessageHeader(buf, m);
         _appendMessageBody(buf, m);
       }
-      final lastId = filtered.last.id;
-      if (total > lastId || (beforeId != null && filtered.length == limit)) {
+      // `filtered` is in chronological order. The first id is the
+      // oldest on this page — pass it as `beforeId` to walk further
+      // back. We have more to show iff we hit the limit (with
+      // `beforeId` set, the cap means there might be older messages;
+      // without `beforeId`, the cap means there might be older
+      // messages we didn't include in the latest-N window).
+      final moreAvailable = beforeId == null
+          ? total > filtered.length
+          : filtered.length == limit;
+      if (moreAvailable) {
+        final firstId = filtered.first.id;
         buf.writeln();
-        buf.writeln('(more messages exist — pass `beforeId=$lastId` to paginate)');
+        buf.writeln('(more messages exist — pass `beforeId=$firstId` to paginate)');
       }
     }
 

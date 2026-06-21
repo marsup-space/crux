@@ -29,3 +29,11 @@ design/
 # Local scratch output
 .worktrees/
 warmup.log
+
+# GitNexus agent runtime artifacts (auto-generated context for AI agents)
+# The agent (Crux/Claude/Codex/...) reads/writes these locally; they must
+# not leak into the project repo.
+AGENTS.md
+CLAUDE.md
+.claude/
+.codegraph/

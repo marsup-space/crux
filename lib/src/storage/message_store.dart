@@ -178,13 +178,28 @@ class MessageStore {
     return result;
   }
 
+  /// Returns up to [limit] messages for [sessionId] in chronological
+  /// order (oldest first).
+  ///
+  /// The default call (no [beforeId]) returns the **latest** `limit`
+  /// messages — i.e. the tail of the session. To read further back in
+  /// time, pass `beforeId` = the smallest id from the previous page
+  /// (i.e. the first id in the returned list). That walks the session
+  /// backwards one page at a time. The returned list is always in
+  /// chronological order so callers can render it directly.
+  ///
+  /// Implementation note: SQL orders by `id DESC` so the LIMIT slices
+  /// off the most-recent N rows; we then reverse in memory to put them
+  /// back in chronological order. Ordering by `id` (the auto-increment
+  /// primary key) is monotonic and stable, which is exactly what the
+  /// `beforeId` pagination cursor needs.
   Future<List<Message>> getMessages(
     int sessionId, {
     int limit = 1000,
     int? beforeId,
   }) async {
     final query = _db.select(_db.messages)
-      ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+      ..orderBy([(t) => OrderingTerm.desc(t.id)])
       ..limit(limit);
 
     if (beforeId != null) {
@@ -197,7 +212,8 @@ class MessageStore {
     }
 
     final rows = await query.get();
-    return rows.map(_rowToMessage).toList();
+    final result = rows.map(_rowToMessage).toList();
+    return result.reversed.toList();
   }
 
   Future<void> updateMessageTldr(int messageId, String tldr) async {
