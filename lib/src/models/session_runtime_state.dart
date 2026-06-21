@@ -118,6 +118,21 @@ class SessionRuntimeState {
   /// repeated automatic attempts.
   int consecutiveCompactionFailures;
 
+  /// User-turn counter for auto-compaction hysteresis.
+  ///
+  /// `0` means "no compact has happened, full auto-compact check is
+  /// allowed". After a compact (success OR failure), set to `1`; each
+  /// subsequent user turn increments it. While `1 <= N <= 3` the
+  /// auto-compact check is skipped — gives the child session room to
+  /// accumulate meaningful turns before we re-evaluate (otherwise a
+  /// single 130k context could thrash through "compact → child at
+  /// 130k → compact → grandchild ..." in three user turns).
+  ///
+  /// Reset back to `0` when the auto-compact check actually runs and
+  /// decides no compact is needed (either we just exited the window
+  /// at N>=4, or we never entered it).
+  int turnsSinceLastCompact;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -141,6 +156,7 @@ class SessionRuntimeState {
     this.interrupted = false,
     this.consecutiveSingleToolCallRounds = 0,
     this.consecutiveCompactionFailures = 0,
+    this.turnsSinceLastCompact = 0,
   });
 
   double get thinkingDurationMs {

@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
+import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 
@@ -57,6 +58,13 @@ void main(List<String> args) async {
     }
     Directory.current = dir;
   }
+
+  // Kick off `semble` model load + index build in the background.
+  // The first `semble_search` tool call awaits this; everything
+  // else (splash, chat panel, recent-projects book-keeping) is
+  // unaffected. Failure here is silent — the tool will surface
+  // its own clean error if the warmup never finished.
+  unawaited(SembleWarmup.instance.start(Directory.current.path));
 
   // Kick off the recent-projects bookkeeping *now* so it runs in
   // parallel with the splash + provider-seed work below. We can't
@@ -481,7 +489,7 @@ Future<void> _runDoctor() async {
     );
 
     stdout.writeln();
-    stdout.writeln('[2/2] Purging sessions not bound to a project path...');
+    stdout.writeln('[2/3] Purging sessions not bound to a project path...');
     final count = await store.deleteByProjectPath('');
     if (count > 0) {
       stdout.writeln(
@@ -490,6 +498,22 @@ Future<void> _runDoctor() async {
     } else {
       stdout.writeln(
         '  ${terminalSymbol('✓', '+')} No orphaned sessions found',
+      );
+    }
+
+    stdout.writeln();
+    stdout.writeln(
+      '[3/3] Repairing sessions with stale context_tokens (=0)...',
+    );
+    final repaired = await store.repairStaleContextTokens();
+    if (repaired > 0) {
+      stdout.writeln(
+        '  ${terminalSymbol('✓', '+')} Repaired $repaired session(s) '
+        '(reconstructed context_tokens from the last AI turn)',
+      );
+    } else {
+      stdout.writeln(
+        '  ${terminalSymbol('✓', '+')} No stale context_tokens found',
       );
     }
 

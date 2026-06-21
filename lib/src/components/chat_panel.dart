@@ -290,6 +290,12 @@ class _ChatPanelState extends State<ChatPanel> {
           builtInProvidersDir: component.builtInProvidersDir,
         );
     _store = bootState?.store ?? SessionStore(CruxDatabase());
+    // Self-heal sessions whose `context_tokens` was reset to 0 by a
+    // failed AI turn (network error / user ESC / stream interrupted
+    // before the LLM reported any usage). Fire-and-forget — doesn't
+    // block startup; repairs land before the next auto-compact
+    // check fires on any of the affected sessions. Idempotent.
+    unawaited(_store.repairStaleContextTokens());
     final tracker = FileReadTracker(
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);

@@ -237,20 +237,17 @@ class ChatService {
     final history = await _messageStore.getMessages(sessionId);
     if (!_hasCompactableHistory(history)) return null;
 
-    final projectedTokens = _estimateProjectedContextTokens(
+    final projectedTokens = estimateProjectedContextTokens(
       session: session,
       systemPrompt: resolved.systemPrompt,
       history: history,
       incomingUserContent: incomingUserContent,
       toolDefs: toolDefs,
     );
-    // Reserve 2× the expected compaction-summary output. The summary
-    // itself fits comfortably in 20k tokens; doubling gives us
-    // headroom for both the incoming turn we're about to send and the
-    // summary the compaction pass will need to emit.
-    const expectedSummaryTokens = 20000;
-    final reserve = expectedSummaryTokens * 2;
-    final threshold = resolved.modelConfig.contextSize - reserve;
+    final rt = computeCompactionReserveAndThreshold(
+      contextSize: resolved.modelConfig.contextSize,
+    );
+    final threshold = rt.threshold;
     if (projectedTokens <= threshold) return null;
 
     var childCreated = false;
@@ -305,7 +302,7 @@ class ChatService {
     final sourceEndId = history.last.id;
     final preTokens =
         preTokensOverride ??
-        _estimateProjectedContextTokens(
+        estimateProjectedContextTokens(
           session: session,
           systemPrompt: target.systemPrompt,
           history: history,
@@ -1598,7 +1595,18 @@ class ChatService {
       status: SessionStatus.done,
       tokensIn: session.tokensIn + promptTokens,
       tokensOut: session.tokensOut + completionTokens,
-      contextTokens: promptTokens + completionTokens - reasoningTokens,
+      // Don't overwrite `contextTokens` with 0 when the AI turn didn't
+      // report any tokens (network error / user ESC / stream
+      // interrupted). Falling back to 0 makes the next auto-compact
+      // check use the buggy fallback path (which double-counts per-
+      // message cumulative `tokensIn`), and the UI's `computeBaseContext`
+      // fallback would inflate the displayed context by adding tool
+      // results that the prior `contextTokens` already covered. Keep
+      // the previous value instead — `repairStaleContextTokens` will
+      // reconstruct it from the last AI message on the next launch.
+      contextTokens: promptTokens > 0
+          ? promptTokens + completionTokens - reasoningTokens
+          : session.contextTokens,
       ttftMs: session.ttftMs > 0 ? session.ttftMs : runtime.ttftMs,
       tokPerSec: runtime.tokPerSec,
       promptCacheHitTokens: session.promptCacheHitTokens + promptCacheHitTokens,
@@ -1858,46 +1866,88 @@ class ChatService {
     });
   }
 
-  int _estimateProjectedContextTokens({
+  /// Compute the next-turn projected prompt size in tokens.
+  ///
+  /// Primary path: returns `session.contextTokens + incomingUserContent`,
+  /// where `contextTokens` was persisted at the end of the last AI turn
+  /// as `promptTokens + completionTokens - reasoningTokens` — the actual
+  /// prompt size the API processed on that turn, plus the just-emitted
+  /// response (which is now part of history).
+  ///
+  /// Fallback (when `session.contextTokens == 0` — e.g. fresh session,
+  /// imported session, or a failed AI turn that we no longer overwrite
+  /// with 0): walk history **backwards** to find the LAST AI message
+  /// with a reported `tokensIn`, and use that single value. AI
+  /// `tokensIn` is per-turn prompt size (already cumulative within the
+  /// session — each turn's prompt includes everything before it), so
+  /// using one value is correct; summing N AI messages would give
+  /// N × finalPrompt.
+  ///
+  /// Last-resort fallback (no AI turn has reported tokens yet):
+  /// estimate from raw content. Won't trigger compaction in practice
+  /// because projectedTokens is much smaller than contextSize.
+  static int estimateProjectedContextTokens({
     required Session session,
     required String? systemPrompt,
     required List<Message> history,
     required String? incomingUserContent,
     required List<Map<String, dynamic>> toolDefs,
   }) {
-    // Prefer the actual prompt size the API processed on the last
-    // turn. It is set at the end of every AI response to
-    // `promptTokens + completionTokens - reasoningTokens`, which
-    // includes the system prompt, tool definitions, all prior
-    // history, and the user message that triggered that turn.
-    //
-    // Summing `tokensIn` across history messages would be wildly
-    // wrong because each AI message's `tokensIn` is *cumulative* —
-    // it equals the full prompt size at the time that turn ran —
-    // so summing N turns approximates N × finalPromptTokens.
     if (session.contextTokens > 0) {
       return session.contextTokens +
           (incomingUserContent != null && incomingUserContent.isNotEmpty
               ? estimateTokens(incomingUserContent)
               : 0);
     }
-    // Fallback for sessions without a reported token count yet
-    // (fresh sessions, imported sessions, etc.). This still suffers
-    // from the cumulative-tokensIn problem for AI messages with
-    // recorded counts, but it's the best we can do without a
-    // real API measurement.
-    var total =
-        estimateTokens(systemPrompt ?? '') + estimateToolDefsTokens(toolDefs);
-    for (final m in history) {
-      total += _estimateMessageTokens(m);
+    Message? lastAiWithTokens;
+    for (final m in history.reversed) {
+      if (m.role == 'ai' && m.tokensIn + m.tokensOut > 0) {
+        lastAiWithTokens = m;
+        break;
+      }
+    }
+    int base;
+    if (lastAiWithTokens != null) {
+      base = lastAiWithTokens.tokensIn +
+          lastAiWithTokens.tokensOut -
+          lastAiWithTokens.reasoningTokens;
+    } else {
+      // No AI turn has reported tokens yet (fresh session, or every
+      // AI turn failed). Best-effort estimate from system + tools +
+      // raw message content. Skips AI messages because for them
+      // `tokensIn + tokensOut == 0` here, so `_estimateMessageTokens`
+      // falls through to the content-based branch which is correct.
+      base = estimateTokens(systemPrompt ?? '') +
+          estimateToolDefsTokens(toolDefs);
+      for (final m in history) {
+        base += _estimateMessageTokens(m);
+      }
     }
     if (incomingUserContent != null && incomingUserContent.isNotEmpty) {
-      total += estimateTokens(incomingUserContent);
+      base += estimateTokens(incomingUserContent);
     }
-    return total;
+    return base;
   }
 
-  int _estimateMessageTokens(Message message) {
+  /// Compute the reserve and threshold for auto-compaction.
+///
+/// Reserve is a flat 40k tokens — the headroom the compaction pass
+/// itself needs (a 20k summary output budget, doubled for the
+/// incoming turn the user is about to send). Intentionally
+/// constant across models; per-model reserve tuning is a separate
+/// design question and out of scope for the bug fixes here.
+///
+/// Threshold = `contextSize - reserve`. Auto-compact fires when
+/// projectedTokens > threshold.
+  static ({int reserve, int threshold}) computeCompactionReserveAndThreshold({
+    required int contextSize,
+  }) {
+    const reserve = 40000;
+    final threshold = contextSize - reserve;
+    return (reserve: reserve, threshold: threshold);
+  }
+
+  static int _estimateMessageTokens(Message message) {
     if (message.tokensIn + message.tokensOut > 0) {
       return (message.tokensIn + message.tokensOut - message.reasoningTokens)
           .clamp(0, 1 << 31);

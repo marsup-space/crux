@@ -266,43 +266,47 @@ class SessionController {
     }
     final msgs = messageCache[sessionId];
     if (msgs == null || msgs.isEmpty) return 0;
+    // Fallback: walk history backwards to find the LAST AI message
+    // with a reported `tokensIn`. That single value is the prompt
+    // size for that turn (already cumulative within the session) —
+    // summing it with later tool_call/tool messages would double-count
+    // (the AI's prompt already included those messages). Mirrors
+    // [ChatService.estimateProjectedContextTokens]'s fallback.
+    for (final m in msgs.reversed) {
+      if (m.role == 'ai' && m.tokensIn + m.tokensOut > 0) {
+        return m.tokensIn + m.tokensOut - m.reasoningTokens;
+      }
+    }
+    // No AI turn has reported tokens yet — best-effort estimate from
+    // raw content. Won't drift the auto-compact decision in practice
+    // because the projection will be much smaller than contextSize.
     var total = 0;
     for (final m in msgs) {
-      if (m.tokensIn + m.tokensOut > 0) {
-        total = m.tokensIn + m.tokensOut - m.reasoningTokens;
-      } else {
-        switch (m.role) {
-          case 'user':
-          case 'system':
-          case 'ai':
-          case 'compaction':
-            if (m.content.isNotEmpty) {
-              total += estimateTokens(m.content);
-            }
-            if (m.reasoningContent.isNotEmpty) {
-              total += estimateTokens(m.reasoningContent);
-            }
-          case 'tool_call':
-            if (m.content.isNotEmpty) {
-              total += estimateTokens(m.content);
-            }
-            if (m.reasoningContent.isNotEmpty) {
-              total += estimateTokens(m.reasoningContent);
-            }
-            for (final call in m.toolCalls) {
-              total += estimateToolRoundTripTokens(
-                toolName: call.name,
-                args: call.input,
-                resultOutput: '',
-              );
-            }
-          case 'tool':
+      switch (m.role) {
+        case 'user':
+        case 'system':
+        case 'ai':
+        case 'compaction':
+        case 'tool_call':
+          if (m.content.isNotEmpty) {
+            total += estimateTokens(m.content);
+          }
+          if (m.reasoningContent.isNotEmpty) {
+            total += estimateTokens(m.reasoningContent);
+          }
+          for (final call in m.toolCalls) {
             total += estimateToolRoundTripTokens(
-              toolName: '',
-              args: {},
-              resultOutput: m.content,
+              toolName: call.name,
+              args: call.input,
+              resultOutput: '',
             );
-        }
+          }
+        case 'tool':
+          total += estimateToolRoundTripTokens(
+            toolName: '',
+            args: {},
+            resultOutput: m.content,
+          );
       }
     }
     return total;

@@ -384,6 +384,51 @@ WHERE id = ?
         .write(db.SessionsCompanion(updatedAt: Value(nowMs)));
   }
 
+  /// Repair sessions whose `context_tokens` was reset to 0 by a
+  /// failed AI turn (network error / user ESC / stream interrupted
+  /// before the LLM reported any usage). The next-turn projection
+  /// uses `session.contextTokens` as its primary basis, so a 0
+  /// value would force it through the slow fallback path; the
+  /// displayed context bar would also inflate (summing tool
+  /// content on top of an effectively-missing last-AI prompt).
+  ///
+  /// Reconstruct `context_tokens` from the last AI message that
+  /// actually reported tokens: `tokens_in + tokens_out -
+  /// reasoning_tokens`. AI `tokens_in` is the per-turn prompt size
+  /// already cumulative within the session, so this single value
+  /// is the right projection. Idempotent — sessions that already
+  /// have `context_tokens > 0` are left alone.
+  ///
+  /// Returns the number of sessions repaired.
+  Future<int> repairStaleContextTokens() async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final result = await _db.customUpdate(
+      '''
+UPDATE sessions
+SET context_tokens = (
+  SELECT m.tokens_in + m.tokens_out - m.reasoning_tokens
+  FROM messages m
+  WHERE m.session_id = sessions.id
+    AND m.role = 'ai'
+    AND m.tokens_in > 0
+  ORDER BY m.id DESC
+  LIMIT 1
+),
+    updated_at = ?
+WHERE context_tokens = 0
+  AND EXISTS (
+    SELECT 1 FROM messages m
+    WHERE m.session_id = sessions.id
+      AND m.role = 'ai'
+      AND m.tokens_in > 0
+  )
+      ''',
+      variables: [Variable.withInt(nowMs)],
+      updates: {_db.sessions},
+    );
+    return result;
+  }
+
   /// Mark every session in [projectPath] with status
   /// [SessionStatus.running] as [SessionStatus.interrupted].
   ///

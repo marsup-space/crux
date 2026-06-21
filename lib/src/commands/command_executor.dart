@@ -6,6 +6,7 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
+import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../storage/session_store.dart';
@@ -1053,20 +1054,51 @@ class CommandExecutor {
       return;
     }
     final rt = ctx.runtime(ctx.currentSessionId!);
+    final session = ctx.currentSessionId == null
+        ? null
+        : ctx.sessions.firstWhere(
+            (s) => s.id == ctx.currentSessionId,
+            orElse: () => ctx.currentSession,
+          );
     final buf = StringBuffer();
     buf.writeln('Context:');
-    buf.writeln('  turnBaseTokens:        ${rt.turnBaseTokens}');
-    buf.writeln('  accumulatedToolTokens: ${rt.accumulatedToolTokens}');
-    buf.writeln('  contextTargetTokens:   ${rt.contextTargetTokens}');
+    buf.writeln('  session.contextTokens:  ${session?.contextTokens ?? 0}');
+    buf.writeln('  session.tokensIn:       ${session?.tokensIn ?? 0}');
+    buf.writeln('  session.tokensOut:      ${session?.tokensOut ?? 0}');
+    buf.writeln('  turnBaseTokens:         ${rt.turnBaseTokens}');
+    buf.writeln('  accumulatedToolTokens:  ${rt.accumulatedToolTokens}');
+    buf.writeln('  contextTargetTokens:    ${rt.contextTargetTokens}');
     buf.writeln(
-      '  contextDisplayTokens:  ${rt.contextDisplayTokens.toStringAsFixed(0)}',
+      '  contextDisplayTokens:   ${rt.contextDisplayTokens.toStringAsFixed(0)}',
     );
     buf.writeln(
-      '  effectiveStreamingMs:  ${rt.effectiveStreamingMs.toStringAsFixed(1)}',
+      '  effectiveStreamingMs:   ${rt.effectiveStreamingMs.toStringAsFixed(1)}',
     );
     buf.writeln(
-      '  thinkingDurationMs:    ${rt.thinkingDurationMs.toStringAsFixed(1)}',
+      '  thinkingDurationMs:     ${rt.thinkingDurationMs.toStringAsFixed(1)}',
     );
+    // Auto-compaction state. `modelConfig` and `systemPrompt` live
+    // on the provider/model config; pull them through the session's
+    // composite key so this dump works without a live LLM client.
+    final modelKey = session?.model ?? '';
+    final modelEntry = modelKey.isEmpty
+        ? null
+        : ctx.providerService.modelByCompositeKey(modelKey);
+    final contextSize = modelEntry?.contextSize;
+    final maxTokens = modelEntry?.maxTokens;
+    if (contextSize != null) {
+      final rt2 = ChatService.computeCompactionReserveAndThreshold(
+        contextSize: contextSize,
+      );
+      buf.writeln('  modelConfig.contextSize: $contextSize');
+      buf.writeln('  modelConfig.maxTokens:   ${maxTokens ?? "—"}');
+      buf.writeln('  compaction.reserve:      ${rt2.reserve}');
+      buf.writeln('  compaction.threshold:    ${rt2.threshold}');
+    } else {
+      buf.writeln('  modelConfig.contextSize: (model not resolved)');
+    }
+    buf.writeln('  turnsSinceLastCompact:   ${rt.turnsSinceLastCompact}');
+    buf.writeln('  compactFailures:         ${rt.consecutiveCompactionFailures}');
     ctx.showToast(buf.toString().trimRight());
   }
 

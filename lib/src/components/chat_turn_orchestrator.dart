@@ -172,40 +172,58 @@ class ChatTurnOrchestrator {
     if (rt.isResponding) return;
 
     if (allowAutoCompact && text != null && text.trim().isNotEmpty) {
-      final session = _sessionController.findSession(sessionId);
-      if (session != null) {
-        try {
-          final result = await _chatService.maybeAutoCompactIntoChildSession(
-            sessionId: sessionId,
-            session: session,
-            runtime: rt,
-            incomingUserContent: text,
-            toolDefs: _toolRegistry.toApiTools(),
-            onChildReady: (childSession, placeholderMessage) async {
-              await _switchToCompactingChild(childSession.id);
-            },
-          );
-          if (result != null) {
+      // Auto-compaction hysteresis: after a successful or failed
+      // compact, skip the auto-compact check for the next 3 user
+      // turns. Otherwise a child session that itself starts near the
+      // threshold would trigger another compact immediately, and
+      // another, etc. — burning summaries with no user-facing
+      // progress. Manual `/compact` bypasses this gate.
+      if (rt.turnsSinceLastCompact > 0) {
+        rt.turnsSinceLastCompact += 1;
+        if (rt.turnsSinceLastCompact > 3) {
+          rt.turnsSinceLastCompact = 0;
+        }
+      } else {
+        final session = _sessionController.findSession(sessionId);
+        if (session != null) {
+          try {
+            final result = await _chatService.maybeAutoCompactIntoChildSession(
+              sessionId: sessionId,
+              session: session,
+              runtime: rt,
+              incomingUserContent: text,
+              toolDefs: _toolRegistry.toApiTools(),
+              onChildReady: (childSession, placeholderMessage) async {
+                await _switchToCompactingChild(childSession.id);
+              },
+            );
+            if (result != null) {
+              rt.turnsSinceLastCompact = 1;
+              await _finishCompactingChild(
+                result.childSession.id,
+                status: SessionStatus.idle,
+              );
+              _showToast(
+                'Context was getting full — summarized and continued as ${result.childSession.displayId}',
+                mode: ToastMode.status,
+              );
+              _refresh();
+              await sendTurn(text: text, images: images, allowAutoCompact: false);
+              return;
+            }
+            // No compact needed this turn — make sure the hysteresis
+            // counter is fully reset so the next turn will re-check.
+            rt.turnsSinceLastCompact = 0;
+          } catch (e) {
+            rt.turnsSinceLastCompact = 1;
             await _finishCompactingChild(
-              result.childSession.id,
+              _sessionController.currentSessionId,
               status: SessionStatus.idle,
             );
-            _showToast(
-              'Context was getting full — summarized and continued as ${result.childSession.displayId}',
-              mode: ToastMode.status,
-            );
+            _showToast('Compaction failed: $e', mode: ToastMode.error);
             _refresh();
-            await sendTurn(text: text, images: images, allowAutoCompact: false);
             return;
           }
-        } catch (e) {
-          await _finishCompactingChild(
-            _sessionController.currentSessionId,
-            status: SessionStatus.idle,
-          );
-          _showToast('Compaction failed: $e', mode: ToastMode.error);
-          _refresh();
-          return;
         }
       }
     }
