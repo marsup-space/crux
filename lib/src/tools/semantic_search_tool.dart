@@ -9,13 +9,13 @@ import 'tool_def.dart';
 const _defaultTopK = 8;
 const _maxSnippetLineLength = 200;
 
-/// Semantic code search: finds code by CONCEPT, not exact regex match.
-///
-/// Use this for "what does X do / how does Y work" questions. For
-/// known identifiers or exact patterns, prefer the `grep` tool.
-class CodeSearchTool extends ToolDef {
+/// Semantic code search: finds code by CONCEPT, not by exact regex
+/// match. Use this for codebase exploration when you don't already
+/// know the exact identifier or file path. For known identifiers
+/// or file patterns, prefer `grep` or `glob`.
+class SemanticSearchTool extends ToolDef {
   @override
-  String get name => 'code_search';
+  String get name => 'semantic_search';
 
   @override
   CollapsedSummary collapsedSummary(
@@ -45,13 +45,13 @@ class CodeSearchTool extends ToolDef {
       'grep+read or glob+read loops. '
       ''
       'Unlike `grep` (literal string match) and `glob` (filename '
-      'pattern), code_search is SEMANTIC — it matches code by '
-      'CONCEPT, not by substring. Describe what you want in '
+      'pattern), semantic_search is SEMANTIC — it matches code '
+      'by CONCEPT, not by substring. Describe what you want in '
       'natural language and get relevant code even when the '
       'exact words don\'t appear in the source. '
       ''
-      'CALL MULTIPLE IN PARALLEL — issue all code_search calls '
-      'in one turn when investigating independent concepts.';
+      'CALL MULTIPLE IN PARALLEL — issue all semantic_search '
+      'calls in one turn when investigating independent concepts.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -112,10 +112,10 @@ class CodeSearchTool extends ToolDef {
       if (result.exitCode != 0) {
         final stderr = (result.stderr as String).trim();
         if (stderr.isEmpty) {
-          return ToolResult.error('code_search exited with code ${result.exitCode}');
+          return ToolResult.error('semantic_search exited with code ${result.exitCode}');
         }
         return ToolResult.error(
-          'code_search error: $stderr\n\n'
+          'semantic_search error: $stderr\n\n'
           'The underlying search engine is unavailable. '
           'Install it (e.g. `pip install semble`) and ensure the '
           '`semble` binary is on PATH or in third_party/bin/.',
@@ -125,8 +125,8 @@ class CodeSearchTool extends ToolDef {
       final stdout = result.stdout as String;
       if (stdout.isEmpty) {
         return ToolResult(
-          title: 'code_search: no matches',
-          output: '(no output from code_search)',
+          title: 'semantic_search: no matches',
+          output: '(no output from semantic_search)',
           metadata: {'totalMatches': 0},
         );
       }
@@ -136,7 +136,7 @@ class CodeSearchTool extends ToolDef {
         parsed = jsonDecode(stdout) as Map<String, dynamic>;
       } on FormatException catch (e) {
         return ToolResult.error(
-          'Failed to parse code_search output: $e\n\n'
+          'Failed to parse semantic_search output: $e\n\n'
           'Raw output (first 500 chars):\n'
           '${stdout.substring(0, stdout.length.clamp(0, 500))}',
         );
@@ -146,7 +146,7 @@ class CodeSearchTool extends ToolDef {
           (parsed['results'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
       if (results.isEmpty) {
         return ToolResult(
-          title: 'code_search: no matches',
+          title: 'semantic_search: no matches',
           output: 'No code matches "$query" in $path',
           metadata: {'totalMatches': 0},
         );
@@ -177,13 +177,13 @@ class CodeSearchTool extends ToolDef {
       }
 
       return ToolResult(
-        title: 'code_search: ${results.length} matches',
+        title: 'semantic_search: ${results.length} matches',
         output: lines.join('\n'),
         metadata: {'totalMatches': results.length},
       );
     } on ProcessException catch (e) {
       return ToolResult.error(
-        'Unable to start code_search: ${e.message}\n\n'
+        'Unable to start semantic_search: ${e.message}\n\n'
         'Install the underlying search engine (e.g. `pip install semble`) '
         'and ensure its binary is on PATH or in third_party/bin/. '
         'Set CRUX_THIRD_PARTY_BIN to override the search path.',

@@ -8,8 +8,9 @@ import 'file_read_tracker.dart';
 import 'glob_tool.dart';
 import 'grep_tool.dart';
 import 'powershell_tool.dart';
-import 'code_search_tool.dart';
+import 'find_similar_code_tool.dart';
 import 'read_tool.dart';
+import 'semantic_search_tool.dart';
 import 'session_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
@@ -63,7 +64,8 @@ class ToolRegistry {
     register(EditTool(tracker: tracker, lsp: lsp));
     register(GrepTool());
     register(GlobTool());
-    register(CodeSearchTool());
+    register(SemanticSearchTool());
+    register(FindSimilarCodeTool());
     register(WebFetchTool());
     register(SessionTool(store: sessionStore));
   }

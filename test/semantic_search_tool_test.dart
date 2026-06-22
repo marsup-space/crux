@@ -1,16 +1,16 @@
 import 'dart:io';
 
 import 'package:test/test.dart';
-import 'package:crux/src/tools/code_search_tool.dart';
+import 'package:crux/src/tools/semantic_search_tool.dart';
 import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
-  group('CodeSearchTool', () {
-    late CodeSearchTool tool;
+  group('SemanticSearchTool', () {
+    late SemanticSearchTool tool;
     late ToolContext ctx;
 
     setUp(() {
-      tool = CodeSearchTool();
+      tool = SemanticSearchTool();
       ctx = ToolContext(
         sessionId: 1,
         messageId: 1,
@@ -20,9 +20,8 @@ void main() {
     });
 
     test('has correct name and description triggers', () {
-      expect(tool.name, equals('code_search'));
-      expect(tool.description, contains('Default tool'));
-      expect(tool.description, contains('code_search'));
+      expect(tool.name, equals('semantic_search'));
+      expect(tool.description, contains('semantic_search'));
       // Implementation details shouldn't leak into the agent-facing
       // description.
       expect(tool.description, isNot(contains('semble')),
@@ -106,7 +105,7 @@ void main() {
         final sentinelContent = '''
 // This file exists only to verify that .gitignore is respected.
 // Token: $sentinelToken
-// If you see this content in a code_search result, .gitignore is broken.
+// If you see this content in a semantic_search result, .gitignore is broken.
 class SentinelForSembleTest {
   String marker = "$sentinelToken";
 }

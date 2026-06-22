@@ -747,12 +747,29 @@ class ChatService {
       var lerpStreamDone = false;
       Completer<void>? lerpDrainCompleter;
 
+      // Per-frame emission budget for the lerp timer. Tracks
+      // wall-clock excess over the 16 ms target — when a frame
+      // is slow (say 20 ms), the 4 ms gap accumulates here; once
+      // the accumulator hits another 16 ms, we have budget for
+      // one extra character on the next frame. This keeps the
+      // emission rate proportional to actual frame time, so a
+      // 30 fps frame emits more characters than a 60 fps frame
+      // (preserving the user-perceived streaming rate even
+      // during sustained slowdowns).
+      //
+      // Spec: "at least 1 character per frame, expecting 16ms.
+      // If the delta is 20ms we have a 4ms gap; if 4 frames
+      // each take 20ms we accumulate a 16ms gap, and on that
+      // frame the minimum to spit is 2 characters."
+      const double lerpBaselineMs = 16.0;
+      double lerpAccumulatedBudgetMs = 0.0;
+
       try {
         void ensureLerpTimer() {
           if (lerpTimer != null) return;
           lerpTimer = NoctermScheduler.instance.every(
             const Duration(milliseconds: 16),
-            (_) {
+            (tick) {
               FrameProfiler.instance.markTimer('lerp');
               // Stop emitting if the stream was cancelled.
               if (_cancelRequested.contains(sessionId)) {
@@ -776,12 +793,46 @@ class ChatService {
                 return;
               }
 
+              // Delta-time aware budget: convert the wall-clock
+              // tick delta to ms and accumulate the excess over
+              // the 16 ms baseline. We only credit positive excess
+              // — a faster-than-16ms frame doesn't carry debt
+              // forward, it just doesn't earn extra credit. The
+              // floor() gives us whole "16 ms slots" of credit;
+              // each slot is one extra character beyond the
+              // baseline. We never let the accumulator go below
+              // zero.
+              final deltaMs = tick.delta == Duration.zero
+                  ? lerpBaselineMs
+                  : tick.delta.inMicroseconds / 1000.0;
+              if (deltaMs > lerpBaselineMs) {
+                lerpAccumulatedBudgetMs += deltaMs - lerpBaselineMs;
+              }
+              final extraFromBudget =
+                  (lerpAccumulatedBudgetMs / lerpBaselineMs).floor();
+              lerpAccumulatedBudgetMs -= extraFromBudget * lerpBaselineMs;
+
+              // The two emission-rate knobs from the original
+              // implementation, kept for behavior parity:
+              //   * `alpha` — the per-frame fraction of
+              //     `totalPending` to emit (drains the queue
+              //     smoothly during a flood).
+              //   * `minCount` — the hard minimum per frame
+              //     (1 while streaming, 2 once the stream is
+              //     done and we're draining the tail).
               final alpha = lerpStreamDone ? 0.03 : 0.016;
-              final minCount = lerpStreamDone ? 2 : 1;
-              final count = (totalPending * alpha).ceil().clamp(
-                minCount,
-                totalPending,
-              );
+              final baselineMin = lerpStreamDone ? 2 : 1;
+              final floodCount = (totalPending * alpha).ceil();
+
+              // Combine: at least `baselineMin + extraFromBudget`
+              // characters, or the flood fraction of the queue,
+              // whichever is larger. The + extraFromBudget is
+              // the delta-time piece — the user-perceived rate
+              // of the reasoning block tracks wall-clock even
+              // when frames drift off 16 ms.
+              final minCount = baselineMin + extraFromBudget;
+              final count = (minCount > floodCount ? minCount : floodCount)
+                  .clamp(1, totalPending);
 
               var remaining = count;
 
@@ -1281,8 +1332,9 @@ class ChatService {
         // The detector + state machine in `shell_base.dart` /
         // `shell_guard.dart` increments the consecutive-violations
         // counter on every detected fallback. Here we reset it
-        // whenever a "proper" tool succeeded — one of grep / read /
-        // glob / code_search. Resetting here (after
+        // whenever a "proper" tool succeeded — any Tier 1 or Tier 2
+        // tool (semantic_search / find_similar_code / webfetch /
+        // read / write / edit / grep / glob). Resetting here (after
         // the tool loop, when every result has landed) means the
         // streak is broken by ANY successful proper-tool call in
         // the round, even if it ran in parallel with a shell call.
@@ -1298,10 +1350,16 @@ class ChatService {
         // stale "2nd" ordinal when the LLM just used read + bash
         // in the same round).
         const properToolsForShellGuardReset = <String>{
-          'grep',
+          // Tier 1 — semantic understanding.
+          'semantic_search',
+          'find_similar_code',
+          'webfetch',
+          // Tier 2 — file operations.
           'read',
+          'write',
+          'edit',
+          'grep',
           'glob',
-          'code_search',
         };
         var hadProperToolSuccess = false;
         for (final call in toolCalls) {
@@ -2329,7 +2387,7 @@ String _shellGuardToolNameForKind(ShellGuardKind kind) {
     case ShellGuardKind.grep:
       return 'grep';
     case ShellGuardKind.codeSearch:
-      return 'code_search';
+      return 'semantic_search';
     case ShellGuardKind.none:
       return '';
   }

@@ -8,7 +8,7 @@ import 'system_hint_bubble.dart';
 /// fallback. Shown right after the matching `tool_call` bubble in
 /// the chat history so the user can see at a glance which calls
 /// wasted effort on shell-native operations that should have used
-/// `read` / `grep` / `glob` / `code_search`.
+/// a dedicated tool (`read` / `grep` / `glob` / `semantic_search` / ...).
 ///
 /// Distinct from the *in-context* reminder that the shell tool
 /// injects into the LLM's next turn (see `lib/src/tools/shell_guard.dart`).

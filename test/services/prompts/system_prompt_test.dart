@@ -103,7 +103,20 @@ void main() {
         worktree: '/tmp/x',
         sessionStarted: DateTime.utc(2026, 1, 1),
       );
-      expect(out, isNot(contains('   ')));
+      // When tuning is whitespace-only it must be dropped
+      // entirely, not rendered as an empty section.
+      expect(out, isNot(contains('Provider-level tuning')));
+      // The rendered prompt must be byte-identical to the
+      // case where no tuning was configured at all — that's
+      // the whole point of treating empty tuning as absent.
+      final noTuning = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, equals(noTuning));
     });
 
     test('byte-identical render across calls (cache stability)', () {

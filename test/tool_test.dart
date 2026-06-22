@@ -98,18 +98,19 @@ void main() {
           'edit',
           'grep',
           'glob',
-          'code_search',
+          'semantic_search',
+          'find_similar_code',
           'webfetch',
           'session',
         ]),
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 10);
+        expect(registry.all.length, 11);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 9);
+        expect(registry.all.length, 10);
       }
     });
   });

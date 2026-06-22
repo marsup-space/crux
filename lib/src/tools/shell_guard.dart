@@ -25,8 +25,9 @@
 /// reads the current counter from the session runtime passed in
 /// via `ToolContext.sessionRuntime` to decide severity, then
 /// increments the counter on every violation. The chat service
-/// resets the counter to 0 whenever a proper-tool call (`grep`,
-/// `read`, `glob`, `code_search`) succeeds.
+/// resets the counter to 0 whenever a proper-tool call (any
+/// Tier 1 or Tier 2 tool — `semantic_search`, `find_similar_code`,
+/// `webfetch`, `read`, `write`, `edit`, `grep`, `glob`) succeeds.
 library;
 
 // =============================================================================
@@ -70,7 +71,7 @@ class ShellGuardVerdict {
   final String what;
 
   /// Name of the dedicated Crux tool the LLM should call instead
-  /// (`read`, `grep`, `glob`, `code_search`).
+  /// (`read`, `grep`, `glob`, `semantic_search`, ...).
   final String toolName;
 
   /// Short canonical example of the anti-pattern → dedicated-tool
@@ -198,7 +199,7 @@ const _posixGrepVerbs = <String>{
 /// Classify a bash command. Walks the segments split by `|`,
 /// `;`, `&&`, `||`, newlines; the first segment whose first
 /// non-redirect verb matches a violation set wins. Special-cases
-/// the `search-verb | head/tail` anti-pattern as `code_search`
+/// the `search-verb | head/tail` anti-pattern as `semantic_search`
 /// before falling through to the verb classifier.
 ///
 /// Per-segment rules (enforced by [_classifySegment]):
@@ -228,7 +229,7 @@ const _posixGrepVerbs = <String>{
 ShellGuardKind _classifyPosix(String command) {
   // Code-search pipe anti-pattern: search-verb | head/tail/…
   // is overwhelmingly "I want to see a few code snippets", which
-  // `code_search` answers in one call. Detected first so the
+  // `semantic_search` answers in one call. Detected first so the
   // verb-classifier doesn't fall through to `grep` (which would
   // technically also be correct but is much more wasteful).
   if (_isCodeSearchPipe(command, _posixGrepVerbs)) {
@@ -702,7 +703,7 @@ bool _isEnvAssignment(String token) {
 /// (e.g. `rg "auth" lib/ | head -10`, `grep -rn "TODO" src/ | tail`).
 /// These pipelines almost always mean "I want to see a few
 /// matching snippets" — the semantic-search use case that
-/// `code_search` was built for.
+/// `semantic_search` was built for.
 ///
 /// [searchVerbs] is the set of "left-side" verbs that trigger
 /// the pattern (ripgrep/grep on POSIX; Select-String/findstr on
@@ -786,7 +787,7 @@ String _toolForKind(ShellGuardKind kind) {
     case ShellGuardKind.grep:
       return 'grep';
     case ShellGuardKind.codeSearch:
-      return 'code_search';
+      return 'semantic_search';
   }
 }
 
@@ -799,7 +800,7 @@ String _exampleForKind(ShellGuardKind kind) {
     case ShellGuardKind.grep:
       return 'grep / rg / ack / ag → grep';
     case ShellGuardKind.codeSearch:
-      return 'rg "concept" | head · find … | head → code_search';
+      return 'rg "concept" | head · find … | head → semantic_search';
     case ShellGuardKind.none:
       return '';
   }
@@ -909,7 +910,7 @@ String _buildBody(ShellGuardVerdict verdict) {
       ? ''
       : '\n\nYour command was:\n  ${verdict.command.trim()}';
 
-  // The user explicitly asked for code_search to be emphasised
+  // The user explicitly asked for semantic_search to be emphasised
   // ("especially code search"), so the body always mentions it
   // as the preferred surface for "how does X work" /
   // "find code that does X" questions, regardless of which
@@ -922,9 +923,9 @@ String _buildBody(ShellGuardVerdict verdict) {
       'shell-quoting bugs.\n'
       '\n'
       'For "how does X work" / "find code that does X" questions, '
-      'prefer `code_search` (semantic search) over `grep` + `read` '
-      'loops — one code_search call returns ranked snippets in '
-      '~600ms instead of the bash+rg+read dance.\n'
+      'prefer `semantic_search` (semantic search) over `grep` + '
+      '`read` loops — one semantic_search call returns ranked '
+      'snippets in ~600ms.\n'
       '\n'
       'Reserve `bash` for shell-native tasks: builds, tests, '
       'package managers, git, and process control.$commandEcho';

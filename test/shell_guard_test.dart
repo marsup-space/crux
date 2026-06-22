@@ -289,8 +289,8 @@ echo "(should be empty)"''';
       }
     });
 
-    test('rg/grep "concept" | head → code_search (NOT grep)', () {
-      // Only rg/grep/ack (search verbs) trigger the code_search
+    test('rg/grep "concept" | head → semantic_search (NOT grep)', () {
+      // Only rg/grep/ack (search verbs) trigger the semantic_search
       // anti-pattern. List verbs (ls/find/tree) + truncator fall
       // through to the verb classifier and are flagged as glob
       // — see the dedicated test below for those.
@@ -308,16 +308,16 @@ echo "(should be empty)"''';
         );
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.codeSearch, reason: 'cmd="$cmd"');
-        expect(v.toolName, 'code_search', reason: 'cmd="$cmd"');
+        expect(v.toolName, 'semantic_search', reason: 'cmd="$cmd"');
       }
     });
 
     test(
-      'ls | head and find | head are flagged as glob (NOT code_search)',
+      'ls | head and find | head are flagged as glob (NOT semantic_search)',
       () {
         // `ls ... | head` and `find ... | head` are
         // list/truncate patterns, not code search. Mixing list
-        // verbs into the code-search check produced false
+        // verbs into the semantic-search check produced false
         // positives on common verification scripts like
         // `ls -la build/ && echo '---' && binary --version | head -5`.
         const cases = <String>[
@@ -508,13 +508,13 @@ echo "(should be empty)"''';
           final cmd = '''git commit -m 'feat(tools): shell-tool fallback guard
 
 Catches the LLM using bash/cmd/powershell for ops that have a dedicated
-tool (read/grep/glob/code_search) and applies a three-tier escalation.
+tool (read/grep/glob/semantic_search) and applies a three-tier escalation.
 
 The detector covers:
   * read:    cat/head/tail/less/sed/wc/file/stat/diff/…
   * glob:    ls/find/tree/du + Get-ChildItem/dir on Windows
   * grep:    grep/rg/ack/ag + Select-String/findstr on Windows
-  * codeSearch: rg "concept" | head, find … | head → code_search
+  * codeSearch: rg "concept" | head, find … | head → semantic_search
 
 Smart skips: input redirects/heredocs (< anywhere), no-arg tail,
 env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
@@ -566,7 +566,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       );
 
       test(
-        'code_search pipe anti-pattern does NOT match when pipe is inside quotes',
+        'semantic_search pipe anti-pattern does NOT match when pipe is inside quotes',
         () {
           // Without quote-awareness, the inner `|` would split
           // the segments and `rg ... | head` would match.
@@ -666,7 +666,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       }
     });
 
-    test('Select-String | Select-Object → code_search', () {
+    test('Select-String | Select-Object → semantic_search', () {
       final v = detectShellGuard(
         r'Select-String -Path "*.cs" -Pattern "TODO" | Select-Object -First 10',
         isWindows: true,
@@ -776,14 +776,14 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(() => renderShellGuardEmbedded(v), throwsStateError);
     });
 
-    test('embedded reminder mentions code_search prominently', () {
+    test('embedded reminder mentions semantic_search prominently', () {
       final v = detectShellGuard(
         'cat lib/main.dart',
         isWindows: false,
         currentStreak: 0,
       )!;
       final out = renderShellGuardEmbedded(v);
-      expect(out, contains('code_search'));
+      expect(out, contains('semantic_search'));
     });
 
     test('embedded reminder suggests the correct dedicated tool', () {
@@ -796,7 +796,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(out, contains('`read`'));
     });
 
-    test('code_search verdict highlights the semantic-search benefit', () {
+    test('semantic_search verdict highlights the semantic-search benefit', () {
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
@@ -804,7 +804,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       )!;
       expect(v.kind, ShellGuardKind.codeSearch);
       final out = renderShellGuardEmbedded(v);
-      expect(out, contains('code_search'));
+      expect(out, contains('semantic_search'));
       expect(out, contains('semantic search'));
     });
   });
@@ -847,14 +847,14 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(out, contains('cat lib/main.dart'));
     });
 
-    test('reject tier emphasises code_search (per the user request)', () {
+    test('reject tier emphasises semantic_search (per the user request)', () {
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
         currentStreak: 2,
       )!;
       final out = renderShellGuardRejection(v);
-      expect(out, contains('code_search'));
+      expect(out, contains('semantic_search'));
     });
   });
 
@@ -907,7 +907,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       );
     });
 
-    test('code_search verdict surfaces the right tool name', () {
+    test('semantic_search verdict surfaces the right tool name', () {
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
@@ -915,7 +915,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       )!;
       expect(
         renderShellGuardBubbleLabel(v),
-        'shell-tool fallback · 1st · use `code_search` instead',
+        'shell-tool fallback · 1st · use `semantic_search` instead',
       );
     });
   });

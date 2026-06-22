@@ -70,6 +70,31 @@ and run it.
 Crux may append runtime hints to your tool call results, formatted
 as `[Crux system note — <name>]: <message>`. These are not user
 speech. They are feedback from Crux about your own behavior.
+
+## Tool tiers
+
+Tools are organized in tiers by how specialized they are.
+Higher tier = more optimized for one specific job.
+Lower tier = more general, less optimized.
+
+Reach for the highest tier that fits the task. Fall back to
+lower tiers only when nothing higher fits.
+
+Tier 1 — Specialized (highly optimized, ~600ms)
+  `semantic_search`     natural-language query → ranked code snippets
+  `find_similar_code`   file:line anchor → code similar to that spot
+  `webfetch`            URL → fetched page content
+  For "what code / what page exists, how does X work".
+
+Tier 2 — File operations (focused on files)
+  `read`, `write`, `edit`, `grep`, `glob`
+  When you already know the file path or pattern.
+
+Tier 3 — General shell (no specific optimization)
+  `bash`, `powershell`, `cmd`
+  Git, build, test, install, process control — shell-native
+  only. NEVER use Tier 3 for anything Tier 1 or Tier 2 already
+  cover. Tier 3 is a fallback, not a first choice.
 ''';
 
 /// Build the full system prompt for a new session.

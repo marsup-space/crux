@@ -137,15 +137,17 @@ class SessionRuntimeState {
   /// session. Powers the `shell-tool fallback` guard in
   /// `lib/src/tools/shell_guard.dart` — catches the model using
   /// `bash`/`cmd`/`powershell` for operations that have a dedicated
-  /// tool (`read` / `grep` / `glob` / `code_search`) and escalates
-  /// through three tiers: mild (run + reminder), firm (run + firmer
-  /// reminder), reject (block the call).
+  /// tool (any Tier 1 or Tier 2 tool — `semantic_search`,
+  /// `find_similar_code`, `webfetch`, `read`, `write`, `edit`,
+  /// `grep`, `glob`) and escalates through three tiers: mild
+  /// (run + reminder), firm (run + firmer reminder), reject
+  /// (block the call).
   ///
   /// Lifecycle (managed by `ShellBase` and `chat_service`):
   ///   - `+1` when a shell call is detected as a fallback violation
   ///     (see `shell_guard.dart` for the detection rules)
   ///   - reset to `0` when a "proper" tool call succeeds — i.e. one
-  ///   of `grep`, `read`, `glob`, `code_search`.
+  ///   of the Tier 1 or Tier 2 tools listed above.
   ///     The chat service does this reset after each tool round so
   ///     a single `read` between two bash+cat fallbacks breaks the
   ///     streak.
