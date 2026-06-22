@@ -39,13 +39,14 @@ class CodeSearchTool extends ToolDef {
 
   @override
   String get description =>
-      '🚨 CRITICAL — for any "what does this code do / how does X '
-      'work / find the code that does Y" question, USE THIS TOOL '
-      'FIRST. It ranks the most relevant snippets across the whole '
+      '🚨 CRITICAL — for ANY question that requires finding or '
+      'understanding code in this codebase, USE THIS TOOL FIRST. '
+      'It ranks the most relevant snippets across the whole '
       'codebase in ~600ms — far faster and more accurate than '
       'guessing paths and reading file-by-file. Reaching for `bash` '
       'or `grep` first is the #1 way to make the user wait through '
-      'a slow, token-wasting exploration loop. '
+      'a slow, token-wasting exploration loop. See TRIGGER PHRASES '
+      'below for the full set of question shapes this tool covers. '
       ''
       'Default tool for "what does this code do" questions. '
       'Semantic code search that finds code by CONCEPT, not by exact '
