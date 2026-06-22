@@ -19,7 +19,6 @@ import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
 import 'shell_guard_bubble.dart';
 import 'tool_guard_bubble.dart';
-import 'ui/button.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -39,7 +38,6 @@ class MessageBubble extends StatelessComponent {
   /// [ToolCallData] and the paired result [Message] (if any).
   final void Function(ToolCallData toolCall, Message? pairedResult)?
   onToolCallTap;
-  final void Function(int sessionId)? onOpenPreviousSession;
 
   /// Callback when the user clicks a `ses://<id>` reference in the
   /// assistant's prose. Forwarded to [HighlightedMarkdownText] so
@@ -58,7 +56,6 @@ class MessageBubble extends StatelessComponent {
     this.highlightText,
     this.reasoningPresets,
     this.onToolCallTap,
-    this.onOpenPreviousSession,
     this.onSessionLinkTap,
   });
 
@@ -293,7 +290,6 @@ class MessageBubble extends StatelessComponent {
   Component _buildCompactionBubble(BuildContext context) {
     final theme = CruxTheme.of(context);
     final meta = _compactionMeta();
-    final sourceSessionId = _sourceSessionIdFromMeta(meta);
     final status = meta['status'] as String? ?? 'complete';
     final label = switch (status) {
       'compacting' => ' Compacting: ',
@@ -305,40 +301,28 @@ class MessageBubble extends StatelessComponent {
       'compacting' => theme.warning,
       _ => theme.info,
     };
+    // The "back to source session" link used to live here as a Button.
+    // It now lives at the top of the session (see [ChatHistory] and
+    // [CompactedSessionHeader]) so the user sees it immediately on
+    // arrival instead of having to scroll past the summary to find it.
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Expanded(
-                child: HighlightedMarkdownText(
-                  message.content,
-                  highlightText: highlightText,
-                ),
-              ),
-            ],
-          ),
-          if (sourceSessionId != null)
-            Container(
-              padding: EdgeInsets.only(left: 1, top: 1),
-              child: Button(
-                label: 'Open previous session #$sourceSessionId',
-                onPressed: onOpenPreviousSession == null
-                    ? null
-                    : () => onOpenPreviousSession!(sourceSessionId),
-                color: theme.buttonText,
-              ),
+          Text(
+            label,
+            style: TextStyle(
+              color: labelColor,
+              fontWeight: FontWeight.bold,
             ),
+          ),
+          Expanded(
+            child: HighlightedMarkdownText(
+              message.content,
+              highlightText: highlightText,
+            ),
+          ),
         ],
       ),
     );
@@ -353,13 +337,6 @@ class MessageBubble extends StatelessComponent {
       return const {};
     }
     return const {};
-  }
-
-  int? _sourceSessionIdFromMeta(Map<String, dynamic> meta) {
-    final value = meta['sourceSessionId'];
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value);
-    return null;
   }
 
   Component _buildToolCallWithContent(BuildContext context) {

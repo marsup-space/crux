@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import '../models/message.dart';
@@ -12,6 +14,7 @@ import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'btw_bubble.dart';
 import 'chat_turn_orchestrator.dart';
+import 'compacted_session_header.dart';
 import 'message_bubble.dart';
 import 'queued_messages_bubble.dart';
 import 'session_controller.dart';
@@ -154,6 +157,23 @@ class _ChatHistoryState extends State<ChatHistory> {
     final userItemIndices = <int>[];
     final userItemLabels = <String>[];
 
+    // If the current session was created via compaction, prepend a
+    // header that links back to the source session. Goes BEFORE any
+    // message — including the compaction summary itself — so the
+    // user sees the link immediately on arrival without scrolling.
+    final compactionSource = _findCompactionSource(messages);
+    if (compactionSource != null) {
+      items.add(
+        (ctx) => CompactedSessionHeader(
+          sourceSessionId: compactionSource,
+          onSessionLinkTap: component.onSessionLinkTap,
+        ),
+      );
+      items.add(
+        (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+      );
+    }
+
     // Resolve the reasoning-effort display mapping once for the
     // entire build. The mapping depends only on the current
     // session's model/provider (see [_currentReasoningPresets]),
@@ -201,17 +221,6 @@ class _ChatHistoryState extends State<ChatHistory> {
           reasoningPresets: reasoningPresets,
           onToolCallTap: component.onToolCallTap,
           onSessionLinkTap: component.onSessionLinkTap,
-          onOpenPreviousSession: (targetSessionId) {
-            component.sessionController.switchSession(targetSessionId).then((
-              error,
-            ) {
-              if (error != null) {
-                component.showToast(error, mode: ToastMode.error);
-                return;
-              }
-              component.refresh();
-            });
-          },
         );
       });
 
@@ -469,6 +478,36 @@ class _ChatHistoryState extends State<ChatHistory> {
       return 'Loading $total messages…';
     }
     return 'Loading messages…';
+  }
+
+  /// Find the session id of the conversation this session was
+  /// compacted from, if any.
+  ///
+  /// Compaction creates a new session whose first message has role
+  /// `compaction` with `meta.sourceSessionId` pointing at the old
+  /// session. We pick the FIRST match — the original source — so
+  /// re-compaction of the new session still points back to the
+  /// pre-compaction history rather than the intermediate summary.
+  ///
+  /// `meta` is a JSON-encoded string; tolerate unparseable values
+  /// gracefully (older rows, future schema drift).
+  int? _findCompactionSource(List<Message> messages) {
+    for (final m in messages) {
+      if (m.role != 'compaction' || m.meta.isEmpty) continue;
+      try {
+        final decoded = jsonDecode(m.meta);
+        if (decoded is! Map<String, dynamic>) continue;
+        final value = decoded['sourceSessionId'];
+        if (value is int) return value;
+        if (value is String) {
+          final parsed = int.tryParse(value);
+          if (parsed != null) return parsed;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   /// Resolve the display label for an internal reasoning effort value,
