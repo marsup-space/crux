@@ -53,20 +53,26 @@ class ToolRegistry {
     required SessionStore sessionStore,
     dynamic lsp,
   }) {
+    // Tool registration order = order the LLM sees in the API tools list.
+    // Tier 1 first so the model's first scan of the list lands on the
+    // specialized tools (see the "Tool tiers" + "Codebase exploration"
+    // rules in the system prompt), Tier 2 next (file ops the agent
+    // needs once it has a specific path or pattern in hand), then
+    // Tier 3 (general shell — last resort), then meta.
+    register(SemanticSearchTool());
+    register(FindSimilarCodeTool());
+    register(WebFetchTool());
+    register(ReadTool(tracker: tracker, lsp: lsp));
+    register(WriteTool(tracker: tracker, lsp: lsp));
+    register(EditTool(tracker: tracker, lsp: lsp));
+    register(GrepTool());
+    register(GlobTool());
     if (Platform.isWindows) {
       register(CmdTool());
       register(PowerShellTool());
     } else {
       register(BashTool());
     }
-    register(ReadTool(tracker: tracker, lsp: lsp));
-    register(WriteTool(tracker: tracker, lsp: lsp));
-    register(EditTool(tracker: tracker, lsp: lsp));
-    register(GrepTool());
-    register(GlobTool());
-    register(SemanticSearchTool());
-    register(FindSimilarCodeTool());
-    register(WebFetchTool());
     register(SessionTool(store: sessionStore));
   }
 }
