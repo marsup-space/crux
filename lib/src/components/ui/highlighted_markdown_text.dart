@@ -6,7 +6,9 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'highlight_service.dart';
+import 'markdown_isolate.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/frame_profiler.dart';
 
 class HighlightedMarkdownText extends StatefulComponent {
   const HighlightedMarkdownText(
@@ -18,6 +20,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.maxLines,
     this.styleSheet,
     this.highlightText,
+    this.useIsolate = false,
   });
 
   final String data;
@@ -28,30 +31,74 @@ class HighlightedMarkdownText extends StatefulComponent {
   final HighlightMarkdownStyleSheet? styleSheet;
   final String? highlightText;
 
+  /// Whether to parse markdown on a background isolate.
+  /// Defaults to `false` — sync parsing is the simpler
+  /// path and works well for the common case of short
+  /// static content (a finished message, a tool result,
+  /// a TLDR summary).
+  ///
+  /// Set to `true` for content that updates at frame
+  /// rate — i.e. the streaming reasoning block in the
+  /// live bubble, where the markdown parse would
+  /// otherwise run on the main isolate every frame and
+  /// starve the chat panel. The streaming bubble is
+  /// the only call site that currently opts in; the rest
+  /// of the app is fine with sync.
+  final bool useIsolate;
+
   @override
   State<HighlightedMarkdownText> createState() =>
       _HighlightedMarkdownTextState();
 }
 
 class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
+  /// Latest parse result from the worker isolate (or
+  /// the synchronous path). The widget renders whatever
+  /// is here — the main isolate does no parsing, no
+  /// plain-text fallback, no incremental merging. The
+  /// worker returns the parsed result and the main
+  /// isolate paints it; the latest result always wins.
+  ///
+  /// This is the simplest design that achieves the
+  /// user's stated goal: "main thread does nothing,
+  /// patient wait for the worker, send the latest
+  /// content after the worker returns". All the
+  /// in-flight coalescing / plain-text tail tricks
+  /// tried in earlier iterations were attempts to
+  /// bridge the data-arrives-faster-than-parse gap,
+  /// but the cleaner outcome is to just accept that
+  /// the parsed view is always a few chars behind
+  /// the raw stream — the user sees formatted markdown
+  /// once the parse lands, and the unparsed tail
+  /// simply isn't visible until the next parse.
   List<InlineSpan> _spans = const [];
+
+  /// True while a parse is in flight on the worker
+  /// isolate. Used for simple coalescing: while one
+  /// parse is running, the main isolate doesn't enqueue
+  /// another — the in-flight parse covers "all data so
+  /// far", and we submit a follow-up from the .then()
+  /// callback if the data has changed in the meantime.
+  bool _inFlight = false;
+
+  /// Last parameters seen by the build. Used to
+  /// short-circuit re-submitting a parse when nothing
+  /// has actually changed (e.g. the chat panel rebuilds
+  /// for an unrelated reason).
   int? _lastMaxWidth;
   String? _lastData;
   HighlightMarkdownStyleSheet? _lastStyleSheet;
-  String? _lastHighlightText;
   String? _lastThemeId;
-
-  List<InlineSpan> _parseMarkdown(CruxThemeData theme, {int? maxWidth}) {
-    return parseMarkdownToInlineSpans(
-      component.data,
-      theme,
-      maxWidth: maxWidth,
-      styleSheet: component.styleSheet,
-    );
-  }
 
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'highlightedMarkdownText.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final theme = CruxTheme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -59,25 +106,60 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             ? constraints.maxWidth.toInt()
             : null;
 
+        final data = component.data;
+        final styleSheet = component.styleSheet;
         final highlight = component.highlightText;
-        if (component.data != _lastData ||
-            component.styleSheet != _lastStyleSheet ||
+
+        final dataChanged = data != _lastData;
+        final paramsChanged = styleSheet != _lastStyleSheet ||
             theme.id != _lastThemeId ||
-            maxWidth != _lastMaxWidth ||
-            highlight != _lastHighlightText) {
-          _lastData = component.data;
-          _lastStyleSheet = component.styleSheet;
+            maxWidth != _lastMaxWidth;
+        if (dataChanged || paramsChanged) {
+          _lastData = data;
+          _lastStyleSheet = styleSheet;
           _lastMaxWidth = maxWidth;
-          _lastHighlightText = highlight;
           _lastThemeId = theme.id;
-          _spans = _parseMarkdown(theme, maxWidth: maxWidth);
-          if (highlight != null && highlight.isNotEmpty) {
-            _spans = _applyHighlight(_spans, highlight, theme);
+          if (component.useIsolate) {
+            // Fire-and-forget. The worker processes
+            // requests in order, so the latest result
+            // is the one we want. If a parse is already
+            // in flight, the .then() callback checks
+            // whether data has changed and submits a
+            // follow-up — no need to enqueue here.
+            _scheduleParse(theme, data, maxWidth);
+          } else {
+            // Sync path — used for short static content
+            // where a one-shot parse is cheaper than
+            // spinning up the isolate. The result is
+            // cached in `_spans` and reused on every
+            // rebuild until `data` changes.
+            _spans = parseMarkdownToInlineSpans(
+              data,
+              theme,
+              maxWidth: maxWidth,
+              styleSheet: styleSheet,
+            );
           }
         }
 
+        // Apply search highlight as a sync overlay. Cheap
+        // (no parse, just a flat scan + style merge). The
+        // highlight is independent of the parse so we don't
+        // need to invalidate the parsed cache when it
+        // changes.
+        var renderedSpans = _spans;
+        if (highlight != null && highlight.isNotEmpty) {
+          renderedSpans = _applyHighlight(
+            _spans,
+            highlight,
+            theme,
+            selectionColor: theme.selection,
+            onSelection: (c) => theme.onColor(c),
+          );
+        }
+
         return RichText(
-          text: TextSpan(children: _spans),
+          text: TextSpan(children: renderedSpans),
           textAlign: component.textAlign,
           softWrap: component.softWrap,
           overflow: component.overflow,
@@ -87,6 +169,80 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         );
       },
     );
+  }
+
+  /// Submit a parse request to the worker. The result is
+  /// applied in [_applyParse] when it arrives. If a
+  /// parse is already in flight, this is a no-op — the
+  /// in-flight parse covers "all data so far", and
+  /// [_applyParse] will submit a follow-up if more data
+  /// arrived in the meantime.
+  void _scheduleParse(
+    MarkdownThemeFields theme,
+    String data,
+    int? maxWidth,
+  ) {
+    if (_inFlight) return;
+    _inFlight = true;
+    _drainParse(theme, data, maxWidth);
+  }
+
+  /// Send a single parse to the worker. On success,
+  /// apply the result and check whether the data has
+  /// grown since submission; if so, submit a follow-up.
+  /// On failure, just clear `_inFlight` — the next
+  /// build will retry.
+  void _drainParse(
+    MarkdownThemeFields theme,
+    String data,
+    int? maxWidth,
+  ) {
+    MarkdownIsolate.instance.ensureSpawned().then((_) async {
+      try {
+        final response = await MarkdownIsolate.instance.parse(
+          text: data,
+          parsedIndex: 0,
+          maxWidth: maxWidth,
+          theme: buildMarkdownParseTheme(theme),
+        );
+        if (!mounted) {
+          _inFlight = false;
+          return;
+        }
+        _applyParse(response, data);
+        // If data has grown since the parse was
+        // submitted, fire a follow-up for the latest
+        // text. This is the only place we enqueue a
+        // new parse while `_inFlight` was true — we
+        // recurse into `_drainParse` directly rather
+        // than going through `_scheduleParse` (which
+        // would short-circuit on the in-flight check).
+        final current = _lastData ?? '';
+        if (current != data) {
+          _drainParse(theme, current, maxWidth);
+        } else {
+          _inFlight = false;
+        }
+      } catch (_) {
+        // Errors are swallowed: a failed parse simply
+        // means the user keeps seeing whatever the
+        // last successful result was, until the next
+        // data change retries.
+        _inFlight = false;
+      }
+    });
+  }
+
+  /// Apply a parse response. Always takes the result —
+  /// the "latest wins" semantics the user asked for.
+  /// A stale result (i.e. the data has since changed)
+  /// is still applied, since the rendering cost is
+  /// trivial and the user would rather see slightly
+  /// stale formatting than nothing.
+  void _applyParse(MarkdownParseResponse response, String submittedFor) {
+    if (!mounted) return;
+    _spans = reconstructInlineSpans(response.spans);
+    setState(() {});
   }
 }
 
@@ -169,8 +325,10 @@ String _stripCodeBlockRowChrome(String line) {
 List<InlineSpan> _applyHighlight(
   List<InlineSpan> spans,
   String search,
-  CruxThemeData theme,
-) {
+  MarkdownThemeFields theme, {
+  required Color selectionColor,
+  required Color Function(Color) onSelection,
+}) {
   final flat = _flattenSpans(spans);
   final plainText = flat.map((e) => e.$1).join();
 
@@ -195,7 +353,9 @@ List<InlineSpan> _applyHighlight(
       );
       final after = end < spanEnd ? span.$1.substring(end - spanStart) : '';
       if (before.isNotEmpty) result.add((before, span.$2));
-      result.add((match, _mergedWithHighlight(span.$2, theme)));
+      result.add(
+        (match, _mergedWithHighlight(span.$2, selectionColor, onSelection)),
+      );
       if (after.isNotEmpty) result.add((after, span.$2));
     }
     pos = spanEnd;
@@ -301,10 +461,14 @@ String _norm(String s) =>
   return null;
 }
 
-TextStyle? _mergedWithHighlight(TextStyle? base, CruxThemeData theme) {
+TextStyle? _mergedWithHighlight(
+  TextStyle? base,
+  Color selectionColor,
+  Color Function(Color) onSelection,
+) {
   return TextStyle(
-    color: theme.onColor(theme.selection),
-    backgroundColor: theme.selection,
+    color: onSelection(selectionColor),
+    backgroundColor: selectionColor,
     fontWeight: FontWeight.bold,
     fontStyle: base?.fontStyle,
     decoration: base?.decoration,
@@ -325,12 +489,17 @@ TextStyle? _mergedWithHighlight(TextStyle? base, CruxThemeData theme) {
 /// value. [styleSheet] overrides the theme-derived default styles.
 List<InlineSpan> parseMarkdownToInlineSpans(
   String text,
-  CruxThemeData theme, {
+  MarkdownThemeFields theme, {
   int? maxWidth,
   HighlightMarkdownStyleSheet? styleSheet,
 }) {
-  final effectiveStyleSheet =
-      styleSheet ?? HighlightMarkdownStyleSheet.fromTheme(theme);
+  // Build the per-call style sheet from the theme when none
+  // is supplied. The [HighlightMarkdownStyleSheet] factory
+  // reads the same `MarkdownThemeFields` getters the
+  // visitor does, so a [WorkerTheme] from the markdown
+  // isolate also works here.
+  final effectiveStyleSheet = styleSheet ??
+      HighlightMarkdownStyleSheet.fromThemeFields(theme);
   final document = md.Document(
     extensionSet: md.ExtensionSet.gitHubFlavored,
     encodeHtml: false,
@@ -400,8 +569,24 @@ class HighlightMarkdownStyleSheet {
     return _build(theme, theme.markdownText);
   }
 
+  /// Build from any [MarkdownThemeFields]. Used by the
+  /// worker isolate (which has a [WorkerTheme] that
+  /// implements the interface but isn't a full
+  /// [CruxThemeData]).
+  factory HighlightMarkdownStyleSheet.fromThemeFields(
+    MarkdownThemeFields theme,
+  ) {
+    return _build(theme, theme.markdownText);
+  }
+
+  factory HighlightMarkdownStyleSheet.thinkingFromFields(
+    MarkdownThemeFields theme,
+  ) {
+    return _build(theme, theme.thinkingExpandedText);
+  }
+
   static HighlightMarkdownStyleSheet _build(
-    CruxThemeData theme,
+    MarkdownThemeFields theme,
     Color baseColor,
   ) {
     return HighlightMarkdownStyleSheet(
@@ -470,7 +655,7 @@ class _HighlightMarkdownVisitor {
   });
 
   final HighlightMarkdownStyleSheet styleSheet;
-  final CruxThemeData theme;
+  final MarkdownThemeFields theme;
   final int? maxWidth;
   int _listDepth = 0;
 

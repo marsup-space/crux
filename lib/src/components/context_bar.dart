@@ -77,7 +77,6 @@ class _ContextBarState extends State<ContextBar> {
   int? _currentSessionId;
 
   TickerToken? _animTicker;
-  DateTime? _lastTick;
 
   /// Direct reference to the render object. Set by the bridge
   /// widget during mount. We update this object in-place from
@@ -111,7 +110,6 @@ class _ContextBarState extends State<ContextBar> {
   /// Start the 16ms polling ticker if it isn't already running.
   void _startTimer() {
     if (_animTicker != null) return;
-    _lastTick = DateTime.now();
     _animTicker = TickerRegistry.instance.subscribe(
       name: 'contextAnim',
       interval: const Duration(milliseconds: 16),
@@ -122,7 +120,6 @@ class _ContextBarState extends State<ContextBar> {
   void _stopTimer() {
     _animTicker?.cancel();
     _animTicker = null;
-    _lastTick = null;
     _animState = _AnimState.idle;
     _coolingStartedAt = null;
   }
@@ -174,7 +171,7 @@ class _ContextBarState extends State<ContextBar> {
     )}k';
   }
 
-  void _tick() {
+  void _tick(Duration elapsed) {
     final sessionId = component.sessionController.currentSessionId;
     if (sessionId == null) {
       _stopTimer();
@@ -234,11 +231,15 @@ class _ContextBarState extends State<ContextBar> {
       return;
     }
 
-    final now = DateTime.now();
-    final dt = _lastTick == null
+    // Delta-time lerp: advance `_displayTokens` by an amount
+    // proportional to the actual wall-clock time since the
+    // previous tick, not a fixed 16 ms step. On a slow frame
+    // the lerp moves further; on a fast frame less. `_lerpSpeed`
+    // is the per-second rate of convergence, so multiplying by
+    // `dt` (seconds) keeps the unit math consistent.
+    final dt = elapsed == Duration.zero
         ? 0.016
-        : now.difference(_lastTick!).inMilliseconds / 1000.0;
-    _lastTick = now;
+        : elapsed.inMicroseconds / Duration.microsecondsPerSecond;
     _displayTokens += diff * (dt * _lerpSpeed);
     _pushToRenderObject();
   }

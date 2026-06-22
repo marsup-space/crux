@@ -1,6 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:textmate_highlight/textmate_highlight.dart' as tm;
-import '../../theme/crux_theme.dart';
+import 'markdown_isolate.dart' show MarkdownThemeFields;
 
 class HighlightService {
   static HighlightService? _instance;
@@ -143,7 +143,7 @@ class HighlightService {
   }
 }
 
-Map<String, Color> _scopeColorMap(CruxThemeData theme) => {
+Map<String, Color> _scopeColorMap(MarkdownThemeFields theme) => {
   'keyword': theme.highlightKeyword,
   'keyword.operator': theme.syntaxOperator,
   'operator': theme.syntaxOperator,
@@ -174,7 +174,7 @@ Map<String, Color> _scopeColorMap(CruxThemeData theme) => {
   'strong': theme.highlightFunction,
 };
 
-Color colorForScopes(List<String> scopes, CruxThemeData theme) {
+Color colorForScopes(List<String> scopes, MarkdownThemeFields theme) {
   final colors = _scopeColorMap(theme);
   for (final scope in scopes) {
     for (final fallback in _scopeFallbacks(scope)) {
@@ -198,7 +198,7 @@ List<String> _scopeFallbacks(String scope) {
 List<InlineSpan> highlightCode(
   String code,
   String language,
-  CruxThemeData theme,
+  MarkdownThemeFields theme,
 ) {
   final service = HighlightService.instance;
   final tm.Highlighter? highlighter = service?.highlighterFor(language);

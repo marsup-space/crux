@@ -21,14 +21,20 @@ import '../../utils/ticker_registry.dart';
 ///   low number — that's normal).
 /// - **Target FPS** — the rate the scheduler is aiming for, from
 ///   [SchedulerBinding.targetFps]. Reflects the `targetFrameDuration`
-///   configured at startup. Shown so the "is current low because we're
-///   idle or because we're saturated?" question has a visible answer.
+///   configured at startup. The trailing `t` keeps the line from being
+///   read as a ratio. Shown so the "is current low because we're idle or
+///   because we're saturated?" question has a visible answer.
 /// - **Max FPS** — theoretical ceiling given how long each frame actually
 ///   takes to process. Computed as `1000 / avg_total_ms`, where
 ///   `avg_total_ms` is the mean of recent [FrameTiming.totalDuration]
 ///   values. A frame that does 10ms of work can in principle hit 100 fps,
 ///   so the third number tells you "if we removed the rate limit, how
 ///   high could we go" rather than "are we smooth right now".
+///
+/// All three segments use the same color — this is a debug HUD, not a
+/// primary surface, and a single [onSurfaceVariant] tint keeps it
+/// readable on any theme without a multi-tier contrast dance that some
+/// themes (e.g. Dracula) cannot satisfy.
 ///
 /// Because this component is hosted by the side panel ([ExtraInfoPanel]),
 /// which itself is only instantiated when the terminal is wide enough to
@@ -85,7 +91,7 @@ class _FpsCounterState extends State<FpsCounter> {
     _sampleTicker ??= TickerRegistry.instance.subscribe(
       name: 'fpsCounter',
       interval: _sampleInterval,
-      onTick: _sampleFps,
+      onTick: (_) => _sampleFps(),
     );
   }
 
@@ -180,35 +186,9 @@ class _FpsCounterState extends State<FpsCounter> {
           // doesn't change between states. The decoration paints nothing.
           : const BoxDecoration(),
       child: showFps
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Current FPS — the actually-observed rate. Bold and bright
-                // so it reads as the headline number.
-                Text(
-                  'FPS: $fpsStr',
-                  style: TextStyle(
-                    color: theme.onSurfaceDim,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                // Target FPS — what the scheduler is aiming for. Dimmer so
-                // the visual hierarchy reads "current → limit → ceiling".
-                // The trailing 't' avoids the line "FPS: 22 / 60" being
-                // mistaken for a ratio.
-                Text(
-                  ' / $targetFpsStr t',
-                  style: TextStyle(color: theme.outlineDim),
-                ),
-                // Max FPS — theoretical ceiling given per-frame work.
-                // Outlined (rather than dim) so it sits visually between
-                // target and the background, since it's a derived number
-                // rather than something the framework is doing.
-                Text(
-                  ' / $maxFpsStr max',
-                  style: TextStyle(color: theme.outline),
-                ),
-              ],
+          ? Text(
+              'FPS: $fpsStr / $targetFpsStr t / $maxFpsStr max',
+              style: TextStyle(color: theme.onSurfaceVariant),
             )
           : const SizedBox.shrink(),
     );

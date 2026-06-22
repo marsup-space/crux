@@ -170,9 +170,16 @@ class ToastHubState extends State<ToastHub> {
     _tickTicker = TickerRegistry.instance.subscribe(
       name: 'toastTick',
       interval: const Duration(milliseconds: 50),
-      onTick: () {
+      onTick: (elapsed) {
         if (!_hovered) {
-          _remaining -= const Duration(milliseconds: 50);
+          // Delta-time countdown: subtract the actual wall-clock
+          // delta, not a fixed 50 ms. On a slow frame the
+          // countdown ticks down faster; on a fast frame less —
+          // total elapsed time still matches the configured
+          // toast duration regardless of frame rate.
+          _remaining -= elapsed == Duration.zero
+              ? const Duration(milliseconds: 50)
+              : elapsed;
           if (_remaining.isNegative) _remaining = Duration.zero;
           setState(() {});
         }

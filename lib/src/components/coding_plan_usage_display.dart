@@ -377,7 +377,14 @@ class _CodingPlanUsageDisplayState
   /// result into the render object. Stops the ticker
   /// when the animation completes; the final push is
   /// the settled value.
-  void _tickAnimation() {
+  ///
+  /// The [elapsed] parameter is the wall-clock delta from
+  /// the scheduler; this animation drives progress off the
+  /// captured start time (so duration is wall-clock-correct
+  /// even if the frame interval drifts). It's plumbed through
+  /// for symmetry with the other tick callbacks and to make
+  /// it obvious where the time input comes from.
+  void _tickAnimation(Duration elapsed) {
     final ro = _renderObject;
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -438,7 +445,7 @@ class _CodingPlanUsageDisplayState
   void _pushCurrentFrame() {
     final ticker = _animationTicker;
     if (ticker != null && ticker.isActive) {
-      _tickAnimation();
+      _tickAnimation(Duration.zero);
     } else if (_refreshing) {
       _pushRefreshFrame();
     } else {
@@ -694,8 +701,11 @@ class _CodingPlanUsageDisplayState
   /// window so the 3-second percentage lerp isn't
   /// interrupted by a seconds-tick flash. Fires the
   /// refresh path when either cell's countdown reaches
-  /// zero.
-  void _tickCountdown() {
+  /// zero. The [elapsed] is unused for the countdown
+  /// (it's anchored to wall-clock hover entry) but is
+  /// plumbed through for symmetry with the ticker
+  /// callback signature.
+  void _tickCountdown(Duration elapsed) {
     final ro = _renderObject;
     final usage = _usage;
     if (ro == null || usage == null) return;

@@ -100,7 +100,12 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// Ceiling for the per-row title truncation. Caps titles so they
   /// never outgrow the panel even if it's resized beyond its target.
   static const int _maxTitleLenCeiling = 40;
-  static const double _animStep = 0.3;
+
+  /// Phase advance rate (radians per second) for the
+  /// session-status fade pulse. Drives a sinusoidal color
+  /// lerp between dim and bright; the original cadence
+  /// advanced by 0.3 every 50 ms tick (= 6 rad/s).
+  static const double _animRadiansPerSecond = 6.0;
   static const Duration _animInterval = Duration(milliseconds: 50);
 
   Color get _prefixDim => CruxTheme.of(context).onSurfaceDim;
@@ -246,13 +251,20 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       _animTicker ??= TickerRegistry.instance.subscribe(
         name: 'extraInfoAnim',
         interval: _animInterval,
-        onTick: () {
+        onTick: (elapsed) {
           if (!_hasRespondingSession()) {
             _animTicker?.cancel();
             _animTicker = null;
             _phase = 0.0;
           }
-          _phase += _animStep;
+          // Delta-time advance: convert the wall-clock delta to
+          // seconds and multiply by the radian rate. On a slow
+          // frame the phase advances further; on a fast frame
+          // less — pulse rate stays constant in real time.
+          final dt = elapsed == Duration.zero
+              ? 0.05
+              : elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+          _phase += _animRadiansPerSecond * dt;
           setState(() {});
         },
       );

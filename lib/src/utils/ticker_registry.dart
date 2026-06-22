@@ -2,6 +2,28 @@ import 'package:nocterm/nocterm.dart';
 
 import 'frame_profiler.dart';
 
+/// Callback signature for per-frame ticks registered through
+/// [TickerRegistry]. Receives the wall-clock [Duration] since the
+/// last tick (the same value the underlying [NoctermScheduler]
+/// computes as `tick.delta`).
+///
+/// Receiving the elapsed time lets every consumer drive
+/// delta-time animations instead of assuming a fixed 16 ms cadence.
+/// On the very first tick `elapsed` is [Duration.zero] (the
+/// scheduler records no `lastTick` yet).
+///
+/// Why delta instead of fixed-step:
+/// - A frame that took 20 ms leaves a 3.4 ms budget gap. With
+///   fixed-step math, that gap is silently dropped — animations
+///   stutter on slow frames and overshoot on fast ones.
+/// - With delta math, the consumer chooses the math (e.g.
+///   `phase += step * dt / 16ms`) so phase advance tracks wall-clock
+///   time regardless of the actual frame interval.
+/// - The reasoning-block character streamer uses the same value
+///   to scale "characters emitted per frame" by the same ratio,
+///   keeping emission rate proportional to wall time.
+typedef TickerCallback = void Function(Duration elapsed);
+
 /// Compatibility adapter for Crux animation subscribers.
 ///
 /// This keeps the existing small [TickerToken] API used by the UI components,
@@ -19,18 +41,22 @@ class TickerRegistry {
   /// [interval] is the desired wall-clock cadence. Delivery is naturally
   /// clamped by Nocterm's target frame rate because callbacks run from the
   /// scheduler's frame phase.
+  ///
+  /// The callback receives the wall-clock [Duration] since the previous
+  /// tick (`SchedulerTick.delta`) so consumers can drive delta-time
+  /// animations instead of assuming a fixed 16 ms step.
   TickerToken subscribe({
     required String name,
     required Duration interval,
-    required void Function() onTick,
+    required TickerCallback onTick,
   }) {
     late final TickerToken token;
     final handle = NoctermScheduler.instance.every(
       interval,
-      (_) {
+      (tick) {
         if (!token.isActive) return;
         FrameProfiler.instance.markTimer(name);
-        onTick();
+        onTick(tick.delta);
       },
       owner: this,
       name: name,

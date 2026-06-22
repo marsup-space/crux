@@ -43,8 +43,16 @@ class FileBrowserOverlay extends StatefulComponent {
 class _FileBrowserOverlayState extends State<FileBrowserOverlay> {
   static const _spinnerFrames = ['|', '/', '-', r'\'];
 
+  /// Time per spinner-frame advance. The ticker fires at
+  /// 120 ms, but we accumulate the actual elapsed time and
+  /// only advance the visible frame once we've crossed this
+  /// threshold — this keeps the rotation rate constant in
+  /// wall-clock terms even if frames take longer than 120 ms.
+  static const double _spinnerFrameMs = 100.0;
+
   TickerToken? _spinnerTicker;
   int _spinnerFrame = 0;
+  double _spinnerAccumulatorMs = 0.0;
 
   @override
   void initState() {
@@ -69,16 +77,32 @@ class _FileBrowserOverlayState extends State<FileBrowserOverlay> {
       _spinnerTicker ??= TickerRegistry.instance.subscribe(
         name: 'fileSearchSpinner',
         interval: const Duration(milliseconds: 120),
-        onTick: () {
+        onTick: (elapsed) {
           if (!mounted) return;
-          setState(() {
-            _spinnerFrame = (_spinnerFrame + 1) % _spinnerFrames.length;
-          });
+          // Delta-time spinner: throttle the frame advance by
+          // accumulated wall-clock time, not by fixed-step
+          // ticks. With `_frameStep = 100 ms`, the spinner
+          // advances one frame every ~100 ms regardless of
+          // whether frames land at 60 fps, 30 fps, or whatever
+          // — the visible rotation stays at a steady pace.
+          // Without this, a 20 ms slow frame would tick at the
+          // same rate as a 120 ms frame, and the spinner would
+          // visibly speed up during lag spikes.
+          _spinnerAccumulatorMs += elapsed == Duration.zero
+              ? 120.0
+              : elapsed.inMicroseconds / 1000.0;
+          while (_spinnerAccumulatorMs >= _spinnerFrameMs) {
+            _spinnerAccumulatorMs -= _spinnerFrameMs;
+            _spinnerFrame =
+                (_spinnerFrame + 1) % _spinnerFrames.length;
+          }
+          setState(() {});
         },
       );
     } else {
       _stopSpinnerTicker();
       _spinnerFrame = 0;
+      _spinnerAccumulatorMs = 0.0;
     }
   }
 

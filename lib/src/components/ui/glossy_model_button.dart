@@ -69,8 +69,19 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     _animTicker = TickerRegistry.instance.subscribe(
       name: 'glossyButton',
       interval: const Duration(milliseconds: 60),
-      onTick: () {
-        _phase += 1.5; // faster sweep
+      onTick: (elapsed) {
+        // Delta-time advance: convert the wall-clock delta
+        // to seconds and multiply by the cell-per-second
+        // rate. The original cadence advanced `_phase` by
+        // 1.5 every 60 ms tick — that's 25 cells/sec. With
+        // delta-time math, slow frames advance the phase
+        // further and fast frames less, so the sweep stays
+        // at a constant wall-clock speed regardless of the
+        // frame interval.
+        final dt = elapsed == Duration.zero
+            ? 60.0 / 1000.0
+            : elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+        _phase += 25.0 * dt; // 25 cells/sec = matches original 1.5/60ms
         final sweepEnd =
             component.label.length + 2 + _bandWidth; // +2 for padding cells
         if (_phase > sweepEnd) {
@@ -79,7 +90,12 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
         _tickCount++;
 
         if (_isFadingOut) {
-          _fadeIntensity -= 1.0 / _fadeTicks;
+          // Fade-out over `_fadeTicks` ticks (~1.2s at 60ms
+          // per tick on the original cadence); with delta
+          // time we subtract a per-second rate instead of a
+          // per-tick fraction so the fade stays 1.2s long
+          // regardless of frame rate.
+          _fadeIntensity -= dt / (_fadeTicks * 60.0 / 1000.0);
           if (_fadeIntensity <= 0) {
             _fadeIntensity = 0;
             _isFadingOut = false;

@@ -200,8 +200,13 @@ class _CreditBalanceDisplayState
 
   /// Per-frame animation callback. Lerps the displayed value
   /// (2-decimal precision) and the colour (flash → target,
-  /// cubic eased).
-  void _tickAnimation() {
+  /// cubic eased). The [elapsed] is the wall-clock delta from
+  /// the scheduler; we still compute progress against the
+  /// animation's wall-clock start time (so the animation
+  /// duration is preserved), but receiving the delta lets us
+  /// verify the timeline advances in real time rather than
+  /// assuming 16 ms per tick.
+  void _tickAnimation(Duration elapsed) {
     final ro = _renderObject;
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -235,7 +240,7 @@ class _CreditBalanceDisplayState
   void _pushCurrentFrame() {
     final ticker = _animationTicker;
     if (ticker != null && ticker.isActive) {
-      _tickAnimation();
+      _tickAnimation(Duration.zero);
     } else if (_refreshing) {
       _pushRefreshFrame();
     } else {

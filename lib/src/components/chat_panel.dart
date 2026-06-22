@@ -959,6 +959,13 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       themeController: component.themeController,
       sendTurn: _turnOrchestrator.sendTurn,
+      // Wire the toolbar's "Compact" affordance (and `/compact`)
+      // to the orchestrator's compaction entry point. Without
+      // this, [CommandExecutor.executeCompact] sees a null
+      // `compactSession` and surfaces the "Compaction
+      // unavailable" toast — the click reaches the executor
+      // but the actual implementation never runs.
+      compactSession: _turnOrchestrator.compactCurrentSession,
       findLastUserMessage: _turnOrchestrator.findLastUserMessage,
       deleteMessagesFrom: _turnOrchestrator.deleteMessagesFrom,
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,

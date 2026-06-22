@@ -8,6 +8,7 @@ import '../utils/frame_profiler.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
+import '../utils/reasoning_block_splitter.dart';
 
 /// Live streaming bubble shown at the bottom of the chat log
 /// while the model is generating.
@@ -69,6 +70,13 @@ class StreamingBubble extends StatefulComponent {
 }
 
 class _StreamingBubbleState extends State<StreamingBubble> {
+  /// Polling interval for the streaming bubble. Schedules a
+  /// `setState` whenever the controller's content has changed.
+  /// We keep the interval at 16 ms (one frame at 60 fps) so the
+  /// bubble can react to fresh chunks at frame rate, but the
+  /// scheduler passes us the actual `tick.delta` (which may be
+  /// larger on a slow frame) and we forward that to the animator
+  /// so its lerp math is delta-driven rather than fixed-step.
   static const Duration _tickInterval = Duration(milliseconds: 16);
   // The lerp speed used to live here too; it now lives inside
   // [ToolMetricsAnimator] (default 12.0) so the post-call
@@ -83,6 +91,20 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   /// so it runs inside Nocterm's frame pipeline.
   String _content = '';
   String _reasoning = '';
+
+  /// Paragraph-split view of [_reasoning], computed lazily
+  /// in [_buildInner] and memoised via [_reasoningBlocksFor].
+  /// See [_splitReasoningBlocks] for the split strategy.
+  List<String> _reasoningBlocks = const [];
+
+  /// The reasoning string that [_reasoningBlocks] was computed
+  /// for. We only re-split when [_reasoning] actually changes,
+  /// so static (frozen) blocks keep the exact same `String`
+  /// instance across rebuilds — and Flutter's element diffing
+  /// reuses their layout elements without re-running
+  /// [RichText] layout for them.
+  String? _reasoningBlocksFor;
+
   double? _waitingForModelSeconds;
   double? _executingToolsSeconds;
   List<ExecutingToolCall> _executingToolCalls = const [];
@@ -102,7 +124,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   @override
   void initState() {
     super.initState();
-    _refreshFromController(_tickInterval);
+    _refreshFromController(Duration.zero);
     _syncSchedulerSubscription();
   }
 
@@ -116,14 +138,14 @@ class _StreamingBubbleState extends State<StreamingBubble> {
     // stable across rebuilds, but the runtime's `findSession`
     // lookup is keyed by sessionId, not instance.)
     if (old.sessionId != component.sessionId) {
-      _refreshFromController(_tickInterval);
+      _refreshFromController(Duration.zero);
       _syncSchedulerSubscription();
       return;
     }
     // Session didn't change — just resync in case the
     // controller was repopulated between two ticks (e.g.
     // tool calls just finished and the new state arrived).
-    _refreshFromController(_tickInterval);
+    _refreshFromController(Duration.zero);
     _syncSchedulerSubscription();
   }
 
@@ -135,6 +157,10 @@ class _StreamingBubbleState extends State<StreamingBubble> {
         (tick) {
           if (!mounted) return;
           FrameProfiler.instance.markTimer('streamingBubble');
+          // Forward the wall-clock delta so the animator (and
+          // anything else that reads `elapsed`) is delta-time,
+          // not fixed-step. On a slow frame the lerp moves
+          // further; on a fast frame less.
           _refreshFromController(tick.delta);
         },
         owner: this,
@@ -241,6 +267,32 @@ class _StreamingBubbleState extends State<StreamingBubble> {
     return true;
   }
 
+  /// Split [text] into blocks at paragraph boundaries so each
+  /// block stays under [cap] characters. Only the last block
+  /// is the *active* one (still receiving streamed tokens) —
+  /// earlier blocks are frozen snapshots of the reasoning
+  /// emitted earlier, rendered as their own
+  /// [HighlightedMarkdownText] widgets so Flutter's element
+  /// diffing reuses their layout across rebuilds.
+  ///
+  /// The win: per-frame layout cost is bounded by the size
+  /// of the active block, not the size of the whole reasoning
+  /// preamble. A long reasoning trace (10 kB, 20 kB, 50 kB)
+  /// degrades into one slow layout pass per emitted block —
+  /// each block is at most [_renderedReasoningCap] chars —
+  /// rather than one slow pass per frame for the full text.
+  /// See `docs/perf-roadmap.md` Phase 1 for the profile
+  /// data this targets.
+  ///
+  /// The actual split logic lives in
+  /// [splitReasoningIntoBlocks] in
+  /// `utils/reasoning_block_splitter.dart` — that's a pure
+  /// function with a unit test suite. We just wrap it here so
+  /// the build path is one line.
+  List<String> _splitReasoningBlocks(String text, int cap) {
+    return splitReasoningIntoBlocks(text, cap);
+  }
+
   bool _sameExecutingToolCalls(
     List<ExecutingToolCall> a,
     List<ExecutingToolCall> b,
@@ -272,8 +324,43 @@ class _StreamingBubbleState extends State<StreamingBubble> {
     super.dispose();
   }
 
+  /// Per-block cap on the streaming reasoning text. Reasoning
+  /// is split at `\n\n` paragraph boundaries into blocks of at
+  /// most this many characters each (see [_splitReasoningBlocks]).
+  /// Only the *last* block is the active one growing under
+  /// live tokens; earlier blocks are static snapshots. Flutter
+  /// element diffing reuses the static blocks across rebuilds,
+  /// so per-frame layout cost is bounded by the active block's
+  /// size rather than the full reasoning preamble.
+  ///
+  /// Why we cap per-block: [RichText] layout in nocterm is
+  /// O(N) in the rendered text length (every grapheme gets a
+  /// width measurement + the span tree is walked). For very
+  /// long reasoning preambles (15 kB+), the layout phase alone
+  /// takes 8-20 ms per frame, dropping the chat panel from
+  /// 60 fps to 25-40 fps. A 4 kB per-block cap keeps the
+  /// active block's layout cost at ~3-4 ms, well under the
+  /// 16 ms frame budget, and pays the static-block layout
+  /// cost only once when each block is first promoted from
+  /// active to frozen.
+  ///
+  /// The split is a render-time optimisation, not a data loss:
+  /// the full reasoning is still in [StreamingController] and
+  /// ends up in the saved [MessageBubble] for the round once
+  /// the turn ends. The streaming bubble's job is to show
+  /// *live* reasoning, and a 4 kB tail per block is plenty to
+  /// read while the LLM is thinking.
+  static const int _renderedReasoningCap = 4096;
+
   @override
   Component build(BuildContext context) {
+    return FrameProfiler.instance.timed(
+      'streamingBubble.build',
+      () => _buildInner(context),
+    );
+  }
+
+  Component _buildInner(BuildContext context) {
     final hasReasoning = _reasoning.isNotEmpty;
     final waitingSeconds = _waitingForModelSeconds;
     final executingSeconds = _executingToolsSeconds;
@@ -281,29 +368,83 @@ class _StreamingBubbleState extends State<StreamingBubble> {
     final children = <Component>[];
 
     if (hasReasoning) {
+      // Recompute the paragraph-split blocks only when the
+      // reasoning text actually changed. We reuse the cached
+      // list otherwise so Flutter can dedupe static blocks via
+      // widget equality (same `String` → same `Widget` →
+      // reused `Element` → no relayout).
+      if (_reasoningBlocksFor != _reasoning) {
+        _reasoningBlocks = _splitReasoningBlocks(
+          _reasoning,
+          _renderedReasoningCap,
+        );
+        _reasoningBlocksFor = _reasoning;
+      }
+
       children.add(
         Tint(
           color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  ' Think: ',
-                  style: TextStyle(
-                    color: CruxTheme.of(context).thinkPrefix,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Expanded(
-                  child: HighlightedMarkdownText(
-                    _reasoning,
-                    styleSheet: HighlightMarkdownStyleSheet.thinking(
-                      CruxTheme.of(context),
+                // First line: ' Think: ' left-rail label +
+                // the first block inline, matching the legacy
+                // single-block Row layout exactly. The block
+                // grows in place; we only split into a new
+                // row when a block would exceed the per-block
+                // cap.
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ' Think: ',
+                      style: TextStyle(
+                        color: CruxTheme.of(context).thinkPrefix,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: HighlightedMarkdownText(
+                        _reasoningBlocks[0],
+                        useIsolate: true,
+                        styleSheet: HighlightMarkdownStyleSheet.thinking(
+                          CruxTheme.of(context),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                // Subsequent (static) blocks: full-width rows
+                // indented by the width of ' Think: ' so the
+                // markdown text aligns where it did before
+                // the multi-block refactor. SizedBox forces
+                // the row's height to 1 cell between blocks
+                // so frozen blocks don't visually touch the
+                // active one above them.
+                for (var i = 1; i < _reasoningBlocks.length; i++) ...[
+                  const SizedBox(height: 1),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Width of ' Think: ' in monospace cells.
+                      // Matches the original left-rail label
+                      // so the markdown text aligns where it
+                      // did before the multi-block refactor.
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: HighlightedMarkdownText(
+                          _reasoningBlocks[i],
+                          useIsolate: true,
+                          styleSheet: HighlightMarkdownStyleSheet.thinking(
+                            CruxTheme.of(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -344,7 +485,19 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                       '...',
                       style: TextStyle(color: CruxTheme.of(context).foreground),
                     )
-                  : HighlightedMarkdownText(_content),
+                  : HighlightedMarkdownText(
+                      // No render-cap here: streamed content
+                      // is the user-facing reply (final text,
+                      // code, tables) and we don't want to
+                      // hide anything from it. The reasoning
+                      // block above is the one that can run
+                      // into thousands of tokens during long
+                      // thinking, so it's the one that needs
+                      // the cost cap. Parse still runs on the
+                      // isolate to keep the main thread free.
+                      _content,
+                      useIsolate: true,
+                    ),
             ),
           ],
         ),

@@ -11,7 +11,7 @@ void main() {
         TickerRegistry.instance.subscribe(
           name: 'test-a',
           interval: const Duration(milliseconds: 16),
-          onTick: () => calls.add(1),
+          onTick: (_) => calls.add(1),
         );
 
         for (var i = 0; i < 4; i++) {
@@ -29,14 +29,14 @@ void main() {
         final t1 = TickerRegistry.instance.subscribe(
           name: 'a',
           interval: const Duration(milliseconds: 16),
-          onTick: () {},
+          onTick: (_) {},
         );
         expect(TickerRegistry.instance.subscriberCount, 1);
 
         final t2 = TickerRegistry.instance.subscribe(
           name: 'b',
           interval: const Duration(milliseconds: 50),
-          onTick: () {},
+          onTick: (_) {},
         );
         expect(TickerRegistry.instance.subscriberCount, 2);
 
@@ -55,7 +55,7 @@ void main() {
         final token = TickerRegistry.instance.subscribe(
           name: 'test-cancel',
           interval: const Duration(milliseconds: 16),
-          onTick: () => calls.add(1),
+          onTick: (_) => calls.add(1),
         );
 
         for (var i = 0; i < 3; i++) {
@@ -78,7 +78,7 @@ void main() {
         final token = TickerRegistry.instance.subscribe(
           name: 'test-idempotent',
           interval: const Duration(milliseconds: 16),
-          onTick: () {},
+          onTick: (_) {},
         );
         token.cancel();
         token.cancel();
@@ -95,7 +95,7 @@ void main() {
         final token = TickerRegistry.instance.subscribe(
           name: 'test-pause',
           interval: const Duration(milliseconds: 16),
-          onTick: () => calls.add(1),
+          onTick: (_) => calls.add(1),
         );
 
         for (var i = 0; i < 3; i++) {
@@ -126,7 +126,7 @@ void main() {
         final token = TickerRegistry.instance.subscribe(
           name: 'test-cadence',
           interval: const Duration(milliseconds: 50),
-          onTick: () => calls++,
+          onTick: (_) => calls++,
         );
 
         for (var i = 0; i < 4; i++) {
@@ -148,17 +148,17 @@ void main() {
         TickerRegistry.instance.subscribe(
           name: 'multi-a',
           interval: const Duration(milliseconds: 16),
-          onTick: () => aCount++,
+          onTick: (_) => aCount++,
         );
         TickerRegistry.instance.subscribe(
           name: 'multi-b',
           interval: const Duration(milliseconds: 50),
-          onTick: () => bCount++,
+          onTick: (_) => bCount++,
         );
         TickerRegistry.instance.subscribe(
           name: 'multi-c',
           interval: const Duration(milliseconds: 500),
-          onTick: () => cCount++,
+          onTick: (_) => cCount++,
         );
 
         for (var i = 0; i < 6; i++) {
@@ -183,14 +183,14 @@ void main() {
         selfCancelling = TickerRegistry.instance.subscribe(
           name: 'self-cancelling',
           interval: const Duration(milliseconds: 16),
-          onTick: () {
+          onTick: (_) {
             selfCancelling.cancel();
           },
         );
         TickerRegistry.instance.subscribe(
           name: 'metrics-display',
           interval: const Duration(milliseconds: 16),
-          onTick: () => secondFired++,
+          onTick: (_) => secondFired++,
         );
 
         await tester.pump(const Duration(milliseconds: 16));

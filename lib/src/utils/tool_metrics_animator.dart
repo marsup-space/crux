@@ -338,6 +338,11 @@ class ToolMetricsAnimator {
       const Duration(milliseconds: 16),
       (tick) {
         if (_handle == null) return;
+        // Use the wall-clock delta reported by the scheduler
+        // (tick.delta) so the lerp tracks real time rather than
+        // a fixed 16 ms step. On a slow frame the lerp advances
+        // more; on a fast frame less — animation rate stays
+        // constant in absolute time.
         if (advance(tick.delta)) {
           _onAdvance?.call();
         }

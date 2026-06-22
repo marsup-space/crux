@@ -84,7 +84,14 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
     _ticker = TickerRegistry.instance.subscribe(
       name: 'metricsTimer',
       interval: _interval,
-      onTick: () {
+      onTick: (elapsed) {
+        // The metrics tick is read-only on the elapsed delta;
+        // `updateLiveMetrics` recomputes from wall-clock anyway
+        // (it reads DateTime.now() against the runtime's
+        // response start). We still receive `elapsed` here for
+        // API symmetry — it documents that this is a delta-time
+        // callback and makes future conversions (e.g. moving the
+        // metric to a true accumulator) cheap.
         component.streamingController.updateLiveMetrics(sessionId);
         _pushToRenderObject();
       },
