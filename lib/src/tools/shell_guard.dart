@@ -231,7 +231,7 @@ ShellGuardKind _classifyPosix(String command) {
   // `code_search` answers in one call. Detected first so the
   // verb-classifier doesn't fall through to `grep` (which would
   // technically also be correct but is much more wasteful).
-  if (_isCodeSearchPipe(command, _posixGrepVerbs, _posixListVerbs)) {
+  if (_isCodeSearchPipe(command, _posixGrepVerbs)) {
     return ShellGuardKind.codeSearch;
   }
 
@@ -327,7 +327,7 @@ const _winGrepVerbs = <String>{
 };
 
 ShellGuardKind _classifyWindows(String command) {
-  if (_isCodeSearchPipe(command, _winGrepVerbs, _winListVerbs)) {
+  if (_isCodeSearchPipe(command, _winGrepVerbs)) {
     return ShellGuardKind.codeSearch;
   }
 
@@ -699,16 +699,24 @@ bool _isEnvAssignment(String token) {
 }
 
 /// Detect the "search verb piped into a truncator" anti-pattern
-/// (e.g. `rg "auth" lib/ | head -10`, `find . -name "*.dart" |
-/// head`, `dir *.cs | more`). These pipelines almost always
-/// mean "I want a few matching snippets" — the semantic-search
-/// use case that `code_search` was built for.
+/// (e.g. `rg "auth" lib/ | head -10`, `grep -rn "TODO" src/ | tail`).
+/// These pipelines almost always mean "I want to see a few
+/// matching snippets" — the semantic-search use case that
+/// `code_search` was built for.
 ///
-/// `searchVerbs` is the set of "left-side" verbs that trigger
+/// [searchVerbs] is the set of "left-side" verbs that trigger
 /// the pattern (ripgrep/grep on POSIX; Select-String/findstr on
-/// Windows). `listVerbs` extends the trigger set to include
-/// directory-listing verbs, since `find … | head` is also a
-/// common "show me a few matches" pattern.
+/// Windows).
+///
+/// IMPORTANT: only search verbs (rg/grep/ack/ag) qualify — list
+/// verbs (ls/find/tree) are NOT included here. `ls … | head` is
+/// list + truncate, not code search, and `find … | head` is
+/// file-pattern search + truncate — both fall through to the
+/// verb classifier which flags them as `glob` (a more accurate
+/// verdict than the code-search label). Mixing list verbs into
+/// the code-search check produced false positives on common
+/// verification scripts like
+/// `ls -la build/ && echo '---' && ls bin/ && binary --version | head -5`.
 ///
 /// `truncatorVerbs` is the implicit set of "right-side" verbs
 /// that look like the user wanted to limit output: `head`,
@@ -716,11 +724,7 @@ bool _isEnvAssignment(String token) {
 /// also requires at least one pipe (`|`) — single-command
 /// invocations like `rg "auth" lib/` go through the regular
 /// verb classifier and surface as `grep`, which is correct.
-bool _isCodeSearchPipe(
-  String command,
-  Set<String> searchVerbs,
-  Set<String> listVerbs,
-) {
+bool _isCodeSearchPipe(String command, Set<String> searchVerbs) {
   const truncatorVerbs = <String>{
     'head', 'tail', 'less', 'more', 'sort', 'uniq', 'wc', 'tee',
     // PowerShell equivalents:
@@ -742,7 +746,7 @@ bool _isCodeSearchPipe(
     final rightVerb = _firstVerb(right);
     if (leftVerb == null || rightVerb == null) continue;
     final leftBase = leftVerb.split(RegExp(r'[/\\]')).last;
-    if (searchVerbs.contains(leftBase) || listVerbs.contains(leftBase)) {
+    if (searchVerbs.contains(leftBase)) {
       if (truncatorVerbs.contains(rightVerb) ||
           truncatorVerbs.contains(rightVerb.split(RegExp(r'[/\\]')).last)) {
         return true;

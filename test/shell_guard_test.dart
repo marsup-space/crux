@@ -289,14 +289,16 @@ echo "(should be empty)"''';
       }
     });
 
-    test('rg "concept" | head → code_search (NOT grep)', () {
+    test('rg/grep "concept" | head → code_search (NOT grep)', () {
+      // Only rg/grep/ack (search verbs) trigger the code_search
+      // anti-pattern. List verbs (ls/find/tree) + truncator fall
+      // through to the verb classifier and are flagged as glob
+      // — see the dedicated test below for those.
       const cases = <String>[
         'rg "auth" lib/ | head -10',
         'rg "auth" lib/ | head',
         'grep -r "auth" lib/ | head -20',
-        'find . -name "*.dart" | head -30',
-        'ls lib/src/ | head',
-        'find . -name "*.dart" | head -5',
+        'ack "foo" lib/ | tail -5',
       ];
       for (final cmd in cases) {
         final v = detectShellGuard(
@@ -309,6 +311,61 @@ echo "(should be empty)"''';
         expect(v.toolName, 'code_search', reason: 'cmd="$cmd"');
       }
     });
+
+    test(
+      'ls | head and find | head are flagged as glob (NOT code_search)',
+      () {
+        // `ls ... | head` and `find ... | head` are
+        // list/truncate patterns, not code search. Mixing list
+        // verbs into the code-search check produced false
+        // positives on common verification scripts like
+        // `ls -la build/ && echo '---' && binary --version | head -5`.
+        const cases = <String>[
+          'ls -la build/releases/crux-macos-arm64/ | head -5',
+          'ls lib/ | head',
+          'find . -name "*.dart" | head -30',
+          'tree lib/src/ | head -20',
+          'du -sh * | sort -h | head -5',
+        ];
+        for (final cmd in cases) {
+          final v = detectShellGuard(
+            cmd,
+            isWindows: false,
+            currentStreak: 0,
+          );
+          expect(v, isNotNull, reason: 'should flag: "$cmd"');
+          expect(v!.kind, ShellGuardKind.glob, reason: 'cmd="$cmd"');
+          expect(v.toolName, 'glob', reason: 'cmd="$cmd"');
+        }
+      },
+    );
+
+    test(
+      'user\'s verification script (ls && echo && binary | head) → glob',
+      () {
+        // The exact command from the user's screenshot —
+        // a verification script that lists build artifacts and
+        // pipes the binary's --version output to head. The
+        // detector correctly identifies it as a glob violation
+        // (because of the leading `ls`), not a code-search
+        // violation. The trailing `| head` doesn't change the
+        // classification.
+        const cmd =
+            'ls -la build/releases/crux-macos-arm64/ && '
+            "echo '---' && "
+            'ls build/releases/crux-macos-arm64/bin/ && '
+            "echo '---' && "
+            'build/releases/crux-macos-arm64/bin/crux --version 2>&1 | head -5';
+        final v = detectShellGuard(
+          cmd,
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, ShellGuardKind.glob);
+        expect(v.toolName, 'glob');
+      },
+    );
 
     test('wc / md5sum / file / stat / diff → read', () {
       const cases = <String>[
