@@ -280,7 +280,7 @@ class SessionTool extends ToolDef {
     if (shown.isEmpty) {
       buf.writeln('No other sessions found.');
       if (hiddenCurrent) {
-        buf.writeln('(the current session #${ctx.sessionId} is hidden — '
+        buf.writeln('(the current session ${_sesRef(ctx.sessionId)} is hidden — '
             'pass `includeCurrent: true` to see it)');
       } else if (projectFilter != null) {
         buf.writeln('(project filter: $projectFilter)');
@@ -303,7 +303,7 @@ class SessionTool extends ToolDef {
     );
     buf.writeln('-' * 78);
     for (final s in shown) {
-      final id = '#${s.id}';
+      final id = _sesRef(s.id);
       final updated = _formatTimestamp(s.updatedAt);
       final msgCount = counts[s.id] ?? 0;
       buf.writeln(
@@ -317,7 +317,7 @@ class SessionTool extends ToolDef {
     }
     if (hiddenCurrent) {
       buf.writeln();
-      buf.writeln('(current session #${ctx.sessionId} hidden — pass '
+      buf.writeln('(current session ${_sesRef(ctx.sessionId)} hidden — pass '
           '`includeCurrent: true` to include it)');
     }
 
@@ -341,7 +341,7 @@ class SessionTool extends ToolDef {
   }) async {
     final session = await _store.getById(sessionId);
     if (session == null) {
-      return ToolResult.error('No session with id #$sessionId');
+      return ToolResult.error('No session with id ${_sesRef(sessionId)}');
     }
 
     final total = await _store.messageStore.countBySession(sessionId);
@@ -351,7 +351,7 @@ class SessionTool extends ToolDef {
     );
 
     final buf = StringBuffer();
-    buf.writeln('Session #${session.id} — '
+    buf.writeln('Session ${_sesRef(session.id)} — '
         '"${session.title.isEmpty ? '(untitled)' : session.title}"');
     buf.writeln('  model:        ${session.model.isEmpty ? '(unset)' : session.model}');
     buf.writeln('  agent:        ${session.agent.isEmpty ? '(default)' : session.agent}');
@@ -359,7 +359,7 @@ class SessionTool extends ToolDef {
     buf.writeln('  project:      '
         '${session.projectPath.isEmpty ? '(none)' : session.projectPath}');
     if (session.parentId != null) {
-      buf.writeln('  parent:       #${session.parentId}');
+      buf.writeln('  parent:       ${_sesRef(session.parentId!)}');
     }
     buf.writeln('  created:      ${_formatTimestamp(session.createdAt)}');
     buf.writeln('  updated:      ${_formatTimestamp(session.updatedAt)}');
@@ -420,7 +420,7 @@ class SessionTool extends ToolDef {
   }) async {
     final session = await _store.getById(sessionId);
     if (session == null) {
-      return ToolResult.error('No session with id #$sessionId');
+      return ToolResult.error('No session with id ${_sesRef(sessionId)}');
     }
 
     final all = await _store.messageStore.getMessages(
@@ -434,7 +434,7 @@ class SessionTool extends ToolDef {
     final total = await _store.messageStore.countBySession(sessionId);
 
     final buf = StringBuffer();
-    buf.writeln('Session #${session.id} — '
+    buf.writeln('Session ${_sesRef(session.id)} — '
         '"${session.title.isEmpty ? '(untitled)' : session.title}"');
     buf.writeln('(${filtered.length} of $total messages'
         '${role != null ? ', role=$role' : ''}'
@@ -508,7 +508,7 @@ class SessionTool extends ToolDef {
     if (singleSessionId != null) {
       final session = await _store.getById(singleSessionId);
       if (session == null) {
-        return ToolResult.error('No session with id #$singleSessionId');
+        return ToolResult.error('No session with id ${_sesRef(singleSessionId)}');
       }
       sessionsToScan = [session];
     } else {
@@ -564,8 +564,8 @@ class SessionTool extends ToolDef {
             }
             final excerpt = _excerptAround(hay, match.start, match.end, 80);
             final sessionLabel = session.title.isEmpty
-                ? '#${session.id}'
-                : '#${session.id} "${_truncate(session.title, 40)}"';
+                ? _sesRef(session.id)
+                : '${_sesRef(session.id)} "${_truncate(session.title, 40)}"';
             matches.writeln(
               '$sessionLabel:msg#${m.id} '
               '(${m.role}, ${_formatTimestamp(m.createdAt)}) '
@@ -609,6 +609,19 @@ class SessionTool extends ToolDef {
   }
 
   // ── helpers ───────────────────────────────────────────────────────
+
+  /// Render [sessionId] as the clickable reference format the TUI
+  /// recognises — `ses://<id>`. The prompt teaches the LLM this
+  /// format, and the session tool emits it in its output so the
+  /// agent sees the convention in context and writes it back in
+  /// replies without further prompting.
+  ///
+  /// Kept distinct from the user-facing `#<id>` used in collapsed
+  /// summaries and `ToolResult.title` — `#` reads more naturally in
+  /// a one-line collapsed chip, but in the LLM-facing tool body
+  /// we want every session id to carry the clickable scheme so the
+  /// agent copies the form verbatim when it references a session.
+  static String _sesRef(int sessionId) => 'ses://$sessionId';
 
   static String _pad(String s, int width) {
     if (s.length >= width) return s;

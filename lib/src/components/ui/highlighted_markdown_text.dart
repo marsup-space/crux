@@ -9,6 +9,7 @@ import 'highlight_service.dart';
 import 'markdown_isolate.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/frame_profiler.dart';
+import '../../utils/session_refs.dart';
 
 class HighlightedMarkdownText extends StatefulComponent {
   const HighlightedMarkdownText(
@@ -21,6 +22,9 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.styleSheet,
     this.highlightText,
     this.useIsolate = false,
+    this.onSessionLinkTap,
+    this.sessionLinkStyle,
+    this.sessionLinkHoverStyle,
   });
 
   final String data;
@@ -45,6 +49,25 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// the only call site that currently opts in; the rest
   /// of the app is fine with sync.
   final bool useIsolate;
+
+  /// Callback fired when the user clicks a `ses://<id>` reference
+  /// in the rendered text. Receives the parsed session id.
+  ///
+  /// When `null` (the default), the widget skips parsing session
+  /// refs entirely — there's zero per-build cost for callers that
+  /// don't care. The feature is also skipped on the isolate parse
+  /// path (`useIsolate: true`); streaming bubbles don't typically
+  /// carry clickable refs and the main-isolate overlay pass would
+  /// race with the worker's per-frame span updates.
+  final void Function(int sessionId)? onSessionLinkTap;
+
+  /// Override the style applied to recognized `ses://` regions.
+  /// Defaults to the theme's `tldrLink` color + underline.
+  final TextStyle? sessionLinkStyle;
+
+  /// Override the hover style. Defaults to a reverse-video treatment
+  /// using `tldrLink` as the background.
+  final TextStyle? sessionLinkHoverStyle;
 
   @override
   State<HighlightedMarkdownText> createState() =>
@@ -90,6 +113,19 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   HighlightMarkdownStyleSheet? _lastStyleSheet;
   String? _lastThemeId;
 
+  /// Session refs parsed from the current spans. Cached per data
+  /// change alongside `_spans` — the overlay pass in [_buildInner]
+  /// re-runs cheaply on every hover/state change without re-parsing.
+  List<SessionRef> _sessionRefs = const [];
+
+  /// Which ref (if any) the mouse is currently over. Drives the
+  /// hover-style overlay and the click target.
+  SessionRef? _hoveredSessionRef;
+
+  /// Key on the inner [RichText] used to locate the [RenderParagraph]
+  /// for hit-testing — see [_linkAtEvent].
+  final GlobalKey _richTextKey = GlobalKey();
+
   @override
   Component build(BuildContext context) {
     return FrameProfiler.instance.timed(
@@ -109,6 +145,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         final data = component.data;
         final styleSheet = component.styleSheet;
         final highlight = component.highlightText;
+        final wantLinks =
+            component.onSessionLinkTap != null && !component.useIsolate;
 
         final dataChanged = data != _lastData;
         final paramsChanged = styleSheet != _lastStyleSheet ||
@@ -140,6 +178,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               styleSheet: styleSheet,
             );
           }
+          // Re-parse session refs alongside the markdown parse so
+          // the two stay in lockstep. Cheap — single regex pass on
+          // the rendered text outside code spans.
+          _sessionRefs = wantLinks ? parseSessionRefs(_spans) : const [];
+          _hoveredSessionRef = null;
         }
 
         // Apply search highlight as a sync overlay. Cheap
@@ -158,7 +201,12 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           );
         }
 
-        return RichText(
+        // Overlay session-link styles on top of the highlight pass
+        // so links inherit the search-highlight background. The
+        // hover style wins over the link style for the specific
+        // ref under the cursor.
+        final richText = RichText(
+          key: _richTextKey,
           text: TextSpan(children: renderedSpans),
           textAlign: component.textAlign,
           softWrap: component.softWrap,
@@ -167,8 +215,105 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           selectionTextTransformer: _stripCodeBlockSelectionChrome,
           selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
         );
+
+        if (!wantLinks || _sessionRefs.isEmpty) {
+          return richText;
+        }
+
+        final linkStyle = component.sessionLinkStyle ??
+            TextStyle(
+              color: theme.tldrLink,
+              decoration: TextDecoration.underline,
+            );
+        final hoverStyle = component.sessionLinkHoverStyle ??
+            TextStyle(
+              color: theme.onColor(theme.tldrLink),
+              backgroundColor: theme.tldrLink,
+              fontWeight: FontWeight.bold,
+            );
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _handleTap,
+          child: MouseRegion(
+            opaque: true,
+            onHover: _handleHover,
+            onExit: (_) {
+              if (_hoveredSessionRef != null) {
+                setState(() => _hoveredSessionRef = null);
+              }
+            },
+            child: RichText(
+              key: _richTextKey,
+              text: TextSpan(
+                children: applySessionLinkStyles(
+                  renderedSpans,
+                  _sessionRefs,
+                  linkStyle,
+                  hoverStyle,
+                  _hoveredSessionRef,
+                ),
+              ),
+              textAlign: component.textAlign,
+              softWrap: component.softWrap,
+              overflow: component.overflow,
+              maxLines: component.maxLines,
+              selectionTextTransformer: _stripCodeBlockSelectionChrome,
+              selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
+            ),
+          ),
+        );
       },
     );
+  }
+
+  RenderParagraph? get _renderParagraph {
+    final ctx = _richTextKey.currentContext;
+    if (ctx == null) return null;
+    final el = ctx as Element;
+    if (el is RenderObjectElement) {
+      final ro = el.renderObject;
+      if (ro is RenderParagraph) return ro;
+    }
+    return null;
+  }
+
+  void _handleHover(MouseEvent event) {
+    final hit = _linkAtEvent(event);
+    if (hit == null && _hoveredSessionRef == null) return;
+    if (hit != null &&
+        _hoveredSessionRef != null &&
+        hit.offset == _hoveredSessionRef!.offset &&
+        hit.length == _hoveredSessionRef!.length) {
+      return;
+    }
+    setState(() => _hoveredSessionRef = hit);
+  }
+
+  void _handleTap() {
+    final ref = _hoveredSessionRef;
+    if (ref != null) {
+      component.onSessionLinkTap?.call(ref.sessionId);
+    }
+  }
+
+  SessionRef? _linkAtEvent(MouseEvent event) {
+    if (_sessionRefs.isEmpty) return null;
+    final rp = _renderParagraph;
+    if (rp == null) return null;
+
+    final localX = event.x.toDouble() - rp.globalPaintOffset.dx;
+    final localY = event.y.toDouble() - rp.globalPaintOffset.dy;
+    if (localX < 0 || localY < 0) return null;
+
+    final charIndex = rp.getCharacterIndexAtLocalPosition(
+      Offset(localX, localY),
+    );
+
+    for (final ref in _sessionRefs) {
+      if (ref.containsIndex(charIndex)) return ref;
+    }
+    return null;
   }
 
   /// Submit a parse request to the worker. The result is

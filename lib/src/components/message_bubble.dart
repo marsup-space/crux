@@ -41,6 +41,14 @@ class MessageBubble extends StatelessComponent {
   onToolCallTap;
   final void Function(int sessionId)? onOpenPreviousSession;
 
+  /// Callback when the user clicks a `ses://<id>` reference in the
+  /// assistant's prose. Forwarded to [HighlightedMarkdownText] so
+  /// refs become clickable buttons that jump to the referenced
+  /// session. Skipped for tool output, reasoning blocks, and the
+  /// compaction bubble — only the assistant's main reply gets
+  /// session links.
+  final void Function(int sessionId)? onSessionLinkTap;
+
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
@@ -51,6 +59,7 @@ class MessageBubble extends StatelessComponent {
     this.reasoningPresets,
     this.onToolCallTap,
     this.onOpenPreviousSession,
+    this.onSessionLinkTap,
   });
 
   String _displayEffort(String effort) {
@@ -271,6 +280,7 @@ class MessageBubble extends StatelessComponent {
                     : HighlightedMarkdownText(
                         message.content,
                         highlightText: highlightText,
+                        onSessionLinkTap: onSessionLinkTap,
                       ),
               ),
             ],

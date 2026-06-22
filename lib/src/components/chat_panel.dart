@@ -617,6 +617,31 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
+  /// Click handler for `ses://<id>` references inside an assistant
+  /// message bubble. Delegates to [_switchSession] so the user
+  /// gets the same loader, message-streaming, and input-stash
+  /// behaviour they'd get from the session manager; surfaces any
+  /// failure as a toast (e.g. `Session #N not found` when the
+  /// referenced session was deleted, or `is running in another
+  /// Crux instance` when another Crux owns it).
+  ///
+  /// No-op when the user clicks a ref to the session they're
+  /// already viewing — switching to yourself would be a no-op
+  /// anyway, but skipping it avoids the redundant setState and
+  /// scroll-to-bottom.
+  Future<void> _handleSessionLinkTap(int sessionId) async {
+    final current = _sessionController.currentSessionId;
+    if (current == sessionId) return;
+    final error = await _sessionController.switchSession(sessionId);
+    if (!mounted) return;
+    if (error != null) {
+      _showToast(error, mode: ToastMode.error);
+      return;
+    }
+    scrollController.scrollToBottom();
+    setState(() {});
+  }
+
   /// Resolve the active model's [CodingPlanProvider] mixin (if
   /// any) and re-align polling state with it. Idempotent — a
   /// no-op when neither the provider nor the session activity
@@ -1268,6 +1293,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       showToast: _showToast,
                       refresh: _refresh,
                       onToolCallTap: _openToolDetail,
+                      onSessionLinkTap: _handleSessionLinkTap,
                     ),
                     ...overlays,
                   ],

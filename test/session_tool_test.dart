@@ -115,7 +115,7 @@ void main() {
     // sessionB is hidden; only sessionA is shown.
     expect(result.output, contains('Session A — debug the LSP hang'));
     expect(result.output, isNot(contains('Session B — write the session tool')));
-    expect(result.output, contains('current session #$sessionB hidden'));
+    expect(result.output, contains('current session ses://$sessionB hidden'));
     expect(result.metadata['returned'], 1);
     expect(result.metadata['hiddenCurrent'], isTrue);
   });
@@ -148,7 +148,7 @@ void main() {
       ctxOf(sessionB),
     );
     expect(result.output, contains('No other sessions found'));
-    expect(result.output, contains('current session #$sessionB is hidden'));
+    expect(result.output, contains('current session ses://$sessionB is hidden'));
     expect(result.output, contains('includeCurrent: true'));
   });
 
@@ -182,7 +182,7 @@ void main() {
       {'action': 'show', 'sessionId': sessionA},
       ctxOf(sessionB),
     );
-    expect(result.output, contains('Session #$sessionA'));
+    expect(result.output, contains('Session ses://$sessionA'));
     expect(result.output, contains('anthropic/claude-sonnet-4'));
     expect(result.output, contains('the lsp hangs'));
     expect(result.output, contains('Recent messages'));
@@ -204,7 +204,7 @@ void main() {
       {'action': 'show', 'sessionId': 99999},
       ctxOf(sessionB),
     );
-    expect(result.output, contains('No session with id #99999'));
+    expect(result.output, contains('No session with id ses://99999'));
   });
 
   // ── action: messages ──────────────────────────────────────────────

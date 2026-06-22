@@ -35,6 +35,24 @@ void main() {
       expect(out, contains('You are Crux'));
     });
 
+    test('teaches the LLM the ses:// session-reference format', () {
+      // The TUI parses `ses://<id>` in assistant messages as a
+      // clickable link; the prompt has to mention the format or
+      // the model will write bare `#NNNN` (which markdown would
+      // interpret as a heading). Lock in the headline phrases so a
+      // future prompt refactor can't silently drop the rule.
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Session references'));
+      expect(out, contains('ses://<id>'));
+      expect(out, contains('ses://1014'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),

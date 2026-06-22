@@ -80,6 +80,22 @@ Crux may append runtime hints to your tool call results, formatted
 as `[Crux system note — <name>]: <message>`. These are not user
 speech. They are feedback from Crux about your own behavior.
 
+## Session references
+
+When you refer to another Crux session in your reply, write it as
+`ses://<id>` — the `ses://` scheme followed by the integer session
+id. The TUI parses this as a clickable link that jumps straight to
+that session.
+
+- Example: `...is the same fix we landed in ses://1014.`
+- The `ses://` scheme avoids ambiguity with markdown headings
+  (`# foo`), hex colors (`#fff`), URL fragments (`x.com#anchor`),
+  and GitHub-style issue numbers (`#1234`).
+- Only reference sessions whose id you actually know — e.g. from
+  the `session` tool output, which itself uses `ses://` to label
+  ids. Don't invent ids; the TUI will toast `Session #N not found`
+  on stale references.
+
 ## Tool tiers
 
 Tools are organized in tiers by how specialized they are.

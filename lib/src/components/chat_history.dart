@@ -50,6 +50,12 @@ class ChatHistory extends StatefulComponent {
   final void Function(ToolCallData toolCall, Message? pairedResult)?
   onToolCallTap;
 
+  /// Callback fired when the user clicks a `ses://<id>` reference
+  /// inside an assistant message bubble. The chat panel implements
+  /// this to switch to the referenced session (or toast "not found"
+  /// if the id is stale).
+  final void Function(int sessionId)? onSessionLinkTap;
+
   const ChatHistory({
     super.key,
     required this.scrollController,
@@ -61,6 +67,7 @@ class ChatHistory extends StatefulComponent {
     required this.showToast,
     required this.refresh,
     this.onToolCallTap,
+    this.onSessionLinkTap,
   });
 
   @override
@@ -193,6 +200,7 @@ class _ChatHistoryState extends State<ChatHistory> {
               msg.id == _highlightMessageId ? _highlightText : null,
           reasoningPresets: reasoningPresets,
           onToolCallTap: component.onToolCallTap,
+          onSessionLinkTap: component.onSessionLinkTap,
           onOpenPreviousSession: (targetSessionId) {
             component.sessionController.switchSession(targetSessionId).then((
               error,
