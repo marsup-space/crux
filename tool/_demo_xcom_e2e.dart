@@ -5,6 +5,7 @@
 
 import 'dart:io';
 
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/webfetch_tool.dart';
 import 'package:crux/src/utils/system_proxy.dart';
@@ -25,7 +26,7 @@ Future<void> main() async {
   stderr.writeln('Target URL: https://x.com/');
   stderr.writeln('');
 
-  final tool = WebFetchTool();
+  final tool = WebFetchTool(WebProviderRegistry());
   final ctx = _Ctx();
   final sw = Stopwatch()..start();
   final result = await tool.execute(

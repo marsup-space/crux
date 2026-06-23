@@ -152,8 +152,8 @@ void main() {
       ];
       final spans = reconstructInlineSpans(data);
       final joined = spans
-          .where((s) => s is TextSpan)
-          .map((s) => (s as TextSpan).text ?? '')
+          .whereType<TextSpan>()
+          .map((s) => s.text ?? '')
           .join();
       expect(joined, equals('plain bold plain'));
     });

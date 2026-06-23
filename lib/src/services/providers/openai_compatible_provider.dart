@@ -32,7 +32,7 @@ class OpenAICompatibleProvider extends LlmProvider {
       'thinking': {'type': thinkingMode},
       if (thinkingMode != 'disabled' && reasoningEffort != null)
         'reasoning_effort': mapEffort(reasoningEffort),
-      if (maxTokens != null) 'max_completion_tokens': maxTokens,
+      'max_completion_tokens': ?maxTokens,
       if (tools != null && tools.isNotEmpty)
         'tools': tools
             .map(
@@ -46,7 +46,7 @@ class OpenAICompatibleProvider extends LlmProvider {
               },
             )
             .toList(),
-      if (userId != null) 'user_id': userId,
+      'user_id': ?userId,
     };
   }
 

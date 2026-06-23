@@ -45,7 +45,7 @@ Future<_Timing> _measureOne(String projectRoot) async {
     input: p1.stdout,
     output: p1.stdin,
     tag: 'spinup-test',
-    onFatal: (_, __) {},
+    onFatal: (_, _) {},
   );
 
   // 2. Initialize.

@@ -5,6 +5,7 @@
 
 import 'dart:io';
 
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
@@ -36,6 +37,7 @@ Future<void> main(List<String> args) async {
     sessionStore: SessionStore(
       CruxDatabase.forTesting(NativeDatabase.memory()),
     ),
+    webProviderRegistry: WebProviderRegistry(),
   );
 
   final tool = registry.lookup('webfetch');

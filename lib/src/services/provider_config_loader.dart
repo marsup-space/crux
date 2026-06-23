@@ -59,8 +59,7 @@ class ProviderConfigLoader {
     : providersDirs = [providersDir];
 
   /// Search multiple directories, earlier entries win on collisions.
-  ProviderConfigLoader.multi({required List<Directory> providersDirs})
-    : providersDirs = providersDirs;
+  ProviderConfigLoader.multi({required this.providersDirs});
 
   /// Whether any configs have been loaded.
   bool get isLoaded => _configs.isNotEmpty;

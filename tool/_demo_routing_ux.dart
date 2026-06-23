@@ -7,6 +7,7 @@
 
 import 'dart:io';
 
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/webfetch_tool.dart';
 import 'package:crux/src/utils/tool_meta.dart';
@@ -34,7 +35,7 @@ void main() async {
     final hint = routingBubbleHint(parseToolRouting(meta));
     final summary = 'https://x.com/: 120 lines, 27.5KB';
     print('  $label:');
-    print('    bubble body:  ${_prefix}${summary}${hint == null ? '' : ',  · $hint'}');
+    print('    bubble body:  $_prefix$summary${hint == null ? '' : ',  · $hint'}');
     print('    bubble hint:  ${hint ?? "(none — direct call)"}');
     print('');
   }
@@ -58,7 +59,7 @@ void main() async {
   // Live demo: actually invoke the tool so the user sees the real
   // output they would see in the TUI.
   print('=== Live: invoking WebFetchTool against x.com ===\n');
-  final tool = WebFetchTool();
+  final tool = WebFetchTool(WebProviderRegistry());
   final ctx = _Ctx();
   final sw = Stopwatch()..start();
   final result = await tool.execute(
@@ -77,7 +78,7 @@ void main() async {
   print('  result.title:  ${result.title}');
   print('  result.body:   $bodyPreview');
   print('  parsed meta:   ${routing?.value ?? "(direct)"}');
-  print('  bubble shows:  ${_prefix}https://x.com/: X lines, YKB${hint == null ? '' : ',  · $hint'}');
+  print('  bubble shows:  $_prefix https://x.com/: X lines, YKB${hint == null ? '' : ',  · $hint'}');
   print('  detail shows:  [badge below URL]: ${hint ?? '(no badge)'}');
 
   exit(0);

@@ -185,8 +185,8 @@ class RpcPeer {
     final body = <String, dynamic>{
       'jsonrpc': '2.0',
       'method': method,
-      if (params != null) 'params': params,
-      if (id != null) 'id': id,
+      'params': ?params,
+      'id': ?id,
     };
     return jsonEncode(body);
   }

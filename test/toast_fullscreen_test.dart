@@ -24,7 +24,7 @@ void main() {
   // callbacks when there's no toast), so the render object identity is
   // stable across rebuilds and the `Positioned`'s parentData stays valid.
 
-  Component _toastHost(GlobalKey<ToastHubState> toastKey) {
+  Component toastHost(GlobalKey<ToastHubState> toastKey) {
     // Mirrors the chat panel's overlay setup: the toast lives inside a
     // `Positioned(bottom: 0, left: 0, right: 0)` inside a Stack that has
     // a non-positioned sibling (ChatHistory in production, SizedBox here)
@@ -47,7 +47,7 @@ void main() {
     );
   }
 
-  int _nonEmptyLineCount(String rendered) {
+  int nonEmptyLineCount(String rendered) {
     return rendered
         .split('\n')
         .where((line) => line.trim().isNotEmpty)
@@ -57,7 +57,7 @@ void main() {
   test('error toast does not fill full screen', () async {
     await testNocterm('error toast shrink-wraps', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
-      await tester.pumpComponent(_toastHost(toastKey));
+      await tester.pumpComponent(toastHost(toastKey));
 
       // Surface a long error message — exactly the kind of error toast
       // that previously ate the whole screen.
@@ -74,11 +74,11 @@ void main() {
       // button + padding/border). Before the fix, the bordered Container
       // expanded to fill all 24 lines and these expectations all broke.
       expect(
-        _nonEmptyLineCount(rendered),
+        nonEmptyLineCount(rendered),
         lessThanOrEqualTo(6),
         reason:
             'error toast should shrink-wrap to a few lines, '
-            'but rendered ${_nonEmptyLineCount(rendered)} non-empty lines:\n'
+            'but rendered ${nonEmptyLineCount(rendered)} non-empty lines:\n'
             '$rendered',
       );
       // And the message itself should actually be visible (truncated with
@@ -91,12 +91,12 @@ void main() {
       () async {
     await testNocterm('info toast shrink-wraps', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
-      await tester.pumpComponent(_toastHost(toastKey));
+      await tester.pumpComponent(toastHost(toastKey));
       toastKey.currentState?.show('hello', mode: ToastMode.info);
       await tester.pump();
 
       final rendered = tester.renderToString(showBorders: false);
-      expect(_nonEmptyLineCount(rendered), lessThanOrEqualTo(3));
+      expect(nonEmptyLineCount(rendered), lessThanOrEqualTo(3));
       expect(rendered, contains('hello'));
     });
   });
@@ -105,12 +105,12 @@ void main() {
       () async {
     await testNocterm('status toast shrink-wraps', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
-      await tester.pumpComponent(_toastHost(toastKey));
+      await tester.pumpComponent(toastHost(toastKey));
       toastKey.currentState?.show('saved', mode: ToastMode.status);
       await tester.pump();
 
       final rendered = tester.renderToString(showBorders: false);
-      expect(_nonEmptyLineCount(rendered), lessThanOrEqualTo(3));
+      expect(nonEmptyLineCount(rendered), lessThanOrEqualTo(3));
       expect(rendered, contains('saved'));
     });
   });
@@ -121,7 +121,7 @@ void main() {
       // Pump the host, then `pump()` again without ever calling `show()`.
       // This is the initial state that previously caused the bad render
       // object to be replaced as soon as the first toast arrived.
-      await tester.pumpComponent(_toastHost(toastKey));
+      await tester.pumpComponent(toastHost(toastKey));
       await tester.pump();
 
       final rendered = tester.renderToString(showBorders: false);
@@ -138,12 +138,12 @@ void main() {
       'shrink-wraps', () async {
     await testNocterm('toast mode transitions', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
-      await tester.pumpComponent(_toastHost(toastKey));
+      await tester.pumpComponent(toastHost(toastKey));
 
       toastKey.currentState?.show('ready', mode: ToastMode.status);
       await tester.pump();
       expect(
-        _nonEmptyLineCount(tester.renderToString(showBorders: false)),
+        nonEmptyLineCount(tester.renderToString(showBorders: false)),
         lessThanOrEqualTo(3),
       );
 
@@ -153,7 +153,7 @@ void main() {
       toastKey.currentState?.show('boom', mode: ToastMode.error);
       await tester.pump();
       final rendered = tester.renderToString(showBorders: false);
-      expect(_nonEmptyLineCount(rendered), lessThanOrEqualTo(6));
+      expect(nonEmptyLineCount(rendered), lessThanOrEqualTo(6));
       expect(rendered, contains('boom'));
     });
   });

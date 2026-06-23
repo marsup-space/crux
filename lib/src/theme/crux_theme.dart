@@ -168,7 +168,6 @@ class CruxThemeData implements MarkdownThemeFields {
   Color get red => error;
   Color get yellow => warning;
   Color get currentLine => surfaceVariant;
-  @override
   Color get surfaceBright => Color.lerp(surfaceVariant, text, 0.16)!;
   Color get onSurface => text;
   Color get onSurfaceVariant => Color.lerp(textMuted, text, 0.45)!;

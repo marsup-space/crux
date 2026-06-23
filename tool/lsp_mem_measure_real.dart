@@ -50,7 +50,7 @@ Future<int> main() async {
     input: p1.stdout,
     output: p1.stdin,
     tag: 'crux-test',
-    onFatal: (_, __) {},
+    onFatal: (_, _) {},
   );
   // Avoid pulling in the helper; just use the public API.
 

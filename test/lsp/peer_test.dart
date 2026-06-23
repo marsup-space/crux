@@ -163,7 +163,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       final result = await peer.request('foo/bar', {'value': 42});
@@ -187,7 +187,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
       peer.notify('hello');
       await Future.delayed(const Duration(milliseconds: 50));
@@ -216,7 +216,7 @@ void main() {
         input: pipe2.aInput,
         output: pipe2.aOutput,
         tag: 'test2',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       // Manually feed a response split into two writes that arrive
@@ -263,7 +263,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       final results = await Future.wait([
@@ -289,7 +289,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       final pending = peer.request('will-fail');
@@ -315,7 +315,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       final received = <Map<String, dynamic>>[];
@@ -354,7 +354,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       // Server pushes a notification to peer — peer has no handler,
@@ -381,7 +381,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       // Capture what the peer writes back. Peer output goes to
@@ -417,7 +417,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       peer.onRequest('workspace/configuration', (params) async {
@@ -480,7 +480,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
 
       final pending = peer.request('never-replies');
@@ -499,7 +499,7 @@ void main() {
         input: pipe.aInput,
         output: pipe.aOutput,
         tag: 'test',
-        onFatal: (_, __) {},
+        onFatal: (_, _) {},
       );
       await pipe.controllerA.close();
       await Future<void>.delayed(const Duration(milliseconds: 10));

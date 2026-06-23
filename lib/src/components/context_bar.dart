@@ -429,10 +429,10 @@ class RenderContextBar extends RenderObject {
   final int _width;
   double _fillRatio;
   String _label;
-  Color _fillColor;
-  Color _emptyColor;
-  Color _labelFillFg;
-  Color _labelEmptyFg;
+  final Color _fillColor;
+  final Color _emptyColor;
+  final Color _labelFillFg;
+  final Color _labelEmptyFg;
 
   RenderContextBar({
     required int width,
