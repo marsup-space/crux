@@ -124,6 +124,49 @@ void main() {
       expect(events.length, greaterThanOrEqualTo(2));
     });
 
+    test(
+      'initialize fires the changes stream when it loads a persisted key',
+      () async {
+        // Regression: a previous version of `_loadFromAuthToml`
+        // set the in-memory key but did NOT notify subscribers.
+        // The chat panel's `_webProviderChangesSub` listener
+        // therefore never re-ran `registerWebTools` on cold
+        // start, leaving `websearch` permanently missing from
+        // the LLM's tool list even though the key was sitting
+        // in `auth.toml` the whole time.
+        //
+        // Pre-write `auth.toml` with a key, simulate the cold
+        // start, and assert both: the key lands in memory AND
+        // the changes stream fires.
+        final authFile = File(p.join(tempDir.path, 'auth.toml'));
+        await authFile.writeAsString('TEST_API_KEY = "sk-persisted"\n');
+
+        final registry = newRegistry()
+          ..register(_CountingProvider(
+            id: 'test',
+            supports: {ToolCapability.search},
+          ));
+
+        // Listen BEFORE initialize() — broadcast streams don't
+        // replay, so a listener set up after the event would
+        // miss it. This is exactly the order the chat panel
+        // uses (synchronous `changes.listen` after
+        // `unawaited(initialize())`).
+        final events = <int>[];
+        final sub = registry.changes.listen((_) => events.add(events.length));
+
+        await registry.initialize();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await sub.cancel();
+
+        expect(registry.getApiKey('test'), 'sk-persisted');
+        expect(events, isNotEmpty,
+            reason: 'changes stream must fire so listeners '
+                're-register web tools');
+        expect(registry.isAnySearchProviderConfigured, isTrue);
+      },
+    );
+
     test('removeApiKey clears the key and deactivates', () async {
       final registry = newRegistry()
         ..register(_CountingProvider(

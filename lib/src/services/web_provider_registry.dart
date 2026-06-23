@@ -159,6 +159,7 @@ class WebProviderRegistry {
     if (!await file.exists()) return;
     try {
       final content = await file.readAsString();
+      var anyLoaded = false;
       for (final provider in _providers.values) {
         final fieldName = _keyEnvFieldName(provider.id);
         final match = RegExp(
@@ -167,7 +168,21 @@ class WebProviderRegistry {
         ).firstMatch(content);
         if (match != null) {
           provider.setApiKey(_unescapeToml(match.group(1)!));
+          anyLoaded = true;
         }
+      }
+      if (anyLoaded) {
+        // Notify subscribers so listeners — most importantly
+        // the chat panel's `_webProviderChangesSub` — can
+        // re-evaluate tool availability. `setApiKey` /
+        // `removeApiKey` fire this for runtime mutations, but
+        // the load-from-disk path is the *first* place the key
+        // shows up in memory and would otherwise stay invisible
+        // to listeners. Symptom: a cold start with a persisted
+        // key in `auth.toml` would have `websearch` permanently
+        // missing from the LLM's tool list, because
+        // `registerWebTools` ran before `initialize()` resolved.
+        _changes.add(null);
       }
     } on FileSystemException {
       // Permission errors / corrupt file — ignore, treat as
