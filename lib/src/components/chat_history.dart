@@ -26,6 +26,7 @@ import 'session_controller.dart';
 import 'streaming_bubble.dart';
 import 'streaming_controller.dart';
 import 'tldr_bubble.dart';
+import '../utils/quick_reply_parser.dart';
 
 /// Lazy item-builder: produces the widget for items[index] only when
 /// the ListView actually lays out that index. Lets us defer the
@@ -64,6 +65,14 @@ class ChatHistory extends StatefulComponent {
   /// if the id is stale).
   final void Function(int sessionId)? onSessionLinkTap;
 
+  /// Callback fired when the user clicks a quick-reply token
+  /// (`ask://label{answer}` or `ask://label`) inside an assistant
+  /// message bubble. The chat panel implements this to submit the
+  /// reply as a new user message or append it to the current
+  /// draft, depending on whether the chat input is empty — see
+  /// `docs/design-quick-reply.md`.
+  final void Function(QuickReply reply)? onQuickReplyTap;
+
   const ChatHistory({
     super.key,
     required this.scrollController,
@@ -76,6 +85,7 @@ class ChatHistory extends StatefulComponent {
     required this.refresh,
     this.onToolCallTap,
     this.onSessionLinkTap,
+    this.onQuickReplyTap,
   });
 
   @override
@@ -120,6 +130,66 @@ class _ChatHistoryState extends State<ChatHistory> {
     final lastRoundStart = isStreaming
         ? -1
         : messages.lastIndexWhere((m) => m.role == 'user');
+
+    // An agent turn can span several rounds: the LLM emits reasoning
+    // + tool_use, the tools run, then the LLM emits more reasoning +
+    // (more) tool_use, … Each round's reasoning is persisted on its
+    // own Message row. We want at most ONE reasoning block expanded
+    // on screen at any time — that "one" is whichever reasoning the
+    // user can most recently read: the live round's reasoning inside
+    // the [StreamingBubble] (when new reasoning is actually being
+    // streamed), otherwise the most-recent persisted reasoning
+    // ([lastReasoningIndex]). Every older reasoning collapses into a
+    // summary line ("Think: 5.2s, 1234 tokens [normal]") matching
+    // the previous-agent-turn style. Without this filter, a
+    // multi-round turn would render every round's reasoning expanded
+    // at once — a wall of text the user has to scroll past.
+    int? lastReasoningIndex;
+    for (var j = messages.length - 1; j >= 0; j--) {
+      final m = messages[j];
+      if ((m.role == 'ai' || m.role == 'tool_call') &&
+          m.reasoningContent.isNotEmpty) {
+        lastReasoningIndex = j;
+        break;
+      }
+    }
+
+    // Has the *current* round started streaming new reasoning content
+    // yet? Until that first reasoning delta lands, the most-recent
+    // persisted reasoning stays expanded — collapsing it the moment
+    // a new round starts (but before any new thinking has been
+    // emitted) would feel like a flicker. Once the live round starts
+    // emitting reasoning, the streaming bubble takes over as "the
+    // one" expanded reasoning block, and every persisted reasoning
+    // collapses into a summary line.
+    //
+    // `streamingReasoningFor` is empty between rounds
+    // (`clearStreamingFor` / `beginWaitingForModel` reset it on
+    // every round boundary) and only becomes non-empty once the
+    // current round's first reasoning delta lands. So this flag is
+    // exactly the "a new think has appeared" signal we need.
+    final newReasoningStarted = isStreaming &&
+        component.streamingController
+            .streamingReasoningFor(sessionId ?? 0)
+            .isNotEmpty;
+
+    // Find the index of the most-recently-persisted `ai` message.
+    // This is the bubble where quick-reply buttons should be live —
+    // choices from older turns are stale and would mislead the user
+    // (the conversation has moved on, the proposed action was either
+    // taken or abandoned). While a new turn is streaming, the
+    // *persisted* latest is technically the previous turn, but we
+    // suppress its buttons too: the streaming bubble is the active
+    // response and the user shouldn't be re-engaging old choices
+    // mid-stream. Source text still renders normally, just without
+    // button styling or click handling.
+    int? latestAiIndex;
+    for (var j = messages.length - 1; j >= 0; j--) {
+      if (messages[j].role == 'ai') {
+        latestAiIndex = j;
+        break;
+      }
+    }
 
     final resultByCallId = <String, Message>{};
     for (final m in messages) {
@@ -190,7 +260,26 @@ class _ChatHistoryState extends State<ChatHistory> {
 
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
-      final collapsed = i < lastRoundStart;
+      // Reasoning-bearing messages — `ai` and `tool_call` rows that
+      // carry `reasoningContent` — collapse to a summary line unless
+      // they're the most-recent reasoning the user can currently see
+      // (the "one" expanded block). That "one" is:
+      //   * the live round's reasoning in the streaming bubble, when
+      //     new reasoning is actually being streamed (`newReasoningStarted`),
+      //   * otherwise the most-recent persisted reasoning
+      //     ([lastReasoningIndex]).
+      // Anything older than that collapses into a `Think: 5.2s,
+      // 1234 tokens [normal]` summary line, matching how a previous
+      // agent turn's think bubble renders. For other roles (`user`,
+      // `tool`, system bubbles) `reasoningCollapsed` is ignored by
+      // [MessageBubble], so the original `lastRoundStart` rule is
+      // fine.
+      final isReasoningMsg =
+          (msg.role == 'ai' || msg.role == 'tool_call') &&
+              msg.reasoningContent.isNotEmpty;
+      final collapsed = isReasoningMsg
+          ? i != lastReasoningIndex || newReasoningStarted
+          : i < lastRoundStart;
       Message? pairedResult;
       final pairedResultsByCallId = <String, Message>{};
       if (msg.role == 'tool_call') {
@@ -215,6 +304,18 @@ class _ChatHistoryState extends State<ChatHistory> {
       // `itemBuilder` is called for this index — i.e. when the
       // bubble is actually laid out. Off-screen bubbles stay
       // un-built, which is the whole point of the change.
+      //
+      // Quick-reply buttons are gated to the latest `ai` message
+      // and only when no turn is currently streaming. Every other
+      // message (older AI, user, tool, compaction summary) gets
+      // `onQuickReplyTap: null` — with the callback null,
+      // [HighlightedMarkdownText] skips parsing `ask://` tokens
+      // entirely, so the source text renders as plain markdown
+      // (no button styling, no hover, no click handling). The
+      // answer is effectively invisible — what shows is just the
+      // literal `ask://label{answer}` or `ask://label` text.
+      final isLatestAi = i == latestAiIndex;
+      final enableQuickReplies = isLatestAi && !isStreaming;
       items.add((ctx) {
         return MessageBubble(
           message: msg,
@@ -227,6 +328,8 @@ class _ChatHistoryState extends State<ChatHistory> {
           reasoningPresets: reasoningPresets,
           onToolCallTap: component.onToolCallTap,
           onSessionLinkTap: component.onSessionLinkTap,
+          onQuickReplyTap:
+              enableQuickReplies ? component.onQuickReplyTap : null,
         );
       });
 

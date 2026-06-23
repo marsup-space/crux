@@ -53,6 +53,25 @@ void main() {
       expect(out, contains('ses://1014'));
     });
 
+    test('teaches the LLM the ask:// quick-reply format', () {
+      // Mirrors the ses:// test above. The TUI parses `ask://…`
+      // tokens as clickable buttons; if the prompt drops this
+      // section, the model has no way to know the format exists
+      // and will fall back to plain prose, which loses the whole
+      // point of the feature.
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Quick reply'));
+      expect(out, contains('ask://label{answer}'));
+      expect(out, contains('ask://label'));
+      expect(out, contains('ask://Use cache'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),

@@ -23,6 +23,7 @@ import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/quick_reply_parser.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
@@ -665,6 +666,33 @@ class _ChatPanelState extends State<ChatPanel> {
     }
     scrollController.scrollToBottom();
     setState(() {});
+  }
+
+  /// Quick-reply button handler.
+  ///
+  /// Routes the click based on the chat input box state at the
+  /// moment of click — see `docs/design-quick-reply.md`
+  /// §"UX: How a Click Becomes a Message":
+  ///
+  /// - Empty / whitespace-only input → submit `reply.answer`
+  ///   directly (the button alone is a complete reply).
+  /// - Non-empty input → append `reply.answer` to the existing
+  ///   draft with a newline separator, so the user can keep
+  ///   composing and review what they're about to send.
+  ///
+  /// The streaming-state handling is uniform (no special path):
+  /// `submit` goes through the existing `onSendTurn` which queues
+  /// via `MessageQueue` if the agent is streaming, and `appendText`
+  /// doesn't care about stream state.
+  void _handleQuickReplyTap(QuickReply reply) {
+    final input = _chatInputKey.currentState;
+    if (input == null) return;
+    final draft = input.component.textController.text.trim();
+    if (draft.isEmpty) {
+      input.submit(reply.answer);
+    } else {
+      input.appendText(reply.answer);
+    }
   }
 
   /// Resolve the active model's [CodingPlanProvider] mixin (if
@@ -1326,6 +1354,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       refresh: _refresh,
                       onToolCallTap: _openToolDetail,
                       onSessionLinkTap: _handleSessionLinkTap,
+                      onQuickReplyTap: _handleQuickReplyTap,
                     ),
                     ...overlays,
                   ],

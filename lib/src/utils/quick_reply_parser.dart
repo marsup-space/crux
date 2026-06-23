@@ -1,0 +1,392 @@
+import 'package:nocterm/nocterm.dart';
+
+/// A clickable quick-reply token found in rendered markdown text.
+///
+/// Surfaces the `ask://label{answer}` and `ask://label` tokens the
+/// agent writes in its replies so the TUI can render them as
+/// clickable buttons. Clicking the button either submits `answer` as
+/// the next user message (when the chat input is empty) or appends it
+/// to the current draft (when the input is non-empty) — see
+/// `docs/design-quick-reply.md` for the full UX spec.
+///
+/// Offsets are absolute positions in the **plain rendered text** of a
+/// markdown rendering (i.e. the result of flattening [InlineSpan]
+/// trees to a single string), matching what
+/// [RenderParagraph.getCharacterIndexAtLocalPosition] expects.
+///
+/// Labels and answers are returned **trimmed** and with all
+/// surrounding whitespace removed. The label and answer may differ
+/// (explicit form `ask://label{answer}`) or be identical (shorthand
+/// `ask://label`, where `answer` defaults to `label`). Either way both
+/// are non-empty.
+class QuickReply {
+  /// Display text shown on the rendered button.
+  final String label;
+
+  /// Text submitted or appended when the button is clicked. Always
+  /// non-empty and trimmed.
+  final String answer;
+
+  /// Absolute offset of the matched `ask://…` substring in the
+  /// rendered text.
+  final int sourceStart;
+
+  /// Length of the matched substring in characters.
+  final int sourceLength;
+
+  QuickReply({
+    required this.label,
+    required this.answer,
+    required this.sourceStart,
+    required this.sourceLength,
+  });
+
+  /// One past the last character index of the matched token.
+  int get sourceEnd => sourceStart + sourceLength;
+
+  /// Absolute offset of the rendered label in the **post-substitution**
+  /// rendered text. `null` until [applyQuickReplyTokens] has run on
+  /// the spans containing this reply; populated by the renderer as it
+  /// walks the span tree and substitutes each reply region with its
+  /// label.
+  ///
+  /// Hit-testing in `HighlightedMarkdownText._linkAtEvent` reads the
+  /// character index from `RenderParagraph` against the rendered
+  /// (substituted) text, so it MUST use [renderedStart] (and
+  /// [containsRenderedIndex]) — not [sourceStart] / [containsIndex].
+  /// The source offsets are kept for cases where the original
+  /// `ask://…` substring needs to be located (e.g. debugging or
+  /// telemetry), but no runtime UI flow hits against them after
+  /// substitution.
+  int? renderedStart;
+
+  /// Length of the rendered label (always equal to [label].length).
+  /// Tracked separately so [containsRenderedIndex] is symmetric with
+  /// [containsIndex].
+  int? renderedLength;
+
+  bool containsIndex(int index) =>
+      index >= sourceStart && index < sourceEnd;
+
+  bool containsRenderedIndex(int index) {
+    final rs = renderedStart;
+    final rl = renderedLength;
+    if (rs == null || rl == null) return false;
+    return index >= rs && index < rs + rl;
+  }
+
+  @override
+  String toString() {
+    final rendered =
+        renderedStart != null ? ' rendered=$renderedStart:$renderedLength' : '';
+    return 'QuickReply("$label" -> "$answer" '
+        '@$sourceStart:$sourceLength$rendered)';
+  }
+}
+
+/// Reference regex for quick-reply tokens. Two alternatives tried in
+/// order:
+///
+///   1. `ask://label{answer}` — explicit form. Label is non-greedy
+///      non-brace text; answer is non-greedy non-brace text between
+///      `{` and the FIRST `}` (no nesting).
+///   2. `ask://label` — shorthand. Label extends up to the next
+///      `ask://` token, end-of-line, or end-of-input. Whitespace is
+///      NOT a shorthand boundary — labels can be multi-word.
+///      `ask://Use cache` is one button with label "Use cache".
+///
+/// `{` and `}` are reserved and cannot appear in label or answer.
+/// Agents that need them must rephrase.
+///
+/// NOTE: this regex can greedily span across another `ask://` substring
+/// when an inner `ask://{...}` block is reachable from an outer
+/// `ask://`. We defend against that in [parseQuickReplies] via
+/// post-validation: if a match's label itself contains `ask://`, we
+/// treat the match as degenerate and advance past just the opener so
+/// the inner `ask://` becomes the next candidate.
+final _askRegex = RegExp(
+  r'ask://'
+  r'(?:'
+  r'([^{}\n]+?)\s*\{\s*([^}\n]*?)\s*\}'   // explicit: ask://label{answer}
+  r'|'
+  r'([^{}\n]+?)'                          // shorthand: ask://label
+  r'(?=ask://|$|\n)'                      //   terminated by next ask / eol / eof
+  r')',
+  multiLine: true,
+);
+
+/// Walk a markdown-rendered inline-span tree and return every
+/// `ask://…` quick-reply token found **outside of code spans**.
+///
+/// Code-span detection mirrors `parseSessionRefs`: any span whose
+/// accumulated style has a non-null `backgroundColor` is treated as
+/// code, catching both inline code (`` `foo` ``) and fenced code
+/// blocks. This matters because the agent's own prompt documentation
+/// for the `ask://` syntax lives inside backticks — without the
+/// exclusion, the doc text itself would render as buttons.
+///
+/// Tokens whose label or answer trims to empty are silently dropped
+/// (they render as plain text). Tokens whose label itself contains
+/// `ask://` — meaning the regex spanned across another `ask://` in
+/// the same string — are also dropped, and the scan resumes from
+/// just past the offending opener so the inner token gets a fresh
+/// chance to match. The walk is single-pass and order-preserving:
+/// replies come back in the order they appear in the rendered text.
+List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
+  final result = <QuickReply>[];
+  final offsetRef = [0];
+
+  void processText(String text) {
+    if (text.isEmpty) return;
+    var pos = 0;
+    while (pos < text.length) {
+      // Jump straight to the next 'ask://' candidate instead of
+      // re-scanning every character. text.indexOf returns -1 when
+      // there are no more candidates, terminating the loop.
+      final nextStart = text.indexOf('ask://', pos);
+      if (nextStart == -1) break;
+
+      final m = _askRegex.matchAsPrefix(text.substring(nextStart));
+      if (m == null) {
+        // Defensive: we just found 'ask://' but the full regex
+        // didn't match (shouldn't happen, but if it does, skip past
+        // this literal to avoid infinite looping).
+        pos = nextStart + 'ask://'.length;
+        continue;
+      }
+
+      String label;
+      String answer;
+      if (m.group(1) != null) {
+        // Explicit form: group(1) is the label, group(2) is the
+        // answer.
+        label = m.group(1)!.trim();
+        answer = m.group(2)!.trim();
+      } else {
+        // Shorthand form: group(3) is the label; answer defaults to
+        // the label per the spec.
+        label = m.group(3)!.trim();
+        answer = label;
+      }
+
+      // Reject degenerate tokens where the regex spanned across
+      // another `ask://` substring. Skip past just the opener so the
+      // inner `ask://` (if any) becomes the next candidate.
+      if (label.contains('ask://')) {
+        pos = nextStart + 'ask://'.length;
+        continue;
+      }
+      // Reject tokens whose label or answer trimmed to empty. The
+      // regex itself prevents this for explicit forms (label
+      // `[^{}\n]+?` requires ≥1 non-brace char), but shorthand forms
+      // can still trim down to empty (e.g. `ask:// ` with a trailing
+      // space). Skip past the full match in that case.
+      if (label.isEmpty || answer.isEmpty) {
+        pos = nextStart + m.end;
+        continue;
+      }
+
+      result.add(QuickReply(
+        label: label,
+        answer: answer,
+        sourceStart: offsetRef[0] + nextStart,
+        sourceLength: m.end,
+      ));
+      pos = nextStart + m.end;
+    }
+  }
+
+  void walk(InlineSpan span, bool inCode) {
+    if (span is! TextSpan) return;
+    final style = span.style;
+    final childInCode = inCode || (style?.backgroundColor != null);
+    final text = span.text ?? '';
+
+    if (!childInCode && text.isNotEmpty) {
+      processText(text);
+    }
+
+    offsetRef[0] += text.length;
+
+    if (span.children != null) {
+      for (final child in span.children!) {
+        walk(child, childInCode);
+      }
+    }
+  }
+
+  for (final span in spans) {
+    walk(span, false);
+  }
+  return result;
+}
+
+/// Substitute `ask://…` regions in [spans] with their reply
+/// `label`s, optionally applying button styling.
+///
+/// Every matched region is replaced with `r.label` — **never** the
+/// raw `ask://label{answer}` source text. The label is the only
+/// thing the user ever sees for a quick reply; the wire syntax is
+/// implementation detail.
+///
+/// Render modes (selected by [buttonStyle]):
+///
+/// - `buttonStyle == null` — **label-only mode**. Emit `r.label`
+///   with the surrounding `baseStyle` unchanged. The result is
+///   indistinguishable from ordinary prose. Used for stale turns
+///   where the choice is no longer relevant (see
+///   `docs/design-quick-reply.md` §"Non-Goals: Buttons on stale
+///   turns").
+///
+/// - `buttonStyle != null` — **button mode**. Emit `r.label`
+///   overlaid with [buttonStyle] (and [hoverStyle] for the
+///   currently-hovered reply, when supplied). Used for the active
+///   turn. The button styling makes the clickable region stand out
+///   from surrounding text.
+///
+/// In both modes, the surrounding text and inline formatting
+/// outside the reply regions are preserved verbatim. Hit-testing
+/// (when applicable) works against the original `sourceStart` /
+/// `sourceEnd` offsets in the **source** markdown — the labels
+/// land at those offsets in the rendered text but the click
+/// resolver ([HighlightedMarkdownText]'s `_linkAtEvent`) is given
+/// the un-substituted source positions via the reply object's
+/// `sourceStart` / `sourceLength`, which point at where the
+/// `ask://…` substring WAS in the source. This means even after
+/// the source text is replaced with the label, the hit-test can
+/// still ask `r.containsIndex(charIndex)` against the rendered
+/// layout. See the "Hit-testing with substituted text" section
+/// of the design doc if this ever needs to change.
+///
+/// Returns the original [spans] unchanged when [replies] is empty.
+List<InlineSpan> applyQuickReplyTokens(
+  List<InlineSpan> spans,
+  List<QuickReply> replies, {
+  TextStyle? buttonStyle,
+  TextStyle? hoverStyle,
+  QuickReply? hoveredReply,
+}) {
+  if (replies.isEmpty) return spans;
+
+  // Flatten the tree to (text, style) tuples with running offsets.
+  // Same shape `applySessionLinkStyles` uses — reimplemented here so
+  // quick_reply_parser.dart stays a self-contained unit that's easy
+  // to test on its own.
+  final flat = <_FlatSpan>[];
+  void flatten(InlineSpan span) {
+    if (span is TextSpan) {
+      if (span.text != null && span.text!.isNotEmpty) {
+        flat.add((span.text!, span.style));
+      }
+      if (span.children != null) {
+        for (final child in span.children!) {
+          flatten(child);
+        }
+      }
+    }
+  }
+
+  for (final s in spans) {
+    flatten(s);
+  }
+
+  // Single forward sweep over the flat list, splitting each span
+  // around any overlapping replies. Replies are already in offset
+  // order (parseQuickReplies walks the tree in order), so we can
+  // break early on the first reply past the current span's end.
+  //
+  // Two running cursors:
+  //   * [pos] tracks position in the FLAT input text (pre-
+  //     substitution). Used to locate each reply's [sourceStart]
+  //     / [sourceEnd] region.
+  //   * [renderedPos] tracks position in the OUTPUT spans (post-
+  //     substitution). This is the position the label lands at
+  //     and is what hit-testing reads back from the
+  //     [RenderParagraph] — see [QuickReply.containsRenderedIndex].
+  //
+  // The renderer MUTATES each reply's [QuickReply.renderedStart] /
+  // [renderedLength] fields as it emits the substituted label, so
+  // the caller can hit-test against the resulting layout without
+  // re-walking the span tree to compute offsets.
+  final result = <_FlatSpan>[];
+  var pos = 0;
+  var renderedPos = 0;
+  for (final entry in flat) {
+    final (text, baseStyle) = entry;
+    final spanStart = pos;
+    final spanEnd = pos + text.length;
+
+    final overlapping = <QuickReply>[];
+    for (final r in replies) {
+      if (r.sourceStart >= spanEnd) break;
+      if (r.sourceEnd > spanStart) {
+        overlapping.add(r);
+      }
+    }
+
+    if (overlapping.isEmpty) {
+      result.add(entry);
+      renderedPos += text.length;
+      pos = spanEnd;
+      continue;
+    }
+
+    var cursor = spanStart;
+    for (final r in overlapping) {
+      final replyStart = r.sourceStart;
+      final replyEnd = r.sourceEnd;
+
+      if (replyStart > cursor) {
+        final beforeText =
+            text.substring(cursor - spanStart, replyStart - spanStart);
+        result.add((beforeText, baseStyle));
+        renderedPos += beforeText.length;
+      }
+
+      // The rendered region is ALWAYS the label — never the raw
+      // `ask://label{answer}` source. Whether to layer button
+      // styling on top is the only mode-dependent choice.
+      final style = buttonStyle == null
+          ? baseStyle
+          : _mergeStyles(
+              baseStyle,
+              (hoveredReply != null &&
+                      hoveredReply.sourceStart == r.sourceStart &&
+                      hoveredReply.sourceLength == r.sourceLength &&
+                      hoverStyle != null)
+                  ? hoverStyle
+                  : buttonStyle,
+            );
+      // Record rendered offsets on the reply object before emitting
+      // the label — hit-testing reads these back from the layout.
+      r.renderedStart = renderedPos;
+      r.renderedLength = r.label.length;
+      renderedPos += r.label.length;
+      result.add((r.label, style));
+      cursor = replyEnd;
+    }
+    if (cursor < spanEnd) {
+      final afterText = text.substring(cursor - spanStart);
+      result.add((afterText, baseStyle));
+      renderedPos += afterText.length;
+    }
+    pos = spanEnd;
+  }
+
+  return result
+      .map((e) => TextSpan(text: e.$1, style: e.$2))
+      .toList();
+}
+
+typedef _FlatSpan = (String, TextStyle?);
+
+TextStyle? _mergeStyles(TextStyle? base, TextStyle overlay) {
+  if (base == null) return overlay;
+  return TextStyle(
+    color: overlay.color ?? base.color,
+    backgroundColor: overlay.backgroundColor ?? base.backgroundColor,
+    fontWeight: overlay.fontWeight ?? base.fontWeight,
+    fontStyle: overlay.fontStyle ?? base.fontStyle,
+    decoration: overlay.decoration ?? base.decoration,
+  );
+}

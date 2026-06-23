@@ -12,6 +12,7 @@ import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
+import '../utils/quick_reply_parser.dart';
 import '../lsp/language.dart';
 import '../utils/tool_meta.dart';
 import 'parallel_praise_bubble.dart';
@@ -47,6 +48,14 @@ class MessageBubble extends StatelessComponent {
   /// session links.
   final void Function(int sessionId)? onSessionLinkTap;
 
+  /// Callback when the user clicks a quick-reply token
+  /// (`ask://label{answer}` or `ask://label`) in the assistant's
+  /// prose. Forwarded to [HighlightedMarkdownText] so tokens
+  /// become clickable buttons. Skipped for reasoning blocks and
+  /// tool output — only the assistant's main reply and the
+  /// compaction summary can carry quick replies.
+  final void Function(QuickReply reply)? onQuickReplyTap;
+
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
@@ -57,6 +66,7 @@ class MessageBubble extends StatelessComponent {
     this.reasoningPresets,
     this.onToolCallTap,
     this.onSessionLinkTap,
+    this.onQuickReplyTap,
   });
 
   String _displayEffort(String effort) {
@@ -278,6 +288,7 @@ class MessageBubble extends StatelessComponent {
                         message.content,
                         highlightText: highlightText,
                         onSessionLinkTap: onSessionLinkTap,
+                        onQuickReplyTap: onQuickReplyTap,
                       ),
               ),
             ],
@@ -430,6 +441,8 @@ class MessageBubble extends StatelessComponent {
                 child: HighlightedMarkdownText(
                   message.content,
                   highlightText: highlightText,
+                  onSessionLinkTap: onSessionLinkTap,
+                  onQuickReplyTap: onQuickReplyTap,
                 ),
               ),
             ],

@@ -96,6 +96,61 @@ that session.
   ids. Don't invent ids; the TUI will toast `Session #N not found`
   on stale references.
 
+## Quick reply
+
+When your next step is a **discrete choice** rather than free-form
+text — a multi-way branch, a confirmation, or a parameter pick —
+emit one `ask://…` token per option and Crux renders them as
+clickable buttons. Clicking a button is equivalent to the user
+typing the option's reply text and pressing Enter.
+
+Two equivalent forms:
+
+- `ask://label{answer}` — explicit. Label is what the button shows;
+  `answer` is what gets sent when the user clicks.
+- `ask://label` — shorthand. Clicking sends `label` itself. Use for
+  yes / no / continue / cancel where the display text *is* the reply.
+
+Examples:
+
+- Multi-choice on separate lines (preferred — easiest to scan):
+
+  ```text
+  I see three ways forward:
+  ask://A. Refactor search(){A}
+  ask://B. Add a cache{B}
+  ask://C. Leave as-is{C}
+  ```
+
+- Confirmation with explicit answers:
+
+  ```text
+  This will overwrite foo.txt. Proceed?
+  ask://Proceed{yes, please continue}
+  ask://Cancel{no, stop}
+  ```
+
+- Short yes / no via shorthand:
+
+  ```text
+  Apply the patch? ask://Yes ask://No
+  ```
+
+Rules:
+
+- One `ask://` per option. Stacking on separate lines is preferred
+  for multi-choice; inline shorthand is fine for short yes / no.
+- Labels can be multi-word: `ask://Use cache` is one button with
+  label `Use cache`.
+- `{` and `}` are reserved delimiters and **cannot appear in label
+  or answer**. Rephrase if you need them.
+- `ask://` is reserved and **cannot appear inside a label or answer**.
+  The parser drops malformed tokens silently rather than rendering
+  them as buttons.
+- Don't use `ask://` for free-form questions — if the user needs to
+  type something, just write a regular sentence ending in `?`. The
+  user types a reply in the input box.
+
 ## Tool tiers
 
 Tools are organized in tiers by how specialized they are.

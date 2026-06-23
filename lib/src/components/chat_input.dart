@@ -305,6 +305,47 @@ class ChatInputState extends State<ChatInput> {
     restoreCommandStash();
   }
 
+  /// Submit [text] as a new user message, equivalent to the user
+  /// typing `text` and pressing Enter. Used by the quick-reply
+  /// handler when the chat input is empty at click time —
+  /// `docs/design-quick-reply.md` §"UX: How a Click Becomes a
+  /// Message".
+  ///
+  /// Delegates to the same `onSendTurn` path as [_sendMessage],
+  /// so existing submission-side effects (input clearing, image
+  /// draining, auto-scroll) all happen uniformly.
+  void submit(String text) {
+    if (text.trim().isEmpty) return;
+    component.onSendTurn(text);
+  }
+
+  /// Append [text] to the existing input draft with a single
+  /// newline separator and move the caret to the end. Used by
+  /// the quick-reply handler when the chat input already has
+  /// draft text.
+  ///
+  /// Join rules:
+  ///   - Empty/whitespace-only draft → just [text].
+  ///   - Non-empty draft (after trimming trailing whitespace) →
+  ///     insert `\n` then [text].
+  ///
+  /// We trim trailing whitespace before inserting the separator
+  /// so a stray trailing space or newline in the user's draft
+  /// doesn't produce ugly double separators. After step 1
+  /// (trim), the draft never ends with `\n`, so the "skip if
+  /// already ends with newline" rule from earlier design
+  /// iterations is moot and the rule simplifies to "always
+  /// insert one separator when joining".
+  void appendText(String text) {
+    if (text.isEmpty) return;
+    final current = component.textController.text.trimRight();
+    final newText = current.isEmpty ? text : '$current\n$text';
+    component.textController.text = newText;
+    component.textController.selection = TextSelection.collapsed(
+      offset: newText.length,
+    );
+  }
+
   /// Capture the overlay's "what the panel needs to redraw"
   /// state right before we mutate it, so [_onTextChanged] can
   /// tell whether a chat-panel rebuild is actually needed.

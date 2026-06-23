@@ -13,6 +13,7 @@ import 'highlight_service.dart';
 import 'markdown_isolate.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/frame_profiler.dart';
+import '../../utils/quick_reply_parser.dart';
 import '../../utils/session_refs.dart';
 
 class HighlightedMarkdownText extends StatefulComponent {
@@ -29,6 +30,9 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.onSessionLinkTap,
     this.sessionLinkStyle,
     this.sessionLinkHoverStyle,
+    this.onQuickReplyTap,
+    this.quickReplyStyle,
+    this.quickReplyHoverStyle,
   });
 
   final String data;
@@ -72,6 +76,28 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// Override the hover style. Defaults to a reverse-video treatment
   /// using `tldrLink` as the background.
   final TextStyle? sessionLinkHoverStyle;
+
+  /// Callback fired when the user clicks a quick-reply token
+  /// (`ask://label{answer}` or `ask://label`) in the rendered text.
+  /// Receives the parsed [QuickReply].
+  ///
+  /// When `null` (the default), the widget skips parsing quick
+  /// replies entirely — zero per-build cost for callers that don't
+  /// care. Like `onSessionLinkTap`, this is also skipped on the
+  /// isolate parse path (`useIsolate: true`).
+  final void Function(QuickReply reply)? onQuickReplyTap;
+
+  /// Override the style applied to recognized `ask://` regions.
+  /// Defaults to the theme's button background as the cell color
+  /// with bold text — gives the rendered label a clear button-like
+  /// affordance. The label replaces the source `ask://…` text in
+  /// the rendered output; this style is what makes it look like a
+  /// button rather than ordinary prose.
+  final TextStyle? quickReplyStyle;
+
+  /// Override the hover style. Defaults to a reverse-video treatment
+  /// using `buttonBackgroundHover` as the background.
+  final TextStyle? quickReplyHoverStyle;
 
   @override
   State<HighlightedMarkdownText> createState() =>
@@ -122,9 +148,18 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// re-runs cheaply on every hover/state change without re-parsing.
   List<SessionRef> _sessionRefs = const [];
 
+  /// Quick-reply tokens parsed from the current spans. Same
+  /// caching policy as `_sessionRefs`.
+  List<QuickReply> _quickReplies = const [];
+
   /// Which ref (if any) the mouse is currently over. Drives the
   /// hover-style overlay and the click target.
   SessionRef? _hoveredSessionRef;
+
+  /// Which quick reply (if any) the mouse is currently over. Mutually
+  /// exclusive with [_hoveredSessionRef] — a single mouse position
+  /// can only hover one clickable region at a time.
+  QuickReply? _hoveredQuickReply;
 
   /// Key on the inner [RichText] used to locate the [RenderParagraph]
   /// for hit-testing — see [_linkAtEvent].
@@ -151,6 +186,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         final highlight = component.highlightText;
         final wantLinks =
             component.onSessionLinkTap != null && !component.useIsolate;
+        final wantQuickReplies =
+            component.onQuickReplyTap != null && !component.useIsolate;
 
         final dataChanged = data != _lastData;
         final paramsChanged = styleSheet != _lastStyleSheet ||
@@ -182,11 +219,24 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               styleSheet: styleSheet,
             );
           }
-          // Re-parse session refs alongside the markdown parse so
-          // the two stay in lockstep. Cheap — single regex pass on
-          // the rendered text outside code spans.
-          _sessionRefs = wantLinks ? parseSessionRefs(_spans) : const [];
+          // Re-parse session refs and quick replies alongside the
+          // markdown parse so they stay in lockstep. Each is a
+          // cheap single-pass regex over the rendered text outside
+          // code spans.
+          //
+          // Quick replies are parsed UNCONDITIONALLY (not gated on
+          // `wantQuickReplies`) because the renderer also uses the
+          // result in label-only mode for stale turns — see the
+          // build branch below. The parse is a single regex pass
+          // over the rendered spans, comparable in cost to the
+          // session-refs pass.
+          _sessionRefs =
+              wantLinks ? parseSessionRefs(_spans) : const [];
           _hoveredSessionRef = null;
+          _quickReplies = component.useIsolate
+              ? const []
+              : parseQuickReplies(_spans);
+          _hoveredQuickReply = null;
         }
 
         // Apply search highlight as a sync overlay. Cheap
@@ -205,10 +255,92 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           );
         }
 
+        // Decide whether any clickable region exists. Each feature
+        // can independently contribute — neither requires the other.
+        //
+        // Quick replies have two display modes:
+        //   * **Button mode** (`wantQuickReplies` true — i.e. the
+        //     message is the latest AI turn and no turn is
+        //     currently streaming): the label is rendered with
+        //     button styling and the click handler is wired up.
+        //   * **Label-only mode** (stale turn — `wantQuickReplies`
+        //     false but there ARE `ask://` tokens in the spans):
+        //     the source text is replaced with the label, but with
+        //     no styling and no click handler. The result is
+        //     indistinguishable from ordinary prose — a user
+        //     scrolling up to an old turn sees just the labels as
+        //     normal text, with no `ask://…` syntax leaking
+        //     through.
+        final haveSessionLinks = wantLinks && _sessionRefs.isNotEmpty;
+        final haveButtonReplies =
+            wantQuickReplies && _quickReplies.isNotEmpty;
+        final haveStaleReplies =
+            !wantQuickReplies && _quickReplies.isNotEmpty;
+        final haveAnyReplies = haveButtonReplies || haveStaleReplies;
+
         // Overlay session-link styles on top of the highlight pass
         // so links inherit the search-highlight background. The
         // hover style wins over the link style for the specific
         // ref under the cursor.
+        if (haveSessionLinks) {
+          final linkStyle = component.sessionLinkStyle ??
+              TextStyle(
+                color: theme.tldrLink,
+                decoration: TextDecoration.underline,
+              );
+          final hoverStyle = component.sessionLinkHoverStyle ??
+              TextStyle(
+                color: theme.onColor(theme.tldrLink),
+                backgroundColor: theme.tldrLink,
+                fontWeight: FontWeight.bold,
+              );
+          renderedSpans = applySessionLinkStyles(
+            renderedSpans,
+            _sessionRefs,
+            linkStyle,
+            hoverStyle,
+            _hoveredSessionRef,
+          );
+        }
+
+        // Overlay quick-reply rendering on top of whatever came
+        // before. The renderer ALWAYS substitutes the source
+        // `ask://…` text with the reply's `label` — the wire
+        // syntax is never shown to the user. The button styling
+        // is applied only in button mode; in stale mode the label
+        // is emitted with the surrounding baseStyle so the result
+        // is indistinguishable from normal prose. The renderer
+        // also records each reply's `renderedStart` / `renderedLength`
+        // so hit-testing (in button mode only) can locate the
+        // substituted label.
+        if (haveButtonReplies) {
+          final buttonStyle = component.quickReplyStyle ??
+              TextStyle(
+                color: theme.buttonTextDisabled,
+                backgroundColor: theme.buttonBackground,
+                fontWeight: FontWeight.bold,
+              );
+          final hoverStyle = component.quickReplyHoverStyle ??
+              TextStyle(
+                color: theme.buttonTextHover,
+                backgroundColor: theme.buttonBackgroundHover,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.underline,
+              );
+          renderedSpans = applyQuickReplyTokens(
+            renderedSpans,
+            _quickReplies,
+            buttonStyle: buttonStyle,
+            hoverStyle: hoverStyle,
+            hoveredReply: _hoveredQuickReply,
+          );
+        } else if (haveStaleReplies) {
+          renderedSpans = applyQuickReplyTokens(
+            renderedSpans,
+            _quickReplies,
+          );
+        }
+
         final richText = RichText(
           key: _richTextKey,
           text: TextSpan(children: renderedSpans),
@@ -220,21 +352,9 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
         );
 
-        if (!wantLinks || _sessionRefs.isEmpty) {
+        if (!haveSessionLinks && !haveAnyReplies) {
           return richText;
         }
-
-        final linkStyle = component.sessionLinkStyle ??
-            TextStyle(
-              color: theme.tldrLink,
-              decoration: TextDecoration.underline,
-            );
-        final hoverStyle = component.sessionLinkHoverStyle ??
-            TextStyle(
-              color: theme.onColor(theme.tldrLink),
-              backgroundColor: theme.tldrLink,
-              fontWeight: FontWeight.bold,
-            );
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -243,28 +363,14 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             opaque: true,
             onHover: _handleHover,
             onExit: (_) {
-              if (_hoveredSessionRef != null) {
-                setState(() => _hoveredSessionRef = null);
+              if (_hoveredSessionRef != null || _hoveredQuickReply != null) {
+                setState(() {
+                  _hoveredSessionRef = null;
+                  _hoveredQuickReply = null;
+                });
               }
             },
-            child: RichText(
-              key: _richTextKey,
-              text: TextSpan(
-                children: applySessionLinkStyles(
-                  renderedSpans,
-                  _sessionRefs,
-                  linkStyle,
-                  hoverStyle,
-                  _hoveredSessionRef,
-                ),
-              ),
-              textAlign: component.textAlign,
-              softWrap: component.softWrap,
-              overflow: component.overflow,
-              maxLines: component.maxLines,
-              selectionTextTransformer: _stripCodeBlockSelectionChrome,
-              selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
-            ),
+            child: richText,
           ),
         );
       },
@@ -284,25 +390,34 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
 
   void _handleHover(MouseEvent event) {
     final hit = _linkAtEvent(event);
-    if (hit == null && _hoveredSessionRef == null) return;
-    if (hit != null &&
-        _hoveredSessionRef != null &&
-        hit.offset == _hoveredSessionRef!.offset &&
-        hit.length == _hoveredSessionRef!.length) {
-      return;
-    }
-    setState(() => _hoveredSessionRef = hit);
+    final newSession = hit is SessionRef ? hit : null;
+    final newReply = hit is QuickReply ? hit : null;
+
+    final sessionChanged = newSession?.sessionId != _hoveredSessionRef?.sessionId;
+    final replyChanged = !_sameQuickReply(newReply, _hoveredQuickReply);
+
+    if (!sessionChanged && !replyChanged && hit == null) return;
+
+    setState(() {
+      _hoveredSessionRef = newSession;
+      _hoveredQuickReply = newReply;
+    });
   }
 
   void _handleTap() {
     final ref = _hoveredSessionRef;
     if (ref != null) {
       component.onSessionLinkTap?.call(ref.sessionId);
+      return;
+    }
+    final reply = _hoveredQuickReply;
+    if (reply != null) {
+      component.onQuickReplyTap?.call(reply);
     }
   }
 
-  SessionRef? _linkAtEvent(MouseEvent event) {
-    if (_sessionRefs.isEmpty) return null;
+  Object? _linkAtEvent(MouseEvent event) {
+    if (_sessionRefs.isEmpty && _quickReplies.isEmpty) return null;
     final rp = _renderParagraph;
     if (rp == null) return null;
 
@@ -314,10 +429,39 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
       Offset(localX, localY),
     );
 
+    // Session refs take precedence — they're the more established
+    // feature. If both happen to land on the same char (extremely
+    // unlikely in practice), the session ref wins.
     for (final ref in _sessionRefs) {
       if (ref.containsIndex(charIndex)) return ref;
     }
+    // Quick-reply hit-testing reads [renderedStart] (NOT
+    // [sourceStart]) because the renderer has substituted the
+    // source `ask://…` text with the (typically shorter) label.
+    // The `charIndex` from the layout engine is in the rendered
+    // text's coordinate space, so it would not align with the
+    // source offsets after substitution. See
+    // [QuickReply.containsRenderedIndex].
+    for (final reply in _quickReplies) {
+      if (reply.containsRenderedIndex(charIndex)) return reply;
+    }
     return null;
+  }
+
+  static bool _sameQuickReply(QuickReply? a, QuickReply? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    // Match on rendered position when both are populated (the
+    // common case after at least one render pass). Fall back to
+    // source position so two never-rendered replies still compare
+    // correctly during the brief window between parse and first
+    // render — defensive only.
+    final aR = a.renderedStart;
+    final bR = b.renderedStart;
+    if (aR != null && bR != null) {
+      return aR == bR && a.renderedLength == b.renderedLength;
+    }
+    return a.sourceStart == b.sourceStart && a.sourceLength == b.sourceLength;
   }
 
   /// Submit a parse request to the worker. The result is

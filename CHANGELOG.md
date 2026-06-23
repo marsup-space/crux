@@ -8,6 +8,24 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Quick reply: `ask://label{answer}` tokens as clickable buttons**
+  — agents can now offer discrete choices inline in their reply
+  (`ask://A{a} ask://B{b} ask://C{c}`), and Crux renders each token
+  as a clickable button. Clicking submits (when the chat input is
+  empty) or appends to the draft (when the input has text). Two
+  forms: explicit `ask://label{answer}` and shorthand
+  `ask://label` (where the label is also sent on click). Source
+  syntax is always substituted with the label before rendering —
+  raw `ask://label{answer}` text never appears in the TUI. Stale
+  turns (older AI messages, or the persisted message during an
+  in-flight streaming turn) render the label as plain prose with
+  no button affordance, so a stale choice can't be picked after
+  the conversation has moved on. Only the latest AI message and
+  only when no turn is currently streaming gets the button mode.
+  See `docs/design-quick-reply.md` for the full spec.
+
 ## [0.7.3] - 2026-06-23
 
 0dbdc27
