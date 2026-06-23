@@ -60,6 +60,12 @@ class Fullpane extends StatefulComponent {
 
 class _FullpaneState extends State<Fullpane> {
   @override
+  void dispose() {
+    NoctermBinding.instance.resetMouseTracking();
+    super.dispose();
+  }
+
+  @override
   Component build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -126,15 +132,13 @@ class _FullpaneState extends State<Fullpane> {
                             color: CruxTheme.of(context).hintText,
                             hoverColor: CruxTheme.of(context).foreground,
                             bgColor: CruxTheme.of(context).surface,
-                            hoverBgColor:
-                                CruxTheme.of(context).buttonBackgroundHover,
+                            hoverBgColor: CruxTheme.of(
+                              context,
+                            ).buttonBackgroundHover,
                           ),
                         ],
                       ),
-                      Divider(
-                        color: CruxTheme.of(context).outline,
-                        height: 1,
-                      ),
+                      Divider(color: CruxTheme.of(context).outline, height: 1),
 
                       // ── Content area ──
                       Expanded(child: component.contentBuilder(context)),
@@ -163,19 +167,14 @@ class _FullpaneState extends State<Fullpane> {
     for (int i = 0; i < component.shortcuts.length; i++) {
       if (i > 0) {
         items.add(
-          Text(
-            '  ',
-            style: TextStyle(color: CruxTheme.of(context).hintText),
-          ),
+          Text('  ', style: TextStyle(color: CruxTheme.of(context).hintText)),
         );
       }
       final s = component.shortcuts[i];
       items.add(
         Text(
           '${s.keyHint} ${s.label}',
-          style: TextStyle(
-            color: CruxTheme.of(context).onSurfaceVariant,
-          ),
+          style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
         ),
       );
     }
