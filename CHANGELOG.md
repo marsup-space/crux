@@ -8,23 +8,168 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-06-23
+
+a964754
+
 ### Features
 
-- **Web tools backed by TinyFish (provider-agnostic)** — `webfetch`
-  now routes through TinyFish's extract API when a key is set,
-  returning clean structured markdown with title/description/metadata
-  instead of raw HTML. New `websearch` tool (also TinyFish-backed)
-  with auto-pagination across up to 5 pages, location/language
-  hints, and optional thumbnails. Both tools are auto-registered
-  only when a key is configured; the `/tinyfish` slash command
-  stores the key in `auth.toml` (`TINYFISH_API_KEY`, `0o600`) and
-  the registry streams a `changes` event so the chat panel
-  rebuilds the tool list on key set/remove. 429/502/503/504 are
-  retried with `Retry-After`-aware backoff (1s/2s/4s, max 3
+- **Web tools backed by TinyFish (provider-agnostic)** (`a964754`) —
+  `webfetch` now routes through TinyFish's extract API when a key is
+  set, returning clean structured markdown with title/description/
+  metadata instead of raw HTML. New `websearch` tool (also
+  TinyFish-backed) with auto-pagination across up to 5 pages,
+  location/language hints, and optional thumbnails. Both tools are
+  auto-registered only when a key is configured; the `/tinyfish`
+  slash command stores the key in `auth.toml` (`TINYFISH_API_KEY`,
+  `0o600`) and the registry streams a `changes` event so the chat
+  panel rebuilds the tool list on key set/remove. 429/502/503/504
+  are retried with `Retry-After`-aware backoff (1s/2s/4s, max 3
   attempts); no silent fallback to raw on provider failure. The
   provider surface (`WebServiceProvider` + `WebProviderRegistry`)
-  is shaped so future providers (Exa, Firecrawl, …) slot in
-  without touching tool code.
+  is shaped so future providers (Exa, Firecrawl, …) slot in without
+  touching tool code.
+
+- **Code-search tier split: `semantic_search` + `find_similar_code`**
+  (`c273791`) — splits the single Tier-1 `code_search` tool into two
+  focused wrappers around the upstream `semble` binary:
+  `semantic_search` (natural-language query → ranked snippets,
+  ~600 ms across the whole codebase) and `find_similar_code`
+  (file:line anchor → code semantically similar to that spot). Tool
+  tiering formalized: Tier 1 = semantic/web/file-system search,
+  Tier 2 = direct file ops, Tier 3 = general shell. Tool descriptions
+  now teach the tier concept so the LLM picks the right tool for the
+  question.
+
+- **Hard-rule codebase exploration + Tier 1 tool reorder** (`a4bdbde`)
+  — adds a `Codebase exploration` hard rule to the universal system
+  prompt, placed right after the `Language (hard rule)` so the two
+  behavior-anchoring rules sit together. The previous tier section
+  (now further down) was a passive catalog of which tool lives in
+  which tier — this rule makes the behavior explicit: Tier 1 is the
+  default for any coding task where the user hasn't already pointed
+  at a specific file. Also reorders `registerDefaults()` so the API
+  tool list (which the LLM scans top-down) leads with Tier 1:
+  `semantic_search`, `find_similar_code`, `webfetch`.
+
+- **`code_search` preference hint — one-shot + 200k/400k/600k
+  threshold re-fires** (`4cac87d`) — teaches the LLM that
+  `code_search` (semantic search) is the preferred surface for
+  "how does X work" / "find code that does X" questions. The hint is
+  appended to the first `grep` or `glob` tool result in two
+  situations: (1) an initial one-shot for the first successful
+  `grep` or `glob` in the session; (2) re-fires each time the LLM's
+  context crosses 200k, 400k, or 600k tokens (useful in long
+  sessions where the original nudge might have fallen out of the
+  recent context window). State persists in `SessionRuntimeState`.
+  Multi-threshold context jumps handle sequentially across
+  subsequent rounds, lowest-first. Companion to the existing
+  shell-tool fallback guard's `codeSearch` verdict — this new hint
+  catches direct `grep`/`glob` overuse, the shell verdict catches
+  `bash | rg | head` fallbacks. 38 new tests.
+
+- **Clickable session links (`ses://<id>`)** (`bbe4e84`) — let the
+  agent reference other Crux sessions in its replies via the
+  `ses://<id>` scheme and have the TUI turn those references into
+  clickable buttons that jump straight to the target session. A new
+  `session_refs.dart` utility walks the inline-span tree of a
+  markdown rendering and finds every `ses://<digits>` reference
+  OUTSIDE of code spans (heuristic: any span with non-null
+  `backgroundColor` is treated as code, catching both inline code and
+  fenced code blocks). `HighlightedMarkdownText` grows three optional
+  props (`onSessionLinkTap`, `sessionLinkStyle`,
+  `sessionLinkHoverStyle`); when the callback is null the parser is
+  skipped entirely, so existing call sites pay zero cost. Session
+  tool output now uses `ses://<id>` instead of bare `#<id>` so the
+  agent sees the convention in context. `kCruxSystemPrompt` gains a
+  `## Session references` section that teaches the format. 21 new
+  tests.
+
+- **Compacted-session back-link with source session's title**
+  (`143b6c9`, `ae65106`) — replaces the bottom-of-compaction-bubble
+  `Open previous session #N` button with a header that sits at the
+  very top of the new session. The link uses the new `ses://<id>`
+  clickable format and reads like a breadcrumb ("← Compacted from
+  Home 界面开发计划") — the source session's actual title, falling
+  back to `ses://<id>` when the title is empty or the source session
+  was deleted. `ChatHistory._findCompactionSource` returns
+  `({int id, String? title})` and resolves the title via
+  `SessionController.findSession(id)`.
+
+- **Streaming perf: delta-time animations, markdown isolate,
+  reasoning block split** (`6a4a3f8`) — Phase 1 of the chat-panel
+  perf roadmap. Three changes that together bring the chat panel
+  back to ~60 fps during long LLM reasoning (was 25-40 fps on
+  15+ kB preambles).
+
+  1. *Delta-time animations.* `TickerCallback` is now
+     `void Function(Duration elapsed)` so animation sites advance on
+     the wall-clock tick delta instead of a fixed 16 ms step.
+     Updated: streaming_bubble animator, context_bar,
+     credit_balance_display, coding_plan_usage_display,
+     glossy_model_button (sweep rate fixed to 25 cells/sec — was 4),
+     extra_info_panel, toast, metrics_display, fps_counter,
+     file_browser_overlay. Chat-service lerp timer now accumulates
+     any frame budget over 16 ms and emits an extra char once that
+     accumulated budget hits 16 ms, preserving the original
+     alpha-flood behavior under varying frame rates.
+  2. *Markdown isolate parsing.* `markdown_isolate.dart` ships a
+     handshaken worker isolate. `HighlightedMarkdownText` opts in
+     via `useIsolate: true` (default false for sync). Main thread
+     just renders the latest parse result — no plain-text fallback,
+     no incremental merging.
+  3. *Reasoning block split.* Reasoning text is now split at `\n\n`
+     paragraph boundaries into blocks of ≤4 kB each (see
+     `reasoning_block_splitter.dart`, 14 new tests). Earlier blocks
+     become frozen widgets — Flutter's element diffing reuses their
+     layout elements, so per-frame layout cost is bounded by the
+     size of the active (last) block rather than the full reasoning
+     preamble. Streaming bubble renders the first block inline with
+     the "Think:" label (preserving the original Row layout visual)
+     and any subsequent blocks below, indented by the "Think:"
+     width for left-margin continuity.
+
+### Fixes
+
+- **`ls | head` / `find | head` is `glob`, not `code_search`**
+  (`5f12a1e`) — the `_isCodeSearchPipe` detector was treating
+  list-verb + truncator patterns as code-search anti-patterns,
+  conflating two distinct intents. `rg "auth" lib/ | head -10`
+  wants matching snippets (use `code_search`); `ls -la build/ |
+  head -5` wants a few directory entries (use `glob`); `find . -name
+  "*.dart" | head -30` wants a few matching files (use `glob`). Fix:
+  remove `listVerbs` from the code-search pipe check. Only search
+  verbs (rg/grep/ack/ag) qualify. `ls | head` and `find | head` now
+  fall through to the verb classifier and surface as `glob`. New
+  regression test asserts the exact command from the user's
+  screenshot classifies as `glob`.
+
+- **Drop `code_search` verdict from shell-guard detector** (`c819ffb`)
+  — too clever, false-positived on common patterns like `perl -pe
+  's|x|y|' file.txt | grep "missing" | head -5`. New rule: classify
+  by checking ONLY the first non-empty, non-shell-script-prefix
+  segment. First verb is `grep`/`rg`/`ack`/`ag` → grep verdict;
+  `cat`/`head`/`less`/`sed` → read; `ls`/`find`/`tree`/`du` → glob;
+  `cd`/`echo`/`export` → skip, check the next segment; anything
+  else (perl, dart, flutter, ps, env, git, curl, …) → no flag. No
+  code_search detection, no path-arg heuristics, no pipe-pattern
+  matching. `ShellGuardKind.codeSearch` enum value is kept for API
+  stability but no longer returned. +71 net tests from the
+  simplification.
+
+- **Annotated scrollbar mouse capture release** (`d7e0af7`) — mouse
+  now properly releases from the scrollbar annotation instead of
+  staying captured.
+
+- **`bash` / `code_search` description hardening** (`4784c8f`,
+  `063f91c`, `c649e6e`, `57675d9`) — `bash` description now leads
+  with a 🚨 CRITICAL marker and frames the DO-NOT-USE block as a
+  hard rule. `code_search` description adds a 🚨 CRITICAL banner
+  urging tool-first use, broadens the banner to an abstract rule
+  (avoids overfitting on literal trigger phrasings), then trims the
+  description to three core points: (1) way faster than grep/glob
+  (~600 ms one call vs. grep+read loop); (2) semantic by concept,
+  not literal substring; (3) reach for it BEFORE grep or glob.
 
 ## [0.7.2] - 2026-06-22
 
