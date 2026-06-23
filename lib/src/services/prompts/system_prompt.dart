@@ -109,7 +109,10 @@ Tier 1 — Specialized (highly optimized, ~600ms)
   `semantic_search`     natural-language query → ranked code snippets
   `find_similar_code`   file:line anchor → code similar to that spot
   `webfetch`            URL → fetched page content
-  For "what code / what page exists, how does X work".
+  `websearch`           query → ranked web results (only when configured)
+  For "what code / what page exists, how does X work", and
+  for "what does the web say about X" when the question needs
+  live / external information.
 
 Tier 2 — File operations (focused on files)
   `read`, `write`, `edit`, `grep`, `glob`

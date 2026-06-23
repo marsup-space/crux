@@ -185,6 +185,27 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
+  // Configure web-search / web-fetch providers. Provider-agnostic on
+  // purpose: every provider exposes the same `<provider> key …`
+  // sub-form, so adding Exa / Firecrawl / etc. needs no command
+  // change — just register another [WebServiceProvider]. Today only
+  // TinyFish is wired up; the registered provider ids come from
+  // [WebServiceProvider.id] (see `services/providers/`).
+  SlashCommand(
+    name: '/web-provider',
+    description:
+        'Configure a web provider: /web-provider (list) | '
+        '/web-provider <name> (status) | '
+        '/web-provider <name> key <key> | '
+        '/web-provider <name> key remove',
+    params: ['<name>', 'key <value>|remove'],
+    suggestionsPerParam: [
+      // First positional arg: provider id, autocompleted from
+      // registered providers in the chat panel.
+      [],
+    ],
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/think',
     description: 'Toggle thinking mode (off|low|normal|adaptive|high|max)',

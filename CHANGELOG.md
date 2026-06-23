@@ -8,6 +8,24 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Web tools backed by TinyFish (provider-agnostic)** — `webfetch`
+  now routes through TinyFish's extract API when a key is set,
+  returning clean structured markdown with title/description/metadata
+  instead of raw HTML. New `websearch` tool (also TinyFish-backed)
+  with auto-pagination across up to 5 pages, location/language
+  hints, and optional thumbnails. Both tools are auto-registered
+  only when a key is configured; the `/tinyfish` slash command
+  stores the key in `auth.toml` (`TINYFISH_API_KEY`, `0o600`) and
+  the registry streams a `changes` event so the chat panel
+  rebuilds the tool list on key set/remove. 429/502/503/504 are
+  retried with `Retry-After`-aware backoff (1s/2s/4s, max 3
+  attempts); no silent fallback to raw on provider failure. The
+  provider surface (`WebServiceProvider` + `WebProviderRegistry`)
+  is shaped so future providers (Exa, Firecrawl, …) slot in
+  without touching tool code.
+
 ## [0.7.2] - 2026-06-22
 
 d8f1e68

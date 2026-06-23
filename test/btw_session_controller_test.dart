@@ -17,6 +17,7 @@ import 'package:crux/src/services/chat_service.dart';
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/services/provider_service.dart';
 import 'package:crux/src/services/tool_executor.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
@@ -44,7 +45,7 @@ void main() {
     // We construct real instances because the constructor
     // signatures require them; both are cheap to build.
     final toolRegistry = ToolRegistry()
-      ..registerDefaults(FileReadTracker(), sessionStore: store);
+      ..registerDefaults(FileReadTracker(), sessionStore: store, webProviderRegistry: WebProviderRegistry());
     return SessionController(
       store: store,
       providerService: providerService,

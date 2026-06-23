@@ -7,6 +7,7 @@ import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/services/tool_executor.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/tools/bash_tool.dart';
 import 'package:path/path.dart' as p;
 import 'package:crux/src/tools/cmd_tool.dart';
@@ -86,7 +87,11 @@ void main() {
       final db = CruxDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final registry = ToolRegistry();
-      registry.registerDefaults(tracker, sessionStore: SessionStore(db));
+      registry.registerDefaults(
+        tracker,
+        sessionStore: SessionStore(db),
+        webProviderRegistry: WebProviderRegistry(),
+      );
       final names = registry.all.map((t) => t.name).toList();
       final expectedShell = Platform.isWindows ? 'cmd' : 'bash';
       expect(

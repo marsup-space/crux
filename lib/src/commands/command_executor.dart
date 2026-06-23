@@ -9,6 +9,8 @@ import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
+import '../services/web_provider_registry.dart';
+import '../services/web_service_provider.dart';
 import '../storage/session_store.dart';
 import '../utils/terminal_symbols.dart';
 import '../utils/user_data_directory.dart';
@@ -24,6 +26,13 @@ class CommandContext {
   final SessionStore store;
   final ProviderService providerService;
   final bool providerServiceReady;
+  /// Web provider registry backing `webfetch` / `websearch`. The
+  /// `/web-provider <name> key …` command uses this to set /
+  /// remove API keys for web providers (TinyFish today, Exa /
+  /// Firecrawl in the future); the registry's `changes` stream
+  /// then drives a tool-registry rebuild so the LLM sees the
+  /// updated `websearch` visibility on its next turn.
+  final WebProviderRegistry webProviderRegistry;
   final Session currentSession;
   final int? currentSessionId;
   final List<Session> sessions;
@@ -136,6 +145,7 @@ class CommandContext {
     required this.store,
     required this.providerService,
     required this.providerServiceReady,
+    required this.webProviderRegistry,
     required this.currentSession,
     required this.currentSessionId,
     required this.sessions,
@@ -181,6 +191,8 @@ class CommandExecutor {
         await executeNew(ctx);
       case '/provider':
         await executeProvider(parts, ctx);
+      case '/web-provider':
+        await executeWebProvider(parts, ctx);
       case '/theme':
         await executeTheme(parts, ctx);
       case '/think':
@@ -416,6 +428,134 @@ class CommandExecutor {
       '${terminalSymbol('✓', '+')} Saved API key for $name',
       mode: ToastMode.status,
     );
+  }
+
+  /// `/web-provider [<provider> [key [<value>|remove]]]`
+  ///
+  /// Configure web-search / web-fetch providers. Provider-agnostic
+  /// on purpose: every provider exposes the same `<provider> key …`
+  /// sub-form, so adding Exa / Firecrawl / etc. needs no command
+  /// change — just register another [WebServiceProvider].
+  ///
+  /// Forms:
+  /// - `/web-provider`                          → list every
+  ///                                                registered
+  ///                                                provider with
+  ///                                                status
+  /// - `/web-provider <provider>`               → show one
+  ///                                                provider's
+  ///                                                status
+  /// - `/web-provider <provider> key <value>`   → persist the API
+  ///                                                key (writes to
+  ///                                                `auth.toml`,
+  ///                                                mode `0o600`)
+  /// - `/web-provider <provider> key remove`    → delete the
+  ///                                                persisted key
+  ///
+  /// The provider id is the same string used by
+  /// [WebServiceProvider.id] (e.g. `tinyfish`). Each provider's
+  /// key is persisted under a provider-specific field in
+  /// `auth.toml` (see `WebProviderRegistry._keyEnvFieldName`).
+  Future<void> executeWebProvider(
+    List<String> parts,
+    CommandContext ctx,
+  ) async {
+    final registry = ctx.webProviderRegistry;
+
+    if (parts.length == 1) {
+      // /web-provider — list every registered provider with status.
+      final providers = registry.allProviders;
+      if (providers.isEmpty) {
+        ctx.showToast(
+          'No web providers registered.',
+          mode: ToastMode.error,
+        );
+        return;
+      }
+      ctx.showToast(providers.map(_webProviderStatusLine).join('\n'));
+      return;
+    }
+
+    final providerId = parts[1].trim();
+    final provider = registry.getProvider(providerId);
+    if (provider == null) {
+      final known =
+          registry.allProviders.map((p) => p.id).join(', ');
+      ctx.showToast(
+        'Unknown web provider "$providerId".'
+        '${known.isEmpty ? '' : ' Known: $known.'}'
+        ' Usage: /web-provider <name> key <value>|remove',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    if (parts.length == 2) {
+      // /web-provider <provider> — show that provider's status.
+      ctx.showToast(_webProviderStatusLine(provider));
+      return;
+    }
+
+    final action = parts[2].trim();
+    if (action != 'key') {
+      ctx.showToast(
+        'Unknown action "$action". Usage: '
+        '/web-provider <provider> key <value>|remove',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    // /web-provider <provider> key [<value>|remove]
+    final valueArg = parts.length > 3 ? parts[3].trim() : '';
+    if (valueArg == 'remove' || valueArg == '--remove' || valueArg == 'rm') {
+      try {
+        await registry.removeApiKey(providerId);
+        ctx.showToast(
+          '${terminalSymbol('✓', '+')} Removed ${provider.displayName} '
+          'API key (`websearch` will be hidden, `webfetch` will fall '
+          'back to raw HTTP).',
+          mode: ToastMode.status,
+        );
+      } on ArgumentError catch (e) {
+        ctx.showToast(e.message.toString(), mode: ToastMode.error);
+      }
+      return;
+    }
+
+    if (valueArg.isEmpty) {
+      ctx.showToast(
+        'Missing key value. Usage: '
+        '/web-provider $providerId key <value>|remove',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+
+    // /web-provider <provider> key <value> — persist.
+    try {
+      await registry.setApiKey(providerId, valueArg);
+      ctx.showToast(
+        '${terminalSymbol('✓', '+')} Saved ${provider.displayName} API '
+        'key. `websearch` is now exposed; `webfetch` now uses '
+        '${provider.displayName} for clean structured content.',
+        mode: ToastMode.status,
+      );
+    } on ArgumentError catch (e) {
+      ctx.showToast(e.message.toString(), mode: ToastMode.error);
+    }
+  }
+
+  /// Render one [WebServiceProvider] as a one-line status string,
+  /// e.g. `tinyfish  [TinyFish]  capabilities=search+fetch  key=set`.
+  String _webProviderStatusLine(WebServiceProvider p) {
+    final caps = <String>[
+      if (p.supportsSearch) 'search',
+      if (p.supportsFetch) 'fetch',
+    ].join('+');
+    return '${p.id}  [${p.displayName}]  '
+        'capabilities=$caps  '
+        'key=${p.isConfigured ? "set" : "missing"}';
   }
 
   Future<void> executeThink(List<String> parts, CommandContext ctx) async {

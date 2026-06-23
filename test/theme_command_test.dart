@@ -8,6 +8,7 @@ import 'package:crux/src/commands/command_executor.dart';
 import 'package:crux/src/components/ui/toast.dart';
 import 'package:crux/src/models/session_runtime_state.dart';
 import 'package:crux/src/services/provider_service.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/theme/theme_config_store.dart';
 import 'package:crux/src/theme/theme_controller.dart';
@@ -51,6 +52,7 @@ void main() {
       store: store,
       providerService: providerService,
       providerServiceReady: false,
+      webProviderRegistry: WebProviderRegistry(),
       currentSession: session,
       currentSessionId: session.id,
       sessions: [session],

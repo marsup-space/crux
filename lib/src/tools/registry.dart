@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../services/web_provider_registry.dart';
 import '../storage/session_store.dart';
 import 'bash_tool.dart';
 import 'cmd_tool.dart';
@@ -14,6 +15,7 @@ import 'semantic_search_tool.dart';
 import 'session_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
+import 'websearch_tool.dart';
 import 'write_tool.dart';
 
 class ToolRegistry {
@@ -21,6 +23,14 @@ class ToolRegistry {
 
   void register(ToolDef tool) {
     _tools[tool.name.toLowerCase()] = tool;
+  }
+
+  /// Remove a tool by name. No-op if the name isn't registered.
+  /// Used by the `/web-provider <name> key …` command to flip
+  /// `websearch` in and out of the LLM's tool list when the
+  /// key state changes.
+  void unregister(String name) {
+    _tools.remove(name.toLowerCase());
   }
 
   ToolDef? lookup(String name) => _tools[name.toLowerCase()];
@@ -48,9 +58,17 @@ class ToolRegistry {
   /// [sessionStore] powers the read-only `session` tool, which lets
   /// the agent list sessions, page through messages, and search
   /// across conversations without shelling out to sqlite3.
+  ///
+  /// [webProviderRegistry] powers `webfetch` (routes through a
+  /// configured provider when available, falls back to raw HTML
+  /// otherwise) and `websearch` (only registered when at least
+  /// one search-capable provider is configured). See
+  /// [rebuildWebTools] for the dynamic-update path used when
+  /// the user runs `/web-provider <name> key <value>`.
   void registerDefaults(
     FileReadTracker tracker, {
     required SessionStore sessionStore,
+    required WebProviderRegistry webProviderRegistry,
     dynamic lsp,
   }) {
     // Tool registration order = order the LLM sees in the API tools list.
@@ -61,7 +79,7 @@ class ToolRegistry {
     // Tier 3 (general shell — last resort), then meta.
     register(SemanticSearchTool());
     register(FindSimilarCodeTool());
-    register(WebFetchTool());
+    registerWebTools(webProviderRegistry);
     register(ReadTool(tracker: tracker, lsp: lsp));
     register(WriteTool(tracker: tracker, lsp: lsp));
     register(EditTool(tracker: tracker, lsp: lsp));
@@ -74,5 +92,28 @@ class ToolRegistry {
       register(BashTool());
     }
     register(SessionTool(store: sessionStore));
+  }
+
+  /// Re-register the web tools to match the current provider
+  /// state. Call this after any change to the
+  /// [WebProviderRegistry]'s key set — typically wired up via
+  /// `webProviderRegistry.changes` so the LLM sees the new tool
+  /// list on its very next turn.
+  ///
+  /// - `webfetch` is always registered (it works without a
+  ///   provider, just noisier).
+  /// - `websearch` is only registered when at least one
+  ///   search-capable provider reports `isConfigured`.
+  void registerWebTools(WebProviderRegistry webProviderRegistry) {
+    // Drop any previous web tools so a stale instance never
+    // lingers — the closure over the registry means a new
+    // instance picks up the latest key state.
+    unregister('webfetch');
+    unregister('websearch');
+
+    register(WebFetchTool(webProviderRegistry));
+    if (webProviderRegistry.isAnySearchProviderConfigured) {
+      register(WebSearchTool(webProviderRegistry));
+    }
   }
 }

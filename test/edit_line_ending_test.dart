@@ -60,6 +60,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'package:crux/src/services/tool_executor.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
@@ -87,7 +88,7 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db));
+        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
       executor = ToolExecutor(registry);
     });
 
@@ -195,7 +196,7 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db));
+        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
       executor = ToolExecutor(registry);
     });
 
@@ -648,6 +649,7 @@ void main() {
       ..registerDefaults(
         FileReadTracker(),
         sessionStore: SessionStore(CruxDatabase.forTesting(NativeDatabase.memory())),
+        webProviderRegistry: WebProviderRegistry(),
       );
     expect(registry.lookup('edit'), isA<EditTool>());
   });
@@ -689,7 +691,7 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db));
+        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
       executor = ToolExecutor(registry);
     });
 

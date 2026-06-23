@@ -15,4 +15,5 @@ export 'shell_base.dart';
 export 'shell_guard.dart';
 export 'tool_def.dart';
 export 'webfetch_tool.dart';
+export 'websearch_tool.dart';
 export 'write_tool.dart';

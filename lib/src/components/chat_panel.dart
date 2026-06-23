@@ -17,6 +17,8 @@ import '../services/providers/coding_plan_provider.dart';
 import '../services/providers/credit_balance_provider.dart';
 import '../services/recent_projects_store.dart';
 import '../services/tool_executor.dart';
+import '../services/web_provider_registry.dart';
+import '../services/providers/tinyfish_web_provider.dart';
 import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
@@ -228,7 +230,9 @@ class _ChatPanelState extends State<ChatPanel> {
   late final SessionStore _store;
   late final ChatService _chatService;
   late final ProviderService _providerService;
+  late final WebProviderRegistry _webProviderRegistry;
   late final ToolRegistry _toolRegistry;
+  StreamSubscription<void>? _webProviderChangesSub;
   late final SessionController _sessionController;
   late final OverlayController _overlayController;
   late final StreamingController _streamingController;
@@ -355,8 +359,20 @@ class _ChatPanelState extends State<ChatPanel> {
         'dart': DartServerActor.new,
       },
     );
+    // Set up the web-provider registry before the tool registry so
+    // `registerDefaults` can route `webfetch` through the right
+    // backend and decide whether to expose `websearch` at all.
+    _webProviderRegistry = WebProviderRegistry()
+      ..register(TinyFishWebProvider());
+    unawaited(_webProviderRegistry.initialize());
+
     final registry = ToolRegistry();
-    registry.registerDefaults(tracker, sessionStore: _store, lsp: _lspManager);
+    registry.registerDefaults(
+      tracker,
+      sessionStore: _store,
+      webProviderRegistry: _webProviderRegistry,
+      lsp: _lspManager,
+    );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
     _chatService = ChatService(
@@ -365,6 +381,15 @@ class _ChatPanelState extends State<ChatPanel> {
       LlmClient(),
       toolExecutor,
     );
+    // Re-register the web tools when the user changes a provider
+    // key. The stream fires after every `setApiKey` /
+    // `removeApiKey`, so `/web-provider <name> key <value>`
+    // lands the new `websearch` (or removes it) before the
+    // LLM's next turn.
+    _webProviderChangesSub = _webProviderRegistry.changes.listen((_) {
+      registry.registerWebTools(_webProviderRegistry);
+      setState(() {});
+    });
     // Initialize the git-status service before handing it to collaborators.
     // `late final` reads throw during mount if this moves below the
     // `ChatTurnOrchestrator` construction.
@@ -870,6 +895,12 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void dispose() {
     CommandRegistry.instance.removeListener(_refresh);
+    // Drop the web-provider change subscription so the closure
+    // over `setState` doesn't outlive the panel (otherwise
+    // late key-change events would try to redraw a torn-down
+    // widget tree).
+    _webProviderChangesSub?.cancel();
+    _webProviderChangesSub = null;
     FrameProfiler.instance.clearSnapshotProvider();
     // We only borrow the store — it's owned by `bin/crux.dart`,
     // which disposes it in `_CruxAppState.dispose()`. Dropping
@@ -960,6 +991,7 @@ class _ChatPanelState extends State<ChatPanel> {
       store: _store,
       providerService: _providerService,
       providerServiceReady: _providerServiceReady,
+      webProviderRegistry: _webProviderRegistry,
       currentSession: _sessionController.currentSession,
       currentSessionId: _sessionController.currentSessionId,
       sessions: _sessionController.sessions,
@@ -1325,6 +1357,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 turnOrchestrator: _turnOrchestrator,
                 providerService: _providerService,
                 providerServiceReady: _providerServiceReady,
+                webProviderRegistry: _webProviderRegistry,
                 themeController: component.themeController,
                 scrollController: scrollController,
                 refresh: _refresh,

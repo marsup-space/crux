@@ -34,6 +34,7 @@ import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
 import 'package:crux/src/services/tool_executor.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
@@ -51,7 +52,7 @@ void main() {
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db));   executor = ToolExecutor(registry);
+        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());   executor = ToolExecutor(registry);
   });
 
   tearDown(() async {

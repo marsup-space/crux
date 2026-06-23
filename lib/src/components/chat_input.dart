@@ -7,6 +7,7 @@ import '../models/image_attachment.dart';
 import '../models/slash_command.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
+import '../services/web_provider_registry.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/at_mention_parser.dart';
@@ -42,6 +43,12 @@ class ChatInput extends StatefulComponent {
   final ChatTurnOrchestrator turnOrchestrator;
   final ProviderService providerService;
   final bool providerServiceReady;
+  /// Web provider registry (TinyFish today, Exa / Firecrawl in the
+  /// future). Powers the `/web-provider <name>` parameter
+  /// autocomplete — when the user types `/web-provider `, the
+  /// overlay shows one entry per registered provider (with a
+  /// "key set" badge when configured).
+  final WebProviderRegistry webProviderRegistry;
   final ThemeController themeController;
   final AutoScrollController scrollController;
   final void Function() refresh;
@@ -83,6 +90,7 @@ class ChatInput extends StatefulComponent {
     required this.turnOrchestrator,
     required this.providerService,
     required this.providerServiceReady,
+    required this.webProviderRegistry,
     required this.themeController,
     required this.scrollController,
     required this.refresh,
@@ -410,6 +418,7 @@ class ChatInputState extends State<ChatInput> {
             commandName != '/model' &&
             commandName != '/auxiliary' &&
             commandName != '/provider' &&
+            commandName != '/web-provider' &&
             commandName != '/theme' &&
             commandName != '/project')) {
       overlay.setOverlayOff();
@@ -442,6 +451,7 @@ class ChatInputState extends State<ChatInput> {
         !(commandName == '/model' && paramIndex == 0) &&
         !(commandName == '/auxiliary' && paramIndex == 0) &&
         !(commandName == '/provider' && paramIndex == 0) &&
+        !(commandName == '/web-provider' && paramIndex == 0) &&
         !(commandName == '/theme' && paramIndex == 0) &&
         !(commandName == '/project' && paramIndex == 0)) {
       overlay.setOverlayOff();
@@ -497,6 +507,22 @@ class ChatInputState extends State<ChatInput> {
       } else {
         suggestions = [];
       }
+    } else if (commandName == '/web-provider' && paramIndex == 0) {
+      // Dynamic suggestions for the first positional arg of
+      // `/web-provider <name> …`. Mirrors the `/provider` branch
+      // above but pulls ids from the [WebProviderRegistry] instead
+      // of the LLM [ProviderService] — the two are independent
+      // (a web provider like TinyFish is unrelated to an LLM
+      // provider like OpenAI). The "key set" badge lets the user
+      // see at a glance which web providers are already configured.
+      suggestions = component.webProviderRegistry.allProviders
+          .map(
+            (p) => CommandSuggestion(
+              value: p.id,
+              description: p.isConfigured ? 'key set' : null,
+            ),
+          )
+          .toList();
     } else if (commandName == '/theme' && paramIndex == 0) {
       suggestions = component.themeController.registry.themes
           .map(
