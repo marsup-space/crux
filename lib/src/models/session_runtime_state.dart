@@ -160,6 +160,43 @@ class SessionRuntimeState {
   /// session.
   int consecutiveShellViolations;
 
+  /// Whether the one-shot `code_search` preference hint has been
+  /// appended to a `grep` or `glob` tool result in this session.
+  /// Gates the hint in `lib/src/services/prompts/code_search_hint.dart`
+  /// — fires once per session to teach the LLM that `code_search`
+  /// is the preferred surface for "how does X work" / "find code
+  /// that does X" questions, returning ranked snippets in one
+  /// call instead of the grep+read dance.
+  ///
+  /// Lifecycle (managed by `chat_service`):
+  ///   - set to `true` by the chat service after the first
+  ///     successful `grep` or `glob` tool call in the session
+  ///   - never reset within a session (one-shot per chat)
+  ///   - reset to `false` when the runtime is constructed (i.e.
+  ///     on app launch or when a new chat starts a fresh runtime)
+  ///
+  /// In-memory only — same persistence model as the parallel-call
+  /// and shell-guard counters. The hint is genuinely per-session,
+  /// so resetting it on app launch is the desired behaviour: a
+  /// fresh chat should see the hint on its first grep/glob use.
+  bool hasShownCodeSearchHint;
+
+  /// The most recent context-size threshold (in tokens) at which
+  /// the `code_search` preference hint re-fired. Initial 0
+  /// (no threshold fire yet). Bumps to 200_000 / 400_000 /
+  /// 600_000 as the LLM's context crosses each boundary.
+  ///
+  /// Pairs with [hasShownCodeSearchHint] which gates the initial
+  /// one-shot. After the initial fire, this field gates the
+  /// threshold re-fires — the chat service finds the next
+  /// unsatisfied threshold via `nextCodeSearchHintThreshold` and
+  /// appends the hint to the next grep/glob result when found.
+  /// Each threshold fires at most once per session.
+  ///
+  /// In-memory only — resets to 0 when the runtime is constructed
+  /// (on app launch or when a new chat starts a fresh runtime).
+  int codeSearchHintLastThreshold;
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,
@@ -185,6 +222,8 @@ class SessionRuntimeState {
     this.consecutiveCompactionFailures = 0,
     this.turnsSinceLastCompact = 0,
     this.consecutiveShellViolations = 0,
+    this.hasShownCodeSearchHint = false,
+    this.codeSearchHintLastThreshold = 0,
   });
 
   double get thinkingDurationMs {

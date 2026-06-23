@@ -23,6 +23,7 @@ import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
+import 'prompts/code_search_hint.dart';
 import 'prompts/praise_prompts.dart';
 import 'prompts/system_prompt.dart';
 import 'provider_service.dart';
@@ -1298,6 +1299,82 @@ class ChatService {
           callResults[entry.key] = entry.value;
         }
 
+        // ── code_search preference hint ──────────────────────────────
+        // Append a one-shot nudge to the FIRST `grep` or `glob` tool
+        // result in the session, teaching the LLM that `code_search`
+        // (semantic search) is the preferred surface for conceptual
+        // code-search questions. Different from the shell-tool fallback
+        // guard's `code_search` verdict (which fires when the LLM uses
+        // `rg | head` style bash pipelines) — this hint fires when the
+        // LLM uses grep/glob DIRECTLY as a tool, regardless of bash.
+        //
+        // Only fires once per session. The flag is per-chat (in-memory,
+        // resets on app restart) so a long chat sees the hint on its
+        // very first grep/glob use, then never again. Mirrors the
+        // existing single-call-hint / shell-guard pattern: the
+        // injected text is bracketed with a `[Crux system note — …]`
+        // marker so the LLM pattern-matches the intent.
+        //
+        // Hooked BEFORE the apiMessages-building loop so the appended
+        // reminder flows into the LLM-facing tool_result block (and
+        // into the persisted record via `_buildToolResultForPersist`,
+        // which reads the same `result.output`). No separate user-
+        // facing bubble row — the reminder is visible in the chat
+        // history inside the tool's output, matching the shell-guard
+        // append pattern.
+        if (!runtime.hasShownCodeSearchHint ||
+            nextCodeSearchHintThreshold(
+              runtime.contextTargetTokens,
+              runtime.codeSearchHintLastThreshold,
+            ) !=
+                null) {
+          const hintTriggerTools = <String>{'grep', 'glob'};
+          for (final call in toolCalls) {
+            if (call.parseError != null) continue;
+            final lower = call.name.toLowerCase();
+            if (!hintTriggerTools.contains(lower)) continue;
+            final result = callResults[call.callId];
+            if (result == null) continue;
+            if (result.title == 'Error') continue;
+            if (result.metadata['guardTriggered'] == true) continue;
+
+            // Construct a new ToolResult with the hint appended.
+            // `ToolResult.output` is `final`, so we rebuild the
+            // record rather than mutating in place. Same
+            // truncated/outputPath/metadata as the original.
+            callResults[call.callId] = ToolResult(
+              title: result.title,
+              output: result.output + renderCodeSearchHintEmbedded(),
+              truncated: result.truncated,
+              outputPath: result.outputPath,
+              metadata: result.metadata,
+            );
+            // Update state: the initial one-shot flips
+            // `hasShownCodeSearchHint`; threshold re-fires bump
+            // `codeSearchHintLastThreshold` to the threshold that
+            // just fired. Both transitions are mutually exclusive
+            // per round — the one-shot fires only when the flag
+            // is still false (no threshold to fire because the
+            // context is well below the first threshold or the
+            // one-shot hasn't fired yet but context already
+            // crossed one). In that case the threshold helper
+            // would also return a value, so we check the one-shot
+            // first and prefer it.
+            if (!runtime.hasShownCodeSearchHint) {
+              runtime.hasShownCodeSearchHint = true;
+            } else {
+              final threshold = nextCodeSearchHintThreshold(
+                runtime.contextTargetTokens,
+                runtime.codeSearchHintLastThreshold,
+              );
+              if (threshold != null) {
+                runtime.codeSearchHintLastThreshold = threshold;
+              }
+            }
+            break; // only the first grep/glob in the round
+          }
+        }
+
         for (final call in toolCalls) {
           final result = callResults[call.callId]!;
           if (isAnthropic) {
@@ -1334,7 +1411,8 @@ class ChatService {
         // counter on every detected fallback. Here we reset it
         // whenever a "proper" tool succeeded — any Tier 1 or Tier 2
         // tool (semantic_search / find_similar_code / webfetch /
-        // read / write / edit / grep / glob). Resetting here (after
+        // websearch / read / write / edit / grep / glob). Resetting
+        // here (after
         // the tool loop, when every result has landed) means the
         // streak is broken by ANY successful proper-tool call in
         // the round, even if it ran in parallel with a shell call.
@@ -1354,6 +1432,7 @@ class ChatService {
           'semantic_search',
           'find_similar_code',
           'webfetch',
+          'websearch',
           // Tier 2 — file operations.
           'read',
           'write',
