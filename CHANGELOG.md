@@ -10,7 +10,7 @@ below the version header. Each version has at most two categories:
 
 ## [0.7.3] - 2026-06-23
 
-a964754
+0dbdc27
 
 ### Features
 
