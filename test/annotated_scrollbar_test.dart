@@ -129,6 +129,64 @@ void main() {
     },
   );
 
+  test('releasing a thumb drag restores hover delivery to content', () async {
+    await testNocterm('annotated scrollbar releases mouse capture', (
+      tester,
+    ) async {
+      final controller = ScrollController();
+      var contentHovers = 0;
+
+      await tester.pumpComponent(
+        Container(
+          width: 20,
+          height: 10,
+          child: AnnotatedScrollbar(
+            controller: controller,
+            thumbVisibility: true,
+            child: ListView.builder(
+              controller: controller,
+              itemCount: 100,
+              itemBuilder: (context, index) => MouseRegion(
+                onHover: (_) => contentHovers++,
+                child: Text('Line $index'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      int? thumbRow;
+      for (var y = 0; y < 10; y++) {
+        if (tester.terminalState.getCellAt(19, y)?.char == '█') {
+          thumbRow = y;
+          break;
+        }
+      }
+      expect(thumbRow, isNotNull, reason: 'expected to find the thumb');
+
+      await tester.press(19, thumbRow!);
+      await tester.sendMouseEvent(
+        MouseEvent(
+          button: MouseButton.left,
+          x: 19,
+          y: (thumbRow + 2).clamp(0, 9),
+          pressed: true,
+          isMotion: true,
+        ),
+      );
+      await tester.release(0, thumbRow);
+
+      final hoversAfterRelease = contentHovers;
+      await tester.hover(0, thumbRow);
+
+      expect(
+        contentHovers,
+        greaterThan(hoversAfterRelease),
+        reason: 'content should receive hover events after scrollbar drag ends',
+      );
+    }, size: const Size(20, 10));
+  });
+
   test('a marker without a label does not register a hint', () async {
     await testNocterm('unlabeled marker leaves the hint controller quiet', (
       tester,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:nocterm/nocterm.dart';
@@ -355,14 +356,15 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
   final List<(int, double)> _visibleMarkers = [];
   MouseTrackerAnnotation? _customAnnotation;
   bool _isLeftButtonPressed = false;
+  StreamSubscription<MouseEvent>? _globalMouseSubscription;
 
   @override
   MouseTrackerAnnotation? get annotation {
     final parent = super.annotation;
     if (parent == null) return null;
     _customAnnotation ??= MouseTrackerAnnotation(
-      onEnter: parent.onEnter,
-      onExit: parent.onExit,
+      onEnter: _handleEnter,
+      onExit: _handleExit,
       onHover: _handleHover,
       renderObject: this,
     );
@@ -375,16 +377,46 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     return _customAnnotation;
   }
 
+  void _syncCapturingFrom(MouseTrackerAnnotation parent) {
+    _customAnnotation?.capturing = parent.capturing;
+  }
+
+  void _clearCaptureOnGlobalMouseUp(MouseEvent event) {
+    if (event.button != MouseButton.left || event.pressed) return;
+    if (!_isLeftButtonPressed && !(_customAnnotation?.capturing ?? false)) {
+      return;
+    }
+    _isLeftButtonPressed = false;
+    releaseMouseCapture();
+    _customAnnotation?.capturing = false;
+  }
+
+  void _handleEnter(MouseEvent event) {
+    final parent = super.annotation;
+    if (parent == null) return;
+    parent.onEnter?.call(event);
+    _syncCapturingFrom(parent);
+  }
+
+  void _handleExit(MouseEvent event) {
+    final parent = super.annotation;
+    if (parent == null) return;
+    parent.onExit?.call(event);
+    _syncCapturingFrom(parent);
+  }
+
   void _handleHover(MouseEvent event) {
     final parent = super.annotation;
     if (parent == null) return;
     final ctrl = controller;
     if (ctrl == null || !thumbVisibility) {
       parent.onHover?.call(event);
+      _syncCapturingFrom(parent);
       return;
     }
     if (ctrl.maxScrollExtent <= 0 || size.height < 3) {
       parent.onHover?.call(event);
+      _syncCapturingFrom(parent);
       return;
     }
 
@@ -414,6 +446,24 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     }
 
     parent.onHover?.call(event);
+    _syncCapturingFrom(parent);
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _globalMouseSubscription = NoctermBinding.instance.mouseEvents.listen(
+      _clearCaptureOnGlobalMouseUp,
+    );
+  }
+
+  @override
+  void detach() {
+    _globalMouseSubscription?.cancel();
+    _globalMouseSubscription = null;
+    releaseMouseCapture();
+    _customAnnotation?.capturing = false;
+    super.detach();
   }
 
   @override
