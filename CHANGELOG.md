@@ -171,6 +171,15 @@ below the version header. Each version has at most two categories:
   (~600 ms one call vs. grep+read loop); (2) semantic by concept,
   not literal substring; (3) reach for it BEFORE grep or glob.
 
+- **Web tools: cold start with persisted key now registers `websearch`**
+  (`b7aa0c4`) — `WebProviderRegistry._loadFromAuthToml` updated
+  the in-memory key from `auth.toml` but did not fire the
+  `changes` stream. The chat panel's listener therefore never
+  re-ran `registerWebTools`, and a cold start with a persisted
+  `TINYFISH_API_KEY` would have `websearch` permanently missing
+  from the LLM's tool list. The fix fires the event when at least
+  one key is loaded, matching `setApiKey` / `removeApiKey` semantics.
+
 ## [0.7.2] - 2026-06-22
 
 d8f1e68
