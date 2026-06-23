@@ -1,3 +1,7 @@
+// Unicode-width measurement (CJK, emoji, ZWJ) is used to align the extra-info
+// panel's git-status rows. Lives in nocterm's `lib/src/`; not re-exported.
+// ignore_for_file: implementation_imports
+
 import 'dart:io';
 import 'dart:math';
 import 'package:characters/characters.dart';

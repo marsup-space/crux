@@ -1,3 +1,7 @@
+// Context bar paints its progress fill directly on a TerminalCanvas for
+// smooth lerp animation. TerminalCanvas is nocterm's internal paint surface.
+// ignore_for_file: implementation_imports
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import '../theme/crux_theme.dart';

@@ -1,3 +1,8 @@
+// Renders progress bars directly on a TerminalCanvas for the coding-plan
+// usage readout. TerminalCanvas is nocterm's internal paint surface and
+// isn't re-exported by `package:nocterm/nocterm.dart`.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:math' as math;
 

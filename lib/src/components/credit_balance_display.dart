@@ -1,3 +1,7 @@
+// Credit-balance display paints a progress bar directly on a TerminalCanvas.
+// TerminalCanvas is nocterm's internal paint surface and isn't re-exported.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:math' as math;
 

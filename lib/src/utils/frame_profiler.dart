@@ -1,3 +1,8 @@
+// frame_profiler reads per-widget layout timings from nocterm's internal
+// NoctermLayoutProfiler, which is toggled on by the chat panel's `/d-profiler`
+// command. Not part of nocterm's public API; importing here is intentional.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

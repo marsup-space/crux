@@ -1,3 +1,7 @@
+// Markdown text rendering needs nocterm's internal unicode-width helpers to
+// measure CJK and emoji segments for wrapping. Not re-exported publicly.
+// ignore_for_file: implementation_imports
+
 import 'dart:math' as math;
 
 import 'package:characters/characters.dart';

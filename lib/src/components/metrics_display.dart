@@ -1,3 +1,8 @@
+// Metrics display paints tok/s and TTFT readouts directly on a TerminalCanvas
+// at ~20 Hz without triggering parent rebuilds. TerminalCanvas is nocterm's
+// internal paint surface and isn't re-exported.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';

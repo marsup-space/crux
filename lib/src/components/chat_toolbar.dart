@@ -1,3 +1,8 @@
+// Unicode-width calculation lives in nocterm's `lib/src/`. The chat toolbar
+// uses it to measure CJK/emoji display widths for the streaming indicator
+// and branch-selector labels. Not re-exported by `package:nocterm/nocterm.dart`.
+// ignore_for_file: implementation_imports
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../models/session.dart';

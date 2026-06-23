@@ -1,3 +1,8 @@
+// chat_history uses nocterm's internal TextLayoutEngine to pre-layout code-block
+// content for hit-testing and selection measurement. Not part of nocterm's
+// public API; importing here is intentional.
+// ignore_for_file: implementation_imports
+
 import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';

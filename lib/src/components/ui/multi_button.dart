@@ -1,3 +1,7 @@
+// Multi-button measures segment label widths in display cells (CJK, emoji)
+// using nocterm's internal unicode-width helpers. Not re-exported publicly.
+// ignore_for_file: implementation_imports
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../../theme/crux_theme.dart';

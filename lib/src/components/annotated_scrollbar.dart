@@ -1,3 +1,10 @@
+// Reach into nocterm's `lib/src/` to implement custom mouse-capture semantics
+// for the annotated scrollbar (overriding `MouseTrackerAnnotation` and
+// `TerminalCanvas` paint hooks). These symbols are intentionally not part of
+// nocterm's public surface but are stable internal contracts used by the
+// scrollbar's render object.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:math' as math;
 
