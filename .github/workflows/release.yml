@@ -108,6 +108,7 @@ jobs:
 
       - name: Extract release notes from CHANGELOG
         if: env.SHOULD_BUILD == 'true' && env.RELEASE_TAG != ''
+        shell: bash
         run: |
           VERSION="${RELEASE_TAG#v}"
           mkdir -p build
