@@ -165,7 +165,8 @@ class _ChatHistoryState extends State<ChatHistory> {
     if (compactionSource != null) {
       items.add(
         (ctx) => CompactedSessionHeader(
-          sourceSessionId: compactionSource,
+          sourceSessionId: compactionSource.id,
+          sourceTitle: compactionSource.title,
           onSessionLinkTap: component.onSessionLinkTap,
         ),
       );
@@ -480,8 +481,8 @@ class _ChatHistoryState extends State<ChatHistory> {
     return 'Loading messages…';
   }
 
-  /// Find the session id of the conversation this session was
-  /// compacted from, if any.
+  /// Find the session id and title of the conversation this
+  /// session was compacted from, if any.
   ///
   /// Compaction creates a new session whose first message has role
   /// `compaction` with `meta.sourceSessionId` pointing at the old
@@ -490,19 +491,27 @@ class _ChatHistoryState extends State<ChatHistory> {
   /// pre-compaction history rather than the intermediate summary.
   ///
   /// `meta` is a JSON-encoded string; tolerate unparseable values
-  /// gracefully (older rows, future schema drift).
-  int? _findCompactionSource(List<Message> messages) {
+  /// gracefully (older rows, future schema drift). Title is
+  /// resolved via [SessionController.findSession]; if the source
+  /// session was deleted the title comes back `null` and the
+  /// header falls back to rendering `ses://<id>` instead.
+  ({int id, String? title})? _findCompactionSource(List<Message> messages) {
     for (final m in messages) {
       if (m.role != 'compaction' || m.meta.isEmpty) continue;
       try {
         final decoded = jsonDecode(m.meta);
         if (decoded is! Map<String, dynamic>) continue;
         final value = decoded['sourceSessionId'];
-        if (value is int) return value;
-        if (value is String) {
-          final parsed = int.tryParse(value);
-          if (parsed != null) return parsed;
-        }
+        int? id;
+        if (value is int) id = value;
+        if (value is String) id = int.tryParse(value);
+        if (id == null) continue;
+
+        final sourceSession = component.sessionController.findSession(id);
+        final title = (sourceSession != null && sourceSession.title.isNotEmpty)
+            ? sourceSession.title
+            : null;
+        return (id: id, title: title);
       } catch (_) {
         continue;
       }
