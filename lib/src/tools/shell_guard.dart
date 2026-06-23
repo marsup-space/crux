@@ -196,66 +196,47 @@ const _posixGrepVerbs = <String>{
   'grep', 'egrep', 'fgrep', 'rg', 'ack', 'ag', 'ripgrep',
 };
 
-/// Classify a bash command. Walks the segments split by `|`,
-/// `;`, `&&`, `||`, newlines; the first segment whose first
-/// non-redirect verb matches a violation set wins. Special-cases
-/// the `search-verb | head/tail` anti-pattern as `semantic_search`
-/// before falling through to the verb classifier.
+/// Classify a bash command. Finds the FIRST non-empty,
+/// non-shell-script-prefix segment and checks it for a
+/// violation. Subsequent segments are NOT checked — they're
+/// filters/serving-the-primary, not standalone fallbacks.
 ///
-/// Per-segment rules (enforced by [_classifySegment]):
+/// Simple rule (per the user's "dumber detector" directive):
 ///
-///   * Input redirect (`<` anywhere in the segment) → skip. The
-///     verb is reading from a file descriptor, not from a path
-///     argument the dedicated tools can address. Covers heredocs
-///     (`<<EOF`), stdin pipes (`< some_pipe`), and process
-///     substitution (`<(...)`).
-///   * Read/list verbs require at least one non-flag argument.
-///     `tail -50` (just truncating output) is NOT a violation;
-///     `tail -50 build.log` (reading a file) IS.
-///   * Grep verbs always flag, even without arguments. The model
-///     could have used the `grep` tool with a path. False
-///     positives on `ps -ef | grep node`-style filters are
-///     accepted — they're cheap reminders, not hard blocks, and
-///     the firm/reject tiers only fire after 2-3 consecutive
-///     hits. EXCEPTION: when the command STARTS with a
-///     shell-script verb (`cd`, `echo`, `export`, etc.), the
-///     grep verdict is skipped. The LLM is clearly running a
-///     shell script (cd /path && grep …, multi-line verification
-///     scripts, etc.) and grep is a legitimate component of
-///     such scripts. cat/head/ls/etc. are NOT exempt from this
-///     exception because they're unambiguously about file
-///     inspection regardless of script context — `cd /path &&
-///     cat file` is still a violation.
+///   * The first command in the pipeline is the "primary
+///     operation". Whatever tool the LLM picked first, that's
+///     what we judge.
+///   * If the first command is a shell-script setup verb
+///     (`cd`, `echo`, `export`, …), skip it and look at the
+///     next command — that's the actual operation. "cd + grep"
+///     is still flagged as grep; "echo + cat" is still flagged
+///     as read, etc.
+///   * Pipelines where another command precedes the verb in
+///     question (e.g. `perl | grep | head`, `cat file | grep`) are
+///     NOT flagged for the trailing verb — we only check the
+///     primary command at the start of the pipeline. This avoids
+///     false positives on patterns like `perl -pe 's|…|' … | grep
+///     "missing" | head` (perl does the file work; grep/head are
+///     just filtering).
+///
+/// Deliberately does NOT try to detect:
+///
+///   * Code-search pipe anti-pattern (`rg | head` → code_search).
+///     The user removed this — too clever, not worth the
+///     complexity. `rg | head` falls through to `grep` verdict.
+///   * Path-arg heuristics for grep ("does grep have a file
+///     arg?"). Too clever; the simpler "check the first verb"
+///     rule covers the common cases without false positives.
+///   * Compound shells with multi-line scripts that happen to
+///     contain a grep/cat later. We just check the first verb.
 ShellGuardKind _classifyPosix(String command) {
-  // Code-search pipe anti-pattern: search-verb | head/tail/…
-  // is overwhelmingly "I want to see a few code snippets", which
-  // `semantic_search` answers in one call. Detected first so the
-  // verb-classifier doesn't fall through to `grep` (which would
-  // technically also be correct but is much more wasteful).
-  if (_isCodeSearchPipe(command, _posixGrepVerbs)) {
-    return ShellGuardKind.codeSearch;
-  }
-
   final segments = _splitSegments(command);
-  final startsWithShellScript = _startsWithShellScriptVerb(segments);
-
-  for (final seg in segments) {
-    final kind = _classifySegment(
-      seg,
-      readVerbs: _posixReadVerbs,
-      listVerbs: _posixListVerbs,
-      grepVerbs: _posixGrepVerbs,
-    );
-    if (kind == null) continue;
-    // Skip the grep verdict when the command starts with a
-    // shell-script verb. See the design notes above for the
-    // rationale — covers both `cd /path && grep …` (single line,
-    // `&&`-chained) and multi-line verification scripts (the
-    // user's example).
-    if (kind == ShellGuardKind.grep && startsWithShellScript) continue;
-    return kind;
-  }
-  return ShellGuardKind.none;
+  return _classifyFirstNonScriptSegment(
+    segments,
+    readVerbs: _posixReadVerbs,
+    listVerbs: _posixListVerbs,
+    grepVerbs: _posixGrepVerbs,
+  );
 }
 
 /// Verbs that signal "the LLM is running a shell script, not
@@ -279,21 +260,6 @@ const _shellScriptVerbs = <String>{
   'source', '.',
   'alias', 'unalias',
 };
-
-/// True when the first non-empty segment of [segments] starts
-/// with one of the [_shellScriptVerbs]. Used by the POSIX and
-/// Windows classifiers to skip the grep verdict in shell-script
-/// commands (see the design notes on [_classifyPosix]).
-bool _startsWithShellScriptVerb(List<String> segments) {
-  for (final seg in segments) {
-    final trimmed = seg.trim();
-    if (trimmed.isEmpty) continue;
-    final verb = _firstVerb(trimmed);
-    if (verb == null) return false;
-    return _shellScriptVerbs.contains(verb);
-  }
-  return false;
-}
 
 // =============================================================================
 // Windows (cmd + PowerShell) classifier
@@ -328,26 +294,57 @@ const _winGrepVerbs = <String>{
 };
 
 ShellGuardKind _classifyWindows(String command) {
-  if (_isCodeSearchPipe(command, _winGrepVerbs)) {
-    return ShellGuardKind.codeSearch;
-  }
-
   final segments = _splitSegments(command);
-  final startsWithShellScript = _startsWithShellScriptVerb(segments);
+  return _classifyFirstNonScriptSegment(
+    segments,
+    readVerbs: _winReadVerbs,
+    listVerbs: _winListVerbs,
+    grepVerbs: _winGrepVerbs,
+  );
+}
 
+/// Shared implementation behind [_classifyPosix] /
+/// [_classifyWindows]. Finds the first non-empty segment. If its
+/// verb is one of the [_shellScriptVerbs] (cd/echo/export/etc.),
+/// skip it and check the next non-empty segment. Otherwise the
+/// first segment IS the primary operation; check it for a
+/// violation. Per the "dumber detector" directive, we don't try
+/// to detect fallbacks in subsequent segments — they're treated
+/// as filters/serving the primary command, not standalone
+/// operations.
+///
+/// Returns [ShellGuardKind.none] when no violation is found in
+/// the primary segment.
+ShellGuardKind _classifyFirstNonScriptSegment(
+  List<String> segments, {
+  required Set<String> readVerbs,
+  required Set<String> listVerbs,
+  required Set<String> grepVerbs,
+}) {
+  var skippedPrefix = false;
   for (final seg in segments) {
-    final kind = _classifySegment(
-      seg,
-      readVerbs: _winReadVerbs,
-      listVerbs: _winListVerbs,
-      grepVerbs: _winGrepVerbs,
-    );
-    if (kind == null) continue;
-    // Skip the grep verdict in shell-script commands (same
-    // rationale as the POSIX classifier — see
-    // [_classifyPosix]).
-    if (kind == ShellGuardKind.grep && startsWithShellScript) continue;
-    return kind;
+    final trimmed = seg.trim();
+    if (trimmed.isEmpty) continue;
+    final verb = _firstVerb(trimmed);
+    if (verb == null) continue;
+
+    // Skip a single shell-script-prefix segment (`cd /path &&`).
+    // Per the user's design directive, the cd itself is
+    // shell-native; only the subsequent operation is judged.
+    if (!skippedPrefix && _shellScriptVerbs.contains(verb)) {
+      skippedPrefix = true;
+      continue;
+    }
+
+    // Found the primary segment. Check it for a violation. If
+    // no violation, we're done — subsequent segments are
+    // filters/serving-this-one, not standalone fallbacks.
+    return _classifySegment(
+      trimmed,
+      readVerbs: readVerbs,
+      listVerbs: listVerbs,
+      grepVerbs: grepVerbs,
+    ) ?? ShellGuardKind.none;
   }
   return ShellGuardKind.none;
 }
@@ -565,98 +562,6 @@ List<String> _splitSegments(String command) {
   return result;
 }
 
-/// Quote-aware pipe split. Same quoting rules as
-/// [_splitSegments], but only splits on `|` — used by
-/// [_isCodeSearchPipe] to find `search-verb | truncator`
-/// patterns without false positives from operators inside
-/// quoted strings (commit messages, user-supplied strings).
-///
-/// `||` (logical OR) is treated as a single pipe for the
-/// purposes of this check: when `||` appears in source, the
-/// `|` in `_isCodeSearchPipe`'s left/right adjacency check
-/// wouldn't fire anyway (because the segments wouldn't be
-/// adjacent — `||` would be a segment separator in the
-/// verb-classifier's view). For symmetry and to keep the
-/// helper focused, we still skip `||` here rather than
-/// splitting on it.
-List<String> _splitOnPipes(String command) {
-  final result = <String>[];
-  final current = StringBuffer();
-  var inSingle = false;
-  var inDouble = false;
-  var escapeNext = false;
-
-  for (var i = 0; i < command.length; i++) {
-    final ch = command[i];
-
-    if (inSingle) {
-      if (ch == "'") {
-        inSingle = false;
-      }
-      current.write(ch);
-      continue;
-    }
-
-    if (inDouble) {
-      if (escapeNext) {
-        current.write(ch);
-        escapeNext = false;
-        continue;
-      }
-      if (ch == r'\') {
-        current.write(ch);
-        escapeNext = true;
-        continue;
-      }
-      if (ch == '"') {
-        inDouble = false;
-        current.write(ch);
-        continue;
-      }
-      current.write(ch);
-      continue;
-    }
-
-    if (escapeNext) {
-      current.write(ch);
-      escapeNext = false;
-      continue;
-    }
-
-    if (ch == r'\') {
-      current.write(ch);
-      escapeNext = true;
-      continue;
-    }
-
-    if (ch == "'") {
-      inSingle = true;
-      current.write(ch);
-      continue;
-    }
-
-    if (ch == '"') {
-      inDouble = true;
-      current.write(ch);
-      continue;
-    }
-
-    // Only split on `|` here — other operators pass through.
-    // `||` is preserved (kept inside the segment) so the
-    // left/right adjacency check in _isCodeSearchPipe works
-    // naturally on the surrounding segments.
-    if (ch == '|') {
-      result.add(current.toString());
-      current.clear();
-      continue;
-    }
-
-    current.write(ch);
-  }
-  result.add(current.toString());
-  return result;
-}
-
 /// Return the first verb of a segment (the first whitespace-
 /// separated token, stripped of any path prefix like
 /// `/usr/bin/cat`). Returns `null` for empty segments.
@@ -697,64 +602,6 @@ bool _isEnvAssignment(String token) {
   // Identifier-like names only (start with letter or `_`,
   // followed by letters / digits / `_`).
   return RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(name);
-}
-
-/// Detect the "search verb piped into a truncator" anti-pattern
-/// (e.g. `rg "auth" lib/ | head -10`, `grep -rn "TODO" src/ | tail`).
-/// These pipelines almost always mean "I want to see a few
-/// matching snippets" — the semantic-search use case that
-/// `semantic_search` was built for.
-///
-/// [searchVerbs] is the set of "left-side" verbs that trigger
-/// the pattern (ripgrep/grep on POSIX; Select-String/findstr on
-/// Windows).
-///
-/// IMPORTANT: only search verbs (rg/grep/ack/ag) qualify — list
-/// verbs (ls/find/tree) are NOT included here. `ls … | head` is
-/// list + truncate, not code search, and `find … | head` is
-/// file-pattern search + truncate — both fall through to the
-/// verb classifier which flags them as `glob` (a more accurate
-/// verdict than the code-search label). Mixing list verbs into
-/// the code-search check produced false positives on common
-/// verification scripts like
-/// `ls -la build/ && echo '---' && ls bin/ && binary --version | head -5`.
-///
-/// `truncatorVerbs` is the implicit set of "right-side" verbs
-/// that look like the user wanted to limit output: `head`,
-/// `tail`, `less`, `more`, `sort`, `uniq`, `wc`. The pipeline
-/// also requires at least one pipe (`|`) — single-command
-/// invocations like `rg "auth" lib/` go through the regular
-/// verb classifier and surface as `grep`, which is correct.
-bool _isCodeSearchPipe(String command, Set<String> searchVerbs) {
-  const truncatorVerbs = <String>{
-    'head', 'tail', 'less', 'more', 'sort', 'uniq', 'wc', 'tee',
-    // PowerShell equivalents:
-    'Select-Object', 'select', 'Get-First', 'Get-Last',
-    'Get-Unique', 'gu',
-  };
-
-  // Quote-aware pipe split — operators inside `'...'` or `"..."`
-  // don't count as pipes. Delegates to [_splitOnPipes] so this
-  // detector stays consistent with the verb-classifier's
-  // [_splitSegments] (both honour the same quoting rules).
-  final segments = _splitOnPipes(command);
-  if (segments.length < 2) return false;
-
-  for (var i = 0; i < segments.length - 1; i++) {
-    final left = segments[i].trim();
-    final right = segments[i + 1].trim();
-    final leftVerb = _firstVerb(left);
-    final rightVerb = _firstVerb(right);
-    if (leftVerb == null || rightVerb == null) continue;
-    final leftBase = leftVerb.split(RegExp(r'[/\\]')).last;
-    if (searchVerbs.contains(leftBase)) {
-      if (truncatorVerbs.contains(rightVerb) ||
-          truncatorVerbs.contains(rightVerb.split(RegExp(r'[/\\]')).last)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 // =============================================================================

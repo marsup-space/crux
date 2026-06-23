@@ -4,18 +4,23 @@
 //
 //   1. **Detector** — pure function that classifies a shell command
 //      into a [ShellGuardKind] (`read` / `glob` / `grep` /
-//      `codeSearch` / `none`) or returns null for shell-native
-//      commands. Pinned patterns include:
+//      `none`) or returns null for shell-native commands. Per the
+//      "dumber detector" design: only the FIRST non-empty,
+//      non-shell-script-prefix segment is checked. Subsequent
+//      segments are filters/serving-the-primary, not standalone
+//      fallbacks. Pinned patterns include:
 //        * cat/head/tail/sed/wc → read
 //        * ls/find/tree/du → glob
 //        * grep/rg/ack → grep
-//        * `rg "concept" | head` / `find … | head` → codeSearch
 //        * bash/cmd/PowerShell verbs all covered (POSIX + Windows)
 //        * env-var prefixes (`FOO=bar cat file`) handled
 //        * heredocs / redirections (`cat <<EOF`, `cat < file`)
 //          correctly skipped
-//        * pipelines without a dedicated-tool verb (builds, git,
-//          process control) return null
+//        * shell-script-prefix commands (`cd /path && grep …`)
+//          flag the post-prefix segment, not the prefix itself
+//        * pipelines where the primary verb isn't a violation
+//          (`perl | grep | head`, `ps -ef | grep node`) return
+//          null — those are shell-native, not fallbacks
 //
 //   2. **Severity escalation** — `currentStreak → severity`
 //      mapping (mild/firm/reject), pinned so the three-tier
@@ -84,19 +89,22 @@ void main() {
       }
     });
 
-    test('flags grep even in stdin-filtering pipelines (accepted false positive)',
+    test('does NOT flag stdin-filtering pipelines (perl|grep|head, etc.)',
         () {
-      // `ps -ef | grep node` and `env | grep PATH` are the
-      // canonical "filter output" patterns — the user wants to
-      // narrow another command's output, not search file
-      // contents. The detector still flags them as `grep`
-      // because grep is in the violation set regardless of args.
-      // Accepted false positive: the LLM just sees a mild-tier
-      // reminder and can choose to ignore it.
+      // Per the "dumber detector" rule, only the FIRST verb is
+      // checked. Pipelines where the first verb is a non-
+      // violation shell-native command (`ps`, `env`, `flutter`,
+      // `perl`, `dart`, …) are NOT flagged — the grep/cat/head
+      // later in the pipeline is just a filter serving the
+      // primary command, not a bash+cat fallback. This is the
+      // simpler, more permissive rule we adopted in place of
+      // the previous grep-path-arg heuristic.
       const cases = <String>[
         'ps -ef | grep node',
         'env | grep PATH',
         'flutter test 2>&1 | grep FAIL',
+        'perl -pe \'s|x|y|\' file.txt | grep "missing" | head -5',
+        'dart run bin/main.dart | grep "error" | tail',
       ];
       for (final cmd in cases) {
         final v = detectShellGuard(
@@ -104,16 +112,15 @@ void main() {
           isWindows: false,
           currentStreak: 0,
         );
-        expect(v, isNotNull, reason: 'should flag: "$cmd"');
-        expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
+        expect(v, isNull, reason: 'should not flag: "$cmd"');
       }
     });
 
-    test('skips grep when command starts with cd (chained workflow)', () {
-      // The user's most common shell pattern: `cd /path && grep …`
-      // The cd is setup, the grep is the actual work. The LLM
-      // is doing chained shell work, not using bash as a fallback
-      // for the grep tool. Skip the grep verdict.
+    test('cd + grep still flags as grep (shell-script prefix skipped)', () {
+      // `cd /path && grep …` — the cd is shell-native setup;
+      // the detector skips the cd prefix and judges the actual
+      // operation (grep). Flagged as grep because grep is the
+      // primary tool the LLM picked.
       const cases = <String>[
         'cd /Users/developer/Projects/crux && grep -rn "TODO" lib/',
         'cd /path && grep "auth" src/',
@@ -125,7 +132,8 @@ void main() {
           isWindows: false,
           currentStreak: 0,
         );
-        expect(v, isNull, reason: 'should not flag: "$cmd"');
+        expect(v, isNotNull, reason: 'should flag: "$cmd"');
+        expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
     });
 
@@ -171,7 +179,9 @@ echo "(should be empty)"''';
       expect(v!.kind, ShellGuardKind.glob);
     });
 
-    test('skips grep when command starts with echo', () {
+    test('echo + grep still flags as grep (shell-script prefix skipped)', () {
+      // Same as the cd test: echo is shell-script prefix, the
+      // detector skips it and judges the actual operation.
       const cases = <String>[
         'echo "hello" && grep "foo" lib/',
         'echo "checking..." ; grep -r "TODO" .',
@@ -182,7 +192,8 @@ echo "(should be empty)"''';
           isWindows: false,
           currentStreak: 0,
         );
-        expect(v, isNull, reason: 'should not flag: "$cmd"');
+        expect(v, isNotNull, reason: 'should flag: "$cmd"');
+        expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
     });
 
@@ -289,11 +300,11 @@ echo "(should be empty)"''';
       }
     });
 
-    test('rg/grep "concept" | head → semantic_search (NOT grep)', () {
-      // Only rg/grep/ack (search verbs) trigger the semantic_search
-      // anti-pattern. List verbs (ls/find/tree) + truncator fall
-      // through to the verb classifier and are flagged as glob
-      // — see the dedicated test below for those.
+    test('rg/grep "concept" | head → grep verdict (first verb is grep)', () {
+      // Per the "dumber detector" rule, only the first verb
+      // is checked. `rg | head` flags as grep (not
+      // semantic_search) — the code-search verdict was
+      // intentionally removed because it was too clever.
       const cases = <String>[
         'rg "auth" lib/ | head -10',
         'rg "auth" lib/ | head',
@@ -307,8 +318,8 @@ echo "(should be empty)"''';
           currentStreak: 0,
         );
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
-        expect(v!.kind, ShellGuardKind.codeSearch, reason: 'cmd="$cmd"');
-        expect(v.toolName, 'semantic_search', reason: 'cmd="$cmd"');
+        expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
+        expect(v.toolName, 'grep', reason: 'cmd="$cmd"');
       }
     });
 
@@ -549,30 +560,32 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       });
 
       test(
-        'still flags when pipe is OUTSIDE quotes (mixed quoted/unquoted)',
+        'mixed quoted/unquoted pipe does NOT flag (first verb not in any violation set)',
         () {
-          // The OUTER `|` is unquoted and should split; the
-          // INNER `|` is inside single quotes and should NOT.
-          // Result: two segments: `cmd 'a|b'` and `cat file`.
-          // cat has a path argument → flagged as read.
+          // The OUTER `|` is unquoted and splits; the INNER
+          // `|` is inside single quotes and does not. Two
+          // segments: `cmd 'a|b'` and `cat file.txt`. With the
+          // "dumber detector" rule, only the FIRST segment is
+          // checked. `cmd` isn't in any violation set, so no flag
+          // fires. (Previously this flagged as read because cat
+          // was the first verb the old code walked to.)
           final v = detectShellGuard(
             "cmd 'a|b' | cat file.txt",
             isWindows: false,
             currentStreak: 0,
           );
-          expect(v, isNotNull);
-          expect(v!.kind, ShellGuardKind.read);
+          expect(v, isNull);
         },
       );
 
       test(
-        'semantic_search pipe anti-pattern does NOT match when pipe is inside quotes',
+        'rg/grep inside single quotes does NOT flag (first verb is echo, not grep)',
         () {
-          // Without quote-awareness, the inner `|` would split
-          // the segments and `rg ... | head` would match.
-          // With quote-awareness, the whole `'rg ... | head'`
-          // is one segment with verb `rg`, not `head`, so the
-          // left/right adjacency check doesn't fire.
+          // The whole `'rg "concept" lib/ | head'` is one
+          // segment with verb `echo` (since `echo` is the first
+          // non-env token). `echo` isn't a violation verb, so
+          // no flag fires. Quote-aware segmentation preserves
+          // the `|` inside the single-quoted string.
           final v = detectShellGuard(
             "echo 'rg \"concept\" lib/ | head'",
             isWindows: false,
@@ -666,14 +679,16 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       }
     });
 
-    test('Select-String | Select-Object → semantic_search', () {
+    test('Select-String | Select-Object → grep verdict (first verb)', () {
+      // First verb is Select-String → grep verdict. The
+      // code-search verdict was removed.
       final v = detectShellGuard(
         r'Select-String -Path "*.cs" -Pattern "TODO" | Select-Object -First 10',
         isWindows: true,
         currentStreak: 0,
       );
       expect(v, isNotNull);
-      expect(v!.kind, ShellGuardKind.codeSearch);
+      expect(v!.kind, ShellGuardKind.grep);
     });
   });
 
@@ -796,16 +811,20 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(out, contains('`read`'));
     });
 
-    test('semantic_search verdict highlights the semantic-search benefit', () {
+    test('grep verdict body text still mentions semantic_search (general nudge)', () {
+      // The code-search verdict is gone, but the body text
+      // still mentions semantic_search as the preferred
+      // surface for "how does X work" questions — that's a
+      // general nudge to the LLM, independent of the verdict
+      // kind.
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
         currentStreak: 0,
       )!;
-      expect(v.kind, ShellGuardKind.codeSearch);
+      expect(v.kind, ShellGuardKind.grep);
       final out = renderShellGuardEmbedded(v);
       expect(out, contains('semantic_search'));
-      expect(out, contains('semantic search'));
     });
   });
 
@@ -847,7 +866,9 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(out, contains('cat lib/main.dart'));
     });
 
-    test('reject tier emphasises semantic_search (per the user request)', () {
+    test('reject tier body text still mentions semantic_search', () {
+      // Same as above: rejection body has the general
+      // semantic_search nudge regardless of verdict kind.
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
@@ -907,7 +928,9 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       );
     });
 
-    test('semantic_search verdict surfaces the right tool name', () {
+    test('grep verdict surfaces the right tool name in the bubble label', () {
+      // After removing the code_search verdict, rg | head falls
+      // through to grep verdict → recommendation is grep tool.
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',
         isWindows: false,
@@ -915,7 +938,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       )!;
       expect(
         renderShellGuardBubbleLabel(v),
-        'shell-tool fallback · 1st · use `semantic_search` instead',
+        'shell-tool fallback · 1st · use `grep` instead',
       );
     });
   });
