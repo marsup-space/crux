@@ -5,12 +5,20 @@
 #
 # The custom `type = "deepseek"` value is registered in
 # `llm_provider.dart`'s resolveProvider() — it dispatches to a DeepSeek-
-# specific LlmProvider that uses DeepSeek's reasoning effort names
-# (e.g. "xhigh" for "high"). Without this, the dispatcher would fall
-# back to OpenAiProvider, which maps "high" to "high".
+# specific LlmProvider that enforces DeepSeek's actual reasoning effort
+# semantics (the API only truly supports `high` and `max`; `low` and
+# `medium` are SDK-compatibility aliases that both resolve to `high`).
 
 type = "deepseek"
 endpoint_url = "https://api.deepseek.com"
+
+# DeepSeek API only supports two real reasoning efforts: high and max.
+# low and medium are compatibility aliases that both resolve to high
+# (see https://api-docs.deepseek.com/guides/thinking_mode). Hide them
+# so the UI only exposes the three meaningful choices.
+[reasoning_labels]
+low = "disabled"
+normal = "disabled"
 
 [[models]]
 id = "deepseek-v4-flash"
