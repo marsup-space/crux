@@ -199,23 +199,72 @@ String formatDroppedFilesForInput(List<DroppedFile> files) {
 ///
 /// Real file drops from terminal emulators (iTerm2, Kitty, WezTerm,
 /// Ghostty, Finder) have a characteristic shape: every token in the
-/// payload is a path. Requiring the same here keeps us from
-/// misreading a sentence that merely *mentions* a path as a drop
-/// (e.g. pasting "see /tmp/photo.png for context" used to be
-/// mis-routed as a single-image attach, with the surrounding words
-/// surfaced as "File(s) not found" toasts).
+/// payload is a path, and each path is either absolute
+/// (`/Users/me/notes.md`), home-relative (`~/notes.md`), or
+/// explicitly relative (`./notes.md`, `../notes.md`). Requiring the
+/// same here keeps us from misreading a sentence that merely
+/// *mentions* a path as a drop (e.g. pasting "see /tmp/photo.png
+/// for context" used to be mis-routed as a single-image attach,
+/// with the surrounding words surfaced as "File(s) not found"
+/// toasts).
 ///
-/// Returns `true` only when [classified] is non-empty AND every
-/// token resolved to a real file or directory on disk. The caller
-/// is expected to fall through to the legacy single-image path
-/// (and from there to plain-text insertion) when this returns
+/// Returns `true` only when:
+///
+///   * [classified] is non-empty,
+///   * every token resolved to a real file or directory on disk
+///     (the prose-with-path guard), AND
+///   * for a single-token payload, the original token itself looks
+///     like a path (see [_looksLikePath]).
+///
+/// The single-token guard is the macOS / IME-composition fix. On
+/// macOS, Chinese / Japanese / Korean IMEs commit candidate text by
+/// wrapping it in bracketed-paste markers (`ESC[200~ ... ESC[201~`),
+/// so a confirmed candidate like "tool" or "你好" arrives here as a
+/// single-token paste. Without this guard, [classifyDroppedPaths]
+/// joins that token against the project root and resolves it as a
+/// real path whenever the project happens to contain a matching
+/// entry (e.g. a `tool/` subdirectory), at which point the input
+/// gets replaced with `[directory: .../tool]` and a "Dropped: 1
+/// path(s) inserted" toast fires. Real file drops from terminal
+/// emulators are always path-shaped, so a bare word is a strong
+/// signal that the paste is user input, not a file drop.
+///
+/// The caller is expected to fall through to the legacy single-image
+/// path (and from there to plain-text insertion) when this returns
 /// `false`.
 bool looksLikeFileDrop(List<DroppedFile> classified) {
   if (classified.isEmpty) return false;
+
+  // Single-token guard: a bare word (e.g. "tool", "你好") joined
+  // against the project root is almost always IME-committed text,
+  // not a file drop. See the docstring for the full context. The
+  // multi-token case is unchanged — the prose-with-path guard
+  // (the every-token-resolves check below) already rejects e.g.
+  // "see /tmp/a.md for context" because the surrounding words
+  // don't resolve.
+  if (classified.length == 1 && !_looksLikePath(classified.first.originalPath)) {
+    return false;
+  }
+
   for (final f in classified) {
     if (f.kind == DroppedFileKind.missing) return false;
   }
   return true;
+}
+
+/// True when [s] has the shape of a real filesystem path —
+/// absolute (`/foo`), home-relative (`~` / `~/foo`), or explicitly
+/// relative (`./foo` / `../foo`).
+///
+/// A bare word like "tool" or a CJK token like "你好" returns
+/// `false`. Those are exactly the inputs that get misclassified
+/// as file drops on macOS when an IME commits them through
+/// bracketed-paste mode.
+bool _looksLikePath(String s) {
+  return s.startsWith('/') ||
+      s.startsWith('./') ||
+      s.startsWith('../') ||
+      s.startsWith('~');
 }
 
 // ─── helpers ────────────────────────────────────────────────────────

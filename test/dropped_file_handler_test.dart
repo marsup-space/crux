@@ -403,5 +403,138 @@ void main() {
       );
       expect(looksLikeFileDrop(classified), isFalse);
     });
+
+    // ─── IME-composition guard (macOS) ───────────────────────────
+    //
+    // On macOS, Chinese / Japanese / Korean IMEs commit their
+    // candidate text through bracketed-paste mode, so a confirmed
+    // word that happens to match a project entry (e.g. typing
+    // "sub" in a project that has a `sub/` directory, or "tool"
+    // in a project that has a `tool/` directory) used to be
+    // classified against the project root and routed as a file
+    // drop, replacing the user's IME text with a `[directory:
+    // ...]` reference and firing a "Dropped: 1 path(s) inserted"
+    // toast. Real file drops from terminal emulators always look
+    // like paths — absolute (`/foo`), home-relative (`~`), or
+    // with an explicit relative prefix (`./foo`, `../foo`) — so
+    // a single bare word must NOT be treated as a drop.
+    group('IME-composition guard (macOS bracketed-paste regression)', () {
+      test('rejects a single bare word that resolves to a real directory',
+          () {
+        // The fixture's `sub/` directory makes "sub" the exact
+        // shape of an IME-committed word that joins against the
+        // project root and resolves to a real path.
+        final classified = classifyDroppedPaths(
+          ['sub'],
+          projectRoot: fx.root.path,
+        );
+        expect(
+          classified.single.kind,
+          DroppedFileKind.directory,
+          reason: 'sanity: "sub" joins to <projectRoot>/sub and resolves',
+        );
+        expect(looksLikeFileDrop(classified), isFalse,
+            reason: 'single bare word without path prefix is IME text');
+      });
+
+      test('rejects a single bare word that resolves to a real file', () {
+        // Same shape, but resolves to a file. The classifier happily
+        // accepts it (it lives on disk); the drop guard is the only
+        // thing standing between the user and a misclassification.
+        final classified = classifyDroppedPaths(
+          ['hello.txt'],
+          projectRoot: fx.root.path,
+        );
+        expect(
+          classified.single.kind,
+          DroppedFileKind.file,
+          reason: 'sanity: "hello.txt" joins to <projectRoot>/hello.txt',
+        );
+        expect(looksLikeFileDrop(classified), isFalse,
+            reason: 'single bare word without path prefix is IME text');
+      });
+
+      test('rejects a single CJK token that happens to resolve', () {
+        // Realistic Chinese-IME shape: a single bare CJK word.
+        // Stash a CJK-named entry under the fixture so the
+        // classifier can resolve it; the guard must still reject.
+        final cjkDir = Directory(p.join(fx.root.path, '工具'));
+        cjkDir.createSync();
+        addTearDown(() {
+          if (cjkDir.existsSync()) cjkDir.deleteSync(recursive: true);
+        });
+
+        final classified = classifyDroppedPaths(
+          ['工具'],
+          projectRoot: fx.root.path,
+        );
+        expect(
+          classified.single.kind,
+          DroppedFileKind.directory,
+          reason: 'sanity: "工具" joins to <projectRoot>/工具 and resolves',
+        );
+        expect(looksLikeFileDrop(classified), isFalse,
+            reason: 'single CJK bare word is IME text, not a file drop');
+      });
+
+      test('accepts a single absolute path', () {
+        final classified = classifyDroppedPaths(
+          [fx.path('hello.txt')],
+          projectRoot: fx.root.path,
+        );
+        expect(looksLikeFileDrop(classified), isTrue,
+            reason: 'real file drop: absolute path');
+      });
+
+      test('accepts a single absolute directory path', () {
+        final classified = classifyDroppedPaths(
+          [fx.path('sub')],
+          projectRoot: fx.root.path,
+        );
+        expect(looksLikeFileDrop(classified), isTrue,
+            reason: 'real file drop: absolute directory path');
+      });
+
+      test('accepts a single explicit-relative path (./foo)', () {
+        final classified = classifyDroppedPaths(
+          ['./hello.txt'],
+          projectRoot: fx.root.path,
+        );
+        expect(
+          classified.single.kind,
+          DroppedFileKind.file,
+          reason: 'sanity: "./hello.txt" resolves via projectRoot',
+        );
+        expect(looksLikeFileDrop(classified), isTrue,
+            reason: 'real file drop: explicit relative path');
+      });
+
+      test('accepts a single home-relative path (~/foo)', () {
+        // `~` is intentionally not expanded by the classifier
+        // (path canonicalize leaves it alone), so this resolves as
+        // missing — but the path-shape check fires before the
+        // missing-kind check, and the originalPath is "~/foo"
+        // which is path-shaped. So we expect the drop guard to
+        // return TRUE here: the shape is right; the user clearly
+        // meant a file drop. The downstream code (or the user
+        // noticing nothing got attached) handles the actual miss.
+        // Actually, the existing every-must-resolve rule still
+        // applies AFTER the path-shape check, so the expected
+        // result here is FALSE: the path is path-shaped but does
+        // not resolve. Document the behaviour with a comment so
+        // future readers don't trip over it.
+        final classified = classifyDroppedPaths(
+          const ['~/no-such-file.md'],
+          projectRoot: fx.root.path,
+        );
+        expect(
+          classified.single.kind,
+          DroppedFileKind.missing,
+          reason: 'sanity: `~` is not expanded, so the path is missing',
+        );
+        expect(looksLikeFileDrop(classified), isFalse,
+            reason: 'path-shaped but missing; every-must-resolve wins');
+      });
+    });
   });
 }

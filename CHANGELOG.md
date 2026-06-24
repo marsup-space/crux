@@ -26,6 +26,33 @@ below the version header. Each version has at most two categories:
   only when no turn is currently streaming gets the button mode.
   See `docs/design-quick-reply.md` for the full spec.
 
+### Fixes
+
+- **Chat input: don't treat IME-committed text as a file drop** —
+  on macOS, Chinese / Japanese / Korean IMEs wrap their committed
+  candidate text in bracketed-paste markers (`ESC[200~ ... ESC[201~`),
+  so a confirmed word like `tool` would arrive at the chat input
+  as a single-token paste. Two layers of fix:
+
+  1. *Crux* — `looksLikeFileDrop` now also requires the single
+     token to be path-shaped (absolute `/...`, home-relative `~`,
+     or explicit relative `./...` / `../...`) before accepting it
+     as a file drop, matching what terminal emulators actually
+     emit for drag-and-drop. Multi-token pastes and the legacy
+     single-image path are unchanged. IME text now falls through
+     to plain-text insertion as intended.
+  2. *Nocterm (submodule, also fixed here)* — every IME-confirmed
+     character or word was also overwriting the user's system
+     clipboard, because `TerminalBinding` used to copy the
+     `PasteInputEvent` payload to the clipboard and then route a
+     synthetic Ctrl+V so `TextField._paste` could read it back.
+     `NoctermBinding` now stashes the payload on the binding
+     instead; `TextField._paste` consumes it via
+     `NoctermBinding.instance.consumePendingPasteText` and
+     falls through to the clipboard for real user-initiated
+     Ctrl+V. The system clipboard is no longer touched on the
+     IME path.
+
 ## [0.7.3] - 2026-06-23
 
 0dbdc27
