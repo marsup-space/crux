@@ -30,26 +30,10 @@ class HighlightService {
       'json',
       'yaml',
       'sql',
-      // Added
+      // Vendored full TextMate grammars (shikijs/textmate-grammars-themes)
       'csharp',
-      'c',
       'cpp',
-      'ruby',
-      'php',
       'bash',
-      'toml',
-      'diff',
-      'dockerfile',
-      'lua',
-      'scala',
-      'haskell',
-      'markdown',
-      'xml',
-      'perl',
-      'r',
-      'elixir',
-      'erlang',
-      'clojure',
     ];
 
     await tm.Highlighter.initialize(languages);
