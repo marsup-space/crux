@@ -458,9 +458,237 @@ void main() {
         }, size: const Size(40, 15));
       },
     );
+
+    test(
+      'Hinted rebuilds with new hint text refresh the tooltip while '
+      'the cursor is still hovering '
+      '(regression: glossy model button streaming lock)',
+      () async {
+        // Repro of the "stuck tooltip" bug: the user hovers a
+        // [Hinted] widget, the host rebuilds with a *new* [Hinted.hint]
+        // (e.g. the chat toolbar's model picker flips from "click
+        // to change" to "cannot be changed" when streaming
+        // starts), and the tooltip is supposed to update in place.
+        // Before the fix, [_HintedState] had no `didUpdateComponent`
+        // hook, so the controller kept painting the previous text
+        // until the next mouse move — looking like a stuck mouse
+        // state.
+        await testNocterm('Hinted refreshes on rebuild', (tester) async {
+          String currentHint = 'click to change';
+          late void Function() updateHint;
+
+          await tester.pumpComponent(
+            HintOverlay(
+              child: _RebuildOnDemand(
+                builder: (context, setState) {
+                  updateHint = () {
+                    setState(() {
+                      currentHint = 'cannot be changed while responding';
+                    });
+                  };
+                  return Hinted(
+                    hint: currentHint,
+                    delay: Duration.zero, // skip the 500 ms wait
+                    child: Text('Model'),
+                  );
+                },
+              ),
+            ),
+          );
+
+          // Hover. With zero delay the hint is visible right away.
+          await tester.hover(1, 1);
+          await tester.pump();
+          expect(
+            HintController.instance.activeHint,
+            'click to change',
+            reason: 'sanity: initial hint is registered and visible',
+          );
+          expect(HintController.instance.visible, isTrue);
+
+          // Rebuild the [Hinted] with new text but DO NOT move the
+          // mouse. The tooltip should pick up the new text
+          // immediately. Before the fix this assertion failed — the
+          // controller was still holding the old text.
+          updateHint();
+          await tester.pump();
+          expect(
+            HintController.instance.activeHint,
+            'cannot be changed while responding',
+            reason:
+                'Hinted must re-fire its hint on didUpdateComponent '
+                'so a stationary cursor sees the new text instead of '
+                'the stale "click to change" from before the rebuild',
+          );
+          expect(
+            HintController.instance.visible,
+            isTrue,
+            reason: 'the tooltip should stay visible across the rebuild',
+          );
+        }, size: const Size(40, 15));
+      },
+    );
+
+    test(
+      'Hinted rebuild with same hint text does not re-show the tooltip '
+      'after the cursor leaves the source',
+      () async {
+        // Companion guard for the new [refreshHintFromLastEvent] path:
+        // a rebuild while the cursor is *not* hovering must not
+        // re-pop the tooltip. [_lastMouseEvent] is cleared in
+        // [onHintExit] so the helper becomes a no-op — without
+        // that, a rebuild with the same hint text would silently
+        // re-appear after the user had moved the cursor away.
+        //
+        // [HintOverlay] uses a [Stack] with [StackFit.expand], which
+        // stretches the single non-positioned child to fill the
+        // overlay. We wrap the [Hinted] in an [Align] so it keeps
+        // its natural (text) size at the top-left — otherwise
+        // every cell of the 40×15 terminal is "inside" the
+        // hinted region and the cursor can never actually leave
+        // it, defeating the test.
+        await testNocterm('Hinted refresh respects cursor exit', (tester) async {
+          String currentHint = 'first';
+          late void Function() updateHint;
+
+          await tester.pumpComponent(
+            HintOverlay(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: _RebuildOnDemand(
+                  builder: (context, setState) {
+                    updateHint = () {
+                      setState(() {
+                        currentHint = 'second';
+                      });
+                    };
+                    return Hinted(
+                      hint: currentHint,
+                      delay: Duration.zero,
+                      child: Text('Source'),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+
+          // Hover so the hint becomes active. The Align keeps the
+          // Hinted at its natural 6×1 size, so the hit region is
+          // the top row (y=0) of the first 6 columns. (1, 0) is
+          // safely inside; (1, 1) would land on the bottom edge
+          // which [Rect.contains] treats as exclusive.
+          await tester.hover(1, 0);
+          await tester.pump();
+          expect(HintController.instance.activeHint, 'first');
+          expect(HintController.instance.visible, isTrue);
+
+          // Move the cursor away. The hint hides.
+          await tester.hover(30, 10);
+          await tester.pump();
+          expect(HintController.instance.activeHint, isNull);
+          expect(HintController.instance.visible, isFalse);
+
+          // Rebuild with new text. The cursor is not over the
+          // source anymore, so the tooltip must stay hidden even
+          // though [refreshHintFromLastEvent] is now wired up.
+          updateHint();
+          await tester.pump();
+          expect(
+            HintController.instance.activeHint,
+            isNull,
+            reason:
+                'no cursor over the source → _lastMouseEvent is null '
+                '→ refreshHintFromLastEvent is a no-op → tooltip '
+                'stays hidden',
+          );
+        }, size: const Size(40, 15));
+      },
+    );
+  });
+
+  group('MouseTracker synthetic dispatch (framework fix)', () {
+    test(
+      'replacing a MouseRegion while hovered fires onEnter on the new '
+      'region via synthetic dispatch at end of frame',
+      () async {
+        await testNocterm('MouseRegion: synthetic onEnter after rebuild', (
+          tester,
+        ) async {
+          var enterCount = 0;
+          var exitCount = 0;
+          var replaceRegion = false;
+          late void Function() triggerReplace;
+
+          await tester.pumpComponent(
+            _RebuildOnDemand(
+              builder: (context, setState) {
+                triggerReplace = () {
+                  setState(() => replaceRegion = true);
+                };
+                if (!replaceRegion) {
+                  return MouseRegion(
+                    opaque: false,
+                    onEnter: (_) => enterCount += 1,
+                    onExit: (_) => exitCount += 1,
+                    child: const SizedBox(width: 10, height: 10),
+                  );
+                } else {
+                  // A different MouseRegion — the framework sees a
+                  // different runtimeType because we wrap it with a
+                  // key. The old RenderMouseRegion detaches (sets
+                  // validForMouseTracker = false), the new one
+                  // attaches (validForMouseTracker = true).
+                  return MouseRegion(
+                    key: const Key('replacement'),
+                    opaque: false,
+                    onEnter: (_) => enterCount += 1,
+                    onExit: (_) => exitCount += 1,
+                    child: const SizedBox(width: 10, height: 10),
+                  );
+                }
+              },
+            ),
+          );
+
+          // Hover inside the region. The onEnter fires.
+          await tester.hover(5, 5);
+          await tester.pump();
+          expect(enterCount, 1);
+          expect(exitCount, 0);
+
+          // Rebuild with a new MouseRegion. The cursor hasn't moved,
+          // but the old region detaches and the new one attaches.
+          // Before the framework fix, onEnter would NOT fire on the
+          // new region until the next real mouse event — this is the
+          // "stuck tooltip" root cause. After the fix, the binding's
+          // synthetic dispatch fires onEnter at the end of drawFrame.
+          triggerReplace();
+          await tester.pump();
+
+          expect(
+            enterCount,
+            2,
+            reason:
+                'The new MouseRegion should get a synthetic onEnter '
+                'at end of frame when the cursor did not move',
+          );
+          // The old region's onExit fires as part of the real
+          // dispatch (the cursor hasn't moved, but the old annotation
+          // is definitely no longer in the hit test — it was dirtied
+          // and the MouseTracker skips it during exit diff).
+          // However, since validForMouseTracker=false on the old
+          // annotation, _dispatchEvent skips it in the exited set
+          // (the validForMouseTracker guard). The synthetic dispatch
+          // then finds the NEW annotation (now in the hit test) and
+          // fires onEnter. So the old annotation's onExit doesn't
+          // fire — but the new one's onEnter does. That's the
+          // expected behavior from the framework perspective.
+        }, size: const Size(20, 20));
+      },
+    );
   });
 }
-
 // ---------------------------------------------------------------------------
 // Test fixtures
 // ---------------------------------------------------------------------------
@@ -506,6 +734,26 @@ class _HintfulComponent extends StatefulComponent {
   const _HintfulComponent();
   @override
   State<_HintfulComponent> createState() => _HintfulState(label: '');
+}
+
+/// Minimal "give me a `setState`" host used by the
+/// "Hinted rebuilds with new hint text" tests. The tests capture the
+/// returned setter via the builder closure and call it to trigger
+/// `didUpdateComponent` on the inner [Hinted] state without
+/// disposing the element (a fresh `pumpComponent` would tear down
+/// the state and lose the cursor's hover bookkeeping).
+class _RebuildOnDemand extends StatefulComponent {
+  const _RebuildOnDemand({required this.builder});
+
+  final Component Function(BuildContext, StateSetter) builder;
+
+  @override
+  State<_RebuildOnDemand> createState() => _RebuildOnDemandState();
+}
+
+class _RebuildOnDemandState extends State<_RebuildOnDemand> {
+  @override
+  Component build(BuildContext context) => component.builder(context, setState);
 }
 
 /// Returns the character at `(x, y)` in the most recent buffer, or
