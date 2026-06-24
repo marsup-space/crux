@@ -31,6 +31,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   int _selectedIndex = 0;
   _PanelMode _mode = _PanelMode.browse;
   final _renameController = TextEditingController();
+  final _scrollController = ScrollController();
 
   List<Session> get _sorted {
     return List<Session>.from(component.sessions)
@@ -45,11 +46,15 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       (s) => s.id == component.currentSessionId,
     );
     _selectedIndex = currentIdx >= 0 ? currentIdx : 0;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _ensureSelectedVisible();
+    });
   }
 
   @override
   void dispose() {
     _renameController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -59,6 +64,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     setState(() {
       _selectedIndex = _selectedIndex > 0 ? _selectedIndex - 1 : len - 1;
     });
+    _ensureSelectedVisible();
   }
 
   void _selectNext() {
@@ -67,6 +73,19 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     setState(() {
       _selectedIndex = _selectedIndex < len - 1 ? _selectedIndex + 1 : 0;
     });
+    _ensureSelectedVisible();
+  }
+
+  void _ensureSelectedVisible() {
+    // Each session row is 1 terminal row. The header is 1 row.
+    // In confirm-delete mode there are 2 extra rows (message + divider)
+    // above the header.
+    final baseOffset = _mode == _PanelMode.confirmDelete ? 2.0 : 0.0;
+    final itemOffset = baseOffset + 1.0 + _selectedIndex.toDouble();
+    _scrollController.ensureVisible(
+      itemOffset: itemOffset,
+      itemExtent: 1.0,
+    );
   }
 
   void _initiateDelete() {
@@ -412,9 +431,13 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           );
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
+        return SingleChildScrollView(
+          controller: _scrollController,
+          keyboardScrollable: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
         );
       },
     );
