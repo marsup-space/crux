@@ -57,15 +57,30 @@ below the version header. Each version has at most two categories:
   existing `Ctrl+Arrow` / `Ctrl+Backspace` / `Ctrl+W` word-move and
   word-delete bindings could not be used for *moving* the cursor on
   macOS because `Ctrl+<` and `Ctrl+>` are bound to Mission Control
-  at the OS level. Fix lands in Nocterm (submodule): `TextField` now
-  also accepts `Alt+Arrow` (Option+Arrow) for word movement, with
-  `Shift+Alt+Arrow` extending the selection by a word. Pure
-  `Shift+Arrow` still extends by a single character. Both modifiers
-  are accepted cross-platform so the binding behaves identically
-  on macOS, Linux, and Windows; macOS users get the native
-  Option+Arrow convention while other platforms keep their existing
-  Ctrl+Arrow muscle memory. Word *deletion* already supported
-  `Alt+Backspace`, so it was unaffected.
+  at the OS level. Fix lands in Nocterm (submodule) on two layers:
+
+  1. *TextField* — now also accepts `Alt+Arrow` (Option+Arrow) for
+     word movement, with `Shift+Alt+Arrow` extending the selection
+     by a word. Pure `Shift+Arrow` still extends by a single
+     character. Both modifiers are accepted cross-platform so the
+     binding behaves identically on macOS, Linux, and Windows;
+     macOS users get the native Option+Arrow convention while other
+     platforms keep their existing Ctrl+Arrow muscle memory.
+  2. *InputParser* — on macOS Terminal.app (default "Use Option as
+     Meta") and on iTerm2 without the kitty keyboard protocol /
+     `modifyOtherKeys` enabled, `Option+→` arrives as `ESC f`,
+     `Option+←` as `ESC b`, and `Option+Delete` as `ESC d` — the
+     readline meta-f / meta-b / meta-d convention — instead of a
+     CSI modifier sequence. The parser now translates those three
+     sequences to `Alt+ArrowRight` / `Alt+ArrowLeft` / `Alt+Delete`
+     so the TextField binding above actually fires. Tradeoff:
+     `Option+f` / `Option+b` / `Option+d` also become
+     word-movement rather than literal-character insertion — the
+     same constraint every readline app on a default-configured
+     macOS terminal already lives with. Terminals that *do* send a
+     proper CSI modifier sequence (`\x1b[1;3C`) are unaffected.
+     Word *deletion* already supported `Alt+Backspace`, so it was
+     unaffected by either fix.
 
 ## [0.7.3] - 2026-06-23
 
