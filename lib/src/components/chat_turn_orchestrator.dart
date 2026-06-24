@@ -593,13 +593,17 @@ class ChatTurnOrchestrator {
               _streamingController.stopContextAnimation();
             }
             final hit = response.promptCacheHitTokens;
-            final total = response.promptTokens;
             final miss = response.promptCacheMissTokens;
-            final nonCached = total - hit;
-            if (total > 0 && hit > 0 && nonCached > 0) {
-              rt.cacheHitPct = ((hit / total) * 100).round();
-            } else if (total > 0 && miss > 0 && hit == 0) {
-              rt.cacheHitPct = 0;
+            // Use hit+miss as the denominator — those are the tokens that
+            // the cache machinery actually counted.  hit/(hit+miss) is the
+            // canonical hit rate;  using promptTokens risks a mismatch when
+            // the API doesn't classify every input token into hit or miss.
+            final cacheTotal = hit + miss;
+            if (cacheTotal > 0) {
+              // Store as decimal percentage (e.g. 85.3) so the UI can show
+              // one decimal place.  The `round()` used before threw away
+              // precision and collapsed 99.5% into "100%" — misleading.
+              rt.cacheHitPct = ((hit / cacheTotal) * 1000).roundToDouble() / 10.0;
             } else {
               rt.cacheHitPct = null;
             }
@@ -806,10 +810,16 @@ class ChatTurnOrchestrator {
     }
 
     // Build the wire message list for this btw call.
+    // Include the system prompt so the prefix matches the main turn's
+    // prefix — DeepSeek prompt-caching requires an exact prefix match.
     final history = await _messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = <Map<String, dynamic>>[
-      ...ChatService.buildApiMessages(history, wireFamily),
+      ...ChatService.buildApiMessages(
+        history,
+        wireFamily,
+        systemPrompt: session.systemPrompt,
+      ),
     ];
     final priorBtw = _sessionController.btwTurnsFor(sessionId);
     for (final t in priorBtw) {

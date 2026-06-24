@@ -563,7 +563,7 @@ class RunMetrics {
   static String _formatCacheSuffix(RunMetricsSnapshot snap) {
     final pct = snap.cacheHitPct;
     if (pct == null) return '(cache —)';
-    return '(cache ${pct.toStringAsFixed(0)}%)';
+    return '(cache ${pct.toStringAsFixed(1)}%)';
   }
 
   /// `5m 23s`, `1h 12m 5s`, `42s`, `2h 0m`. Skips

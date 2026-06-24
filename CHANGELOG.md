@@ -53,6 +53,20 @@ below the version header. Each version has at most two categories:
      Ctrl+V. The system clipboard is no longer touched on the
      IME path.
 
+- **Chat input: word navigation on macOS (Option+Arrow)** — the
+  existing `Ctrl+Arrow` / `Ctrl+Backspace` / `Ctrl+W` word-move and
+  word-delete bindings could not be used for *moving* the cursor on
+  macOS because `Ctrl+<` and `Ctrl+>` are bound to Mission Control
+  at the OS level. Fix lands in Nocterm (submodule): `TextField` now
+  also accepts `Alt+Arrow` (Option+Arrow) for word movement, with
+  `Shift+Alt+Arrow` extending the selection by a word. Pure
+  `Shift+Arrow` still extends by a single character. Both modifiers
+  are accepted cross-platform so the binding behaves identically
+  on macOS, Linux, and Windows; macOS users get the native
+  Option+Arrow convention while other platforms keep their existing
+  Ctrl+Arrow muscle memory. Word *deletion* already supported
+  `Alt+Backspace`, so it was unaffected.
+
 ## [0.7.3] - 2026-06-23
 
 0dbdc27

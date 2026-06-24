@@ -29,13 +29,13 @@ import '../utils/ticker_registry.dart';
 ///
 /// ## Hover countdown ticker
 ///
-/// When the user hovers and at least one cell's countdown
-/// shows a visible seconds digit (i.e. `remaining < 1 minute`
-/// per [formatCodingPlanRemains]), a separate
+/// When the user hovers and at least one cell has a
+/// countdown [Duration] (i.e. `intervalRemains` or
+/// `weeklyRemains` is non-null), a separate
 /// [_countdownTicker] starts running at
 /// [_countdownTickInterval] (250ms) and the displayed
-/// countdown is computed from an anchor captured at hover-
-/// entry:
+/// countdown is computed from an anchor captured at
+/// hover-entry:
 ///
 /// ```text
 /// displayed = anchor - (now - anchorMs)
@@ -43,13 +43,11 @@ import '../utils/ticker_registry.dart';
 ///
 /// where `anchor` is the snapshot's effective time-until-
 /// reset at hover-entry (`intervalRemains - (now - fetchedAt)`,
-/// clamped to `>= 0`). The 250ms cadence keeps the visible
-/// second digit within ~250ms of the actual transition —
-/// faster than the wall-clock second would let us perceive,
-/// and cheap because the ticker just decrements a [Duration]
-/// and pushes one paint. Ticks yield to the 3-second
-/// animation ticker when both fire in the same frame, so
-/// the punchy red/green flash stays clean.
+/// clamped to `>= 0`). The 250ms cadence catches minute-
+/// boundary transitions promptly and also handles the
+/// final second digits naturally. Ticks yield to the
+/// 3-second animation ticker when both fire in the same
+/// frame, so the punchy red/green flash stays clean.
 ///
 /// When either cell's displayed countdown hits zero, the
 /// ticker reuses the click-to-refresh path ([_onTap]) so
@@ -213,13 +211,12 @@ class _CodingPlanUsageDisplayState
       Duration(milliseconds: 250);
 
   /// Ticker for the hover countdown. Started by
-  /// [_syncCountdownTicker] when the user hovers AND at
-  /// least one cell's countdown will show a visible
-  /// seconds digit (<1m remaining). Stopped on hover-
-  /// exit, when a new snapshot lands that no longer
-  /// qualifies, or when the displayed countdown hits
-  /// zero (in which case [_onTap] is invoked to trigger
-  /// a refresh).
+  /// [_syncCountdownTicker] when the user hovers and at
+  /// least one cell has a countdown [Duration].
+  /// Stopped on hover-exit, when a new snapshot lands
+  /// whose countdown fields are all null, or when the
+  /// displayed countdown hits zero (in which case
+  /// [_onTap] is invoked to trigger a refresh).
   TickerToken? _countdownTicker;
 
   /// Wall-clock time captured when the countdown anchor
@@ -300,11 +297,12 @@ class _CodingPlanUsageDisplayState
     // Re-evaluate the hover countdown ticker. A new
     // snapshot might:
     //   * have reset the window (new intervalRemains
-    //     well above 1 minute → stop ticking);
+    //     farther out → re-anchor so the countdown
+    //     snaps to the new value);
     //   * have a different remaining value mid-window
-    //     (re-anchor so the displayed countdown snaps
-    //     to the new value rather than drifting from
-    //     the old anchor);
+    //     (same — re-anchor to avoid drift);
+    //   * leave the countdown fields all null
+    //     (stop ticking — nothing to display);
     //   * leave the countdown in the same regime
     //     (no-op, ticker keeps running).
     // We call this *after* setState so the render
@@ -444,13 +442,16 @@ class _CodingPlanUsageDisplayState
 
   /// Push either the current animation frame (if the
   /// ticker is mid-animation, the next tick will
-  /// overwrite this) or the settled frame. The unified
-  /// "current frame" computation keeps hover-aware
-  /// rendering consistent across both paths.
+  /// overwrite this) or the hover countdown frame, or
+  /// the settled frame. The unified "current frame"
+  /// computation keeps hover-aware rendering consistent
+  /// across both paths.
   void _pushCurrentFrame() {
-    final ticker = _animationTicker;
-    if (ticker != null && ticker.isActive) {
+    final animTicker = _animationTicker;
+    if (animTicker != null && animTicker.isActive) {
       _tickAnimation(Duration.zero);
+    } else if (_countdownTicker?.isActive ?? false) {
+      _tickCountdown(Duration.zero);
     } else if (_refreshing) {
       _pushRefreshFrame();
     } else {
@@ -617,18 +618,18 @@ class _CodingPlanUsageDisplayState
   /// ticker stays in sync with the latest snapshot and
   /// hover state.
   ///
-  /// The ticker is started when the user is hovering AND
-  /// the current snapshot has at least one cell whose
-  /// countdown would show a visible seconds digit —
-  /// i.e. `remaining < 1 minute` per
-  /// [formatCodingPlanRemains]. When both cells are above
-  /// 1 minute (e.g. `4h 32m`, `6d 4h`) the formatted
-  /// label has no seconds and ticking would produce no
-  /// visible change.
+  /// The ticker is started whenever the user is hovering
+  /// and at least one cell has a countdown [Duration]
+  /// — regardless of magnitude. The formatted label
+  /// changes only at boundary transitions (e.g. `4h 32m`
+  /// → `4h 31m`), and the render object's dirty-check
+  /// absorbs no-op frames where the string is identical
+  /// to the previous one, so the ticker is cheap even for
+  /// long-duration countdowns.
   void _syncCountdownTicker() {
     final usage = _usage;
     final shouldTick = _hovered && usage != null &&
-        _shouldCountdownTick(usage);
+        _hasCountdownData(usage);
     if (shouldTick) {
       // Re-anchor every time: even if the ticker is
       // already running, a fresh anchor captures the
@@ -650,29 +651,14 @@ class _CodingPlanUsageDisplayState
     }
   }
 
-  /// True iff at least one cell's countdown would show a
-  /// visible seconds digit in [formatCodingPlanRemains].
-  /// The format rules are:
-  ///
-  ///   * `>= 1 day`  → `"6d 4h"`     — no seconds
-  ///   * `>= 1 hour` → `"4h 32m"`    — no seconds
-  ///   * `>= 1 min`  → `"23m 15s"`   — seconds visible
-  ///   * `>= 1 s`    → `"45s"`       — seconds visible
-  ///   * `else`      → `"<1s"`       — zero / saturated
-  ///
-  /// Both null (API didn't return a countdown) and
-  /// `>= 1 minute` short-circuit to false; either of
-  /// the two windows being `< 1 minute` is enough to
-  /// justify ticking (the other window's countdown is
-  /// still painted, just static).
-  bool _shouldCountdownTick(CodingPlanUsage usage) {
-    final i = usage.intervalRemains;
-    final w = usage.weeklyRemains;
-    final intervalHasSec = i != null && i > Duration.zero &&
-        i < const Duration(minutes: 1);
-    final weeklyHasSec = w != null && w > Duration.zero &&
-        w < const Duration(minutes: 1);
-    return intervalHasSec || weeklyHasSec;
+  /// True iff at least one cell has countdown data
+  /// (non-null [CodingPlanUsage.intervalRemains] or
+  /// [CodingPlanUsage.weeklyRemains]). When true, the
+  /// hover countdown ticker can actively decrement the
+  /// remaining time.
+  bool _hasCountdownData(CodingPlanUsage usage) {
+    return usage.intervalRemains != null ||
+        usage.weeklyRemains != null;
   }
 
   /// Effective time-until-reset for the 5h window, i.e.
@@ -971,11 +957,11 @@ class _CodingPlanUsageDisplayState
       child: MouseRegion(
         onEnter: (_) {
           if (canTap) setState(() => _hovered = true);
-          _pushCurrentFrame();
           // Start the countdown ticker (if applicable)
-          // immediately on hover-enter. The first tick
-          // will fire 250ms later via the scheduler.
+          // immediately on hover-enter. Anchor first so
+          // the push below uses the live anchored value.
           _syncCountdownTicker();
+          _pushCurrentFrame();
         },
         onExit: (_) {
           setState(() => _hovered = false);

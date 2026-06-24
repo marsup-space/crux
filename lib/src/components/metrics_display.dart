@@ -116,15 +116,9 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
   }
 
   String _cacheHitLabel(SessionRuntimeState rt) {
-    if (rt.cacheHitPct != null) {
-      return 'cache ${rt.cacheHitPct}%';
-    }
-    final session = component.sessionController.findSession(rt.sessionId);
-    if (session == null) return '—';
-    final hit = session.promptCacheHitTokens;
-    final total = session.tokensIn;
-    if (total > 0 && hit > 0) {
-      return 'cache ${((hit / total) * 100).round()}%';
+    final pct = rt.cacheHitPct;
+    if (pct != null) {
+      return 'cache ${pct.toStringAsFixed(1)}%';
     }
     return '—';
   }

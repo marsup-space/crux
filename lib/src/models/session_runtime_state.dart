@@ -72,7 +72,7 @@ class SessionRuntimeState {
   int accumulatedToolTokens;
   String thinkingMode;
   String? reasoningEffort;
-  int? cacheHitPct;
+  double? cacheHitPct;
 
   bool isGeneratingTldr;
 
