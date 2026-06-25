@@ -96,6 +96,28 @@ below the version header. Each version has at most two categories:
   triggers the double-press-to-quit guard via the existing
   `isControlPressed && !isMetaPressed` check in `chat_input`.
 
+- **Chat input: don't mis-attach clipboard image on IME paste**
+  (macOS CJK input fix) — every IME candidate confirmation
+  (Chinese / Japanese / Korean input via pinyin / kana / etc.)
+  arrives at the terminal wrapped in bracketed-paste markers.
+  Nocterm's TerminalBinding translates that into a synthetic
+  Ctrl+V that flows through the same code path as a real
+  Ctrl+V. Crux's Ctrl+V handler in `chat_input` reads the
+  system clipboard to attach an image if one is present — so
+  when the user happened to have an image on their clipboard
+  (copying a screenshot, an image link, etc.), every single
+  IME confirmation silently attached that image on top of the
+  candidate text, making CJK input unusable.
+
+  Fix lands in Nocterm (submodule bump follows): `NoctermBinding`
+  gains a `hasPendingPasteText` peek so callers can distinguish
+  the synthetic Ctrl+V (an IME paste) from a real one. Crux's
+  `chat_input` now gates the image-attach path on this flag —
+  if the framework has a stashed paste payload, the Ctrl+V
+  must be synthetic and we leave the system clipboard alone.
+  A real subsequent Ctrl+V (after the IME stash has been
+  consumed) still attaches the image as before.
+
 ## [0.7.3] - 2026-06-23
 
 0dbdc27

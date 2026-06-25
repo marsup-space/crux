@@ -896,18 +896,30 @@ class ChatInputState extends State<ChatInput> {
         event.isControlPressed &&
         !event.isShiftPressed &&
         !event.isAltPressed) {
-      final sessionId = component.sessionController.currentSessionId;
-      if (sessionId != null && component.onAttachClipboardImage != null) {
-        // Check if the current model supports images
-        final modelKey = component.sessionController.currentSession.model;
-        final imageKeys = component.providerServiceReady
-            ? component.providerService.imageModelKeys()
-            : <String>{};
-        if (imageKeys.contains(modelKey)) {
-          // Try reading an image from the clipboard asynchronously.
-          // This is best-effort — if no image is on the clipboard,
-          // the text paste falls through to the default handler.
-          _tryClipboardImage(sessionId);
+      // Skip the image-attachment path when this Ctrl+V was synthesized
+      // by TerminalBinding to route an IME bracketed paste — the user
+      // didn't actually press Ctrl+V, so reading the system clipboard
+      // (which may contain an image they were holding for some other
+      // purpose) would mis-attach that image on every IME candidate
+      // confirmation, making CJK input unusable. The stashed IME text
+      // still goes through below via TextField._paste's
+      // consumePendingPasteText call. A real subsequent Ctrl+V
+      // (after the IME stash has been consumed) falls into the normal
+      // image-attach path.
+      if (!NoctermBinding.instance.hasPendingPasteText) {
+        final sessionId = component.sessionController.currentSessionId;
+        if (sessionId != null && component.onAttachClipboardImage != null) {
+          // Check if the current model supports images
+          final modelKey = component.sessionController.currentSession.model;
+          final imageKeys = component.providerServiceReady
+              ? component.providerService.imageModelKeys()
+              : <String>{};
+          if (imageKeys.contains(modelKey)) {
+            // Try reading an image from the clipboard asynchronously.
+            // This is best-effort — if no image is on the clipboard,
+            // the text paste falls through to the default handler.
+            _tryClipboardImage(sessionId);
+          }
         }
       }
       // Don't consume the event — let the default text paste proceed.
