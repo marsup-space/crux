@@ -82,6 +82,20 @@ below the version header. Each version has at most two categories:
      Word *deletion* already supported `Alt+Backspace`, so it was
      unaffected by either fix.
 
+- **Chat input: macOS Cmd+A/C/V/X (select-all / copy / cut / paste)**
+  — on the kitty keyboard protocol the Cmd key arrives as a
+  "super"/Meta modifier, so `Cmd+A/C/V/X` reached the chat input
+  with `meta: true` and fell through to the character-insertion
+  branch (typing a literal `a` / `c` / `v` / `x` into the draft).
+  Fix in Nocterm (submodule bump follows): `TextField` now accepts
+  either `ctrl: true` or `meta: true` for select-all, copy, cut,
+  and paste, so `Cmd+A/C/V/X` work the way macOS GUI users expect.
+  `Cmd+W` and `Cmd+T` are intentionally NOT aliased — those keep
+  their macOS conventions (close window / new tab) and fall through.
+  Ctrl+C (the terminal-interrupt binding) is unchanged: it still
+  triggers the double-press-to-quit guard via the existing
+  `isControlPressed && !isMetaPressed` check in `chat_input`.
+
 ## [0.7.3] - 2026-06-23
 
 0dbdc27
