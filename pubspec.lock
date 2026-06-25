@@ -382,7 +382,7 @@ packages:
       path: nocterm
       relative: true
     source: path
-    version: "0.7.0"
+    version: "0.8.0"
   node_preamble:
     dependency: transitive
     description:
