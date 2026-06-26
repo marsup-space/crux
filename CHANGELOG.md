@@ -14,153 +14,143 @@ below the version header. Each version has at most two categories:
 
 ### Features
 
-- **Quick reply: `ask://label{answer}` tokens as clickable buttons**
-  (`570dd76`, parser rewrite in `554914a`) — when an agent's reply
-  contains a discrete choice ("Should I run the tests?", "Which
-  approach?"), it can offer the options inline as `ask://` tokens
-  and Crux renders each as a clickable button. Click submits (or
-  appends to your draft if you're already typing) — no need to type
-  out the option. The parser was rewritten so tokens whose labels
-  span inline code spans (e.g., `ask://run-test{run `npm test`}`)
-  also render correctly. See `docs/design-quick-reply.md` for the
-  full spec.
+- **One-tap answers to the agent's questions** (`570dd76`, parser
+  rewrite in `554914a`) — when the agent asks a discrete question
+  ("Should I run the tests?", "Which approach?"), Crux renders each
+  `ask://` option as a clickable button right in the reply. Click
+  submits — or appends to your draft if you're already typing — so
+  you never have to type out an answer the agent already wrote for
+  you. The parser was rewritten so buttons whose labels contain
+  inline code (e.g. `ask://run-test{run `npm test`}`) render
+  correctly. See `docs/design-quick-reply.md` for the full spec.
 
-- **Compaction: one summary per session, not a chain** (`554914a`) —
-  when Crux runs out of context and compacts the chat, it now
-  rebuilds the summary from scratch instead of stacking a new
-  summary on top of the old one. A session has at most one
-  compaction at any time, so the context bar reliably returns to
-  a healthy size after each compact (previously repeated compactions
-  made the bar grow monotonically and the wire layer emitted N
-  stacked summaries to the model). The hover label on the bar now
-  shows a projection: "X → Y" if a compact would meaningfully reduce
-  tokens, "X . skip" if it wouldn't — clicking "skip" is a no-op so
-  you don't pay for a useless compact. The compact's content is
-  also slimmer: just the files read and written (not every search
-  query and fetched page), so the saved context is more useful per
-  token.
+- **Compaction that pays off the longer you use Crux** (`554914a`) —
+  long sessions no longer get worse over time. Crux now rebuilds
+  the chat summary from scratch on every compact (instead of
+  stacking summaries on top of summaries), so a session has at
+  most one summary at any time and the context bar reliably returns
+  to a healthy size after each compact. The hover label tells you
+  before you click: "X → Y" if a compact would meaningfully reduce
+  tokens, "X . skip" if it wouldn't — and clicking "skip" is a
+  no-op, so you stop paying for compacts that wouldn't help. The
+  summary itself is slimmer too — just the files you read and
+  wrote, not every search query — so the saved context is more
+  useful per token.
 
-- **Failed turns end with a persistent error bubble + one-click
-  retry** (`eeb1f3f`) — when a turn fails (rate limit, auth, context
-  too long, upstream overloaded, network, timeout), the chat ends
-  with a one-line error bubble describing what happened with a
-  vendor-aware hint ("context too long — try /compact", "check your
-  MiniMax API key" for 401, "upstream overloaded — retry" for 529),
-  instead of the previous opaque toast. For recoverable failures
-  the bubble includes a clickable "▶ retry" that re-runs the same
-  turn. The bubble stays visible until your next message, so you
-  don't lose context of what failed. Built on the unified `LlmError`
-  taxonomy below.
+- **Errors you can read, plus one-click retry** (`eeb1f3f`) — when
+  a turn fails, you'll know exactly what went wrong and what to
+  do next. The chat ends with a one-line bubble and a vendor-aware
+  hint: "context too long — try /compact", "check your MiniMax API
+  key" for a 401, "upstream overloaded — retry" for a 529, and so
+  on. For recoverable failures, there's a clickable "▶ retry" that
+  re-runs the same turn. The bubble stays visible until your next
+  message — you don't lose the context of what failed. The previous
+  opaque toasts are gone.
 
-- **Stream-idle watchdog: no more "stuck waiting for streams"**
-  (`eeb1f3f`) — if the upstream goes silent for 120 seconds (long
-  reasoning pass + socket keep-alive expiry, or the upstream drops
-  the connection without sending a final event), Crux now ends the
-  stream with a typed timeout error and surfaces the retry bubble
-  above. Total stream duration is also capped at 10 minutes.
-  Previously the chat would hang indefinitely in this case, usually
-  during peak hours.
+- **No more "stuck waiting for streams"** (`eeb1f3f`) — if the
+  upstream goes silent for 120 seconds (long reasoning pass + socket
+  keep-alive expiry, or the upstream dropping the connection
+  without sending a final event), Crux now ends the stream with
+  a typed timeout and surfaces the retry bubble above. Total
+  stream duration is also capped at 10 minutes. A flaky network
+  or upstream hiccup no longer leaves you staring at an
+  unresponsive chat.
 
-- **Unified `LlmError` taxonomy across providers** (`554914a`) —
-  every provider's errors (Anthropic, OpenAI, MiniMax) are now
-  classified into the same small set of categories (rateLimit, auth,
-  contextLength, overloaded, serverError, timeout, network, …). The
-  error bubble above and the existing error toasts read from this
-  taxonomy, so the message you see reflects what actually went wrong
-  rather than the vendor's specific error string. See
-  `docs/llm-error-mapping.md` for the cross-vendor reference table.
+- **One error vocabulary across every provider** (`554914a`) —
+  Anthropic, OpenAI, and MiniMax all now speak the same error
+  language (rateLimit, auth, contextLength, overloaded, serverError,
+  timeout, network, …), so "rate limited" reads as "rate limited"
+  no matter which model you're on — and Crux can act on it
+  (e.g., suggest `/compact` for context-length errors). See
+  `docs/llm-error-mapping.md` for the cross-vendor reference.
 
-- **Markdown links are clickable, and the URL is hidden when a
-  label is set** (`77f3667`) — `[label](url)` now renders as just
-  the label (no more "(url)" suffix cluttering replies), and clicking
-  it opens the URL in your default browser. Empty-label links still
-  show the URL so they're not invisible.
+- **Markdown links that look like links** (`77f3667`) — `[label](url)`
+  now renders as just the label (no more "(url)" suffix cluttering
+  replies), and clicking it opens the URL in your default browser.
+  Replies stay scannable; URLs are still one click away when you
+  want them. Empty-label links still show the URL so they're not
+  invisible.
 
-- **Agents treat your code and live docs as the source of truth**
-  (`3bb6887`) — the system prompt now includes an "Authoritative
-  sources" rule: for project questions the agent must read the code,
-  for external libraries / APIs it must fetch the live docs. Stops
-  agents from confidently giving answers based on stale training
-  data when the real answer is one `semantic_search` or `webfetch`
-  away. The agent's recollection loses to a verified source.
+- **Agents that check before they answer** (`3bb6887`) — for
+  project questions, the agent reads the code; for external
+  libraries and APIs, it fetches the live docs. Stops agents from
+  confidently handing you answers from stale training data when
+  the real answer is one `semantic_search` or `webfetch` away.
+  Contradicted recollection loses to a verified source, every
+  time.
 
-- **Context bar hover arrow matches the bar's movement** (`22473c8`)
-  — the hover label reads "Y ← X" (post on the left, arrow pointing
-  left) instead of "X → Y". The arrow now points in the direction
-  the bar actually moves when it shrinks after a compact, so the
-  label and bar read as the same transition. `/compact` toasts
-  follow the same convention.
+- **The context bar and its hover label now tell the same story**
+  (`22473c8`) — the hover label reads "Y ← X" (post on the left,
+  arrow pointing left) instead of "X → Y". The arrow points in
+  the direction the bar actually moves when it shrinks after a
+  compact, so the label and the bar read as one transition.
+  `/compact` toasts follow the same convention.
 
-- **Countdown ticker runs for all hover durations** (`da7452f`) —
-  the countdown shown when hovering the context bar (e.g., for a
-  compact preview) now decrements continuously regardless of how
-  much time is left, instead of freezing once the remaining time
-  crossed a threshold. Hovering a 5-minute preview now shows it
-  ticking down to "4m 59s", not a static "5m" stuck forever.
+- **Countdown that actually counts down** (`da7452f`) — hover the
+  context bar for a 5-minute compact preview and watch the
+  countdown tick down to 4:59, 4:58, 4:57, …. Previously it froze
+  at "5m" forever once the remaining time crossed a threshold; now
+  it decrements continuously for the full hover duration.
 
-- **`./release.sh` for local version bumps + builds + installs**
-  (`cec8dfa`) — the same flow as `install.sh`, but for local builds:
-  pass a version (`./release.sh 0.9.0`) and Crux bumps it in
-  `pubspec.yaml` / `bin/crux.dart` / `README.md`, builds the bundle
-  for the current platform, and installs it to `~/.crux/bin/` so
-  `crux --version` reports the new version in your next shell.
-  Supports `--skip-bump`, `--no-install`, `--commit` (commit + tag
-  the version bump), `--semble-bin` (path to a `semble` binary to
+- **Ship a new version of Crux with one command** (`cec8dfa`) —
+  `./release.sh 0.9.0` is the same pipeline `install.sh` uses, but
+  running on your machine: bump the version, build the bundle for
+  the current platform, install to `~/.crux/bin/`, done. Supports
+  `--skip-bump`, `--no-install`, `--commit` (commit + tag the
+  version bump), `--semble-bin` (path to a `semble` binary to
   bundle with the install), and `--clean` (delete the build output
   after install). The GitHub release flow is unchanged: tag-push
-  triggers `.github/workflows/release.yml`.
+  still triggers `.github/workflows/release.yml`.
 
 ### Fixes
 
-- **CJK IME input works again** (`1643a8e`, `1625163`) — when typing
-  with a Chinese, Japanese, or Korean IME, confirmed characters used
-  to (1) be treated as a file drop, because the IME wraps its output
-  in bracketed-paste markers that looked like a drag-and-drop; and
-  (2) silently attach whatever image happened to be on your
-  clipboard on top of the candidate text. Both paths now distinguish
-  a synthetic IME paste from a real paste / drop, so IME input flows
-  through as plain text. Previously, if you happened to have a
-  screenshot copied, every IME confirmation was also silently
-  attaching that image — making CJK input unusable.
+- **CJK input works again** (`1643a8e`, `1625163`) — typing in
+  Chinese, Japanese, or Korean no longer hijacks the chat input.
+  Confirmed characters used to (1) be treated as a file drop
+  (because the IME wraps its output in bracketed-paste markers
+  that looked like a drag-and-drop), and (2) silently attach
+  whatever image was on your clipboard on top of the candidate
+  text. If you've ever wondered why a screenshot you copied 10
+  minutes ago kept showing up in your chat — this is why. Both
+  paths now distinguish a synthetic IME paste from a real one,
+  so IME input flows through as plain text.
 
-- **macOS keyboard shortcuts in the chat input** (`4439b86`,
-  `86a9d74`) — Option+Arrow (Alt+Arrow) now moves the cursor by
-  word (with Shift+Option+Arrow extending the selection by a word),
-  since macOS binds Ctrl+Arrow to Mission Control. Cmd+A / Cmd+C /
-  Cmd+V / Cmd+X now work as select-all / copy / paste / cut.
-  Previously Cmd arrived as Meta under the kitty keyboard protocol
-  and fell through to character insertion, so Cmd+A typed a literal
-  "a" into your draft instead of selecting everything. Linux and
-  Windows users get both Ctrl+Arrow and Alt+Arrow for word
-  navigation.
+- **macOS keyboard shortcuts that work the way you expect**
+  (`4439b86`, `86a9d74`) — Option+Arrow jumps the cursor by word
+  (with Shift+Option+Arrow extending the selection by a word),
+  since macOS binds Ctrl+Arrow to Mission Control. Cmd+A, Cmd+C,
+  Cmd+V, Cmd+X now do select-all / copy / paste / cut. Previously
+  Cmd arrived as Meta under the kitty keyboard protocol and fell
+  through to character insertion, so Cmd+A typed a literal "a"
+  into your draft instead of selecting everything. Linux and
+  Windows users get both Ctrl+Arrow and Alt+Arrow.
 
-- **Web tools now register on cold start with a saved key**
-  (`b7aa0c4`) — if you have a TinyFish API key in `auth.toml`,
-  Crux now picks up `websearch` on its very first turn after
-  launch. Previously the in-memory key was loaded but the chat
-  panel's listener never re-registered the tools, so `websearch`
-  was permanently missing until you ran `/tinyfish` to re-set the
-  key.
+- **`websearch` is there on every cold start** (`b7aa0c4`) — save
+  your TinyFish API key once in `auth.toml` and the `websearch`
+  tool is there the moment you launch Crux. Previously the key
+  was loaded into memory but the chat panel's listener never
+  re-registered the tools, so `websearch` was permanently missing
+  until you ran `/tinyfish` to re-set the key.
 
-- **DeepSeek reasoning effort levels are honest** (`5596032`) —
-  DeepSeek only actually supports `high` and `max` (the other levels
-  are API aliases that resolve to `high`). Crux now shows only those
-  two in the UI instead of a misleading 5-level scale, and the
-  underlying mapping sends `high` → `high` (previously it sent
-  `high` → `xhigh`, which the API then mapped back to `max`, making
-  the two indistinguishable).
+- **DeepSeek's reasoning effort picker tells the truth**
+  (`5596032`) — DeepSeek only actually supports `high` and `max`
+  (the other levels are API aliases that silently downgrade). Crux
+  now shows only those two in the UI instead of a misleading
+  5-level scale, and `high` stays `high` instead of being silently
+  mapped to `max`.
 
-- **Code highlighting only asks for languages we can highlight**
-  (`615f790`) — the highlighter used to request ~19 languages whose
-  grammars weren't actually vendored with Crux, which crashed
-  startup with "Could not find grammar file". It now requests only
-  languages whose grammars we ship (csharp, cpp, bash); other
-  requested languages fall through to plain text.
+- **Code highlighting no longer crashes startup** (`615f790`) —
+  Crux used to ask for ~19 languages whose grammars weren't
+  vendored, which crashed startup with "Could not find grammar
+  file". It now requests only the three we actually ship (csharp,
+  cpp, bash); other languages fall through to plain text. Fewer
+  languages, but the ones you ask for work.
 
-- **Session list scrolls when it overflows** (`ae4fbf3`) — the
-  session management panel now wraps its session list in a scroll
-  container and auto-scrolls to the active session. Previously the
-  list would overflow off-screen with no way to reach older
+- **The session list scrolls when it overflows** (`ae4fbf3`) —
+  if you have more than a screen's worth of sessions, you can
+  actually reach them all now. The list is wrapped in a scroll
+  container and auto-scrolls to the active session. Previously
+  the list overflowed off-screen with no way to reach older
   sessions.
 
 ## [0.7.3] - 2026-06-23
