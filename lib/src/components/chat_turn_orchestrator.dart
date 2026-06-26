@@ -269,7 +269,7 @@ class ChatTurnOrchestrator {
               rt.turnsSinceLastCompact = 1;
               _showToast(
                 'Context was getting full — compacted '
-                '(${result.preTokens} → ~${result.postEstimateTokens} tokens)',
+                '(~${result.postEstimateTokens} ← ${result.preTokens} tokens)',
                 mode: ToastMode.status,
               );
               // Reload the in-memory message cache so the new
@@ -835,7 +835,7 @@ class ChatTurnOrchestrator {
       }
       _showToast(
         'Compacted — ${result.sourceEndMessageId - result.sourceStartMessageId + 1} messages '
-        '(${result.preTokens} → ~${result.postEstimateTokens} tokens)',
+        '(~${result.postEstimateTokens} ← ${result.preTokens} tokens)',
         mode: ToastMode.status,
       );
       // Reload the in-memory message cache so the new

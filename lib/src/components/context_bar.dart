@@ -39,7 +39,7 @@ class ContextBar extends StatefulComponent {
 
   /// Pre-projected token counts for an in-place chat-log
   /// compaction. When non-null, the hover label shows
-  /// `preTokens → postTokens` (e.g. `123k → 56k`) instead of
+  /// `postTokens ← preTokens` (e.g. `56k ← 123k`) instead of
   /// the generic `Compact` action label, so the user sees the
   /// expected result of clicking the bar. Pass `null` to fall
   /// back to the bare `Compact` label.
@@ -188,8 +188,8 @@ class ContextBarState extends State<ContextBar> {
     // Hover swap to "Compact" is an affordance — it tells the
     // user what the click does. When the chat panel has a
     // pre-projected compaction estimate, swap the action label
-    // for the actual `X → Y` result so the user can see what
-    // they'd get from clicking — e.g. `123k → 56k`. Only show
+    // for the actual `Y ← X` result so the user can see what
+    // they'd get from clicking — e.g. `56k ← 123k`. Only show
     // it when the bar is actually clickable; otherwise the
     // hover label would advertise an action that's been
     // disabled.
@@ -209,9 +209,11 @@ class ContextBarState extends State<ContextBar> {
 
   /// Render the hover label from a pre→post projection.
   ///
-  /// Worth-it case (savings ≥ 5%): `X → Y` — the arrow implies
-  /// "after" and reads naturally when the projection represents
-  /// a real reduction.
+  /// Worth-it case (savings ≥ 5%): `Y ← X` — the arrow points
+  /// left because the context bar fills right-to-left as it
+  /// shrinks: post (Y) on the left, pre (X) on the right. The
+  /// direction matches the bar's visual movement so the user
+  /// can read the label and the bar as the same transition.
   ///
   /// Skip case (savings < 5%): `X · skip` — a short verb that
   /// tells the user the click won't save enough to be worth it.
@@ -223,7 +225,7 @@ class ContextBarState extends State<ContextBar> {
   /// headroom.
   ///
   /// Debug mode: when [debugMode] is true, always render the
-  /// projection as `X → Y` — even sub-5% savings show up. Used
+  /// projection as `Y ← X` — even sub-5% savings show up. Used
   /// by `/debug` so the user can see the projection itself and
   /// diagnose why the skip gate fired.
   @visibleForTesting
@@ -233,7 +235,7 @@ class ContextBarState extends State<ContextBar> {
     bool debugMode = false,
   }) {
     if (debugMode || isCompactWorthwhile(preTokens, postEstimateTokens)) {
-      return '${_fmtCtx(preTokens)} → ${_fmtCtx(postEstimateTokens)}';
+      return '${_fmtCtx(postEstimateTokens)} ← ${_fmtCtx(preTokens)}';
     }
     return '${_fmtCtx(preTokens)} · skip';
   }
@@ -283,10 +285,10 @@ class ContextBarState extends State<ContextBar> {
   /// counts are decimal (1k = 1000), not binary (1Ki = 1024) —
   /// the latter is a memory-size convention and the LLM token
   /// numbers in the rest of the UI (e.g. the chat panel's
-  /// `356k / 1M` display, the `/compact` toast's `123k → 56k`)
+  /// `356k / 1M` display, the `/compact` toast's `56k ← 123k`)
   /// all use 1000-based grouping. Using 1024 here would make
   /// the bar's `369,096 / 976k` disagree with the hover's
-  /// `360k → 62k` by ~10k (the binary-vs-decimal ratio on a
+  /// `62k ← 360k` by ~10k (the binary-vs-decimal ratio on a
   /// value in the 100k–1M range) — same number, two different
   /// read-outs. ≥ 1M collapses to a single-letter `M` suffix
   /// so a 1M model doesn't render the bar as `369,096 / 1,000k`.
@@ -503,11 +505,11 @@ class ContextBarState extends State<ContextBar> {
         component.streamingController.contextBarHovered = true;
         _hovered = true;
         // Snap the displayed value to the runtime's current
-        // target so the bar's number matches the `pre → post`
+        // target so the bar's number matches the `post ← pre`
         // shown on hover. The lerp is purely cosmetic for
         // streaming transitions; while the user is hovering
         // (i.e. inspecting the exact value), the bar should
-        // agree with the pre side of the `X → Y` projection
+        // agree with the pre side of the `Y ← X` projection
         // rather than lag behind it by a few thousand tokens.
         // Resets the timer to `idle` so the just-snap doesn't
         // get immediately re-driven toward the (now-equal)

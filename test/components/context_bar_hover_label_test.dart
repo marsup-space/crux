@@ -1,13 +1,20 @@
 // Regression tests for the context bar's hover label and the
 // skip-gate predicate.
 //
-// The bar shows a projected `pre → post` token count when the
-// user hovers it. When the projection says compacting wouldn't
-// save enough tokens to be worth the churn (the 5% threshold),
-// the arrow form `X → Y` would mislead — it implies a real
-// reduction that's barely there. The fix renders `X · skip`
-// instead, so the user sees a short verb and knows the click
-// would be near-pointless.
+// The bar shows a projected `post ← pre` token count when the
+// user hovers it. The arrow points LEFT because the context bar
+// fills right-to-left as it shrinks: post (the smaller value,
+// "after compact") is on the left, pre (the larger value, "now")
+// is on the right. The direction matches the bar's visual
+// movement so the user can read the label and the bar as the
+// same transition.
+//
+// When the projection says compacting wouldn't save enough
+// tokens to be worth the churn (the 5% threshold), the arrow
+// form `Y ← X` would mislead — it implies a real reduction
+// that's barely there. The fix renders `X · skip` instead, so
+// the user sees a short verb and knows the click would be
+// near-pointless.
 //
 // Two knobs:
 //   * `formatCompactHoverLabel(pre, post, debugMode: …)` renders
@@ -42,13 +49,15 @@ ChatLogCompactionEstimate _est({
 
 void main() {
   group('ContextBar.formatCompactHoverLabel', () {
-    test('big savings: pre > post by >5% renders as `X → Y`', () {
+    test('big savings: pre > post by >5% renders as `Y ← X`', () {
       // Normal case: compacting reduces size well past the
-      // 5% threshold. The arrow reads naturally — savings,
-      // so "after, the result is" is meaningful.
+      // 5% threshold. The arrow points left because the bar
+      // fills right-to-left as it shrinks — post (Y) on the
+      // left, pre (X) on the right. The direction matches the
+      // bar's visual movement.
       expect(
         ContextBarState.formatCompactHoverLabel(123_000, 56_000),
-        equals('123k → 56k'),
+        equals('56k ← 123k'),
       );
     });
 
@@ -66,7 +75,7 @@ void main() {
     test('equal: pre == post renders as `X · skip` (0% < 5%)', () {
       // Zero savings falls under the 5% threshold — same skip
       // rendering as counter-productive. Avoids the misleading
-      // `X → X` arrow form that we used to render here.
+      // `X ← X` arrow form that we used to render here.
       expect(
         ContextBarState.formatCompactHoverLabel(50_000, 50_000),
         equals('50k · skip'),
@@ -90,7 +99,7 @@ void main() {
       // `9490 * 100 = 949000 < 10000 * 95 = 950000` → worthwhile.
       expect(
         ContextBarState.formatCompactHoverLabel(10_000, 9_490),
-        equals('10k → 9k'),
+        equals('9k ← 10k'),
       );
     });
 
@@ -102,7 +111,7 @@ void main() {
       // bar's main display.
       expect(
         ContextBarState.formatCompactHoverLabel(1_500_000, 800_000),
-        equals('1.5M → 800k'),
+        equals('800k ← 1.5M'),
       );
       // Counter-productive at M scale still uses the same
       // `· skip` rendering.
@@ -113,18 +122,20 @@ void main() {
     });
 
     test('skipped rendering does not show a misleading arrow', () {
-      // The arrow `→` is the bug surface — it implies savings.
-      // When we render `skip`, the arrow MUST be absent. Catches
-      // a future regression that re-adds `→` for clarity.
+      // The arrow `←` is the bug surface — it implies savings.
+      // When we render `skip`, neither arrow (`→` nor `←`) may
+      // be present. Catches a future regression that re-adds
+      // the arrow for "clarity" (the skip verb is the clarity).
       final rendered =
           ContextBarState.formatCompactHoverLabel(68_718, 71_000);
+      expect(rendered, isNot(contains('←')));
       expect(rendered, isNot(contains('→')));
       expect(rendered, contains('skip'));
     });
 
     test('debug mode: counter-productive still shows the arrow', () {
       // `/debug on` reveals the projection itself so the user
-      // can see what the gate is reading. `68k → 71k` is
+      // can see what the gate is reading. `71k ← 68k` is
       // misleading for a click action but informative for
       // debugging — the user knows the gate fired because the
       // session would grow, not because the label is hidden.
@@ -134,14 +145,14 @@ void main() {
           71_000,
           debugMode: true,
         ),
-        equals('68k → 71k'),
+        equals('71k ← 68k'),
       );
     });
 
     test('debug mode: sub-5% savings still shows the arrow', () {
       // The whole point of debug mode — let the user see the
       // projection even when it's not "worth it". A 2% saving
-      // renders as `10k → 9k` in debug (9800 truncates to 9k),
+      // renders as `9k ← 10k` in debug (9800 truncates to 9k),
       // `10k · skip` in normal.
       expect(
         ContextBarState.formatCompactHoverLabel(10_000, 9_800),
@@ -153,7 +164,7 @@ void main() {
           9_800,
           debugMode: true,
         ),
-        equals('10k → 9k'),
+        equals('9k ← 10k'),
       );
     });
 
@@ -167,7 +178,7 @@ void main() {
           56_000,
           debugMode: true,
         ),
-        equals('123k → 56k'),
+        equals('56k ← 123k'),
       );
     });
   });
@@ -204,7 +215,7 @@ void main() {
     });
 
     test('equal sizes are counterproductive (0% savings)', () {
-      // `pre == post` would render as the misleading `X → X`
+      // `pre == post` would render as the misleading `X ← X`
       // arrow — fall under the 5% skip gate so the click is
       // blocked too.
       expect(
