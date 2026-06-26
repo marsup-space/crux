@@ -295,7 +295,8 @@ void main() {
       });
     });
 
-    test('link renders text and href without brackets', () async {
+    test('link renders label only — no URL when label provided',
+        () async {
       await testNocterm('link', (tester) async {
         await tester.pumpComponent(
           Container(
@@ -306,10 +307,54 @@ void main() {
             ),
           ),
         );
+        // Label is visible.
         expect(tester.terminalState, containsText('Google'));
-        expect(tester.terminalState, containsText('google.com'));
+        // URL appendix is suppressed — the user only sees the label,
+        // not the raw href. The URL is still recoverable via
+        // onLinkTap (see the click-handling test below).
+        expect(tester.terminalState.containsText('google.com'), isFalse);
+        expect(tester.terminalState.containsText('http'), isFalse);
         expect(tester.terminalState.containsText('['), isFalse);
         expect(tester.terminalState.containsText(']('), isFalse);
+      });
+    });
+
+    test('link with empty label falls back to URL', () async {
+      await testNocterm('link empty label', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 10,
+            child: HighlightedMarkdownText(
+              'See [](https://example.com/page)',
+            ),
+          ),
+        );
+        // No label provided, so the URL itself becomes the visible
+        // text — otherwise the link would render as an empty
+        // region the user can't see or click.
+        expect(tester.terminalState, containsText('example.com'));
+      });
+    });
+
+    test('onLinkTap fires when the rendered link is clicked', () async {
+      await testNocterm('link click', (tester) async {
+        String? tappedUrl;
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 10,
+            child: HighlightedMarkdownText(
+              'Visit [Google](https://google.com)',
+              onLinkTap: (link) => tappedUrl = link.url,
+            ),
+          ),
+        );
+
+        // Click somewhere on the "Google" label. The label starts at
+        // column 6 ("Visit " is 6 chars) and runs to column 11.
+        await tester.tap(8, 0);
+        expect(tappedUrl, equals('https://google.com'));
       });
     });
 

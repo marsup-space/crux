@@ -13,6 +13,7 @@ import 'highlight_service.dart';
 import 'markdown_isolate.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/frame_profiler.dart';
+import '../../utils/markdown_links.dart';
 import '../../utils/quick_reply_parser.dart';
 import '../../utils/session_refs.dart';
 
@@ -33,6 +34,9 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.onQuickReplyTap,
     this.quickReplyStyle,
     this.quickReplyHoverStyle,
+    this.onLinkTap,
+    this.linkStyle,
+    this.linkHoverStyle,
   });
 
   final String data;
@@ -99,6 +103,35 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// using `buttonBackgroundHover` as the background.
   final TextStyle? quickReplyHoverStyle;
 
+  /// Callback fired when the user clicks a markdown link
+  /// (`[label](url)`) in the rendered text. Receives the parsed
+  /// [MarkdownLink] (label, url, and offsets). The caller is
+  /// responsible for filtering unsafe URL schemes (e.g. `file:`,
+  /// `javascript:`) before opening — the parser passes the URL
+  /// through verbatim.
+  ///
+  /// When `null` (the default), the widget still hides the URL
+  /// when a label is present (so `[Flutter](https://flutter.dev)`
+  /// renders as just `Flutter`), but doesn't wire up any click
+  /// handling. The link-styled spans are still emitted so they
+  /// look clickable, but the user can only copy the URL by
+  /// selecting the underlying text. Set this to make the link
+  /// actually clickable.
+  ///
+  /// The feature is skipped on the isolate parse path
+  /// (`useIsolate: true`); streaming bubbles don't typically
+  /// carry clickable links and the main-isolate overlay pass
+  /// would race with the worker's per-frame span updates.
+  final void Function(MarkdownLink link)? onLinkTap;
+
+  /// Override the style applied to recognized markdown links.
+  /// Defaults to the theme's `mdLink` color + underline.
+  final TextStyle? linkStyle;
+
+  /// Override the hover style. Defaults to a reverse-video
+  /// treatment using `mdLink` as the background.
+  final TextStyle? linkHoverStyle;
+
   @override
   State<HighlightedMarkdownText> createState() =>
       _HighlightedMarkdownTextState();
@@ -152,6 +185,13 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// caching policy as `_sessionRefs`.
   List<QuickReply> _quickReplies = const [];
 
+  /// Markdown links (`[label](url)`) parsed from the current
+  /// spans. Same caching policy as `_sessionRefs`. Populated by
+  /// the visitor during the markdown parse (sync path only) and
+  /// surfaces the visible label and underlying href along with
+  /// the rendered-text offset so the hit-tester can locate them.
+  List<MarkdownLink> _markdownLinks = const [];
+
   /// Which ref (if any) the mouse is currently over. Drives the
   /// hover-style overlay and the click target.
   SessionRef? _hoveredSessionRef;
@@ -160,6 +200,12 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// exclusive with [_hoveredSessionRef] — a single mouse position
   /// can only hover one clickable region at a time.
   QuickReply? _hoveredQuickReply;
+
+  /// Which markdown link (if any) the mouse is currently over.
+  /// Mutually exclusive with [_hoveredSessionRef] and
+  /// [_hoveredQuickReply] — a single mouse position can only
+  /// hover one clickable region at a time.
+  MarkdownLink? _hoveredMarkdownLink;
 
   /// Key on the inner [RichText] used to locate the [RenderParagraph]
   /// for hit-testing — see [_linkAtEvent].
@@ -188,6 +234,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             component.onSessionLinkTap != null && !component.useIsolate;
         final wantQuickReplies =
             component.onQuickReplyTap != null && !component.useIsolate;
+        final wantMarkdownLinks =
+            component.onLinkTap != null && !component.useIsolate;
 
         final dataChanged = data != _lastData;
         final paramsChanged = styleSheet != _lastStyleSheet ||
@@ -212,12 +260,21 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             // spinning up the isolate. The result is
             // cached in `_spans` and reused on every
             // rebuild until `data` changes.
+            //
+            // The visitor collects markdown links alongside
+            // the spans so we don't pay a second walk over
+            // the rendered text just to recover the offsets
+            // (which would be brittle — see the
+            // _HighlightMarkdownVisitor notes).
+            final collectedLinks = <MarkdownLink>[];
             _spans = parseMarkdownToInlineSpans(
               data,
               theme,
               maxWidth: maxWidth,
               styleSheet: styleSheet,
+              collectedLinks: collectedLinks,
             );
+            _markdownLinks = collectedLinks;
           }
           // Re-parse session refs and quick replies alongside the
           // markdown parse so they stay in lockstep. Each is a
@@ -237,6 +294,16 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               ? const []
               : parseQuickReplies(_spans);
           _hoveredQuickReply = null;
+          // Markdown links are collected by the visitor itself on
+          // the sync path (see _spans above); the isolate path
+          // yields an empty list because we don't ship link
+          // metadata across the worker boundary. The click
+          // handling is also disabled for isolate-mode callsites
+          // (see the wantMarkdownLinks gate).
+          if (component.useIsolate) {
+            _markdownLinks = const [];
+          }
+          _hoveredMarkdownLink = null;
         }
 
         // Apply search highlight as a sync overlay. Cheap
@@ -272,6 +339,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         //     normal text, with no `ask://…` syntax leaking
         //     through.
         final haveSessionLinks = wantLinks && _sessionRefs.isNotEmpty;
+        final haveMarkdownLinks = wantMarkdownLinks && _markdownLinks.isNotEmpty;
         final haveButtonReplies =
             wantQuickReplies && _quickReplies.isNotEmpty;
         final haveStaleReplies =
@@ -300,6 +368,41 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             linkStyle,
             hoverStyle,
             _hoveredSessionRef,
+          );
+        }
+
+        // Overlay markdown-link styles on top of the highlight and
+        // session-link passes. The hover style wins over the link
+        // style for the specific link under the cursor. We run this
+        // AFTER session links so the visitor's link style (already
+        // emitted on the raw span) wins on the non-hovered state —
+        // the overlay only kicks in to (a) layer in the theme's
+        // `mdLink` color when the caller's style sheet omitted one
+        // and (b) swap to the hover style for the hovered link.
+        //
+        // When `component.linkStyle` is null we still apply the
+        // overlay so the underline + color from the theme's
+        // `mdLink` is preserved uniformly across callers. The
+        // visitor already styles link spans with the same color, so
+        // the no-op merge is cheap.
+        if (haveMarkdownLinks) {
+          final linkStyle = component.linkStyle ??
+              TextStyle(
+                color: theme.mdLink,
+                decoration: TextDecoration.underline,
+              );
+          final hoverStyle = component.linkHoverStyle ??
+              TextStyle(
+                color: theme.onColor(theme.mdLink),
+                backgroundColor: theme.mdLink,
+                fontWeight: FontWeight.bold,
+              );
+          renderedSpans = applyMarkdownLinkStyles(
+            renderedSpans,
+            _markdownLinks,
+            linkStyle,
+            hoverStyle,
+            _hoveredMarkdownLink,
           );
         }
 
@@ -352,7 +455,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
         );
 
-        if (!haveSessionLinks && !haveAnyReplies) {
+        if (!haveSessionLinks && !haveAnyReplies && !haveMarkdownLinks) {
           return richText;
         }
 
@@ -363,10 +466,13 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             opaque: true,
             onHover: _handleHover,
             onExit: (_) {
-              if (_hoveredSessionRef != null || _hoveredQuickReply != null) {
+              if (_hoveredSessionRef != null ||
+                  _hoveredQuickReply != null ||
+                  _hoveredMarkdownLink != null) {
                 setState(() {
                   _hoveredSessionRef = null;
                   _hoveredQuickReply = null;
+                  _hoveredMarkdownLink = null;
                 });
               }
             },
@@ -392,15 +498,18 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     final hit = _linkAtEvent(event);
     final newSession = hit is SessionRef ? hit : null;
     final newReply = hit is QuickReply ? hit : null;
+    final newLink = hit is MarkdownLink ? hit : null;
 
     final sessionChanged = newSession?.sessionId != _hoveredSessionRef?.sessionId;
     final replyChanged = !_sameQuickReply(newReply, _hoveredQuickReply);
+    final linkChanged = !_sameMarkdownLink(newLink, _hoveredMarkdownLink);
 
-    if (!sessionChanged && !replyChanged && hit == null) return;
+    if (!sessionChanged && !replyChanged && !linkChanged && hit == null) return;
 
     setState(() {
       _hoveredSessionRef = newSession;
       _hoveredQuickReply = newReply;
+      _hoveredMarkdownLink = newLink;
     });
   }
 
@@ -410,6 +519,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
       component.onSessionLinkTap?.call(ref.sessionId);
       return;
     }
+    final link = _hoveredMarkdownLink;
+    if (link != null) {
+      component.onLinkTap?.call(link);
+      return;
+    }
     final reply = _hoveredQuickReply;
     if (reply != null) {
       component.onQuickReplyTap?.call(reply);
@@ -417,7 +531,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   }
 
   Object? _linkAtEvent(MouseEvent event) {
-    if (_sessionRefs.isEmpty && _quickReplies.isEmpty) return null;
+    if (_sessionRefs.isEmpty &&
+        _quickReplies.isEmpty &&
+        _markdownLinks.isEmpty) {
+      return null;
+    }
     final rp = _renderParagraph;
     if (rp == null) return null;
 
@@ -434,6 +552,15 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     // unlikely in practice), the session ref wins.
     for (final ref in _sessionRefs) {
       if (ref.containsIndex(charIndex)) return ref;
+    }
+    // Markdown links come next. They're more specific to the
+    // current text than quick replies (which are wire-format
+    // tokens the user shouldn't normally see), so a click on
+    // `[Open](https://example.com)` opens the URL even if the
+    // surrounding text contains an `ask://` token. The two
+    // regions overlap only by extreme coincidence.
+    for (final link in _markdownLinks) {
+      if (link.containsIndex(charIndex)) return link;
     }
     // Quick-reply hit-testing reads [renderedStart] (NOT
     // [sourceStart]) because the renderer has substituted the
@@ -462,6 +589,20 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
       return aR == bR && a.renderedLength == b.renderedLength;
     }
     return a.sourceStart == b.sourceStart && a.sourceLength == b.sourceLength;
+  }
+
+  static bool _sameMarkdownLink(MarkdownLink? a, MarkdownLink? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    // Compare by rendered position so a re-parse that produces a
+    // fresh MarkdownLink instance for the same region doesn't
+    // count as a hover change (which would re-trigger a
+    // setState + repaint on every cursor move). Compare URLs as
+    // a tiebreaker in case two adjacent links happen to share
+    // offsets — defensive only.
+    return a.offset == b.offset &&
+        a.length == b.length &&
+        a.url == b.url;
   }
 
   /// Submit a parse request to the worker. The result is
@@ -780,11 +921,20 @@ TextStyle? _mergedWithHighlight(
 /// Pass [maxWidth] to constrain the rendered width to the available
 /// terminal columns; tables, code blocks, and HR rules respect this
 /// value. [styleSheet] overrides the theme-derived default styles.
+///
+/// When [collectedLinks] is supplied, the visitor records every
+/// markdown link it emits into that list (in source order) along
+/// with the visible label, the underlying URL, and the offset /
+/// length in the rendered text. This is the cheapest way to surface
+/// clickable regions: tracking happens during the same walk that
+/// builds the spans, so there's no post-hoc flat-scan cost. When
+/// omitted, the visitor skips the bookkeeping entirely.
 List<InlineSpan> parseMarkdownToInlineSpans(
   String text,
   MarkdownThemeFields theme, {
   int? maxWidth,
   HighlightMarkdownStyleSheet? styleSheet,
+  List<MarkdownLink>? collectedLinks,
 }) {
   // Build the per-call style sheet from the theme when none
   // is supplied. The [HighlightMarkdownStyleSheet] factory
@@ -803,6 +953,7 @@ List<InlineSpan> parseMarkdownToInlineSpans(
     effectiveStyleSheet,
     theme: theme,
     maxWidth: maxWidth,
+    collectedLinks: collectedLinks,
   );
   return visitor.visitNodes(nodes);
 }
@@ -945,6 +1096,7 @@ class _HighlightMarkdownVisitor {
     this.styleSheet, {
     required this.theme,
     this.maxWidth,
+    this.collectedLinks,
   });
 
   final HighlightMarkdownStyleSheet styleSheet;
@@ -952,7 +1104,31 @@ class _HighlightMarkdownVisitor {
   final int? maxWidth;
   int _listDepth = 0;
 
+  /// Optional sink for markdown links discovered during the walk.
+  /// When non-null the visitor records every `<a>` element into
+  /// this list (in source order) along with the visible label, the
+  /// underlying URL, and the offset / length in the rendered text.
+  /// When null, the visitor skips the bookkeeping entirely so the
+  /// hot path stays allocation-free for callers that don't care
+  /// about clickable links (e.g. the worker isolate).
+  final List<MarkdownLink>? collectedLinks;
+
+  /// Running offset (in characters) of the next span we emit, in
+  /// the same coordinate space [RenderParagraph.getCharacterIndexAtLocalPosition]
+  /// expects. Updated by [visitNode] for every emitted span, so
+  /// [case 'a'] can read it before returning to know where its
+  /// link text lands in the rendered output. Reset to 0 at the
+  /// start of each `visitNodes` call.
+  int _currentOffset = 0;
+
   List<InlineSpan> visitNodes(List<md.Node> nodes) {
+    // Reset the running offset at the start of every parse so
+    // successive calls to `visitNodes` (e.g. for nested
+    // paragraphs or `<blockquote>` bodies that recurse through
+    // `visitChildren`) don't double-count. The visitor is
+    // constructed fresh per `parseMarkdownToInlineSpans` call,
+    // so this is belt-and-suspenders, but cheap.
+    _currentOffset = 0;
     final spans = <InlineSpan>[];
     for (final node in nodes) {
       final span = visitNode(node);
@@ -992,12 +1168,37 @@ class _HighlightMarkdownVisitor {
   }
 
   InlineSpan? visitNode(md.Node node) {
+    InlineSpan? span;
     if (node is md.Element) {
-      return visitElement(node);
+      span = visitElement(node);
     } else if (node is md.Text) {
-      return TextSpan(text: node.text);
+      span = TextSpan(text: node.text);
     }
-    return null;
+    if (span != null) {
+      // Advance the running offset by the total text length of
+      // the emitted span (text + all children). The visitor
+      // emits spans in render order, so the running offset is
+      // always the absolute position of the next emitted span
+      // in the rendered text. The `<a>` case reads this counter
+      // BEFORE this increment to compute the link's start offset.
+      _currentOffset += _textLength(span);
+    }
+    return span;
+  }
+
+  /// Recursive text-length of a span tree. Counts UTF-16 code
+  /// units (the same measure `RenderParagraph.getCharacterIndexAtLocalPosition`
+  /// uses), not graphemes — they're equivalent for the ASCII
+  /// URLs and labels we expect to see.
+  static int _textLength(InlineSpan span) {
+    if (span is! TextSpan) return 0;
+    var len = span.text?.length ?? 0;
+    if (span.children != null) {
+      for (final child in span.children!) {
+        len += _textLength(child);
+      }
+    }
+    return len;
   }
 
   InlineSpan? visitElement(md.Element element) {
@@ -1068,18 +1269,32 @@ class _HighlightMarkdownVisitor {
         );
       case 'a':
         final href = element.attributes['href'] ?? '';
-        final text = element.textContent;
+        final label = element.textContent;
+        // User contract: when a label is provided, render just
+        // the label — no URL appendix in parentheses or brackets.
+        // When no label is provided (`[](https://…)`), fall back
+        // to the URL itself so the link is still visible (and
+        // clickable, when an `onLinkTap` handler is wired).
+        final displayText = label.isNotEmpty ? label : href;
+
+        // Record the link BEFORE the visitNode offset increment
+        // above — `_currentOffset` still points at the start of
+        // the link's text at this point. The link's length is the
+        // displayed text length (label, or URL when no label was
+        // given). Skipping the bookkeeping when the caller didn't
+        // ask for it keeps the hot path allocation-free.
+        collectedLinks?.add(
+          MarkdownLink(
+            label: displayText,
+            url: href,
+            offset: _currentOffset,
+            length: displayText.length,
+          ),
+        );
+
         return TextSpan(
-          children: [
-            TextSpan(text: text, style: styleSheet.linkStyle),
-            TextSpan(
-              text: ' ($href)',
-              style: styleSheet.linkStyle?.copyWith(
-                fontWeight: FontWeight.normal,
-                decoration: TextDecoration.none,
-              ),
-            ),
-          ],
+          text: displayText,
+          style: styleSheet.linkStyle,
         );
       case 'img':
         final alt = element.attributes['alt'] ?? 'image';

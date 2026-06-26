@@ -28,6 +28,7 @@ import 'streaming_bubble.dart';
 import 'streaming_controller.dart';
 import 'tldr_bubble.dart';
 import '../utils/quick_reply_parser.dart';
+import '../utils/markdown_links.dart';
 
 /// Lazy item-builder: produces the widget for items[index] only when
 /// the ListView actually lays out that index. Lets us defer the
@@ -74,6 +75,15 @@ class ChatHistory extends StatefulComponent {
   /// `docs/design-quick-reply.md`.
   final void Function(QuickReply reply)? onQuickReplyTap;
 
+  /// Callback fired when the user clicks a markdown link
+  /// (`[label](url)`) inside an assistant message bubble. The
+  /// chat panel implements this to open the URL in the user's
+  /// default browser via [openUrl], falling back to a toast on
+  /// launch failure. Filtering of unsafe schemes (anything other
+  /// than `http(s):`) happens inside [openUrl] — the chat panel
+  /// just forwards the click and surfaces the result.
+  final void Function(MarkdownLink link)? onLinkTap;
+
   /// Callback fired when the user clicks a [CompactionDivider] in
   /// the chat history. Receives the [Message] whose
   /// `role: 'compaction'` produced the divider — the chat panel
@@ -109,6 +119,7 @@ class ChatHistory extends StatefulComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.onQuickReplyTap,
+    this.onLinkTap,
     this.onCompactionTap,
     this.onRetryContinue,
   });
@@ -374,6 +385,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           onSessionLinkTap: component.onSessionLinkTap,
           onQuickReplyTap:
               enableQuickReplies ? component.onQuickReplyTap : null,
+          onLinkTap: component.onLinkTap,
           // The retry button on a `stream_error` bubble should
           // always be live when the bubble is rendered (i.e. NOT
           // suppressed by the "latest AI" / streaming rules that

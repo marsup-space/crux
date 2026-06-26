@@ -12,6 +12,7 @@ import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
+import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../lsp/language.dart';
 import '../utils/tool_meta.dart';
@@ -58,6 +59,14 @@ class MessageBubble extends StatelessComponent {
   /// compaction summary can carry quick replies.
   final void Function(QuickReply reply)? onQuickReplyTap;
 
+  /// Callback when the user clicks a markdown link
+  /// (`[label](url)`) in the assistant's prose. Forwarded to
+  /// [HighlightedMarkdownText] so links open the user's default
+  /// browser. Applied to the main reply and tool output that has
+  /// its own content area; reasoning blocks don't get link
+  /// handling because they shouldn't be navigable surfaces.
+  final void Function(MarkdownLink link)? onLinkTap;
+
   /// Callback when the user clicks the retry affordance on a
   /// `stream_error` bubble. Wired by [ChatHistory] (which receives
   /// it from [ChatPanel]) to invoke the command executor's
@@ -76,6 +85,7 @@ class MessageBubble extends StatelessComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.onQuickReplyTap,
+    this.onLinkTap,
     this.onRetryContinue,
   });
 
@@ -316,6 +326,7 @@ class MessageBubble extends StatelessComponent {
                         highlightText: highlightText,
                         onSessionLinkTap: onSessionLinkTap,
                         onQuickReplyTap: onQuickReplyTap,
+                        onLinkTap: onLinkTap,
                       ),
               ),
             ],
@@ -470,6 +481,7 @@ class MessageBubble extends StatelessComponent {
                   highlightText: highlightText,
                   onSessionLinkTap: onSessionLinkTap,
                   onQuickReplyTap: onQuickReplyTap,
+                  onLinkTap: onLinkTap,
                 ),
               ),
             ],

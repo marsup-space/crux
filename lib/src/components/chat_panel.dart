@@ -24,6 +24,7 @@ import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/quick_reply_parser.dart';
+import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
@@ -801,6 +802,29 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
+  /// Markdown link click handler.
+  ///
+  /// Forwards to [openUrl] (which rejects anything that isn't
+  /// `http(s):` so an LLM-emitted `[Heading](file://…)` can never
+  /// spawn a local program) and surfaces a toast on launch
+  /// failure. The link's `label` is purely cosmetic at this point
+  /// — the visitor has already stripped the URL appendix from the
+  /// rendered text, so the visible label may be something like
+  /// "Read more" while the underlying URL is the real target.
+  void _handleMarkdownLinkTap(MarkdownLink link) {
+    final result = openUrl(link.url);
+    switch (result) {
+      case UrlLaunchResult.launched:
+        return;
+      case UrlLaunchResult.rejected:
+        _showToast('Refused to open url: ${link.url}', mode: ToastMode.error);
+        return;
+      case UrlLaunchResult.failed:
+        _showToast("Couldn't open url: ${link.url}", mode: ToastMode.error);
+        return;
+    }
+  }
+
   /// Click handler for the `▶ retry (/continue)` affordance on
   /// a persisted `stream_error` bubble. Routes through the
   /// command executor so the retry behaves identically to the
@@ -1549,6 +1573,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onToolCallTap: _openToolDetail,
                       onSessionLinkTap: _handleSessionLinkTap,
                       onQuickReplyTap: _handleQuickReplyTap,
+                      onLinkTap: _handleMarkdownLinkTap,
                       // Retry button on a `stream_error` bubble —
                       // wires the affordance to `/continue` so the
                       // user can retry a failed turn by clicking
