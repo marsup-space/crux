@@ -8,10 +8,14 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-26
+
+TBD
+
 ### Features
 
 - **Quick reply: `ask://label{answer}` tokens as clickable buttons**
-  — agents can now offer discrete choices inline in their reply
+  (`570dd76`) — agents can now offer discrete choices inline in their reply
   (`ask://A{a} ask://B{b} ask://C{c}`), and Crux renders each token
   as a clickable button. Clicking submits (when the chat input is
   empty) or appends to the draft (when the input has text). Two
@@ -22,9 +26,52 @@ below the version header. Each version has at most two categories:
   turns (older AI messages, or the persisted message during an
   in-flight streaming turn) render the label as plain prose with
   no button affordance, so a stale choice can't be picked after
-  the conversation has moved on. Only the latest AI message and
+  the   conversation has moved on. Only the latest AI message and
   only when no turn is currently streaming gets the button mode.
   See `docs/design-quick-reply.md` for the full spec.
+
+- **Streaming: persisted error bubble + retry, stream-idle
+  watchdog** (`eeb1f3f`) — turns that fail (rate limit, auth,
+  overloaded, timeout, …) now end with a persistent error bubble
+  instead of an opaque toast:
+
+  * a single-line message describing the failure with a
+    vendor-aware hint ("check your MiniMax API key" for 401,
+    "/compact or shorten the conversation" for context-length,
+    "the upstream is overloaded — retry" for 529);
+  * for retriable categories (rateLimit / overloaded /
+    serverError / timeout / network) a clickable "▶ retry
+    (/continue)" affordance below the body that invokes the
+    command executor's `/continue` flow (not the chat input
+    pipeline, which would treat `/continue` as a literal message);
+  * the bubble stays at the end of the chat until the user
+    submits a new message — `stream_error` rows are cleared at
+    the start of every turn, so the bubble disappears naturally
+    on retry.
+
+  Also adds a stream-idle watchdog that ends silent SSE streams
+  with a typed `LlmErrorKind.timeout` so "stuck waiting for
+  streams" no longer blocks the chat: 120 s idle timeout (reset
+  on every chunk; Anthropic also resets on `event: ping`
+  heartbeats) and a 10-minute max stream duration, set once at
+  request start. Both classify as `timeout` → already retriable
+  → the retry button shows up automatically. See
+  `docs/llm-error-mapping.md` for the cross-vendor reference
+  table.
+
+- **Markdown: clickable links, hide URL when label is set**
+  (`77f3667`) — `[label](url)` markdown links now render as just
+  the label (the URL is suppressed). Empty-label links fall
+  back to the URL itself so they stay visible. The underlying
+  URL is still reachable via a click — the chat wires each link
+  through `openUrl` so the user's default browser opens with the
+  original href. New `MarkdownLink` collector in the markdown
+  visitor (opt-in, so the worker isolate stays allocation-free);
+  `HighlightedMarkdownText` grows `onLinkTap` / `linkStyle` /
+  `linkHoverStyle`. Click precedence: `session refs > markdown
+  links > quick replies`. Not yet wired: tool_detail_pane,
+  btw_bubble, streaming_bubble, and compaction_fullpane still
+  render without click handling (follow-up).
 
 ### Fixes
 
@@ -117,6 +164,17 @@ below the version header. Each version has at most two categories:
   must be synthetic and we leave the system clipboard alone.
   A real subsequent Ctrl+V (after the IME stash has been
   consumed) still attaches the image as before.
+
+- **Context bar: hover arrow now points left (Y ← X)** (`22473c8`)
+  — the hover label now renders as `Y <- X` (post on the left,
+  pre on the right, arrow pointing left) instead of `X -> Y`.
+  The new direction matches the context bar's visual movement:
+  as the bar shrinks after a successful compact, the fill
+  retreats from right to left, so the user reads the label and
+  the bar as the same transition. `/compact` toasts (auto and
+  manual) follow the same convention so every place that shows
+  a pre→post projection agrees on the direction. Skip case
+  (`X . skip`) is unchanged — no arrow there.
 
 ## [0.7.3] - 2026-06-23
 
