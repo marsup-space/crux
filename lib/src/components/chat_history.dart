@@ -88,6 +88,14 @@ class ChatHistory extends StatefulComponent {
   /// always meaningless.
   final void Function(Message message)? onCompactionTap;
 
+  /// Callback fired when the user clicks the `▶ retry (/continue)`
+  /// affordance on a `stream_error` bubble. The chat panel wires
+  /// this to the command executor's `/continue` flow so the
+  /// retry button skips the input pipeline entirely (which would
+  /// otherwise interpret `/continue` as a literal user message
+  /// and call the LLM with that string).
+  final VoidCallback? onRetryContinue;
+
   const ChatHistory({
     super.key,
     required this.scrollController,
@@ -102,6 +110,7 @@ class ChatHistory extends StatefulComponent {
     this.onSessionLinkTap,
     this.onQuickReplyTap,
     this.onCompactionTap,
+    this.onRetryContinue,
   });
 
   @override
@@ -365,6 +374,14 @@ class _ChatHistoryState extends State<ChatHistory> {
           onSessionLinkTap: component.onSessionLinkTap,
           onQuickReplyTap:
               enableQuickReplies ? component.onQuickReplyTap : null,
+          // The retry button on a `stream_error` bubble should
+          // always be live when the bubble is rendered (i.e. NOT
+          // suppressed by the "latest AI" / streaming rules that
+          // gate quick-reply tokens). Stream errors don't appear
+          // in the middle of an active turn — they only get
+          // persisted when the turn has fully errored out — so
+          // there's no stale-retry concern here.
+          onRetryContinue: component.onRetryContinue,
         );
       });
 

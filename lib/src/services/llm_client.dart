@@ -191,6 +191,40 @@ class LlmClient {
       _ => LlmVendor.openai,
     };
 
+    // ── Stream watchdog timers ───────────────────────────────────
+    //
+    // SSE streams can hang silently for a number of reasons that
+    // the HTTP layer never surfaces as an exception:
+    //   * upstream starts generating, then pauses mid-stream
+    //     (e.g. long reasoning block + socket keep-alive expires),
+    //   * upstream returns a 200 then drops the connection without
+    //     sending `event: error` (a known failure mode under
+    //     peak load on Anthropic / MiniMax / OpenAI),
+    //   * the user's network drops the connection after the TLS
+    //     handshake but the OS doesn't immediately notice.
+    //
+    // Without an idle watchdog, Crux waits indefinitely — the UI
+    // shows "waiting for model..." with no progress, no toast, no
+    // retry button. Two timers protect against this:
+    //
+    // 1. **Stream idle timeout** — resets on every chunk (data
+    //    line for both wire families; also on `event: ping` for
+    //    Anthropic, which is their explicit heartbeat). Default
+    //    120s. When it fires: synthesise an `LlmErrorKind.timeout`
+    //    chunk, close the controller.
+    //
+    // 2. **Max stream duration** — set once at request start,
+    //    never reset. Default 10 minutes (matches Anthropic's own
+    //    streaming recommendation). When it fires: same as idle
+    //    timeout but with a duration-specific message.
+    //
+    // Both classified as `timeout` (already retriable), so the
+    // persisted error bubble automatically shows the Retry button.
+    const idleTimeout = Duration(seconds: 120);
+    const maxDuration = Duration(minutes: 10);
+    Timer? idleTimer;
+    Timer? maxTimer;
+
     () async {
       try {
         final provider = resolved.provider;
@@ -252,6 +286,42 @@ class LlmClient {
         );
         cancelToken?._attachResponse(response);
 
+        // Arm both watchdog timers the moment we have a response.
+        // The idle timer is reset by every chunk (or `event: ping`
+        // for Anthropic) inside the stream handlers; the max
+        // duration timer is fire-and-forget — once it pops the
+        // stream is dead.
+        idleTimer = Timer(idleTimeout, () {
+          if (controller.isClosed) return;
+          controller.add(
+            LlmChunk(
+              error: LlmError(
+                kind: LlmErrorKind.timeout,
+                vendor: errorVendor,
+                message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+                    'no response — connection may have stalled.',
+                providerName: config.name,
+              ),
+            ),
+          );
+          controller.close();
+        });
+        maxTimer = Timer(maxDuration, () {
+          if (controller.isClosed) return;
+          controller.add(
+            LlmChunk(
+              error: LlmError(
+                kind: LlmErrorKind.timeout,
+                vendor: errorVendor,
+                message: 'Stream exceeded ${maxDuration.inMinutes} '
+                    'minutes — the upstream is taking too long.',
+                providerName: config.name,
+              ),
+            ),
+          );
+          controller.close();
+        });
+
         if (response.statusCode != 200) {
           final errorBody = await response.transform(utf8.decoder).join();
           // Anthropic puts a `request-id` header on every response;
@@ -260,6 +330,8 @@ class LlmClient {
           // inside the error body (and so end up in `vendorCode`
           // via the parser), but we capture here for parity.
           final requestId = response.headers.value('request-id');
+          idleTimer?.cancel();
+          maxTimer?.cancel();
           controller.add(
             LlmChunk(
               error: parseHttpError(
@@ -284,6 +356,9 @@ class LlmClient {
             cancelToken,
             providerName: config.name,
             requestId: anthropicRequestId,
+            idleTimer: idleTimer,
+            maxTimer: maxTimer,
+            idleTimeout: idleTimeout,
           );
         } else {
           await _handleOpenAiStream(
@@ -291,9 +366,25 @@ class LlmClient {
             controller,
             cancelToken,
             providerName: config.name,
+            idleTimer: idleTimer,
+            maxTimer: maxTimer,
+            idleTimeout: idleTimeout,
           );
         }
+        // Successful (or already-errored) return — both timers
+        // are stopped by their respective code paths; the
+        // catch-all below stops them on a thrown exception.
       } catch (e) {
+        // Make sure the watchdog timers don't keep running if
+        // the request blew up before the handler took ownership
+        // of them (e.g. proxy-retry threw, `response.close()` was
+        // never reached). Both timers are nulled after cancel so
+        // the cancel callbacks in the stream handlers are no-ops
+        // if the handler is reached later.
+        idleTimer?.cancel();
+        maxTimer?.cancel();
+        idleTimer = null;
+        maxTimer = null;
         if (!controller.isClosed) {
           if (cancelToken?.isCancelled ?? false) {
             controller.add(
@@ -322,10 +413,15 @@ class LlmClient {
     StreamController<LlmChunk> controller,
     LlmStreamCancelToken? cancelToken, {
     required String providerName,
+    required Timer? idleTimer,
+    required Timer? maxTimer,
+    required Duration idleTimeout,
   }) async {
     String buffer = '';
     await for (final chunk in response) {
       if (cancelToken?.isCancelled ?? false) {
+        idleTimer?.cancel();
+        maxTimer?.cancel();
         controller.add(
           LlmChunk(
             abortReason: cancelToken?.reason ?? 'cancelled',
@@ -335,6 +431,30 @@ class LlmClient {
         await controller.close();
         return;
       }
+      // Reset the idle watchdog on every raw byte batch from the
+      // socket. Some upstream servers emit partial SSE lines that
+      // we don't see as `data:` events until the buffer flushes
+      // — resetting here means "any TCP activity, not just parsed
+      // data lines", which is what we want for the silence
+      // detection. The reset cost is one Timer allocation, well
+      // below the noise floor of an SSE stream.
+      idleTimer?.cancel();
+      idleTimer = Timer(idleTimeout, () {
+        if (controller.isClosed) return;
+        controller.add(
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.timeout,
+              vendor: LlmVendorX.fromProviderName(providerName),
+              message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+                  'no response — connection may have stalled.',
+              providerName: providerName,
+            ),
+          ),
+        );
+        controller.close();
+      });
+
       buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();
@@ -345,6 +465,8 @@ class LlmClient {
 
         final data = trimmed.substring(6);
         if (data == '[DONE]') {
+          idleTimer.cancel();
+          maxTimer?.cancel();
           controller.add(const LlmChunk(finishReason: 'stop'));
           await controller.close();
           return;
@@ -354,6 +476,8 @@ class LlmClient {
           final json = jsonDecode(data) as Map<String, dynamic>;
           final error = json['error'];
           if (error != null) {
+            idleTimer.cancel();
+            maxTimer?.cancel();
             controller.add(
               LlmChunk(
                 error: parseOpenAiStreamError(
@@ -423,6 +547,8 @@ class LlmClient {
       }
     }
 
+    idleTimer?.cancel();
+    maxTimer?.cancel();
     controller.add(const LlmChunk(finishReason: 'done'));
     await controller.close();
   }
@@ -434,6 +560,9 @@ class LlmClient {
     LlmStreamCancelToken? cancelToken, {
     required String providerName,
     String? requestId,
+    required Timer? idleTimer,
+    required Timer? maxTimer,
+    required Duration idleTimeout,
   }) async {
     String buffer = '';
     String? eventType;
@@ -449,6 +578,8 @@ class LlmClient {
 
     await for (final chunk in response) {
       if (cancelToken?.isCancelled ?? false) {
+        idleTimer?.cancel();
+        maxTimer?.cancel();
         controller.add(
           LlmChunk(
             abortReason: cancelToken?.reason ?? 'cancelled',
@@ -458,6 +589,25 @@ class LlmClient {
         await controller.close();
         return;
       }
+      // Reset the idle watchdog on every raw byte batch — same
+      // rationale as in the OpenAI handler.
+      idleTimer?.cancel();
+      idleTimer = Timer(idleTimeout, () {
+        if (controller.isClosed) return;
+        controller.add(
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.timeout,
+              vendor: LlmVendorX.fromProviderName(providerName),
+              message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+                  'no response — connection may have stalled.',
+              providerName: providerName,
+            ),
+          ),
+        );
+        controller.close();
+      });
+
       buffer += utf8.decode(chunk, allowMalformed: true);
       final lines = buffer.split('\n');
       buffer = lines.removeLast();
@@ -479,9 +629,34 @@ class LlmClient {
         try {
           final json = jsonDecode(data) as Map<String, dynamic>;
 
-          if (eventType == 'ping') continue;
+          // Anthropic's explicit heartbeat. Reset the idle
+          // watchdog so a quiet-but-alive stream (e.g. model is
+          // doing a long reasoning pass before the first content
+          // delta) doesn't trip the timeout — the ping itself is
+          // proof of life from the upstream.
+          if (eventType == 'ping') {
+            idleTimer?.cancel();
+            idleTimer = Timer(idleTimeout, () {
+              if (controller.isClosed) return;
+              controller.add(
+                LlmChunk(
+                  error: LlmError(
+                    kind: LlmErrorKind.timeout,
+                    vendor: LlmVendorX.fromProviderName(providerName),
+                    message: 'Stream idle for ${idleTimeout.inSeconds}s '
+                        'with no response — connection may have stalled.',
+                    providerName: providerName,
+                  ),
+                ),
+              );
+              controller.close();
+            });
+            continue;
+          }
 
           if (eventType == 'error') {
+            idleTimer?.cancel();
+            maxTimer?.cancel();
             controller.add(
               LlmChunk(
                 error: parseAnthropicStreamError(
@@ -544,6 +719,8 @@ class LlmClient {
       }
     }
 
+    idleTimer?.cancel();
+    maxTimer?.cancel();
     controller.add(const LlmChunk(finishReason: 'done'));
     await controller.close();
   }

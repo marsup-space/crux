@@ -801,6 +801,19 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
+  /// Click handler for the `▶ retry (/continue)` affordance on
+  /// a persisted `stream_error` bubble. Routes through the
+  /// command executor so the retry behaves identically to the
+  /// user typing `/continue` in the chat input — including the
+  /// role-based `请继续` injection for `ai`/`tool_call`-ending
+  /// histories. We deliberately don't go through
+  /// `submit('/continue')` because that path would treat the
+  /// command as a literal user message and call the LLM with
+  /// the string `/continue` instead of executing it.
+  void _retryContinue() {
+    unawaited(_executeCommand('/continue'));
+  }
+
   /// Resolve the active model's [CodingPlanProvider] mixin (if
   /// any) and re-align polling state with it. Idempotent — a
   /// no-op when neither the provider nor the session activity
@@ -1536,6 +1549,16 @@ class _ChatPanelState extends State<ChatPanel> {
                       onToolCallTap: _openToolDetail,
                       onSessionLinkTap: _handleSessionLinkTap,
                       onQuickReplyTap: _handleQuickReplyTap,
+                      // Retry button on a `stream_error` bubble —
+                      // wires the affordance to `/continue` so the
+                      // user can retry a failed turn by clicking
+                      // rather than typing the command. The bubble
+                      // itself only renders the affordance for
+                      // `LlmErrorKind.isRetriable` errors, so the
+                      // button never shows up for auth / billing /
+                      // content-policy failures where retrying
+                      // wouldn't help.
+                      onRetryContinue: _retryContinue,
                       // Compaction divider is only clickable when
                       // debug mode is on — in production it just
                       // renders as a static "─── Compaction #N ───"

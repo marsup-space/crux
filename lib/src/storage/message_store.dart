@@ -271,6 +271,26 @@ class MessageStore {
   /// represent a half-finished write and are reaped by the
   /// `try { ... } catch { mark 'failed' }` block in
   /// createChatLogCompaction when the next compact runs.
+  /// Delete every `stream_error` row for [sessionId]. Called at the
+  /// start of every new turn (user message, /continue, /retry) so
+  /// the persisted error bubble from a previous failed attempt
+  /// disappears before the new attempt begins. The next attempt's
+  /// success hides it naturally; its failure is surfaced by a
+  /// fresh bubble written by [ChatTurnOrchestrator].
+  ///
+  /// Returns the count deleted (zero is normal — no prior error
+  /// bubble, or one already cleared by a prior new turn).
+  Future<int> clearStreamErrorsFor(int sessionId) async {
+    final deleted = await (_db.delete(_db.messages)..where(
+          (t) => t.sessionId.equals(sessionId) & t.role.equals('stream_error'),
+        ))
+        .go();
+    if (deleted > 0) {
+      await sessionStore.touchSession(sessionId);
+    }
+    return deleted;
+  }
+
   Future<int> deleteCompleteCompactions(int sessionId) async {
     final rows = await (_db.select(_db.messages)
           ..where((t) =>

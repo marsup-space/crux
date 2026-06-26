@@ -2,6 +2,7 @@ import '../models/provider_config.dart';
 import '../storage/message_store.dart';
 import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
+import 'llm_error.dart';
 import 'provider_service.dart';
 
 /// Lightweight LLM calls that use the auxiliary model (title generation,
@@ -79,7 +80,7 @@ class AuxiliaryService {
       );
 
       final buffer = StringBuffer();
-      String? streamError;
+      LlmError? streamError;
       await for (final chunk in stream) {
         if (chunk.error != null) {
           streamError = chunk.error;
@@ -88,7 +89,12 @@ class AuxiliaryService {
         if (chunk.textDelta != null) buffer.write(chunk.textDelta);
       }
       if (streamError != null) {
-        print('[$logTag] stream error: $streamError');
+        // Auxiliary calls are background work (title generation, TLDR)
+        // — we don't surface errors as a persistent bubble, only log
+        // the structured error so debugging has the kind/code/context.
+        print('[$logTag] ${streamError.kind.name}'
+            '${streamError.vendorCode != null ? "(${streamError.vendorCode})" : ""}'
+            ': ${streamError.toUserMessage()}');
         return null;
       }
       final result = buffer.toString().trim();

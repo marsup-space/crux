@@ -26,6 +26,7 @@ import 'compaction/chat_log_builder.dart';
 import 'compaction/summary_collector.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
+import 'llm_error.dart';
 import 'prompts/code_search_hint.dart';
 import 'prompts/praise_prompts.dart';
 import 'prompts/system_prompt.dart';
@@ -626,7 +627,7 @@ $chatLogMarkdown
     required void Function(String reasoning) onReasoning,
     required void Function() onChunk,
     required FutureOr<void> Function(ChatResponse response) onComplete,
-    required void Function(String error) onError,
+    required void Function(LlmError error) onError,
     void Function(String status)? onStatus,
     FutureOr<void> Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
@@ -664,14 +665,28 @@ $chatLogMarkdown
       runtime.roundStartTime = null;
       runtime.roundFirstTokenTime = null;
       _markSessionInactive(sessionId);
-      onError(e.toString());
+      onError(
+        LlmError(
+          kind: LlmErrorKind.unknown,
+          vendor: LlmVendor.unknown,
+          message: e.toString(),
+          cause: e,
+        ),
+      );
     } catch (e) {
       await _recoverFromUnexpectedTurnExit(
         sessionId: sessionId,
         session: session,
         runtime: runtime,
       );
-      onError('Unhandled chat service error: $e');
+      onError(
+        LlmError(
+          kind: LlmErrorKind.unknown,
+          vendor: LlmVendor.unknown,
+          message: 'Unhandled chat service error: $e',
+          cause: e,
+        ),
+      );
     }
   }
 
@@ -713,7 +728,7 @@ $chatLogMarkdown
     required void Function(String reasoning) onReasoning,
     required void Function() onChunk,
     required FutureOr<void> Function(ChatResponse response) onComplete,
-    required void Function(String error) onError,
+    required void Function(LlmError error) onError,
     void Function(String status)? onStatus,
     FutureOr<void> Function(int toolResultTokens)? onToolRound,
     void Function(ToolUseChunk chunk)? onToolUse,
@@ -724,6 +739,16 @@ $chatLogMarkdown
     String? userContent,
     List<ImageAttachment> images = const [],
   }) async {
+    // Clear any prior `stream_error` bubble for this session. The
+    // user is starting a new turn (user message, /continue, /retry),
+    // so any "this turn failed" bubble from a previous attempt is
+    // now stale — either this new turn succeeds and the bubble
+    // disappears naturally, or it fails and the orchestrator
+    // persists a fresh one. We do this BEFORE the user-message
+    // persist so a crash mid-persist doesn't leave the bubble
+    // visible alongside a half-written user turn.
+    await _messageStore.clearStreamErrorsFor(sessionId);
+
     final updatedSession = await _store.update(
       sessionId,
       status: SessionStatus.running,
@@ -767,7 +792,13 @@ $chatLogMarkdown
       runtime.isResponding = false;
       _markSessionInactive(sessionId);
       onError(
-        'No API key for provider "$providerName". Use /provider to connect.',
+        LlmError(
+          kind: LlmErrorKind.auth,
+          vendor: LlmVendorX.fromProviderName(providerName),
+          message: 'No API key for provider "$providerName". '
+              'Use /provider to connect.',
+          providerName: providerName,
+        ),
       );
       return;
     }
@@ -1240,7 +1271,9 @@ $chatLogMarkdown
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
         _markSessionInactive(sessionId);
-        onError(e.toString());
+        onError(
+          classifyThrownError(e, providerName: providerName),
+        );
         return;
       }
 
@@ -1784,7 +1817,15 @@ $chatLogMarkdown
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
         _markSessionInactive(sessionId);
-        onError('Tool execution error: $e');
+        onError(
+          LlmError(
+            kind: LlmErrorKind.unknown,
+            vendor: LlmVendorX.fromProviderName(providerName),
+            message: 'Tool execution error: $e',
+            cause: e,
+            providerName: providerName,
+          ),
+        );
         return;
       }
 
@@ -1998,7 +2039,15 @@ $chatLogMarkdown
         await _store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
         _markSessionInactive(sessionId);
-        onError('Persistence error: $e');
+        onError(
+          LlmError(
+            kind: LlmErrorKind.unknown,
+            vendor: LlmVendorX.fromProviderName(providerName),
+            message: 'Persistence error: $e',
+            cause: e,
+            providerName: providerName,
+          ),
+        );
         return;
       }
 
@@ -2091,8 +2140,13 @@ $chatLogMarkdown
       // it and send another message to continue. This is not an error
       // — it's a safety brake configured by the provider.
       onError(
-        'Step limit reached ($maxRounds tool rounds). '
-        'Send another message to continue.',
+        LlmError(
+          kind: LlmErrorKind.unknown,
+          vendor: LlmVendorX.fromProviderName(providerName),
+          message: 'Step limit reached ($maxRounds tool rounds). '
+              'Send another message to continue.',
+          providerName: providerName,
+        ),
       );
     }
 

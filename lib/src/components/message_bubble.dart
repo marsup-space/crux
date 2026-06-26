@@ -20,6 +20,8 @@ import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
 import 'shell_guard_bubble.dart';
 import 'tool_guard_bubble.dart';
+import 'error_bubble.dart';
+import '../services/llm_error.dart';
 
 class MessageBubble extends StatelessComponent {
   final Message message;
@@ -56,6 +58,13 @@ class MessageBubble extends StatelessComponent {
   /// compaction summary can carry quick replies.
   final void Function(QuickReply reply)? onQuickReplyTap;
 
+  /// Callback when the user clicks the retry affordance on a
+  /// `stream_error` bubble. Wired by [ChatHistory] (which receives
+  /// it from [ChatPanel]) to invoke the command executor's
+  /// `/continue` flow. Only set on `stream_error` rows; null on
+  /// every other role.
+  final VoidCallback? onRetryContinue;
+
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
@@ -67,6 +76,7 @@ class MessageBubble extends StatelessComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.onQuickReplyTap,
+    this.onRetryContinue,
   });
 
   String _displayEffort(String effort) {
@@ -159,6 +169,23 @@ class MessageBubble extends StatelessComponent {
       final kind = ToolGuardKind.values[kindIndex];
       final filePath = message.content.isEmpty ? null : message.content;
       return ToolGuardBubble(guardKind: kind, filePath: filePath);
+    }
+    if (message.role == 'stream_error') {
+      // Persisted error bubble from a failed LLM turn. Decode the
+      // structured payload from `message.error` (JSON), fall back
+      // to a generic unknown-error bubble if the JSON is missing
+      // or malformed (defensive — future schema changes could leave
+      // a stale row that we still want to render).
+      final llmError = decodeLlmErrorJson(message.error ?? '');
+      return ErrorBubble(
+        error: llmError,
+        // The retry affordance only renders when (a) the error is
+        // retriable (auth / billing / content-policy failures don't
+        // expose the button — they'd obviously fail again) and (b)
+        // the chat panel has wired a callback. The bubble builder
+        // checks both before adding the affordance row.
+        onRetry: onRetryContinue,
+      );
     }
     if (message.role == 'shell_guard') {
       // `parallelCount` carries the post-call streak (1, 2, 3, …)

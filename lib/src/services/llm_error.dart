@@ -392,7 +392,23 @@ LlmError parseHttpError({
       }
     }
 
-    // 2. OpenAI {error: {message, type, code, param}}.
+    // 2. Anthropic {type: "error", error: {type, message}} —
+    // check BEFORE the OpenAI branch because both vendors use a
+    // top-level `error` map and we need Anthropic's stronger
+    // `type: "error"` discriminator to avoid misclassifying
+    // Anthropic bodies as OpenAI. The order matters.
+    if (json['type'] == 'error' && json['error'] is Map) {
+      final inner = json['error'] as Map;
+      return _fromAnthropic(
+        errorType: inner['type'] as String?,
+        message: inner['message'] as String?,
+        statusCode: statusCode,
+        providerName: providerName,
+        requestId: requestId,
+      );
+    }
+
+    // 3. OpenAI {error: {message, type, code, param}}.
     final errorObj = json['error'];
     if (errorObj is Map) {
       return _fromOpenAi(
@@ -400,18 +416,6 @@ LlmError parseHttpError({
         errorCode: errorObj['code'] as String?,
         message: errorObj['message'] as String?,
         param: errorObj['param'] as String?,
-        statusCode: statusCode,
-        providerName: providerName,
-        requestId: requestId,
-      );
-    }
-
-    // 3. Anthropic {type: "error", error: {type, message}}.
-    if (json['type'] == 'error' && json['error'] is Map) {
-      final inner = json['error'] as Map;
-      return _fromAnthropic(
-        errorType: inner['type'] as String?,
-        message: inner['message'] as String?,
         statusCode: statusCode,
         providerName: providerName,
         requestId: requestId,
@@ -625,15 +629,31 @@ LlmErrorKind _anthropicKind(String? type, int? statusCode) {
 }
 
 LlmErrorKind _openAiKind(String? type, String? code, int? statusCode) {
-  // Specific OpenAI codes that override status-based inference.
-  // `context_length_exceeded` arrives as a 400 but means "context
-  // too long", not "malformed request".
+  // OpenAI's `error.type` is mostly a coarse bucket (often
+  // `invalid_request_error` for both auth and bad-param cases),
+  // so we lean on the HTTP status for the primary mapping and
+  // override only when the code/type carries more specific
+  // information than the status can express.
+
+  // Code-based overrides (more specific than status).
   if (code == 'context_length_exceeded') return LlmErrorKind.contextLength;
   if (code == 'insufficient_quota') return LlmErrorKind.quota;
-  if (type == 'invalid_request_error') return LlmErrorKind.invalidRequest;
-  if (type == 'authentication_error') return LlmErrorKind.auth;
-  if (type == 'rate_limit_error') return LlmErrorKind.rateLimit;
-  if (type == 'not_found_error') return LlmErrorKind.notFound;
+  if (code == 'invalid_api_key') return LlmErrorKind.auth;
+  if (code == 'organization_not_found') return LlmErrorKind.auth;
+
+  // `slow_down` is the shared-tier 503 throttle signal — treat as
+  // overloaded regardless of whether it arrived via `error.type`
+  // or `error.code`.
+  if (type == 'slow_down' || code == 'slow_down') {
+    return LlmErrorKind.overloaded;
+  }
+
+  // Fall back to the HTTP status. This handles the common
+  // cases cleanly: 401 → auth, 403 → permission, 429 → rateLimit,
+  // 500 → serverError, 503 → overloaded, etc. — and doesn't get
+  // fooled by `type: 'invalid_request_error'` arriving on a 401
+  // (which the type-based branch above would otherwise mis-route
+  // to invalidRequest).
   return _kindFromStatus(statusCode);
 }
 

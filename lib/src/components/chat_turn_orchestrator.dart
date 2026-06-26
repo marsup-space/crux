@@ -11,6 +11,7 @@ import '../services/git_status_service.dart';
 import '../tools/semble_warmup.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
+import '../services/llm_error.dart';
 import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
@@ -735,7 +736,38 @@ class ChatTurnOrchestrator {
                 .then((changed) {
                   if (changed) _refresh();
                 });
-            _showToast(error, mode: ToastMode.error);
+            // Persist the error as a `stream_error` system bubble so
+            // it stays at the end of the chat until the user submits
+            // a new message. `chat_service.sendMessage` clears any
+            // prior `stream_error` rows at the start of each new
+            // turn, so the bubble disappears naturally on retry —
+            // either replaced by an `ai` response (success) or by a
+            // fresh `stream_error` bubble (failure).
+            //
+            // Use the structured LlmError for the body so the
+            // bubble can render a vendor-specific hint and a Retry
+            // button when `kind.isRetriable`.
+            _messageStore
+                .addMessage(
+              sessionId,
+              role: 'stream_error',
+              content: error.toUserMessage(),
+              error: error.toJson(),
+              model: _sessionController.currentSession.model,
+            )
+                .then((persisted) {
+              // Mirror the new row into the in-memory cache so the
+              // chat history paints the bubble without waiting for
+              // a refetch. `addMessage` returns the persisted row;
+              // the cache is the message list the chat history
+              // widget reads from.
+              final cache = _sessionController.messageCache[sessionId];
+              if (cache != null) {
+                cache.add(persisted);
+              }
+              _refresh();
+            });
+            _showToast(error.toUserMessage(), mode: ToastMode.error);
           },
           onStatus: (status) {
             if (_interruptedSessions.contains(sessionId)) return;
@@ -894,7 +926,7 @@ class ChatTurnOrchestrator {
 
     final llmClient = LlmClient();
     final buffer = StringBuffer();
-    String? streamError;
+    LlmError? streamError;
 
     // Btw turns don't go through ChatService.sendMessage, so
     // they don't get a ChatResponse with the final token
@@ -982,7 +1014,7 @@ class ChatTurnOrchestrator {
         }
       }
     } catch (e) {
-      streamError = e.toString();
+      streamError = classifyThrownError(e, providerName: provider.name);
     } finally {
       llmClient.dispose();
     }
@@ -1033,7 +1065,7 @@ class ChatTurnOrchestrator {
           }
         }
       }
-      _showToast(streamError, mode: ToastMode.error);
+      _showToast(streamError.toUserMessage(), mode: ToastMode.error);
       // Still roll whatever usage the LLM did report into
       // the per-run totals — the user paid for the prompt
       // even if the response errored out before completing.
