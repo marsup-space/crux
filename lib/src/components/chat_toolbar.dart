@@ -7,6 +7,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
+import '../services/chat_service.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../services/providers/coding_plan_provider.dart';
@@ -83,6 +84,21 @@ class ChatToolbar extends StatefulComponent {
   final void Function() onAuxiliaryPressed;
   final void Function(SessionRuntimeState) onCycleThinking;
 
+  /// Pre-projected compaction result for the current session.
+  /// Forwarded to [ContextBar] so its hover label can show
+  /// `preTokens → postTokens` (e.g. `123k → 56k`) instead of
+  /// the bare `Compact` action label — the user sees the
+  /// expected result of clicking the bar before committing.
+  final ChatLogCompactionEstimate? compactEstimate;
+
+  /// When true, the context bar's hover label always shows the
+  /// projection (e.g. `143k → 145k`) instead of `143k · skip`,
+  /// even when the savings are below the 5% threshold. Used by
+  /// `/debug` so the user can see the projection itself and
+  /// diagnose why the skip gate is firing. Wired from
+  /// [CommandRegistry.debugEnabled] by the chat panel.
+  final bool debugMode;
+
   const ChatToolbar({
     super.key,
     required this.sessionController,
@@ -95,10 +111,12 @@ class ChatToolbar extends StatefulComponent {
     required this.onCompactPressed,
     required this.onAuxiliaryPressed,
     required this.onCycleThinking,
+    this.compactEstimate,
     this.codingPlanProvider,
     this.creditBalanceProvider,
     this.onCodingPlanTap,
     this.onCreditBalanceTap,
+    this.debugMode = false,
   });
 
   @override
@@ -183,12 +201,27 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // in `compactCurrentSession` is a backstop.
     final isSessionRunning =
         _sessionController.currentSession.status == SessionStatus.running;
+    // When the projection says "skip" (post > pre), the click
+    // is a no-op. We don't set `disabled: true` here because
+    // that would hide the projection on hover (the bar falls
+    // back to the idle `X / Y` label), which is the only way the
+    // user finds out the click won't do anything. Instead, set
+    // `onTap: null` so the gesture detector drops the click
+    // while the hover label keeps showing `X · skip`.
+    final isSkip = ContextBarState.isCompactCounterproductive(
+        component.compactEstimate);
     return ContextBar(
       sessionController: _sessionController,
       streamingController: _streamingController,
       contextMaxTokens: component.contextMaxTokens,
-      onTap: component.onCompactPressed,
+      compactEstimate: component.compactEstimate,
+      // Even in `/debug` mode where the hover label reveals the
+      // projection, we still gate the click on the 5% threshold.
+      // Debug mode is for inspection, not override — the user
+      // wants to see WHY the gate fired, not bypass it.
+      onTap: isSkip ? null : component.onCompactPressed,
       disabled: isSessionRunning,
+      debugMode: component.debugMode,
     );
   }
 

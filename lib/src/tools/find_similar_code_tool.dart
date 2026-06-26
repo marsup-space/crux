@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/bundled_executable.dart';
+import '../models/message.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'semble_warmup.dart';
 import 'tool_def.dart';
@@ -227,4 +228,22 @@ class FindSimilarCodeTool extends ToolDef {
       );
     }
   }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final query = (call.input['query'] as String?) ?? '';
+    if (isError) return 'find_similar_code {$query} → $pairedResult';
+    return 'find_similar_code for {$query}';
+  }
+
+  // find_similar_code intentionally has no [extractPruneSummary]
+  // override — it inherits the default `null` return. Same
+  // reasoning as semantic_search: the anchor file path is shown
+  // inline (`find_similar_code for {$query}`), the resumed agent
+  // can re-run if it needs the matches again, and dumping
+  // snippets at compact time adds little for the token cost.
 }

@@ -12,6 +12,7 @@ import 'matchers/exact_matcher.dart';
 import 'matchers/whitespace_matcher.dart';
 import 'matchers/indentation_matcher.dart';
 import 'tool_def.dart';
+import '../models/message.dart';
 import '../utils/tool_metrics_animator.dart';
 
 class EditTool extends ToolDef with IntentionalTool {
@@ -573,5 +574,43 @@ class EditTool extends ToolDef with IntentionalTool {
       return true;
     }
     return matchLen > oldString.length * 4 && matchLen > oldString.length + 500;
+  }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final path = call.input['filePath']?.toString() ?? '?';
+    final intent = (call.input['intent'] as String?) ?? '';
+    final suffix = intent.isNotEmpty ? ' for {$intent}' : '';
+    if (isError) return 'edit $path$suffix → $pairedResult';
+    // No `→ $pairedResult` on success — the chat log body is a
+    // compact call summary. Edit doesn't contribute to the
+    // bottom-of-log section either (see [extractPruneSummary]):
+    // the agent knows its own oldString/newString, the diff is
+    // captured in the collapsed bubble, and the file's post-edit
+    // state is on disk for the next `read` to pick up.
+    return 'edit $path$suffix';
+  }
+
+  @override
+  SummaryContribution? extractPruneSummary({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+    required String workingDirectory,
+  }) {
+    // Edit doesn't contribute to the bottom-of-log summary
+    // section. The user's chat-log spec keeps `read files:` and
+    // `write files:` (newly created files) — edit is "other" by
+    // that rubric: the file content is on disk for the next read,
+    // and the model already has the diff (oldString/newString)
+    // in its input args. Dumping the post-edit full file here
+    // would inflate the compaction's chain-accumulated size
+    // without giving the resumed agent anything it couldn't get
+    // from a cheap `read`.
+    return null;
   }
 }

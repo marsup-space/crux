@@ -31,8 +31,10 @@ import '../utils/frame_profiler.dart';
 import '../utils/run_metrics.dart';
 import '../utils/url_launcher.dart';
 import 'chat_history.dart';
+import 'compaction_fullpane.dart';
 import 'chat_input.dart';
 import 'chat_toolbar.dart';
+import 'context_bar.dart';
 import 'chat_turn_orchestrator.dart';
 import 'command_overlay.dart';
 import 'extra_info_panel.dart';
@@ -82,6 +84,24 @@ class ChatPanelBootState {
     required this.messageCache,
     required this.currentFileReadState,
     this.messagesTotal,
+  });
+}
+
+/// Cache entry for [_ChatPanelState._compactEstimates]. Pairs
+/// the projection result with the inputs it was computed from
+/// so we know when to invalidate. The fields are intentionally
+/// tiny (a couple of ints) so the per-session memory cost is
+/// negligible even for long Crux sessions that visit many
+/// different projects / models.
+class _CachedCompactEstimate {
+  final int messageCount;
+  final int contextTargetTokens;
+  final ChatLogCompactionEstimate estimate;
+
+  const _CachedCompactEstimate({
+    required this.messageCount,
+    required this.contextTargetTokens,
+    required this.estimate,
   });
 }
 
@@ -242,6 +262,17 @@ class _ChatPanelState extends State<ChatPanel> {
   late final FileReadTracker _tracker;
   late final LspManager _lspManager;
 
+  /// Per-session cache of the chat-log compaction estimate used
+  /// for the context bar's hover hint (`123k → 56k`). Keyed by
+  /// session id, value is the estimate paired with the message
+  /// count + context target the estimate was computed from —
+  /// if any of those change, the cache is invalidated and a
+  /// fresh estimate is scheduled on the next build. The cache
+  /// also drops the session on a session switch so we don't
+  /// leak estimates for every session the user has ever opened.
+  final Map<int, _CachedCompactEstimate> _compactEstimates = {};
+  int? _estimateJobSessionId;
+
   /// History of recently-opened project directories. Loaded once
   /// during construction and threaded through to the chat input so
   /// the `/project` autocomplete can populate from real prior
@@ -262,6 +293,12 @@ class _ChatPanelState extends State<ChatPanel> {
   /// When non-null, a tool detail fullpane is shown for this tool call.
   ToolDetailData? _toolDetailData;
 
+  /// When non-null, a compaction-debug fullpane is shown for this
+  /// `role: 'compaction'` message. Populated by [_openCompactionFullpane]
+  /// (debug-mode only) and cleared by [_closeFullpane].
+  Message? _compactionFullpaneMessage;
+
+  /// 1-based index of the compaction whose fullpane is open, or null
   bool _providerServiceReady = false;
 
   // ─── Coding-plan polling state ───────────────────────────────
@@ -425,6 +462,7 @@ class _ChatPanelState extends State<ChatPanel> {
       showToast: _showToast,
       refresh: _refresh,
       gitStatusService: _gitStatusService,
+      tracker: _tracker,
     );
 
     if (bootState != null) {
@@ -520,6 +558,74 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _showToast(String message, {ToastMode? mode}) {
     _toastKey.currentState?.show(message, mode: mode);
+  }
+
+  /// Project what an in-place chat-log compaction would produce
+  /// for the current session, cache the result by
+  /// `(sessionId, messageCount, contextTargetTokens)`, and
+  /// forward the cached value to the context bar's hover label
+  /// as `preTokens → postTokens` (e.g. `123k → 56k`).
+  ///
+  /// The work runs in a microtask so the synchronous `build()`
+  /// stays free of I/O — the chat panel renders with the
+  /// previous (or null) estimate, then `setState` fires once
+  /// the projection lands and the next paint shows the real
+  /// numbers. The build is fast for typical sessions (one
+  /// `buildChatLog` walk + one stat-or-read per touched file,
+  /// bounded at [kInlineReadMaxChars] = 100KB per file), so
+  /// the microtask usually finishes before the user even
+  /// hovers the bar.
+  ///
+  /// Cache invalidation: any change to `messageCount` OR
+  /// `contextTargetTokens` re-runs the projection. The session
+  /// switch path also wipes the cache so we don't leak
+  /// per-session entries across many opened sessions.
+  void _maybeRecomputeCompactEstimate() {
+    final session = _sessionController.currentSession;
+    final sessionId = session.id;
+    final messages = _sessionController.currentMessages;
+    final runtime = _sessionController.runtime(sessionId);
+    final contextTarget = runtime.contextTargetTokens;
+    final cached = _compactEstimates[sessionId];
+    if (cached != null &&
+        cached.messageCount == messages.length &&
+        cached.contextTargetTokens == contextTarget) {
+      return;
+    }
+    // Cache is stale (the session's contextTokens moved since the
+    // last compute). Drop the entry now so the context bar's
+    // hover label falls back to the bare `Compact` action
+    // string instead of showing the old `pre → post` numbers
+    // paired with the current bar value — that mismatch was
+    // the source of the `353,163 / 976k` bar vs `344k → 62k`
+    // hover bug. The recompute below will repopulate the cache
+    // and the next build's hover will show fresh numbers.
+    _compactEstimates.remove(sessionId);
+    // Avoid scheduling a second concurrent compute for the
+    // same session — if one is in flight, the next build's
+    // cache miss will be satisfied when that future lands.
+    if (_estimateJobSessionId == sessionId) return;
+    _estimateJobSessionId = sessionId;
+    Future.microtask(() async {
+      try {
+        final estimate = await _chatService.estimateChatLogCompaction(
+          sessionId: sessionId,
+          session: session,
+          toolRegistry: _toolRegistry,
+        );
+        if (!mounted) return;
+        if (estimate != null) {
+          _compactEstimates[sessionId] = _CachedCompactEstimate(
+            messageCount: messages.length,
+            contextTargetTokens: contextTarget,
+            estimate: estimate,
+          );
+        }
+      } finally {
+        if (mounted) _estimateJobSessionId = null;
+        if (mounted) setState(() {});
+      }
+    });
   }
 
   /// Open the current project directory in the system file explorer.
@@ -1012,6 +1118,26 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _executeCommand(String text) async {
+    // Skip `/compact` when the projection says no gain
+    // (post > pre). This is the central dispatch for all
+    // command paths — the context bar's click and any
+    // user-typed `/compact` both arrive here. The hover label
+    // already told the user compacting would grow the
+    // context; the explicit command is treated the same way
+    // because there's no separate "force" affordance, and
+    // silently allowing the command to fire would contradict
+    // the projection the user just saw. Cache miss falls
+    // through to the normal compact path (we have no
+    // information to skip against).
+    if (text == '/compact') {
+      final sessionId = _sessionController.currentSessionId;
+      if (sessionId != null) {
+        final cached = _compactEstimates[sessionId];
+        if (ContextBarState.isCompactCounterproductive(cached?.estimate)) {
+          return;
+        }
+      }
+    }
     // Command executed — restore any stashed input text so the user can
     // continue composing their message.
     _chatInputKey.currentState?.restoreCommandStash();
@@ -1071,6 +1197,25 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _onCompactButtonPressed() {
+    // Honor the hover projection: if the cached estimate says
+    // "skip" (post > pre), the click is a no-op. The hover label
+    // has already told the user compacting would grow the
+    // context, and clicking through would contradict that
+    // signal. The user can still force a compact via `/compact`
+    // from the command bar — that path bypasses this check
+    // because the explicit command is the override hatch.
+    //
+    // The toolbar already drops `onTap` to `null` in this state
+    // so this handler isn't normally reached. The check here is
+    // defense-in-depth — if the toolbar wiring changes, the
+    // chat-panel side still honors the projection.
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId != null) {
+      final cached = _compactEstimates[sessionId];
+      if (ContextBarState.isCompactCounterproductive(cached?.estimate)) {
+        return;
+      }
+    }
     unawaited(_executeCommand('/compact'));
   }
 
@@ -1120,6 +1265,23 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildFullpane() {
+    // Compaction-debug fullpane takes precedence over the tool
+    // detail fullpane when both happen to be set — the user
+    // clicked the divider most recently and that's what they want
+    // to inspect. Under the "replace from scratch" model there
+    // is at most one compaction per session, so the title is
+    // just "Compaction" (no per-compaction index).
+    final compactionMsg = _compactionFullpaneMessage;
+    if (compactionMsg != null) {
+      return Fullpane(
+        title: 'Compaction',
+        onClose: _closeFullpane,
+        contentBuilder: (context) => CompactionFullpane(
+          message: compactionMsg,
+          key: const ValueKey('compaction-current'),
+        ),
+      );
+    }
     final data = _toolDetailData;
     if (data != null) {
       final tc = data.toolCall;
@@ -1176,6 +1338,18 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {
       _overlayController.showFullpane = false;
       _toolDetailData = null;
+      _compactionFullpaneMessage = null;
+    });
+  }
+
+  /// Open the compaction-debug fullpane for [message]. Caller is
+  /// responsible for gating this on debug mode (the chat history's
+  /// [ChatHistory.onCompactionTap] is only wired when
+  /// [CommandRegistry.debugEnabled]).
+  void _openCompactionFullpane(Message message) {
+    setState(() {
+      _compactionFullpaneMessage = message;
+      _overlayController.showFullpane = true;
     });
   }
 
@@ -1320,6 +1494,13 @@ class _ChatPanelState extends State<ChatPanel> {
     // Re-align the credit-balance polling timer.
     _syncCreditBalancePolling();
 
+    // Project what a /compact would produce for the current
+    // session and forward the cached result to the context bar
+    // (its hover label swaps "Compact" → "123k → 56k"). Cheap
+    // when nothing changed; runs the buildChatLog walk only
+    // when the message count or context target actually moved.
+    _maybeRecomputeCompactEstimate();
+
     // Wrap the top-level build in a profiler section so
     // the report can show how much of each frame was spent
     // in the chat panel's build itself (vs. layout / paint
@@ -1355,6 +1536,14 @@ class _ChatPanelState extends State<ChatPanel> {
                       onToolCallTap: _openToolDetail,
                       onSessionLinkTap: _handleSessionLinkTap,
                       onQuickReplyTap: _handleQuickReplyTap,
+                      // Compaction divider is only clickable when
+                      // debug mode is on — in production it just
+                      // renders as a static "─── Compaction #N ───"
+                      // marker.
+                      onCompactionTap:
+                          CommandRegistry.instance.debugEnabled
+                              ? _openCompactionFullpane
+                              : null,
                     ),
                     ...overlays,
                   ],
@@ -1375,6 +1564,21 @@ class _ChatPanelState extends State<ChatPanel> {
                 onCompactPressed: _onCompactButtonPressed,
                 onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                 onCycleThinking: _cycleThinkingLevel,
+                // The compact-hint label for the context bar:
+                // hover shows `123k → 56k` (the pre→post token
+                // count of a /compact on the current session).
+                // null until the first async projection lands.
+                compactEstimate: sessionId == null
+                    ? null
+                    : _compactEstimates[sessionId]?.estimate,
+                // In `/debug` mode the context bar's hover label
+                // shows the projection (e.g. `143k → 145k`) even
+                // when the 5% savings gate would otherwise render
+                // `143k · skip`. Same `CommandRegistry` flag that
+                // gates the compaction-divider click — debug
+                // mode is one consistent "show me the internal
+                // state" toggle across the chat panel.
+                debugMode: CommandRegistry.instance.debugEnabled,
               ),
               Divider(color: CruxTheme.of(context).divider, height: 1),
               ChatInput(

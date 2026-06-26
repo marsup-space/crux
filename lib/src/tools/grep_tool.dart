@@ -209,6 +209,9 @@ class GrepTool extends ToolDef {
     );
   }
 
+  @override
+  bool get skipInPrune => true;
+
   String _makePathsRelative(String output, String workingDirectory) {
     final normalizedWorkingDirectory = workingDirectory.replaceAll('\\', '/');
     final prefix = '$normalizedWorkingDirectory/';

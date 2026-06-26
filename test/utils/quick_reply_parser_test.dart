@@ -277,6 +277,171 @@ void main() {
     });
   });
 
+  // Regression for the bug observed in ses://1508 / message 63862:
+  // the agent wrote `ask://A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN{在
+  // ~/.zshrc 加 \`export CRUX_THIRD_PARTY_BIN=...\`,最干净}` — the
+  // backticks inside the answer caused the markdown parser to split
+  // the token across multiple InlineSpans, and the old per-span
+  // regex pass failed to match. The new flatten-then-regex pass
+  // handles these correctly.
+  group('parseQuickReplies — token crosses inline code boundary', () {
+    test('explicit token with backticks in the middle of the answer', () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Markdown source would be: ask://A{run `npm install`}
+      // → three spans: regular, code (backticks), regular
+      final refs = parseQuickReplies([
+        const TextSpan(text: 'ask://A{run ', style: text),
+        const TextSpan(text: '`npm install`', style: code),
+        const TextSpan(text: '}', style: text),
+      ]);
+      expect(refs, hasLength(1));
+      expect(refs.first.label, 'A');
+      expect(refs.first.answer, 'run `npm install`');
+      // The whole source `ask://A{run \`npm install\`}` is 25 chars
+      // and starts at offset 0 of the flat text.
+      expect(refs.first.sourceStart, 0);
+      expect(
+        refs.first.sourceLength,
+        'ask://A{run `npm install`}'.length,
+      );
+    });
+
+    test('explicit token with backticks at the start of the answer', () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: ask://B{`cmd` is the way}
+      final refs = parseQuickReplies([
+        const TextSpan(text: 'ask://B{', style: text),
+        const TextSpan(text: '`cmd`', style: code),
+        const TextSpan(text: ' is the way}', style: text),
+      ]);
+      expect(refs, hasLength(1));
+      expect(refs.first.label, 'B');
+      expect(refs.first.answer, '`cmd` is the way');
+    });
+
+    test('explicit token with backticks at the end of the answer', () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: ask://C{see `tail`}
+      final refs = parseQuickReplies([
+        const TextSpan(text: 'ask://C{see ', style: text),
+        const TextSpan(text: '`tail`', style: code),
+        const TextSpan(text: '}', style: text),
+      ]);
+      expect(refs, hasLength(1));
+      expect(refs.first.label, 'C');
+      expect(refs.first.answer, 'see `tail`');
+    });
+
+    test('multiple tokens: one crosses code, one is plain', () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: ask://A{a} then ask://B{run `cmd`}
+      final refs = parseQuickReplies([
+        const TextSpan(text: 'ask://A{a} then ', style: text),
+        const TextSpan(text: 'ask://B{run ', style: text),
+        const TextSpan(text: '`cmd`', style: code),
+        const TextSpan(text: '}', style: text),
+      ]);
+      expect(refs, hasLength(2));
+      expect(refs[0].label, 'A');
+      expect(refs[0].answer, 'a');
+      expect(refs[0].sourceStart, 0);
+      expect(refs[1].label, 'B');
+      expect(refs[1].answer, 'run `cmd`');
+      // "ask://A{a} then " is 16 chars → B starts at offset 16.
+      expect(refs[1].sourceStart, 16);
+    });
+
+    test('token entirely inside code is still dropped', () {
+      // Negative case: even with the new flatten approach, tokens
+      // whose START position is inside a code region must be
+      // rejected (agent's own prompt doc).
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      final refs = parseQuickReplies([
+        const TextSpan(text: 'see ', style: text),
+        const TextSpan(text: 'ask://A{a}', style: code),
+        const TextSpan(text: ' and ask://B{b}', style: text),
+      ]);
+      expect(refs, hasLength(1));
+      expect(refs.first.label, 'B');
+    });
+
+    test('reproduces the ses://1508 / message 63862 case', () {
+      // Real-world failing case from the agent's reply about
+      // CRUX_THIRD_PARTY_BIN: four tokens whose answers each
+      // contain a backticked shell command. The old parser
+      // returned ZERO matches for these; the new parser returns
+      // all four with intact answers.
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+
+      // We build the four token source lines in spans so the
+      // backticked commands end up as code-styled sub-spans —
+      // mirroring what `parseMarkdownToInlineSpans` would produce.
+      //
+      // ask://A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN{在 ~/.zshrc 加 `export CRUX_THIRD_PARTY_BIN=...`,最干净}
+      // ask://B: 软链到 ~/.crux/bin/third_party/bin/{`ln -sf ...`,跟着 install 走}
+      // ask://C: 把 venv bin 加进 PATH{`export PATH=...:$PATH` 加到 ~/.zshrc,全局生效}
+      // ask://release.sh 加个检查{在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理}
+
+      final spans = <InlineSpan>[
+        const TextSpan(text: 'ask://A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN{在 ~/.zshrc 加 ', style: text),
+        const TextSpan(text: '`export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`', style: code),
+        const TextSpan(text: ',最干净}\n', style: text),
+        const TextSpan(text: 'ask://B: 软链到 ~/.crux/bin/third_party/bin/{', style: text),
+        const TextSpan(text: '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`', style: code),
+        const TextSpan(text: ',跟着 install 走}\n', style: text),
+        const TextSpan(text: 'ask://C: 把 venv bin 加进 PATH{', style: text),
+        const TextSpan(text: '`export PATH=...:\$PATH`', style: code),
+        const TextSpan(text: ' 加到 ~/.zshrc,全局生效}\n', style: text),
+        const TextSpan(text: 'ask://release.sh 加个检查{在 release.sh 里加一段:装完检查 ', style: text),
+        const TextSpan(text: '`semble`', style: code),
+        const TextSpan(text: ' 是否可达,缺了给提示并问怎么处理}', style: text),
+      ];
+
+      final refs = parseQuickReplies(spans);
+      expect(refs, hasLength(4));
+
+      expect(refs[0].label, 'A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN');
+      expect(refs[0].answer,
+          '在 ~/.zshrc 加 `export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`,最干净');
+
+      expect(refs[1].label, 'B: 软链到 ~/.crux/bin/third_party/bin/');
+      expect(refs[1].answer,
+          '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`,跟着 install 走');
+
+      expect(refs[2].label, 'C: 把 venv bin 加进 PATH');
+      expect(refs[2].answer,
+          '`export PATH=...:\$PATH` 加到 ~/.zshrc,全局生效');
+
+      expect(refs[3].label, 'release.sh 加个检查');
+      expect(refs[3].answer,
+          '在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理');
+    });
+  });
+
   group('parseQuickReplies — span tree shapes', () {
     test('handles parent + children on the same TextSpan', () {
       const text = TextStyle(color: Color(0xFFFFFFFF));

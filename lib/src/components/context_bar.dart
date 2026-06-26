@@ -2,8 +2,10 @@
 // smooth lerp animation. TerminalCanvas is nocterm's internal paint surface.
 // ignore_for_file: implementation_imports
 
+import 'package:meta/meta.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+import '../services/chat_service.dart';
 import '../theme/crux_theme.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -35,6 +37,14 @@ class ContextBar extends StatefulComponent {
   final int contextMaxTokens;
   final VoidCallback? onTap;
 
+  /// Pre-projected token counts for an in-place chat-log
+  /// compaction. When non-null, the hover label shows
+  /// `preTokens → postTokens` (e.g. `123k → 56k`) instead of
+  /// the generic `Compact` action label, so the user sees the
+  /// expected result of clicking the bar. Pass `null` to fall
+  /// back to the bare `Compact` label.
+  final ChatLogCompactionEstimate? compactEstimate;
+
   /// When true, the bar is rendered but not clickable — the
   /// [GestureDetector] gets `onTap: null` and hover effects
   /// are suppressed so the widget doesn't look interactive.
@@ -43,17 +53,30 @@ class ContextBar extends StatefulComponent {
   /// is a backstop; this is the UX-level gate).
   final bool disabled;
 
+  /// When true, the hover label always shows the projected
+  /// `pre → post` estimate instead of `X · skip`, even when
+  /// compacting wouldn't save enough tokens to be worth it.
+  /// Used by `/debug` mode so the user can see what every
+  /// projection looks like — useful for diagnosing why a
+  /// compact gate is firing (or not). Wired from
+  /// [CommandRegistry.debugEnabled] by the chat panel; the
+  /// toolbar / context bar don't import the registry
+  /// themselves.
+  final bool debugMode;
+
   const ContextBar({
     super.key,
     required this.sessionController,
     required this.streamingController,
     required this.contextMaxTokens,
     this.onTap,
+    this.compactEstimate,
     this.disabled = false,
+    this.debugMode = false,
   });
 
   @override
-  State<ContextBar> createState() => _ContextBarState();
+  State<ContextBar> createState() => ContextBarState();
 }
 
 /// Animation lifecycle for [ContextBar]'s state.
@@ -66,7 +89,7 @@ class ContextBar extends StatefulComponent {
 /// - idle: nothing happening, timer is stopped.
 enum _AnimState { active, cooling, idle }
 
-class _ContextBarState extends State<ContextBar> {
+class ContextBarState extends State<ContextBar> {
   static const double _lerpSpeed = 6.0;
 
   /// The currently displayed token count, lerped from the
@@ -105,6 +128,14 @@ class _ContextBarState extends State<ContextBar> {
   /// When [_animState] entered [cooling]. Used by [_tick] to
   /// decide when to transition to [idle] and stop the timer.
   DateTime? _coolingStartedAt;
+
+  /// Last value of `rt.contextTargetTokens` observed in [build].
+  /// When the runtime's target changes outside of streaming
+  /// (e.g. `/compact` rewrites it while the session is idle),
+  /// the diff against [_displayTokens] tells the bar to either
+  /// snap (small diff) or kick the lerp timer back on (big diff)
+  /// so the visible bar catches up.
+  int? _lastSeenTarget;
 
   /// After streaming ends, keep the lerp running for this
   /// long so the bar settles smoothly to its final value
@@ -155,11 +186,93 @@ class _ContextBarState extends State<ContextBar> {
 
   String _formatLabel(int displayTokens, int maxTokens, bool hovered) {
     // Hover swap to "Compact" is an affordance — it tells the
-    // user what the click does. Only show it when the bar is
-    // actually clickable; otherwise the hover label would
-    // advertise an action that's been disabled.
-    if (hovered && !component.disabled) return 'Compact';
+    // user what the click does. When the chat panel has a
+    // pre-projected compaction estimate, swap the action label
+    // for the actual `X → Y` result so the user can see what
+    // they'd get from clicking — e.g. `123k → 56k`. Only show
+    // it when the bar is actually clickable; otherwise the
+    // hover label would advertise an action that's been
+    // disabled.
+    if (hovered && !component.disabled) {
+      final est = component.compactEstimate;
+      if (est != null) {
+        return formatCompactHoverLabel(
+          est.preTokens,
+          est.postEstimateTokens,
+          debugMode: component.debugMode,
+        );
+      }
+      return 'Compact';
+    }
     return '${_fmtNum(displayTokens)} / ${_fmtCtx(maxTokens)}';
+  }
+
+  /// Render the hover label from a pre→post projection.
+  ///
+  /// Worth-it case (savings ≥ 5%): `X → Y` — the arrow implies
+  /// "after" and reads naturally when the projection represents
+  /// a real reduction.
+  ///
+  /// Skip case (savings < 5%): `X · skip` — a short verb that
+  /// tells the user the click won't save enough to be worth it.
+  /// The arrow would mislead (it implies "after, the size
+  /// becomes" — but the size barely budges). The 5% threshold
+  /// (not just "post ≤ pre") avoids firing compactions that
+  /// save only a handful of tokens: those writes would churn
+  /// the DB and reset the chat log without delivering real
+  /// headroom.
+  ///
+  /// Debug mode: when [debugMode] is true, always render the
+  /// projection as `X → Y` — even sub-5% savings show up. Used
+  /// by `/debug` so the user can see the projection itself and
+  /// diagnose why the skip gate fired.
+  @visibleForTesting
+  static String formatCompactHoverLabel(
+    int preTokens,
+    int postEstimateTokens, {
+    bool debugMode = false,
+  }) {
+    if (debugMode || isCompactWorthwhile(preTokens, postEstimateTokens)) {
+      return '${_fmtCtx(preTokens)} → ${_fmtCtx(postEstimateTokens)}';
+    }
+    return '${_fmtCtx(preTokens)} · skip';
+  }
+
+  /// True when a compact would not save enough tokens to be
+  /// worth firing. Uses a 5% threshold: any savings below that
+  /// (`post >= pre * 0.95`) is treated as "skip" because the
+  /// churn (DB write, chat log re-render, history re-read on
+  /// next launch) outweighs the headroom gained. Drives both:
+  ///
+  ///   * [formatCompactHoverLabel] → renders `X · skip`
+  ///   * the bar's `onTap: null` and the chat panel's
+  ///     `_executeCommand` / `createChatLogCompaction` gates
+  ///
+  /// ...so every entry point (hover, click, `/compact`, auto)
+  /// agrees on the same rule.
+  ///
+  /// `null` estimate (cache miss / pre-hydration) is treated as
+  /// "not counterproductive" — let the real projection decide.
+  /// `pre <= 0` (fresh session, no AI tokens reported yet) is
+  /// also treated as "not counterproductive" — there's nothing
+  /// meaningful to compare against, and the upstream
+  /// `toCompress.isEmpty` check catches the empty-history case
+  /// before this gate fires anyway.
+  @visibleForTesting
+  static bool isCompactCounterproductive(ChatLogCompactionEstimate? est) {
+    if (est == null) return false;
+    final pre = est.preTokens;
+    if (pre <= 0) return false;
+    return !isCompactWorthwhile(pre, est.postEstimateTokens);
+  }
+
+  /// Companion predicate to [isCompactCounterproductive]: returns
+  /// true when the projected savings clear the 5% bar. Pure
+  /// integer math (`post * 100 < pre * 95`) avoids floating-point
+  /// rounding at the boundary.
+  static bool isCompactWorthwhile(int preTokens, int postEstimateTokens) {
+    if (preTokens <= 0) return false;
+    return postEstimateTokens * 100 < preTokens * 95;
   }
 
   String _fmtNum(int n) => n.toString().replaceAllMapped(
@@ -167,8 +280,29 @@ class _ContextBarState extends State<ContextBar> {
         (m) => ',',
       );
 
-  String _fmtCtx(int n) {
-    final k = n ~/ 1024;
+  /// Format a token count for the context bar's label. Token
+  /// counts are decimal (1k = 1000), not binary (1Ki = 1024) —
+  /// the latter is a memory-size convention and the LLM token
+  /// numbers in the rest of the UI (e.g. the chat panel's
+  /// `356k / 1M` display, the `/compact` toast's `123k → 56k`)
+  /// all use 1000-based grouping. Using 1024 here would make
+  /// the bar's `369,096 / 976k` disagree with the hover's
+  /// `360k → 62k` by ~10k (the binary-vs-decimal ratio on a
+  /// value in the 100k–1M range) — same number, two different
+  /// read-outs. ≥ 1M collapses to a single-letter `M` suffix
+  /// so a 1M model doesn't render the bar as `369,096 / 1,000k`.
+  ///
+  /// Static so [formatCompactHoverLabel] can reuse it without
+  /// needing a state instance to render the hover label.
+  static String _fmtCtx(int n) {
+    if (n >= 1000000) {
+      // 1.2M, 12M — one decimal when the millions digit isn't
+      // already crowded, none when it is.
+      final m = n / 1000000;
+      final fractionDigits = m >= 10 ? 0 : 1;
+      return '${m.toStringAsFixed(fractionDigits)}M';
+    }
+    final k = n ~/ 1000;
     return '${k.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (m) => ',',
@@ -282,6 +416,7 @@ class _ContextBarState extends State<ContextBar> {
     final rt = component.sessionController.runtime(sessionId);
     _currentSessionId = sessionId;
     _displayTokens = rt.contextTargetTokens.toDouble();
+    _lastSeenTarget = rt.contextTargetTokens;
     _pushToRenderObject();
     _stopTimer();
   }
@@ -311,6 +446,32 @@ class _ContextBarState extends State<ContextBar> {
     // than animating from the old session's value.
     if (_currentSessionId != sessionId) {
       _snapToSession(sessionId);
+    } else {
+      // Same session but the target changed under us (e.g.
+      // `/compact` just rewrote `rt.contextTargetTokens` to
+      // the post-compaction size while the session is idle).
+      // The lerp timer is only running while `isResponding`
+      // (see [_syncTimer]), so without this check the bar
+      // would stay stuck on its pre-compaction displayed
+      // value forever — the chat panel rebuilds, the new
+      // target is sitting on `rt`, but `_displayTokens` only
+      // advances inside `_tick`. Spin up the lerp timer for
+      // a brief settling window so the bar animates to the
+      // new value instead of jumping instantly (matching the
+      // streaming-end settle behaviour) and then stops.
+      final target =
+          component.sessionController.runtime(sessionId).contextTargetTokens;
+      if (target != _lastSeenTarget) {
+        _lastSeenTarget = target;
+        if ((target - _displayTokens).abs() >= 0.5) {
+          _animState = _AnimState.cooling;
+          _coolingStartedAt = DateTime.now();
+          _startTimer();
+        } else {
+          _displayTokens = target.toDouble();
+          _pushToRenderObject();
+        }
+      }
     }
 
     // Sync the timer with the streaming state. Runs only
@@ -342,6 +503,27 @@ class _ContextBarState extends State<ContextBar> {
       onEnter: (_) {
         component.streamingController.contextBarHovered = true;
         _hovered = true;
+        // Snap the displayed value to the runtime's current
+        // target so the bar's number matches the `pre → post`
+        // shown on hover. The lerp is purely cosmetic for
+        // streaming transitions; while the user is hovering
+        // (i.e. inspecting the exact value), the bar should
+        // agree with the pre side of the `X → Y` projection
+        // rather than lag behind it by a few thousand tokens.
+        // Resets the timer to `idle` so the just-snap doesn't
+        // get immediately re-driven toward the (now-equal)
+        // target by a leftover cooling tick.
+        final sessionId = component.sessionController.currentSessionId;
+        if (sessionId != null) {
+          final rt = component.sessionController.runtime(sessionId);
+          final target = rt.contextTargetTokens.toDouble();
+          if ((target - _displayTokens).abs() >= 0.5) {
+            _displayTokens = target;
+            _animState = _AnimState.idle;
+            _coolingStartedAt = null;
+            _stopTimer();
+          }
+        }
         _pushToRenderObject();
       },
       onExit: (_) {

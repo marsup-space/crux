@@ -17,6 +17,7 @@ import '../storage/session_store.dart';
 import '../tools/registry.dart';
 import '../tools/shell_base.dart';
 import '../tools/tool_def.dart';
+import '../tools/file_read_tracker.dart';
 import '../utils/run_metrics.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
@@ -45,6 +46,7 @@ class ChatTurnOrchestrator {
   final ToolRegistry _toolRegistry;
   final ShowToastCallback _showToast;
   final void Function() _refresh;
+  final FileReadTracker _tracker;
 
   /// Git status service for the project root. Used to force a
   /// refresh right after the agent mutates a file via `edit` or
@@ -93,11 +95,13 @@ class ChatTurnOrchestrator {
     required ShowToastCallback showToast,
     required void Function() refresh,
     required GitStatusService gitStatusService,
+    required FileReadTracker tracker,
   }) : _store = store,
        _messageStore = store.messageStore,
        _chatService = chatService,
        _providerService = providerService,
        _sessionController = sessionController,
+       _tracker = tracker,
        _streamingController = streamingController,
        _toolRegistry = toolRegistry,
        _showToast = showToast,
@@ -118,6 +122,44 @@ class ChatTurnOrchestrator {
   bool wasInterrupted(int? sessionId) {
     if (sessionId == null) return false;
     return _sessionController.runtime(sessionId).interrupted;
+  }
+
+  /// Decide whether auto-compaction should fire on this turn.
+  ///
+  /// Projects the next-prompt size as
+  /// `session.contextTokens + incomingUserContent` (the same
+  /// formula [ChatService.estimateProjectedContextTokens] uses
+  /// internally) and compares it against
+  /// `contextSize - reserve`. When the projection is at or below
+  /// the threshold, the context has plenty of room and we should
+  /// NOT compact — compacting an already-small context is pure
+  /// waste (extra DB writes, lost tool_result detail, churn in
+  /// the chat log).
+  ///
+  /// Defaults to `true` (compact) when the model config can't be
+  /// resolved, so a missing model config doesn't silently disable
+  /// auto-compaction — a wrong compaction is recoverable; a
+  /// missed one runs the user out of context.
+  bool _shouldAutoCompact({
+    required Session session,
+    required String incomingUserContent,
+  }) {
+    final modelConfig = _providerService.modelByCompositeKey(session.model);
+    if (modelConfig == null) return true;
+
+    final reserve = ChatService.computeCompactionReserveAndThreshold(
+      contextSize: modelConfig.contextSize,
+    );
+
+    final projected = ChatService.estimateProjectedContextTokens(
+      session: session,
+      systemPrompt: session.systemPrompt,
+      history: _sessionController.currentMessages,
+      incomingUserContent: incomingUserContent,
+      toolDefs: _toolRegistry.toApiTools(),
+    );
+
+    return projected > reserve.threshold;
   }
 
   /// Send a user message. If the session is currently streaming, the
@@ -175,10 +217,10 @@ class ChatTurnOrchestrator {
     if (allowAutoCompact && text != null && text.trim().isNotEmpty) {
       // Auto-compaction hysteresis: after a successful or failed
       // compact, skip the auto-compact check for the next 3 user
-      // turns. Otherwise a child session that itself starts near the
-      // threshold would trigger another compact immediately, and
-      // another, etc. — burning summaries with no user-facing
-      // progress. Manual `/compact` bypasses this gate.
+      // turns. Otherwise a session that just compacted would
+      // trigger another one immediately, and another, etc. —
+      // burning compactions with no user-facing progress. Manual
+      // `/compact` bypasses this gate.
       if (rt.turnsSinceLastCompact > 0) {
         rt.turnsSinceLastCompact += 1;
         if (rt.turnsSinceLastCompact > 3) {
@@ -187,27 +229,54 @@ class ChatTurnOrchestrator {
       } else {
         final session = _sessionController.findSession(sessionId);
         if (session != null) {
+          // Auto-compact threshold gate: skip the compaction pass
+          // when the projected next-prompt is well below the
+          // model's context limit. Without this, the compaction
+          // would fire on every turn (gated only by the 3-turn
+          // hysteresis) regardless of whether the context is
+          // actually filling up — a regression from the old
+          // LLM-summary path, where the projection-vs-threshold
+          // check lived inside `maybeAutoCompactIntoChildSession`.
+          // The chat-log compaction path lost that gate during
+          // the refactor; this is where it belongs.
+          if (!_shouldAutoCompact(
+            session: session,
+            incomingUserContent: text,
+          )) {
+            // Below threshold — fall through to the normal
+            // sendTurn path. No hysteresis bump; we'll re-check
+            // next turn.
+          } else {
           try {
-            final result = await _chatService.maybeAutoCompactIntoChildSession(
+            final result = await _chatService.createChatLogCompaction(
               sessionId: sessionId,
               session: session,
               runtime: rt,
-              incomingUserContent: text,
-              toolDefs: _toolRegistry.toApiTools(),
-              onChildReady: (childSession, placeholderMessage) async {
-                await _switchToCompactingChild(childSession.id);
-              },
+              toolRegistry: _toolRegistry,
+              reason: CompactionReason.auto,
             );
             if (result != null) {
+              // Replay file markers through [FileReadTracker] so
+              // the read-before-write guard sees fresh mtimes
+              // post-compact.
+              for (final marker in result.fileMarkers) {
+                await _tracker.recordRead(
+                  resolvePath(marker.path, Directory.current.path),
+                  marker.mtime,
+                );
+              }
               rt.turnsSinceLastCompact = 1;
-              await _finishCompactingChild(
-                result.childSession.id,
-                status: SessionStatus.idle,
-              );
               _showToast(
-                'Context was getting full — summarized and continued as ${result.childSession.displayId}',
+                'Context was getting full — compacted '
+                '(${result.preTokens} → ~${result.postEstimateTokens} tokens)',
                 mode: ToastMode.status,
               );
+              // Reload the in-memory message cache so the new
+              // `role: 'compaction'` divider is visible during the
+              // follow-up `sendTurn` below. Without this, the chat
+              // history keeps showing the pre-compaction list and
+              // the divider only appears after the next user turn.
+              await _sessionController.loadMessages(sessionId);
               _refresh();
               await sendTurn(text: text, images: images, allowAutoCompact: false);
               return;
@@ -217,14 +286,11 @@ class ChatTurnOrchestrator {
             rt.turnsSinceLastCompact = 0;
           } catch (e) {
             rt.turnsSinceLastCompact = 1;
-            await _finishCompactingChild(
-              _sessionController.currentSessionId,
-              status: SessionStatus.idle,
-            );
             _showToast('Compaction failed: $e', mode: ToastMode.error);
             _refresh();
             return;
           }
+          }  // close: else (shouldAutoCompact)
         }
       }
     }
@@ -711,75 +777,47 @@ class ChatTurnOrchestrator {
     }
     try {
       _showToast('Compacting context...', mode: ToastMode.status);
-      final result = await _chatService.compactIntoChildSession(
+      // In-place chat-log compaction: no child session, the
+      // compaction marker is appended to THIS session's history
+      // and the wire layer skips everything older than it.
+      final result = await _chatService.createChatLogCompaction(
         sessionId: sessionId,
         session: session,
         runtime: rt,
+        toolRegistry: _toolRegistry,
         reason: CompactionReason.manual,
-        toolDefs: _toolRegistry.toApiTools(),
-        onChildReady: (childSession, placeholderMessage) async {
-          await _switchToCompactingChild(childSession.id);
-        },
       );
-      await _finishCompactingChild(
-        result.childSession.id,
-        status: SessionStatus.idle,
+      if (result == null) {
+        _showToast('Nothing to compact', mode: ToastMode.status);
+        return;
+      }
+      // Replay the file markers through [FileReadTracker] so the
+      // read-before-write guard sees fresh mtimes — the chat log
+      // summarised these files via `read files:`, and the agent
+      // should be able to edit them straight away without re-reading.
+      for (final marker in result.fileMarkers) {
+        await _tracker.recordRead(
+          resolvePath(marker.path, Directory.current.path),
+          marker.mtime,
+        );
+      }
+      _showToast(
+        'Compacted — ${result.sourceEndMessageId - result.sourceStartMessageId + 1} messages '
+        '(${result.preTokens} → ~${result.postEstimateTokens} tokens)',
+        mode: ToastMode.status,
       );
-      _showToast('Compacted — continued as ${result.childSession.displayId}', mode: ToastMode.status);
+      // Reload the in-memory message cache so the new
+      // `role: 'compaction'` message shows up in the chat
+      // history on the next rebuild. Without this the UI keeps
+      // showing the pre-compaction list until the next user
+      // turn triggers a reload somewhere else — the divider
+      // would only appear after the user submitted again,
+      // which is exactly the bug we're fixing here.
+      await _sessionController.loadMessages(sessionId);
       _refresh();
     } catch (e) {
-      await _finishCompactingChild(
-        _sessionController.currentSessionId,
-        status: SessionStatus.idle,
-      );
       _showToast('Compaction failed: $e', mode: ToastMode.error);
     }
-  }
-
-  Future<void> _switchToCompactingChild(int childSessionId) async {
-    _sessionController.sessions = await _store.list(
-      projectPath: Directory.current.path,
-    );
-    await _sessionController.switchSession(childSessionId);
-    await _sessionController.loadMessages(childSessionId);
-    final childRt = _sessionController.runtime(childSessionId);
-    final base = _sessionController.computeBaseContext(childSessionId);
-    childRt.contextTargetTokens = base;
-    childRt.contextDisplayTokens = base.toDouble();
-    childRt.isResponding = true;
-    childRt.responseStartTime = DateTime.now();
-    childRt.ttftMs = 0.0;
-    childRt.ttftReceived = false;
-    childRt.tokPerSec = 0.0;
-    _streamingController.startMetricsTimer(childSessionId);
-    _refresh();
-  }
-
-  Future<void> _finishCompactingChild(
-    int? childSessionId, {
-    required SessionStatus status,
-  }) async {
-    if (childSessionId == null) return;
-    _streamingController.stopMetricsTimer(childSessionId);
-    _sessionController.sessions = await _store.list(
-      projectPath: Directory.current.path,
-    );
-    await _sessionController.loadMessages(childSessionId);
-    final session = _sessionController.findSession(childSessionId);
-    if (session != null) {
-      session.status = status;
-      session.updatedAt = DateTime.now();
-    }
-    final childRt = _sessionController.runtime(childSessionId);
-    final base = _sessionController.computeBaseContext(childSessionId);
-    childRt.contextTargetTokens = base;
-    childRt.contextDisplayTokens = base.toDouble();
-    childRt.isResponding = false;
-    childRt.roundStreaming = false;
-    childRt.roundStartTime = null;
-    childRt.roundFirstTokenTime = null;
-    childRt.responseStartTime = null;
-    _refresh();
   }
 
   /// Drive a single `/btw` turn. Nothing is written to the database.

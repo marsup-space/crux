@@ -118,22 +118,27 @@ that session.
 
 ## Quick reply
 
-When your next step is a **discrete choice** rather than free-form
-text — a multi-way branch, a confirmation, or a parameter pick —
-emit one `ask://…` token per option and Crux renders them as
-clickable buttons. Clicking a button is equivalent to the user
-typing the option's reply text and pressing Enter.
+When your next step is a **discrete choice** rather than free-form text — a multi-way branch, a confirmation, or a parameter pick — emit one `ask://…` token per option and Crux renders them as clickable buttons. Clicking a button is equivalent to the user typing the option's reply text and pressing Enter.
 
-Two equivalent forms:
+**Placement — hard rule.** `ask://` tokens must appear as plain text in an ordinary paragraph. The TUI parses them by walking the raw text, not the rendered Markdown — any wrapper breaks that. Tokens wrapped in **any** of the following will render as literal text instead of buttons:
 
-- `ask://label{answer}` — explicit. Label is what the button shows;
-  `answer` is what gets sent when the user clicks.
-- `ask://label` — shorthand. Clicking sends `label` itself. Use for
-  yes / no / continue / cancel where the display text *is* the reply.
+- fenced or indented code blocks (```` ``` ````, ` ```text `, etc.)
+- inline code spans (`` `ask://…` ``)
+- blockquotes (`> ask://…`)
+- list items (`- ask://…`, `1. ask://…`)
+- bold / italic / strikethrough emphasis (`**ask://…**`, `*ask://…*`, `~~ask://…~~`)
+- headings (`# ask://…`), tables, or any other Markdown structure
 
-Examples:
+When in doubt, put the token on its own line in a normal paragraph.
 
-- Multi-choice on separate lines (preferred — easiest to scan):
+**Two equivalent forms:**
+
+- `ask://label{answer}` — explicit. Label is what the button shows; `answer` is what gets sent when the user clicks.
+- `ask://label` — shorthand. Clicking sends `label` itself. Use for yes / no / continue / cancel where the display text *is* the reply.
+
+**Examples.** The blocks below are wrapped in code fences for documentation — that is **not** a violation of the placement rule. The rule applies to actual reply output, not to literal syntax being demonstrated here.
+
+Multi-choice on separate lines (preferred — easiest to scan):
 
   ```text
   I see three ways forward:
@@ -142,7 +147,7 @@ Examples:
   ask://C. Leave as-is{C}
   ```
 
-- Confirmation with explicit answers:
+Confirmation with explicit answers:
 
   ```text
   This will overwrite foo.txt. Proceed?
@@ -150,26 +155,19 @@ Examples:
   ask://Cancel{no, stop}
   ```
 
-- Short yes / no via shorthand:
+Short yes / no via shorthand:
 
   ```text
   Apply the patch? ask://Yes ask://No
   ```
 
-Rules:
+**Rules:**
 
-- One `ask://` per option. Stacking on separate lines is preferred
-  for multi-choice; inline shorthand is fine for short yes / no.
-- Labels can be multi-word: `ask://Use cache` is one button with
-  label `Use cache`.
-- `{` and `}` are reserved delimiters and **cannot appear in label
-  or answer**. Rephrase if you need them.
-- `ask://` is reserved and **cannot appear inside a label or answer**.
-  The parser drops malformed tokens silently rather than rendering
-  them as buttons.
-- Don't use `ask://` for free-form questions — if the user needs to
-  type something, just write a regular sentence ending in `?`. The
-  user types a reply in the input box.
+- One `ask://` per option. Stacking on separate lines is preferred for multi-choice; inline shorthand is fine for short yes / no.
+- Labels can be multi-word: `ask://Use cache` is one button with label `Use cache`.
+- `{` and `}` are reserved delimiters and **cannot appear in label or answer**. Rephrase if you need them.
+- `ask://` is reserved and **cannot appear inside a label or answer**. The parser drops malformed tokens silently rather than rendering them as buttons.
+- Don't use `ask://` for free-form questions — if the user needs to type something, just write a regular sentence ending in `?`. The user types a reply in the input box.
 
 ## Tool tiers
 

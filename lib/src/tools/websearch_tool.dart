@@ -1,5 +1,6 @@
 import '../services/web_provider_registry.dart';
 import '../services/web_service_provider.dart';
+import '../models/message.dart';
 import 'tool_def.dart';
 
 /// Web search tool — only registered with the LLM when at least
@@ -212,4 +213,25 @@ class WebSearchTool extends ToolDef {
     }
     return buf.toString().trimRight();
   }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final query = (call.input['query'] as String?) ?? '';
+    if (isError) return 'websearch {$query} → $pairedResult';
+    return 'websearch for {$query}';
+  }
+
+  // websearch intentionally has no [extractPruneSummary] override
+  // — it inherits the default `null` return. The chat-log spec
+  // drops search results from the bottom-of-log section: the
+  // query is preserved in the inline `websearch for {$query}`
+  // line, and the resumed agent can re-run the search if it
+  // needs the results. Search snippets go stale faster than the
+  // model's own recall of what it searched for, so dumping
+  // them again at compact time adds little value for the token
+  // cost.
 }

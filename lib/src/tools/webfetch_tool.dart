@@ -4,6 +4,7 @@ import 'dart:io';
 import '../services/web_provider_registry.dart';
 import '../services/web_service_provider.dart';
 import '../utils/proxy_aware_http.dart';
+import '../models/message.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
@@ -371,4 +372,26 @@ class WebFetchTool extends ToolDef {
 
     return md;
   }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final url = (call.input['url'] as String?) ?? '?';
+    if (isError) return 'webfetch $url → $pairedResult';
+    return 'webfetch $url';
+  }
+
+  // webfetch intentionally has no [extractPruneSummary] override
+  // — it inherits the default `null` return. The chat-log spec
+  // drops web results from the bottom-of-log section: the URL
+  // is preserved in the inline `webfetch $url` line, the page
+  // content is in the inline tool_result the model already saw,
+  // and if the resumed agent needs the page again it can
+  // re-fetch. Dumping the content again at the bottom would
+  // inflate the chain-accumulated compaction size without
+  // giving the agent anything it didn't have at the time of
+  // the original call.
 }

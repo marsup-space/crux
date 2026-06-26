@@ -258,6 +258,55 @@ class MessageStore {
     return deleted;
   }
 
+  /// Delete every `status: 'complete'` compaction message in
+  /// [sessionId]. Used by the chat-log compaction path's
+  /// "replace from scratch" model: each new compact builds a
+  /// fresh chat log from the full non-compaction history, so
+  /// the prior `compaction`-role messages are no longer needed
+  /// (their content has been folded into the new one).
+  ///
+  /// In-progress compactions (the `status: 'compacting'` marker
+  /// written at the start of [ChatService.createChatLogCompaction]
+  /// before the actual rebuild) are NOT touched here — they
+  /// represent a half-finished write and are reaped by the
+  /// `try { ... } catch { mark 'failed' }` block in
+  /// createChatLogCompaction when the next compact runs.
+  Future<int> deleteCompleteCompactions(int sessionId) async {
+    final rows = await (_db.select(_db.messages)
+          ..where((t) =>
+              t.sessionId.equals(sessionId) &
+              t.role.equals('compaction')))
+        .get();
+    var deleted = 0;
+    for (final row in rows) {
+      // Mirror ChatService._isCompleteCompactionMessage: empty
+      // or unparseable meta is treated as complete (the only
+      // sentinel is the literal `status: 'compacting'`).
+      if (row.meta.isEmpty) {
+        await (_db.delete(_db.messages)..where((t) => t.id.equals(row.id))).go();
+        deleted++;
+        continue;
+      }
+      bool isComplete = true;
+      try {
+        final decoded = jsonDecode(row.meta);
+        if (decoded is Map<String, dynamic>) {
+          isComplete = (decoded['status'] as String? ?? 'complete') == 'complete';
+        }
+      } catch (_) {
+        isComplete = true;
+      }
+      if (isComplete) {
+        await (_db.delete(_db.messages)..where((t) => t.id.equals(row.id))).go();
+        deleted++;
+      }
+    }
+    if (deleted > 0) {
+      await sessionStore.touchSession(sessionId);
+    }
+    return deleted;
+  }
+
   // ── Parts ────────────────────────────────────────────────────────
 
   Future<List<Part>> addParts(

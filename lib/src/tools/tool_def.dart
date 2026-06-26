@@ -1,4 +1,6 @@
 import 'package:path/path.dart' as p;
+
+import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
 
@@ -92,6 +94,140 @@ class CollapsedSummary {
   });
 }
 
+/// Maximum size (in Dart `String.length` units) of a file's content
+/// inlined into the chat log under `read files:`. Files larger than
+/// this are truncated with a hint to re-read. Kept small because:
+///
+///   * the LLM context grows linearly with the chat log size, so
+///     huge inline files eat the win compaction just bought;
+///   * the debug fullpane renders the entire chat log on a single
+///     `RichText`, so multi-MB inlines cause multi-second freezes
+///     on open;
+///   * the LLM can always call `read` with `offset`/`limit` to
+///     re-fetch the rest, so we don't lose information.
+const int kInlineReadMaxChars = 100 * 1024;
+
+/// Same idea for fetched pages. Pages already come through the
+/// web provider's cleaner (title + body), so 50KB is enough for
+/// the LLM to recognize the page; the URL is preserved so the
+/// agent can re-fetch if it needs the full text.
+const int kInlineFetchMaxChars = 50 * 1024;
+
+/// Same idea for semantic_search / find_similar_code / websearch
+/// results. These are snippet blocks, not full documents, so 20KB
+/// is plenty — the top-K hits have already been trimmed by the
+/// tool itself.
+const int kInlineSearchMaxChars = 20 * 1024;
+
+/// Total size cap for the `read files:` section that the chat
+/// log appends at the bottom of a compaction. Each individual
+/// `read` / `write` / `edit` call is already capped at
+/// [kInlineReadMaxChars] = 100KB, but a session that touches
+/// many files can still accumulate a multi-MB section — which
+/// (a) makes the next compaction's projection show
+/// `post > pre` (the section is folded into the new
+/// compaction's chain content, growing the post-side beyond
+/// the pre-side), and (b) the LLM rarely needs the FULL
+/// current contents of every file; the path + mtime is
+/// enough for the agent to re-read on demand. Cap the whole
+/// section at 32KB (~8K tokens): a few small files fit whole,
+/// one mid-size file gets a partial fit, the rest are listed
+/// by path only.
+const int kInlineSummarySectionMaxChars = 32 * 1024;
+
+/// Truncate [content] to at most [maxChars] characters, appending
+/// a marker that tells the reader (LLM or human) the original
+/// size and (optionally) how to see the rest. Returns the input
+/// unchanged when it fits — a no-op fast path so the chat log
+/// builder doesn't pay a per-call cost for typical-sized entries.
+String truncateForInline(
+  String content,
+  int maxChars, {
+  String? hint,
+}) {
+  if (content.length <= maxChars) return content;
+  final truncated = content.substring(0, maxChars);
+  final total = content.length;
+  final hintSuffix = hint != null && hint.isNotEmpty ? ' $hint' : '';
+  return '$truncated\n\n... [truncated — full content is $total chars;$hintSuffix]';
+}
+
+/// A piece of content for the bottom-of-log summary section of a
+/// chat log. Tools produce these via [ToolDef.extractPruneSummary];
+/// the chat log builder accumulates them, deduplicates by
+/// (category, key) using last-write-wins, and renders them at the
+/// end of the log.
+///
+/// Two categories survive into the summary section:
+///   * `'read-files'` — content the agent READ at the time of
+///     the call. Sourced from the read tool's `tool_result` (the
+///     numbered file body the model actually saw), not from a
+///     re-read of disk at compact time. The chat log preserves
+///     the model's memory, not the current file state — if the
+///     file changed externally between read and compact, showing
+///     the current state would silently "correct" the model's
+///     recollection without telling it.
+///   * `'write-files'` — content the agent WROTE via the `write`
+///     tool. Sourced from the input `content` argument (the
+///     payload the model produced), so post-compact the resumed
+///     agent has its own write preserved verbatim.
+///
+/// Everything else — `webfetch`, `websearch`, `semantic_search`,
+/// `find_similar_code`, `edit`, `bash`, `grep`, `glob` — is
+/// dropped from the bottom-of-log section. The chat log body
+/// already records the call (path / query / intent), and the
+/// model's reasoning during the original turn was based on the
+/// inline result. Dumping the result again at the bottom would
+/// double-count tokens without adding information; if the model
+/// needs the result post-compact, it can re-call the tool. The
+/// `read` and `write` cases are exceptions because the file
+/// CONTENT is the durable artifact — the path/intent alone
+/// wouldn't let the agent continue working with the file.
+class SummaryContribution {
+  /// One of `'read-files'`, `'write-files'`.
+  final String category;
+
+  /// Stable identity for dedup (last-write-wins within a category).
+  /// The file path.
+  final String key;
+
+  /// Full body to render — file content.
+  final String value;
+
+  /// Reserved for future metadata. Currently unused by the chat
+  /// log rendering (the section just shows `path\n<content>`),
+  /// but kept on the type so callers can attach extra hints
+  /// without an API change.
+  final Map<String, dynamic>? meta;
+
+  const SummaryContribution({
+    required this.category,
+    required this.key,
+    required this.value,
+    this.meta,
+  });
+
+  factory SummaryContribution.readFile({
+    required String path,
+    required String content,
+  }) =>
+      SummaryContribution(
+        category: 'read-files',
+        key: path,
+        value: content,
+      );
+
+  factory SummaryContribution.writtenFile({
+    required String path,
+    required String content,
+  }) =>
+      SummaryContribution(
+        category: 'write-files',
+        key: path,
+        value: content,
+      );
+}
+
 abstract class ToolDef {
   String get name;
   String get description;
@@ -157,11 +293,77 @@ abstract class ToolDef {
   ) {
     return null;
   }
+
+  /// Whether this tool's results should be dropped entirely from
+  /// chat logs. Override to `true` for discovery / introspection
+  /// tools (`grep` / `glob` / `session`) whose success is implied
+  /// by downstream reads and whose failures are rarely interesting.
+  /// Default false.
+  bool get skipInPrune => false;
+
+  /// Render this tool call's line in the inline `tool calls:` block
+  /// of the chat log. [pairedResult] is the matching `role: tool`
+  /// message content (empty if no result was captured); [isError]
+  /// is true when the result indicates failure — implementations
+  /// should keep the error text in that case instead of synthesising
+  /// a one-line summary.
+  ///
+  /// Default: `$name for {intent}` if an intent is present, else
+  /// `$name`. Tools whose primary identifier is something other
+  /// than `intent` (`read` uses filePath, `webfetch` uses url,
+  /// `semantic_search` uses query, etc.) should override.
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final intent = _intentOf(call);
+    if (isError) {
+      return intent.isNotEmpty
+          ? '$name for {$intent} → $pairedResult'
+          : '$name → $pairedResult';
+    }
+    if (intent.isNotEmpty) return '$name for {$intent}';
+    return name;
+  }
+
+  /// Extract a contribution for the bottom-of-log summary section,
+  /// or return null if this tool doesn't contribute. Override in
+  /// tools whose content is worth preserving verbatim.
+  ///
+  /// `read` / `write` / `edit` use this to surface the current
+  /// on-disk state of files the agent touched. For `read`, this
+  /// re-reads the file because the original read result may be
+  /// partial (offset/limit) or stale (post-edit). For `write` /
+  /// `edit`, the input `content` / `oldString` / `newString` was
+  /// dropped from the chat log, so re-reading the file restores the
+  /// agent's memory of what it wrote / edited. Newly-created files
+  /// (write to a path that didn't exist) are included too — they
+  /// exist on disk by the time the chat log is built.
+  ///
+  /// `webfetch` / `websearch` / `semantic_search` /
+  /// `find_similar_code` use this to surface full results.
+  ///
+  /// [workingDirectory] is the session's project root; tools that
+  /// need to read files should resolve relative paths via
+  /// [resolvePath] before reading.
+  SummaryContribution? extractPruneSummary({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+    required String workingDirectory,
+  }) =>
+      null;
 }
 
 String _capitalize(String s) {
   if (s.isEmpty) return s;
   return s[0].toUpperCase() + s.substring(1);
+}
+
+String _intentOf(ToolCallData c) {
+  final i = c.input['intent'];
+  return i is String ? i : '';
 }
 
 /// Mixin for tools whose schema includes an `intent` parameter.

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../utils/bundled_executable.dart';
+import '../models/message.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'semble_warmup.dart';
 import 'tool_def.dart';
@@ -190,4 +191,25 @@ class SemanticSearchTool extends ToolDef {
       );
     }
   }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final query = (call.input['query'] as String?) ?? '';
+    if (isError) return 'semantic_search {$query} → $pairedResult';
+    return 'semantic_search for {$query}';
+  }
+
+  // semantic_search intentionally has no [extractPruneSummary]
+  // override — it inherits the default `null` return. The
+  // chat-log spec drops search results from the bottom-of-log
+  // section: the query IS the intent (already shown inline as
+  // `semantic_search for {$query}`), and the resumed agent can
+  // re-run the search if it needs the snippets again. Search
+  // results go stale faster than the model's own recall of
+  // what it searched for, so dumping them again at compact
+  // time adds little for the token cost.
 }

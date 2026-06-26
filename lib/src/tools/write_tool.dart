@@ -7,6 +7,7 @@ import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
 import 'file_read_tracker.dart';
+import '../models/message.dart';
 import 'tool_def.dart';
 import '../utils/tool_metrics_animator.dart';
 
@@ -434,6 +435,51 @@ class WriteTool extends ToolDef with IntentionalTool {
         'replaces the whole file. Use `edit` for in-place changes, or '
         'pass `force: true` if you really want to overwrite the entire '
         'file with this small payload.';
+  }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final path = call.input['filePath']?.toString() ?? '?';
+    final intent = (call.input['intent'] as String?) ?? '';
+    final suffix = intent.isNotEmpty ? ' for {$intent}' : '';
+    if (isError) return 'write $path$suffix → $pairedResult';
+    // No `→ $pairedResult` on success — the body of the chat log
+    // is supposed to be a compact call summary, not a verbose
+    // "File written: … +45 -12 lines" recap. The full content
+    // goes into the `write files:` bottom-of-log section via
+    // [extractPruneSummary] below; the LLM can find it there
+    // when it needs to re-reference what it wrote.
+    return 'write $path$suffix';
+  }
+
+  @override
+  SummaryContribution? extractPruneSummary({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+    required String workingDirectory,
+  }) {
+    if (isError) return null;
+    final raw = call.input['filePath']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    final content = call.input['content']?.toString();
+    if (content == null || content.isEmpty) return null;
+    // Source from the input `content` (the payload the model
+    // produced) — NOT from a re-read of disk. The chat log
+    // preserves the model's memory of what it wrote; if the file
+    // changed externally post-write, that's a separate concern
+    // the LLM will catch via the read-before-write guard on the
+    // next edit attempt.
+    final truncated = truncateForInline(
+      content,
+      kInlineReadMaxChars,
+      hint: 're-read with offset/limit to see more',
+    );
+    return SummaryContribution.writtenFile(path: raw, content: truncated);
   }
 }
 

@@ -20,6 +20,7 @@ import 'annotated_scrollbar.dart';
 import 'btw_bubble.dart';
 import 'chat_turn_orchestrator.dart';
 import 'compacted_session_header.dart';
+import 'compaction_divider.dart';
 import 'message_bubble.dart';
 import 'queued_messages_bubble.dart';
 import 'session_controller.dart';
@@ -73,6 +74,20 @@ class ChatHistory extends StatefulComponent {
   /// `docs/design-quick-reply.md`.
   final void Function(QuickReply reply)? onQuickReplyTap;
 
+  /// Callback fired when the user clicks a [CompactionDivider] in
+  /// the chat history. Receives the [Message] whose
+  /// `role: 'compaction'` produced the divider — the chat panel
+  /// opens a fullpane showing the raw compaction content +
+  /// metadata. The host wires this only in debug mode (see
+  /// `CommandRegistry.debugEnabled`); in production the divider
+  /// renders as a static marker.
+  ///
+  /// Previously this callback also received a 1-based compaction
+  /// index; under the "replace from scratch" model there is at
+  /// most ONE compaction per session at a time, so the index is
+  /// always meaningless.
+  final void Function(Message message)? onCompactionTap;
+
   const ChatHistory({
     super.key,
     required this.scrollController,
@@ -86,6 +101,7 @@ class ChatHistory extends StatefulComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.onQuickReplyTap,
+    this.onCompactionTap,
   });
 
   @override
@@ -296,6 +312,25 @@ class _ChatHistoryState extends State<ChatHistory> {
         userItemIndices.add(items.length);
         final text = msg.content.replaceAll('\n', ' ').trim();
         userItemLabels.add(text);
+      }
+
+      // Compaction messages render as a divider instead of a
+      // [MessageBubble] — the chat log content is meant for the
+      // LLM, not the user; the divider is the user-facing marker
+      // that this boundary exists. In debug mode the divider is
+      // clickable and opens a fullpane showing the raw content
+      // + metadata for inspection. Under the "replace from
+      // scratch" compaction model there is at most ONE such
+      // divider per session, so it carries no per-session index.
+      if (msg.role == 'compaction') {
+        items.add(
+          (ctx) => CompactionDivider(
+            onTap: component.onCompactionTap == null
+                ? null
+                : () => component.onCompactionTap!(msg),
+          ),
+        );
+        continue;
       }
 
       // Build the MessageBubble inside a closure so the inner

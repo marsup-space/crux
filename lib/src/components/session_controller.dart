@@ -9,7 +9,6 @@ import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
-import '../utils/token_estimate.dart';
 
 /// One `/btw` round: the user's ephemeral prompt and the AI's ephemeral
 /// reply. Both strings live only in memory (and only in [SessionController];
@@ -274,6 +273,21 @@ class SessionController {
   bool get hasAnyRunningSession =>
       sessions.any((s) => s.status == SessionStatus.running);
 
+  /// Returns the current context size for [sessionId] in
+  /// tokens, as the LLM will see it on the next turn. The
+  /// single source of truth is
+  /// [ChatService.currentContextTokens]; this method just
+  /// routes through the fast path (the cached
+  /// `session.contextTokens` from the last successful AI
+  /// turn) when available, and falls back to the SSoT for
+  /// fresh / failed sessions.
+  ///
+  /// Used by the context bar's lerp target, the auto-compact
+  /// gate, and the `turnBaseTokens` projection at the start of
+  /// every new turn — keeping this in lockstep with the SSoT
+  /// means a fresh / recovered session doesn't visually jump
+  /// when it transitions from "no AI yet" to "AI has reported
+  /// tokens".
   int computeBaseContext(int sessionId) {
     final session = findSession(sessionId);
     if (session != null && session.contextTokens > 0) {
@@ -281,50 +295,7 @@ class SessionController {
     }
     final msgs = messageCache[sessionId];
     if (msgs == null || msgs.isEmpty) return 0;
-    // Fallback: walk history backwards to find the LAST AI message
-    // with a reported `tokensIn`. That single value is the prompt
-    // size for that turn (already cumulative within the session) —
-    // summing it with later tool_call/tool messages would double-count
-    // (the AI's prompt already included those messages). Mirrors
-    // [ChatService.estimateProjectedContextTokens]'s fallback.
-    for (final m in msgs.reversed) {
-      if (m.role == 'ai' && m.tokensIn + m.tokensOut > 0) {
-        return m.tokensIn + m.tokensOut - m.reasoningTokens;
-      }
-    }
-    // No AI turn has reported tokens yet — best-effort estimate from
-    // raw content. Won't drift the auto-compact decision in practice
-    // because the projection will be much smaller than contextSize.
-    var total = 0;
-    for (final m in msgs) {
-      switch (m.role) {
-        case 'user':
-        case 'system':
-        case 'ai':
-        case 'compaction':
-        case 'tool_call':
-          if (m.content.isNotEmpty) {
-            total += estimateTokens(m.content);
-          }
-          if (m.reasoningContent.isNotEmpty) {
-            total += estimateTokens(m.reasoningContent);
-          }
-          for (final call in m.toolCalls) {
-            total += estimateToolRoundTripTokens(
-              toolName: call.name,
-              args: call.input,
-              resultOutput: '',
-            );
-          }
-        case 'tool':
-          total += estimateToolRoundTripTokens(
-            toolName: '',
-            args: {},
-            resultOutput: m.content,
-          );
-      }
-    }
-    return total;
+    return ChatService.currentContextTokens(messages: msgs);
   }
 
   Future<void> initSessions() async {

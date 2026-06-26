@@ -182,6 +182,9 @@ class GlobTool extends ToolDef {
     }
   }
 
+  @override
+  bool get skipInPrune => true;
+
   String _normalizePattern(String pattern) {
     var p = pattern.replaceAll('\\', '/');
     if (Platform.isWindows && !p.contains('/') && !p.contains('*')) {

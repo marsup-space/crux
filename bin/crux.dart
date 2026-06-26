@@ -9,7 +9,7 @@ import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 
-const _version = 'v0.7.4';
+const _version = 'v0.8.1';
 
 void main(List<String> args) async {
   // Enable ANSI/VT escape processing on the Windows stdout console BEFORE

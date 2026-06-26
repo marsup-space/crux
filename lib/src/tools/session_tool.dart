@@ -697,6 +697,9 @@ class SessionTool extends ToolDef {
     }
   }
 
+  @override
+  bool get skipInPrune => true;
+
   static String _summarizeArgs(Map<String, dynamic> args) {
     if (args.isEmpty) return '{}';
     // Pick the most informative single key — `command`, `filePath`,

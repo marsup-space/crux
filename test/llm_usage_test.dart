@@ -95,11 +95,51 @@ void main() {
       ], WireFamily.openaiCompatible);
 
       expect(wireMessages.single['role'], 'user');
+      // Clean markdown header — no XML wrapper, no "treat this as
+      // the only context" prose preamble.
       expect(
         wireMessages.single['content'],
-        contains('<compacted-session-summary>'),
+        contains('## Compacted history (from earlier in this session)'),
       );
       expect(wireMessages.single['content'], contains('Continue the refactor'));
+    });
+
+    test('only the LATEST compaction is emitted on the wire', () {
+      // Two complete compactions in history. The latest's content
+      // already chains the prior one (chain accumulation in
+      // _buildCompactionPreview), so emitting both on the wire
+      // would double-count the older section. The wire layer must
+      // emit only the latest.
+      final wireMessages = ChatService.buildApiMessages([
+        Message(
+          id: 1,
+          sessionId: 1,
+          role: 'compaction',
+          content: 'compact #1 body',
+          meta: '{"status":"complete"}',
+        ),
+        Message(
+          id: 2,
+          sessionId: 1,
+          role: 'compaction',
+          content: 'compact #1 body\n\n---\n\ncompact #2 delta',
+          meta: '{"status":"complete"}',
+        ),
+      ], WireFamily.openaiCompatible);
+
+      // Exactly one user-role compaction block.
+      final compactionBlocks = wireMessages
+          .where((m) =>
+              m['role'] == 'user' &&
+              (m['content'] as String).startsWith('## Compacted history'))
+          .toList();
+      expect(compactionBlocks, hasLength(1),
+          reason: 'N compactions in storage → 1 block on wire');
+
+      // The emitted block is the latest (compact #2's chain).
+      expect(compactionBlocks.single['content'], contains('compact #2 delta'));
+      expect(
+          compactionBlocks.single['content'], contains('compact #1 body'));
     });
 
     test('skips in-progress compaction placeholders in model context', () {

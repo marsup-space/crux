@@ -125,76 +125,36 @@ final _askRegex = RegExp(
 /// for the `ask://` syntax lives inside backticks — without the
 /// exclusion, the doc text itself would render as buttons.
 ///
-/// Tokens whose label or answer trims to empty are silently dropped
-/// (they render as plain text). Tokens whose label itself contains
-/// `ask://` — meaning the regex spanned across another `ask://` in
-/// the same string — are also dropped, and the scan resumes from
-/// just past the offending opener so the inner token gets a fresh
-/// chance to match. The walk is single-pass and order-preserving:
-/// replies come back in the order they appear in the rendered text.
+/// **Algorithm — two passes over the span tree:**
+///
+/// 1. *Flatten pass*: walk every span (code and non-code alike) and
+///    build a single flat string of all the text in order. Code
+///    regions are recorded as `[start, end)` intervals in the flat
+///    string's coordinate system, so we can later look up whether a
+///    given offset sits inside a code span.
+/// 2. *Regex pass*: run `_askRegex` against the full flat string
+///    once. Because the string is contiguous, a token whose answer
+///    contains an inline code span (e.g. backticks around a shell
+///    command) matches cleanly across the span boundary.
+///
+/// Matches whose **start** position lies inside a code region are
+/// dropped — those are the agent's own prompt-doc examples, not
+/// real user-facing tokens. A match that *crosses* a code boundary
+/// (starts outside, extends inside, or vice versa) is accepted:
+/// the agent meant the whole thing, and the wire syntax is the same
+/// either way.
+///
+/// Tokens whose label or answer trims to empty are silently dropped.
+/// Tokens whose label itself contains `ask://` (meaning the regex
+/// spanned across another `ask://` in the same string) are also
+/// dropped, and the scan resumes from just past the offending
+/// opener so the inner token gets a fresh chance to match.
+///
+/// Replies come back in the order they appear in the rendered text.
 List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
-  final result = <QuickReply>[];
-  final offsetRef = [0];
-
-  void processText(String text) {
-    if (text.isEmpty) return;
-    var pos = 0;
-    while (pos < text.length) {
-      // Jump straight to the next 'ask://' candidate instead of
-      // re-scanning every character. text.indexOf returns -1 when
-      // there are no more candidates, terminating the loop.
-      final nextStart = text.indexOf('ask://', pos);
-      if (nextStart == -1) break;
-
-      final m = _askRegex.matchAsPrefix(text.substring(nextStart));
-      if (m == null) {
-        // Defensive: we just found 'ask://' but the full regex
-        // didn't match (shouldn't happen, but if it does, skip past
-        // this literal to avoid infinite looping).
-        pos = nextStart + 'ask://'.length;
-        continue;
-      }
-
-      String label;
-      String answer;
-      if (m.group(1) != null) {
-        // Explicit form: group(1) is the label, group(2) is the
-        // answer.
-        label = m.group(1)!.trim();
-        answer = m.group(2)!.trim();
-      } else {
-        // Shorthand form: group(3) is the label; answer defaults to
-        // the label per the spec.
-        label = m.group(3)!.trim();
-        answer = label;
-      }
-
-      // Reject degenerate tokens where the regex spanned across
-      // another `ask://` substring. Skip past just the opener so the
-      // inner `ask://` (if any) becomes the next candidate.
-      if (label.contains('ask://')) {
-        pos = nextStart + 'ask://'.length;
-        continue;
-      }
-      // Reject tokens whose label or answer trimmed to empty. The
-      // regex itself prevents this for explicit forms (label
-      // `[^{}\n]+?` requires ≥1 non-brace char), but shorthand forms
-      // can still trim down to empty (e.g. `ask:// ` with a trailing
-      // space). Skip past the full match in that case.
-      if (label.isEmpty || answer.isEmpty) {
-        pos = nextStart + m.end;
-        continue;
-      }
-
-      result.add(QuickReply(
-        label: label,
-        answer: answer,
-        sourceStart: offsetRef[0] + nextStart,
-        sourceLength: m.end,
-      ));
-      pos = nextStart + m.end;
-    }
-  }
+  // Pass 1: flatten spans to a single string + record code regions.
+  final flatText = StringBuffer();
+  final codeRegions = <_CodeRegion>[];
 
   void walk(InlineSpan span, bool inCode) {
     if (span is! TextSpan) return;
@@ -202,11 +162,15 @@ List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
     final childInCode = inCode || (style?.backgroundColor != null);
     final text = span.text ?? '';
 
-    if (!childInCode && text.isNotEmpty) {
-      processText(text);
+    if (text.isNotEmpty) {
+      if (childInCode) {
+        codeRegions.add(_CodeRegion(
+          flatText.length,
+          flatText.length + text.length,
+        ));
+      }
+      flatText.write(text);
     }
-
-    offsetRef[0] += text.length;
 
     if (span.children != null) {
       for (final child in span.children!) {
@@ -218,7 +182,97 @@ List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
   for (final span in spans) {
     walk(span, false);
   }
+
+  // Pass 2: run the regex against the full flat string. Code
+  // exclusion is now a per-match check, not a per-span skip — so
+  // tokens that cross a code boundary match correctly.
+  final result = <QuickReply>[];
+  final text = flatText.toString();
+  var pos = 0;
+  while (pos < text.length) {
+    final nextStart = text.indexOf('ask://', pos);
+    if (nextStart == -1) break;
+
+    // Drop matches that START inside a code region. The end may
+    // extend outside (and that's fine — the agent's own prompt doc
+    // does this with `\`ask://...\`` examples, and the whole token
+    // is just doc text that shouldn't render as a button). What we
+    // MUST avoid is the start being in code, because that would
+    // mean the `ask://` literal came from the doc itself.
+    if (_isInCode(nextStart, codeRegions)) {
+      pos = nextStart + 'ask://'.length;
+      continue;
+    }
+
+    final m = _askRegex.matchAsPrefix(text.substring(nextStart));
+    if (m == null) {
+      // Defensive: we just found 'ask://' but the full regex didn't
+      // match (shouldn't happen, but if it does, skip past this
+      // literal to avoid infinite looping).
+      pos = nextStart + 'ask://'.length;
+      continue;
+    }
+
+    String label;
+    String answer;
+    if (m.group(1) != null) {
+      // Explicit form: group(1) is the label, group(2) is the
+      // answer.
+      label = m.group(1)!.trim();
+      answer = m.group(2)!.trim();
+    } else {
+      // Shorthand form: group(3) is the label; answer defaults to
+      // the label per the spec.
+      label = m.group(3)!.trim();
+      answer = label;
+    }
+
+    // Reject degenerate tokens where the regex spanned across
+    // another `ask://` substring. Skip past just the opener so the
+    // inner `ask://` (if any) becomes the next candidate.
+    if (label.contains('ask://')) {
+      pos = nextStart + 'ask://'.length;
+      continue;
+    }
+    // Reject tokens whose label or answer trimmed to empty. The
+    // regex itself prevents this for explicit forms (label
+    // `[^{}\n]+?` requires ≥1 non-brace char), but shorthand forms
+    // can still trim down to empty (e.g. `ask:// ` with a trailing
+    // space). Skip past the full match in that case.
+    if (label.isEmpty || answer.isEmpty) {
+      pos = nextStart + m.end;
+      continue;
+    }
+
+    result.add(QuickReply(
+      label: label,
+      answer: answer,
+      sourceStart: nextStart,
+      sourceLength: m.end,
+    ));
+    pos = nextStart + m.end;
+  }
+
   return result;
+}
+
+/// Half-open interval `[start, end)` in the flat-text coordinate
+/// system used by [parseQuickReplies]. Tracks the bounds of a code
+/// span (inline code or fenced code block) so the regex pass can
+/// decide whether each `ask://` candidate's start position sits
+/// inside one.
+class _CodeRegion {
+  final int start;
+  final int end;
+  // ignore: prefer_const_constructors_in_immutables
+  _CodeRegion(this.start, this.end);
+}
+
+bool _isInCode(int pos, List<_CodeRegion> regions) {
+  for (final r in regions) {
+    if (pos >= r.start && pos < r.end) return true;
+  }
+  return false;
 }
 
 /// Substitute `ask://…` regions in [spans] with their reply

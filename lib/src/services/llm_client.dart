@@ -5,6 +5,7 @@ import 'dart:io';
 import '../models/provider_config.dart';
 import '../utils/proxy_aware_http.dart';
 import '../utils/system_proxy.dart' show SystemProxyDetector;
+import 'llm_error.dart';
 import 'llm_provider.dart';
 
 class ToolUseChunk {
@@ -31,7 +32,14 @@ class LlmChunk {
   final int? promptCacheHitTokens;
   final int? promptCacheMissTokens;
   final int? reasoningTokens;
-  final String? error;
+
+  /// Structured LLM error — populated whenever the upstream stream
+  /// aborts with an error (HTTP non-200, SSE `error`/`event: error`,
+  /// thrown connection / timeout / cancel). Consumers (chat
+  /// service, auxiliary service) pattern-match on
+  /// [LlmError.kind] and use [LlmError.toUserMessage] for the
+  /// user-facing text. `null` on a successful stream.
+  final LlmError? error;
   final String? abortReason;
   final bool guardAbort;
   final ToolUseChunk? toolUse;
@@ -172,6 +180,16 @@ class LlmClient {
     final wireFamily = resolved.wire;
     final authStyle = resolved.authStyle;
     final anthropicToolBlocks = <int, ({String callId, String name})>{};
+    // Vendor used by error parsers. For MiniMax on the
+    // Anthropic-compatible wire the HTTP body still comes back as
+    // MiniMax's own `base_resp` shape, so we tell the parser to
+    // expect it. For DeepSeek (OpenAI-compatible wire) we use the
+    // OpenAI parser.
+    final errorVendor = switch (config.type) {
+      'minimax' => LlmVendor.minimax,
+      'anthropic' || 'anthropic_compatible' => LlmVendor.anthropic,
+      _ => LlmVendor.openai,
+    };
 
     () async {
       try {
@@ -236,22 +254,44 @@ class LlmClient {
 
         if (response.statusCode != 200) {
           final errorBody = await response.transform(utf8.decoder).join();
+          // Anthropic puts a `request-id` header on every response;
+          // capture it so error reports carry the ID support can
+          // grep for. Other vendors' request IDs are typically
+          // inside the error body (and so end up in `vendorCode`
+          // via the parser), but we capture here for parity.
+          final requestId = response.headers.value('request-id');
           controller.add(
-            LlmChunk(error: 'HTTP ${response.statusCode}: $errorBody'),
+            LlmChunk(
+              error: parseHttpError(
+                statusCode: response.statusCode,
+                body: errorBody,
+                vendor: errorVendor,
+                providerName: config.name,
+                requestId: requestId,
+              ),
+            ),
           );
           await controller.close();
           return;
         }
 
         if (wireFamily == WireFamily.anthropicCompatible) {
+          final anthropicRequestId = response.headers.value('request-id');
           await _handleAnthropicStream(
             response,
             controller,
             anthropicToolBlocks,
             cancelToken,
+            providerName: config.name,
+            requestId: anthropicRequestId,
           );
         } else {
-          await _handleOpenAiStream(response, controller, cancelToken);
+          await _handleOpenAiStream(
+            response,
+            controller,
+            cancelToken,
+            providerName: config.name,
+          );
         }
       } catch (e) {
         if (!controller.isClosed) {
@@ -263,7 +303,11 @@ class LlmClient {
               ),
             );
           } else {
-            controller.add(LlmChunk(error: e.toString()));
+            controller.add(
+              LlmChunk(
+                error: classifyThrownError(e, providerName: config.name),
+              ),
+            );
           }
           await controller.close();
         }
@@ -276,8 +320,9 @@ class LlmClient {
   Future<void> _handleOpenAiStream(
     HttpClientResponse response,
     StreamController<LlmChunk> controller,
-    LlmStreamCancelToken? cancelToken,
-  ) async {
+    LlmStreamCancelToken? cancelToken, {
+    required String providerName,
+  }) async {
     String buffer = '';
     await for (final chunk in response) {
       if (cancelToken?.isCancelled ?? false) {
@@ -309,10 +354,14 @@ class LlmClient {
           final json = jsonDecode(data) as Map<String, dynamic>;
           final error = json['error'];
           if (error != null) {
-            final msg = error is Map
-                ? error['message'] ?? error.toString()
-                : error.toString();
-            controller.add(LlmChunk(error: msg.toString()));
+            controller.add(
+              LlmChunk(
+                error: parseOpenAiStreamError(
+                  eventJson: json,
+                  providerName: providerName,
+                ),
+              ),
+            );
             await controller.close();
             return;
           }
@@ -382,8 +431,10 @@ class LlmClient {
     HttpClientResponse response,
     StreamController<LlmChunk> controller,
     Map<int, ({String callId, String name})> toolBlocks,
-    LlmStreamCancelToken? cancelToken,
-  ) async {
+    LlmStreamCancelToken? cancelToken, {
+    required String providerName,
+    String? requestId,
+  }) async {
     String buffer = '';
     String? eventType;
 
@@ -431,8 +482,15 @@ class LlmClient {
           if (eventType == 'ping') continue;
 
           if (eventType == 'error') {
-            final errMsg = json['error']?['message'] ?? json.toString();
-            controller.add(LlmChunk(error: errMsg.toString()));
+            controller.add(
+              LlmChunk(
+                error: parseAnthropicStreamError(
+                  eventJson: json,
+                  providerName: providerName,
+                  requestId: requestId,
+                ),
+              ),
+            );
             await controller.close();
             return;
           }
