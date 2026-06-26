@@ -152,37 +152,6 @@ class _StubWriteTool extends ToolDef {
       contribution;
 }
 
-/// Stub `edit` tool. Per the chat-log spec, edit no longer
-/// contributes to the bottom-of-log summary section — its
-/// `extractPruneSummary` returns null. The stub still exists so
-/// tests can register an edit tool in the registry without
-/// crashing on lookup, but it produces no contribution.
-class _StubEditTool extends ToolDef {
-  @override
-  String get name => 'edit';
-
-  @override
-  String get description => 'stub';
-
-  @override
-  Map<String, dynamic> get parametersSchema => const {};
-
-  @override
-  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  String renderPruneInline({
-    required ToolCallData call,
-    required String pairedResult,
-    required bool isError,
-  }) {
-    final path = call.input['filePath']?.toString() ?? '?';
-    return 'edit $path';
-  }
-}
-
 void main() {
   // Empty registry: the cases under test don't involve tool calls, so
   // the per-tool lookup path is never reached. Mirrors how

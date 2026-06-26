@@ -268,8 +268,8 @@ void main() {
       expect(body['user_id'], 'abc123-7');
     });
 
-    test('maps effort "high" to wire "xhigh"', () {
-      expect(provider.mapEffort('high'), 'xhigh');
+    test('passes "high" through unchanged (DeepSeek accepts it as-is)', () {
+      expect(provider.mapEffort('high'), 'high');
     });
   });
 

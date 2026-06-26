@@ -176,7 +176,7 @@ void main() {
       expect(summary, contains('2'));
       expect(summary, contains('Tokens in:'));
       expect(summary, contains('12.8K'));
-      expect(summary, contains('cache 78%'));
+      expect(summary, contains('cache 78.1%'));
       expect(summary, contains('Tokens out:'));
       expect(summary, contains('2.4K'));
     });
@@ -192,7 +192,7 @@ void main() {
       expect(summary, contains('1.2M'));
     });
 
-    test('huge cache hit (100%) is shown as "cache 100%"', () {
+    test('huge cache hit (100%) is shown as "cache 100.0%"', () {
       RunMetrics.instance.recordTurnUsage(
         tokensIn: 5000,
         tokensOut: 0,
@@ -200,7 +200,7 @@ void main() {
         cacheMiss: 0,
       );
       final summary = RunMetrics.instance.formatSummary(useAscii: true);
-      expect(summary, contains('cache 100%'));
+      expect(summary, contains('cache 100.0%'));
     });
 
     test('cache suffix is "—" when no input tokens were recorded', () {

@@ -132,8 +132,10 @@ void main() {
         'await, causing a brief lerp from the old session\'s '
         'contextTargetTokens)', () async {
       await testNocterm('context bar session switch snap', (tester) async {
-        // 200 * 1024 → `_fmtCtx` renders as "200k". 200,000 and
-        // 5,000 are far enough apart that one 16ms lerp tick
+        // 200 * 1024 = 204,800 → `_fmtCtx` renders as "204k"
+        // (it truncates via integer division `n ~/ 1000`, not
+        // rounds — see `context_bar.dart`'s `_fmtCtx`). 200,000
+        // and 5,000 are far enough apart that one 16ms lerp tick
         // (≈1,872 tokens of movement at lerpSpeed=6) can't bridge
         // them — the post-tick value is unambiguously one or the
         // other, so a substring match is unambiguous.
@@ -163,12 +165,12 @@ void main() {
 
         // Sanity: bar should be showing session A's value, not B's.
         expect(
-          tester.terminalState.findText('200,000 / 200k').isNotEmpty,
+          tester.terminalState.findText('200,000 / 204k').isNotEmpty,
           isTrue,
           reason: 'bar should initially show session A\'s context value',
         );
         expect(
-          tester.terminalState.findText('5,000 / 200k').isEmpty,
+          tester.terminalState.findText('5,000 / 204k').isEmpty,
           isTrue,
           reason: 'bar should NOT show session B\'s value yet',
         );
@@ -187,7 +189,7 @@ void main() {
         // stale target (≈200,000) and the subsequent target reset
         // would have lerped down — we'd see ~198,128 here instead.
         expect(
-          tester.terminalState.findText('5,000 / 200k').isNotEmpty,
+          tester.terminalState.findText('5,000 / 204k').isNotEmpty,
           isTrue,
           reason: 'bar should snap to session B\'s base after '
               'switchSession commits currentSessionId + target atomically',

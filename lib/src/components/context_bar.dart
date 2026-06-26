@@ -258,7 +258,6 @@ class ContextBarState extends State<ContextBar> {
   /// meaningful to compare against, and the upstream
   /// `toCompress.isEmpty` check catches the empty-history case
   /// before this gate fires anyway.
-  @visibleForTesting
   static bool isCompactCounterproductive(ChatLogCompactionEstimate? est) {
     if (est == null) return false;
     final pre = est.preTokens;

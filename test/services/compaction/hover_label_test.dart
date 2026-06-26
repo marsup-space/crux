@@ -22,8 +22,6 @@
 //      of ALL non-compaction messages, with no folding-in of
 //      prior compactions.
 
-import 'dart:convert';
-
 import 'package:test/test.dart';
 
 import 'package:crux/src/models/message.dart';
@@ -54,32 +52,6 @@ Message _ai({
 
 Message _compaction({required int id, required String content}) {
   return Message(id: id, sessionId: 1, role: 'compaction', content: content);
-}
-
-Message _toolCall({
-  required int id,
-  required String toolName,
-  required Map<String, dynamic> input,
-}) {
-  return Message(
-    id: id,
-    sessionId: 1,
-    role: 'tool_call',
-    content: '',
-    toolCalls: [
-      ToolCallData(callId: 'call_$id', name: toolName, input: input),
-    ],
-  );
-}
-
-Message _toolResult({required int id, String content = 'ok'}) {
-  return Message(
-    id: id,
-    sessionId: 1,
-    role: 'tool',
-    content: content,
-    toolCallId: 'call_${id - 1}',
-  );
 }
 
 int estimateTokens(String content) {
