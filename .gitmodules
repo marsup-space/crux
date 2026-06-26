@@ -7,3 +7,6 @@
 [submodule "dart-jieba"]
 	path = dart-jieba
 	url = git@github.com:marsup-space/dart-jieba.git
+[submodule "semble-dart"]
+	path = semble-dart
+	url = git@github.com:marsup-space/semble-dart.git
