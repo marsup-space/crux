@@ -244,11 +244,32 @@ List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
       continue;
     }
 
+    // For shorthand matches, the regex greedily absorbs any
+    // trailing whitespace into the label group (the `\s` isn't a
+    // shorthand boundary — see docs/design-quick-reply.md). The
+    // renderer treats `sourceLength` as "everything to delete from
+    // the source", so leaving the trailing space in the range
+    // would silently swallow the separator between two adjacent
+    // shorthand tokens and make the rendered buttons run into each
+    // other ("YesNo" instead of "Yes No"). Trim it off the source
+    // range so the renderer keeps the whitespace as ordinary
+    // "before text" for the next token (or the trailing edge of
+    // the line). The label itself is already trimmed above.
+    //
+    // Explicit-form matches never have this problem — the explicit
+    // form's `\s*\{` keeps the label cleanly bounded by `{` and
+    // there's no trailing whitespace to discard, so the trim is a
+    // no-op there.
+    final sourceLength = text
+        .substring(nextStart, nextStart + m.end)
+        .trimRight()
+        .length;
+
     result.add(QuickReply(
       label: label,
       answer: answer,
       sourceStart: nextStart,
-      sourceLength: m.end,
+      sourceLength: sourceLength,
     ));
     pos = nextStart + m.end;
   }

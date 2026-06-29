@@ -187,6 +187,33 @@ void main() {
       expect(refs.first.label, 'Final');
       expect(refs.first.answer, 'Final');
     });
+
+    // Regression: the shorthand regex used to capture the trailing
+    // space between two adjacent `ask://` tokens as part of the
+    // first token's source range. The display label was correctly
+    // trimmed to "Yes", but `sourceLength` still included the space
+    // — so the renderer (which uses `sourceLength` to decide what
+    // to delete from the source) ate the separator and produced
+    // "YesNo" with no visible gap between the two buttons. The
+    // fix trims the source range to match the trimmed label, so
+    // the renderer keeps the space as ordinary "before text" for
+    // the next token. The label itself is unchanged.
+    test('shorthand source range excludes the separator before next token', () {
+      const style = TextStyle(color: Color(0xFFFFFFFF));
+      final refs = parseQuickReplies(_spansFromSegments([
+        ('ask://Yes ask://No', style),
+      ]));
+      expect(refs, hasLength(2));
+      // First token's range covers "ask://Yes" only — the trailing
+      // space stays outside so the renderer preserves it.
+      expect(refs[0].sourceStart, 0);
+      expect(refs[0].sourceLength, 'ask://Yes'.length);
+      expect(refs[0].label, 'Yes');
+      // Second token's range is the normal "ask://No".
+      expect(refs[1].sourceStart, 'ask://Yes '.length);
+      expect(refs[1].sourceLength, 'ask://No'.length);
+      expect(refs[1].label, 'No');
+    });
   });
 
   group('parseQuickReplies — mixed forms', () {
