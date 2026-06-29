@@ -89,6 +89,33 @@ ChatLogResult buildChatLog({
           final isError = _looksLikeError(result);
           final tool = toolRegistry.lookup(call.name);
 
+          // No-op filter: drop guard / abort calls entirely. The
+          // model almost always follows a failed edit / write
+          // with a corrected retry in the same turn, so the
+          // failed attempt is pure noise in the post-compaction
+          // context. Skipping the call here has two effects:
+          //
+          //   * no inline chat log line (the `edit: foo.dart →
+          //     [GUARD]…` form, which can be hundreds of chars
+          //     because the guard embeds the current file body)
+          //   * [extractPruneSummary] is NOT consulted, so the
+          //     summary section won't pick up a stale read / write
+          //     snapshot for a file the tool never touched
+          //
+          // Auto-reads (edit's `[AUTOREAD]` response) are NOT
+          // no-op — they teach the model the file content, and
+          // [EditTool.extractPruneSummary] routes that into the
+          // `read files:` summary section. The user's chat-log
+          // spec keeps the file snapshot in the summary and lets
+          // the inline line stay as `edit: foo.dart`.
+          if (tool != null &&
+              tool.isNoOpForCompaction(
+                pairedResult: result ?? '',
+                isError: isError,
+              )) {
+            continue;
+          }
+
           calls.add(_ResolvedCall(
             call: call,
             tool: tool,

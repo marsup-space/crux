@@ -602,15 +602,148 @@ class EditTool extends ToolDef with IntentionalTool {
     required bool isError,
     required String workingDirectory,
   }) {
-    // Edit doesn't contribute to the bottom-of-log summary
-    // section. The user's chat-log spec keeps `read files:` and
-    // `write files:` (newly created files) — edit is "other" by
-    // that rubric: the file content is on disk for the next read,
-    // and the model already has the diff (oldString/newString)
-    // in its input args. Dumping the post-edit full file here
-    // would inflate the compaction's chain-accumulated size
-    // without giving the resumed agent anything it couldn't get
-    // from a cheap `read`.
-    return null;
+    // Two edit paths contribute file content to the chat log's
+    // `read files:` summary section. Everything else returns null
+    // — the user spec keeps only `read files:` (and `write files:`
+    // for newly created files); edit is "other" by that rubric on
+    // the success path, since the model already has the diff
+    // (oldString/newString) in its input args and the file's
+    // post-edit state is on disk for the next `read` to pick up.
+    //
+    // The exceptions are the two cases where edit is effectively
+    // "using the read tool" on the model's behalf:
+    //
+    //   1. Auto-read (oldString didn't match / ambiguous /
+    //      disproportionate). The tool re-reads the file and
+    //      returns the current content in the auto-read response.
+    //      The model relies on that snapshot to formulate the
+    //      retry's oldString, so the content is worth preserving
+    //      verbatim in the `read files:` section — the resumed
+    //      agent post-compact otherwise has no way to know what
+    //      the model saw. Detected by the result text starting
+    //      with `[AUTOREAD]`. (The matching prune filter is in
+    //      [isNoOpForCompaction] — auto-read is NOT no-op, only
+    //      guards and aborts are.)
+    //
+    //   2. Read-before-write guard. The guard returns the current
+    //      file content as a hint for the retry. Same reasoning:
+    //      the model relied on the snapshot to plan the fix. But
+    //      the guard is filtered by [isNoOpForCompaction], so
+    //      [extractPruneSummary] is never reached for that path
+    //      — see the comment there. We don't try to recover the
+    //      content here because the auto-read path is what the
+    //      production code actually emits for the read-before-
+    //      write case (the streaming guard's output and the
+    //      post-execution guard's output are both routed through
+    //      the same chat log pruning).
+    if (isError) return null;
+    if (!_looksLikeAutoRead(pairedResult)) return null;
+    final raw = call.input['filePath']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    final content = _extractAutoReadContent(pairedResult);
+    if (content == null) return null;
+    final truncated = truncateForInline(
+      content,
+      kInlineReadMaxChars,
+      hint: 're-read with offset/limit to see more',
+    );
+    return SummaryContribution.readFile(path: raw, content: truncated);
   }
+
+  @override
+  bool isNoOpForCompaction({
+    required String pairedResult,
+    required bool isError,
+  }) {
+    // The chat log drops edit calls whose result indicates the
+    // file was NOT mutated. Two patterns, both surfaced in the
+    // leading 200 chars of the result (see [_looksLikeError] for
+    // the window-size rationale — file content further down the
+    // body must not trigger a false positive):
+    //
+    //   * `[GUARD]…` — read-before-write guard (file was modified
+    //     externally / was never read), oldString-no-match guard
+    //     emitted from `checkStreamingGuard`, and the streaming
+    //     abort case (`_buildGuardAbortedToolResult` reuses the
+    //     same bracketed header shape). All three mean "the edit
+    //     did NOT take effect; here's the current file content
+    //     to retry against."
+    //   * `Tool aborted` — the call was interrupted by
+    //     `ctx.abort.isAborted` (user-initiated abort, parallel-
+    //     tool sibling abort after a guard, etc.). The output is
+    //     the literal string `Tool aborted` produced by
+    //     `ToolResult.error('Tool aborted')` in `_doMutation`.
+    //
+    // Note we do NOT gate on [isError] here. `_looksLikeError`
+    // catches `[GUARD]` and `Error: …` shapes, but not the
+    // literal `Tool aborted` text — gating on `isError` would
+    // let that one slip through. The text pattern alone is the
+    // source of truth for this filter.
+    //
+    // NOT matched (intentionally kept): `[AUTOREAD]…`. The
+    // auto-read response is filtered out of the success path
+    // by `_looksLikeError` and is meaningful to preserve — the
+    // call DID teach the model the file content, and
+    // [extractPruneSummary] routes that into the
+    // `read files:` summary section above. The inline chat log
+    // line stays as `edit $path` (the tool the model actually
+    // called) and the snapshot is preserved via the summary
+    // section. Filtering the auto-read would lose that snapshot
+    // for no real win.
+    const leadingWindow = 200;
+    final head = pairedResult.length > leadingWindow
+        ? pairedResult.substring(0, leadingWindow)
+        : pairedResult;
+    final lower = head.toLowerCase();
+    if (lower.startsWith('[guard]')) return true;
+    if (head == 'Tool aborted') return true;
+    return false;
+  }
+}
+
+/// Whether [pairedResult] is the auto-read response emitted by
+/// [_autoReadResult]. The check is the leading 200 chars of the
+/// result text — `[AUTOREAD]` is always the first line. Mirrors
+/// the leading-window reasoning in [_looksLikeError]: file
+/// content further down the body must not trigger a false
+/// positive, and the auto-read header is always emitted in line
+/// one.
+bool _looksLikeAutoRead(String pairedResult) {
+  const leadingWindow = 200;
+  final head = pairedResult.length > leadingWindow
+      ? pairedResult.substring(0, leadingWindow)
+      : pairedResult;
+  return head.toLowerCase().startsWith('[autoread]');
+}
+
+/// Extract the file content from an auto-read response. The
+/// response shape (emitted by [_autoReadResult]) is three
+/// segments separated by blank lines:
+///
+///   [AUTOREAD] No changes were made — `<reason>`
+///
+///   We re-read the file for you (saved a round trip). The
+///   current content is below; you can call edit again now
+///   without having to call read first.
+///
+///   `<content>`
+///
+/// The content is everything after the second blank line.
+/// Re-join with `\n\n` so file bodies that legitimately contain
+/// blank lines are preserved verbatim. Returns null on any
+/// structural mismatch so the caller can fall back to skipping
+/// the contribution rather than emit a corrupt snapshot.
+String? _extractAutoReadContent(String pairedResult) {
+  // Find the first blank line.
+  final firstBlank = pairedResult.indexOf('\n\n');
+  if (firstBlank < 0) return null;
+  // Skip past it and find the second blank line.
+  final rest = pairedResult.substring(firstBlank + 2);
+  final secondBlank = rest.indexOf('\n\n');
+  if (secondBlank < 0) return null;
+  // Content is everything after the second blank line, leading
+  // whitespace trimmed (the [AUTOREAD] template leaves the file
+  // body flush-left with no indent).
+  final content = rest.substring(secondBlank + 2);
+  return content.trimLeft();
 }

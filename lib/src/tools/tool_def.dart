@@ -354,6 +354,47 @@ abstract class ToolDef {
     required String workingDirectory,
   }) =>
       null;
+
+  /// Whether this call should be dropped from the chat log entirely
+  /// because the tool did NOT actually do what the model asked for.
+  ///
+  /// The chat log builder drops a call when this returns `true`:
+  /// the inline per-turn line is skipped, and [extractPruneSummary]
+  /// is NOT called for the call (so the summary section won't pick
+  /// up a stale "read" / "write" snapshot for a file the tool never
+  /// touched). Tools that succeed in mutating / fetching always
+  /// return `false` — the default.
+  ///
+  /// The original motivation is the `edit` and `write` guards. The
+  /// model almost always follows a guarded / aborted call with a
+  /// corrected retry in the same turn, so the failed attempt is
+  /// pure noise in the post-compaction context: the agent doesn't
+  /// need to know "this edit was BLOCKED" if a successful `edit`
+  /// for the same file is right next to it in the log. Filtering
+  /// the inline line keeps the activity log tight and stops the
+  /// guard's full file body (the guard returns the current file
+  /// content as a hint for the retry) from blowing up the chat log
+  /// size.
+  ///
+  /// Auto-reads (edit's `[AUTOREAD]` response when the oldString
+  /// didn't match) deliberately do NOT report no-op: the call DID
+  /// teach the model the file content, and [extractPruneSummary]
+  /// can route that into the `read files:` summary section. Only
+  /// the guard / abort paths — where the model gained nothing
+  /// useful and the retry is the durable signal — are filtered.
+  ///
+  /// [pairedResult] is the matching `role: tool` message content
+  /// (empty if no result was captured). [isError] is true when the
+  /// result indicates failure. Implementations should restrict the
+  /// scan to a small leading window — file content that happens
+  /// to contain the trigger substring would otherwise false-
+  /// positive. See `_looksLikeError` in `chat_log_builder.dart`
+  /// for the window-size rationale.
+  bool isNoOpForCompaction({
+    required String pairedResult,
+    required bool isError,
+  }) =>
+      false;
 }
 
 String _capitalize(String s) {

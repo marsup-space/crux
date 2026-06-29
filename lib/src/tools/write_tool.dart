@@ -481,6 +481,54 @@ class WriteTool extends ToolDef with IntentionalTool {
     );
     return SummaryContribution.writtenFile(path: raw, content: truncated);
   }
+
+  @override
+  bool isNoOpForCompaction({
+    required String pairedResult,
+    required bool isError,
+  }) {
+    // The chat log drops write calls whose result indicates the
+    // file was NOT mutated. Three patterns, all surfaced in the
+    // leading 200 chars of the result (see `_looksLikeError` in
+    // `chat_log_builder.dart` for the window-size rationale —
+    // file content further down the body must not trigger a
+    // false positive):
+    //
+    //   * `[GUARD]…` — read-before-write guard. The write tool's
+    //     own path returns `'$header\n\n$content'` where
+    //     `header` starts with `[GUARD]` (see
+    //     `FileReadTracker.checkWriteGuard`). The streaming-
+    //     time abort path (`_buildGuardAbortedToolResult`)
+    //     reuses the same bracketed header shape.
+    //   * `Refusing to overwrite…` — size-mismatch guard emitted
+    //     from `_checkSizeMismatch`. No `[GUARD]` prefix on this
+    //     one — it's a different guard kind with a different UX
+    //     message — so we match the leading phrase directly.
+    //   * `Tool aborted` — the call was interrupted by
+    //     `ctx.abort.isAborted`. Output is the literal string
+    //     `Tool aborted` from `ToolResult.error('Tool aborted')`.
+    //
+    // Write has no auto-read analog (the tool does not re-read
+    // the file on a failed match — it doesn't have a match step
+    // to begin with), so the auto-read exception that exists
+    // for [EditTool] does not apply here.
+    //
+    // Note we do NOT gate on [isError] here. `_looksLikeError`
+    // catches `[GUARD]` and `Error: …` shapes, but not the
+    // literal `Tool aborted` text or the `Refusing to overwrite`
+    // size-mismatch message — gating on `isError` would let
+    // both slip through. The text pattern alone is the source
+    // of truth for this filter.
+    const leadingWindow = 200;
+    final head = pairedResult.length > leadingWindow
+        ? pairedResult.substring(0, leadingWindow)
+        : pairedResult;
+    final lower = head.toLowerCase();
+    if (lower.startsWith('[guard]')) return true;
+    if (lower.startsWith('refusing to overwrite')) return true;
+    if (head == 'Tool aborted') return true;
+    return false;
+  }
 }
 
 String _formatBytes(int bytes) {
