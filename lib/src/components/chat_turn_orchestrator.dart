@@ -622,21 +622,22 @@ class ChatTurnOrchestrator {
               refresh: false,
             );
 
-            // The chat service sets SessionStatus.done on completion. We
-            // override to idle for *every* session that completes — current
-            // *and* background — so the sidebar doesn't display a lingering
-            // non-idle status (running / done) for a turn that already
-            // finished. Previously this only ran for the current session,
-            // which left background sessions stuck showing the "done" (✦)
-            // indicator in the sidebar until the user manually switched to
-            // them, even though the response was complete and a TLDR
-            // (fire-and-forget) was already being generated.
-            final session = _sessionController.findSession(sessionId);
-            if (session != null && session.status == SessionStatus.done) {
-              session.status = SessionStatus.idle;
-              session.updatedAt = DateTime.now();
-              await _store.update(sessionId, status: SessionStatus.idle);
-            }
+            // The chat service set the raw status to [SessionStatus.done]
+            // right after the LLM finished streaming. Funnel that through
+            // [SessionController.setSessionStatus] so the active-session
+            // rule fires: the session the user is currently viewing
+            // ([currentSessionId]) is downgraded to `idle` (ready-for-input
+            // signal), while background sessions keep `done` so the
+            // sidebar keeps the `✦` "completed but not yet viewed"
+            // indicator until the user switches to them. Centralizing the
+            // rule in [setSessionStatus] keeps the logic in one place and
+            // prevents future code paths from regressing to either
+            // "always idle" (loses the unread marker) or "always done"
+            // (active session stuck showing `✦`).
+            await _sessionController.setSessionStatus(
+              sessionId,
+              SessionStatus.done,
+            );
 
             // Refresh immediately so the session list picks up the status
             // change (idle/done) without waiting for the rest of the
