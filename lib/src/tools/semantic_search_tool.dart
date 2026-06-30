@@ -1,8 +1,5 @@
-import 'dart:convert';
-import 'dart:io';
-
-import '../utils/bundled_executable.dart';
 import '../models/message.dart';
+import '../services/semble_client.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'semble_warmup.dart';
 import 'tool_def.dart';
@@ -99,52 +96,12 @@ class SemanticSearchTool extends ToolDef {
     // fire-and-forget; the agent's first tool call pays the cost.
     await SembleWarmup.instance.awaitReady(path);
 
-    final executable = await resolveBundledExecutable('semble');
-
     try {
-      final result = await Process.run(executable, [
-        'search',
+      final results = await SembleClient.instance.search(
         query,
-        path,
-        '--top-k',
-        '$k',
-      ]);
-
-      if (result.exitCode != 0) {
-        final stderr = (result.stderr as String).trim();
-        if (stderr.isEmpty) {
-          return ToolResult.error('semantic_search exited with code ${result.exitCode}');
-        }
-        return ToolResult.error(
-          'semantic_search error: $stderr\n\n'
-          'The underlying search engine is unavailable. '
-          'Install it (e.g. `pip install semble`) and ensure the '
-          '`semble` binary is on PATH or in third_party/bin/.',
-        );
-      }
-
-      final stdout = result.stdout as String;
-      if (stdout.isEmpty) {
-        return ToolResult(
-          title: 'semantic_search: no matches',
-          output: '(no output from semantic_search)',
-          metadata: {'totalMatches': 0},
-        );
-      }
-
-      final Map<String, dynamic> parsed;
-      try {
-        parsed = jsonDecode(stdout) as Map<String, dynamic>;
-      } on FormatException catch (e) {
-        return ToolResult.error(
-          'Failed to parse semantic_search output: $e\n\n'
-          'Raw output (first 500 chars):\n'
-          '${stdout.substring(0, stdout.length.clamp(0, 500))}',
-        );
-      }
-
-      final results =
-          (parsed['results'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+        path: path,
+        topK: k,
+      );
       if (results.isEmpty) {
         return ToolResult(
           title: 'semantic_search: no matches',
@@ -155,16 +112,16 @@ class SemanticSearchTool extends ToolDef {
 
       final lines = <String>[
         '# ${results.length} semantic '
-        'match${results.length == 1 ? '' : 'es'} for "$query" '
-        '(in $path)',
+            'match${results.length == 1 ? '' : 'es'} for "$query" '
+            '(in $path)',
         '',
       ];
       for (final r in results) {
-        final file = r['file_path'] ?? '<unknown>';
-        final start = r['start_line'] ?? '?';
-        final end = r['end_line'] ?? '?';
-        final score = (r['score'] as num?)?.toStringAsFixed(4) ?? '?';
-        final content = (r['content'] as String? ?? '').trim();
+        final file = r.filePath;
+        final start = r.startLine;
+        final end = r.endLine;
+        final score = r.score.toStringAsFixed(4);
+        final content = r.content.trim();
 
         lines.add('## $file:$start-$end  (score $score)');
         for (final line in content.split('\n')) {
@@ -182,13 +139,8 @@ class SemanticSearchTool extends ToolDef {
         output: lines.join('\n'),
         metadata: {'totalMatches': results.length},
       );
-    } on ProcessException catch (e) {
-      return ToolResult.error(
-        'Unable to start semantic_search: ${e.message}\n\n'
-        'Install the underlying search engine (e.g. `pip install semble`) '
-        'and ensure its binary is on PATH or in third_party/bin/. '
-        'Set CRUX_THIRD_PARTY_BIN to override the search path.',
-      );
+    } on Object catch (e) {
+      return ToolResult.error('Unable to run semantic_search: $e');
     }
   }
 
