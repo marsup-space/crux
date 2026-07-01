@@ -8,6 +8,16 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **LongCat provider** — add `longcat` as a built-in provider
+  (`providers/longcat.toml`) backed by Meituan's LongCat API at
+  `https://api.longcat.chat/openai/v1`. Uses the generic
+  `type = "openai_compatible"` (Bearer auth) — no custom type
+  registration needed in `llm_provider.dart`. Ships with the
+  `LongCat-2.0` model (1M context, 128K max output, text-only,
+  binary on/off thinking).
+
 ## [0.9.0] - 2026-06-26
 
 72208b3

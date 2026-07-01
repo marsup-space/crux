@@ -1,0 +1,43 @@
+# LongCat provider configuration
+# Filename serves as the provider name: "longcat"
+# OpenAI-format endpoint: https://api.longcat.chat/openai/v1
+# (Crux appends /chat/completions to the base URL
+#  → https://api.longcat.chat/openai/v1/chat/completions)
+#
+# Uses the generic `type = "openai_compatible"` — no custom type
+# registration needed in llm_provider.dart. LongCat also offers an
+# Anthropic-format endpoint at /anthropic/v1/messages, but that path
+# uses Bearer auth (not Anthropic's x-api-key) so the generic
+# anthropic_compatible type doesn't fit; a future built-in that
+# wants the Anthropic shape would need a new resolveProvider() case
+# (see how `minimax` is registered). The OpenAI endpoint uses Bearer
+# too, so the generic shape works as-is.
+
+type = "openai_compatible"
+endpoint_url = "https://api.longcat.chat/openai/v1"
+
+[[models]]
+id = "LongCat-2.0"
+name = "LongCat 2.0"
+context_size = 1048576
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+temperature = 0
+stream_lerp = true
+
+# LongCat's thinking is binary ({"type": "enabled"} / {"type":
+# "disabled"}) — no four-level effort scale documented. Show a clean
+# off/on picker by hiding the low/normal/high/max presets and
+# renaming the default "normal" effort to "on". "off" stays visible
+# so the user can still turn thinking off. The openai_compatible
+# provider will still send `reasoning_effort: "high"` in the wire
+# body when thinking is on (its mapEffort maps "normal" → "high");
+# that's harmless because LongCat's docs don't document the field,
+# so the proxy ignores it.
+[models.reasoning_labels]
+low = "disabled"
+normal = "on"
+high = "disabled"
+max = "disabled"

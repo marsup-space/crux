@@ -866,7 +866,7 @@ context_size = 8192
       // Built-ins shipped with the repo. `example.provider.toml` is the
       // reference template and is skipped by the loader (see
       // `loadAll skips example.*.toml files` above).
-      const builtIns = ['deepseek', 'local', 'minimax'];
+      const builtIns = ['deepseek', 'local', 'minimax', 'longcat'];
 
       if (loader.providerNames().isEmpty) {
         // Providers dir may not exist in test working directory — skip

@@ -102,7 +102,7 @@ Crux 不是 Claude Code 或 OpenCode 的复制品。它更偏向一个**本地�
 - ⚡ **高性能终端渲染** — 面向长对话、流式输出、工具详情和指标刷新做过性能优化，并内置 frame profiler 方便定位慢帧
 - 🔁 **Harness parallel toolcall 优化** — 针对模型容易串行调用工具的问题，Crux 会检测、提示并鼓励独立工具调用并行发出，减少模型往返回合
 - 🎯 **缓存命中率优化** — 系统提示分层、稳定 cache prefix、provider/model prompt addition 和运行态元信息分离，尽量提高 prompt cache 命中率并在 UI 中显示命中情况
-- 🤖 **Provider 优先的多模型架构** — 内置 DeepSeek、MiniMax、Local；TOML Provider 配置可描述模型、上下文、图片能力、thinking、价格、余额和系统提示增量
+- 🤖 **Provider 优先的多模型架构** — 内置 DeepSeek、MiniMax、Local、LongCat；TOML Provider 配置可描述模型、上下文、图片能力、thinking、价格、余额和系统提示增量
 - 🧠 **可调推理模式** — `/think off|low|normal|adaptive|high|max`，适配 DeepSeek、MiniMax、Anthropic 风格 thinking/reasoning，并可按模型覆盖预算
 - 🔧 **Agentic 工具调用** — 读写文件、精确编辑、grep/glob、bash/cmd/powershell、web fetch；独立文件的写入和编辑可并行执行
 - 🛡️ **更稳的编辑反馈** — 写入/编辑后接入 LSP 诊断，工具结果会把错误以专门气泡反馈给模型和用户，减少“改完才发现编译炸了”的回合数
@@ -173,6 +173,7 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro |
 | Local | `/provider local` | Llama 3 / Mistral |
+| LongCat | `/provider longcat` | 2.0 |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | 自定义 | `/provider custom` | 任意兼容 API |
 
@@ -313,7 +314,7 @@ Crux is not a clone of Claude Code or OpenCode. It is a **local-first, provider-
 - ⚡ **Fast terminal performance** — Optimized for long conversations, streaming output, tool detail panes, and live metrics, with a built-in frame profiler for chasing slow frames
 - 🔁 **Harness parallel tool-call optimization** — Crux detects and reinforces independent parallel tool calls, reducing unnecessary model round trips when the model would otherwise serialize work
 - 🎯 **Prompt-cache hit optimization** — Layered system prompts, stable cache prefixes, provider/model prompt additions, and separated runtime metadata are designed to improve prompt-cache reuse, with cache-hit visibility in the UI
-- 🤖 **Provider-first multi-model design** — DeepSeek, MiniMax, and Local are bundled; TOML providers describe models, context windows, image support, thinking, pricing, balances, and prompt additions
+- 🤖 **Provider-first multi-model design** — DeepSeek, MiniMax, Local, and LongCat are bundled; TOML providers describe models, context windows, image support, thinking, pricing, balances, and prompt additions
 - 🧠 **Adjustable reasoning** — `/think off|low|normal|adaptive|high|max`, with DeepSeek, MiniMax, and Anthropic-style thinking/reasoning support plus per-model budgets
 - 🔧 **Agentic tool use** — Read, write, precise edit, grep/glob, bash/cmd/powershell, and web fetch; writes/edits to independent files can run in parallel
 - 🛡️ **Edit feedback loop** — Write/edit tools collect LSP diagnostics and surface failures as dedicated bubbles for both the model and the user
