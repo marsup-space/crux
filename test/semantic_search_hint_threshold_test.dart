@@ -1,14 +1,14 @@
 // Tests for the context-size threshold re-fires of the
-// `code_search` preference hint.
+// `semantic_search` preference hint.
 //
 // The feature has three moving parts:
 //
-//   1. **Threshold helper** — `nextCodeSearchHintThreshold` finds
+//   1. **Threshold helper** — `nextSemanticSearchHintThreshold` finds
 //      the next unsatisfied threshold given the current context and
 //      the last threshold fired. Pure function — no side effects,
 //      easy to pin.
 //
-//   2. **Threshold constants** — `codeSearchHintContextThresholds`
+//   2. **Threshold constants** — `semanticSearchHintContextThresholds`
 //      holds the [200k, 400k, 600k] tokens list. Updated as
 //      context windows grow.
 //
@@ -17,13 +17,13 @@
 //      the threshold helper. Synthetic version of the rule
 //      exercised against synthetic ToolResult maps.
 //
-// The existing `code_search_hint_test.dart` covers the one-shot
+// The existing `semantic_search_hint_test.dart` covers the one-shot
 // behavior. This file focuses on the threshold re-fires (the
 // 200k / 400k / 600k re-fires in long sessions).
 
 import 'package:test/test.dart';
 
-import 'package:crux/src/services/prompts/code_search_hint.dart';
+import 'package:crux/src/services/prompts/semantic_search_hint.dart';
 import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
@@ -31,36 +31,36 @@ void main() {
   // 1. Threshold helper
   // ===========================================================================
 
-  group('nextCodeSearchHintThreshold', () {
+  group('nextSemanticSearchHintThreshold', () {
     test('returns null when no threshold has been crossed', () {
       // Below the first threshold (200k). Helper says no fire.
-      expect(nextCodeSearchHintThreshold(100, 0), isNull);
-      expect(nextCodeSearchHintThreshold(50_000, 0), isNull);
-      expect(nextCodeSearchHintThreshold(199_999, 0), isNull);
+      expect(nextSemanticSearchHintThreshold(100, 0), isNull);
+      expect(nextSemanticSearchHintThreshold(50_000, 0), isNull);
+      expect(nextSemanticSearchHintThreshold(199_999, 0), isNull);
     });
 
     test('returns 200k on first crossing when lastFired=0', () {
-      expect(nextCodeSearchHintThreshold(200_000, 0), 200000);
-      expect(nextCodeSearchHintThreshold(250_000, 0), 200000);
-      expect(nextCodeSearchHintThreshold(199_999, 0), isNull);
+      expect(nextSemanticSearchHintThreshold(200_000, 0), 200000);
+      expect(nextSemanticSearchHintThreshold(250_000, 0), 200000);
+      expect(nextSemanticSearchHintThreshold(199_999, 0), isNull);
     });
 
     test('returns 400k after 200k has fired', () {
-      expect(nextCodeSearchHintThreshold(400_000, 200000), 400000);
-      expect(nextCodeSearchHintThreshold(500_000, 200000), 400000);
-      expect(nextCodeSearchHintThreshold(399_999, 200000), isNull);
+      expect(nextSemanticSearchHintThreshold(400_000, 200000), 400000);
+      expect(nextSemanticSearchHintThreshold(500_000, 200000), 400000);
+      expect(nextSemanticSearchHintThreshold(399_999, 200000), isNull);
     });
 
     test('returns 600k after 400k has fired', () {
-      expect(nextCodeSearchHintThreshold(600_000, 400000), 600000);
-      expect(nextCodeSearchHintThreshold(900_000, 400000), 600000);
-      expect(nextCodeSearchHintThreshold(599_999, 400000), isNull);
+      expect(nextSemanticSearchHintThreshold(600_000, 400000), 600000);
+      expect(nextSemanticSearchHintThreshold(900_000, 400000), 600000);
+      expect(nextSemanticSearchHintThreshold(599_999, 400000), isNull);
     });
 
     test('returns null above the highest threshold (600k)', () {
       // All thresholds configured above 600k have fired. No more.
-      expect(nextCodeSearchHintThreshold(700_000, 600000), isNull);
-      expect(nextCodeSearchHintThreshold(1_000_000, 600000), isNull);
+      expect(nextSemanticSearchHintThreshold(700_000, 600000), isNull);
+      expect(nextSemanticSearchHintThreshold(1_000_000, 600000), isNull);
     });
 
     test('handles a context jump past multiple thresholds', () {
@@ -68,26 +68,26 @@ void main() {
       // long message). Helper returns the LOWEST unsatisfied
       // threshold (200k). Subsequent rounds handle the higher
       // ones as the threshold still satisfies T > lastFired.
-      expect(nextCodeSearchHintThreshold(600_000, 0), 200000);
-      expect(nextCodeSearchHintThreshold(600_000, 200000), 400000);
-      expect(nextCodeSearchHintThreshold(600_000, 400000), 600000);
-      expect(nextCodeSearchHintThreshold(600_000, 600000), isNull);
+      expect(nextSemanticSearchHintThreshold(600_000, 0), 200000);
+      expect(nextSemanticSearchHintThreshold(600_000, 200000), 400000);
+      expect(nextSemanticSearchHintThreshold(600_000, 400000), 600000);
+      expect(nextSemanticSearchHintThreshold(600_000, 600000), isNull);
     });
 
     test('handles a context jump past all thresholds', () {
       // 100k → 900k in one round. Helper still returns 200k
       // first; the chat service updates lastFired as each
       // threshold fires in subsequent rounds.
-      expect(nextCodeSearchHintThreshold(900_000, 0), 200000);
+      expect(nextSemanticSearchHintThreshold(900_000, 0), 200000);
     });
 
     test('is idempotent (same input → same output, every call)', () {
-      expect(nextCodeSearchHintThreshold(450_000, 200000),
-          nextCodeSearchHintThreshold(450_000, 200000));
+      expect(nextSemanticSearchHintThreshold(450_000, 200000),
+          nextSemanticSearchHintThreshold(450_000, 200000));
     });
 
     test('the thresholds constant is [200k, 400k, 600k]', () {
-      expect(codeSearchHintContextThresholds, [200000, 400000, 600000]);
+      expect(semanticSearchHintContextThresholds, [200000, 400000, 600000]);
     });
   });
 
@@ -98,8 +98,8 @@ void main() {
   group('injection rule with threshold re-fires', () {
     /// Synthetic version of the chat_service injection logic that
     /// also handles threshold re-fires. Mirrors the real logic
-    /// in `chat_service.dart` (the `if (!runtime.hasShownCodeSearchHint ||
-    /// nextCodeSearchHintThreshold(...) != null)` block).
+    /// in `chat_service.dart` (the `if (!runtime.hasShownsemanticSearchHint ||
+    /// nextSemanticSearchHintThreshold(...) != null)` block).
     ///
     /// Returns the (possibly mutated) results map, the post-injection
     /// flag value, and the post-injection threshold value. Lets us
@@ -120,7 +120,7 @@ void main() {
       var lastThreshold = lastThresholdBefore;
 
       final shouldFire = !flag ||
-          nextCodeSearchHintThreshold(currentContextTokens, lastThreshold) !=
+          nextSemanticSearchHintThreshold(currentContextTokens, lastThreshold) !=
               null;
       if (!shouldFire) {
         return (results: results, flag: flag, lastThreshold: lastThreshold);
@@ -144,7 +144,7 @@ void main() {
 
         results[entry.key] = ToolResult(
           title: r.title,
-          output: r.output + renderCodeSearchHintEmbedded(),
+          output: r.output + renderSemanticSearchHintEmbedded(),
           truncated: r.truncated,
           outputPath: r.outputPath,
           metadata: r.metadata,
@@ -156,7 +156,7 @@ void main() {
         if (!flag) {
           flag = true;
         } else {
-          final t = nextCodeSearchHintThreshold(
+          final t = nextSemanticSearchHintThreshold(
             currentContextTokens,
             lastThreshold,
           );
@@ -179,7 +179,7 @@ void main() {
         lastThresholdBefore: 0,
         currentContextTokens: 100_000, // well below 200k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.flag, isTrue);
       // One-shot doesn't bump lastThreshold — the threshold logic
       // is for subsequent fires. lastThreshold stays at 0.
@@ -199,7 +199,7 @@ void main() {
       );
       // No fire — flag is true, no threshold crossed.
       expect(out.results['a']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.lastThreshold, 0);
     });
 
@@ -214,7 +214,7 @@ void main() {
         lastThresholdBefore: 0,
         currentContextTokens: 250_000, // crossed 200k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.flag, isTrue); // stays true
       expect(out.lastThreshold, 200000); // bumped to 200k
     });
@@ -230,7 +230,7 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 450_000, // crossed 400k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 400000);
     });
 
@@ -245,7 +245,7 @@ void main() {
         lastThresholdBefore: 400000,
         currentContextTokens: 700_000, // crossed 600k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 600000);
     });
 
@@ -261,7 +261,7 @@ void main() {
         currentContextTokens: 900_000, // above 600k, no more thresholds
       );
       expect(out.results['a']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.lastThreshold, 600000);
     });
 
@@ -277,7 +277,7 @@ void main() {
         currentContextTokens: 300_000, // below 400k
       );
       expect(out.results['a']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.lastThreshold, 200000); // unchanged
     });
 
@@ -302,7 +302,7 @@ void main() {
         lastThresholdBefore: 0,
         currentContextTokens: 900_000,
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 200000);
 
       // Round 2 (context = 900k, lastThreshold = 200k):
@@ -318,7 +318,7 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 900_000,
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 400000);
 
       // Round 3 (context = 900k, lastThreshold = 400k):
@@ -334,7 +334,7 @@ void main() {
         lastThresholdBefore: 400000,
         currentContextTokens: 900_000,
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 600000);
 
       // Round 4 (context = 900k, lastThreshold = 600k):
@@ -351,7 +351,7 @@ void main() {
         currentContextTokens: 900_000,
       );
       expect(out.results['a']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.lastThreshold, 600000); // unchanged
     });
 
@@ -366,31 +366,31 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 450_000, // crossed 400k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.lastThreshold, 400000);
     });
 
-    test('mixed round: threshold re-fire on the first grep, not on later read/code_search',
+    test('mixed round: threshold re-fire on the first grep, not on later read/semantic_search',
         () {
-      // LLM called grep, read, code_search all in one round. The
+      // LLM called grep, read, semantic_search all in one round. The
       // threshold re-fire should hit the grep, not the others.
       final results = <String, ToolResult>{
         'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
         'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
-        'c': const ToolResult(title: 'code_search: auth', output: 'snippets'),
+        'c': const ToolResult(title: 'semantic_search: auth', output: 'snippets'),
       };
       final out = injectHint(
         results: results,
-        toolNamesInOrder: ['grep', 'read', 'code_search'],
+        toolNamesInOrder: ['grep', 'read', 'semantic_search'],
         flagBefore: true,
         lastThresholdBefore: 200000,
         currentContextTokens: 450_000, // crossed 400k
       );
-      expect(out.results['a']!.output, contains(renderCodeSearchHintEmbedded()));
+      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
       expect(out.results['b']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.results['c']!.output,
-          isNot(contains(renderCodeSearchHintEmbedded())));
+          isNot(contains(renderSemanticSearchHintEmbedded())));
       expect(out.lastThreshold, 400000);
     });
   });
