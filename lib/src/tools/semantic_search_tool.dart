@@ -44,12 +44,50 @@ class SemanticSearchTool extends ToolDef {
       ''
       'Unlike `grep` (literal string match) and `glob` (filename '
       'pattern), semantic_search is SEMANTIC — it matches code '
-      'by CONCEPT, not by substring. Describe what you want in '
-      'natural language and get relevant code even when the '
-      'exact words don\'t appear in the source. '
+      'by CONCEPT, not by substring. Write a short structured '
+      'phrase (see QUERY RULES below) and get relevant code even '
+      'when the exact words don\'t appear in the source. '
       ''
       'CALL MULTIPLE IN PARALLEL — issue all semantic_search '
-      'calls in one turn when investigating independent concepts.';
+      'calls in one turn when investigating independent concepts.\n'
+      '\n'
+      'QUERY RULES — what works vs what doesn\'t:\n'
+      '\n'
+      '✅ GOOD (use these patterns):\n'
+      '  • "<ClassName> <verb> <object>"  → e.g. '
+      '"ChatTurnOrchestrator execute tool call"\n'
+      '  • "<verb> <object>, <verb> <object>"  → e.g. '
+      '"process tool call results, render ask:// button"\n'
+      '  • "<id1> <id2> <id3>"  → e.g. '
+      '"onToolExecutionStart onToolRound" (when you know '
+      'identifiers)\n'
+      '\n'
+      '❌ BAD (avoid these — they route to docstrings, the system '
+      'prompt, or unrelated files):\n'
+      '  • Conversational questions  → '
+      '"how does the orchestrator handle tool calls?" almost '
+      'always surfaces the system prompt, not the code\n'
+      '  • Noun phrases alone  → '
+      '"click handler" is too generic, surfaces unrelated code\n'
+      '  • Filler words  → '
+      '"find me code that does X" wastes the limited query budget\n'
+      '  • Question + identifier mix  → '
+      '"where is sendTurn defined and how does it..." triggers the '
+      'question path\n'
+      '\n'
+      'TIPS:\n'
+      '  • Include the class/identifier name as a literal token '
+      'when you know it — strong lexical anchor\n'
+      '  • Action verbs (execute, render, process, dispatch) > '
+      'abstract verbs (handle, deal with, manage)\n'
+      '  • 2-4 concepts joined by commas > 1 long sentence\n'
+      '  • For "where is X defined" or exact symbol lookup, use '
+      '`grep` or `read` instead\n'
+      '  • For "find code like this spot", use `find_similar_code` '
+      '(anchor-based, sharper than free-text)\n'
+      '  • If first query misses, retry with the class name '
+      'included, OR split into 2-3 parallel searches (one per '
+      'sub-concept)';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -58,9 +96,15 @@ class SemanticSearchTool extends ToolDef {
       'query': {
         'type': 'string',
         'description':
-            'Natural-language query describing the code you want. '
-            'Examples: "how does indexing parse source files", '
-            '"authentication middleware", "error handling in API layer".',
+            'Short structured phrase describing the code concept. '
+            'Best patterns: "<ClassName> <verb> <object>" '
+            '(e.g. "ChatTurnOrchestrator execute tool call"), '
+            'comma-separated "<verb> <object>" phrases '
+            '(e.g. "process tool call results, render ask:// button"), '
+            'or space-separated identifiers when you know them '
+            '(e.g. "onToolExecutionStart onToolRound"). '
+            'AVOID conversational questions like "how does X handle Y?" '
+            '— they route to the system prompt instead of the actual code.',
       },
       'path': {
         'type': 'string',

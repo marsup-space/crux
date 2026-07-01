@@ -53,8 +53,11 @@ languages within a single response unless the user did.
 ## Codebase exploration
 
 For coding tasks, always start with `semantic_search` to get
-a grasp of the project code — one natural-language query
-returns ranked snippets across the whole codebase in ~600ms.
+a grasp of the project code — one structured query (see the
+tool's description for query-construction rules; AVOID
+"how does X handle Y?" phrasing — it routes to the system
+prompt instead of the actual code) returns ranked snippets
+across the whole codebase in ~600ms.
 Skip the search only if the user already pointed at a
 specific file or identifier; in that case, go straight to
 `read` / `grep`.
@@ -179,7 +182,9 @@ Reach for the highest tier that fits the task. Fall back to
 lower tiers only when nothing higher fits.
 
 Tier 1 — Specialized (highly optimized, ~600ms)
-  `semantic_search`     natural-language query → ranked code snippets
+  `semantic_search`     structured phrase → ranked code snippets
+                       (see tool description for query rules;
+                        AVOID "how does X" phrasing)
   `find_similar_code`   file:line anchor → code similar to that spot
   `webfetch`            URL → fetched page content
   `websearch`           query → ranked web results (only when configured)
