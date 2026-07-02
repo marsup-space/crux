@@ -668,10 +668,10 @@ class ChatTurnOrchestrator {
             // the API doesn't classify every input token into hit or miss.
             final cacheTotal = hit + miss;
             if (cacheTotal > 0) {
-              // Store as decimal percentage (e.g. 85.3) so the UI can show
-              // one decimal place.  The `round()` used before threw away
+              // Store as decimal percentage (e.g. 85.333) so the UI can show
+              // three decimal places.  The `round()` used before threw away
               // precision and collapsed 99.5% into "100%" — misleading.
-              rt.cacheHitPct = ((hit / cacheTotal) * 1000).roundToDouble() / 10.0;
+              rt.cacheHitPct = ((hit / cacheTotal) * 10000).roundToDouble() / 1000.0;
             } else {
               rt.cacheHitPct = null;
             }

@@ -118,7 +118,7 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
   String _cacheHitLabel(SessionRuntimeState rt) {
     final pct = rt.cacheHitPct;
     if (pct != null) {
-      return 'cache ${pct.toStringAsFixed(1)}%';
+      return 'cache ${pct.toStringAsFixed(3)}%';
     }
     return '—';
   }
