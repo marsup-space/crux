@@ -463,6 +463,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
+  semble_dart:
+    dependency: "direct main"
+    description:
+      path: semble-dart
+      relative: true
+    source: path
+    version: "0.1.0"
   shelf:
     dependency: transitive
     description:

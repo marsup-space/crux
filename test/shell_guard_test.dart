@@ -303,7 +303,7 @@ echo "(should be empty)"''';
     test('rg/grep "concept" | head → grep verdict (first verb is grep)', () {
       // Per the "dumber detector" rule, only the first verb
       // is checked. `rg | head` flags as grep (not
-      // semantic_search) — the code-search verdict was
+      // semantic_search) — the semantic-search verdict was
       // intentionally removed because it was too clever.
       const cases = <String>[
         'rg "auth" lib/ | head -10',
@@ -358,7 +358,7 @@ echo "(should be empty)"''';
         // a verification script that lists build artifacts and
         // pipes the binary's --version output to head. The
         // detector correctly identifies it as a glob violation
-        // (because of the leading `ls`), not a code-search
+        // (because of the leading `ls`), not a semantic-search
         // violation. The trailing `| head` doesn't change the
         // classification.
         const cmd =
@@ -525,7 +525,7 @@ The detector covers:
   * read:    cat/head/tail/less/sed/wc/file/stat/diff/…
   * glob:    ls/find/tree/du + Get-ChildItem/dir on Windows
   * grep:    grep/rg/ack/ag + Select-String/findstr on Windows
-  * codeSearch: rg "concept" | head, find … | head → semantic_search
+  * semanticSearch: rg "concept" | head, find … | head → semantic_search
 
 Smart skips: input redirects/heredocs (< anywhere), no-arg tail,
 env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
@@ -681,7 +681,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
 
     test('Select-String | Select-Object → grep verdict (first verb)', () {
       // First verb is Select-String → grep verdict. The
-      // code-search verdict was removed.
+      // semantic-search verdict was removed.
       final v = detectShellGuard(
         r'Select-String -Path "*.cs" -Pattern "TODO" | Select-Object -First 10',
         isWindows: true,
@@ -812,7 +812,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
     });
 
     test('grep verdict body text still mentions semantic_search (general nudge)', () {
-      // The code-search verdict is gone, but the body text
+      // The semantic-search verdict is gone, but the body text
       // still mentions semantic_search as the preferred
       // surface for "how does X work" questions — that's a
       // general nudge to the LLM, independent of the verdict
@@ -929,7 +929,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
     });
 
     test('grep verdict surfaces the right tool name in the bubble label', () {
-      // After removing the code_search verdict, rg | head falls
+      // After removing the semantic_search verdict, rg | head falls
       // through to grep verdict → recommendation is grep tool.
       final v = detectShellGuard(
         'rg "auth" lib/ | head -10',

@@ -59,8 +59,8 @@ void main(List<String> args) async {
     Directory.current = dir;
   }
 
-  // Kick off `semble` model load + index build in the background.
-  // The first `semble_search` tool call awaits this; everything
+  // Kick off Semble model load + index build in the background.
+  // The first `semantic_search` tool call awaits this; everything
   // else (splash, chat panel, recent-projects book-keeping) is
   // unaffected. Failure here is silent — the tool will surface
   // its own clean error if the warmup never finished.

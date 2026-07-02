@@ -21,7 +21,7 @@ void main() {
 
     test('has correct name and description triggers', () {
       expect(tool.name, equals('semantic_search'));
-      expect(tool.description, contains('semantic_search'));
+      expect(tool.description, contains('SEMANTIC'));
       // Implementation details shouldn't leak into the agent-facing
       // description.
       expect(tool.description, isNot(contains('semble')),

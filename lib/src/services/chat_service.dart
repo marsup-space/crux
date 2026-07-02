@@ -27,7 +27,7 @@ import 'compaction/summary_collector.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
 import 'llm_error.dart';
-import 'prompts/code_search_hint.dart';
+import 'prompts/semantic_search_hint.dart';
 import 'prompts/praise_prompts.dart';
 import 'prompts/system_prompt.dart';
 import 'provider_service.dart';
@@ -1529,12 +1529,12 @@ $chatLogMarkdown
           callResults[entry.key] = entry.value;
         }
 
-        // ── code_search preference hint ──────────────────────────────
+        // ── semantic_search preference hint ──────────────────────────────
         // Append a one-shot nudge to the FIRST `grep` or `glob` tool
-        // result in the session, teaching the LLM that `code_search`
+        // result in the session, teaching the LLM that `semantic_search`
         // (semantic search) is the preferred surface for conceptual
-        // code-search questions. Different from the shell-tool fallback
-        // guard's `code_search` verdict (which fires when the LLM uses
+        // semantic-search questions. Different from the shell-tool fallback
+        // guard's `semantic_search` verdict (which fires when the LLM uses
         // `rg | head` style bash pipelines) — this hint fires when the
         // LLM uses grep/glob DIRECTLY as a tool, regardless of bash.
         //
@@ -1552,10 +1552,10 @@ $chatLogMarkdown
         // facing bubble row — the reminder is visible in the chat
         // history inside the tool's output, matching the shell-guard
         // append pattern.
-        if (!runtime.hasShownCodeSearchHint ||
-            nextCodeSearchHintThreshold(
+        if (!runtime.hasShownsemanticSearchHint ||
+            nextSemanticSearchHintThreshold(
               runtime.contextTargetTokens,
-              runtime.codeSearchHintLastThreshold,
+              runtime.semanticSearchHintLastThreshold,
             ) !=
                 null) {
           const hintTriggerTools = <String>{'grep', 'glob'};
@@ -1574,14 +1574,14 @@ $chatLogMarkdown
             // truncated/outputPath/metadata as the original.
             callResults[call.callId] = ToolResult(
               title: result.title,
-              output: result.output + renderCodeSearchHintEmbedded(),
+              output: result.output + renderSemanticSearchHintEmbedded(),
               truncated: result.truncated,
               outputPath: result.outputPath,
               metadata: result.metadata,
             );
             // Update state: the initial one-shot flips
-            // `hasShownCodeSearchHint`; threshold re-fires bump
-            // `codeSearchHintLastThreshold` to the threshold that
+            // `hasShownsemanticSearchHint`; threshold re-fires bump
+            // `semanticSearchHintLastThreshold` to the threshold that
             // just fired. Both transitions are mutually exclusive
             // per round — the one-shot fires only when the flag
             // is still false (no threshold to fire because the
@@ -1590,15 +1590,15 @@ $chatLogMarkdown
             // crossed one). In that case the threshold helper
             // would also return a value, so we check the one-shot
             // first and prefer it.
-            if (!runtime.hasShownCodeSearchHint) {
-              runtime.hasShownCodeSearchHint = true;
+            if (!runtime.hasShownsemanticSearchHint) {
+              runtime.hasShownsemanticSearchHint = true;
             } else {
-              final threshold = nextCodeSearchHintThreshold(
+              final threshold = nextSemanticSearchHintThreshold(
                 runtime.contextTargetTokens,
-                runtime.codeSearchHintLastThreshold,
+                runtime.semanticSearchHintLastThreshold,
               );
               if (threshold != null) {
-                runtime.codeSearchHintLastThreshold = threshold;
+                runtime.semanticSearchHintLastThreshold = threshold;
               }
             }
             break; // only the first grep/glob in the round
@@ -2677,7 +2677,7 @@ String _shellGuardToolNameForKind(ShellGuardKind kind) {
       return 'glob';
     case ShellGuardKind.grep:
       return 'grep';
-    case ShellGuardKind.codeSearch:
+    case ShellGuardKind.semanticSearch:
       return 'semantic_search';
     case ShellGuardKind.none:
       return '';

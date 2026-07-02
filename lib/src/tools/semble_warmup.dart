@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
-import '../utils/bundled_executable.dart';
+import '../services/semble_client.dart';
 
-/// Background warmup for the `semble` binary.
+/// Background warmup for the in-process Semble search isolate.
 ///
-/// `semble` is slow on cold start (model download once, then per-repo
-/// index build on first search). The agent loop shouldn't make the
+/// Semble is slow on cold start (model load, then per-repo index build
+/// on first search). The agent loop shouldn't make the
 /// user wait at the splash screen for this, but the *first tool call*
 /// must see a ready index — otherwise it stalls inside the agent's
 /// think phase and looks like a hang.
@@ -40,10 +39,7 @@ class SembleWarmup {
   /// Fire-and-forget. Starts warmup if not already started. Safe to
   /// call multiple times; later calls return the existing future.
   ///
-  /// Warmup = run a no-op `semble search` against [path], which
-  /// triggers model load + index build. The query content doesn't
-  /// matter — even a junk string forces semble to materialize the
-  /// cache for [path].
+  /// Warmup = spawn the search isolate and pre-index [path].
   ///
   /// Returns the warmup future so callers can choose: `unawaited(...)`
   /// to fire-and-forget at boot, or `await ...` to block on it.
@@ -68,17 +64,15 @@ class SembleWarmup {
     _ready = null;
     _path = null;
     _refreshing = false;
+    SembleClient.instance.debugReset();
   }
 
   // ── Cache refresh (post-edit) ────────────────────────────────────────
 
   bool _refreshing = false;
 
-  /// Fire-and-forget cache refresh. Triggers a `semble search` against
-  /// [path] which forces cache validation: files newer than the cache
-  /// get re-indexed, unchanged files are skipped. Unchanged-file path
-  /// is fast (just an mtime walk); changed-file path scales with how
-  /// many files actually moved.
+  /// Fire-and-forget cache refresh. Drops the in-memory index for [path]
+  /// and asks the search isolate to rebuild it lazily.
   ///
   /// Mirrors the existing git-status refresh pattern in the chat turn
   /// orchestrator: hook this after every tool round that mutated files,
@@ -93,16 +87,7 @@ class SembleWarmup {
 
   Future<void> _doRefresh(String path) async {
     try {
-      final executable = await resolveBundledExecutable('semble');
-      // Same junk-query trick as warmup: the query content is irrelevant;
-      // the side effect (cache validation + selective re-index) is what we want.
-      await Process.run(executable, [
-        'search',
-        '__semble_refresh__',
-        path,
-        '--top-k',
-        '1',
-      ]);
+      await SembleClient.instance.refresh(path);
     } on Object {
       // Silent: same policy as warmup. Refresh failure must never
       // break the agent loop — the next real search will surface
@@ -114,24 +99,9 @@ class SembleWarmup {
 
   Future<void> _doWarmup(Completer<void> completer) async {
     try {
-      final executable = await resolveBundledExecutable('semble');
-      final result = await Process.run(executable, [
-        'search',
-        '__semble_warmup__',
-        _path!,
-        '--top-k',
-        '1',
-      ]);
-      // Both exit-0 (cache built) and non-zero (e.g. path vanished
-      // mid-warmup) are treated as "warmup done, tool will sort it
-      // out". We don't want a failed warmup to leave the tool
-      // blocked forever.
-      if (result.exitCode != 0) {
-        // best-effort: nothing to do
-      }
+      await SembleClient.instance.prewarm(_path!);
     } on Object {
-      // Semble missing, ProcessException, etc. — same policy: don't
-      // block the agent loop.
+      // Same policy as before: don't block the agent loop.
     } finally {
       if (!completer.isCompleted) completer.complete();
     }

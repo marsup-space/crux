@@ -248,6 +248,65 @@ class SessionController {
     return null;
   }
 
+  /// Centralized session-status setter. Single chokepoint for
+  /// any code that wants to move a session to a new status, so
+  /// the "active vs background" rule lives in exactly one place
+  /// and future callers can't accidentally regress it.
+  ///
+  /// ## The active-session rule
+  ///
+  /// When a streaming turn completes, [ChatService] sets the raw
+  /// status to [SessionStatus.done] and the orchestrator calls
+  /// this setter. We downgrade `done` → `idle` for the session
+  /// the user is currently viewing ([currentSessionId]) because
+  /// they were watching the response stream in real time — there
+  /// is nothing "unread" about it, and showing `idle` is the
+  /// correct "ready-for-input" signal. Background sessions, on
+  /// the other hand, keep their `done` status so the sidebar
+  /// keeps the `✦` ("completed but not yet viewed") indicator
+  /// until the user switches to them.
+  ///
+  /// Switching to a `done` background session is what consumes
+  /// the indicator: [completeSwitchSession] flips `done` →
+  /// `idle` at that point (so the in-memory cache and the DB
+  /// stay consistent), and the sidebar no longer shows `✦`.
+  ///
+  /// Other target statuses ([SessionStatus.idle] on error,
+  /// [SessionStatus.interrupted] on user interrupt, etc.) are
+  /// passed through unchanged — the active/background rule only
+  /// applies to `done`.
+  ///
+  /// Updates both the in-memory [Session] and the DB row.
+  /// Returns the *effective* status that was actually applied
+  /// (which may differ from [target] for the active-session
+  /// downgrade path), so the caller can use it for logging or
+  /// to drive a follow-up action without re-deriving the rule.
+  Future<SessionStatus> setSessionStatus(int sessionId, SessionStatus target) async {
+    final session = findSession(sessionId);
+    if (session == null) return target;
+
+    final effective =
+        (sessionId == currentSessionId && target == SessionStatus.done)
+        ? SessionStatus.idle
+        : target;
+
+    session.status = effective;
+    session.updatedAt = DateTime.now();
+    try {
+      final updated = await _store.update(sessionId, status: effective);
+      session.status = updated.status;
+      session.runningOwnerId = updated.runningOwnerId;
+      session.runningHeartbeatAt = updated.runningHeartbeatAt;
+      session.updatedAt = updated.updatedAt;
+    } catch (_) {
+      // Keep the in-memory SSoT sane even if persistence fails —
+      // callers rely on `session.status` reflecting what they
+      // asked for, and the DB write is best-effort (next launch
+      // will reconcile any drift via the boot-time orphan sweep).
+    }
+    return effective;
+  }
+
   SessionRuntimeState runtime(int sessionId) {
     return _runtimeStates.putIfAbsent(sessionId, () {
       final initial = computeBaseContext(sessionId);

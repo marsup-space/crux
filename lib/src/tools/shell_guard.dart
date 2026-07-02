@@ -44,7 +44,7 @@ enum ShellGuardKind {
   read,
   glob,
   grep,
-  codeSearch,
+  semanticSearch,
 }
 
 /// Severity tier for a detected violation. Maps directly to the
@@ -221,7 +221,7 @@ const _posixGrepVerbs = <String>{
 ///
 /// Deliberately does NOT try to detect:
 ///
-///   * Code-search pipe anti-pattern (`rg | head` → code_search).
+///   * Semantic-search pipe anti-pattern (`rg | head` → semantic_search).
 ///     The user removed this — too clever, not worth the
 ///     complexity. `rg | head` falls through to `grep` verdict.
 ///   * Path-arg heuristics for grep ("does grep have a file
@@ -618,7 +618,7 @@ String _whatForKind(ShellGuardKind kind) {
       return 'directory listing via shell';
     case ShellGuardKind.grep:
       return 'content search via shell';
-    case ShellGuardKind.codeSearch:
+    case ShellGuardKind.semanticSearch:
       return 'concept search via shell pipeline';
   }
 }
@@ -633,7 +633,7 @@ String _toolForKind(ShellGuardKind kind) {
       return 'glob';
     case ShellGuardKind.grep:
       return 'grep';
-    case ShellGuardKind.codeSearch:
+    case ShellGuardKind.semanticSearch:
       return 'semantic_search';
   }
 }
@@ -646,7 +646,7 @@ String _exampleForKind(ShellGuardKind kind) {
       return 'ls / find / tree / du → glob';
     case ShellGuardKind.grep:
       return 'grep / rg / ack / ag → grep';
-    case ShellGuardKind.codeSearch:
+    case ShellGuardKind.semanticSearch:
       return 'rg "concept" | head · find … | head → semantic_search';
     case ShellGuardKind.none:
       return '';

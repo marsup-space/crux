@@ -11,8 +11,10 @@ import 'package:test/test.dart';
 
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/services/compaction/chat_log_builder.dart';
+import 'package:crux/src/tools/edit_tool.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
+import 'package:crux/src/tools/write_tool.dart';
 
 Message _ai({
   required int id,
@@ -734,6 +736,487 @@ void main() {
           reason: 'real error markers must still trigger the '
               'inline result-passthrough so the user sees the '
               'failure context in the chat log');
+    });
+  });
+
+  group('buildChatLog — no-op filter (guards and aborts)', () {
+    // The compaction filter drops edit / write calls whose
+    // result indicates the file was NOT mutated:
+    //   * `[GUARD]…` (read-before-write, oldString-no-match,
+    //     streaming abort — they all reuse the bracketed header)
+    //   * `Refusing to overwrite…` (write size-mismatch guard)
+    //   * `Tool aborted` (the literal text the tool layer emits
+    //     when `ctx.abort.isAborted` fires)
+    //
+    // Filtered calls disappear from BOTH the inline per-turn
+    // line AND the bottom-of-log summary section (the latter
+    // because [extractPruneSummary] is never consulted). Auto-
+    // reads are NOT filtered — see the next group.
+    //
+    // Real EditTool / WriteTool (not stubs) — stubs don't
+    // implement the new [ToolDef.isNoOpForCompaction] hook.
+
+    test('edit read-before-write guard is dropped from the chat log',
+        () {
+      // The production shape of `_doMutation`'s read-before-
+      // write guard: header starts with `[GUARD]`, then a
+      // blank line, then the current file body. The chat log
+      // must not show the inline `edit: foo.dart → [GUARD]…`
+      // line (which would be hundreds of chars because the
+      // guard embeds the current file).
+      final guardResult =
+          '[GUARD] Write was BLOCKED — file was modified since '
+          'last read. Your write did NOT take effect. The new '
+          'content is below; retry your edit with a pattern that '
+          'matches this version.\n\nclass Foo {}\n';
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'edit foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'class Foo {}',
+              'newString': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: guardResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // Inline line gone.
+      expect(result.markdown, isNot(contains('edit: lib/foo.dart')),
+          reason: 'guarded edit must be dropped from the inline '
+              'log; the follow-up retry is what matters');
+      expect(result.markdown, isNot(contains('[GUARD]')),
+          reason: 'guard header / file body must not leak into the '
+              'compacted log');
+      // No summary contribution either — guarded edit never
+      // touched the file.
+      expect(result.markdown, isNot(contains('read files:')),
+          reason: 'no read / write-files section when the only '
+              'tool call was a guard');
+    });
+
+    test('edit streaming abort (mid-stream guard catch) is dropped',
+        () {
+      // Streaming-time abort path (`_buildGuardAbortedToolResult`)
+      // wraps the guard header + file content + an early-abort
+      // marker. Same `[GUARD]` header shape → same filter
+      // behaviour.
+      final abortResult =
+          '[GUARD] Edit was BLOCKED — oldString does not match any '
+          'text in the file. Your edit did NOT take effect. The '
+          'current file content is below; pick a different oldString '
+          'and try again.\n\nclass Foo {}\n\n'
+          '[Crux system note — tool-call early abort]\n'
+          'Crux stopped this edit tool call while its arguments '
+          'were still streaming.';
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'edit foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'nope',
+              'newString': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: abortResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(result.markdown, isNot(contains('edit: lib/foo.dart')));
+      expect(result.markdown, isNot(contains('[GUARD]')));
+      expect(result.markdown, isNot(contains('tool-call early abort')));
+    });
+
+    test('edit "Tool aborted" output is dropped', () {
+      // The `ctx.abort.isAborted` path emits
+      // `ToolResult.error('Tool aborted')` → output is the
+      // literal string `Tool aborted`. `_looksLikeError` does
+      // NOT catch it (it only knows about `Error: …`,
+      // `Path not found: …`, `[GUARD]…`, and `exit code:` +
+      // `failed`), so the no-op filter must NOT gate on
+      // `isError` — it must detect the pattern directly.
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'edit foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'class Foo {}',
+              'newString': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: 'Tool aborted'),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(result.markdown, isNot(contains('edit: lib/foo.dart')));
+      expect(result.markdown, isNot(contains('Tool aborted')));
+    });
+
+    test('write read-before-write guard is dropped', () {
+      final guardResult =
+          '[GUARD] Write was BLOCKED — file was not read before '
+          'write. Your write did NOT take effect. The current '
+          'file content is below; call edit or write again now '
+          'and it will succeed (the file has been auto-read for '
+          'you).\n\nclass Foo {}\n';
+      final registry = ToolRegistry();
+      registry.register(WriteTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'write foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'write',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'content': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: guardResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(result.markdown, isNot(contains('write: lib/foo.dart')));
+      expect(result.markdown, isNot(contains('[GUARD]')));
+    });
+
+    test('write size-mismatch guard is dropped', () {
+      // The size-mismatch message does NOT start with
+      // `[GUARD]` — it has its own UX message ("Refusing to
+      // overwrite …"). Same filter must still catch it.
+      // `_looksLikeError` doesn't catch this text either, so
+      // the no-op filter must rely on the leading phrase
+      // alone, not on `isError`.
+      final sizeResult =
+          'Refusing to overwrite lib/foo.dart: the existing file '
+          'is 463 lines / 16.9KB, but the new content is only 1 '
+          'line / 19B. This looks like an accidental full-file '
+          'rewrite — the `edit` tool merges changes by oldString/'
+          'newString, while `write` replaces the whole file. Use '
+          '`edit` for in-place changes, or pass `force: true` if '
+          'you really want to overwrite the entire file with this '
+          'small payload.';
+      final registry = ToolRegistry();
+      registry.register(WriteTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'rewrite foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'write',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'content': 'x',
+              'intent': 'rewrite',
+            },
+          ),
+          _toolResult(id: 3, content: sizeResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(result.markdown, isNot(contains('write: lib/foo.dart')));
+      expect(result.markdown, isNot(contains('Refusing to overwrite')));
+    });
+
+    test('write "Tool aborted" output is dropped', () {
+      final registry = ToolRegistry();
+      registry.register(WriteTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'write foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'write',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'content': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: 'Tool aborted'),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(result.markdown, isNot(contains('write: lib/foo.dart')));
+      expect(result.markdown, isNot(contains('Tool aborted')));
+    });
+
+    test('non-edit/write tools are not affected (read errors are kept)',
+        () {
+      // The filter is opt-in per tool — the default
+      // `isNoOpForCompaction` returns false, so a `read`
+      // failure (e.g. file not found) is still rendered
+      // inline with the `→ <error>` tail. The user spec is
+      // specifically about edit / write noise; other tools
+      // benefit from keeping the error visible in the log.
+      final registry = ToolRegistry();
+      registry.register(_StubReadTool(
+        const SummaryContribution(
+          category: 'read-files',
+          key: 'lib/missing.dart',
+          value: '',
+        ),
+      ));
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'read missing'),
+          _toolCall(
+            id: 2,
+            toolName: 'read',
+            input: {'filePath': 'lib/missing.dart'},
+          ),
+          // Real read-error prefix that `_looksLikeError`
+          // catches.
+          _toolResult(
+            id: 3,
+            content: 'Path not found: lib/missing.dart',
+          ),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      expect(
+        result.markdown,
+        contains('read: lib/missing.dart → Path not found'),
+        reason: 'read failures must NOT be dropped — the filter '
+            'is opt-in per tool, and the default keeps the '
+            'error visible',
+      );
+    });
+  });
+
+  group('buildChatLog — auto-read routes into read files section', () {
+    // The auto-read path is the one edit result that we KEEP
+    // in the chat log: the call DID teach the model the file
+    // content, and the resumed agent post-compact still needs
+    // that snapshot to make sense of a follow-up edit. The
+    // user's spec: "edit and write auto-read should be
+    // 'using' the read tool, and count towards the 'all read
+    // files' section." Concretely:
+    //
+    //   * The inline per-turn line stays as `edit: foo.dart
+    //     for {intent}` — the tool the model actually called.
+    //   * The bottom-of-log `read files:` section gets the
+    //     file content (extracted from the auto-read response
+    //     body) so the snapshot is preserved verbatim.
+    //
+    // Write has no auto-read analog (the tool doesn't have a
+    // match step to fail on), so there's no mirror test for
+    // write.
+
+    test('edit auto-read keeps the inline line and contributes the '
+        'file content to read files', () {
+      // The exact shape emitted by `_autoReadResult` in
+      // edit_tool.dart: `[AUTOREAD]` header line, blank line,
+      // hint paragraph, blank line, file content. The test
+      // uses a content body that includes internal blank
+      // lines to verify the parser joins segments with
+      // `\n\n` instead of splitting on every blank line.
+      final fileBody =
+          'class Foo {\n  void bar() {}\n\n  // blank-line comment\n}\n';
+      final autoReadResult =
+          '[AUTOREAD] No changes were made — The oldString was '
+          'not found in the file.\n\n'
+          'We re-read the file for you (saved a round trip). '
+          'The current content is below; you can call edit again '
+          'now without having to call read first.\n\n'
+          '$fileBody';
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'edit foo'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'nope',
+              'newString': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(id: 3, content: autoReadResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // Inline line preserved — the tool the model actually
+      // called.
+      expect(
+        result.markdown,
+        contains('edit: lib/foo.dart for {rename}'),
+        reason: 'auto-read edit is kept inline as the tool the '
+            'model actually called',
+      );
+      // The auto-read response text is NOT pasted inline.
+      expect(
+        result.markdown,
+        isNot(contains('[AUTOREAD]')),
+        reason: 'auto-read header / hint paragraph must not leak '
+            'into the chat log body',
+      );
+      // File content makes it into the read files section.
+      expect(
+        result.markdown,
+        contains('read files:'),
+        reason: 'auto-read contributes to the read files section',
+      );
+      expect(
+        result.markdown,
+        contains('lib/foo.dart'),
+      );
+      expect(
+        result.markdown,
+        contains('class Foo {'),
+        reason: 'file body from the auto-read response is '
+            'preserved verbatim in the summary section',
+      );
+      // The internal blank line in the file body is preserved
+      // (the parser joins segments with `\n\n` instead of
+      // collapsing them).
+      expect(
+        result.markdown,
+        contains('// blank-line comment'),
+      );
+    });
+
+    test('guard followed by successful edit in the same round: only '
+        'the successful edit shows', () {
+      // The common LLM streaming pattern: model emits a
+      // guarded edit, sees the guard, immediately retries
+      // with a corrected oldString. The retry succeeds. The
+      // chat log should show ONLY the retry, not the failed
+      // attempt. The retry's args are in the model history
+      // already (the tool_call was emitted), so the only
+      // thing missing post-compact is the inline line.
+      final guardResult =
+          '[GUARD] Edit was BLOCKED — oldString does not match any '
+          'text in the file. Your edit did NOT take effect. The '
+          'current file content is below; pick a different '
+          'oldString and try again.\n\nclass Foo {}\n';
+      final successResult =
+          'Edit applied to lib/foo.dart (intent: \'rename\'): '
+          'Replaced 1 occurrence of oldString (+1 -1 lines)';
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      // Single tool_call message with TWO calls (the guarded
+      // one and the retry), each with its own tool_result
+      // message keyed by callId.
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'edit foo'),
+          Message(
+            id: 2,
+            sessionId: 1,
+            role: 'tool_call',
+            content: '',
+            toolCalls: [
+              ToolCallData(
+                callId: 'call_2_0',
+                name: 'edit',
+                input: {
+                  'filePath': 'lib/foo.dart',
+                  'oldString': 'nope',
+                  'newString': 'class Bar {}',
+                  'intent': 'rename',
+                },
+              ),
+              ToolCallData(
+                callId: 'call_2_1',
+                name: 'edit',
+                input: {
+                  'filePath': 'lib/foo.dart',
+                  'oldString': 'class Foo {}',
+                  'newString': 'class Bar {}',
+                  'intent': 'rename',
+                },
+              ),
+            ],
+          ),
+          Message(
+            id: 3,
+            sessionId: 1,
+            role: 'tool',
+            toolCallId: 'call_2_0',
+            content: guardResult,
+          ),
+          Message(
+            id: 4,
+            sessionId: 1,
+            role: 'tool',
+            toolCallId: 'call_2_1',
+            content: successResult,
+          ),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // The retry renders inline (success path).
+      expect(
+        result.markdown,
+        contains('edit: lib/foo.dart for {rename}'),
+      );
+      // The guarded call is gone — no [GUARD] / guard header.
+      expect(
+        result.markdown,
+        isNot(contains('[GUARD]')),
+        reason: 'guarded edit is dropped; the successful retry '
+            'is the durable signal',
+      );
+      // No `→` for the retry (success path; error path would
+      // append `→ <result>`).
+      expect(
+        result.markdown,
+        isNot(contains('Edit applied to lib/foo.dart →')),
+        reason: 'successful edit renders without the result '
+            'payload; the success summary is in the model\'s '
+            'tool call history, not the chat log',
+      );
     });
   });
 }

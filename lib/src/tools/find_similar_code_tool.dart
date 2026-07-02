@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
-import '../utils/bundled_executable.dart';
+import 'package:path/path.dart' as p;
+
 import '../models/message.dart';
+import '../services/semble_client.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'semble_warmup.dart';
 import 'tool_def.dart';
@@ -120,68 +121,34 @@ class FindSimilarCodeTool extends ToolDef {
     final k = (args['k'] as int?) ?? _defaultTopK;
     if (k < 1) return ToolResult.error('k must be >= 1');
 
+    final anchorPath = p.isAbsolute(file) ? file : p.join(path, file);
+    final anchorFile = File(anchorPath);
+    if (!anchorFile.existsSync()) {
+      return ToolResult.error(
+        'find_similar_code: no chunk found at $file:$line. '
+        'Check that the file path matches one returned by a '
+        'previous `semantic_search` or `read` call.',
+      );
+    }
+    final lineCount = (await anchorFile.readAsLines()).length;
+    if (line > lineCount) {
+      return ToolResult.error(
+        'find_similar_code: no chunk found at $file:$line. '
+        'Check that the line number is in range.',
+      );
+    }
+
     // Same warmup as semantic_search — the index is shared.
     await SembleWarmup.instance.awaitReady(path);
 
-    final executable = await resolveBundledExecutable('semble');
-
     try {
-      final result = await Process.run(executable, [
-        'find-related',
-        file,
-        '$line',
-        path,
-        '--top-k',
-        '$k',
-      ]);
+      final results = await SembleClient.instance.findRelated(
+        file: file,
+        line: line,
+        path: path,
+        topK: k,
+      );
 
-      if (result.exitCode != 0) {
-        final stderr = (result.stderr as String).trim();
-        // "No chunk found at file:line" — the file/line didn't
-        // snap onto a real source chunk (file moved, line out
-        // of range, etc.). Surface a clean, agent-actionable
-        // error rather than the raw stderr.
-        if (stderr.toLowerCase().contains('no chunk found at')) {
-          return ToolResult.error(
-            'find_similar_code: no chunk found at $file:$line. '
-            'Check that the file path matches one returned by a '
-            'previous `semantic_search` or `read` call, and that '
-            'the line number is in range.',
-          );
-        }
-        if (stderr.isEmpty) {
-          return ToolResult.error('find_similar_code exited with code ${result.exitCode}');
-        }
-        return ToolResult.error(
-          'find_similar_code error: $stderr\n\n'
-          'The underlying search engine is unavailable. '
-          'Install it (e.g. `pip install semble`) and ensure the '
-          '`semble` binary is on PATH or in third_party/bin/.',
-        );
-      }
-
-      final stdout = result.stdout as String;
-      if (stdout.isEmpty) {
-        return ToolResult(
-          title: 'find_similar_code: no matches',
-          output: '(no output from find_similar_code)',
-          metadata: {'totalMatches': 0},
-        );
-      }
-
-      final Map<String, dynamic> parsed;
-      try {
-        parsed = jsonDecode(stdout) as Map<String, dynamic>;
-      } on FormatException catch (e) {
-        return ToolResult.error(
-          'Failed to parse find_similar_code output: $e\n\n'
-          'Raw output (first 500 chars):\n'
-          '${stdout.substring(0, stdout.length.clamp(0, 500))}',
-        );
-      }
-
-      final results =
-          (parsed['results'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
       if (results.isEmpty) {
         return ToolResult(
           title: 'find_similar_code: no matches',
@@ -192,16 +159,16 @@ class FindSimilarCodeTool extends ToolDef {
 
       final lines = <String>[
         '# ${results.length} match'
-        '${results.length == 1 ? '' : 'es'} similar to '
-        '$file:$line (in $path)',
+            '${results.length == 1 ? '' : 'es'} similar to '
+            '$file:$line (in $path)',
         '',
       ];
       for (final r in results) {
-        final f = r['file_path'] ?? '<unknown>';
-        final start = r['start_line'] ?? '?';
-        final end = r['end_line'] ?? '?';
-        final score = (r['score'] as num?)?.toStringAsFixed(4) ?? '?';
-        final content = (r['content'] as String? ?? '').trim();
+        final f = r.filePath;
+        final start = r.startLine;
+        final end = r.endLine;
+        final score = r.score.toStringAsFixed(4);
+        final content = r.content.trim();
 
         lines.add('## $f:$start-$end  (score $score)');
         for (final line in content.split('\n')) {
@@ -219,13 +186,17 @@ class FindSimilarCodeTool extends ToolDef {
         output: lines.join('\n'),
         metadata: {'totalMatches': results.length},
       );
-    } on ProcessException catch (e) {
-      return ToolResult.error(
-        'Unable to start find_similar_code: ${e.message}\n\n'
-        'Install the underlying search engine (e.g. `pip install semble`) '
-        'and ensure its binary is on PATH or in third_party/bin/. '
-        'Set CRUX_THIRD_PARTY_BIN to override the search path.',
-      );
+    } on Object catch (e) {
+      final message = e.toString();
+      if (message.toLowerCase().contains('no chunk found at')) {
+        return ToolResult.error(
+          'find_similar_code: no chunk found at $file:$line. '
+          'Check that the file path matches one returned by a '
+          'previous `semantic_search` or `read` call, and that '
+          'the line number is in range.',
+        );
+      }
+      return ToolResult.error('Unable to run find_similar_code: $e');
     }
   }
 
