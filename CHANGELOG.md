@@ -6,6 +6,17 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [0.10.2] - 2026-07-02
+
+76cf456
+
+### Fixes
+
+- **Cache hit percentage precision** — the cache hit rate in the
+  metrics display now shows 3 decimal places (e.g. `cache 98.500%`)
+  and the calculation was corrected (was producing values 10x too
+  small due to a rounding coefficient error).
+
 ## [0.10.1] - 2026-06-26
 
 1747489
