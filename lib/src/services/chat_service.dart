@@ -3,6 +3,7 @@ import 'dart:async';
 import '../models/chat_types.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
+import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
@@ -18,6 +19,7 @@ import 'prompts/system_prompt.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
 import 'tool_executor.dart';
+import 'wire_format.dart' as wire_format;
 import 'wire_format.dart';
 
 // Re-export the public API surface so existing callers only need to
@@ -27,7 +29,8 @@ export 'wire_format.dart' show
     buildApiMessages,
     currentContextTokens,
     estimateProjectedContextTokens,
-    computeCompactionReserveAndThreshold;
+    computeCompactionReserveAndThreshold,
+    ResolvedChatTarget;
 
 /// Facade for the chat subsystem.
 ///
@@ -232,4 +235,44 @@ class ChatService {
     _turnExecutor.leaseManager.dispose();
     _turnExecutor.dispose();
   }
+
+  // ── Static delegating methods (backward compatibility) ────────────
+  // Tests call these as `ChatService.staticMethod(...)`. They delegate
+  // to the top-level functions in wire_format.dart.
+
+  static List<Map<String, dynamic>> buildApiMessages(
+    List<Message> history,
+    WireFamily wireFamily, {
+    String? systemPrompt,
+  }) => wire_format.buildApiMessages(history, wireFamily, systemPrompt: systemPrompt);
+
+  static int estimateProjectedContextTokens({
+    required Session session,
+    required String? systemPrompt,
+    required List<Message> history,
+    required String? incomingUserContent,
+    required List<Map<String, dynamic>> toolDefs,
+  }) => wire_format.estimateProjectedContextTokens(
+    session: session,
+    systemPrompt: systemPrompt,
+    history: history,
+    incomingUserContent: incomingUserContent,
+    toolDefs: toolDefs,
+  );
+
+  static ({int reserve, int threshold}) computeCompactionReserveAndThreshold({
+    required int contextSize,
+  }) => wire_format.computeCompactionReserveAndThreshold(contextSize: contextSize);
+
+  static int currentContextTokens({
+    required List<Message> messages,
+    String? systemPrompt,
+    List<Map<String, dynamic>>? toolDefs,
+    String? incomingUserContent,
+  }) => wire_format.currentContextTokens(
+    messages: messages,
+    systemPrompt: systemPrompt,
+    toolDefs: toolDefs,
+    incomingUserContent: incomingUserContent,
+  );
 }

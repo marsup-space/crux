@@ -1089,7 +1089,7 @@ void main() {
           'lib',
           'src',
           'components',
-          'chat_input.dart',
+          'input_overlay.dart',
         ),
         'context': 3,
       }, ctx);
