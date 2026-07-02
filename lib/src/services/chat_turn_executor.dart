@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 
@@ -31,6 +32,41 @@ import 'wire_format.dart';
 
 const String earlyAbortSystemNoteMarker =
     '[Crux system note — tool-call early abort]';
+
+/// Maximum number of automatic retries for retriable LLM errors
+/// (rateLimit, overloaded, serverError, timeout, network). The initial
+/// attempt counts as try 0, so the total number of attempts is
+/// [kMaxLlmRetries] + 1.
+const int kMaxLlmRetries = 5;
+
+/// Returns a short, user-facing label describing the error that triggered
+/// a retry attempt. Used in the status toast shown between attempts.
+String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
+  if (streamError != null) {
+    switch (streamError.kind) {
+      case LlmErrorKind.rateLimit:
+        return 'rate limited';
+      case LlmErrorKind.overloaded:
+        return 'upstream overloaded';
+      case LlmErrorKind.serverError:
+        return 'server error';
+      case LlmErrorKind.timeout:
+        return 'timed out';
+      case LlmErrorKind.network:
+        return 'network error';
+      default:
+        return 'error';
+    }
+  }
+  if (thrownError != null) {
+    if (thrownError is TimeoutException) return 'timed out';
+    if (thrownError is SocketException) return 'network error';
+    if (thrownError is HandshakeException) return 'TLS error';
+    if (thrownError is HttpException) return 'HTTP error';
+    return 'error';
+  }
+  return 'error';
+}
 
 /// Runs a single chat turn: streams the LLM response, executes tool
 /// calls in parallel, injects hints, and persists the round.
@@ -320,267 +356,343 @@ class ChatTurnExecutor {
         return;
       }
 
-      runtime.startStreamingTimer();
-      runtime.roundStartTime = DateTime.now();
-      runtime.roundStreaming = true;
-      runtime.roundFirstTokenTime = null;
+      LlmError? streamError;
+      Object? thrownError;
 
-      roundReasoningTokens = 0;
-      roundReasoningSignatureBuffer.clear();
-      roundThinkingDurationMs = 0;
-      roundFirstContentTime = null;
-      roundFirstDeltaTime = null;
-      roundFirstReasoningTime = null;
-      roundLastReasoningTime = null;
-      roundLastDeltaTime = null;
-
-      final streamCancelToken = LlmStreamCancelToken();
-      final streamingGuard = _StreamingGuardAccumulator();
-      _PendingStreamingGuardAbort? pendingGuardAbort;
-
-      final stream = llmClient.streamChat(
-        endpointUrl: provider.endpointUrl,
-        config: provider,
-        apiKey: apiKey,
-        modelId: modelId,
-        messages: List<Map<String, dynamic>>.from(apiMessages),
-        thinkingMode: runtime.thinkingMode,
-        reasoningEffort: runtime.reasoningEffort,
-        thinkingBudget: modelConfig.thinkingBudget,
-        maxTokens: modelConfig.maxTokens,
-        temperature: modelConfig.temperature,
-        tools: toolDefs.isNotEmpty ? toolDefs : null,
-        userId: '${InstallSlug.slug}-$sessionId',
-        cancelToken: streamCancelToken,
-      );
-
+      // Declared outside the retry loop so they remain in scope for
+      // the post-stream processing that follows.
       final chunks = <LlmChunk>[];
-
-      final useLerp = modelConfig.streamLerp;
+      _PendingStreamingGuardAbort? pendingGuardAbort;
+      SchedulerHandle? lerpTimer;
       String lerpPendingText = '';
       String lerpPendingReasoning = '';
-      SchedulerHandle? lerpTimer;
       var lerpStreamDone = false;
       Completer<void>? lerpDrainCompleter;
+      final useLerp = modelConfig.streamLerp;
 
-      const double lerpBaselineMs = 16.0;
-      double lerpAccumulatedBudgetMs = 0.0;
-
-      try {
-        void ensureLerpTimer() {
-          if (lerpTimer != null) return;
-          lerpTimer = NoctermScheduler.instance.every(
-            const Duration(milliseconds: 16),
-            (tick) {
-              FrameProfiler.instance.markTimer('lerp');
-              if (leaseManager.isCancelRequested(sessionId)) {
-                lerpTimer?.cancel();
-                lerpTimer = null;
-                if (lerpDrainCompleter != null &&
-                    !lerpDrainCompleter.isCompleted) {
-                  lerpDrainCompleter.complete();
-                }
-                return;
-              }
-
-              final totalPending =
-                  lerpPendingText.length + lerpPendingReasoning.length;
-              if (totalPending == 0) {
-                if (lerpStreamDone &&
-                    lerpDrainCompleter != null &&
-                    !lerpDrainCompleter.isCompleted) {
-                  lerpDrainCompleter.complete();
-                }
-                return;
-              }
-
-              final deltaMs = tick.delta == Duration.zero
-                  ? lerpBaselineMs
-                  : tick.delta.inMicroseconds / 1000.0;
-              if (deltaMs > lerpBaselineMs) {
-                lerpAccumulatedBudgetMs += deltaMs - lerpBaselineMs;
-              }
-              final extraFromBudget =
-                  (lerpAccumulatedBudgetMs / lerpBaselineMs).floor();
-              lerpAccumulatedBudgetMs -= extraFromBudget * lerpBaselineMs;
-
-              final alpha = lerpStreamDone ? 0.03 : 0.016;
-              final baselineMin = lerpStreamDone ? 2 : 1;
-              final floodCount = (totalPending * alpha).ceil();
-
-              final minCount = baselineMin + extraFromBudget;
-              final count = (minCount > floodCount ? minCount : floodCount)
-                  .clamp(1, totalPending);
-
-              var remaining = count;
-
-              if (lerpPendingText.isNotEmpty) {
-                final take = remaining.clamp(0, lerpPendingText.length);
-                if (take > 0) {
-                  final emit = lerpPendingText.substring(0, take);
-                  lerpPendingText = lerpPendingText.substring(take);
-                  onDelta(emit);
-                  remaining -= take;
-                }
-              }
-
-              if (remaining > 0 && lerpPendingReasoning.isNotEmpty) {
-                final take = remaining.clamp(0, lerpPendingReasoning.length);
-                if (take > 0) {
-                  final emit = lerpPendingReasoning.substring(0, take);
-                  lerpPendingReasoning = lerpPendingReasoning.substring(take);
-                  onReasoning(emit);
-                }
-              }
-
-              onChunk();
-            },
-            name: 'streamLerp',
-            owner: this,
-            priority: SchedulePriority.animation,
+      for (var attempt = 0; attempt <= kMaxLlmRetries; attempt++) {
+        if (attempt > 0) {
+          final backoffMs = (1000 * (1 << (attempt - 1))).clamp(1000, 30000);
+          onStatus?.call(
+            'Retrying ($attempt/$kMaxLlmRetries) after '
+            '${errorLabelForRetry(thrownError, streamError)} — '
+            'waiting ${backoffMs}ms...',
           );
-        }
-
-        await for (final chunk in stream) {
+          await Future.delayed(Duration(milliseconds: backoffMs));
           if (leaseManager.isCancelRequested(sessionId)) {
-            lerpTimer?.cancel();
-            break;
-          }
-
-          if (chunk.error != null) {
-            lerpTimer?.cancel();
             runtime.pauseStreamingTimer();
             stopActiveRound();
             runtime.isResponding = false;
             await store.update(sessionId, status: SessionStatus.idle);
             session.status = SessionStatus.idle;
             leaseManager.markSessionInactive(sessionId);
-            onError(chunk.error!);
+            leaseManager.clearCancelRequest(sessionId);
             return;
           }
+          streamError = null;
+          thrownError = null;
+        }
 
-          if (chunk.guardAbort) {
-            lerpTimer?.cancel();
-            pendingGuardAbort ??= streamingGuard.pendingAbort;
-            break;
+        runtime.startStreamingTimer();
+        runtime.roundStartTime = DateTime.now();
+        runtime.roundStreaming = true;
+        runtime.roundFirstTokenTime = null;
+
+        roundReasoningTokens = 0;
+        roundReasoningSignatureBuffer.clear();
+        roundThinkingDurationMs = 0;
+        roundFirstContentTime = null;
+        roundFirstDeltaTime = null;
+        roundFirstReasoningTime = null;
+        roundLastReasoningTime = null;
+        roundLastDeltaTime = null;
+
+        final streamCancelToken = LlmStreamCancelToken();
+        final streamingGuard = _StreamingGuardAccumulator();
+
+        final stream = llmClient.streamChat(
+          endpointUrl: provider.endpointUrl,
+          config: provider,
+          apiKey: apiKey,
+          modelId: modelId,
+          messages: List<Map<String, dynamic>>.from(apiMessages),
+          thinkingMode: runtime.thinkingMode,
+          reasoningEffort: runtime.reasoningEffort,
+          thinkingBudget: modelConfig.thinkingBudget,
+          maxTokens: modelConfig.maxTokens,
+          temperature: modelConfig.temperature,
+          tools: toolDefs.isNotEmpty ? toolDefs : null,
+          userId: '${InstallSlug.slug}-$sessionId',
+          cancelToken: streamCancelToken,
+        );
+
+        chunks.clear();
+        pendingGuardAbort = null;
+        lerpTimer?.cancel();
+        lerpTimer = null;
+        lerpPendingText = '';
+        lerpPendingReasoning = '';
+        lerpStreamDone = false;
+        lerpDrainCompleter = null;
+
+        const double lerpBaselineMs = 16.0;
+        double lerpAccumulatedBudgetMs = 0.0;
+
+        try {
+          void ensureLerpTimer() {
+            if (lerpTimer != null) return;
+            lerpTimer = NoctermScheduler.instance.every(
+              const Duration(milliseconds: 16),
+              (tick) {
+                FrameProfiler.instance.markTimer('lerp');
+                if (leaseManager.isCancelRequested(sessionId)) {
+                  lerpTimer?.cancel();
+                  lerpTimer = null;
+                  if (lerpDrainCompleter != null &&
+                      !lerpDrainCompleter.isCompleted) {
+                    lerpDrainCompleter.complete();
+                  }
+                  return;
+                }
+
+                final totalPending =
+                    lerpPendingText.length + lerpPendingReasoning.length;
+                if (totalPending == 0) {
+                  if (lerpStreamDone &&
+                      lerpDrainCompleter != null &&
+                      !lerpDrainCompleter.isCompleted) {
+                    lerpDrainCompleter.complete();
+                  }
+                  return;
+                }
+
+                final deltaMs = tick.delta == Duration.zero
+                    ? lerpBaselineMs
+                    : tick.delta.inMicroseconds / 1000.0;
+                if (deltaMs > lerpBaselineMs) {
+                  lerpAccumulatedBudgetMs += deltaMs - lerpBaselineMs;
+                }
+                final extraFromBudget =
+                    (lerpAccumulatedBudgetMs / lerpBaselineMs).floor();
+                lerpAccumulatedBudgetMs -= extraFromBudget * lerpBaselineMs;
+
+                final alpha = lerpStreamDone ? 0.03 : 0.016;
+                final baselineMin = lerpStreamDone ? 2 : 1;
+                final floodCount = (totalPending * alpha).ceil();
+
+                final minCount = baselineMin + extraFromBudget;
+                final count = (minCount > floodCount ? minCount : floodCount)
+                    .clamp(1, totalPending);
+
+                var remaining = count;
+
+                if (lerpPendingText.isNotEmpty) {
+                  final take = remaining.clamp(0, lerpPendingText.length);
+                  if (take > 0) {
+                    final emit = lerpPendingText.substring(0, take);
+                    lerpPendingText = lerpPendingText.substring(take);
+                    onDelta(emit);
+                    remaining -= take;
+                  }
+                }
+
+                if (remaining > 0 && lerpPendingReasoning.isNotEmpty) {
+                  final take = remaining.clamp(0, lerpPendingReasoning.length);
+                  if (take > 0) {
+                    final emit = lerpPendingReasoning.substring(0, take);
+                    lerpPendingReasoning =
+                        lerpPendingReasoning.substring(take);
+                    onReasoning(emit);
+                  }
+                }
+
+                onChunk();
+              },
+              name: 'streamLerp',
+              owner: this,
+              priority: SchedulePriority.animation,
+            );
           }
 
-          chunks.add(chunk);
-
-          if (chunk.reasoningSignatureDelta != null) {
-            roundReasoningSignatureBuffer.write(chunk.reasoningSignatureDelta);
-          }
-
-          if (chunk.textDelta != null ||
-              chunk.reasoningContent != null ||
-              chunk.toolUse != null) {
-            final now = DateTime.now();
-            if (runtime.roundFirstTokenTime == null) {
-              runtime.roundFirstTokenTime = now;
-              roundFirstDeltaTime = now;
+          await for (final chunk in stream) {
+            if (leaseManager.isCancelRequested(sessionId)) {
+              lerpTimer?.cancel();
+              break;
             }
-            roundLastDeltaTime = now;
-            if (chunk.toolUse != null) {
-              final toolUse = chunk.toolUse!;
-              if (toolUse.inputDelta.isNotEmpty) {
-                runtime.cumulativeCompletionTokens += estimateTokens(
-                  toolUse.inputDelta,
-                );
-              }
-              onToolUse?.call(toolUse);
-              final guardAbort = await streamingGuard.accumulateAndCheck(
-                toolUse,
-                toolExecutor: toolExecutor,
-                workingDirectory: session.projectPath,
-              );
-              if (guardAbort != null) {
-                pendingGuardAbort = guardAbort;
-                onStreamingGuardAbort?.call(
-                  StreamingGuardAbortEvent(
-                    index: guardAbort.index,
-                    callId: guardAbort.callId,
-                    name: guardAbort.name,
-                    filePath: guardAbort.filePath,
-                    reason: guardAbort.guard.reason ?? 'guard',
-                    abortedInputTokensEstimate:
-                        guardAbort.abortedInputTokensEstimate,
-                  ),
-                );
-                await streamCancelToken.cancelActiveStream(
-                  reason: guardAbort.guard.reason ?? 'guard',
-                  guardAbort: true,
-                );
-                lerpTimer?.cancel();
+
+            if (chunk.error != null) {
+              lerpTimer?.cancel();
+              if (chunk.error!.isRetriable && attempt < kMaxLlmRetries) {
+                streamError = chunk.error!;
                 break;
               }
+              runtime.pauseStreamingTimer();
+              stopActiveRound();
+              runtime.isResponding = false;
+              await store.update(sessionId, status: SessionStatus.idle);
+              session.status = SessionStatus.idle;
+              leaseManager.markSessionInactive(sessionId);
+              onError(chunk.error!);
+              return;
             }
-            if (firstTokenEver &&
-                (chunk.textDelta != null || chunk.reasoningContent != null)) {
-              final now = DateTime.now();
-              final elapsed =
-                  now.difference(runtime.responseStartTime!).inMicroseconds /
-                  1000.0;
-              runtime.ttftMs = elapsed;
-              runtime.ttftReceived = true;
-              runtime.firstTokenTime = now;
-              firstTokenEver = false;
+
+            if (chunk.guardAbort) {
+              lerpTimer?.cancel();
+              pendingGuardAbort ??= streamingGuard.pendingAbort;
+              break;
             }
-            if (chunk.textDelta != null) {
-              roundTextBuffer.write(chunk.textDelta);
-              roundFirstContentTime ??= now;
-              if (useLerp) {
-                lerpPendingText += chunk.textDelta!;
-                ensureLerpTimer();
-              } else {
-                onDelta(chunk.textDelta!);
-              }
+
+            chunks.add(chunk);
+
+            if (chunk.reasoningSignatureDelta != null) {
+              roundReasoningSignatureBuffer
+                  .write(chunk.reasoningSignatureDelta);
             }
-            if (chunk.reasoningContent != null) {
-              roundReasoningBuffer.write(chunk.reasoningContent);
-              roundFirstReasoningTime ??= now;
-              roundLastReasoningTime = now;
-              if (useLerp) {
-                lerpPendingReasoning += chunk.reasoningContent!;
-                ensureLerpTimer();
-              } else {
-                onReasoning(chunk.reasoningContent!);
-              }
-            }
-            if ((!useLerp &&
-                    (chunk.textDelta != null ||
-                        chunk.reasoningContent != null)) ||
+
+            if (chunk.textDelta != null ||
+                chunk.reasoningContent != null ||
                 chunk.toolUse != null) {
-              onChunk();
+              final now = DateTime.now();
+              if (runtime.roundFirstTokenTime == null) {
+                runtime.roundFirstTokenTime = now;
+                roundFirstDeltaTime = now;
+              }
+              roundLastDeltaTime = now;
+              if (chunk.toolUse != null) {
+                final toolUse = chunk.toolUse!;
+                if (toolUse.inputDelta.isNotEmpty) {
+                  runtime.cumulativeCompletionTokens += estimateTokens(
+                    toolUse.inputDelta,
+                  );
+                }
+                onToolUse?.call(toolUse);
+                final guardAbort = await streamingGuard.accumulateAndCheck(
+                  toolUse,
+                  toolExecutor: toolExecutor,
+                  workingDirectory: session.projectPath,
+                );
+                if (guardAbort != null) {
+                  pendingGuardAbort = guardAbort;
+                  onStreamingGuardAbort?.call(
+                    StreamingGuardAbortEvent(
+                      index: guardAbort.index,
+                      callId: guardAbort.callId,
+                      name: guardAbort.name,
+                      filePath: guardAbort.filePath,
+                      reason: guardAbort.guard.reason ?? 'guard',
+                      abortedInputTokensEstimate:
+                          guardAbort.abortedInputTokensEstimate,
+                    ),
+                  );
+                  await streamCancelToken.cancelActiveStream(
+                    reason: guardAbort.guard.reason ?? 'guard',
+                    guardAbort: true,
+                  );
+                  lerpTimer?.cancel();
+                  break;
+                }
+              }
+              if (firstTokenEver &&
+                  (chunk.textDelta != null || chunk.reasoningContent != null)) {
+                final now = DateTime.now();
+                final elapsed =
+                    now.difference(runtime.responseStartTime!).inMicroseconds /
+                    1000.0;
+                runtime.ttftMs = elapsed;
+                runtime.ttftReceived = true;
+                runtime.firstTokenTime = now;
+                firstTokenEver = false;
+              }
+              if (chunk.textDelta != null) {
+                roundTextBuffer.write(chunk.textDelta);
+                roundFirstContentTime ??= now;
+                if (useLerp) {
+                  lerpPendingText += chunk.textDelta!;
+                  ensureLerpTimer();
+                } else {
+                  onDelta(chunk.textDelta!);
+                }
+              }
+              if (chunk.reasoningContent != null) {
+                roundReasoningBuffer.write(chunk.reasoningContent);
+                roundFirstReasoningTime ??= now;
+                roundLastReasoningTime = now;
+                if (useLerp) {
+                  lerpPendingReasoning += chunk.reasoningContent!;
+                  ensureLerpTimer();
+                } else {
+                  onReasoning(chunk.reasoningContent!);
+                }
+              }
+              if ((!useLerp &&
+                      (chunk.textDelta != null ||
+                          chunk.reasoningContent != null)) ||
+                  chunk.toolUse != null) {
+                onChunk();
+              }
+            }
+
+            if (chunk.promptTokens != null) {
+              promptTokens = chunk.promptTokens!;
+            }
+            if (chunk.completionTokens != null) {
+              completionTokens = chunk.completionTokens!;
+            }
+            if (chunk.promptCacheHitTokens != null) {
+              promptCacheHitTokens = chunk.promptCacheHitTokens!;
+            }
+            if (chunk.promptCacheMissTokens != null) {
+              promptCacheMissTokens = chunk.promptCacheMissTokens!;
+            }
+            if (chunk.reasoningTokens != null) {
+              reasoningTokens = chunk.reasoningTokens!;
             }
           }
 
-          if (chunk.promptTokens != null) {
-            promptTokens = chunk.promptTokens!;
+          if (streamError != null) break;
+
+          lerpStreamDone = true;
+        } catch (e) {
+          lerpTimer?.cancel();
+          final error = classifyThrownError(e, providerName: providerName);
+          if (error.isRetriable && attempt < kMaxLlmRetries) {
+            thrownError = e;
+            break;
           }
-          if (chunk.completionTokens != null) {
-            completionTokens = chunk.completionTokens!;
-          }
-          if (chunk.promptCacheHitTokens != null) {
-            promptCacheHitTokens = chunk.promptCacheHitTokens!;
-          }
-          if (chunk.promptCacheMissTokens != null) {
-            promptCacheMissTokens = chunk.promptCacheMissTokens!;
-          }
-          if (chunk.reasoningTokens != null) {
-            reasoningTokens = chunk.reasoningTokens!;
-          }
+          runtime.pauseStreamingTimer();
+          stopActiveRound();
+          runtime.isResponding = false;
+          await store.update(sessionId, status: SessionStatus.idle);
+          session.status = SessionStatus.idle;
+          leaseManager.markSessionInactive(sessionId);
+          onError(error);
+          return;
         }
-      } catch (e) {
-        lerpTimer?.cancel();
+
+        if (streamError == null && thrownError == null) {
+          break;
+        }
+      }
+
+      if (streamError != null) {
         runtime.pauseStreamingTimer();
         stopActiveRound();
         runtime.isResponding = false;
         await store.update(sessionId, status: SessionStatus.idle);
         session.status = SessionStatus.idle;
         leaseManager.markSessionInactive(sessionId);
-        onError(
-          classifyThrownError(e, providerName: providerName),
-        );
+        onError(streamError);
+        return;
+      }
+
+      if (thrownError != null) {
+        runtime.pauseStreamingTimer();
+        stopActiveRound();
+        runtime.isResponding = false;
+        await store.update(sessionId, status: SessionStatus.idle);
+        session.status = SessionStatus.idle;
+        leaseManager.markSessionInactive(sessionId);
+        onError(classifyThrownError(thrownError, providerName: providerName));
         return;
       }
 
