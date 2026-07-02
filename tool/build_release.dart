@@ -65,7 +65,8 @@ Future<void> main(List<String> args) async {
   // `semble-dart/tool/build_native.dart` — submodule ships a prebuilt
   // copy at `<submodule>/third_party/bin/<target>/libcrux_grammars.<ext>`,
   // so a fresh clone only needs the submodule init, not a full rebuild.
-  await _ensureLibcruxGrammars(root: root, target: target);
+    await _ensureLibcruxGrammars(root: root, target: target);
+  await _ensureSembleModel(root: root);
 
   final bundle = Directory(p.join(root, 'build', 'releases', 'crux-$target'));
   if (bundle.existsSync()) await bundle.delete(recursive: true);
@@ -114,6 +115,15 @@ Future<void> main(List<String> args) async {
     Directory(p.join(root, 'third_party', 'licenses')),
     Directory(p.join(bundle.path, 'third_party', 'licenses')),
   );
+  // Copy the embedding model so the bundled release is self-contained
+  // — no HF cache dependency at runtime.
+  final modelDir = Directory(p.join(root, 'third_party', 'semblemodel'));
+  if (await modelDir.exists()) {
+    await _copyDirectory(
+      modelDir,
+      Directory(p.join(bundle.path, 'third_party', 'semblemodel')),
+    );
+  }
   // Copy manifest.toml (preferred format); JSON kept for backward compat.
   for (final manifestName in ['manifest.toml', 'manifest.json']) {
     final source = File(p.join(root, 'third_party', manifestName));
@@ -215,6 +225,71 @@ Future<void> _ensureLibcruxGrammars({
   // Copy resolves symlinks — the destination is a regular file, not
   // a symlink, so the bundle's _copyDirectory below picks it up.
   stdout.writeln('  ✔ libcrux_grammars: $sourcePath → $destPath');
+}
+
+/// Copy the Potion-code-16M embedding model (`model.safetensors` +
+/// `tokenizer.json`) from the local HuggingFace cache into
+/// `third_party/semblemodel/` so the bundled release ships a
+/// self-contained model and doesn't depend on `~/.cache/huggingface/`.
+///
+/// The lookup mirrors [SembleClient._huggingFaceSnapshotPath] so
+/// the same cache that `dart run` uses is the one that gets bundled.
+Future<void> _ensureSembleModel({required String root}) async {
+  final home = Platform.environment['HOME'];
+  if (home == null || home.isEmpty) {
+    stderr.writeln('  ⚠ semblemodel: no HOME — skipping model bundle');
+    return;
+  }
+  final refPath = p.join(
+    home,
+    '.cache',
+    'huggingface',
+    'hub',
+    'models--minishlab--potion-code-16M',
+    'refs',
+    'main',
+  );
+  final ref = File(refPath);
+  if (!await ref.exists()) {
+    stderr.writeln(
+      '  ⚠ semblemodel: HF snapshot ref not found at $refPath\n'
+      '  Download the model first:\n'
+      '    pip install huggingface_hub\n'
+      '    huggingface-cli download minishlab/potion-code-16M',
+    );
+    return;
+  }
+  final snapshot = (await ref.readAsString()).trim();
+  if (snapshot.isEmpty) {
+    stderr.writeln('  ⚠ semblemodel: refs/main is empty — skipping model bundle');
+    return;
+  }
+  final snapshotDir = p.join(
+    home,
+    '.cache',
+    'huggingface',
+    'hub',
+    'models--minishlab--potion-code-16M',
+    'snapshots',
+    snapshot,
+  );
+
+  final destDir = Directory(p.join(root, 'third_party', 'semblemodel'));
+  await destDir.create(recursive: true);
+
+  for (final name in ['model.safetensors', 'tokenizer.json']) {
+    final source = File(p.join(snapshotDir, name));
+    if (!await source.exists()) {
+      stderr.writeln(
+        '  ✖ semblemodel: missing $name in $snapshotDir',
+      );
+      exit(1);
+    }
+    final dest = File(p.join(destDir.path, name));
+    if (await dest.exists()) await dest.delete();
+    await source.copy(dest.path);
+  }
+  stdout.writeln('  ✔ semblemodel: $snapshotDir/* → $destDir');
 }
 
 void _usage() {
