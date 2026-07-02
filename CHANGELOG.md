@@ -6,9 +6,20 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [0.10.0] - 2026-06-26
+
+TBD
 
 ### Features
+
+- **In-process Dart Semble search** — `semantic_search` and
+  `find_similar_code` now run through the Dart `semble_dart`
+  package via `SembleClient`, eliminating the Python subprocess
+  round-trip. The first search warmup loads the model and indexes
+  the repo (~450 ms); subsequent searches average ~1 ms warm.
+  Cross-platform: ships as a single self-contained Dart binary
+  with the grammars dylib bundled in `third_party/bin/`. The
+  python `semble` shim is no longer required.
 
 - **LongCat provider** — add `longcat` as a built-in provider
   (`providers/longcat.toml`) backed by Meituan's LongCat API at
