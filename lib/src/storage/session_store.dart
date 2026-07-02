@@ -152,42 +152,49 @@ class SessionStore implements SessionStoreAccessor {
   /// Auto-archive all un-archived sessions for [projectPath] whose
   /// [updatedAt] is older than [olderThan]. Returns the number of
   /// sessions that were archived.
+  ///
+  /// Uses a single indexed UPDATE — O(log n) with the
+  /// `idx_sessions_project_archived` index, no full table scan.
   Future<int> autoArchive({
     String? projectPath,
     required Duration olderThan,
   }) async {
     final cutoffMs =
         DateTime.now().subtract(olderThan).millisecondsSinceEpoch;
-    final candidates = await _db.select(_db.sessions).get();
-    final toArchive = <int>[];
-    for (final row in candidates) {
-      if (row.archivedAt != null) continue;
-      if (projectPath != null && row.projectPath != projectPath) continue;
-      if (row.updatedAt < cutoffMs) {
-        toArchive.add(row.id);
-      }
-    }
-    if (toArchive.isEmpty) return 0;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    for (final id in toArchive) {
-      await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
-        db.SessionsCompanion(
-          archivedAt: Value(nowMs),
-          updatedAt: Value(nowMs),
-        ),
-      );
+
+    final query = _db.update(_db.sessions)
+      ..where((t) => t.archivedAt.isNull())
+      ..where((t) => t.updatedAt.isSmallerThanValue(cutoffMs));
+
+    if (projectPath != null) {
+      query.where((t) => t.projectPath.equals(projectPath));
     }
-    return toArchive.length;
+
+    return query.write(
+      db.SessionsCompanion(
+        archivedAt: Value(nowMs),
+        updatedAt: Value(nowMs),
+      ),
+    );
   }
 
   /// Count of archived sessions for a given project path.
+  ///
+  /// Uses a single `SELECT COUNT(*)` — O(log n) with the
+  /// `idx_sessions_project_archived` index, no row materialization.
   Future<int> archivedCount({String? projectPath}) async {
-    final archived = await list(
-      projectPath: projectPath,
-      includeArchived: true,
-      limit: 1000,
-    );
-    return archived.where((s) => s.archivedAt != null).length;
+    final countExp = countAll();
+    final query = _db.selectOnly(_db.sessions)
+      ..addColumns([countExp])
+      ..where(_db.sessions.archivedAt.isNotNull());
+
+    if (projectPath != null) {
+      query.where(_db.sessions.projectPath.equals(projectPath));
+    }
+
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
   }
 
   Future<Session> update(

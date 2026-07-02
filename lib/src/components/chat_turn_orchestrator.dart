@@ -129,7 +129,7 @@ class ChatTurnOrchestrator {
   ///
   /// Projects the next-prompt size as
   /// `session.contextTokens + incomingUserContent` (the same
-  /// formula [ChatService.estimateProjectedContextTokens] uses
+  /// formula [estimateProjectedContextTokens] uses
   /// internally) and compares it against
   /// `contextSize - reserve`. When the projection is at or below
   /// the threshold, the context has plenty of room and we should
@@ -148,11 +148,11 @@ class ChatTurnOrchestrator {
     final modelConfig = _providerService.modelByCompositeKey(session.model);
     if (modelConfig == null) return true;
 
-    final reserve = ChatService.computeCompactionReserveAndThreshold(
+    final reserve = computeCompactionReserveAndThreshold(
       contextSize: modelConfig.contextSize,
     );
 
-    final projected = ChatService.estimateProjectedContextTokens(
+    final projected = estimateProjectedContextTokens(
       session: session,
       systemPrompt: session.systemPrompt,
       history: _sessionController.currentMessages,
@@ -886,7 +886,7 @@ class ChatTurnOrchestrator {
     final history = await _messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = <Map<String, dynamic>>[
-      ...ChatService.buildApiMessages(
+      ...buildApiMessages(
         history,
         wireFamily,
         systemPrompt: session.systemPrompt,

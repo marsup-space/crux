@@ -59,6 +59,14 @@ Future<void> main(List<String> args) async {
     target,
   ], root);
 
+  // Copy the libcrux_grammars dylib out of the semble-dart submodule so
+  // the existing `third_party/bin/<target>/` → bundle copy picks it up
+  // alongside ripgrep. The dylib is a build product of
+  // `semble-dart/tool/build_native.dart` — submodule ships a prebuilt
+  // copy at `<submodule>/third_party/bin/<target>/libcrux_grammars.<ext>`,
+  // so a fresh clone only needs the submodule init, not a full rebuild.
+  await _ensureLibcruxGrammars(root: root, target: target);
+
   final bundle = Directory(p.join(root, 'build', 'releases', 'crux-$target'));
   if (bundle.existsSync()) await bundle.delete(recursive: true);
   await bundle.create(recursive: true);
@@ -149,6 +157,64 @@ Future<void> _copyDirectory(Directory source, Directory destination) async {
       await entity.copy(targetPath);
     }
   }
+}
+
+const _libExtension = <String, String>{
+  'macos-arm64': 'dylib',
+  'macos-x64': 'dylib',
+  'linux-arm64': 'so',
+  'linux-x64': 'so',
+  'windows-arm64': 'dll',
+  'windows-x64': 'dll',
+};
+
+/// Copy the prebuilt `libcrux_grammars.<ext>` from the
+/// `semble-dart` submodule into the main repo's
+/// `third_party/bin/<target>/` so the bundle assembly picks it up.
+Future<void> _ensureLibcruxGrammars({
+  required String root,
+  required String target,
+}) async {
+  final ext = _libExtension[target];
+  if (ext == null) {
+    stderr.writeln(
+      'libcrux_grammars: unknown target $target — skipping dylib bundle',
+    );
+    return;
+  }
+  final fileName = 'libcrux_grammars.$ext';
+  final sourcePath = p.join(
+    root,
+    'semble-dart',
+    'third_party',
+    'bin',
+    target,
+    fileName,
+  );
+  final destDir = Directory(p.join(root, 'third_party', 'bin', target));
+  await destDir.create(recursive: true);
+  final destPath = p.join(destDir.path, fileName);
+
+  final source = File(sourcePath);
+  if (!await source.exists()) {
+    stderr.writeln(
+      '✖ libcrux_grammars: dylib not found at $sourcePath\n'
+      '  Build one with:\n'
+      '    cd semble-dart && dart run tool/build_native.dart --target $target',
+    );
+    exit(1);
+  }
+
+  // Delete any existing file/link at the destination so the copy
+  // always produces a regular file — _copyDirectory skips symlinks
+  // (followLinks: false), so a leftover symlink would silently drop
+  // the dylib from the release bundle.
+  final dest = File(destPath);
+  if (await dest.exists()) await dest.delete();
+  await source.copy(destPath);
+  // Copy resolves symlinks — the destination is a regular file, not
+  // a symlink, so the bundle's _copyDirectory below picks it up.
+  stdout.writeln('  ✔ libcrux_grammars: $sourcePath → $destPath');
 }
 
 void _usage() {

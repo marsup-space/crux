@@ -88,7 +88,7 @@ class CruxDatabase extends _$CruxDatabase {
   ///         order). Cheap win — saves a sort per chunk — and
   ///         also drops the now-redundant single-column index.
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -116,6 +116,16 @@ class CruxDatabase extends _$CruxDatabase {
       );
       await m.database.customStatement(
         'CREATE INDEX idx_sessions_project_path ON sessions(project_path)',
+      );
+      // Composite index for the auto-archive and archived-count queries.
+      // The leading `project_path` column serves the per-project filter;
+      // `archivedAt` as the second column lets SQLite seek directly to
+      // un-archived rows (or archived rows for the count) without a
+      // full table scan. Without this, autoArchive loads every row into
+      // Dart and archivedCount materializes up to 1000 rows just to count.
+      await m.database.customStatement(
+        'CREATE INDEX idx_sessions_project_archived '
+        'ON sessions(project_path, archived_at)',
       );
     },
     onUpgrade: (Migrator m, int from, int to) async {
@@ -284,6 +294,16 @@ CREATE TABLE offloaded_content (
         );
         await m.database.customStatement(
           'DROP INDEX IF EXISTS idx_messages_session_id',
+        );
+      }
+      if (from < 25) {
+        // Add composite index on (project_path, archived_at) so the
+        // auto-archive and archived-count queries stay O(log n) as
+        // the sessions table grows. `IF EXISTS` keeps this a no-op
+        // on fresh installs (which went through onCreate).
+        await m.database.customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_sessions_project_archived '
+          'ON sessions(project_path, archived_at)',
         );
       }
     },

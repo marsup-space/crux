@@ -335,7 +335,7 @@ class SessionController {
   /// Returns the current context size for [sessionId] in
   /// tokens, as the LLM will see it on the next turn. The
   /// single source of truth is
-  /// [ChatService.currentContextTokens]; this method just
+  /// [currentContextTokens]; this method just
   /// routes through the fast path (the cached
   /// `session.contextTokens` from the last successful AI
   /// turn) when available, and falls back to the SSoT for
@@ -354,7 +354,7 @@ class SessionController {
     }
     final msgs = messageCache[sessionId];
     if (msgs == null || msgs.isEmpty) return 0;
-    return ChatService.currentContextTokens(messages: msgs);
+    return currentContextTokens(messages: msgs);
   }
 
   Future<void> initSessions() async {

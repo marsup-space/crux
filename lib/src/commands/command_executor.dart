@@ -1227,7 +1227,7 @@ class CommandExecutor {
     final contextSize = modelEntry?.contextSize;
     final maxTokens = modelEntry?.maxTokens;
     if (contextSize != null) {
-      final rt2 = ChatService.computeCompactionReserveAndThreshold(
+      final rt2 = computeCompactionReserveAndThreshold(
         contextSize: contextSize,
       );
       buf.writeln('  modelConfig.contextSize: $contextSize');
