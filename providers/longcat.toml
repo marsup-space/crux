@@ -35,20 +35,21 @@ image_support = false
 max_tokens = 131072
 thinking = true
 thinking_budget = 10000
+# Expose the full reasoning-effort picker so LongCat receives the
+# standard OpenAI `reasoning_effort` field on every request. The
+# openai_compatible provider's mapEffort sends:
+#
+#   off    → thinking.type = "disabled"
+#   low    → "low"
+#   normal → "high"
+#   high   → "high"
+#   max    → "max"
+#
+# LongCat's docs don't document the field, but the proxy already
+# advertises `thinking` in its supported_parameters, and
+# reasoning_effort is standard OpenAI shape — it may honour the
+# field or silently ignore it. Either way, zero downside to
+# sending it.
+reasoning_effort = "normal"
 temperature = 0
 stream_lerp = true
-
-# LongCat's thinking is binary ({"type": "enabled"} / {"type":
-# "disabled"}) — no four-level effort scale documented. Show a clean
-# off/on picker by hiding the low/normal/high/max presets and
-# renaming the default "normal" effort to "on". "off" stays visible
-# so the user can still turn thinking off. The openai_compatible
-# provider will still send `reasoning_effort: "high"` in the wire
-# body when thinking is on (its mapEffort maps "normal" → "high");
-# that's harmless because LongCat's docs don't document the field,
-# so the proxy ignores it.
-[models.reasoning_labels]
-low = "disabled"
-normal = "on"
-high = "disabled"
-max = "disabled"
