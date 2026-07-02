@@ -8,6 +8,19 @@ import '../utils/system_proxy.dart' show SystemProxyDetector;
 import 'llm_error.dart';
 import 'llm_provider.dart';
 
+/// Format a duration for the "Stream exceeded N …" error message.
+///
+/// Picks the most natural unit so the message stays readable when
+/// the duration is overridden in the provider TOML (e.g. 30 min for
+/// LongCat's long thinking passes, or — at the other extreme — a
+/// 30 s test value that would otherwise print as "0 minutes").
+String _formatMaxDuration(Duration d) {
+  if (d.inMinutes >= 1) {
+    return d.inMinutes == 1 ? '1 minute' : '${d.inMinutes} minutes';
+  }
+  return d.inSeconds == 1 ? '1 second' : '${d.inSeconds} seconds';
+}
+
 class ToolUseChunk {
   final int index;
   final String callId;
@@ -220,8 +233,18 @@ class LlmClient {
     //
     // Both classified as `timeout` (already retriable), so the
     // persisted error bubble automatically shows the Retry button.
-    const idleTimeout = Duration(seconds: 120);
-    const maxDuration = Duration(minutes: 10);
+    //
+    // Both are per-provider overridable via TOML
+    // (`stream_idle_timeout_ms` / `stream_max_duration_ms`) for
+    // models whose reasoning phase can exceed the defaults
+    // (e.g. LongCat, MiniMax M2.x). `null` in the TOML keeps the
+    // hardcoded defaults.
+    final idleTimeout = config.streamIdleTimeoutMs != null
+        ? Duration(milliseconds: config.streamIdleTimeoutMs!)
+        : const Duration(seconds: 120);
+    final maxDuration = config.streamMaxDurationMs != null
+        ? Duration(milliseconds: config.streamMaxDurationMs!)
+        : const Duration(minutes: 10);
     Timer? idleTimer;
     Timer? maxTimer;
 
@@ -313,8 +336,12 @@ class LlmClient {
               error: LlmError(
                 kind: LlmErrorKind.timeout,
                 vendor: errorVendor,
-                message: 'Stream exceeded ${maxDuration.inMinutes} '
-                    'minutes — the upstream is taking too long.',
+                // Format the duration in the most natural unit so the
+                // message stays readable across default (10 min) and
+                // TOML-overridden (could be 30 min, 5 min, etc.) values.
+                message:
+                    'Stream exceeded ${_formatMaxDuration(maxDuration)} '
+                    '— the upstream is taking too long.',
                 providerName: config.name,
               ),
             ),

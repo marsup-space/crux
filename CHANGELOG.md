@@ -18,6 +18,51 @@ below the version header. Each version has at most two categories:
   `LongCat-2.0` model (1M context, 128K max output, text-only,
   binary on/off thinking).
 
+- **Per-provider stream watchdog overrides** — adds
+  `stream_idle_timeout_ms` and `stream_max_duration_ms` to the
+  provider TOML so models with very long thinking passes (e.g.
+  LongCat) can opt into longer timeouts without affecting other
+  providers. `null`/absent keeps the hardcoded defaults (120 s
+  idle / 10 min max). The LongCat built-in ships with 20 min
+  idle / 60 min max. `LlmClient.streamChat` reads the values
+  off the `ProviderConfig`; the max-duration error message now
+  uses a `_formatMaxDuration` helper so overridden values (e.g.
+  25 min, 30 s) render readably. See
+  `docs/llm-error-mapping.md` for the field reference.
+
+### Fixes
+
+- **Chunker byte→char offsets** — tree-sitter returns UTF-8 byte
+  positions; the chunker now converts them to UTF-16 char indices
+  before slicing `source`. Without this, chunks in files with
+  non-ASCII characters (e.g. docstrings with `→` or CJK identifiers)
+  shifted by 2–3 characters per non-ASCII codepoint. Fixed the
+  end-line off-by-one (Python uses `end_index - 1` to skip a
+  trailing newline) and dropped `.trimRight()` to match upstream's
+  exact byte-for-byte chunk content.
+
+- **BM25 enrichment + relative chunk paths** — the Dart BM25 index
+  now appends the file stem (×2) and the last three directory
+  components to each chunk's content (the upstream
+  `semble.index.sparse.enrich_for_bm25`), so path-based queries
+  ("how does chunking work?", "the tokens module") actually hit.
+  Chunks are also stored with repo-relative paths now — previously
+  the absolute `/tmp/.../bench-repo` prefix leaked into the BM25
+  index, producing garbage tokens like `tmp` and `bench1`.
+
+- **model2vec SIF weighting** — the embedding encode pipeline
+  reads `weights` and `mapping` from the model artifact and applies
+  Smooth Inverse Frequency weighting (`a / (a + p)` by token
+  frequency), down-weighting common tokens (`def`, `class`,
+  `import`) and up-weighting rare identifiers. This alone moved
+  top-5 search overlap from 77.8% to 86.7% versus upstream Python.
+
+- **Chunker 2000-byte hard cap + cache versioning** — the chunker
+  now caps any single chunk at 2000 bytes (prevents pathological
+  cases like a 90 KB regex from producing one unsearchable chunk)
+  and the on-disk cache is versioned so a model or chunker change
+  invalidates the cache automatically.
+
 ## [0.9.0] - 2026-06-26
 
 72208b3

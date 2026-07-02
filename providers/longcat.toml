@@ -16,6 +16,17 @@
 type = "openai_compatible"
 endpoint_url = "https://api.longcat.chat/openai/v1"
 
+# LongCat's thinking phase can run for several minutes between
+# content chunks (the whole pass lands as one big thinking block at
+# the end). Raise both stream watchdogs so a quiet-but-alive stream
+# doesn't trip the 120 s idle default. `null`/absent would keep the
+# defaults (120 s idle / 10 min max) — see LlmClient.streamChat.
+# Doubled from the previous 10 min idle / 30 min max — LongCat's
+# 1.6T-param MoE can sit quietly on long reasoning passes for
+# well over 10 min on a busy upstream.
+stream_idle_timeout_ms = 1200000   # 20 min between chunks
+stream_max_duration_ms = 3600000  # 60 min total
+
 [[models]]
 id = "LongCat-2.0"
 name = "LongCat 2.0"

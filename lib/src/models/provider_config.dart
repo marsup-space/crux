@@ -387,6 +387,36 @@ class ProviderConfig {
   /// entirely.
   final String? systemPromptAddition;
 
+  /// Provider-level override for the stream idle watchdog (ms).
+  ///
+  /// The LlmClient resets an idle timer on every chunk; if no chunk
+  /// (or, for Anthropic, `event: ping`) arrives within this window,
+  /// the stream is considered stalled and is closed with a
+  /// `LlmErrorKind.timeout` chunk. `null` (TOML absent) keeps the
+  /// hardcoded default of 120_000 ms (2 min).
+  ///
+  /// Some models produce very long reasoning passes with no
+  /// intermediate content chunks (the whole pass lands as one big
+  /// thinking block at the end). For those, raise this — e.g. LongCat
+  /// uses 10 min by default. The chunk-reset logic still fires on
+  /// any byte that arrives, so this only governs the *worst-case*
+  /// silence between chunks, not the total stream duration (see
+  /// [streamMaxDurationMs] for that).
+  final int? streamIdleTimeoutMs;
+
+  /// Provider-level override for the total stream max duration (ms).
+  ///
+  /// Hard wall-clock cap on a single stream from request start to
+  /// final chunk. Once this fires, the stream is closed with a
+  /// `LlmErrorKind.timeout` chunk. `null` (TOML absent) keeps the
+  /// hardcoded default of 600_000 ms (10 min, matching Anthropic's
+  /// own streaming recommendation).
+  ///
+  /// Set this for models with reasoning phases that can exceed 10
+  /// min in aggregate (thinking + final answer), e.g. LongCat uses
+  /// 30 min by default.
+  final int? streamMaxDurationMs;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -399,6 +429,8 @@ class ProviderConfig {
     this.hintParallelCalls,
     this.hintParallelCallsSingleThreshold,
     this.systemPromptAddition,
+    this.streamIdleTimeoutMs,
+    this.streamMaxDurationMs,
   });
 
   /// Resolve the effective system-prompt tuning block for a model.
@@ -454,5 +486,7 @@ class ProviderConfig {
       'endpoint=$endpointUrl, models=${models.length}, quota=$quota, '
       'defaultMaxRounds=$defaultMaxRounds, '
       'hintParallelCalls=$hintParallelCalls, '
-      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold)';
+      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold, '
+      'streamIdleTimeoutMs=$streamIdleTimeoutMs, '
+      'streamMaxDurationMs=$streamMaxDurationMs)';
 }

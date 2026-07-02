@@ -325,6 +325,24 @@ class ProviderConfigLoader {
       'system_prompt_addition',
     );
 
+    // --- Optional provider-level stream watchdog overrides ---
+    // Both are positive integers in milliseconds. `null` (TOML
+    // absent) means "use the LlmClient's hardcoded default" (120s
+    // for idle, 10min for max), so this is fully backward-
+    // compatible — existing provider TOMLs need no change.
+    // Negative values are rejected at load time with a clear
+    // error rather than silently ignored.
+    final streamIdleTimeoutMs = _optionalNonNegativeInt(
+      map,
+      'stream_idle_timeout_ms',
+      fieldLabel: 'Provider "$name"',
+    );
+    final streamMaxDurationMs = _optionalNonNegativeInt(
+      map,
+      'stream_max_duration_ms',
+      fieldLabel: 'Provider "$name"',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -337,6 +355,8 @@ class ProviderConfigLoader {
       hintParallelCalls: hintParallelCalls,
       hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
       systemPromptAddition: systemPromptAddition,
+      streamIdleTimeoutMs: streamIdleTimeoutMs,
+      streamMaxDurationMs: streamMaxDurationMs,
     );
   }
 

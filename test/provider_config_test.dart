@@ -454,6 +454,65 @@ thinking_budget = 10000
       expect(model.thinkingBudget, 10000);
     });
 
+    test(
+      'loadAll parses stream_idle_timeout_ms and stream_max_duration_ms '
+      'when set; defaults to null when absent',
+      () async {
+        // First: provider with both overrides set.
+        await File('${tempDir.path}/longthinking.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.longcat.chat/openai/v1"
+stream_idle_timeout_ms = 600000
+stream_max_duration_ms = 1800000
+
+[[models]]
+id = "LongCat-2.0"
+name = "LongCat 2.0"
+context_size = 1048576
+''');
+        // Second: provider with neither override (default behavior).
+        await File('${tempDir.path}/normal.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+        await loader.loadAll();
+
+        final longcat = loader.providerByName('longthinking')!;
+        expect(longcat.streamIdleTimeoutMs, 600000);
+        expect(longcat.streamMaxDurationMs, 1800000);
+
+        final normal = loader.providerByName('normal')!;
+        expect(normal.streamIdleTimeoutMs, isNull);
+        expect(normal.streamMaxDurationMs, isNull);
+      },
+    );
+
+    test('loadAll rejects negative stream_*_timeout_ms values', () async {
+      await File('${tempDir.path}/bad.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+stream_idle_timeout_ms = -1
+
+[[models]]
+id = "x"
+name = "X"
+context_size = 8192
+''');
+      await loader.loadAll();
+      // The file should be skipped, with the parse error recorded.
+      expect(loader.providerByName('bad'), isNull);
+      expect(loader.loadErrors(), isNotEmpty);
+      expect(
+        loader.loadErrors().values.first,
+        contains('stream_idle_timeout_ms'),
+      );
+    });
+
     test('loadAll parses multiple models', () async {
       final tomlContent = '''
 type = "openai_compatible"
