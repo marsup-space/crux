@@ -395,27 +395,34 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                 // grows in place; we only split into a new
                 // row when a block would exceed the per-block
                 // cap.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ' Think: ',
-                      style: TextStyle(
-                        color: CruxTheme.of(context).thinkPrefix,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Expanded(
-                      child: HighlightedMarkdownText(
-                        _reasoningBlocks[0],
-                        useIsolate: true,
-                        styleSheet: HighlightMarkdownStyleSheet.thinking(
-                          CruxTheme.of(context),
+                //
+                // Guarded by isNotEmpty: when the bubble first
+                // mounts, _reasoningBlocks is still empty and
+                // indexing [0] would throw a RangeError that
+                // surfaces as a build error for the whole
+                // streaming bubble.
+                if (_reasoningBlocks.isNotEmpty)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ' Think: ',
+                        style: TextStyle(
+                          color: CruxTheme.of(context).thinkPrefix,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      Expanded(
+                        child: HighlightedMarkdownText(
+                          _reasoningBlocks[0],
+                          useIsolate: true,
+                          styleSheet: HighlightMarkdownStyleSheet.thinking(
+                            CruxTheme.of(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 // Subsequent (static) blocks: full-width rows
                 // indented by the width of ' Think: ' so the
                 // markdown text aligns where it did before
