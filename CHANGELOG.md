@@ -8,6 +8,8 @@ below the version header. Each version has at most two categories:
 
 ## [0.10.1] - 2026-06-26
 
+1747489
+
 ### Fixes
 
 - **Bundled `libcrux_grammars` dylib in the release** — the
