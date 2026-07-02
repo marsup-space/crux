@@ -6,6 +6,41 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [0.10.1] - 2026-06-26
+
+### Fixes
+
+- **Bundled `libcrux_grammars` dylib in the release** — the
+  tree-sitter FFI library for semantic search was missing from
+  the binary release bundle; `tool/build_release.dart` now
+  copies it from the `semble-dart` submodule into
+  `third_party/bin/<target>/` before assembly. The prior
+  release silently skipped the symlink, so `semantic_search`
+  would start but fail on first use.
+
+- **Bundled `model.safetensors` + `tokenizer.json` in the
+  release** — the Potion-code-16M embedding model (61 MB) and
+  its WordPiece tokenizer are now copied from the local
+  HuggingFace cache into `third_party/semblemodel/` during the
+  build, matching `SembleClient._resolveModelPair`'s first
+  local fallback path. The release is now self-contained —
+  no dependency on `~/.cache/huggingface/` at runtime.
+
+- **Restored pre-bloc chat-services split** — the `feature/dart-
+  semble-integration` merge had committed the branch's monolithic
+  `chat_service.dart` over the pre-existing refactor (facade +
+  `wire_format.dart`, `chat_turn_executor.dart`, etc.). Restored
+  the split so the orchestration layer compiles against the
+  correct APIs.
+
+### Removed
+
+- **Bloc refactor** — the 76-commit `codex/nocterm-bloc-refactor`
+  branch was fully reverted from master. The bridge commit that
+  coupled the semble merge to the bloc cubit layer (`ChatTurnCubit`,
+  `CompactionCubit`, etc.) is gone; master now continues from the
+  clean v0.9.0 base with Semble + LongCat layered on top.
+
 ## [0.10.0] - 2026-06-26
 
 e0e541d
