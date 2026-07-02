@@ -8,7 +8,7 @@ below the version header. Each version has at most two categories:
 
 ## [0.10.0] - 2026-06-26
 
-TBD
+e0e541d
 
 ### Features
 
