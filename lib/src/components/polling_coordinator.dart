@@ -15,7 +15,14 @@ const Duration kCodingPlanIdleInterval = Duration(seconds: 180);
 class PollingCoordinator {
   final ProviderService providerService;
   final SessionController sessionController;
-  final bool providerServiceReady;
+
+  /// Live read of the chat panel's `providerServiceReady` flag.
+  /// Implemented as a callback rather than a captured `bool`
+  /// because the chat panel flips the flag *after* this
+  /// coordinator is constructed (during async provider init),
+  /// and the coordinator must see the up-to-date value on
+  /// every `sync*` call from `build`.
+  final bool Function() _isProviderServiceReady;
 
   CodingPlanProvider? activeCodingPlanProvider;
   CreditBalanceProvider? activeCreditBalanceProvider;
@@ -31,15 +38,15 @@ class PollingCoordinator {
   PollingCoordinator({
     required this.providerService,
     required this.sessionController,
-    required this.providerServiceReady,
-  });
+    required bool Function() isProviderServiceReady,
+  }) : _isProviderServiceReady = isProviderServiceReady;
 
   /// True if any session is currently marked running.
   bool hasActiveSession() => sessionController.hasAnyRunningSession;
 
   /// Re-align the coding-plan polling timer with the current model.
   void syncCodingPlanPolling() {
-    if (!providerServiceReady) return;
+    if (!_isProviderServiceReady()) return;
 
     final modelKey = sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');
@@ -89,7 +96,7 @@ class PollingCoordinator {
 
   /// Re-align the credit-balance polling timer with the current model.
   void syncCreditBalancePolling() {
-    if (!providerServiceReady) return;
+    if (!_isProviderServiceReady()) return;
 
     final modelKey = sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');

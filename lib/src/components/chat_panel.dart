@@ -320,7 +320,13 @@ class _ChatPanelState extends State<ChatPanel> {
     _polling = PollingCoordinator(
       providerService: _providerService,
       sessionController: _sessionController,
-      providerServiceReady: _providerServiceReady,
+      // Read the flag live on every sync, not at construction
+      // time — the panel flips `_providerServiceReady` to true
+      // asynchronously after `ProviderService.initialize()`
+      // completes (or synchronously from `bootState`), and the
+      // coordinator must observe the post-init value to start
+      // the coding-plan / credit-balance polling timers.
+      isProviderServiceReady: () => _providerServiceReady,
     );
     _quitHandler = QuitHandler(themeController: component.themeController);
 
