@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
+import '../utils/fuzzy_match.dart';
 
 /// Mutable registry of all available slash commands.
 ///
@@ -54,16 +55,31 @@ class CommandRegistry extends ChangeNotifier {
     return _debugEnabled;
   }
 
-  /// Returns commands whose name (or any alias) starts with the given
-  /// prefix. The primary [SlashCommand.name] is always what shows up
-  /// in the suggestion list — the alias is only used as a way to
-  /// discover the command (e.g. typing `/继续` reveals `/continue`).
-  List<SlashCommand> filterCommands(String prefix) {
+  /// Returns commands whose name (or any alias) fuzzy-matches the
+  /// given [query], ordered by match quality (best match first).
+  ///
+  /// Matching is case-insensitive and accepts several flavors of
+  /// "fuzzy" beyond plain prefix: substring, subsequence, and
+  /// acronym-style initials. The strongest match wins, so typing
+  /// `/con` still ranks `/continue` first (prefix tier), but typing
+  /// `/cnt` (a missing-letter typo) or `/cunt` still finds
+  /// `/continue` via the subsequence tier.
+  ///
+  /// The primary [SlashCommand.name] is always what shows up in
+  /// the suggestion list — aliases are only used as a way to
+  /// discover the command (e.g. typing `/继续` reveals
+  /// `/continue`).
+  ///
+  /// An empty or whitespace-only [query] returns every registered
+  /// command in registry order, so the overlay shows the full
+  /// catalog before the user has typed anything.
+  List<SlashCommand> filterCommands(String query) {
     final list = all;
-    if (prefix.isEmpty) return list;
-    return list
-        .where((cmd) => cmd.allNames.any((n) => n.startsWith(prefix)))
-        .toList();
+    return fuzzyRankMulti<SlashCommand>(
+      list,
+      (cmd) => cmd.allNames,
+      query,
+    );
   }
 
   /// Returns the SlashCommand matching the exact given name, or any
@@ -79,13 +95,23 @@ class CommandRegistry extends ChangeNotifier {
     return null;
   }
 
-  /// Filters suggestions by a prefix string.
+  /// Filters suggestions by fuzzy-matching their [CommandSuggestion.value]
+  /// against [query], ordered by match quality (best match first).
+  ///
+  /// The match uses the same tiered scoring as [filterCommands]:
+  /// exact, prefix, substring, initials prefix, initials
+  /// subsequence, subsequence. An empty [query] returns the input
+  /// list unchanged so the overlay shows every suggestion before
+  /// the user has typed anything.
   List<CommandSuggestion> filterSuggestions(
     List<CommandSuggestion> suggestions,
-    String prefix,
+    String query,
   ) {
-    if (prefix.isEmpty) return suggestions;
-    return suggestions.where((s) => s.value.startsWith(prefix)).toList();
+    return fuzzyRank<CommandSuggestion>(
+      suggestions,
+      (s) => s.value,
+      query,
+    );
   }
 }
 
