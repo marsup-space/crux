@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:nocterm/nocterm.dart';
+
+import '../components/tool_detail_utils.dart';
 import '../lsp/manager.dart' show LspManager;
+import '../models/message.dart';
+import '../theme/crux_theme.dart';
+import '../utils/fuzzy_match.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_read_tracker.dart';
-import '../models/message.dart';
 import 'tool_def.dart';
 
 const _defaultLimit = 2000;
@@ -243,23 +248,51 @@ class ReadTool extends ToolDef {
     return _TextFileSnapshot(lines: await file.readAsLines(), mtimeMs: null);
   }
 
+  /// Suggest up to 5 entries in [path]'s directory that fuzzy-match
+  /// the missing file's basename. Returns the newline-joined list of
+  /// basenames, with directories marked by a trailing separator.
+  ///
+  /// Used when the agent asks to read a path that doesn't exist —
+  /// the suggestion list lets it recover from typos like
+  /// `read_tool.dart` (real) vs `readtools.dart` (typo). Fuzzy
+  /// matching is the same algorithm the slash-command autocomplete
+  /// and the @-mention file browser use (see `fuzzy_match.dart`),
+  /// so the user gets consistent behavior across all three
+  /// suggestion popovers.
   String _suggestSimilarFiles(String path) {
     final sep = Platform.pathSeparator;
     final lastSep = path.lastIndexOf(sep);
     if (lastSep == -1) return '';
     final dirPath = path.substring(0, lastSep);
     final target = path.substring(lastSep + 1);
-    final prefix = target.toLowerCase().substring(0, target.length.clamp(0, 3));
-    if (prefix.isEmpty) return '';
+    if (target.isEmpty) return '';
     final dir = Directory(dirPath);
     if (!dir.existsSync()) return '';
-    final candidates = dir
-        .listSync()
-        .map((e) => e.path.split(sep).last)
-        .where((name) => name.toLowerCase().contains(prefix))
+    // Collect basenames with a `/` suffix for directories so the
+    // suggestion output tells the user "hey, you can drill in".
+    // We synthesize the entries as `name` and `name/` (matching
+    // the rest of the read tool's display convention) and rank
+    // them with `fuzzyRank`.
+    final entries = <(String, bool)>[];
+    try {
+      for (final e in dir.listSync()) {
+        final name = e.path.split(sep).last;
+        if (name.isEmpty) continue;
+        entries.add((name, e is Directory));
+      }
+    } on FileSystemException {
+      return '';
+    }
+    if (entries.isEmpty) return '';
+    final ranked = fuzzyRank<(String, bool)>(
+      entries,
+      (e) => e.$1,
+      target,
+    );
+    return ranked
         .take(5)
+        .map((e) => e.$2 ? '${e.$1}$sep' : e.$1)
         .join('\n');
-    return candidates;
   }
 
   @override
@@ -298,6 +331,28 @@ class ReadTool extends ToolDef {
       hint: 're-read with offset/limit to see more',
     );
     return SummaryContribution.readFile(path: raw, content: content);
+  }
+
+  Component? buildPrettyTab({
+    required ToolCallData call,
+    required Message? result,
+    required CruxThemeData theme,
+    required ScrollController scrollController,
+  }) {
+    final filePath = call.input['filePath']?.toString() ?? '';
+    final content = result?.content ?? '';
+    final language = languageFromPath(filePath);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        fileHeader(filePath, '', theme),
+        if (content.isEmpty)
+          dimText('  (empty)', theme)
+        else
+          scrollableCodeBlock(content, language, theme, controller: scrollController),
+      ],
+    );
   }
 }
 

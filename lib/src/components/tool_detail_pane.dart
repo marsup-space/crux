@@ -10,6 +10,7 @@ import '../tools/registry.dart';
 import '../utils/tool_meta.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
+import 'tool_detail_utils.dart';
 import 'ui/highlighted_markdown_text.dart';
 
 /// Data needed to render a tool detail fullpane.
@@ -260,12 +261,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final filePath = tc.input['filePath']?.toString() ?? '';
     final intent = tc.input['intent']?.toString() ?? '';
     final content = _resolveArg('content', tc.input['content']);
-    final language = _languageFromPath(filePath);
+    final language = languageFromPath(filePath);
 
     final children = <Component>[];
 
     // Header
-    children.add(_fileHeader(filePath, intent, theme));
+    children.add(fileHeader(filePath, intent, theme));
 
     // Content — syntax-highlighted code block. The persist path
     // embeds an LSP payload marker at the end of the result's
@@ -277,11 +278,11 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         : extractLspPayload(result.content);
 
     if (lsp.visible.isEmpty) {
-      children.add(_dimText('  (empty)', theme));
+      children.add(dimText('  (empty)', theme));
     } else {
       children.add(
         Expanded(
-          child: _scrollableCodeBlock(lsp.visible, language ?? '', theme),
+          child: _scrollableCodeBlock(lsp.visible, language, theme),
         ),
       );
     }
@@ -305,12 +306,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final oldStr = _resolveArg('oldString', tc.input['oldString']);
     final newStr = _resolveArg('newString', tc.input['newString']);
     final replaceAll = tc.input['replaceAll'] == true;
-    final language = _languageFromPath(filePath);
+    final language = languageFromPath(filePath);
 
     final children = <Component>[];
 
     // Header
-    children.add(_fileHeader(filePath, intent, theme));
+    children.add(fileHeader(filePath, intent, theme));
     if (replaceAll) {
       children.add(_banner('⟳ Replace all occurrences', theme.info, theme));
     }
@@ -318,12 +319,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     // Old → New diff-style view
     children.add(_sectionHeading('Old', theme, color: theme.error));
     if (oldStr.isEmpty) {
-      children.add(_dimText('  (empty)', theme));
+      children.add(dimText('  (empty)', theme));
     } else {
       children.add(
         Container(
           padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(oldStr, language ?? '', theme),
+          child: _inlineCodeBlock(oldStr, language, theme),
         ),
       );
     }
@@ -331,12 +332,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     children.add(Divider(color: theme.dividerDim, height: 1));
     children.add(_sectionHeading('New', theme, color: theme.success));
     if (newStr.isEmpty) {
-      children.add(_dimText('  (empty)', theme));
+      children.add(dimText('  (empty)', theme));
     } else {
       children.add(
         Container(
           padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(newStr, language ?? '', theme),
+          child: _inlineCodeBlock(newStr, language, theme),
         ),
       );
     }
@@ -433,7 +434,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         Expanded(child: _scrollableCodeBlock(displayOutput, '', theme)),
       );
     } else {
-      children.add(_dimText('  (no output)', theme));
+      children.add(dimText('  (no output)', theme));
     }
 
     return Column(
@@ -449,20 +450,20 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final filePath = tc.input['filePath']?.toString() ?? '';
     final result = component.data.pairedResult;
     final output = result?.content ?? '';
-    final language = _languageFromPath(filePath);
+    final language = languageFromPath(filePath);
 
     final children = <Component>[];
 
     // Header
-    children.add(_fileHeader(filePath, '', theme));
+    children.add(fileHeader(filePath, '', theme));
 
     // File content (output already has line numbers from the tool)
     if (output.isNotEmpty) {
       children.add(
-        Expanded(child: _scrollableCodeBlock(output, language ?? '', theme)),
+        Expanded(child: _scrollableCodeBlock(output, language, theme)),
       );
     } else {
-      children.add(_dimText('  (no content)', theme));
+      children.add(dimText('  (no content)', theme));
     }
 
     return Column(
@@ -541,7 +542,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (output.isNotEmpty) {
       children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
-      children.add(_dimText('  (no matches)', theme));
+      children.add(dimText('  (no matches)', theme));
     }
 
     return Column(
@@ -609,7 +610,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (output.isNotEmpty) {
       children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
-      children.add(_dimText('  (no files matched)', theme));
+      children.add(dimText('  (no files matched)', theme));
     }
 
     return Column(
@@ -692,7 +693,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         ),
       );
     } else {
-      children.add(_dimText('  (no content)', theme));
+      children.add(dimText('  (no content)', theme));
     }
 
     return Column(
@@ -767,7 +768,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     children.add(_sectionHeading('Arguments', theme));
 
     if (tc.input.isEmpty) {
-      children.add(_dimText('(no arguments)', theme));
+      children.add(dimText('(no arguments)', theme));
     } else {
       for (final entry in tc.input.entries) {
         children.add(_buildArgBlock(entry.key, entry.value, theme));
@@ -825,7 +826,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     }
 
     if (tc.input.isEmpty) {
-      children.add(_dimText('  (no arguments)', theme));
+      children.add(dimText('  (no arguments)', theme));
     } else {
       for (final entry in tc.input.entries) {
         children.add(_buildArgBlock(entry.key, entry.value, theme));
@@ -865,12 +866,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           ),
         );
       } else {
-        children.add(_dimText('  (empty)', theme));
+        children.add(dimText('  (empty)', theme));
       }
     } else {
       children.add(Divider(color: theme.divider, height: 1));
       children.add(_sectionLabel('Output', theme));
-      children.add(_dimText('  (no result yet)', theme));
+      children.add(dimText('  (no result yet)', theme));
     }
 
     return Scrollbar(
@@ -886,44 +887,6 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   // Shared building blocks
   // ══════════════════════════════════════════════════════════════════════
 
-  /// File path header used by write, edit, read.
-  Component _fileHeader(String filePath, String intent, CruxThemeData theme) {
-    final spans = <TextSpan>[];
-    spans.add(
-      TextSpan(
-        text: '📄 ', // file icon
-        style: TextStyle(color: theme.foreground),
-      ),
-    );
-    spans.add(
-      TextSpan(
-        text: filePath,
-        style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
-      ),
-    );
-    if (intent.isNotEmpty) {
-      spans.add(
-        TextSpan(
-          text: '  $intent',
-          style: TextStyle(
-            color: theme.onSurfaceDim,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      );
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: RichText(text: TextSpan(children: spans)),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Section label with a colored background bar.
   Component _sectionLabel(String label, CruxThemeData theme) {
     return Container(
@@ -936,30 +899,21 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     );
   }
 
-  /// A full-width scrollable code block with syntax highlighting.
+  /// Thin wrapper so call sites in this file don't have to
+  /// pass [controller: _prettyScrollController] themselves —
+  /// the public [scrollableCodeBlock] requires it because the
+  /// tool-specific pretty tab (see [ReadTool.buildPrettyTab])
+  /// uses its own caller-provided controller.
   Component _scrollableCodeBlock(
     String content,
     String language,
     CruxThemeData theme,
   ) {
-    final fence = language.isNotEmpty
-        ? '```$language\n$content\n```'
-        : '```\n$content\n```';
-    return Scrollbar(
+    return scrollableCodeBlock(
+      content,
+      language,
+      theme,
       controller: _prettyScrollController,
-      thumbVisibility: true,
-      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-      trackColor: theme.surfaceVariant.withOpacity(0.3),
-      child: SingleChildScrollView(
-        controller: _prettyScrollController,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-          child: HighlightedMarkdownText(
-            fence,
-            styleSheet: HighlightMarkdownStyleSheet.fromTheme(theme),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1058,13 +1012,13 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       _sectionHeading('LSP · ${errors.length} $word', theme, color: theme.error),
     );
     if (filePath.isNotEmpty) {
-      children.add(_dimText('  in $filePath', theme));
+      children.add(dimText('  in $filePath', theme));
     }
     for (final d in shown) {
       children.add(_lspErrorRow(d, theme));
     }
     if (more > 0) {
-      children.add(_dimText('  ... and $more more', theme));
+      children.add(dimText('  ... and $more more', theme));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1158,18 +1112,8 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     );
   }
 
-  Component _dimText(String text, CruxThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: theme.onSurfaceDim,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
-    );
-  }
+  Component dimText(String text, CruxThemeData theme) =>
+      dimText(text, theme);
 
   String _languageForArgKey(String key) {
     switch (key) {
@@ -1190,7 +1134,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     for (final key in pathKeys) {
       final path = tc.input[key];
       if (path is String && path.isNotEmpty) {
-        return _languageFromPath(path);
+        return languageFromPath(path);
       }
     }
     return null;
@@ -1262,60 +1206,4 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return trimmed.isEmpty ? 'Auto-read' : 'Auto-read: $trimmed';
   }
 
-  static String? _languageFromPath(String path) {
-    final dot = path.lastIndexOf('.');
-    if (dot < 0 || dot >= path.length - 1) return null;
-    final ext = path.substring(dot + 1).toLowerCase();
-    return _extToLanguage[ext];
-  }
-
-  static const _extToLanguage = <String, String>{
-    'dart': 'dart',
-    'py': 'python',
-    'js': 'javascript',
-    'mjs': 'javascript',
-    'cjs': 'javascript',
-    'ts': 'typescript',
-    'tsx': 'typescript',
-    'jsx': 'javascript',
-    'rs': 'rust',
-    'go': 'go',
-    'java': 'java',
-    'kt': 'kotlin',
-    'kts': 'kotlin',
-    'swift': 'swift',
-    'html': 'html',
-    'htm': 'html',
-    'css': 'css',
-    'scss': 'css',
-    'json': 'json',
-    'yaml': 'yaml',
-    'yml': 'yaml',
-    'sql': 'sql',
-    'sh': 'bash',
-    'bash': 'bash',
-    'zsh': 'bash',
-    'toml': 'toml',
-    'xml': 'xml',
-    'md': 'markdown',
-    'c': 'c',
-    'cpp': 'cpp',
-    'cc': 'cpp',
-    'cxx': 'cpp',
-    'h': 'c',
-    'hpp': 'cpp',
-    'rb': 'ruby',
-    'php': 'php',
-    'lua': 'lua',
-    'pl': 'perl',
-    'r': 'r',
-    'scala': 'scala',
-    'ex': 'elixir',
-    'exs': 'elixir',
-    'erl': 'erlang',
-    'hs': 'haskell',
-    'clj': 'clojure',
-    'vue': 'html',
-    'svelte': 'html',
-  };
 }
