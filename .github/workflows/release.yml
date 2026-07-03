@@ -89,6 +89,40 @@ jobs:
         if: env.SHOULD_BUILD == 'true'
         run: dart pub get
 
+      # `tool/build_native.dart` (used in the pre-step below)
+      # imports `package:crypto` and `package:path` from the
+      # submodule's own pub workspace, so the submodule needs
+      # its own `pub get` — the root-level `dart pub get`
+      # above doesn't resolve a sibling package's deps.
+      - name: Install submodule dependencies
+        if: env.SHOULD_BUILD == 'true'
+        run: |
+          cd semble-dart
+          dart pub get
+
+      # Build `libcrux_grammars.<ext>` for the target on the CI
+      # runner before the main release build runs. The dylib
+      # only ships prebuilt in the submodule for macos-arm64
+      # (so developer `release.sh` on Apple Silicon Just Works).
+      # Every other target has to compile it from source as
+      # part of the release pipeline.
+      #
+      # Skipped on windows-x64 — the build_native tool needs
+      # `cl.exe` and Visual Studio's MSVC toolchain, which
+      # `windows-latest` runners don't ship. The Windows
+      # release currently ships without `libcrux_grammars.dll`,
+      # so the bundled Crux on Windows can't run
+      # `semantic_search` / `find_similar_code` — every other
+      # tool works. TODO: build the dylib in a Windows-friendly
+      # way (cross-compile from linux, or add a windows-latest
+      # step that sets up cl.exe).
+      - name: Build libcrux_grammars (POSIX)
+        if: env.SHOULD_BUILD == 'true' && matrix.target != 'windows-x64'
+        run: |
+          cd semble-dart
+          dart run tool/build_native.dart --target "$TARGET"
+        shell: bash
+
       - name: Build release bundle
         if: env.SHOULD_BUILD == 'true'
         run: dart run tool/build_release.dart --target "$TARGET"
