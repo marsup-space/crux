@@ -6,6 +6,94 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [0.11.3] - 2026-07-03
+
+c98915d
+
+### Features
+
+- **Version comes from a single source** (`c98915d`) — `pubspec.yaml`
+  is now the only place the Crux version lives. The previous setup
+  required `pubspec.yaml` and `bin/crux.dart` to stay in lock-step,
+  and `tool/prepare_release.dart` had to keep both updated. The two
+  could drift if anyone bumped one by hand and forgot the other —
+  after a bad bump, `crux --version` could disagree with `pub` by
+  a patch version.
+
+  The release script now reads the version it just wrote into
+  `pubspec.yaml` and regenerates a small `lib/src/version.dart`
+  from it (`const String kCruxVersion = '0.11.2';`). `bin/crux.dart`
+  imports the generated constant and adds the `v` prefix only at
+  the two print sites (`--version` output and the splash-art
+  corner). The prefix is a presentation concern, not part of the
+  version itself, so it lives at the print site — the generated
+  constant stays plain semver and matches what `pubspec.yaml`
+  declares.
+
+  `release.sh --commit` now stages `pubspec.yaml
+  lib/src/version.dart README.md` (was: `pubspec.yaml
+  bin/crux.dart README.md`). The README's narrative `当前版本` /
+  `Current version` lines are intentionally not auto-bumped: they're
+  prose for human readers, not code that gets compiled.
+
+## [0.11.2] - 2026-07-03
+
+0a8487a
+
+### Features
+
+- **Shared fuzzy-match library** (`21b5cce`) — a new
+  `lib/src/utils/fuzzy_match.dart` module with a six-tier
+  ranked matcher (exact, prefix, substring, initials prefix,
+  initials subsequence, subsequence) plus the supporting
+  `fuzzyRank` / `fuzzyRankMulti` / `isSubsequence` /
+  `computeInitials` / `tokenizeForInitials` primitives. The
+  slash-command autocomplete, the file browser's @-mention
+  popover, and the read tool's "similar files" suggestion
+  all now rank with the same algorithm, so the user gets
+  consistent behavior across every suggestion popover in the
+  TUI. Backed by `test/fuzzy_match_test.dart` (312 lines)
+  that exercises every tier and the alias / CJK paths.
+
+- **Slash-command suggestions survive typos** (`9d8f153`) —
+  `CommandRegistry.filterCommands` and `filterSuggestions`
+  now fuzzy-match the query instead of requiring a prefix,
+  so `/cnt` still finds `/continue`, `/cmt` still finds
+  `/compact`, and CJK aliases like `/继续` keep working via
+  the alias path. The strongest match wins (exact → prefix
+  → substring → initials → subsequence), so `/con` still
+  ranks `/continue` first.
+
+- **Read tool renders in the detail pane's Pretty tab**
+  (`54ad403`) — `ReadTool.buildPrettyTab` mirrors the
+  pane's built-in write/edit/read look: file path header,
+  dim `(empty)` placeholder, or a syntax-highlighted
+  scrollable code block for the content. Previously the
+  pane fell through to the generic Raw view for the read
+  tool, which dumped the entire output verbatim. The
+  new pretty view gives the user a clean glance at the
+  file the agent just read.
+
+- **Read tool offers similar files on a missing path**
+  (`54ad403`) — when the read tool can't find a path (typo,
+  wrong directory), it now offers up to 5 entries in the
+  same directory ranked by the shared fuzzy matcher.
+  Replaces the old prefix-of-the-first-3-chars heuristic
+  that missed most real-world typos. Directory entries
+  are marked with a trailing separator so the suggestion
+  list tells the user "hey, you can drill in here".
+
+- **Reusable tool-detail building blocks**
+  (`54ad403`) — extracted `fileHeader`, `dimText`,
+  `scrollableCodeBlock`, and `languageFromPath` from
+  `tool_detail_pane.dart`'s private state into a new
+  `lib/src/components/tool_detail_utils.dart` module, so
+  the read tool's new pretty tab (and any future per-tool
+  pretty tabs) can reuse the same look the pane uses for
+  its built-in write/edit/read views. The pane's private
+  methods are now thin delegations; behavior and visual
+  output are unchanged.
+
 ## [0.10.2] - 2026-07-02
 
 76cf456
