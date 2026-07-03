@@ -39,6 +39,7 @@ const String earlyAbortSystemNoteMarker =
 /// [kMaxLlmRetries] + 1.
 const int kMaxLlmRetries = 5;
 
+
 /// Returns a short, user-facing label describing the error that triggered
 /// a retry attempt. Used in the status toast shown between attempts.
 String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
@@ -76,6 +77,15 @@ String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
 /// own file, independent of compaction, wire format, and session
 /// management.
 class ChatTurnExecutor {
+  /// Test hook: when set, this function replaces the production exponential
+  /// backoff (`1s, 2s, 4s, 8s, 16s`, capped at 30s) so unit tests can drive
+  /// the retry loop without waiting up to 31 seconds. Set to
+  /// `(int) => Duration.zero` to skip the wait entirely.
+  ///
+  /// Always reset to `null` in `tearDown` so a leaked override doesn't
+  /// affect other tests in the same process.
+  static Duration Function(int attempt)? debugBackoffOverride;
+
   final SessionStore store;
   final ProviderService providerService;
   final LlmClient llmClient;
@@ -372,13 +382,19 @@ class ChatTurnExecutor {
 
       for (var attempt = 0; attempt <= kMaxLlmRetries; attempt++) {
         if (attempt > 0) {
-          final backoffMs = (1000 * (1 << (attempt - 1))).clamp(1000, 30000);
+          // Production backoff: 1s, 2s, 4s, 8s, 16s (capped at 30s).
+          // Tests can set `debugBackoffOverride` to skip the wait entirely.
+          final backoff = ChatTurnExecutor.debugBackoffOverride?.call(attempt) ??
+              Duration(
+                milliseconds:
+                    (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
+              );
           onStatus?.call(
             'Retrying ($attempt/$kMaxLlmRetries) after '
             '${errorLabelForRetry(thrownError, streamError)} — '
-            'waiting ${backoffMs}ms...',
+            'waiting ${backoff.inMilliseconds}ms...',
           );
-          await Future.delayed(Duration(milliseconds: backoffMs));
+          await Future.delayed(backoff);
           if (leaseManager.isCancelRequested(sessionId)) {
             runtime.pauseStreamingTimer();
             stopActiveRound();
@@ -649,24 +665,27 @@ class ChatTurnExecutor {
             }
           }
 
-          if (streamError != null) break;
-
+          // Don't `break` the outer for here — a retriable chunk.error
+          // or thrown error must let the backoff block at the top of
+          // the for-loop run again. The `if (streamError == null &&
+          // thrownError == null) break;` below exits the loop only on
+          // a clean completion of the attempt.
           lerpStreamDone = true;
         } catch (e) {
           lerpTimer?.cancel();
           final error = classifyThrownError(e, providerName: providerName);
           if (error.isRetriable && attempt < kMaxLlmRetries) {
             thrownError = e;
-            break;
+          } else {
+            runtime.pauseStreamingTimer();
+            stopActiveRound();
+            runtime.isResponding = false;
+            await store.update(sessionId, status: SessionStatus.idle);
+            session.status = SessionStatus.idle;
+            leaseManager.markSessionInactive(sessionId);
+            onError(error);
+            return;
           }
-          runtime.pauseStreamingTimer();
-          stopActiveRound();
-          runtime.isResponding = false;
-          await store.update(sessionId, status: SessionStatus.idle);
-          session.status = SessionStatus.idle;
-          leaseManager.markSessionInactive(sessionId);
-          onError(error);
-          return;
         }
 
         if (streamError == null && thrownError == null) {
