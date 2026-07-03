@@ -8,9 +8,15 @@ Examples:
   dart run tool/prepare_release.dart v0.7.1 --tag
 
 This updates the version in:
-  - pubspec.yaml
-  - bin/crux.dart
+  - pubspec.yaml            (single source of truth)
+  - lib/src/version.dart    (generated from pubspec.yaml)
   - README.md, when matching version text exists
+
+The compiled `crux --version` output reads from the
+generated `lib/src/version.dart`, so the runtime version
+cannot drift from what `pub` reports. The `v` prefix is
+added at the print site in `bin/crux.dart` — the generated
+constant stays a plain semver string.
 
 With --tag, it also creates the matching git tag, for example v0.7.1.
 Push the commit and tag to trigger GitHub release packaging:
@@ -44,25 +50,26 @@ void main(List<String> args) {
   final root = _repoRoot();
   final files = [
     File('${root.path}/pubspec.yaml'),
-    File('${root.path}/bin/crux.dart'),
+    File('${root.path}/lib/src/version.dart'),
     File('${root.path}/README.md'),
   ];
 
   _replace(files[0], [
     (RegExp(r'^version:\s+.+$', multiLine: true), 'version: $version'),
   ]);
-  _replace(files[1], [
-    (
-      RegExp(r"^const _version = 'v[^']+';$", multiLine: true),
-      "const _version = '$tag';",
-    ),
-  ]);
+  // Regenerate the compile-time version constant from the
+  // same value we just wrote into pubspec.yaml. The `v` prefix
+  // is a presentation concern that lives in the print site
+  // (see bin/crux.dart), so this file stays a plain semver
+  // string — matching what pubspec.yaml declares, so `pub`
+  // and `crux --version` can never disagree.
+  files[1].writeAsStringSync(_versionDartContents(version));
   _replace(files[2], [
-    (RegExp(r'当前版本：\*\*[^*]+\*\*'), '当前版本：**$version**'),
-    (
-      RegExp(r'Current version: \*\*[^*]+\*\*'),
-      'Current version: **$version**',
-    ),
+    // The narrative "Current version" / "当前版本" lines in
+    // the README are documentation, not code — they describe
+    // the project state for a human reader. The `CRUX_VERSION`
+    // example IS code (it's what users put in their CI env),
+    // so it must stay in sync with the tag, which is `v`-prefixed.
     (RegExp(r'CRUX_VERSION=v[0-9A-Za-z.+-]+'), 'CRUX_VERSION=$tag'),
   ], requireAll: false);
 
@@ -75,14 +82,37 @@ void main(List<String> args) {
 
   stdout.writeln('');
   stdout.writeln('Next steps:');
-  stdout.writeln('  git diff -- pubspec.yaml bin/crux.dart README.md');
-  stdout.writeln('  git add pubspec.yaml bin/crux.dart README.md');
+  stdout.writeln('  git diff -- pubspec.yaml lib/src/version.dart README.md');
+  stdout.writeln('  git add pubspec.yaml lib/src/version.dart README.md');
   stdout.writeln('  git commit -m "Release $tag"');
   if (!createTag) {
     stdout.writeln('  git tag $tag');
   }
   stdout.writeln('  git push origin master');
   stdout.writeln('  git push origin $tag');
+}
+
+String _versionDartContents(String version) {
+  // Indentation: 2 spaces, matching the rest of lib/src/.
+  // The header comment must stay short — it lives at the
+  // top of every grep result for this file and shows up
+  // in every PR that touches the version.
+  return '''// GENERATED FILE — do not edit by hand.
+//
+// The single source of truth for the Crux version is
+// `pubspec.yaml` (`version: X.Y.Z`). This file is
+// regenerated from it by `tool/prepare_release.dart` on
+// every release, so the compiled `crux --version` output
+// can never drift away from what `pub` reports.
+//
+// Edit `pubspec.yaml` and re-run
+// `dart run tool/prepare_release.dart <new-version>` to
+// regenerate. The `v` prefix is added at the print site
+// in `bin/crux.dart`, so this constant stays a plain
+// semver string (matching what `pubspec.yaml` declares).
+
+const String kCruxVersion = '$version';
+''';
 }
 
 String? _normalizeVersion(String input) {

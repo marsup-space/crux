@@ -8,8 +8,14 @@ import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
+import 'package:crux/src/version.dart';
 
-const _version = 'v0.10.2';
+/// `crux --version` prints the semver string with a `v`
+/// prefix to match the git tag. The prefix is a presentation
+/// concern, so it lives here at the print site and not in
+/// the generated `kCruxVersion` constant (which is plain
+/// semver, matching `pubspec.yaml`).
+String get _cliVersionString => 'v$kCruxVersion';
 
 void main(List<String> args) async {
   // Enable ANSI/VT escape processing on the Windows stdout console BEFORE
@@ -34,7 +40,7 @@ void main(List<String> args) async {
       return;
     }
     if (arg == '--version' || arg == '-v') {
-      stdout.writeln(_version);
+      stdout.writeln(_cliVersionString);
       return;
     }
     if (arg == '--doctor') {
@@ -417,7 +423,7 @@ Future<_LoadingResults> _showSplashLoading(
           ..write(
             '\x1B[0m\x1B[1C\x1B[38;2;$versionLabelR;$versionLabelG;$versionLabelB m',
           )
-          ..write(_version)
+          ..write(_cliVersionString)
           ..write('\x1B[0m');
       } else {
         buf.write('\x1B[0m');

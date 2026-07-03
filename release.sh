@@ -35,8 +35,12 @@ Arguments:
   <version>           Semver version, with or without leading 'v' (e.g. 0.8.1)
 
 Options:
-  --skip-bump         Skip version bump; assume pubspec.yaml + bin/crux.dart
-                      are already at the target version.
+  --skip-bump         Skip version bump; assume pubspec.yaml +
+                      lib/src/version.dart + README.md are already at
+                      the target version. The version constant in
+                      bin/crux.dart is generated from pubspec.yaml
+                      via tool/prepare_release.dart, so it doesn't
+                      need to be bumped by hand.
   --no-install        Build the bundle but don't copy it to the install dir.
   --commit            After a successful build+install, git commit the
                       version-bump files and create tag v<version>.
@@ -130,7 +134,7 @@ echo ""
 if [[ "$SKIP_BUMP" == "true" ]]; then
   echo "==> [1/3] Skipping version bump (--skip-bump)"
 else
-  echo "==> [1/3] Bumping version in pubspec.yaml, bin/crux.dart, README.md"
+  echo "==> [1/3] Bumping version in pubspec.yaml + lib/src/version.dart + README.md"
   dart run tool/prepare_release.dart "$VERSION"
 fi
 
@@ -199,7 +203,7 @@ fi
 if [[ "$DO_COMMIT" == "true" ]]; then
   echo ""
   echo "==> Committing and tagging $EXPECTED_VERSION"
-  git add pubspec.yaml bin/crux.dart README.md
+  git add pubspec.yaml lib/src/version.dart README.md
   if git diff --cached --quiet; then
     echo "    No version-bump changes to commit."
   else
