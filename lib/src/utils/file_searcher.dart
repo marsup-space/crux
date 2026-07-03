@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 
 import 'bundled_executable.dart';
+import 'fuzzy_match.dart';
 import 'gitignore.dart';
 
 /// A single file/directory match returned by [FileSearcher.search].
@@ -266,15 +267,25 @@ class FileSearcher {
     // keystroke comparison in [_score] is case-insensitive
     // without re-allocating.
     _basenameInitials = List<String>.unmodifiable(
-      paths.map((s) => _computeInitials(p.basename(s))).toList(),
+      paths.map((s) => _initialsForPath(p.basename(s))).toList(),
     );
     // Initials for the whole path. Tokenizes across `/`
     // boundaries so e.g. `lib/src/file_searcher.dart` →
     // `lsfsd`. Used by the path-initials tiers in [_score].
     _initials = List<String>.unmodifiable(
-      paths.map((s) => _computeInitials(s)).toList(),
+      paths.map(_initialsForPath).toList(),
     );
     _localIndexEpoch++;
+  }
+
+  /// Compute the lowercased initials string for a path from the
+  /// index. Strips a trailing separator (for directory entries
+  /// — see [_ripgrepOutputToPaths] / [_walk]) so `foo/bar/`
+  /// tokenizes the same as `foo/bar`. Delegates to the shared
+  /// [computeInitials] in `fuzzy_match.dart`.
+  static String _initialsForPath(String s) {
+    final cleaned = s.endsWith('/') ? s.substring(0, s.length - 1) : s;
+    return computeInitials(cleaned);
   }
 
   /// Fuzzy-search the indexed tree for [query]. Returns up to
@@ -618,7 +629,7 @@ class FileSearcher {
     //    whose initials happen to align with the query chars
     //    in order, this catches them. Always strictly below
     //    the prefix tier above.
-    if (_isSubsequence(bi, ql)) {
+    if (isSubsequence(bi, ql)) {
       return _tierFilenameInitialsSubseq;
     }
 
@@ -645,7 +656,7 @@ class FileSearcher {
     // 8. Path initials subsequence match. The user typed chars
     //    that line up with the path's word-initials but not
     //    as a prefix. Always strictly below the prefix tier.
-    if (_isSubsequence(pi, ql)) {
+    if (isSubsequence(pi, ql)) {
       return _tierPathInitialsSubseq;
     }
 
@@ -653,141 +664,21 @@ class FileSearcher {
     //    in order, anywhere. The slowest and weakest branch —
     //    catches last-resort matches like `ttlm` for
     //    `BattleMode.cs` when no initials tier applies.
-    if (_isSubsequence(pathL, ql)) {
+    if (isSubsequence(pathL, ql)) {
       return _tierSubsequence;
     }
 
     return 0;
   }
 
-  /// True if every character of [ql] appears in [hay] in order
-  /// (not necessarily consecutively). Empty [ql] or empty [hay]
-  /// returns false. Case-sensitive — callers pre-lowercase both.
-  static bool _isSubsequence(String hay, String ql) {
-    if (hay.isEmpty || ql.isEmpty) return false;
-    var qi = 0;
-    for (var i = 0; i < hay.length && qi < ql.length; i++) {
-      if (hay.codeUnitAt(i) == ql.codeUnitAt(qi)) qi++;
-    }
-    return qi == ql.length;
-  }
-
   // ── Initials helpers ───────────────────────────────────────────
   //
-  // Pre-compute the "word-initials" of every indexed path at
-  // index time so per-keystroke scoring is just a string-compare
-  // against a pre-computed field — no tokenization in the hot
-  // path. Initials are the lowercased first character of each
-  // word component, where words are split on:
-  //
-  //   - Path separators (`/`, `\`)
-  //   - Common delimiters (`_`, `-`, `.`, space)
-  //   - camelCase transitions (lower → upper, e.g. `battleMode`
-  //     splits into `battle` + `Mode`)
-  //   - Consecutive-cap transitions (e.g. `XMLParser` splits
-  //     into `XML` + `Parser` — the lowercase char that
-  //     follows a run of uppercase starts a new word)
-  //
-  // Examples (input → initials):
-  //   `BattleMode.cs`              → `bmc`
-  //   `battle_mode.dart`           → `bmd`
-  //   `XMLParser.cs`               → `xpc`
-  //   `lib/src/file_searcher.dart` → `lsfsd`
-  //
-  // Performance: tokenization is O(L) per path (one pass, no
-  // backtracking) and runs once at index time. For a 50k-path
-  // index this is dominated by the file-system walk cost —
-  // a few extra ms at most.
-
-  /// Compute the lowercased initials string for [s]. Strips a
-  /// trailing separator (for directory entries — see
-  /// [_ripgrepOutputToPaths] / [_walk]) so `foo/bar/` tokenizes
-  /// the same as `foo/bar`.
-  static String _computeInitials(String s) {
-    final cleaned = s.endsWith('/') ? s.substring(0, s.length - 1) : s;
-    final tokens = _tokenizeForInitials(cleaned);
-    final buf = StringBuffer();
-    for (final t in tokens) {
-      if (t.isEmpty) continue;
-      final c = t.codeUnitAt(0);
-      // Lowercase the first char without allocating. ASCII
-      // uppercase is in [0x41, 0x5A]; lowercase is the same
-      // range + 0x20. Non-ASCII chars pass through unchanged
-      // (the matcher's case-insensitive comparison relies on
-      // both sides being lowercased — the query side is
-      // pre-lowered in [_scoredQueryResults]).
-      buf.writeCharCode(_isUpper(c) ? c + 0x20 : c);
-    }
-    return buf.toString();
-  }
-
-  /// Split [s] into word components for initials extraction.
-  /// See the rule list on the helpers section header above.
-  static List<String> _tokenizeForInitials(String s) {
-    final tokens = <String>[];
-    final buf = StringBuffer();
-
-    for (var i = 0; i < s.length; i++) {
-      final c = s.codeUnitAt(i);
-
-      // Separator character: flush whatever is in the buffer
-      // as a completed word.
-      if (c == 0x2F || // /
-          c == 0x5C || // \
-          c == 0x5F || // _
-          c == 0x2D || // -
-          c == 0x2E || // .
-          c == 0x20) {
-        // space
-        if (buf.isNotEmpty) {
-          tokens.add(buf.toString());
-          buf.clear();
-        }
-        continue;
-      }
-
-      // camelCase boundary: previous was lowercase, current is
-      // uppercase → the previous char ended one word, this char
-      // starts the next. Flush the buffer.
-      if (i > 0 && _isLower(s.codeUnitAt(i - 1)) && _isUpper(c)) {
-        if (buf.isNotEmpty) {
-          tokens.add(buf.toString());
-          buf.clear();
-        }
-      }
-      // Consecutive-caps boundary: current is lowercase, the two
-      // previous chars are uppercase (e.g., `XMLP|arser` →
-      // buffer held `XMLP`; we move the `P` to start the new
-      // word and continue with `a`). This handles names like
-      // `XMLParser` → ['XML', 'Parser'] cleanly.
-      else if (i >= 2 &&
-          _isLower(c) &&
-          _isUpper(s.codeUnitAt(i - 1)) &&
-          _isUpper(s.codeUnitAt(i - 2))) {
-        if (buf.isNotEmpty) {
-          final prev = buf.toString();
-          buf.clear();
-          if (prev.length > 1) {
-            // Move the last char of `prev` back into the buffer
-            // as the start of the new word; everything before
-            // it becomes a completed word.
-            tokens.add(prev.substring(0, prev.length - 1));
-            buf.write(prev.substring(prev.length - 1));
-          }
-          // If `prev.length == 1` (single-char word already,
-          // e.g. just `X`), nothing to flush — the buffer
-          // stays empty and the lowercase char starts fresh.
-        }
-      }
-
-      buf.writeCharCode(c);
-    }
-    if (buf.isNotEmpty) tokens.add(buf.toString());
-    return tokens;
-  }
-
-  static bool _isLower(int c) => c >= 0x61 && c <= 0x7A; // a-z
-  static bool _isUpper(int c) => c >= 0x41 && c <= 0x5A; // A-Z
+  // The actual [computeInitials] and [tokenizeForInitials]
+  // implementations live in `fuzzy_match.dart` — the per-file
+  // scoring table here (the 9-tier file-specific ladder) just
+  // composes the shared primitives. See `fuzzy_match.dart`'s
+  // library doc for the rules (camelCase, snake_case, kebab-case,
+  // dot, path separators) and the full tier table.
 
   // ── ripgrep backend ────────────────────────────────────────────
 
