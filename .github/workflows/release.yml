@@ -118,9 +118,33 @@ jobs:
       # step that sets up cl.exe).
       - name: Build libcrux_grammars (POSIX)
         if: env.SHOULD_BUILD == 'true' && matrix.target != 'windows-x64'
+        env:
+          # `build_native.dart` defaults to SSH git URLs for tree-sitter
+          # + grammar clones (works behind GFW-friendly networks when the
+          # developer has a GitHub SSH key). CI runners have no SSH key,
+          # so force HTTPS — the grammar repos are all public, no auth
+          # needed.
+          SEMBLE_GIT_HTTPS: '1'
         run: |
           cd semble-dart
+          # `dart run` does NOT propagate the Dart script's exit
+          # code (it returns 0 even when main() returns 1), so we
+          # can't trust the step's green-check icon — verify the
+          # dylib exists instead. The dylib is what
+          # `build_release.dart` actually needs; the script's exit
+          # code is decorative.
           dart run tool/build_native.dart --target "$TARGET"
+          # Extension is target-dependent (.dylib on macOS, .so on
+          # Linux). The script prints e.g. "→ cc -shared -o
+          # third_party/bin/linux-arm64/libcrux_grammars.so" — we
+          # pick up whatever it produced.
+          dylib="$(ls "third_party/bin/${TARGET}"/libcrux_grammars.* 2>/dev/null | head -1)"
+          if [ -z "$dylib" ]; then
+            echo "::error::libcrux_grammars build produced no dylib under third_party/bin/${TARGET}/"
+            ls -la "third_party/bin/${TARGET}/" 2>/dev/null || echo "  (directory does not exist)"
+            exit 1
+          fi
+          echo "libcrux_grammars: built $dylib"
         shell: bash
 
       - name: Build release bundle
