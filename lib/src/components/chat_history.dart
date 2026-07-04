@@ -26,6 +26,7 @@ import 'compaction_divider.dart';
 import 'message_bubble.dart';
 import 'queued_messages_bubble.dart';
 import 'session_controller.dart';
+import 'session_cubit.dart';
 import 'streaming_bubble.dart';
 import 'streaming_controller.dart';
 import 'tldr_bubble.dart';
@@ -158,26 +159,42 @@ class _ChatHistoryState extends State<ChatHistory> {
   /// closures in `items` — so for an N-message session, only the
   /// ~20 visible items pay the full cost, not all N.
   Component _buildInner(BuildContext context) {
-    final messages = component.sessionController.currentMessages;
     final sessionId = component.sessionController.currentSessionId;
     final rt = sessionId != null
         ? component.sessionController.runtime(sessionId)
         : null;
     final isStreaming = rt?.isResponding ?? false;
 
-    // Single BtwCubit subscription site for the whole chat history.
-    // The selector returns this session's /btw chain, captured at the
-    // very top so we can use it for both the empty-state check (so the
-    // 'No messages yet.' placeholder disappears as soon as the user
-    // types /btw) and the actual BtwBubble rendering loop further
-    // down. We don't try to scope the rebuild down to a per-turn
-    // granularity because the chat panel's _refresh() callback still
-    // rebuilds chat_history on every btw delta today; the cubit
-    // subscription here is an *additional* trigger, not a replacement,
-    // and matching today's rebuild cadence is the safest decoupling
-    // target. A future slice can move each BtwBubble into its own
-    // per-turn BlocSelector to scope rebuilds to just the changed
-    // turn.
+    // ─── Cubit subscriptions captured up front ─────────────────
+    //
+    // Each subscription is registered at the very top of the build so
+    // the selector is consistently called once per build (no
+    // conditional re-registration). List identity differs across
+    // emits because SessionCubit / BtwCubit store unmodifiable
+    // snapshots; List.== defaults to identity, so any new emit fires
+    // the selector and triggers chat_history to rebuild — which is
+    // exactly what we want for chunks/delivered messages.
+    //
+    // The loading-state record only changes when the chunked loader
+    // updates its progress counters, so the rebuild rate there is
+    // bounded.
+    final messages = context.select<SessionCubit, List<Message>>(
+      (cubit) =>
+          sessionId == null ? const <Message>[] : cubit.state.messagesFor(sessionId),
+    );
+    final loadingState = context.select<
+        SessionCubit, ({bool isLoading, int? total, int? loaded})>(
+      (cubit) {
+        if (sessionId == null) {
+          return (isLoading: false, total: null, loaded: null);
+        }
+        return (
+          isLoading: cubit.state.isLoadingMessages(sessionId),
+          total: cubit.state.loadingMessageTotal(sessionId),
+          loaded: cubit.state.loadingMessageLoaded(sessionId),
+        );
+      },
+    );
     final btwTurns = context.select<BtwCubit, List<BtwTurn>>(
       (cubit) =>
           sessionId == null ? const <BtwTurn>[] : cubit.state.turnsFor(sessionId),
@@ -262,11 +279,10 @@ class _ChatHistoryState extends State<ChatHistory> {
       // messages…" or "Loading 247 messages… (48%)") instead of the
       // misleading "No messages yet." which would imply the session
       // is genuinely empty.
-      if (sessionId != null &&
-          component.sessionController.isLoadingMessages(sessionId)) {
+      if (loadingState.isLoading) {
         return Center(
           child: Text(
-            _loadingLabel(component.sessionController, sessionId),
+            _loadingLabel(loadingState.total, loadingState.loaded),
             style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
         );
@@ -667,9 +683,7 @@ class _ChatHistoryState extends State<ChatHistory> {
   /// `loaded` is the *post-cap* count — sessions with more than the
   /// 1000-message cap will show "… (100%)" once the cap is hit and
   /// the loop exits, even if the underlying DB has more rows.
-  String _loadingLabel(SessionController controller, int sessionId) {
-    final total = controller.loadingMessageTotal(sessionId);
-    final loaded = controller.loadingMessageLoaded(sessionId);
+  String _loadingLabel(int? total, int? loaded) {
     if (total != null && total > 0 && loaded != null && loaded > 0) {
       final pct = ((loaded * 100) / total).clamp(0, 100).round();
       return 'Loading $total messages… ($pct%)';
