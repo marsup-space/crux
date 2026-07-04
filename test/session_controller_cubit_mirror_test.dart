@@ -313,4 +313,72 @@ void main() {
       reason: 'removeSessionState should clear the deleted cache',
     );
   });
+
+  group('btwCubit mirror', () {
+    test('appendBtwTurn / appendPendingBtwTurn mirror into btwCubit', () {
+      final controller = buildController();
+      const completed = BtwTurn(userText: 'hi', aiText: 'hello');
+      const pending = BtwTurn(userText: 'followup', aiText: '');
+
+      controller.appendBtwTurn(1, completed);
+      expect(controller.btwCubit.state.turnsFor(1), [completed]);
+
+      controller.appendPendingBtwTurn(1, 'followup');
+      expect(
+        controller.btwCubit.state.turnsFor(1),
+        [completed, pending],
+      );
+    });
+
+    test('updateLastBtwTurnAiText mirrors into the last turn', () {
+      final controller = buildController();
+      controller.appendPendingBtwTurn(2, 'what is dart?');
+      controller.updateLastBtwTurnAiText(2, 'Dart is a programming language.');
+
+      expect(controller.btwCubit.state.turnsFor(2).single.aiText,
+          'Dart is a programming language.');
+      // The controller's own btw buffer should agree with the cubit.
+      expect(
+        controller.btwTurnsFor(2).single.aiText,
+        'Dart is a programming language.',
+      );
+    });
+
+    test('clearBtwTurnsFor wipes the cubit entry for that session', () {
+      final controller = buildController();
+      controller.appendPendingBtwTurn(3, 'first');
+      controller.appendPendingBtwTurn(3, 'second');
+      expect(controller.btwCubit.state.turnsFor(3), hasLength(2));
+
+      controller.clearBtwTurnsFor(3);
+      expect(controller.btwCubit.state.turnsFor(3), isEmpty);
+      expect(controller.btwTurnsFor(3), isEmpty);
+    });
+
+    test('deleteSession removes btw state from both buffers', () async {
+      final session = await store.create(
+        title: 'With btw',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      controller.appendPendingBtwTurn(session.id, 'a turn');
+      expect(
+        controller.btwCubit.state.turnsFor(session.id),
+        hasLength(1),
+      );
+
+      await controller.deleteSession(session.id);
+
+      expect(
+        controller.btwCubit.state.turnsFor(session.id),
+        isEmpty,
+        reason: 'deleteSession should drop per-session btw state from cubit',
+      );
+      expect(controller.btwTurnsFor(session.id), isEmpty);
+    });
+  });
 }

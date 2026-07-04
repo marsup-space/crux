@@ -9,19 +9,10 @@ import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
+import 'btw_cubit.dart';
 import 'session_cubit.dart';
 
-/// One `/btw` round: the user's ephemeral prompt and the AI's ephemeral
-/// reply. Both strings live only in memory (and only in [SessionController];
-/// the chat service never sees them) and are wiped on the next non-`/btw`
-/// user input, and on `/retry`. They survive session switches (each
-/// session has its own independent chain). They are never persisted
-/// to the database.
-class BtwTurn {
-  final String userText;
-  final String aiText;
-  const BtwTurn({required this.userText, required this.aiText});
-}
+export 'btw_cubit.dart' show BtwTurn;
 
 class SessionController {
   final SessionStore _store;
@@ -37,6 +28,12 @@ class SessionController {
   /// controller for the lifetime of the controller — close it with
   /// [dispose] or let the controller get GC'd.
   final SessionCubit cubit = SessionCubit();
+
+  /// Passive mirror of the per-session `/btw` chains. Mirrors the
+  /// same `Map<int, List<BtwTurn>>` shape as the cubit's state, so
+  /// the chat panel can either keep reading from [btwTurnsFor] or
+  /// subscribe via `BlocBuilder<BtwCubit>` in a future slice.
+  final BtwCubit btwCubit = BtwCubit();
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -214,6 +211,7 @@ class SessionController {
   /// btw stream completion handler.
   void appendBtwTurn(int sessionId, BtwTurn turn) {
     btwBuffer.putIfAbsent(sessionId, () => <BtwTurn>[]).add(turn);
+    btwCubit.appendTurn(sessionId, turn);
   }
 
   /// Append a "pending" btw round to the in-memory chain — a pair
@@ -229,6 +227,7 @@ class SessionController {
     btwBuffer
         .putIfAbsent(sessionId, () => <BtwTurn>[])
         .add(BtwTurn(userText: userText, aiText: ''));
+    btwCubit.appendPendingTurn(sessionId, userText);
   }
 
   /// Update the AI-side text of the *last* btw turn in [sessionId]'s
@@ -241,6 +240,7 @@ class SessionController {
     if (list == null || list.isEmpty) return;
     final last = list.last;
     list[list.length - 1] = BtwTurn(userText: last.userText, aiText: aiText);
+    btwCubit.updateLastAiText(sessionId, aiText);
   }
 
   /// Drop every accumulated btw round for [sessionId] and leave an
@@ -253,6 +253,7 @@ class SessionController {
   /// each session keeps its own chain across navigation.
   void clearBtwTurnsFor(int sessionId) {
     btwBuffer[sessionId] = <BtwTurn>[];
+    btwCubit.clearTurnsFor(sessionId);
   }
 
   SessionController({
@@ -857,6 +858,7 @@ class SessionController {
     // in-memory state so we don't leak entries for a session that
     // no longer exists. Other sessions' chains are untouched.
     btwBuffer.remove(sessionId);
+    btwCubit.removeSession(sessionId);
     // Also drop the deleted session's message queue.
     _messageQueues.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
@@ -1000,5 +1002,6 @@ class SessionController {
     inputTextStash.clear();
     _messageQueues.clear();
     cubit.close();
+    btwCubit.close();
   }
 }
