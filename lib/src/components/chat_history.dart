@@ -165,6 +165,24 @@ class _ChatHistoryState extends State<ChatHistory> {
         : null;
     final isStreaming = rt?.isResponding ?? false;
 
+    // Single BtwCubit subscription site for the whole chat history.
+    // The selector returns this session's /btw chain, captured at the
+    // very top so we can use it for both the empty-state check (so the
+    // 'No messages yet.' placeholder disappears as soon as the user
+    // types /btw) and the actual BtwBubble rendering loop further
+    // down. We don't try to scope the rebuild down to a per-turn
+    // granularity because the chat panel's _refresh() callback still
+    // rebuilds chat_history on every btw delta today; the cubit
+    // subscription here is an *additional* trigger, not a replacement,
+    // and matching today's rebuild cadence is the safest decoupling
+    // target. A future slice can move each BtwBubble into its own
+    // per-turn BlocSelector to scope rebuilds to just the changed
+    // turn.
+    final btwTurns = context.select<BtwCubit, List<BtwTurn>>(
+      (cubit) =>
+          sessionId == null ? const <BtwTurn>[] : cubit.state.turnsFor(sessionId),
+    );
+
     final lastRoundStart = isStreaming
         ? -1
         : messages.lastIndexWhere((m) => m.role == 'user');
@@ -253,21 +271,11 @@ class _ChatHistoryState extends State<ChatHistory> {
           ),
         );
       }
-      // Subscribe to BtwCubit for the empty-state check. We pick `bool`
-      // here so BlocSelector (via context.select) only triggers a rebuild
-      // when the chain goes empty / non-empty — not on every
-      // updateLastAiText delta. The actual BtwBubble rendering further
-      // down still reads from the controller, which is fine: the chat
-      // panel's _refresh() rebuilds the whole history on every delta
-      // today, so the line-448 renderer already pays that cost.
-      // Decoupling here is the first step of moving chat_history off
-      // controller state; future slices will convert the btw bubble
-      // loop to its own per-bubble subscription to scope rebuilds to
-      // just the changed turn.
-      final hasBtwTurns = sessionId != null &&
-          context.select<BtwCubit, bool>(
-            (cubit) => cubit.state.turnsFor(sessionId).isNotEmpty,
-          );
+      // Empty-state check: any /btw turn for this session is enough
+      // to clear the 'No messages yet.' placeholder. Derived from the
+      // list we already captured at the top of this method, so this
+      // site does NOT register a separate cubit subscription.
+      final hasBtwTurns = btwTurns.isNotEmpty;
       if (!hasBtwTurns) {
         return Center(
           child: Text(
@@ -457,9 +465,14 @@ class _ChatHistoryState extends State<ChatHistory> {
       }
     }
 
-    // Render the in-memory `/btw` chain.
+    // Render the in-memory `/btw` chain. Read from the list captured
+    // at the top of this method (BtwCubit subscription) instead of
+    // from the controller. The chat panel's _refresh() callback
+    // rebuilds chat_history on every btw delta as before, so the
+    // streaming AI-text updates on the in-flight turn still land at
+    // the same cadence — the rebuild trigger just gained a cubit
+    // path alongside the controller one.
     if (sessionId != null) {
-      final btwTurns = component.sessionController.btwTurnsFor(sessionId);
       final lastIndex = btwTurns.length - 1;
       for (var i = 0; i < btwTurns.length; i++) {
         final turn = btwTurns[i];
