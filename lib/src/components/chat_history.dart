@@ -159,7 +159,14 @@ class _ChatHistoryState extends State<ChatHistory> {
   /// closures in `items` — so for an N-message session, only the
   /// ~20 visible items pay the full cost, not all N.
   Component _buildInner(BuildContext context) {
-    final sessionId = component.sessionController.currentSessionId;
+    // Capture the current session id from the cubit so the entire
+    // build is pinned to whatever the cubit reports at entry. The
+    // chat panel also reads currentSessionId elsewhere, but chat
+    // history's view of "which session am I rendering" now flows
+    // through SessionCubit, not the controller.
+    final sessionId = context.select<SessionCubit, int?>(
+      (cubit) => cubit.state.currentSessionId,
+    );
     final rt = sessionId != null
         ? component.sessionController.runtime(sessionId)
         : null;
