@@ -29,6 +29,7 @@ import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
+import 'btw_cubit.dart';
 import 'chat_history.dart';
 import 'compaction_fullpane.dart';
 import 'chat_input.dart';
@@ -926,8 +927,11 @@ class _ChatPanelState extends State<ChatPanel> {
     _maybeRecomputeCompactEstimate();
 
     return FrameProfiler.instance.timed('chatPanel.build', () {
-      return BlocProvider<SessionCubit>.value(
-        value: _sessionController.cubit,
+      return MultiBlocProvider(
+        providers: [
+          BlocProvider<SessionCubit>.value(value: _sessionController.cubit),
+          BlocProvider<BtwCubit>.value(value: _sessionController.btwCubit),
+        ],
         child: LayoutBuilder(
         builder: (context, constraints) {
           final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;

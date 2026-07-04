@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
+import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
@@ -18,6 +19,7 @@ import '../tools/registry.dart';
 import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'btw_bubble.dart';
+import 'btw_cubit.dart';
 import 'chat_turn_orchestrator.dart';
 import 'compacted_session_header.dart';
 import 'compaction_divider.dart';
@@ -251,9 +253,21 @@ class _ChatHistoryState extends State<ChatHistory> {
           ),
         );
       }
-      final hasBtwTurns =
-          sessionId != null &&
-          component.sessionController.btwTurnsFor(sessionId).isNotEmpty;
+      // Subscribe to BtwCubit for the empty-state check. We pick `bool`
+      // here so BlocSelector (via context.select) only triggers a rebuild
+      // when the chain goes empty / non-empty — not on every
+      // updateLastAiText delta. The actual BtwBubble rendering further
+      // down still reads from the controller, which is fine: the chat
+      // panel's _refresh() rebuilds the whole history on every delta
+      // today, so the line-448 renderer already pays that cost.
+      // Decoupling here is the first step of moving chat_history off
+      // controller state; future slices will convert the btw bubble
+      // loop to its own per-bubble subscription to scope rebuilds to
+      // just the changed turn.
+      final hasBtwTurns = sessionId != null &&
+          context.select<BtwCubit, bool>(
+            (cubit) => cubit.state.turnsFor(sessionId).isNotEmpty,
+          );
       if (!hasBtwTurns) {
         return Center(
           child: Text(
