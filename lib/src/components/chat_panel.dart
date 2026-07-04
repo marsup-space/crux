@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
 import '../lsp/actors/dart.dart';
@@ -32,6 +33,7 @@ import 'chat_history.dart';
 import 'compaction_fullpane.dart';
 import 'chat_input.dart';
 import 'chat_toolbar.dart';
+import 'session_cubit.dart';
 import 'context_bar.dart';
 import 'chat_turn_orchestrator.dart';
 import 'command_overlay.dart';
@@ -924,7 +926,9 @@ class _ChatPanelState extends State<ChatPanel> {
     _maybeRecomputeCompactEstimate();
 
     return FrameProfiler.instance.timed('chatPanel.build', () {
-      return LayoutBuilder(
+      return BlocProvider<SessionCubit>.value(
+        value: _sessionController.cubit,
+        child: LayoutBuilder(
         builder: (context, constraints) {
           final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
 
@@ -1105,7 +1109,8 @@ class _ChatPanelState extends State<ChatPanel> {
 
           return mainContent;
         },
-      );
+      ),
+    );
     });
   }
 }

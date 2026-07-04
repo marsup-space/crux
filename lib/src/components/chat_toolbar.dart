@@ -5,6 +5,7 @@
 
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
+import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
@@ -19,6 +20,7 @@ import 'credit_balance_display.dart';
 import 'context_bar.dart';
 import 'metrics_display.dart';
 import 'session_controller.dart';
+import 'session_cubit.dart';
 import 'streaming_controller.dart';
 import 'ui/button.dart';
 import 'ui/glossy_model_button.dart';
@@ -230,6 +232,14 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
     final isAuxBusy =
         _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
+    // Subscribe to the auxiliary-model short-name through a
+    // BlocSelector<SessionCubit, String> so this button only
+    // rebuilds when that one field changes. Re-renders triggered
+    // by anything else in the cubit state (session list, message
+    // cache, pending images, …) are dropped at the selector
+    // boundary, so the auxiliary section does not pay the cost of
+    // a full chat-panel refresh just to keep its label up to date.
+    //
     // The auxiliary model is only used for side tasks (session-title
     // generation, TLDR summaries) — never for the in-flight chat
     // response — so it's safe to swap while the main model is busy.
@@ -239,10 +249,13 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // without disturbing the one currently in flight. The main-model
     // button (above) is the one that needs to stay disabled while
     // the session is running.
-    return GlossyModelButton(
-      label: '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}',
-      isAnimating: isAuxBusy,
-      onPressed: component.onAuxiliaryPressed,
+    return BlocSelector<SessionCubit, SessionCubitState, String>(
+      selector: (state) => state.auxiliaryModelShortName,
+      builder: (context, auxShortName) => GlossyModelButton(
+        label: '$_kIconAuxiliary $auxShortName',
+        isAnimating: isAuxBusy,
+        onPressed: component.onAuxiliaryPressed,
+      ),
     );
   }
 
