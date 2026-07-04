@@ -9,6 +9,7 @@ import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
+import 'session_cubit.dart';
 
 /// One `/btw` round: the user's ephemeral prompt and the AI's ephemeral
 /// reply. Both strings live only in memory (and only in [SessionController];
@@ -28,6 +29,14 @@ class SessionController {
   final ProviderService _providerService;
   final ChatService _chatService;
   final void Function() _refresh;
+
+  /// Passive mirror of the controller's session/navigation state. Every
+  /// mutation on this controller also calls the matching cubit method,
+  /// so widgets can subscribe via `BlocBuilder` while older code keeps
+  /// reading from the controller's fields. The cubit is owned by the
+  /// controller for the lifetime of the controller — close it with
+  /// [dispose] or let the controller get GC'd.
+  final SessionCubit cubit = SessionCubit();
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -78,6 +87,21 @@ class SessionController {
   /// into a single user turn with a system prefix.
   final Map<int, MessageQueue> _messageQueues = {};
 
+  /// Route-through access to the per-session input text stash. Stores
+  /// [text] under [sessionId], or removes the entry when [text] is
+  /// empty. Mirrors the same change into [cubit] so subscribed
+  /// listeners stay in sync — this is the only place callers should
+  /// mutate `inputTextStash` directly (the controller maps are kept
+  /// for backward compatibility with older widget code).
+  void stashInputText(int sessionId, String text) {
+    if (text.isEmpty) {
+      inputTextStash.remove(sessionId);
+    } else {
+      inputTextStash[sessionId] = text;
+    }
+    cubit.stashInputText(sessionId, text);
+  }
+
   /// Read-only view of the message queue for [sessionId]. Returns an
   /// empty queue (not stored) when the session has never queued a
   /// message.
@@ -96,14 +120,18 @@ class SessionController {
       sessionId,
       () => MessageQueue(sessionId: sessionId),
     );
-    return queue.enqueue(content);
+    final id = queue.enqueue(content);
+    cubit.setQueuedMessages(sessionId, queue.messages);
+    return id;
   }
 
   /// Discard a queued message by its queue id. Returns true if found.
   bool discardQueuedMessage(int sessionId, int queueId) {
     final queue = _messageQueues[sessionId];
     if (queue == null) return false;
-    return queue.discard(queueId);
+    final discarded = queue.discard(queueId);
+    if (discarded) cubit.setQueuedMessages(sessionId, queue.messages);
+    return discarded;
   }
 
   /// Drain the message queue for [sessionId], returning the merged
@@ -113,18 +141,23 @@ class SessionController {
     final queue = _messageQueues[sessionId];
     if (queue == null || queue.isEmpty) return null;
     final result = queue.drain();
+    cubit.setQueuedMessages(sessionId, queue.messages);
     return result.isEmpty ? null : result;
   }
 
   /// Clear the message queue for [sessionId] without draining.
   void clearMessageQueue(int sessionId) {
     _messageQueues[sessionId]?.clear();
+    cubit.setQueuedMessages(sessionId, const []);
   }
 
   /// Add a pending image attachment for [sessionId]. The image will be
   /// attached to the next user message and then cleared.
   void addPendingImage(int sessionId, ImageAttachment image) {
-    pendingImages.putIfAbsent(sessionId, () => <ImageAttachment>[]).add(image);
+    final list = pendingImages
+        .putIfAbsent(sessionId, () => <ImageAttachment>[])
+      ..add(image);
+    cubit.setPendingImages(sessionId, List<ImageAttachment>.unmodifiable(list));
   }
 
   /// Replace all pending image attachments for [sessionId].
@@ -134,6 +167,7 @@ class SessionController {
     } else {
       pendingImages[sessionId] = List<ImageAttachment>.from(images);
     }
+    cubit.setPendingImages(sessionId, images);
   }
 
   /// Remove a single pending image by its 1-based index (the number
@@ -145,6 +179,10 @@ class SessionController {
     if (oneBasedIndex < 1 || oneBasedIndex > list.length) return false;
     list.removeAt(oneBasedIndex - 1);
     if (list.isEmpty) pendingImages.remove(sessionId);
+    cubit.setPendingImages(
+      sessionId,
+      pendingImages[sessionId] ?? const <ImageAttachment>[],
+    );
     return true;
   }
 
@@ -155,12 +193,14 @@ class SessionController {
   /// Drain and clear the pending images for [sessionId], returning them.
   List<ImageAttachment> drainPendingImages(int sessionId) {
     final images = pendingImages.remove(sessionId) ?? const <ImageAttachment>[];
+    cubit.drainPendingImages(sessionId);
     return images;
   }
 
   /// Clear the pending images for [sessionId] without attaching them.
   void clearPendingImages(int sessionId) {
     pendingImages.remove(sessionId);
+    cubit.setPendingImages(sessionId, const []);
   }
 
   /// Read-only view of the in-memory btw chain for [sessionId]. Returns
@@ -401,6 +441,11 @@ class SessionController {
       currentSessionId = initialSession.id;
     }
     await loadMessages(currentSessionId!);
+    cubit.replaceSessions(
+      sessions: sessions,
+      archivedCount: archivedCount,
+      currentSessionId: currentSessionId,
+    );
     _refresh();
   }
 
@@ -464,7 +509,17 @@ class SessionController {
   }
 
   Future<void> loadMessages(int sessionId) async {
-    messageCache[sessionId] = await _messageStore.getMessages(sessionId);
+    putCachedMessages(sessionId, await _messageStore.getMessages(sessionId));
+  }
+
+  /// Single-writer setter for the in-memory message cache. Updates
+  /// `messageCache[sessionId]` and mirrors the same list into [cubit]
+  /// so any BlocBuilder on [SessionCubit] sees the new snapshot. Both
+  /// paths go through here so the cache and cubit can never disagree.
+  void putCachedMessages(int sessionId, List<Message> messages) {
+    final cached = List<Message>.unmodifiable(messages);
+    messageCache[sessionId] = cached;
+    cubit.putMessages(sessionId, cached);
   }
 
   /// True while the message list for [sessionId] is being filled in
@@ -542,12 +597,14 @@ class SessionController {
     // [completeSwitchSession]) shows a progress line instead of
     // "No messages yet.".
     _loadingSessionIds.add(id);
+    cubit.beginLoadingMessages(id);
 
     final rt = runtime(id);
     rt.contextTargetTokens = session.contextTokens;
     rt.contextDisplayTokens = session.contextTokens.toDouble();
 
     currentSessionId = id;
+    cubit.setCurrentSession(id);
 
     if (!rt.isResponding) {
       rt.ttftMs = 0;
@@ -612,6 +669,7 @@ class SessionController {
       _loadingSessionIds.remove(id);
       _loadingTotalCounts.remove(id);
       _loadingLoadedCounts.remove(id);
+      cubit.finishLoadingMessages(id);
       onProgress?.call();
     }
   }
@@ -694,8 +752,12 @@ class SessionController {
       if (resumedFromBoot) ...preloaded,
       ...firstChunk,
     ];
-    messageCache[sessionId] = List<Message>.unmodifiable(accumulated);
+    putCachedMessages(sessionId, accumulated);
     _loadingLoadedCounts[sessionId] = accumulated.length;
+    cubit.updateLoadingProgress(
+      sessionId: sessionId,
+      loaded: accumulated.length,
+    );
     // First progress tick: the chat history can now render real
     // bubbles instead of the loading label. If COUNT hasn't
     // returned yet, the label still says "Loading messages…"
@@ -704,6 +766,7 @@ class SessionController {
 
     final total = await totalFuture;
     _loadingTotalCounts[sessionId] = total;
+    cubit.updateLoadingProgress(sessionId: sessionId, total: total);
     // Second progress tick: now the label can show "Loading N
     // messages…" with the actual total, and the `(X%)` suffix
     // becomes meaningful as subsequent chunks arrive.
@@ -744,7 +807,8 @@ class SessionController {
       // next round of older messages.
       beforeId = chunk.first.id;
       _loadingLoadedCounts[sessionId] = loaded;
-      messageCache[sessionId] = List<Message>.unmodifiable(accumulated);
+      putCachedMessages(sessionId, accumulated);
+      cubit.updateLoadingProgress(sessionId: sessionId, loaded: loaded);
       onProgress?.call();
       // Yield to the event loop so the chat panel can paint the
       // just-arrived chunk before we queue the next DB round-trip.
@@ -784,6 +848,7 @@ class SessionController {
     await _store.deleteSession(sessionId);
     _runtimeStates.remove(sessionId);
     messageCache.remove(sessionId);
+    cubit.removeSessionState(sessionId);
     // Drop the deleted session's input text stash alongside its other
     // in-memory state so we don't leak entries for a session that no
     // longer exists.
@@ -798,10 +863,16 @@ class SessionController {
     archivedCount = await _store.archivedCount(
       projectPath: Directory.current.path,
     );
+    cubit.replaceSessions(
+      sessions: sessions,
+      archivedCount: archivedCount,
+      currentSessionId: currentSessionId,
+    );
 
     if (wasCurrent) {
       if (sessions.isNotEmpty) {
         currentSessionId = sessions.first.id;
+        cubit.setCurrentSession(currentSessionId);
         await loadMessages(currentSessionId!);
         final rt = runtime(currentSessionId!);
         final base = computeBaseContext(currentSessionId!);
@@ -816,6 +887,11 @@ class SessionController {
         );
         sessions = [session];
         currentSessionId = session.id;
+        cubit.replaceSessions(
+          sessions: sessions,
+          archivedCount: archivedCount,
+          currentSessionId: currentSessionId,
+        );
         await loadMessages(session.id);
       }
     }
@@ -828,6 +904,11 @@ class SessionController {
     final session = findSession(sessionId);
     if (session != null) {
       session.title = newTitle;
+      cubit.replaceSessions(
+        sessions: sessions,
+        archivedCount: archivedCount,
+        currentSessionId: currentSessionId,
+      );
     }
     _refresh();
   }
@@ -850,6 +931,7 @@ class SessionController {
     if (provider == null) return;
     if (apiKey == null || apiKey.isEmpty) return;
     _isGeneratingTitle = true;
+    cubit.setGeneratingTitle(true);
     _refresh();
     try {
       final title = await _chatService.generateSessionTitle(
@@ -861,31 +943,38 @@ class SessionController {
       if (session == null || session.title != 'New Session') return;
       await _store.update(sessionId, title: title);
       session.title = title;
+      cubit.replaceSessions(
+        sessions: sessions,
+        archivedCount: archivedCount,
+        currentSessionId: currentSessionId,
+      );
       _refresh();
     } catch (_) {
     } finally {
       _isGeneratingTitle = false;
+      cubit.setGeneratingTitle(false);
       _refresh();
     }
   }
 
   void resolveAuxiliaryModel() {
+    String next = auxiliaryModelShortName;
     final auxKey = _providerService.auxiliaryModel;
     if (auxKey == 'none') {
-      auxiliaryModelShortName = 'none';
-      return;
-    }
-    if (auxKey != null) {
+      next = 'none';
+    } else if (auxKey != null) {
       final model = _providerService.modelByCompositeKey(auxKey);
       if (model != null) {
-        auxiliaryModelShortName = model.name;
-        return;
+        next = model.name;
+      } else {
+        final localProvider = _providerService.providerByName('local');
+        if (localProvider != null && localProvider.models.isNotEmpty) {
+          next = localProvider.models.first.name;
+        }
       }
     }
-    final localProvider = _providerService.providerByName('local');
-    if (localProvider != null && localProvider.models.isNotEmpty) {
-      auxiliaryModelShortName = localProvider.models.first.name;
-    }
+    auxiliaryModelShortName = next;
+    cubit.setAuxiliaryModelShortName(next);
   }
 
   void persistThinkingLevel(SessionRuntimeState rt) {
@@ -910,5 +999,6 @@ class SessionController {
     btwBuffer.clear();
     inputTextStash.clear();
     _messageQueues.clear();
+    cubit.close();
   }
 }

@@ -460,15 +460,9 @@ class _ChatPanelState extends State<ChatPanel> {
       final currentText = textController.text;
       if (currentText.startsWith('/')) {
         final stashed = _chatInputKey.currentState?.commandStashedText;
-        if (stashed != null && stashed.isNotEmpty) {
-          _sessionController.inputTextStash[oldId] = stashed;
-        } else {
-          _sessionController.inputTextStash.remove(oldId);
-        }
-      } else if (currentText.isNotEmpty) {
-        _sessionController.inputTextStash[oldId] = currentText;
+        _sessionController.stashInputText(oldId, stashed ?? '');
       } else {
-        _sessionController.inputTextStash.remove(oldId);
+        _sessionController.stashInputText(oldId, currentText);
       }
     }
 
