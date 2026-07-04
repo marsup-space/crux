@@ -344,6 +344,14 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
       _sessionController.resolveAuxiliaryModel();
+      // The boot path above writes to the controller fields directly
+      // (it bypasses initSessions and the chunked loader). Those writes
+      // do not flow through the per-mutation cubit mirror helpers that
+      // slice 4 introduced, so without this snapshot the cubit stays
+      // empty and chat_history renders a blank panel until the next
+      // session switch. Push the legacy state into the cubit once
+      // before the panel builds its first frame.
+      _sessionController.syncCubitFromLegacyState();
       _tracker.loadSession(bootState.currentSessionId, bootState.currentFileReadState);
 
       final bootMessagesLoaded =

@@ -523,6 +523,37 @@ class SessionController {
     cubit.putMessages(sessionId, cached);
   }
 
+  /// Sync the cubit's snapshot from the controller's current
+  /// legacy-mutable fields. Used by code paths that bypass the
+  /// per-mutation mirror helpers (e.g. the chat_panel boot path
+  /// pre-populates the controller directly from `loadChatPanelBootState`
+  /// before `initSessions` runs, so the cubit has not yet seen those
+  /// assignments). Callers must own the cubit's lifecycle — this
+  /// helper overwrites it with a full snapshot.
+  ///
+  /// Mirrors the bloc branch's `syncCubitFromLegacyState`. New code
+  /// should not need this; route mutations through the per-field
+  /// helpers (initSessions, switchSession, deleteSession, …) so the
+  /// cubit stays in lockstep naturally.
+  void syncCubitFromLegacyState() {
+    cubit.replaceSessions(
+      sessions: sessions,
+      archivedCount: archivedCount,
+      currentSessionId: currentSessionId,
+    );
+    for (final entry in messageCache.entries) {
+      cubit.putMessages(entry.key, entry.value);
+    }
+    for (final sessionId in _loadingSessionIds) {
+      cubit.beginLoadingMessages(sessionId);
+      cubit.updateLoadingProgress(
+        sessionId: sessionId,
+        total: _loadingTotalCounts[sessionId],
+        loaded: _loadingLoadedCounts[sessionId],
+      );
+    }
+  }
+
   /// True while the message list for [sessionId] is being filled in
   /// by a chunked load (i.e. the user just switched to it and the
   /// first paint hasn't landed yet). The chat history's empty-state

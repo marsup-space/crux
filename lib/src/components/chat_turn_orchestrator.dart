@@ -285,10 +285,15 @@ class ChatTurnOrchestrator {
           content: text,
           images: images,
         );
-        _sessionController.messageCache[sessionId] = [
+        // Append the persisted user message to the in-memory cache.
+        // Route through putCachedMessages so the cubit's messageCache
+        // snapshot sees the new entry — otherwise chat_history keeps
+        // showing the pre-append messages until the next round
+        // complete (which re-fetches and mirrors via its own write).
+        _sessionController.putCachedMessages(sessionId, [
           ...?_sessionController.messageCache[sessionId],
           userMsg,
-        ];
+        ]);
         _refresh();
 
         _maybeKickOffTitleEarly(sessionId, text);
@@ -452,7 +457,7 @@ class ChatTurnOrchestrator {
             rt.turnBaseTokens = 0;
             rt.accumulatedToolTokens = 0;
             final msgs = await _messageStore.getMessages(sessionId);
-            _sessionController.messageCache[sessionId] = msgs;
+            _sessionController.putCachedMessages(sessionId, msgs);
             if (response.promptTokens + response.completionTokens > 0) {
               final finalTokens = _sessionController.computeBaseContext(sessionId);
               rt.contextTargetTokens = finalTokens;
@@ -499,7 +504,7 @@ class ChatTurnOrchestrator {
                 content: response.queuedMessage!,
               );
               final updatedMsgs = await _messageStore.getMessages(sessionId);
-              _sessionController.messageCache[sessionId] = updatedMsgs;
+              _sessionController.putCachedMessages(sessionId, updatedMsgs);
               _refresh();
               await sendTurn(text: null);
             }
@@ -522,7 +527,13 @@ class ChatTurnOrchestrator {
             ).then((persisted) {
               final cache = _sessionController.messageCache[sessionId];
               if (cache != null) {
-                cache.add(persisted);
+                // Rebuild the list rather than mutating in place so the
+                // SessionCubit's BlocSelector (which compares by list
+                // identity) actually fires for the appended error row.
+                _sessionController.putCachedMessages(
+                  sessionId,
+                  [...cache, persisted],
+                );
               }
               _refresh();
             });
