@@ -68,7 +68,18 @@ class TldrHandler {
       if (msgs != null) {
         for (var i = 0; i < msgs.length; i++) {
           if (msgs[i].id == aiMsg.id) {
-            msgs[i] = msgs[i].copyWith(tldr: '');
+            // Rebuild the list with the modified message and route
+            // through putCachedMessages so the SessionCubit's
+            // BlocSelector (list identity compare) fires for the
+            // clear. In-place `msgs[i] = msgs[i].copyWith(...)`
+            // keeps the same list reference, so the cubit would
+            // not see the change and chat_history would keep
+            // rendering the previous tldr field.
+            final updated = <Message>[
+              for (var j = 0; j < msgs.length; j++)
+                if (j == i) msgs[j].copyWith(tldr: '') else msgs[j],
+            ];
+            sessionController.putCachedMessages(sessionId, updated);
             break;
           }
         }
@@ -90,7 +101,11 @@ class TldrHandler {
         if (msgs != null) {
           for (var i = 0; i < msgs.length; i++) {
             if (msgs[i].id == aiMsg.id) {
-              msgs[i] = msgs[i].copyWith(tldr: tldrText);
+              final updated = <Message>[
+                for (var j = 0; j < msgs.length; j++)
+                  if (j == i) msgs[j].copyWith(tldr: tldrText) else msgs[j],
+              ];
+              sessionController.putCachedMessages(sessionId, updated);
               break;
             }
           }

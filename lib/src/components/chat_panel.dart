@@ -610,6 +610,18 @@ class _ChatPanelState extends State<ChatPanel> {
       projectPath: Directory.current.path,
     );
     _sessionController.sessions = await _store.list(projectPath: Directory.current.path);
+    // Direct field write above bypasses the per-mutation cubit mirror
+    // helpers that slice 4 wired into SessionController. Force the cubit
+    // to see the new session list so chat_history / sidebar / anything
+    // else watching SessionCubit state picks up the freshly-created
+    // session — without this, the /new command's new session does not
+    // appear in widget subscriptions until the next mutation that does
+    // round-trip through the controller (initSessions, switchSession, …).
+    _sessionController.cubit.replaceSessions(
+      sessions: _sessionController.sessions,
+      archivedCount: _sessionController.archivedCount,
+      currentSessionId: _sessionController.currentSessionId,
+    );
     await _switchSession(session.id);
   }
 
