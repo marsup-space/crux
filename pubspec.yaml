@@ -25,6 +25,8 @@ dependencies:
   json_annotation: ^4.9.0
   crypto: ^3.0.3
   ffi: ^2.1.4
+  bloc: ^9.2.1
+  nocterm_bloc: ^1.1.0
 
 dev_dependencies:
   archive: ^4.0.9
@@ -33,3 +35,8 @@ dev_dependencies:
   drift_dev: ^2.22.1
   build_runner: ^2.4.14
   json_serializable: ^6.9.4
+  bloc_test: ^10.0.0
+
+dependency_overrides:
+  nocterm:
+    path: nocterm
