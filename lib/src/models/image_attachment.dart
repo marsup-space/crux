@@ -4,8 +4,8 @@ import 'dart:io';
 /// Represents an image attached to a message.
 ///
 /// Images can come from:
-/// - A file path on disk (`/image <path>` command)
 /// - Pasted from the clipboard (Ctrl+V when clipboard contains an image)
+/// - Dropped as a file onto the terminal (handled by the input layer)
 ///
 /// The image data is stored as base64-encoded bytes along with its
 /// media type (e.g. `image/png`, `image/jpeg`), ready for inclusion

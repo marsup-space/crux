@@ -183,9 +183,7 @@ class ReadTool extends ToolDef {
         title: 'Image file: $path',
         output:
             'Image file: ${relativePath(path, workingDirectory)} ($sizeStr)\n'
-            'Format: ${ext.substring(1).toUpperCase()}\n'
-            'This is an image file. Use /image to attach it to a message '
-            'for models that support image input.',
+            'Format: ${ext.substring(1).toUpperCase()}\n',
       );
     }
 
