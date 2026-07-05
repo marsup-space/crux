@@ -1,7 +1,6 @@
 import 'dart:async';
 import '../services/llm_client.dart';
 import '../utils/token_estimate.dart';
-import 'metrics_cubit.dart';
 import 'session_controller.dart';
 
 /// Snapshot of an in-progress tool call as it streams in from the
@@ -356,18 +355,21 @@ class StreamingController {
     }
     // Mirror the live metrics into MetricsCubit so any subscriber
     // (e.g. metrics_display reading from the cubit instead of the
-    // runtime) sees the fresh values. Wholesale replaceSessionState
-    // covers just the fields metrics_display currently consumes
-    // (tokPerSec, ttftMs, ttftReceived); other MetricsSessionState
-    // fields are still seeded at runtime() creation and at
-    // completeSwitchSession's updateContext.
+    // runtime) sees the fresh values. copyWith preserves the other
+    // fields the cubit carries (contextTargetTokens seeded at
+    // runtime() creation and at completeSwitchSession, cacheHitPct
+    // mirrored at onComplete, etc.) — a wholesale MetricsSessionState
+    // constructor would zero those on every tick and clobber the
+    // context bar's current token count.
     _sessionController.metricsCubit.replaceSessionState(
       sessionId,
-      MetricsSessionState(
-        tokPerSec: rt.tokPerSec,
-        ttftMs: rt.ttftMs,
-        ttftReceived: rt.ttftReceived,
-      ),
+      _sessionController.metricsCubit.state
+          .sessionState(sessionId)
+          .copyWith(
+            tokPerSec: rt.tokPerSec,
+            ttftMs: rt.ttftMs,
+            ttftReceived: rt.ttftReceived,
+          ),
     );
   }
 
