@@ -456,6 +456,22 @@ class ChatTurnOrchestrator {
             _activeAbortSignals.remove(sessionId);
             rt.turnBaseTokens = 0;
             rt.accumulatedToolTokens = 0;
+            // Flip isResponding + the per-round lifecycle fields on
+            // normal completion. The catch (line 302) and interrupt
+            // (line 642) paths already do this, but the normal
+            // completion path didn't — so chat_history's
+            // rt.isResponding stayed true after a clean turn and the
+            // streaming bubble kept rendering (showing empty content
+            // since the streaming buffer is already cleared). This
+            // also keeps the cubit-subscribed rebuilding paths in
+            // lockstep when a future slice migrates chat_history's
+            // isStreaming read off the runtime.
+            rt.isResponding = false;
+            rt.btwMode = false;
+            rt.interrupted = false;
+            rt.roundStreaming = false;
+            rt.roundStartTime = null;
+            rt.roundFirstTokenTime = null;
             final msgs = await _messageStore.getMessages(sessionId);
             _sessionController.putCachedMessages(sessionId, msgs);
             if (response.promptTokens + response.completionTokens > 0) {
