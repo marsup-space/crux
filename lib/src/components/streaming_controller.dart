@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../services/llm_client.dart';
 import '../utils/token_estimate.dart';
+import 'metrics_cubit.dart';
 import 'session_controller.dart';
 
 /// Snapshot of an in-progress tool call as it streams in from the
@@ -353,6 +354,21 @@ class StreamingController {
     if (elapsedSec > 0) {
       rt.tokPerSec = tokens / elapsedSec;
     }
+    // Mirror the live metrics into MetricsCubit so any subscriber
+    // (e.g. metrics_display reading from the cubit instead of the
+    // runtime) sees the fresh values. Wholesale replaceSessionState
+    // covers just the fields metrics_display currently consumes
+    // (tokPerSec, ttftMs, ttftReceived); other MetricsSessionState
+    // fields are still seeded at runtime() creation and at
+    // completeSwitchSession's updateContext.
+    _sessionController.metricsCubit.replaceSessionState(
+      sessionId,
+      MetricsSessionState(
+        tokPerSec: rt.tokPerSec,
+        ttftMs: rt.ttftMs,
+        ttftReceived: rt.ttftReceived,
+      ),
+    );
   }
 
   /// No-op legacy API. The real context-bar animation lives

@@ -20,6 +20,7 @@ import '../tools/tool_def.dart';
 import '../utils/run_metrics.dart';
 import '../utils/token_estimate.dart';
 import 'btw_turn_handler.dart';
+import 'metrics_cubit.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 import 'tldr_handler.dart';
@@ -496,6 +497,18 @@ class ChatTurnOrchestrator {
             } else {
               rt.cacheHitPct = null;
             }
+            // Mirror cacheHitPct into MetricsCubit so subscribers
+            // (e.g. metrics_display's hover state) see the fresh
+            // value at the same time the runtime does. Replaces the
+            // existing MetricsSessionState for this session (the
+            // cubit's state-level equality skips redundant emits if
+            // the value didn't change).
+            _sessionController.metricsCubit.replaceSessionState(
+              sessionId,
+              _sessionController.metricsCubit.state
+                  .sessionState(sessionId)
+                  .copyWith(cacheHitPct: rt.cacheHitPct),
+            );
             _refresh();
             if (_sessionController.currentSession.title == 'New Session') {
               _sessionController.generateTitle(sessionId);

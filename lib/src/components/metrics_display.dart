@@ -6,7 +6,6 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
-import '../models/session_runtime_state.dart';
 import '../theme/crux_theme.dart';
 import '../utils/ticker_registry.dart';
 import 'session_controller.dart';
@@ -115,8 +114,12 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
     super.dispose();
   }
 
-  String _cacheHitLabel(SessionRuntimeState rt) {
-    final pct = rt.cacheHitPct;
+  String _cacheHitLabel() {
+    final sessionId = component.currentSessionId;
+    if (sessionId == null) return '—';
+    final pct = component.sessionController.metricsCubit.state
+        .sessionState(sessionId)
+        .cacheHitPct;
     if (pct != null) {
       return 'cache ${pct.toStringAsFixed(3)}%';
     }
@@ -134,22 +137,40 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
       ro.update(tokText: '— tok/s', ttftText: '—', fg: null, hovered: _hovered);
       return;
     }
-    final rt = component.sessionController.runtime(sessionId);
-    final tokText = rt.isResponding
-        ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
-        : rt.tokPerSec > 0
-            ? '${rt.tokPerSec.toStringAsFixed(1)} tok/s'
+    // Read all four metrics fields from the cubits instead of the
+    // legacy runtime singletons. The mirrors for these fields are:
+    // - isResponding (ChatTurnCubit): session_controller
+    //     .mirrorTurnFlags at every turn lifecycle boundary
+    // - tokPerSec / ttftMs (MetricsCubit): streaming_controller
+    //     .updateLiveMetrics every 50ms during streaming
+    // - cacheHitPct (MetricsCubit): chat_turn_orchestrator's
+    //     onComplete path after a turn resolves with cache stats
+    // This method is the per-frame hot path (50ms tick during
+    // streaming), so it uses direct cubit-state getters rather than
+    // BlocSelector / context.select — the timer itself drives
+    // repaint via markNeedsPaint, no widget rebuild is needed.
+    final turnState = component.sessionController.chatTurnCubit.state
+        .sessionState(sessionId);
+    final metricsState = component.sessionController.metricsCubit.state
+        .sessionState(sessionId);
+    final isResponding = turnState.isResponding;
+    final tokPerSec = metricsState.tokPerSec;
+    final ttftMs = metricsState.ttftMs;
+    final tokText = isResponding
+        ? '${tokPerSec.toStringAsFixed(1)} tok/s'
+        : tokPerSec > 0
+            ? '${tokPerSec.toStringAsFixed(1)} tok/s'
             : '— tok/s';
-    final ttftText = rt.isResponding
-        ? component.streamingController.formatTtft(rt.ttftMs)
-        : rt.ttftMs > 0
-            ? component.streamingController.formatTtft(rt.ttftMs)
+    final ttftText = isResponding
+        ? component.streamingController.formatTtft(ttftMs)
+        : ttftMs > 0
+            ? component.streamingController.formatTtft(ttftMs)
             : '—';
-    final fg = rt.isResponding
+    final fg = isResponding
         ? CruxTheme.of(ro.context!).metricsActive
         : CruxTheme.of(ro.context!).metricsIdle;
     ro.update(
-      tokText: _hovered ? _cacheHitLabel(rt) : tokText,
+      tokText: _hovered ? _cacheHitLabel() : tokText,
       ttftText: ttftText,
       fg: fg,
       hovered: _hovered,
