@@ -185,6 +185,17 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _temperatureOverrideMeta =
+      const VerificationMeta('temperatureOverride');
+  @override
+  late final GeneratedColumn<double> temperatureOverride =
+      GeneratedColumn<double>(
+        'temperature_override',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _runningOwnerIdMeta = const VerificationMeta(
     'runningOwnerId',
   );
@@ -268,6 +279,7 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
+    temperatureOverride,
     runningOwnerId,
     runningHeartbeatAt,
     createdAt,
@@ -386,6 +398,15 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         reasoningEffort.isAcceptableOrUnknown(
           data['reasoning_effort']!,
           _reasoningEffortMeta,
+        ),
+      );
+    }
+    if (data.containsKey('temperature_override')) {
+      context.handle(
+        _temperatureOverrideMeta,
+        temperatureOverride.isAcceptableOrUnknown(
+          data['temperature_override']!,
+          _temperatureOverrideMeta,
         ),
       );
     }
@@ -513,6 +534,10 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_effort'],
       ),
+      temperatureOverride: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}temperature_override'],
+      ),
       runningOwnerId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}running_owner_id'],
@@ -566,6 +591,17 @@ class Session extends DataClass implements Insertable<Session> {
   final int promptCacheHitTokens;
   final String thinkingMode;
   final String? reasoningEffort;
+
+  /// Optional per-session override for the sampling temperature that
+  /// wins over the model's TOML-configured default at API-call time.
+  ///
+  /// Set via the `/temperature` slash command. User input is clamped
+  /// to `[0.0, 1.0]` regardless of what is typed — the underlying
+  /// LLM API accepts up to 2.0, but Crux intentionally narrows the
+  /// user-facing range to the well-trodden 0–1 "deterministic ↔
+  /// creative" axis. `null` means "no override, fall back to the
+  /// model's TOML `temperature`".
+  final double? temperatureOverride;
   final String? runningOwnerId;
   final int? runningHeartbeatAt;
   final int createdAt;
@@ -607,6 +643,7 @@ class Session extends DataClass implements Insertable<Session> {
     required this.promptCacheHitTokens,
     required this.thinkingMode,
     this.reasoningEffort,
+    this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,
     required this.createdAt,
@@ -640,6 +677,9 @@ class Session extends DataClass implements Insertable<Session> {
     map['thinking_mode'] = Variable<String>(thinkingMode);
     if (!nullToAbsent || reasoningEffort != null) {
       map['reasoning_effort'] = Variable<String>(reasoningEffort);
+    }
+    if (!nullToAbsent || temperatureOverride != null) {
+      map['temperature_override'] = Variable<double>(temperatureOverride);
     }
     if (!nullToAbsent || runningOwnerId != null) {
       map['running_owner_id'] = Variable<String>(runningOwnerId);
@@ -680,6 +720,9 @@ class Session extends DataClass implements Insertable<Session> {
       reasoningEffort: reasoningEffort == null && nullToAbsent
           ? const Value.absent()
           : Value(reasoningEffort),
+      temperatureOverride: temperatureOverride == null && nullToAbsent
+          ? const Value.absent()
+          : Value(temperatureOverride),
       runningOwnerId: runningOwnerId == null && nullToAbsent
           ? const Value.absent()
           : Value(runningOwnerId),
@@ -723,6 +766,9 @@ class Session extends DataClass implements Insertable<Session> {
       ),
       thinkingMode: serializer.fromJson<String>(json['thinkingMode']),
       reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
+      temperatureOverride: serializer.fromJson<double?>(
+        json['temperatureOverride'],
+      ),
       runningOwnerId: serializer.fromJson<String?>(json['runningOwnerId']),
       runningHeartbeatAt: serializer.fromJson<int?>(json['runningHeartbeatAt']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -753,6 +799,7 @@ class Session extends DataClass implements Insertable<Session> {
       'promptCacheHitTokens': serializer.toJson<int>(promptCacheHitTokens),
       'thinkingMode': serializer.toJson<String>(thinkingMode),
       'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
+      'temperatureOverride': serializer.toJson<double?>(temperatureOverride),
       'runningOwnerId': serializer.toJson<String?>(runningOwnerId),
       'runningHeartbeatAt': serializer.toJson<int?>(runningHeartbeatAt),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -779,6 +826,7 @@ class Session extends DataClass implements Insertable<Session> {
     int? promptCacheHitTokens,
     String? thinkingMode,
     Value<String?> reasoningEffort = const Value.absent(),
+    Value<double?> temperatureOverride = const Value.absent(),
     Value<String?> runningOwnerId = const Value.absent(),
     Value<int?> runningHeartbeatAt = const Value.absent(),
     int? createdAt,
@@ -804,6 +852,9 @@ class Session extends DataClass implements Insertable<Session> {
     reasoningEffort: reasoningEffort.present
         ? reasoningEffort.value
         : this.reasoningEffort,
+    temperatureOverride: temperatureOverride.present
+        ? temperatureOverride.value
+        : this.temperatureOverride,
     runningOwnerId: runningOwnerId.present
         ? runningOwnerId.value
         : this.runningOwnerId,
@@ -843,6 +894,9 @@ class Session extends DataClass implements Insertable<Session> {
       reasoningEffort: data.reasoningEffort.present
           ? data.reasoningEffort.value
           : this.reasoningEffort,
+      temperatureOverride: data.temperatureOverride.present
+          ? data.temperatureOverride.value
+          : this.temperatureOverride,
       runningOwnerId: data.runningOwnerId.present
           ? data.runningOwnerId.value
           : this.runningOwnerId,
@@ -879,6 +933,7 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
+          ..write('temperatureOverride: $temperatureOverride, ')
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
@@ -907,6 +962,7 @@ class Session extends DataClass implements Insertable<Session> {
     promptCacheHitTokens,
     thinkingMode,
     reasoningEffort,
+    temperatureOverride,
     runningOwnerId,
     runningHeartbeatAt,
     createdAt,
@@ -934,6 +990,7 @@ class Session extends DataClass implements Insertable<Session> {
           other.promptCacheHitTokens == this.promptCacheHitTokens &&
           other.thinkingMode == this.thinkingMode &&
           other.reasoningEffort == this.reasoningEffort &&
+          other.temperatureOverride == this.temperatureOverride &&
           other.runningOwnerId == this.runningOwnerId &&
           other.runningHeartbeatAt == this.runningHeartbeatAt &&
           other.createdAt == this.createdAt &&
@@ -959,6 +1016,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> promptCacheHitTokens;
   final Value<String> thinkingMode;
   final Value<String?> reasoningEffort;
+  final Value<double?> temperatureOverride;
   final Value<String?> runningOwnerId;
   final Value<int?> runningHeartbeatAt;
   final Value<int> createdAt;
@@ -982,6 +1040,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
+    this.temperatureOverride = const Value.absent(),
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1006,6 +1065,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.promptCacheHitTokens = const Value.absent(),
     this.thinkingMode = const Value.absent(),
     this.reasoningEffort = const Value.absent(),
+    this.temperatureOverride = const Value.absent(),
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
     required int createdAt,
@@ -1032,6 +1092,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? promptCacheHitTokens,
     Expression<String>? thinkingMode,
     Expression<String>? reasoningEffort,
+    Expression<double>? temperatureOverride,
     Expression<String>? runningOwnerId,
     Expression<int>? runningHeartbeatAt,
     Expression<int>? createdAt,
@@ -1057,6 +1118,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
         'prompt_cache_hit_tokens': promptCacheHitTokens,
       if (thinkingMode != null) 'thinking_mode': thinkingMode,
       if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
+      if (temperatureOverride != null)
+        'temperature_override': temperatureOverride,
       if (runningOwnerId != null) 'running_owner_id': runningOwnerId,
       if (runningHeartbeatAt != null)
         'running_heartbeat_at': runningHeartbeatAt,
@@ -1084,6 +1147,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? promptCacheHitTokens,
     Value<String>? thinkingMode,
     Value<String?>? reasoningEffort,
+    Value<double?>? temperatureOverride,
     Value<String?>? runningOwnerId,
     Value<int?>? runningHeartbeatAt,
     Value<int>? createdAt,
@@ -1108,6 +1172,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       promptCacheHitTokens: promptCacheHitTokens ?? this.promptCacheHitTokens,
       thinkingMode: thinkingMode ?? this.thinkingMode,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+      temperatureOverride: temperatureOverride ?? this.temperatureOverride,
       runningOwnerId: runningOwnerId ?? this.runningOwnerId,
       runningHeartbeatAt: runningHeartbeatAt ?? this.runningHeartbeatAt,
       createdAt: createdAt ?? this.createdAt,
@@ -1172,6 +1237,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (reasoningEffort.present) {
       map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
     }
+    if (temperatureOverride.present) {
+      map['temperature_override'] = Variable<double>(temperatureOverride.value);
+    }
     if (runningOwnerId.present) {
       map['running_owner_id'] = Variable<String>(runningOwnerId.value);
     }
@@ -1212,6 +1280,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('promptCacheHitTokens: $promptCacheHitTokens, ')
           ..write('thinkingMode: $thinkingMode, ')
           ..write('reasoningEffort: $reasoningEffort, ')
+          ..write('temperatureOverride: $temperatureOverride, ')
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('createdAt: $createdAt, ')
@@ -3104,6 +3173,7 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
       required int createdAt,
@@ -3129,6 +3199,7 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> promptCacheHitTokens,
       Value<String> thinkingMode,
       Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
       Value<int> createdAt,
@@ -3285,6 +3356,11 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get reasoningEffort => $composableBuilder(
     column: $table.reasoningEffort,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get temperatureOverride => $composableBuilder(
+    column: $table.temperatureOverride,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3483,6 +3559,11 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get temperatureOverride => $composableBuilder(
+    column: $table.temperatureOverride,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get runningOwnerId => $composableBuilder(
     column: $table.runningOwnerId,
     builder: (column) => ColumnOrderings(column),
@@ -3578,6 +3659,11 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<String> get reasoningEffort => $composableBuilder(
     column: $table.reasoningEffort,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get temperatureOverride => $composableBuilder(
+    column: $table.temperatureOverride,
     builder: (column) => column,
   );
 
@@ -3731,6 +3817,7 @@ class $$SessionsTableTableManager
                 Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
+                Value<double?> temperatureOverride = const Value.absent(),
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -3754,6 +3841,7 @@ class $$SessionsTableTableManager
                 promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
+                temperatureOverride: temperatureOverride,
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
                 createdAt: createdAt,
@@ -3779,6 +3867,7 @@ class $$SessionsTableTableManager
                 Value<int> promptCacheHitTokens = const Value.absent(),
                 Value<String> thinkingMode = const Value.absent(),
                 Value<String?> reasoningEffort = const Value.absent(),
+                Value<double?> temperatureOverride = const Value.absent(),
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
                 required int createdAt,
@@ -3802,6 +3891,7 @@ class $$SessionsTableTableManager
                 promptCacheHitTokens: promptCacheHitTokens,
                 thinkingMode: thinkingMode,
                 reasoningEffort: reasoningEffort,
+                temperatureOverride: temperatureOverride,
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
                 createdAt: createdAt,

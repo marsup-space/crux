@@ -65,6 +65,7 @@ void main() {
       createNewSession: () async {},
       runtime: (_) => runtime,
       persistThinkingLevel: (_) {},
+      persistTemperature: (_) async {},
       resolveAuxiliaryModel: () {},
       themeController: controller,
       sendTurn: ({text}) async {},

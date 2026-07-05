@@ -358,6 +358,7 @@ class SessionController {
         contextDisplayTokens: initial.toDouble(),
         thinkingMode: session?.thinkingMode ?? 'enabled',
         reasoningEffort: session?.reasoningEffort,
+        temperatureOverride: session?.temperatureOverride,
       );
     });
   }
@@ -1023,6 +1024,22 @@ class SessionController {
       thinkingMode: rt.thinkingMode,
       reasoningEffort: rt.reasoningEffort,
     );
+  }
+
+  /// Mirror the in-memory runtime's `temperatureOverride` onto the
+  /// `Session` and persist it via `SessionStore.update`. Called by
+  /// the `/temperature` slash command — the runtime owns the
+  /// authoritative in-memory value (the chat turn executor reads
+  /// from it directly), but the row owns the cross-restart value.
+  /// Same persistence shape as `persistThinkingLevel`.
+  Future<void> persistTemperature(SessionRuntimeState rt) async {
+    final sid = currentSessionId;
+    if (sid == null) return;
+    final session = findSession(sid);
+    if (session != null) {
+      session.temperatureOverride = rt.temperatureOverride;
+    }
+    await _store.update(sid, temperatureOverride: rt.temperatureOverride);
   }
 
   void dispose() {

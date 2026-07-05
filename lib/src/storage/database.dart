@@ -87,8 +87,16 @@ class CruxDatabase extends _$CruxDatabase {
   ///         loader does (rows come back already in newest-first
   ///         order). Cheap win — saves a sort per chunk — and
   ///         also drops the now-redundant single-column index.
+///   v25 – added composite index on `(project_path, archived_at)`
+  ///         so the auto-archive / archived-count queries stay
+  ///         O(log n).
+///   v26 – added `sessions.temperature_override` for the
+  ///         `/temperature` slash command. Nullable REAL clamped
+  ///         to `[0.0, 1.0]` at write time; `null` means "use the
+  ///         model's TOML `temperature` default". See
+  ///         `lib/src/commands/cmd_temperature.dart`.
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -305,6 +313,16 @@ CREATE TABLE offloaded_content (
           'CREATE INDEX IF NOT EXISTS idx_sessions_project_archived '
           'ON sessions(project_path, archived_at)',
         );
+      }
+      if (from < 26) {
+        // Add `sessions.temperature_override` so the `/temperature`
+        // slash command can persist a per-session override that
+        // wins over the model's TOML-configured `temperature`
+        // default. Nullable REAL: `null` means "no override,
+        // fall back to model default". No index — this is read
+        // alongside the full session row, never queried in
+        // isolation.
+        await m.addColumn(sessions, sessions.temperatureOverride);
       }
     },
   );

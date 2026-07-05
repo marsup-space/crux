@@ -257,6 +257,31 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
+  // Override the LLM sampling temperature for the rest of the
+  // session. Input is clamped to [0.0, 1.0] regardless of what is
+  // typed — the underlying APIs accept up to 2.0, but Crux
+  // intentionally narrows the user-facing range to the well-trodden
+  // 0–1 "deterministic ↔ creative" axis. The override wins over
+  // the model's TOML-configured `temperature` default at API-call
+  // time and persists in the session row, so it outlives an app
+  // restart. `availableDuringResponse: true` because changing the
+  // sampling temperature doesn't touch the in-flight stream — the
+  // new value only takes effect on the *next* turn anyway.
+  SlashCommand(
+    name: '/temperature',
+    description:
+        'Override sampling temperature for the session (clamped 0.0–1.0)',
+    params: ['value'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: '0.0', description: 'Fully deterministic'),
+        CommandSuggestion(value: '0.3', description: 'Mostly deterministic'),
+        CommandSuggestion(value: '0.7', description: 'Balanced'),
+        CommandSuggestion(value: '1.0', description: 'Maximum creativity'),
+      ],
+    ],
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/auxiliary',
     description: 'Select the auxiliary model (for summaries, session names)',

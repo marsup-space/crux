@@ -653,6 +653,7 @@ class _ChatPanelState extends State<ChatPanel> {
       createNewSession: _createNewSession,
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
+      persistTemperature: _sessionController.persistTemperature,
       resolveAuxiliaryModel: _sessionController.resolveAuxiliaryModel,
       triggerTldr: (sessionId, aiMsg, detail, userQuestion) {
         _turnOrchestrator.maybeGenerateTldr(

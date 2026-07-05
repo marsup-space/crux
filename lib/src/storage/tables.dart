@@ -21,6 +21,17 @@ class Sessions extends Table {
   TextColumn get thinkingMode =>
       text().withDefault(const Constant('enabled'))();
   TextColumn get reasoningEffort => text().nullable()();
+
+  /// Optional per-session override for the sampling temperature that
+  /// wins over the model's TOML-configured default at API-call time.
+  ///
+  /// Set via the `/temperature` slash command. User input is clamped
+  /// to `[0.0, 1.0]` regardless of what is typed — the underlying
+  /// LLM API accepts up to 2.0, but Crux intentionally narrows the
+  /// user-facing range to the well-trodden 0–1 "deterministic ↔
+  /// creative" axis. `null` means "no override, fall back to the
+  /// model's TOML `temperature`".
+  RealColumn get temperatureOverride => real().nullable()();
   TextColumn get runningOwnerId => text().nullable()();
   IntColumn get runningHeartbeatAt => integer().nullable()();
   IntColumn get createdAt => integer()();

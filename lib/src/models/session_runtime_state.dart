@@ -72,6 +72,17 @@ class SessionRuntimeState {
   int accumulatedToolTokens;
   String thinkingMode;
   String? reasoningEffort;
+
+  /// Per-session override for the LLM sampling temperature set by
+  /// the `/temperature` slash command. When non-null, this wins
+  /// over the model's TOML-configured `temperature` default at the
+  /// API-call site (see `chat_turn_executor.dart`). User input is
+  /// clamped to `[0.0, 1.0]`; `null` means "no override, use the
+  /// model default". Lives on the runtime (not a widget-local
+  /// state) because the chat turn executor reads it directly when
+  /// constructing the stream request — and persists alongside the
+  /// session so the override outlives an app restart.
+  double? temperatureOverride;
   double? cacheHitPct;
 
   bool isGeneratingTldr;
@@ -214,6 +225,7 @@ class SessionRuntimeState {
     this.accumulatedToolTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.temperatureOverride,
     this.cacheHitPct,
     this.isGeneratingTldr = false,
     this.btwMode = false,

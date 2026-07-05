@@ -207,6 +207,7 @@ class SessionStore implements SessionStoreAccessor {
     int? contextTokens,
     String? thinkingMode,
     Object? reasoningEffort = _unset,
+    Object? temperatureOverride = _unset,
     double? ttftMs,
     double? tokPerSec,
     int? promptCacheHitTokens,
@@ -221,6 +222,15 @@ class SessionStore implements SessionStoreAccessor {
         : reasoningEffort == null
         ? const Value(null)
         : Value(reasoningEffort as String);
+    // Tri-state: caller didn't pass it (absent, leave alone), explicitly
+    // cleared the override to `null` (drop model override), or set a new
+    // value. Same pattern as `reasoningEffort` so the row can represent
+    // "use the model default" without the caller having to special-case.
+    final Value<double?> tempValue = temperatureOverride == _unset
+        ? const Value.absent()
+        : temperatureOverride == null
+        ? const Value(null)
+        : Value(temperatureOverride as double);
     final Value<String?> systemPromptValue = systemPrompt == _unset
         ? const Value.absent()
         : systemPrompt == null
@@ -240,6 +250,7 @@ class SessionStore implements SessionStoreAccessor {
             ? Value(thinkingMode)
             : const Value.absent(),
         reasoningEffort: effortValue,
+        temperatureOverride: tempValue,
         ttftMs: ttftMs != null ? Value(ttftMs) : const Value.absent(),
         tokPerSec: tokPerSec != null ? Value(tokPerSec) : const Value.absent(),
         promptCacheHitTokens: promptCacheHitTokens != null
@@ -499,6 +510,7 @@ WHERE status = ?
       contextTokens: row.contextTokens,
       thinkingMode: row.thinkingMode,
       reasoningEffort: row.reasoningEffort,
+      temperatureOverride: row.temperatureOverride,
       ttftMs: row.ttftMs,
       tokPerSec: row.tokPerSec,
       promptCacheHitTokens: row.promptCacheHitTokens,

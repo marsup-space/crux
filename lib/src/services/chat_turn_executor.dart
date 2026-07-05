@@ -436,7 +436,11 @@ class ChatTurnExecutor {
           reasoningEffort: runtime.reasoningEffort,
           thinkingBudget: modelConfig.thinkingBudget,
           maxTokens: modelConfig.maxTokens,
-          temperature: modelConfig.temperature,
+          // Per-session `/temperature` override wins over the
+          // model's TOML default. Null means "no override" — the
+          // pre-existing behavior, preserved exactly so existing
+          // installs without the override column don't change.
+          temperature: runtime.temperatureOverride ?? modelConfig.temperature,
           tools: toolDefs.isNotEmpty ? toolDefs : null,
           userId: '${InstallSlug.slug}-$sessionId',
           cancelToken: streamCancelToken,

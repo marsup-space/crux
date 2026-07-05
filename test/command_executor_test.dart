@@ -85,6 +85,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () => {},
         sendTurn: sendTurnImpl,
         compactSession: compactSessionImpl,
@@ -340,6 +341,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -438,6 +440,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             events.add('sendTurn:${text ?? '<null>'}');
@@ -488,6 +491,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -527,6 +531,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -580,6 +585,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -666,6 +672,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             events.add('sendTurn:${text ?? '<null>'}');
@@ -727,6 +734,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -773,6 +781,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -830,6 +839,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
             sendTurnCalls++;
@@ -892,6 +902,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
           findLastUserMessage: () async => userMsg,
@@ -964,6 +975,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
           findLastUserMessage: () async => null,
@@ -1012,6 +1024,7 @@ void main() {
             createNewSession: () async {},
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
+            persistTemperature: (_) async {},
             resolveAuxiliaryModel: () {},
             sendTurn: ({String? text}) async {},
             findLastUserMessage: () async => null,
@@ -1068,6 +1081,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
           findLastUserMessage: () async => null,
@@ -1114,6 +1128,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
           findLastUserMessage: () async => null,
@@ -1177,6 +1192,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () => {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1313,6 +1329,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
           resolveAuxiliaryModel: () => {},
           sendTurn: ({String? text}) async {},
           findLastUserMessage: () async => null,
@@ -1400,6 +1417,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1557,6 +1575,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1596,6 +1615,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1671,6 +1691,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1759,6 +1780,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1798,6 +1820,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
         findLastUserMessage: () async => null,
@@ -1811,5 +1834,287 @@ void main() {
       expect(toasts.first.message, contains('Quit unavailable'));
       expect(toasts.first.mode, ToastMode.error);
     });
+  });
+
+  group('CommandExecutor — /temperature', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_temp_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext(
+      List<({String message, ToastMode? mode})> toasts,
+    ) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add((message: message, mode: mode));
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (_) => runtime,
+        persistThinkingLevel: (_) {},
+        persistTemperature: (_) async {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+    }
+
+    test('stores an in-range override on the runtime', () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = buildContext(toasts);
+      await CommandExecutor().execute('/temperature 0.7', ctx);
+      expect(runtime.temperatureOverride, 0.7);
+      expect(toasts, hasLength(1));
+      // Success-path toast is `info` mode with an explicit 4s
+      // duration override — see the comment in `cmd_temperature.dart`
+      // for why (default `status` 2s is shorter than the message's
+      // read time on a fast eye).
+      expect(toasts.first.mode, ToastMode.info);
+      expect(toasts.first.message, contains('Temperature set to 0.7'));
+      expect(toasts.first.message, isNot(contains('clamped')));
+      // Override is session-wide, not per-turn — make sure the
+      // wording matches the actual persistence model.
+      expect(toasts.first.message, contains('for the session'));
+      expect(toasts.first.message, isNot(contains('next turn')));
+    });
+
+    test('clamps values above 1.0 and reports the original', () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = buildContext(toasts);
+      await CommandExecutor().execute('/temperature 1.5', ctx);
+      // Clamped to the user-facing max, not silently dropped.
+      expect(runtime.temperatureOverride, 1.0);
+      expect(toasts.first.message, contains('Temperature set to 1'));
+      expect(toasts.first.message, contains('clamped from 1.5'));
+      expect(toasts.first.message, contains('0.0–1.0'));
+    });
+
+    test('clamps negative values to 0.0', () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = buildContext(toasts);
+      await CommandExecutor().execute('/temperature -0.2', ctx);
+      expect(runtime.temperatureOverride, 0.0);
+      expect(toasts.first.message, contains('clamped from -0.2'));
+    });
+
+    test('rejects non-numeric input with an error toast', () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = buildContext(toasts);
+      await CommandExecutor().execute('/temperature hot', ctx);
+      // Runtime is left untouched.
+      expect(runtime.temperatureOverride, isNull);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.mode, ToastMode.error);
+      expect(toasts.first.message, contains('Invalid temperature'));
+      expect(toasts.first.message, contains('"hot"'));
+    });
+
+    test('rejects NaN and infinity', () async {
+      // Use explicit non-finite strings. `double.tryParse` returns
+      // null for these so behavior should be the same as a garbage
+      // string, but this guards against future changes that try to
+      // accept them (e.g. `.toString()` of an Infinity double).
+      for (final bad in ['NaN', 'Infinity', '-Infinity']) {
+        final toasts = <({String message, ToastMode? mode})>[];
+        final ctx = buildContext(toasts);
+        await CommandExecutor().execute('/temperature $bad', ctx);
+        expect(runtime.temperatureOverride, isNull,
+            reason: 'bad input "$bad" must not mutate runtime');
+        expect(toasts.last.mode, ToastMode.error,
+            reason: 'bad input "$bad" must produce error toast');
+      }
+    });
+
+    test('with no argument reports current state and does not mutate',
+        () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = buildContext(toasts);
+      // No override set yet.
+      await CommandExecutor().execute('/temperature', ctx);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('model default'));
+      // Bare-call toast is informational state, not an error or a
+      // transient status change — must render as `info`.
+      expect(toasts.first.mode, ToastMode.info);
+      expect(runtime.temperatureOverride, isNull);
+
+      // With an override set, the same command reports the override.
+      toasts.clear();
+      runtime.temperatureOverride = 0.4;
+      await CommandExecutor().execute('/temperature', ctx);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('0.4'));
+      expect(toasts.first.message, contains('override'));
+      expect(toasts.first.mode, ToastMode.info);
+      // `executeTemperature` only reports when called with no arg;
+      // it should not write the runtime back.
+      expect(runtime.temperatureOverride, 0.4);
+    });
+
+    test('persists the override through the supplied callback',
+        () async {
+      final toasts = <({String message, ToastMode? mode})>[];
+      SessionRuntimeState? persistedFor;
+      double? persistedValue;
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add((message: message, mode: mode));
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (_) => runtime,
+        persistThinkingLevel: (_) {},
+        persistTemperature: (rt) async {
+          persistedFor = rt;
+          persistedValue = rt.temperatureOverride;
+        },
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+      await CommandExecutor().execute('/temperature 0.55', ctx);
+      expect(persistedFor, same(runtime));
+      expect(persistedValue, 0.55);
+    });
+
+    test(
+      'with no argument surfaces the model-configured default when '
+      'provider service is ready',
+      () async {
+        // Drop a minimal OpenAI-compatible provider into a separate
+        // subdir, register a model with a non-zero TOML temperature,
+        // and point the session at it. The no-arg toast should
+        // include the resolved value, not just the abstract
+        // "model default" string.
+        final providersDir =
+            await Directory.systemTemp.createTemp('crux_temp_prov_');
+        addTearDown(() async {
+          if (await providersDir.exists()) {
+            await providersDir.delete(recursive: true);
+          }
+        });
+        await File(p.join(providersDir.path, 'tmpl.toml')).writeAsString('''
+type = "openai_compatible"
+endpoint_url = "http://localhost:65535/v1"
+
+[[models]]
+id = "tmpl-model"
+name = "Test Model"
+context_size = 8000
+image_support = false
+thinking = false
+reasoning_effort = "none"
+temperature = 0.6
+stream_lerp = false
+''');
+        final liveService = ProviderService(
+          userProvidersDir: providersDir.path,
+        );
+        await liveService.initialize();
+        // Reassign so buildContext picks up the live service.
+        providerService = liveService;
+        session = await store.update(
+          session.id,
+          model: 'tmpl/tmpl-model',
+        );
+
+        // No-arg, no override — should include the resolved default.
+        final toasts = <({String message, ToastMode? mode})>[];
+        final ctx = CommandContext(
+          store: store,
+          providerService: providerService,
+          providerServiceReady: true,
+          webProviderRegistry: WebProviderRegistry(),
+          currentSession: session,
+          currentSessionId: session.id,
+          sessions: [session],
+          currentMessages: const <Message>[],
+          projectPath: tempDir.path,
+          refresh: () {},
+          showToast: (message, {ToastMode? mode}) {
+            toasts.add((message: message, mode: mode));
+          },
+          switchSession: (_) async {},
+          initSessions: () async {},
+          createNewSession: () async {},
+          runtime: (_) => runtime,
+          persistThinkingLevel: (_) {},
+          persistTemperature: (_) async {},
+          resolveAuxiliaryModel: () {},
+          sendTurn: ({String? text}) async {},
+          findLastUserMessage: () async => null,
+          deleteMessagesFrom: (_) async {},
+          sendBtwTurn: (_) async {},
+          clearBtwTurns: (_) {},
+        );
+        await CommandExecutor().execute('/temperature', ctx);
+        expect(toasts, hasLength(1));
+        expect(toasts.first.message, contains('model default'));
+        expect(toasts.first.message, contains('0.6'));
+        expect(toasts.first.message, contains('no override'));
+        expect(toasts.first.mode, ToastMode.info);
+
+        // With an override in place, the same toast should still
+        // surface the resolved default — that's the comparison
+        // signal users want when they're deciding what to pick.
+        toasts.clear();
+        runtime.temperatureOverride = 0.85;
+        await CommandExecutor().execute('/temperature', ctx);
+        expect(toasts, hasLength(1));
+        expect(toasts.first.message, contains('0.85'));
+        expect(toasts.first.message, contains('override'));
+        expect(toasts.first.message, contains('default 0.6'));
+        expect(toasts.first.mode, ToastMode.info);
+      },
+    );
   });
 }

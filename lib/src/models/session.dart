@@ -17,6 +17,14 @@ class Session {
   int promptCacheHitTokens;
   String thinkingMode;
   String? reasoningEffort;
+
+  /// Optional per-session override for the sampling temperature
+  /// that the `/temperature` slash command sets. When non-null this
+  /// wins over the model's TOML-configured default at the API-call
+  /// site (see `chat_turn_executor.dart`). User input is clamped to
+  /// `[0.0, 1.0]`; `null` means "no override".
+  double? temperatureOverride;
+
   String? runningOwnerId;
   DateTime? runningHeartbeatAt;
   final DateTime createdAt;
@@ -47,6 +55,7 @@ class Session {
     this.promptCacheHitTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,
     DateTime? createdAt,

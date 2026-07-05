@@ -96,6 +96,7 @@ void main() {
       expect(offNames, contains('/history'));
       expect(offNames, contains('/provider'));
       expect(offNames, contains('/think'));
+      expect(offNames, contains('/temperature'));
       expect(offNames, contains('/auxiliary'));
       expect(offNames, contains('/tldr'));
       expect(offNames, contains('/project'));

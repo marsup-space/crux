@@ -458,9 +458,15 @@ class InputKeyHandler {
         final stash = getCommandStash();
         if (stash != null) {
           _restoreStashedText();
-        } else {
-          textController.clear();
         }
+        // ESC just dismisses the suggestion overlay — it does NOT
+        // clear the input. Clearing here would destroy the user's
+        // in-progress command, and many commands (`/think`,
+        // `/temperature`, `/theme`, `/d-profiler`, `/web-provider`)
+        // accept a bare invocation, so a typed-but-unfilled
+        // `/temperature ` is still a valid submission (`parts[1]`
+        // is empty → falls through to the no-arg branch in the
+        // executor). Press Enter after ESC to submit as-is.
         overlayController.setOverlayOff();
         refresh();
         return true;

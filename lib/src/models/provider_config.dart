@@ -120,8 +120,21 @@ class ModelConfig {
 
   final bool streamLerp;
 
-  /// Sampling temperature (0–2). Default `0` — deterministic output
-  /// suitable for coding agents. Set higher in TOML for creative tasks.
+  /// Sampling temperature. Default `0` — deterministic output
+  /// suitable for coding agents. Set higher in TOML for creative
+  /// tasks.
+  ///
+  /// **Range depends on the provider:**
+  ///   - OpenAI-compatible (and providers that emulate the OpenAI
+  ///     Chat Completions shape): `0.0–2.0`.
+  ///   - Anthropic-compatible and MiniMax (this repo's
+  ///     `AnthropicCompatibleProvider` / `MinimaxProvider`): `0.0–1.0`.
+  ///     Values above 1.0 are rejected by the server with a 400.
+  ///
+  /// The user-facing `/temperature` slash command clamps to the
+  /// universal `0.0–1.0` range so the same input works across
+  /// providers; this TOML field has no such guard at load time, so
+  /// model authors must respect their provider's actual range.
   final double temperature;
 
   /// Per-model display label overrides for reasoning effort levels.
