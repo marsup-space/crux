@@ -149,7 +149,9 @@ class BtwTurnHandler {
           }
           if (deltaText != null) {
             buffer.write(deltaText);
-            if (streamingController.streamingContentFor(sessionId).isEmpty) {
+            if (sessionController.streamingCubit.state
+                .streamingContentFor(sessionId)
+                .isEmpty) {
               rt.contentStartTime = DateTime.now();
             }
             streamingController.appendStreamingContent(sessionId, deltaText);

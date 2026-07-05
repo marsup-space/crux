@@ -20,7 +20,6 @@ import '../tools/tool_def.dart';
 import '../utils/run_metrics.dart';
 import '../utils/token_estimate.dart';
 import 'btw_turn_handler.dart';
-import 'metrics_cubit.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 import 'tldr_handler.dart';
@@ -327,7 +326,9 @@ class ChatTurnOrchestrator {
           runtime: rt,
           onDelta: (delta) {
             if (_interruptedSessions.contains(sessionId)) return;
-            if (_streamingController.streamingContentFor(sessionId).isEmpty) {
+            if (_sessionController.streamingCubit.state
+                .streamingContentFor(sessionId)
+                .isEmpty) {
               rt.contentStartTime = DateTime.now();
             }
             _streamingController.appendStreamingContent(sessionId, delta);
@@ -340,10 +341,13 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _streamingController.streamingContentFor(sessionId) +
-                      _streamingController.streamingReasoningFor(sessionId),
+                  _sessionController.streamingCubit.state
+                          .streamingContentFor(sessionId) +
+                      _sessionController.streamingCubit.state
+                          .streamingReasoningFor(sessionId),
                 ) +
-                _streamingController.streamingToolInputTokensFor(sessionId);
+                _sessionController.streamingCubit.state
+                    .streamingToolInputTokensFor(sessionId);
             rt.contextTargetTokens =
                 rt.turnBaseTokens + rt.accumulatedToolTokens + streamingTokens;
             if (!_streamingController.contextAnimTimerIsActive()) {
@@ -354,10 +358,13 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _streamingController.streamingContentFor(sessionId) +
-                      _streamingController.streamingReasoningFor(sessionId),
+                  _sessionController.streamingCubit.state
+                          .streamingContentFor(sessionId) +
+                      _sessionController.streamingCubit.state
+                          .streamingReasoningFor(sessionId),
                 ) +
-                _streamingController.streamingToolInputTokensFor(sessionId);
+                _sessionController.streamingCubit.state
+                    .streamingToolInputTokensFor(sessionId);
             rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
             rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
@@ -397,10 +404,13 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _streamingController.streamingContentFor(sessionId) +
-                      _streamingController.streamingReasoningFor(sessionId),
+                  _sessionController.streamingCubit.state
+                          .streamingContentFor(sessionId) +
+                      _sessionController.streamingCubit.state
+                          .streamingReasoningFor(sessionId),
                 ) +
-                _streamingController.streamingToolInputTokensFor(sessionId);
+                _sessionController.streamingCubit.state
+                    .streamingToolInputTokensFor(sessionId);
             rt.accumulatedToolTokens += streamingTokens;
             rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
@@ -670,8 +680,10 @@ class ChatTurnOrchestrator {
       }
     }
 
-    final partialContent = _streamingController.streamingContentFor(sessionId);
-    final partialReasoning = _streamingController.streamingReasoningFor(sessionId);
+    final partialContent = _sessionController.streamingCubit.state
+        .streamingContentFor(sessionId);
+    final partialReasoning = _sessionController.streamingCubit.state
+        .streamingReasoningFor(sessionId);
 
     _streamingController.clearStreamingFor(sessionId);
     _streamingController.stopMetricsTimer(sessionId);
