@@ -102,6 +102,14 @@ class StreamingController {
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
     _streamingContent[sessionId] = (_streamingContent[sessionId] ?? '') + delta;
+    // Mirror to StreamingCubit so chat_panel consumers can
+    // subscribe to the streaming text without going through this
+    // controller. The cubit is a passive mirror — its value
+    // matches `_streamingContent[sessionId]` after this call.
+    _sessionController.streamingCubit.appendStreamingContent(
+      sessionId,
+      delta,
+    );
   }
 
   void appendStreamingReasoning(int sessionId, String delta) {
@@ -109,6 +117,10 @@ class StreamingController {
     _clearExecutingTools(sessionId);
     _streamingReasoning[sessionId] =
         (_streamingReasoning[sessionId] ?? '') + delta;
+    _sessionController.streamingCubit.appendStreamingReasoning(
+      sessionId,
+      delta,
+    );
   }
 
   /// Fold a [ToolUseChunk] from the LLM into the per-session,

@@ -275,7 +275,7 @@ class _ChatHistoryState extends State<ChatHistory> {
     // current round's first reasoning delta lands. So this flag is
     // exactly the "a new think has appeared" signal we need.
     final newReasoningStarted = isStreaming &&
-        component.streamingController
+        component.sessionController.streamingCubit.state
             .streamingReasoningFor(sessionId)
             .isNotEmpty;
 
@@ -540,7 +540,8 @@ class _ChatHistoryState extends State<ChatHistory> {
       if (isBtwTurn) {
         items.add((ctx) {
           return BtwBubble.ai(
-            content: component.streamingController.streamingContentFor(
+            content: component.sessionController.streamingCubit.state
+                .streamingContentFor(
               component.sessionController.currentSessionId ?? 0,
             ),
             streaming: true,
