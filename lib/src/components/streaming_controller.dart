@@ -355,21 +355,34 @@ class StreamingController {
   }
 
   void updateLiveMetrics(int sessionId) {
-    final rt = _sessionController.runtime(sessionId);
-    if (!rt.isResponding || rt.responseStartTime == null) return;
+    // Read all per-session state from the cubits, not the runtime's
+    // local maps. The metrics fields (responseStartTime, ttftReceived,
+    // roundStreaming, roundFirstTokenTime, cumulativeCompletionTokens,
+    // cumulativeGenMs) live in MetricsSessionState. The streaming
+    // content / reasoning live in StreamingCubitState. The lifecycle
+    // flag isResponding lives in ChatTurnSessionState. The legacy
+    // controller-internal maps are no longer read anywhere — they
+    // exist only as a write target for the brief computation below
+    // before the mirror copies the value to MetricsCubit.
+    final metrics = _sessionController.metricsCubit.state
+        .sessionState(sessionId);
+    final streaming = _sessionController.streamingCubit.state;
+    final turn = _sessionController.chatTurnCubit.state
+        .sessionState(sessionId);
+    if (!turn.isResponding || metrics.responseStartTime == null) return;
 
     final elapsedMs =
-        DateTime.now().difference(rt.responseStartTime!).inMicroseconds /
-        1000.0;
+        DateTime.now().difference(metrics.responseStartTime!).inMicroseconds /
+            1000.0;
 
-    if (!rt.ttftReceived) {
-      rt.ttftMs = elapsedMs;
+    if (!metrics.ttftReceived) {
+      _sessionController.runtime(sessionId).ttftMs = elapsedMs;
     }
 
     // Pause tok/s while we're outside active token generation. That means:
     // before the first model delta arrives, during local tool execution,
     // between LLM requests, and during idle UI time.
-    if (!rt.roundStreaming || rt.roundFirstTokenTime == null) return;
+    if (!metrics.roundStreaming || metrics.roundFirstTokenTime == null) return;
 
     // Live numerator: completed text/reasoning/tool_use tokens from prior
     // rounds, plus tool_use JSON deltas already emitted in this round, plus
@@ -377,23 +390,24 @@ class StreamingController {
     // tool_use is what makes tok/s reflect the LLM's actual generation rate
     // for an agentic turn, not just the visible text rate.
     final liveStreamingTokens = estimateTokens(
-      streamingContentFor(sessionId) + streamingReasoningFor(sessionId),
+      streaming.streamingContentFor(sessionId) +
+          streaming.streamingReasoningFor(sessionId),
     );
-    final tokens = rt.cumulativeCompletionTokens + liveStreamingTokens;
+    final tokens = metrics.cumulativeCompletionTokens + liveStreamingTokens;
 
     // Live denominator: cumulative generated-token time of all completed
     // rounds plus the current round's elapsed time since its first emitted
     // token/delta. The first delta can be reasoning, response text, or
     // tool_use JSON. This excludes TTFT, local tool execution, between-round
     // waits, and idle UI time.
-    var genMs = rt.cumulativeGenMs;
+    var genMs = metrics.cumulativeGenMs;
     genMs +=
-        DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
-        1000.0;
+        DateTime.now().difference(metrics.roundFirstTokenTime!).inMicroseconds /
+            1000.0;
 
     final elapsedSec = genMs / 1000.0;
     if (elapsedSec > 0) {
-      rt.tokPerSec = tokens / elapsedSec;
+      _sessionController.runtime(sessionId).tokPerSec = tokens / elapsedSec;
     }
     // Mirror the live metrics into MetricsCubit so any subscriber
     // (e.g. metrics_display reading from the cubit instead of the
@@ -408,9 +422,11 @@ class StreamingController {
       _sessionController.metricsCubit.state
           .sessionState(sessionId)
           .copyWith(
-            tokPerSec: rt.tokPerSec,
-            ttftMs: rt.ttftMs,
-            ttftReceived: rt.ttftReceived,
+            tokPerSec:
+                _sessionController.runtime(sessionId).tokPerSec,
+            ttftMs:
+                _sessionController.runtime(sessionId).ttftMs,
+            ttftReceived: metrics.ttftReceived,
           ),
     );
   }
