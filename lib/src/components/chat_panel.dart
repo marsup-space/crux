@@ -585,22 +585,32 @@ class _ChatPanelState extends State<ChatPanel> {
 
   Map<String, dynamic> _profilerSnapshot() {
     final sessionId = _sessionController.currentSessionId;
-    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
-    final messages = _sessionController.currentMessages;
-    final anyResponding = _sessionController.sessions.any(
-      (s) => _sessionController.runtime(s.id).isResponding,
-    );
+    // Read the lifecycle flags from ChatTurnCubit and the message
+    // count from SessionCubit instead of going through the
+    // controller's runtime singletons. The cubit state is the
+    // read-side SSoT and is already mirrored from the controller
+    // at every meaningful transition (mirrorTurnFlags for the
+    // lifecycle flags, putCachedMessages for the message list).
+    // The `anySessionResponding` aggregation now walks the cubit's
+    // per-session state map directly — one iteration over the
+    // cubit's sessions map, no `runtime(sessionId)` singleton
+    // lookup per session.
+    final turnStates = _sessionController.chatTurnCubit.state.sessions;
+    final ts = sessionId != null ? turnStates[sessionId] : null;
+    final messages = _sessionController.cubit.state
+        .messagesFor(sessionId ?? -1);
     return {
       'sessionId': sessionId,
-      'isResponding': rt?.isResponding ?? false,
-      'isGeneratingTldr': rt?.isGeneratingTldr ?? false,
-      'btwMode': rt?.btwMode ?? false,
-      'interrupted': rt?.interrupted ?? false,
+      'isResponding': ts?.isResponding ?? false,
+      'isGeneratingTldr': ts?.isGeneratingTldr ?? false,
+      'btwMode': ts?.btwMode ?? false,
+      'interrupted': ts?.interrupted ?? false,
       'isGeneratingTitle': _sessionController.isGeneratingTitle,
       'messageCount': messages.length,
       'reasoningMsgs': messages.where((m) => m.reasoningContent.isNotEmpty).length,
       'contextAnimActive': _streamingController.contextAnimTimerIsActive(),
-      'anySessionResponding': anyResponding,
+      'anySessionResponding':
+          turnStates.values.any((s) => s.isResponding),
     };
   }
 
