@@ -406,9 +406,16 @@ class _ChatPanelState extends State<ChatPanel> {
   void _maybeRecomputeCompactEstimate() {
     final session = _sessionController.currentSession;
     final sessionId = session.id;
-    final messages = _sessionController.currentMessages;
-    final runtime = _sessionController.runtime(sessionId);
-    final contextTarget = runtime.contextTargetTokens;
+    // Read contextTargetTokens from MetricsCubit (already mirrored
+    // by session_controller.mirrorTurnFlags + the runtime() seed
+    // path) and the message list from SessionCubit — both are the
+    // read-side SSoTs at this layer. The local `runtime` (and
+    // `currentMessages` getter) are no longer needed in this method.
+    final contextTarget = _sessionController.metricsCubit.state
+        .sessionState(sessionId)
+        .contextTargetTokens;
+    final messages = _sessionController.cubit.state
+        .messagesFor(sessionId);
     final cached = _compactEstimates[sessionId];
     if (cached != null &&
         cached.messageCount == messages.length &&
@@ -483,8 +490,12 @@ class _ChatPanelState extends State<ChatPanel> {
     if (error != null) {
       _showToast(error, mode: ToastMode.error);
       if (oldId != null && oldId != id) {
-        final oldRt = _sessionController.runtime(oldId);
-        if (oldRt.isResponding) {
+        // Same cubit-read as the success path: ChatTurnCubit carries
+        // the current isResponding state mirrored from every turn
+        // boundary.
+        if (_sessionController.chatTurnCubit.state
+            .sessionState(oldId)
+            .isResponding) {
           _streamingController.startMetricsTimer(oldId);
         }
       }
@@ -508,8 +519,14 @@ class _ChatPanelState extends State<ChatPanel> {
     _tracker.loadSession(id, savedState);
     _chatInputKey.currentState?.loadSessionStash(id);
 
-    final rt = _sessionController.runtime(id);
-    if (rt.isResponding) {
+    // Read isResponding from ChatTurnCubit (already mirrored from
+    // every turn lifecycle boundary by session_controller
+    // .mirrorTurnFlags). The runtime's `isResponding` flag and the
+    // cubit's `state.sessionState(id).isResponding` carry the same
+    // value here — using the cubit is the read-side SSoT.
+    if (_sessionController.chatTurnCubit.state
+        .sessionState(id)
+        .isResponding) {
       _streamingController.startMetricsTimer(id);
     }
 
