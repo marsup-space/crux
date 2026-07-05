@@ -220,6 +220,21 @@ class ChatTurnCubit extends Cubit<ChatTurnCubitState> {
     emit(state.copyWith(sessions: _withoutKey(state.sessions, sessionId)));
   }
 
+  /// Replace the per-session ChatTurnSessionState wholesale. Used by
+  /// the controller's runtime → cubit mirror helper, which
+  /// constructs a fresh `ChatTurnSessionState` from the legacy
+  /// `SessionRuntimeState` flags (`isResponding`, `btwMode`,
+  /// `isGeneratingTldr`, `interrupted`). Not part of the public
+  /// semantic API (`beginTurn` / `completeTurn` / `failTurn` /
+  /// `interruptTurn` are) — only the runtime mirror path uses
+  /// this. Skips emission if the value is structurally equal so
+  /// a no-op mirror pass doesn't churn subscribers.
+  void replaceSessionState(int sessionId, ChatTurnSessionState value) {
+    final current = state.sessionState(sessionId);
+    if (current == value) return;
+    _put(sessionId, value);
+  }
+
   void _put(int sessionId, ChatTurnSessionState value) {
     emit(state.copyWith(sessions: {...state.sessions, sessionId: value}));
   }

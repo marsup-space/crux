@@ -13,7 +13,9 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import 'package:crux/src/components/chat_turn_cubit.dart';
 import 'package:crux/src/components/session_controller.dart';
+import 'package:crux/src/components/turn_registry.dart';
 import 'package:crux/src/models/image_attachment.dart';
 import 'package:crux/src/services/chat_service.dart';
 import 'package:crux/src/services/llm_client.dart';
@@ -472,5 +474,120 @@ void main() {
             '(zeroed) MetricsSessionState in the cubit',
       );
     });
+  });
+
+  group('chatTurnCubit mirror', () {
+    test('mirrorTurnFlags maps idle runtime → ChatTurnPhase.idle', () async {
+      final session = await store.create(
+        title: 'idle',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      // Touch runtime first (default rt has isResponding=false).
+      controller.runtime(session.id);
+
+      controller.mirrorTurnFlags(session.id);
+      final s = controller.chatTurnCubit.state.sessionState(session.id);
+      expect(s.phase, ChatTurnPhase.idle);
+      expect(s.isResponding, isFalse);
+      expect(s.btwMode, isFalse);
+    });
+
+    test('mirrorTurnFlags maps responding + btwMode → responding + btw', () async {
+      final session = await store.create(
+        title: 'responding',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      final rt = controller.runtime(session.id);
+      rt.isResponding = true;
+      rt.btwMode = true;
+
+      controller.mirrorTurnFlags(session.id);
+      final s = controller.chatTurnCubit.state.sessionState(session.id);
+      expect(s.phase, ChatTurnPhase.responding);
+      expect(s.isResponding, isTrue);
+      expect(s.btwMode, isTrue,
+          reason: 'btwMode should mirror when the turn is responding');
+      expect(s.kind, TurnKind.btw);
+    });
+
+    test('mirrorTurnFlags maps interrupted → ChatTurnPhase.interrupted', () async {
+      final session = await store.create(
+        title: 'interrupted',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      final rt = controller.runtime(session.id);
+      rt.isResponding = false;
+      rt.interrupted = true;
+
+      controller.mirrorTurnFlags(session.id);
+      final s = controller.chatTurnCubit.state.sessionState(session.id);
+      expect(s.phase, ChatTurnPhase.interrupted);
+      expect(s.interrupted, isTrue);
+      expect(s.isResponding, isFalse);
+    });
+
+    test('mirrorTurnFlags updates isGeneratingTldr', () async {
+      final session = await store.create(
+        title: 'tldr',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      final rt = controller.runtime(session.id);
+
+      rt.isGeneratingTldr = true;
+      controller.mirrorTurnFlags(session.id);
+      expect(
+        controller.chatTurnCubit.state.sessionState(session.id).isGeneratingTldr,
+        isTrue,
+      );
+
+      rt.isGeneratingTldr = false;
+      controller.mirrorTurnFlags(session.id);
+      expect(
+        controller.chatTurnCubit.state.sessionState(session.id).isGeneratingTldr,
+        isFalse,
+      );
+    });
+
+    test('deleteSession drops the chatTurnCubit entry', () async {
+      final session = await store.create(
+        title: 'temp',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      final rt = controller.runtime(session.id);
+      rt.isResponding = true;
+      controller.mirrorTurnFlags(session.id);
+      expect(
+        controller.chatTurnCubit.state.sessionState(session.id).phase,
+        ChatTurnPhase.responding,
+      );
+
+      await controller.deleteSession(session.id);
+
+      expect(
+        controller.chatTurnCubit.state.sessionState(session.id).phase,
+        ChatTurnPhase.idle,
+        reason: 'deleted session should fall back to default ChatTurnSessionState',
+      );
+  });
   });
 }

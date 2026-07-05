@@ -20,6 +20,7 @@ import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
+import 'chat_turn_cubit.dart';
 import 'chat_turn_orchestrator.dart';
 import 'compacted_session_header.dart';
 import 'compaction_divider.dart';
@@ -170,7 +171,18 @@ class _ChatHistoryState extends State<ChatHistory> {
     final rt = sessionId != null
         ? component.sessionController.runtime(sessionId)
         : null;
-    final isStreaming = rt?.isResponding ?? false;
+    // Read the streaming-bubble visibility flag from ChatTurnCubit
+    // instead of the controller's runtime. The mirror in
+    // SessionController.mirrorTurnFlags keeps the cubit's phase in
+    // lockstep with the runtime's `isResponding` flip at every
+    // meaningful transition (turn start, completion, error,
+    // interrupt, btw start/end), so this read returns the same
+    // value as rt.isResponding without chat_history depending on the
+    // runtime being mutated directly.
+    final isStreaming = sessionId != null &&
+        context.select<ChatTurnCubit, bool>(
+          (cubit) => cubit.state.sessionState(sessionId).isResponding,
+        );
 
     // ─── Cubit subscriptions captured up front ─────────────────
     //
@@ -250,7 +262,7 @@ class _ChatHistoryState extends State<ChatHistory> {
     // exactly the "a new think has appeared" signal we need.
     final newReasoningStarted = isStreaming &&
         component.streamingController
-            .streamingReasoningFor(sessionId ?? 0)
+            .streamingReasoningFor(sessionId)
             .isNotEmpty;
 
     // Find the index of the most-recently-persisted `ai` message.

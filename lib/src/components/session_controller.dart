@@ -10,8 +10,10 @@ import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import 'btw_cubit.dart';
+import 'chat_turn_cubit.dart';
 import 'metrics_cubit.dart';
 import 'session_cubit.dart';
+import 'turn_registry.dart';
 
 export 'btw_cubit.dart' show BtwTurn;
 
@@ -45,6 +47,17 @@ class SessionController {
   /// controller's direct `runtime` reads with `BlocSelector`s and
   /// migrate more fields into the cubit.
   final MetricsCubit metricsCubit = MetricsCubit();
+
+  /// Passive mirror of the per-session turn-phase lifecycle —
+  /// `isResponding`, `btwMode`, `isGeneratingTldr`, `interrupted`.
+  /// ChatTurnCubit owns the structured `ChatTurnSessionState` with
+  /// `phase` + `kind` fields; the controller's legacy
+  /// `SessionRuntimeState` keeps the same flags as flat booleans.
+  /// [mirrorTurnFlags] bridges the two so subscribers see the
+  /// current value of each lifecycle flag at every meaningful
+  /// state transition (turn start, normal completion, error,
+  /// interrupt, btw start/end).
+  final ChatTurnCubit chatTurnCubit = ChatTurnCubit();
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -381,6 +394,50 @@ class SessionController {
       );
       return rt;
     });
+  }
+
+  /// Mirror the runtime's lifecycle flags (isResponding, btwMode,
+  /// isGeneratingTldr, interrupted) into ChatTurnCubit for
+  /// [sessionId]. The cubit's `ChatTurnSessionState.phase` and
+  /// `.kind` get derived from the runtime's flat booleans:
+  ///
+  ///   rt.isResponding true → phase = responding
+  ///   rt.isResponding false, rt.interrupted true → phase = interrupted
+  ///   otherwise → phase = idle
+  ///   rt.btwMode true (while responding) → kind = TurnKind.btw
+  ///   otherwise → kind = null
+  ///
+  /// Callers: the chat panel / orchestrator / tldr / btw handlers
+  /// should call this after every direct mutation of the runtime's
+  /// `isResponding`, `btwMode`, or `isGeneratingTldr` fields so the
+  /// cubit-driven chat_history subscribers see fresh values without
+  /// waiting for the next chat-panel _refresh(). The initial seed
+  /// happens implicitly inside [runtime] when a session is first
+  /// seen (both fields are `false` defaults there).
+  void mirrorTurnFlags(int sessionId) {
+    final rt = _runtimeStates[sessionId];
+    if (rt == null) {
+      chatTurnCubit.replaceSessionState(
+        sessionId,
+        const ChatTurnSessionState(),
+      );
+      return;
+    }
+    final phase = rt.isResponding
+        ? ChatTurnPhase.responding
+        : (rt.interrupted
+              ? ChatTurnPhase.interrupted
+              : ChatTurnPhase.idle);
+    final kind =
+        (rt.isResponding && rt.btwMode) ? TurnKind.btw : null;
+    chatTurnCubit.replaceSessionState(
+      sessionId,
+      ChatTurnSessionState(
+        phase: phase,
+        kind: kind,
+        isGeneratingTldr: rt.isGeneratingTldr,
+      ),
+    );
   }
 
   /// True iff at least one session (current or background) is in
@@ -919,6 +976,9 @@ class SessionController {
     // Drop the deleted session's metrics mirror so the cubit doesn't
     // retain a stale entry for a session the controller has forgotten.
     metricsCubit.removeSession(sessionId);
+    // Same cleanup for the turn-phase mirror so chat_history won't
+    // keep rendering per-session state for a deleted session.
+    chatTurnCubit.removeSession(sessionId);
     // Also drop the deleted session's message queue.
     _messageQueues.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
@@ -1080,5 +1140,6 @@ class SessionController {
     cubit.close();
     btwCubit.close();
     metricsCubit.close();
+    chatTurnCubit.close();
   }
 }

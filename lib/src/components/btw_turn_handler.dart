@@ -78,6 +78,10 @@ class BtwTurnHandler {
     streamingController.clearStreamingFor(sessionId);
     rt.isResponding = true;
     rt.btwMode = true;
+    // Mirror the phase transition into ChatTurnCubit so chat_history
+    // sees the btwStreaming render path immediately, not on the next
+    // chat-panel _refresh().
+    sessionController.mirrorTurnFlags(sessionId);
     rt.responseStartTime = DateTime.now();
     rt.ttftMs = 0.0;
     rt.ttftReceived = false;
@@ -184,6 +188,9 @@ class BtwTurnHandler {
     streamingController.stopMetricsTimer(sessionId);
     rt.isResponding = false;
     rt.btwMode = false;
+    // Mirror the btw-end flag reset into ChatTurnCubit so chat_history
+    // can switch from btwStreaming render back to normal message render.
+    sessionController.mirrorTurnFlags(sessionId);
 
     if (streamError != null) {
       streamingController.clearStreamingFor(sessionId);

@@ -247,6 +247,10 @@ class ChatTurnOrchestrator {
       _streamingController.stopContextAnimation();
 
       rt.isResponding = true;
+      // Mirror the flag flip into ChatTurnCubit so subscribers
+      // (chat_history's streaming-bubble visibility check) see the
+      // turn kickoff immediately.
+      _sessionController.mirrorTurnFlags(sessionId);
       rt.responseStartTime = DateTime.now();
       rt.ttftMs = 0.0;
       rt.ttftReceived = false;
@@ -300,6 +304,7 @@ class ChatTurnOrchestrator {
       }
     } catch (e) {
       rt.isResponding = false;
+      _sessionController.mirrorTurnFlags(sessionId);
       rt.roundStreaming = false;
       rt.roundStartTime = null;
       rt.roundFirstTokenTime = null;
@@ -472,6 +477,9 @@ class ChatTurnOrchestrator {
             rt.roundStreaming = false;
             rt.roundStartTime = null;
             rt.roundFirstTokenTime = null;
+            // Mirror the flag reset into ChatTurnCubit so the
+            // streaming bubble disappears on normal completion.
+            _sessionController.mirrorTurnFlags(sessionId);
             final msgs = await _messageStore.getMessages(sessionId);
             _sessionController.putCachedMessages(sessionId, msgs);
             if (response.promptTokens + response.completionTokens > 0) {
@@ -565,6 +573,7 @@ class ChatTurnOrchestrator {
         _showToast('Unhandled error: $e', mode: ToastMode.error);
       }
       rt.isResponding = false;
+      _sessionController.mirrorTurnFlags(sessionId);
       _streamingController.stopMetricsTimer(sessionId);
       _streamingController.clearStreamingFor(sessionId);
       _activeAbortSignals.remove(sessionId);
@@ -663,6 +672,9 @@ class ChatTurnOrchestrator {
     rt.roundFirstTokenTime = null;
     rt.pauseStreamingTimer();
     rt.cancelTimers();
+    // Mirror the interrupt into ChatTurnCubit so subscribers see the
+    // phase transition (responding → interrupted) immediately.
+    _sessionController.mirrorTurnFlags(sessionId);
 
     _interruptedSessions.add(sessionId);
 

@@ -87,6 +87,7 @@ class TldrHandler {
     }
 
     rt.isGeneratingTldr = true;
+    sessionController.mirrorTurnFlags(sessionId);
     refresh();
 
     try {
@@ -113,6 +114,7 @@ class TldrHandler {
       }
     } finally {
       rt.isGeneratingTldr = false;
+      sessionController.mirrorTurnFlags(sessionId);
       refresh();
     }
   }

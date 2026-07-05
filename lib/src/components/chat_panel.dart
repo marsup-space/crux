@@ -31,6 +31,7 @@ import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
 import 'btw_cubit.dart';
 import 'chat_history.dart';
+import 'chat_turn_cubit.dart';
 import 'compaction_fullpane.dart';
 import 'chat_input.dart';
 import 'chat_toolbar.dart';
@@ -954,6 +955,7 @@ class _ChatPanelState extends State<ChatPanel> {
           BlocProvider<SessionCubit>.value(value: _sessionController.cubit),
           BlocProvider<BtwCubit>.value(value: _sessionController.btwCubit),
           BlocProvider<MetricsCubit>.value(value: _sessionController.metricsCubit),
+          BlocProvider<ChatTurnCubit>.value(value: _sessionController.chatTurnCubit),
         ],
         child: LayoutBuilder(
         builder: (context, constraints) {
