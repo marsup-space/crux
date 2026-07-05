@@ -355,59 +355,59 @@ class StreamingController {
   }
 
   void updateLiveMetrics(int sessionId) {
-    // Read all per-session state from the cubits, not the runtime's
-    // local maps. The metrics fields (responseStartTime, ttftReceived,
-    // roundStreaming, roundFirstTokenTime, cumulativeCompletionTokens,
-    // cumulativeGenMs) live in MetricsSessionState. The streaming
-    // content / reasoning live in StreamingCubitState. The lifecycle
-    // flag isResponding lives in ChatTurnSessionState. The legacy
-    // controller-internal maps are no longer read anywhere — they
-    // exist only as a write target for the brief computation below
-    // before the mirror copies the value to MetricsCubit.
-    final metrics = _sessionController.metricsCubit.state
-        .sessionState(sessionId);
-    final streaming = _sessionController.streamingCubit.state;
-    final turn = _sessionController.chatTurnCubit.state
-        .sessionState(sessionId);
-    if (!turn.isResponding || metrics.responseStartTime == null) return;
+    // HOTFIX (reverts part of slice 26): the metrics fields
+    // (responseStartTime, ttftReceived, roundStreaming, etc.) are
+    // NOT mirrored to MetricsCubit anywhere — the cubit's
+    // responseStartTime stays null even when rt.responseStartTime
+    // is set. Reading these from the cubit made the early-return
+    // checks fire on every tick, so tok/s and the context-bar
+    // projection never computed. Keep reading the metrics fields
+    // from the runtime (the write-side SSoT) and only use the
+    // cubit for fields that ARE mirrored — the streaming content
+    // and reasoning, which have had mirror calls since slices
+    // 23 + 24. The proper full migration requires mirror sites at
+    // every rt-field-mutation location (orchestrator sendTurn,
+    // onComplete, onToolRound, chat_turn_executor per-delta,
+    // btw_turn_handler start/end, tldr_handler). That's a follow-up
+    // slice; for now, read from rt for the unmirrored fields.
+    final rt = _sessionController.runtime(sessionId);
+    if (!rt.isResponding || rt.responseStartTime == null) return;
 
     final elapsedMs =
-        DateTime.now().difference(metrics.responseStartTime!).inMicroseconds /
+        DateTime.now().difference(rt.responseStartTime!).inMicroseconds /
             1000.0;
 
-    if (!metrics.ttftReceived) {
-      _sessionController.runtime(sessionId).ttftMs = elapsedMs;
+    if (!rt.ttftReceived) {
+      rt.ttftMs = elapsedMs;
     }
 
     // Pause tok/s while we're outside active token generation. That means:
     // before the first model delta arrives, during local tool execution,
     // between LLM requests, and during idle UI time.
-    if (!metrics.roundStreaming || metrics.roundFirstTokenTime == null) return;
+    if (!rt.roundStreaming || rt.roundFirstTokenTime == null) return;
 
-    // Live numerator: completed text/reasoning/tool_use tokens from prior
-    // rounds, plus tool_use JSON deltas already emitted in this round, plus
-    // the current round's still-buffered streaming text/reasoning. Including
-    // tool_use is what makes tok/s reflect the LLM's actual generation rate
-    // for an agentic turn, not just the visible text rate.
+    // Streaming content / reasoning ARE mirrored (slices 23 + 24),
+    // so the cubit is the read-side SSoT for those.
+    final streaming = _sessionController.streamingCubit.state;
     final liveStreamingTokens = estimateTokens(
       streaming.streamingContentFor(sessionId) +
           streaming.streamingReasoningFor(sessionId),
     );
-    final tokens = metrics.cumulativeCompletionTokens + liveStreamingTokens;
+    final tokens = rt.cumulativeCompletionTokens + liveStreamingTokens;
 
     // Live denominator: cumulative generated-token time of all completed
     // rounds plus the current round's elapsed time since its first emitted
     // token/delta. The first delta can be reasoning, response text, or
     // tool_use JSON. This excludes TTFT, local tool execution, between-round
     // waits, and idle UI time.
-    var genMs = metrics.cumulativeGenMs;
+    var genMs = rt.cumulativeGenMs;
     genMs +=
-        DateTime.now().difference(metrics.roundFirstTokenTime!).inMicroseconds /
+        DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
             1000.0;
 
     final elapsedSec = genMs / 1000.0;
     if (elapsedSec > 0) {
-      _sessionController.runtime(sessionId).tokPerSec = tokens / elapsedSec;
+      rt.tokPerSec = tokens / elapsedSec;
     }
     // Mirror the live metrics into MetricsCubit so any subscriber
     // (e.g. metrics_display reading from the cubit instead of the
@@ -422,11 +422,9 @@ class StreamingController {
       _sessionController.metricsCubit.state
           .sessionState(sessionId)
           .copyWith(
-            tokPerSec:
-                _sessionController.runtime(sessionId).tokPerSec,
-            ttftMs:
-                _sessionController.runtime(sessionId).ttftMs,
-            ttftReceived: metrics.ttftReceived,
+            tokPerSec: rt.tokPerSec,
+            ttftMs: rt.ttftMs,
+            ttftReceived: rt.ttftReceived,
           ),
     );
   }
