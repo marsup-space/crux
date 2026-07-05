@@ -142,6 +142,22 @@ class ContextBarState extends State<ContextBar> {
   /// instead of freezing mid-flight.
   static const Duration _idleGrace = Duration(milliseconds: 100);
 
+  /// Read `contextTargetTokens` for [sessionId] from MetricsCubit.
+  ///
+  /// The bar's 16ms lerp ticker calls into this on every frame, so
+  /// it goes through a direct cubit-state getter instead of a
+  /// `BlocSelector` subscription — the ticker itself drives the
+  /// repaint and only needs the latest value at this tick.
+  /// `contextTargetTokens` is the first runtime field fully cubit-
+  /// driven; future slices will move the rest of the bar's runtime
+  /// reads (e.g. `isResponding`, `btwMode`, `temperatureOverride`)
+  /// onto MetricsCubit the same way.
+  int _contextTargetFor(int sessionId) {
+    return component.sessionController.metricsCubit.state
+        .sessionState(sessionId)
+        .contextTargetTokens;
+  }
+
   /// Start the 16ms polling ticker if it isn't already running.
   void _startTimer() {
     if (_animTicker != null) return;
@@ -340,7 +356,7 @@ class ContextBarState extends State<ContextBar> {
       final started = _coolingStartedAt;
       if (started != null &&
           DateTime.now().difference(started) >= _idleGrace) {
-        _displayTokens = rt.contextTargetTokens.toDouble();
+        _displayTokens = _contextTargetFor(sessionId).toDouble();
         _pushToRenderObject();
         _stopTimer();
         return;
@@ -354,7 +370,7 @@ class ContextBarState extends State<ContextBar> {
       _coolingStartedAt = DateTime.now();
     }
 
-    final target = rt.contextTargetTokens;
+    final target = _contextTargetFor(sessionId);
     final targetDouble = target.toDouble();
     final diff = targetDouble - _displayTokens;
 
@@ -414,10 +430,10 @@ class ContextBarState extends State<ContextBar> {
   /// target (which would be visually misleading — it would
   /// imply the new session is consuming those tokens).
   void _snapToSession(int sessionId) {
-    final rt = component.sessionController.runtime(sessionId);
     _currentSessionId = sessionId;
-    _displayTokens = rt.contextTargetTokens.toDouble();
-    _lastSeenTarget = rt.contextTargetTokens;
+    final target = _contextTargetFor(sessionId);
+    _displayTokens = target.toDouble();
+    _lastSeenTarget = target;
     _pushToRenderObject();
     _stopTimer();
   }
@@ -460,8 +476,7 @@ class ContextBarState extends State<ContextBar> {
       // a brief settling window so the bar animates to the
       // new value instead of jumping instantly (matching the
       // streaming-end settle behaviour) and then stops.
-      final target =
-          component.sessionController.runtime(sessionId).contextTargetTokens;
+      final target = _contextTargetFor(sessionId);
       if (target != _lastSeenTarget) {
         _lastSeenTarget = target;
         if ((target - _displayTokens).abs() >= 0.5) {
@@ -516,10 +531,9 @@ class ContextBarState extends State<ContextBar> {
         // target by a leftover cooling tick.
         final sessionId = component.sessionController.currentSessionId;
         if (sessionId != null) {
-          final rt = component.sessionController.runtime(sessionId);
-          final target = rt.contextTargetTokens.toDouble();
-          if ((target - _displayTokens).abs() >= 0.5) {
-            _displayTokens = target;
+        final target = _contextTargetFor(sessionId).toDouble();
+        if ((target - _displayTokens).abs() >= 0.5) {
+          _displayTokens = target;
             _animState = _AnimState.idle;
             _coolingStartedAt = null;
             _stopTimer();
