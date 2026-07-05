@@ -2,6 +2,12 @@ import 'dart:async';
 import '../services/llm_client.dart';
 import '../utils/token_estimate.dart';
 import 'session_controller.dart';
+// The mirror calls into StreamingCubit, which uses its own copies
+// of the tool-call value classes (StreamingToolCall,
+// ExecutingToolCall, StreamingToolAbortInfo). Import them with a
+// prefix to avoid the name collision with the controller's local
+// copies. A future slice will deduplicate the class definitions.
+import 'streaming_cubit.dart' as cubit;
 
 /// Snapshot of an in-progress tool call as it streams in from the
 /// LLM. The LLM emits `tool_use` chunks one at a time, each carrying
@@ -153,6 +159,10 @@ class StreamingController {
         accumulatedInputJson: existing.accumulatedInputJson + chunk.inputDelta,
       );
     }
+    _sessionController.streamingCubit.updateStreamingToolCall(
+      sessionId,
+      chunk,
+    );
   }
 
   void beginWaitingForModel(int sessionId) {
@@ -161,6 +171,7 @@ class StreamingController {
     _streamingToolCalls.remove(sessionId);
     _clearExecutingTools(sessionId);
     _waitingForModelSince[sessionId] = DateTime.now();
+    _sessionController.streamingCubit.beginWaitingForModel(sessionId);
     _refresh();
   }
 
@@ -177,6 +188,15 @@ class StreamingController {
     _waitingForModelSince.remove(sessionId);
     _executingToolsSince[sessionId] = DateTime.now();
     _executingToolCalls[sessionId] = calls;
+    _sessionController.streamingCubit.beginExecutingTools(
+      sessionId,
+      [for (final c in calls)
+        cubit.ExecutingToolCall(
+          callId: c.callId,
+          name: c.name,
+          inputPreview: c.inputPreview,
+        )],
+    );
     _refresh();
   }
 
@@ -196,6 +216,7 @@ class StreamingController {
       return;
     }
     _clearExecutingTools(sessionId);
+    _sessionController.streamingCubit.finishExecutingTools(sessionId);
     _refresh();
   }
 
@@ -244,6 +265,14 @@ class StreamingController {
             name: existing.name.isEmpty ? name : existing.name,
             abortInfo: abortInfo,
           );
+    _sessionController.streamingCubit.markStreamingToolCallAborted(
+      sessionId,
+      index: index,
+      callId: callId,
+      name: name,
+      reason: reason,
+      abortedInputTokensEstimate: abortedInputTokensEstimate,
+    );
     _refresh();
   }
 
@@ -270,6 +299,7 @@ class StreamingController {
     _streamingToolCalls.remove(sessionId);
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
+    _sessionController.streamingCubit.clearStreamingFor(sessionId);
   }
 
   void _clearExecutingTools(int sessionId) {
