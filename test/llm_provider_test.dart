@@ -433,6 +433,305 @@ void main() {
     });
   });
 
+  group('AnthropicCompatibleProvider.sanitizeMessages '
+      '(tool_use ↔ tool_result pairing)', () {
+    // The Anthropic Messages protocol requires every tool_use
+    // block in an assistant message's content list to be answered
+    // by a tool_result block (matched on tool_use_id) in the very
+    // next user message. The sanitizer on AnthropicCompatibleProvider
+    // repairs orphan tool_use blocks — typically caused by switching
+    // the session model from an OpenAI-wire provider to an
+    // Anthropic-wire provider mid-conversation, or by a mid-round
+    // interruption that left a tool_call row without its results.
+    // The MiniMax session that hit "tool result's tool id ... not
+    // found (2013)" was exercising exactly this path.
+    final provider = AnthropicCompatibleProvider();
+
+    Map<String, dynamic> thinkingBlock(String signature) => {
+          'type': 'thinking',
+          'thinking': 'reasoning text',
+          'signature': signature,
+        };
+
+    Map<String, dynamic> textBlock(String text) =>
+        {'type': 'text', 'text': text};
+
+    Map<String, dynamic> toolUseBlock(String id, String name) => {
+          'type': 'tool_use',
+          'id': id,
+          'name': name,
+          'input': {'arg': 'val'},
+        };
+
+    Map<String, dynamic> toolResultBlock(String id, String content) => {
+          'type': 'tool_result',
+          'tool_use_id': id,
+          'content': content,
+        };
+
+    test('returns the original list reference when pairing is already valid',
+        () {
+      // The well-formed fast path: a complete assistant→user
+      // tool_use↔tool_result chain returns the same list reference,
+      // no allocation.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [
+            thinkingBlock('sig1'),
+            textBlock('calling both'),
+            toolUseBlock('toolu_a', 'tool_x'),
+            toolUseBlock('toolu_b', 'tool_x'),
+          ],
+        },
+        {
+          'role': 'user',
+          'content': [
+            toolResultBlock('toolu_a', 'r1'),
+            toolResultBlock('toolu_b', 'r2'),
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': [textBlock('done')],
+        },
+      ];
+      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    });
+
+    test('drops orphan tool_use blocks from an assistant message whose tool '
+        'results were never persisted (mid-round interrupt)', () {
+      // Regression: a tool_call row was persisted but the round was
+      // interrupted before addToolRound wrote the tool result rows.
+      // The next request sees a dangling tool_use block. Anthropic
+      // rejects this with a 400.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [
+            thinkingBlock('sig1'),
+            textBlock('I will call a tool'),
+            toolUseBlock('toolu_a', 'tool_x'),
+          ],
+        },
+        {'role': 'user', 'content': 'try again'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(3));
+      // The thinking and text blocks are preserved; tool_use is gone.
+      expect(out[1]['role'], 'assistant');
+      final keptContent = (out[1]['content'] as List).cast<Map>();
+      expect(keptContent.map((b) => b['type']), ['thinking', 'text'],
+          reason: 'thinking + text survive, tool_use dropped');
+      // The interrupting user message is preserved verbatim.
+      expect(out[2]['content'], 'try again');
+    });
+
+    test('drops only the orphan tool_use blocks when some calls have '
+        'responses and others do not', () {
+      // Mid-round interrupt in the middle of a multi-call round:
+      // A got a response, B did not. Keep A's response, drop B
+      // from the assistant's content blocks, and let the user
+      // message that interrupted the round stand on its own.
+      final messages = [
+        {'role': 'user', 'content': 'do both'},
+        {
+          'role': 'assistant',
+          'content': [
+            toolUseBlock('toolu_a', 'tool_x'),
+            toolUseBlock('toolu_b', 'tool_x'),
+          ],
+        },
+        {
+          'role': 'user',
+          'content': [toolResultBlock('toolu_a', 'r1')],
+        },
+        {'role': 'user', 'content': 'actually just give me the first result'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(4));
+      // Only toolu_a survives on the assistant message.
+      final assistantContent =
+          (out[1]['content'] as List).cast<Map<String, dynamic>>();
+      expect(assistantContent, hasLength(1));
+      expect(assistantContent[0]['id'], 'toolu_a',
+          reason: 'only toolu_a should survive');
+      // toolu_a's tool_result is preserved.
+      final firstUserContent =
+          (out[2]['content'] as List).cast<Map<String, dynamic>>();
+      expect(firstUserContent[0]['tool_use_id'], 'toolu_a');
+      // The interrupting user message is preserved.
+      expect(out[3]['content'], 'actually just give me the first result');
+    });
+
+    test('drops an assistant message whose content is only orphan tool_use '
+        'blocks', () {
+      // Edge case: every tool_use in the assistant message was
+      // orphaned (no tool_result ever came back). After dropping
+      // all of them, the assistant content would be empty — and an
+      // assistant message with no content blocks is invalid in
+      // Anthropic format, so the whole message goes.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [toolUseBlock('toolu_a', 'tool_x')],
+        },
+        {'role': 'user', 'content': 'never mind'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(2));
+      expect(out.map((m) => m['role']), ['user', 'user']);
+    });
+
+    test('drops orphan tool_result blocks that have no preceding assistant '
+        'tool_use with a matching id', () {
+      // A tool_result block landed in the history without a
+      // matching tool_use — e.g. an external write or a corrupted
+      // round. Anthropic rejects tool_results that don't follow a
+      // matching assistant tool_use.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'user',
+          'content': [toolResultBlock('toolu_x', 'orphan')],
+        },
+        {'role': 'user', 'content': 'do something else'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      // The orphan user message is dropped entirely (its only
+      // content block was the orphan tool_result).
+      expect(out, hasLength(2));
+      expect(out[0]['content'], 'do it');
+      expect(out[1]['content'], 'do something else');
+    });
+
+    test('drops tool_result blocks with a null tool_use_id', () {
+      // Malformed tool_result block — has the type but no
+      // tool_use_id. There's no way to associate it with an
+      // assistant tool_use, so it's always dropped.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'tool_result', 'content': 'orphan result'},
+          ],
+        },
+        {'role': 'user', 'content': 'next'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(2));
+      // The orphan user message (only block was the malformed
+      // tool_result) is dropped.
+      expect(out[0]['content'], 'do it');
+      expect(out[1]['content'], 'next');
+    });
+
+    test('preserves thinking blocks on assistant messages even when their '
+        'tool_use blocks are dropped', () {
+      // Critical: thinking blocks carry a `signature` the Anthropic
+      // API needs to verify the prior turn's reasoning. Dropping
+      // them silently would break extended thinking on subsequent
+      // turns. The sanitizer must always preserve `thinking`
+      // blocks when pruning tool_use.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [
+            thinkingBlock('sig_precious'),
+            toolUseBlock('toolu_a', 'tool_x'),
+          ],
+        },
+        // No tool_result — tool_use is orphan, but thinking is not.
+        {'role': 'user', 'content': 'abort'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      final assistantContent =
+          (out[1]['content'] as List).cast<Map<String, dynamic>>();
+      expect(assistantContent, hasLength(1));
+      expect(assistantContent[0]['type'], 'thinking');
+      expect(assistantContent[0]['signature'], 'sig_precious',
+          reason: 'thinking block must survive orphan tool_use pruning');
+    });
+
+    test('preserves well-formed tool flow even with intervening system '
+        'messages', () {
+      // System messages don't terminate a tool flow — only user
+      // and tool_use-free assistant messages do. (Crux's
+      // buildRequestBody hoists system messages to a separate
+      // `system` field, so the only system messages in the messages
+      // list are legitimate interleavings.)
+      final messages = [
+        {'role': 'system', 'content': 'be brief'},
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [toolUseBlock('toolu_a', 'tool_x')],
+        },
+        {
+          'role': 'user',
+          'content': [toolResultBlock('toolu_a', 'r1')],
+        },
+      ];
+      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    });
+
+    test('handles a user message that mixes text and a tool_result', () {
+      // A user message can carry text and tool_result blocks in
+      // the same content list. The text block doesn't terminate
+      // the flow by itself — only the user message as a whole
+      // does. The tool_result here answers the prior tool_use,
+      // so the chain stays valid.
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        {
+          'role': 'assistant',
+          'content': [toolUseBlock('toolu_a', 'tool_x')],
+        },
+        {
+          'role': 'user',
+          'content': [
+            toolResultBlock('toolu_a', 'r1'),
+            textBlock('also, thanks'),
+          ],
+        },
+      ];
+      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    });
+
+    test('does not mutate the original message maps', () {
+      // The sanitizer must produce new map instances for any row
+      // it modifies, so callers that hold references to the
+      // pre-sanitize maps don't see surprise mutations across
+      // requests.
+      final originalAssistant = {
+        'role': 'assistant',
+        'content': [
+          thinkingBlock('sig1'),
+          toolUseBlock('toolu_a', 'tool_x'),
+        ],
+      };
+      final messages = [
+        {'role': 'user', 'content': 'do it'},
+        originalAssistant,
+        // No tool_response — toolu_a is orphan.
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(identical(out[1], originalAssistant), isFalse,
+          reason: 'modified rows must be a fresh map');
+      // Original is unchanged: both blocks still present.
+      final origContent =
+          (originalAssistant['content'] as List).cast<Map<String, dynamic>>();
+      expect(origContent, hasLength(2));
+      expect(origContent.map((b) => b['type']), ['thinking', 'tool_use'],
+          reason: 'original must not be mutated in place');
+    });
+  });
+
   group('LlmProvider.sanitizeMessages (default no-op)', () {
     test('returns the original list reference when no modifications are made',
         () {

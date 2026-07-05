@@ -6,6 +6,55 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [Unreleased]
+
+### Fixes
+
+- **Anthropic-compatible providers repair orphan `tool_use` blocks
+  before sending** — `AnthropicCompatibleProvider.sanitizeMessages`
+  now walks the wire-format message list and drops orphan
+  `tool_use` blocks from assistant messages and orphan `tool_result`
+  blocks from user messages, mirroring the
+  `OpenAICompatibleProvider.sanitizeMessages` repair that has been
+  in place for DeepSeek / OpenAI-compatible providers since the
+  wire-format sanitization hooks landed. Crux's storage layer
+  generally maintains the pairing invariant (`addToolRound` wraps
+  the tool_call row and all matching tool result rows in one
+  transaction), but it can still break in two real situations:
+
+  1. **Mid-round interruption.** A `tool_call` row is persisted but
+     the round aborts before its tool results are written — the
+     next request sees a dangling `tool_use` block nothing answers.
+  2. **Wire-family switch.** Switching the session model from an
+     OpenAI-wire provider to an Anthropic-wire provider
+     (MiniMax etc.) re-serializes the history with the new shape;
+     half-persisted rounds or empty `tool_calls` arrays after
+     orphan pruning can become malformed payloads the new endpoint
+     rejects.
+
+  Without the repair, the MiniMax API rejects the request with a
+  400 `tool result's tool id ... not found (2013)` and the session
+  is stuck — every subsequent retry re-sends the same broken
+  history. With the repair, the next request from a stuck session
+  goes out clean without any database surgery: orphan `tool_use`
+  blocks get pruned from the assistant content list (with
+  `thinking` and `text` blocks preserved — the API needs the
+  thinking signature on extended-thinking turns), orphan
+  `tool_result` blocks get pruned from the user content list, and
+  assistant messages whose content was only `tool_use` get dropped
+  entirely. The well-formed-history fast path returns the same
+  list reference unchanged, so providers and sessions that don't
+  hit this path pay zero per-request allocation cost. Unblocks the
+  "bloc refactor" session that hit this loop on MiniMax-M3.
+
+  Backed by `test/llm_provider_test.dart` (10 new cases covering
+  the well-formed fast path, mid-round interrupt, partial-pair
+  preservation, single-tool-use assistant dropping, orphan
+  `tool_result` dropping, malformed `tool_result` blocks, thinking
+  block preservation under orphan pruning, system-message
+  interleavings, mixed text + `tool_result` user messages, and
+  no-mutation invariants).
+
 ## [0.11.3] - 2026-07-03
 
 c98915d
