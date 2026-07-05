@@ -13,6 +13,7 @@ import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
 import 'metrics_cubit.dart';
 import 'session_cubit.dart';
+import 'streaming_cubit.dart';
 import 'turn_registry.dart';
 
 export 'btw_cubit.dart' show BtwTurn;
@@ -58,6 +59,17 @@ class SessionController {
   /// state transition (turn start, normal completion, error,
   /// interrupt, btw start/end).
   final ChatTurnCubit chatTurnCubit = ChatTurnCubit();
+
+  /// Passive mirror of the per-session in-flight streaming state
+  /// — accumulated response text, accumulated reasoning, waiting-
+  /// for-model timer, executing-tools rows, streaming tool-use
+  /// chunks, and the tool-input token estimate. Future slices
+  /// move the write side (StreamingController's per-session
+  /// mutators) over to this cubit; for now StreamingController
+  /// remains the canonical writer and the cubit is a parallel
+  /// structure. The seed is created by [runtime] when a
+  /// session is first touched; teardown is via [dispose].
+  final StreamingCubit streamingCubit = StreamingCubit();
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -1141,5 +1153,6 @@ class SessionController {
     btwCubit.close();
     metricsCubit.close();
     chatTurnCubit.close();
+    streamingCubit.close();
   }
 }

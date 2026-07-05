@@ -458,11 +458,9 @@ bool _mapListEquals<K, V>(Map<K, List<V>> a, Map<K, List<V>> b) {
 bool _nestedMapEquals<K1, K2, V>(Map<K1, Map<K2, V>> a, Map<K1, Map<K2, V>> b) {
   if (identical(a, b)) return true;
   if (a.length != b.length) return false;
-  for (final entry in a.entries) {
-    final other = b[entry.key];
-    if (other == null || !_mapEquals(entry.value, other)) return false;
-  }
-  return true;
+  return a.entries.every(
+    (entry) => b[entry.key] != null && _mapEquals(entry.value, b[entry.key]!),
+  );
 }
 
 int _mapHash<K, V>(Map<K, V> map) {
