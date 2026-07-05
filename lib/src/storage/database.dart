@@ -322,7 +322,29 @@ CREATE TABLE offloaded_content (
         // fall back to model default". No index — this is read
         // alongside the full session row, never queried in
         // isolation.
-        await m.addColumn(sessions, sessions.temperatureOverride);
+        //
+        // Idempotent: SQLite ALTER TABLE ADD COLUMN fails with
+        // "duplicate column name" if the column already exists,
+        // so guard the ALTER on a PRAGMA check. This protects
+        // users whose DB was created (or partially migrated)
+        // with the column already present but user_version not
+        // yet bumped past 25 — e.g. a previous run that crashed
+        // between addColumn and drift's user_version write, or
+        // a regenerated database.g.dart whose CREATE TABLE
+        // already declares the column for fresh installs while
+        // v25 user_version lingers. Without this guard the
+        // startup fails with `SqliteException(1): duplicate
+        // column name: temperature_override` and the app can't
+        // open its database at all.
+        final hasTemperatureOverride = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('sessions') "
+              "WHERE name = 'temperature_override' LIMIT 1",
+            )
+            .get();
+        if (hasTemperatureOverride.isEmpty) {
+          await m.addColumn(sessions, sessions.temperatureOverride);
+        }
       }
     },
   );
