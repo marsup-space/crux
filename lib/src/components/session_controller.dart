@@ -10,6 +10,7 @@ import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import 'btw_cubit.dart';
+import 'metrics_cubit.dart';
 import 'session_cubit.dart';
 
 export 'btw_cubit.dart' show BtwTurn;
@@ -34,6 +35,16 @@ class SessionController {
   /// the chat panel can either keep reading from [btwTurnsFor] or
   /// subscribe via `BlocBuilder<BtwCubit>` in a future slice.
   final BtwCubit btwCubit = BtwCubit();
+
+  /// Passive mirror of the per-session live metrics — context
+  /// target, cache-hit percentage, generation duration, and so on.
+  /// Mirrors the same `Map<int, MetricsSessionState>` shape as the
+  /// cubit's state. Today's slice only establishes the lifecycle
+  /// (controller owns the cubit and seeds `contextTargetTokens` /
+  /// teardown on session removal); future slices will replace the
+  /// controller's direct `runtime` reads with `BlocSelector`s and
+  /// migrate more fields into the cubit.
+  final MetricsCubit metricsCubit = MetricsCubit();
 
   List<Session> sessions = [];
   int? currentSessionId;
@@ -352,7 +363,7 @@ class SessionController {
     return _runtimeStates.putIfAbsent(sessionId, () {
       final initial = computeBaseContext(sessionId);
       final session = findSession(sessionId);
-      return SessionRuntimeState(
+      final rt = SessionRuntimeState(
         sessionId: sessionId,
         contextTargetTokens: initial,
         contextDisplayTokens: initial.toDouble(),
@@ -360,6 +371,15 @@ class SessionController {
         reasoningEffort: session?.reasoningEffort,
         temperatureOverride: session?.temperatureOverride,
       );
+      // Seed MetricsCubit with the same base context target that the
+      // runtime carries, so the cubit has an entry to subscribe to
+      // before any caller actually mutates the runtime. The mirror
+      // keeps both sources in lockstep at session creation.
+      metricsCubit.updateContext(
+        sessionId: sessionId,
+        targetTokens: initial,
+      );
+      return rt;
     });
   }
 
@@ -698,6 +718,11 @@ class SessionController {
       final base = computeBaseContext(id);
       rt.contextTargetTokens = base;
       rt.contextDisplayTokens = base.toDouble();
+      // Mirror the refined context target into MetricsCubit so any
+      // BlocSelector on the cubit sees the fresh value. The runtime
+      // is the legacy write-side; the cubit is the read-side for
+      // widgets migrated to BlocBuilder / BlocSelector.
+      metricsCubit.updateContext(sessionId: id, targetTokens: base);
     } finally {
       _loadingSessionIds.remove(id);
       _loadingTotalCounts.remove(id);
@@ -891,6 +916,9 @@ class SessionController {
     // no longer exists. Other sessions' chains are untouched.
     btwBuffer.remove(sessionId);
     btwCubit.removeSession(sessionId);
+    // Drop the deleted session's metrics mirror so the cubit doesn't
+    // retain a stale entry for a session the controller has forgotten.
+    metricsCubit.removeSession(sessionId);
     // Also drop the deleted session's message queue.
     _messageQueues.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
@@ -1051,5 +1079,6 @@ class SessionController {
     _messageQueues.clear();
     cubit.close();
     btwCubit.close();
+    metricsCubit.close();
   }
 }

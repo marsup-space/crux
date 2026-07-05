@@ -381,4 +381,96 @@ void main() {
       expect(controller.btwTurnsFor(session.id), isEmpty);
     });
   });
+
+  group('metricsCubit mirror', () {
+    test('runtime() seeds contextTargetTokens into metricsCubit',
+        () async {
+      final session = await store.create(
+        title: 'With runtime',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+
+      // Touching runtime() is what creates a fresh SessionRuntimeState
+      // for a session; the same call should also seed MetricsCubit with
+      // the initial base context.
+      final rt = controller.runtime(session.id);
+      expect(rt.contextTargetTokens, 0);
+      expect(
+        controller.metricsCubit.state.sessionState(session.id).contextTargetTokens,
+        0,
+        reason: 'fresh runtime should mirror initial context into the cubit',
+      );
+    });
+
+    test(
+        'switchSession lifecycle updates contextTargetTokens in metricsCubit',
+        () async {
+      final session = await store.create(
+        title: 'Has messages',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      // Seed enough messages for computeBaseContext to have something
+      // to walk (it falls back to message sum when session.contextTokens
+      // is 0).
+      for (var i = 0; i < 4; i++) {
+        await store.messageStore.addMessage(
+          session.id,
+          role: 'user',
+          content: 'm$i',
+        );
+      }
+
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
+      controller.beginSwitchSession(session.id);
+      await controller.completeSwitchSession(session.id);
+
+      // Controller mirrors whatever base context was computed.
+      final rt = controller.runtime(session.id);
+      expect(
+        controller.metricsCubit.state.sessionState(session.id).contextTargetTokens,
+        rt.contextTargetTokens,
+        reason: 'metricsCubit contextTargetTokens should match controller rt',
+      );
+    });
+
+    test('deleteSession drops the metricsCubit entry', () async {
+      final keep = await store.create(
+        title: 'Keep',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final drop = await store.create(
+        title: 'Drop',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+
+      final controller = buildController()
+        ..sessions = [drop, keep]
+        ..currentSessionId = drop.id;
+      controller.runtime(drop.id); // ensure cubit entry exists
+
+      expect(
+        controller.metricsCubit.state.sessionState(drop.id).contextTargetTokens,
+        0,
+        reason: 'fresh runtime seed should land in the cubit',
+      );
+
+      await controller.deleteSession(drop.id);
+
+      expect(
+        controller.metricsCubit.state.sessionState(drop.id).contextTargetTokens,
+        0,
+        reason: 'deleted session should fall back to the default '
+            '(zeroed) MetricsSessionState in the cubit',
+      );
+    });
+  });
 }
