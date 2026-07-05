@@ -183,6 +183,20 @@ class _ChatHistoryState extends State<ChatHistory> {
         context.select<ChatTurnCubit, bool>(
           (cubit) => cubit.state.sessionState(sessionId).isResponding,
         );
+    // Mirror the other two lifecycle flags that chat_history reads
+    // from `rt` (this slice 17 widens slice 16). Both are flat bools
+    // on the cubit today but reach here via `phase`/`kind`/`isGeneratingTldr`
+    // fields; the mirrorTurnFlags calls in chat_turn_orchestrator /
+    // btw_turn_handler / tldr_handler keep them in lockstep with the
+    // runtime's flags.
+    final isBtwTurn = sessionId != null &&
+        context.select<ChatTurnCubit, bool>(
+          (cubit) => cubit.state.sessionState(sessionId).btwMode,
+        );
+    final isGeneratingTldr = sessionId != null &&
+        context.select<ChatTurnCubit, bool>(
+          (cubit) => cubit.state.sessionState(sessionId).isGeneratingTldr,
+        );
 
     // ─── Cubit subscriptions captured up front ─────────────────
     //
@@ -456,7 +470,7 @@ class _ChatHistoryState extends State<ChatHistory> {
 
       if (msg.role == 'ai' && msg.id > 0 && rt != null) {
         final hasTldr = msg.tldr.isNotEmpty;
-        if (hasTldr || rt.isGeneratingTldr) {
+        if (hasTldr || isGeneratingTldr) {
           final aiMessageItemIndex = items.length - 1;
           final aiMessageId = msg.id;
           final aiMessageContent = msg.content;
@@ -472,7 +486,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             return TldrBubble(
               tldrText: msg.tldr,
               headings: extractHeadings(msg.content),
-              isGenerating: rt.isGeneratingTldr && !hasTldr,
+              isGenerating: isGeneratingTldr && !hasTldr,
               hasAuxiliaryModel:
                   component.providerService.auxiliaryModel != null &&
                   component.providerService.auxiliaryModel != 'none',
@@ -513,7 +527,7 @@ class _ChatHistoryState extends State<ChatHistory> {
         final turn = btwTurns[i];
         items.add((ctx) => BtwBubble.user(content: turn.userText));
         final isPendingLast =
-            i == lastIndex && (rt?.btwMode ?? false) && isStreaming;
+            i == lastIndex && isBtwTurn && isStreaming;
         if (!isPendingLast) {
           items.add((ctx) => BtwBubble.ai(content: turn.aiText));
         }
@@ -523,7 +537,7 @@ class _ChatHistoryState extends State<ChatHistory> {
 
     // Streaming bubble.
     if (isStreaming) {
-      if (rt?.btwMode ?? false) {
+      if (isBtwTurn) {
         items.add((ctx) {
           return BtwBubble.ai(
             content: component.streamingController.streamingContentFor(
