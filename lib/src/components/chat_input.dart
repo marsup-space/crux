@@ -234,9 +234,17 @@ class ChatInputState extends State<ChatInput> {
     if (text.isEmpty) return;
 
     final sessionId = component.sessionController.currentSessionId;
+    // Read isResponding from ChatTurnCubit (already mirrored by the
+    // controller's mirrorTurnFlags calls at every turn lifecycle
+    // boundary) instead of going through the runtime — same value,
+    // no dependency on the controller's mutable SessionRuntimeState
+    // singletons. Set in _sendMessage to gate commands / normal
+    // text while a turn is mid-flight.
     final isResponding =
         sessionId != null &&
-        component.sessionController.runtime(sessionId).isResponding;
+        component.sessionController.chatTurnCubit.state
+            .sessionState(sessionId)
+            .isResponding;
 
     if (text.startsWith('/')) {
       final cmd = findCommand(text.split(' ').first);
@@ -258,7 +266,14 @@ class ChatInputState extends State<ChatInput> {
     final sessionId = component.sessionController.currentSessionId;
     if (sessionId == null) return;
 
-    final pending = component.sessionController.pendingImagesFor(sessionId);
+    // Read pending images from SessionCubit (already mirrored by
+    // addPendingImage / setPendingImages / removePendingImage in
+    // session_controller) rather than reaching through the
+    // controller's mutable Map<int, List<ImageAttachment>>. The
+    // setter sites still mutate the controller directly — see
+    // slice 4 / bug fix e7543f7 for those.
+    final pending = component.sessionController.cubit.state
+        .pendingImagesFor(sessionId);
     if (pending.isEmpty) return;
 
     final text = component.textController.text;
@@ -307,7 +322,15 @@ class ChatInputState extends State<ChatInput> {
   // ── Input history navigation ─────────────────────────────────────
 
   void _jumpToPreviousUserInput() {
-    final messages = component.sessionController.currentMessages;
+    // Read the current session's messages from SessionCubit (already
+    // mirrored by putCachedMessages on every chunk arrival and on
+    // user-message append). `_jumpToPrevious` is scroll-position
+    // navigation — it doesn't care about the specific contents, just
+    // the [role == 'user'] indices — but pulling from the cubit
+    // keeps the chat_input on the cubit side of the read boundary
+    // for message data.
+    final messages = component.sessionController.cubit.state
+        .messagesFor(component.sessionController.currentSessionId ?? -1);
     final userIndices = <int>[];
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].role == 'user') userIndices.add(i);
@@ -340,7 +363,8 @@ class ChatInputState extends State<ChatInput> {
   }
 
   void _jumpToNextUserInput() {
-    final messages = component.sessionController.currentMessages;
+    final messages = component.sessionController.cubit.state
+        .messagesFor(component.sessionController.currentSessionId ?? -1);
     final userIndices = <int>[];
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].role == 'user') userIndices.add(i);
@@ -384,14 +408,20 @@ class ChatInputState extends State<ChatInput> {
 
   Component _buildInner(BuildContext context) {
     final sessionId = component.sessionController.currentSessionId;
-    final rt = sessionId != null
-        ? component.sessionController.runtime(sessionId)
-        : null;
-    final isStreaming = rt?.isResponding ?? false;
+    // Read both flags from cubits rather than controller.runtime().
+    // The local `rt` variable is no longer needed — its lifecycle
+    // fields go through ChatTurnCubit, its message data through
+    // SessionCubit. chat_input now holds zero direct reads of the
+    // runtime's mutable fields.
+    final isStreaming = sessionId != null &&
+        component.sessionController.chatTurnCubit.state
+            .sessionState(sessionId)
+            .isResponding;
     final wasInterrupted = component.turnOrchestrator.wasInterrupted(sessionId);
 
     final pendingImages = sessionId != null
-        ? component.sessionController.pendingImagesFor(sessionId)
+        ? component.sessionController.cubit.state
+            .pendingImagesFor(sessionId)
         : <ImageAttachment>[];
     final hasImages = pendingImages.isNotEmpty;
 
