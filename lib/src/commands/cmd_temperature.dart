@@ -1,37 +1,6 @@
 import '../components/ui/toast.dart';
+import '../utils/sampling.dart';
 import 'command_executor.dart';
-
-/// User-visible clamp range. Accepted LLM temperature range varies
-/// per provider:
-///
-///   - OpenAI / OpenAI-compatible: `0.0–2.0`
-///   - Anthropic / MiniMax (Anthropic-shaped): `0.0–1.0` only;
-///     anything higher is a server-side 400.
-///
-/// We deliberately clamp at `1.0` here so the same user input
-/// behaves identically regardless of which provider the active
-/// session happens to use — letting the cap differ per provider
-/// would mean `/temperature 1.5` works for some users and silently
-/// fails for others. 0 is fully deterministic, 1 is maximum
-/// creativity. Anything outside the range gets clamped and we tell
-/// the user.
-const double kMinTemperature = 0.0;
-const double kMaxTemperature = 1.0;
-
-/// Format a temperature for display. Toasts are short so we use up
-/// to two decimals — more than enough resolution for the user to
-/// notice 0.0 vs 0.7 vs 1.0.
-String _formatTemperature(double value) {
-  // Trims trailing zero(s) so `0.70` shows as `0.7`, while keeping
-  // `0.00` as `0`. Whole numbers render without a decimal point.
-  final s = value.toStringAsFixed(2);
-  if (s.contains('.')) {
-    var trimmed = s.replaceFirst(RegExp(r'0+$'), '');
-    if (trimmed.endsWith('.')) trimmed = '${trimmed}0';
-    return trimmed;
-  }
-  return s;
-}
 
 /// Resolve the model's TOML-configured default temperature for the
 /// active session, mirroring how `cmd_think.dart` and `cmd_model.dart`
@@ -70,7 +39,7 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
       ctx.showToast(
         modelDefault != null
             ? 'Temperature: model default '
-                '${_formatTemperature(modelDefault)} '
+                '${formatSamplingValue(modelDefault)} '
                 '(no override set)'
             : 'Temperature: model default (no override set)',
         mode: ToastMode.info,
@@ -80,10 +49,10 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
       // users can see what they're overriding from.
       final suffix = modelDefault != null
           ? ' (override; default '
-              '${_formatTemperature(modelDefault)})'
+              '${formatSamplingValue(modelDefault)})'
           : ' (override)';
       ctx.showToast(
-        'Temperature: ${_formatTemperature(current)}$suffix',
+        'Temperature: ${formatSamplingValue(current)}$suffix',
         mode: ToastMode.info,
       );
     }
@@ -108,22 +77,28 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
   final wasClamped = clamped != parsed;
 
   rt.temperatureOverride = clamped;
+
+  // Persist FIRST, then show the toast. The `await` yields to the
+  // event loop, which lets pending setState calls from
+  // `_sendMessage`'s `textController.clear()` (and the resulting
+  // `_onTextChanged` → overlay state changes) be processed before
+  // the toast is shown. If the toast fires synchronously before
+  // those setStates are processed, the toast's own setState can be
+  // lost — the pending rebuilds from the text-clear path end up
+  // overwriting the toast's dirty flag before the frame renders.
+  // Awaiting first ensures the text-clear rebuilds complete, so
+  // the toast's setState lands on a stable tree and renders.
   await ctx.persistTemperature(rt);
 
   if (wasClamped) {
-    // `mode: ToastMode.info` so the confirmation reads on screen —
-    // the default `status` duration of 2s is shorter than the time
-    // it takes to look at the bottom of the panel for a message
-    // this long. `info` defaults to 3s, which gives enough time to
-    // catch the new value without dragging the toast forever.
     ctx.showToast(
-      'Temperature set to ${_formatTemperature(clamped)} '
-      '(clamped from ${_formatTemperature(parsed)}; range 0.0–1.0)',
+      'Temperature set to ${formatSamplingValue(clamped)} '
+      '(clamped from ${formatSamplingValue(parsed)}; range 0.0–1.0)',
       mode: ToastMode.info,
     );
   } else {
     ctx.showToast(
-      'Temperature set to ${_formatTemperature(clamped)} '
+      'Temperature set to ${formatSamplingValue(clamped)} '
       '(override; will apply for the session)',
       mode: ToastMode.info,
     );

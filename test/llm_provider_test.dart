@@ -1,11 +1,11 @@
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
-import 'package:crux/src/services/chat_turn_executor.dart';
 import 'package:crux/src/services/install_slug.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
 import 'package:crux/src/services/providers/minimax_provider.dart';
 import 'package:crux/src/services/providers/openai_compatible_provider.dart';
+import 'package:crux/src/utils/sampling.dart';
 
 void main() {
   // Minimal user/system messages used across the test cases.

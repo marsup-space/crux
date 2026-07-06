@@ -15,6 +15,7 @@ import '../services/providers/coding_plan_provider.dart';
 import '../services/providers/credit_balance_provider.dart';
 import '../theme/crux_theme.dart';
 import '../utils/frame_profiler.dart';
+import '../utils/sampling.dart';
 import 'coding_plan_usage_display.dart';
 import 'credit_balance_display.dart';
 import 'context_bar.dart';
@@ -79,6 +80,14 @@ class ChatToolbar extends StatefulComponent {
   /// [CreditBalanceProvider.refreshNow].
   final VoidCallback? onCreditBalanceTap;
 
+  /// Called when the user clicks the temperature chip (the small
+  /// `T:0.5` readout that appears next to the image modality
+  /// badge when a temperature override is in effect). Wired by the
+  /// chat panel to `stashAndSetCommand('/temperature ')` so the
+  /// user lands in the input with a fresh `/temperature ` prefix
+  /// ready to retype.
+  final VoidCallback? onTemperaturePressed;
+
   final SessionRuntimeState? runtime;
   final int contextMaxTokens;
   final void Function() onModelPressed;
@@ -118,6 +127,7 @@ class ChatToolbar extends StatefulComponent {
     this.creditBalanceProvider,
     this.onCodingPlanTap,
     this.onCreditBalanceTap,
+    this.onTemperaturePressed,
     this.debugMode = false,
   });
 
@@ -274,6 +284,97 @@ class _ChatToolbarState extends State<ChatToolbar> {
   /// don't get a stray balance tag in their toolbar.
   bool _hasCreditBalanceProvider() => component.creditBalanceProvider != null;
 
+  /// The model's TOML-configured `temperature` default (i.e. what
+  /// the user gets when no override is in effect). `null` when the
+  /// model can't be resolved — the chip's hover hint then omits the
+  /// "default" line rather than printing a number we can't verify.
+  double? _modelDefaultTemperature() {
+    if (!component.providerServiceReady) return null;
+    final modelKey = _sessionController.currentSession.model;
+    if (modelKey.isEmpty) return null;
+    return _providerService.modelByCompositeKey(modelKey)?.temperature;
+  }
+
+  /// Build the `T:0.5` chip that surfaces the active temperature
+  /// override beside the image modality badge. Returns `null`
+  /// when the chip should be hidden — specifically:
+  ///
+  ///   - No runtime is attached (transient state during session
+  ///     switch).
+  ///   - No override is in effect, OR
+  ///   - The override equals the model's TOML default (showing
+  ///     the chip would be visually misleading — the effective
+  ///     temperature is the model default either way).
+  ///
+  /// The chip is visually identical to the thinking label so it
+  /// reads as another "this session is configured with X" affordance.
+  /// Clicking it dumps `/temperature ` into the chat input so the
+  /// user can immediately retype a new value. The click is disabled
+  /// while the session is running — typing in the input while the
+  /// agent is streaming would race with the active chat service.
+  Component? _buildTemperatureChip(
+    BuildContext context,
+    bool isSessionRunning,
+  ) {
+    final rt = _rt;
+    final override = rt?.temperatureOverride;
+    if (rt == null || override == null) return null;
+
+    final modelDefault = _modelDefaultTemperature();
+    // If the user typed the model's default temperature as an
+    // override, the chip would say "T:0" while the actual sampling
+    // config is already the model's default — visually misleading.
+    // Suppress in that case. Compare with a small epsilon for
+    // float drift (the runtime value comes from `double.tryParse`
+    // of the user input, the model default from TOML — same
+    // semantic value but possibly different bit-level doubles).
+    if (modelDefault != null &&
+        (override - modelDefault).abs() < 1e-9) {
+      return null;
+    }
+
+    final topP = topPForTemperature(override);
+    final label = 'T:${formatSamplingValue(override)}';
+
+    // Hover hint surfaces the three pieces of context the user
+    // actually needs: the current setting (echoed in the chip
+    // label), the derived `top_p` the model will see, and the
+    // model default so they know what they're overriding from.
+    // The click affordance is repeated in the hint so users
+    // who've never seen the chip before know it's interactive.
+    final buffer = StringBuffer()
+      ..writeln('Temperature: ${formatSamplingValue(override)}')
+      ..writeln('top_p = ${formatSamplingValue(topP)}');
+    if (modelDefault != null) {
+      buffer.writeln(
+        'Model default: ${formatSamplingValue(modelDefault)}',
+      );
+    } else {
+      buffer.writeln('Model default: (unknown)');
+    }
+    buffer.writeln('(click to change)');
+    final hint = buffer.toString();
+
+    return Hinted(
+      hint: hint.trimRight(),
+      child: Button(
+        label: label,
+        onPressed:
+            isSessionRunning ? null : component.onTemperaturePressed,
+        // Theme: match the thinking-label color so the chip reads
+        // as "another knob you've tuned" — but a different hue so
+        // the user can tell at a glance that it's not the
+        // thinking level. Pick something distinct from the disabled
+        // thinking color to avoid collisions on the off state.
+        color: CruxTheme.of(context).onSurfaceVariant,
+        hoverColor: CruxTheme.of(context).buttonTextHover,
+        bgColor: CruxTheme.of(context).buttonBackground,
+        hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
+        padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      ),
+    );
+  }
+
   @override
   Component build(BuildContext context) {
     return FrameProfiler.instance.timed(
@@ -306,6 +407,22 @@ class _ChatToolbarState extends State<ChatToolbar> {
             padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           );
 
+    // Pre-compute the temperature chip label and width budget
+    // BEFORE LayoutBuilder so the budget check knows to either
+    // reserve room or skip it. The visibility rule mirrors the
+    // chip builder's: hide when no override, or when the override
+    // equals the model default (visually misleading to show
+    // "T:0" when the effective temperature IS already the model
+    // default of 0).
+    final tempOverride = rt?.temperatureOverride;
+    final tempModelDefault = _modelDefaultTemperature();
+    final tempSuppressesChip = tempOverride != null &&
+        tempModelDefault != null &&
+        (tempOverride - tempModelDefault).abs() < 1e-9;
+    final tempLabel = (tempOverride != null && !tempSuppressesChip)
+        ? 'T:${formatSamplingValue(tempOverride)}'
+        : null;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         const btnPad = 2;
@@ -316,6 +433,16 @@ class _ChatToolbarState extends State<ChatToolbar> {
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
             ? UnicodeWidth.stringWidth(_kIconImage)
+            : 0;
+        // Temperature chip width is computed here (inside the
+        // LayoutBuilder where `btnPad` is in scope) so the budget
+        // check below can decide whether to reserve room for it
+        // or skip it. The `tempLabel` itself is computed outside
+        // the builder — the model-default suppression check needs
+        // the runtime + provider data, none of which depends on
+        // layout constraints.
+        final tempW = tempLabel != null
+            ? UnicodeWidth.stringWidth(tempLabel) + btnPad
             : 0;
         final thinkingLabel =
             (rt != null &&
@@ -355,6 +482,9 @@ class _ChatToolbarState extends State<ChatToolbar> {
 
         var remaining = constraints.maxWidth.toInt() - 2 - modelW - imageW;
 
+        final showTemp = tempLabel != null && (remaining - tempW) >= 0;
+        if (showTemp) remaining -= tempW;
+
         final showThinking =
             thinkingLabel != null && (remaining - thinkingW) >= 0;
         if (showThinking) remaining -= thinkingW;
@@ -382,6 +512,17 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // non-null. Promote it to avoid null-check noise below.
         final nonNullRt = rt;
 
+        // Build the temperature chip only if the width budget
+        // allows it. The builder is self-suppressing: when the
+        // override equals the model default it returns null even
+        // when called — `showTemp` only checks the first two
+        // conditions, so a late suppression inside the builder
+        // nulls out the children-list entry below without leaking
+        // the no-longer-needed width budget.
+        final temperatureChip = showTemp
+            ? _buildTemperatureChip(context, isSessionRunning)
+            : null;
+
         return Container(
           padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
           child: Row(
@@ -406,6 +547,12 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     ),
                   ),
                 ),
+              // Tiny `T:0.5` chip beside the image modality badge;
+              // surfaces the active per-session temperature override.
+              // Click puts `/temperature ` in the input so the user
+              // can retype a new value. See `_buildTemperatureChip`
+              // for the visibility rules.
+              ?temperatureChip,
               if (showThinking && nonNullRt != null)
                 Hinted(
                   hint:

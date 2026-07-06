@@ -102,6 +102,10 @@ class SessionCubitState {
       isGeneratingTitle: isGeneratingTitle ?? this.isGeneratingTitle,
       auxiliaryModelShortName:
           auxiliaryModelShortName ?? this.auxiliaryModelShortName,
+      // Sessions are still mutable during the refactor, so two states with
+      // the same object identity can carry different content. Bump revision
+      // on every copyWith to guarantee that Bloc emits the new snapshot even
+      // when the list of sessions is the same instance with mutated fields.
       revision: revision ?? this.revision + 1,
     );
   }

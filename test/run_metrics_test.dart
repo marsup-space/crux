@@ -483,11 +483,11 @@ void main() {
         snapshot: sample(),
         theme: theme,
       );
-      // The Dracula primary is purple (189,147,249).
-      // That exact RGB triple should appear in the
-      // styled output as part of an SGR foreground
-      // escape sequence.
-      expect(summary, contains('38;2;189;147;249'));
+      // The Dracula primary is purple (#BD93F9). nocterm's
+      // TextStyle.toAnsi() emits it as the 8-bit indexed color
+      // 141 (xterm palette), so the SGR foreground sequence is
+      // `38;5;141` rather than a 24-bit truecolor triple.
+      expect(summary, contains('38;5;141'));
     });
   });
 }

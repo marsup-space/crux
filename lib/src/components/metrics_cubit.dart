@@ -262,6 +262,15 @@ class MetricsCubit extends Cubit<MetricsCubitState> {
     );
   }
 
+  /// Computes tok/s and live TTFT from values already held in the
+  /// cubit state. This is the "cubit-only" version of the live-metrics
+  /// tick; it is exercised directly in unit tests and will become the
+  /// production path once all metric fields are mirrored from the
+  /// runtime into the cubit. Today, production code still calls
+  /// [StreamingController.updateLiveMetrics] (which reads the runtime
+  /// as the write-side SSoT and mirrors the result here), so changes
+  /// to this method do not affect the live UI until the mirror slice
+  /// lands.
   void updateLiveMetrics({
     required int sessionId,
     required int liveStreamingTokens,

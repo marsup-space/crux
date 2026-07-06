@@ -17,6 +17,7 @@ import '../tools/shell_guard.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/partial_json_field_extractor.dart';
+import '../utils/sampling.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_service.dart';
 import 'install_slug.dart';
@@ -39,29 +40,7 @@ const String earlyAbortSystemNoteMarker =
 /// [kMaxLlmRetries] + 1.
 const int kMaxLlmRetries = 5;
 
-/// User-specified temperature ↔ top_p mapping: a temperature of
-/// `0.0` maps to `top_p = 1.0`, and `1.0` maps to `top_p = 0.85`,
-/// linearly interpolated. Both inputs are clamped to `[0.0, 1.0]`
-/// before the linear step so an out-of-range TOML default (e.g.
-/// a `0.0–2.0` OpenAI model configured at `1.5`) still produces
-/// a valid `top_p` inside the API's `[0.0, 1.0]` window.
-///
-/// The rationale: as temperature rises, the wider distribution
-/// benefits from a narrower nucleus so the model doesn't pick
-/// truly low-probability tokens. The OpenAI / Anthropic APIs both
-/// accept `top_p` in `[0.0, 1.0]` — verified for OpenAI (Chat
-/// Completions) and Anthropic (Messages). OpenAI explicitly
-/// recommends altering only one of temperature / top_p from the
-/// default; pairing them via this helper keeps the relationship
-/// coherent.
-double topPForTemperature(double temperature) {
-  final t = temperature.clamp(0.0, 1.0);
-  // 1.0 - 0.15 * t is in [0.85, 1.0] for t in [0.0, 1.0]; the
-  // outer clamp is defensive in case a future caller passes a
-  // non-finite / unsanitized double and the math produces a
-  // value outside [0.0, 1.0] (e.g. via floating-point edge cases).
-  return (1.0 - 0.15 * t).clamp(0.0, 1.0);
-}
+
 
 
 /// Returns a short, user-facing label describing the error that triggered

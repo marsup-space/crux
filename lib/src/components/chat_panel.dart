@@ -702,6 +702,12 @@ class _ChatPanelState extends State<ChatPanel> {
       deleteMessagesFrom: _turnOrchestrator.deleteMessagesFrom,
       sendBtwTurn: _turnOrchestrator.sendBtwTurn,
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
+      setInputText: (text) {
+        textController.text = text;
+        textController.selection = TextSelection.collapsed(
+          offset: text.length,
+        );
+      },
       quitApp: _quitHandler.quitAndPrintSummary,
       showFullpane: _openFullpane,
       recentProjectsStore: _recentProjectsStore,
@@ -757,6 +763,18 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _onAuxiliaryModelButtonPressed() {
     _chatInputKey.currentState?.stashAndSetCommand('/auxiliary ');
+  }
+
+  /// Invoked by the toolbar's `T:0.5` chip when the user clicks
+  /// it. Stashes any user-typed prefix (same as the other button
+  /// shortcuts in this file) and replaces the input with
+  /// `/temperature ` so the cursor lands ready to retype a new
+  /// value. The executor's no-arg branch is what `/temperature`
+  /// without a value triggers, so on the next send the user gets
+  /// the "current temperature" toast — a useful "show me where I
+  /// am" step before deciding whether to change it.
+  void _onTemperatureChipPressed() {
+    _chatInputKey.currentState?.stashAndSetCommand('/temperature ');
   }
 
   void _cycleThinkingLevel(SessionRuntimeState rt) {
@@ -1072,6 +1090,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 onCompactPressed: _onCompactButtonPressed,
                 onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                 onCycleThinking: _cycleThinkingLevel,
+                onTemperaturePressed: _onTemperatureChipPressed,
                 compactEstimate: sessionId == null
                     ? null
                     : _compactEstimates[sessionId]?.estimate,

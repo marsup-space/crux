@@ -1,6 +1,9 @@
 import 'dart:async';
 
-class SessionRuntimeState {
+import 'session_runtime_sink.dart';
+
+class SessionRuntimeState implements SessionRuntimeSink {
+  @override
   final int sessionId;
 
   bool isResponding;
@@ -251,7 +254,17 @@ class SessionRuntimeState {
     metricsTimer = null;
   }
 
-  void resetMetrics() {
+  @override
+  void resetMetrics({
+    int? turnBaseTokens,
+    int? accumulatedToolTokens,
+    int? targetTokens,
+  }) {
+    final savedTurnBase = turnBaseTokens ?? this.turnBaseTokens;
+    final savedAccumulated =
+        accumulatedToolTokens ?? this.accumulatedToolTokens;
+    final savedTarget = targetTokens ?? contextTargetTokens;
+
     tokPerSec = 0.0;
     ttftMs = 0.0;
     ttftReceived = false;
@@ -270,6 +283,100 @@ class SessionRuntimeState {
     btwMode = false;
     interrupted = false;
     cancelTimers();
+
+    this.turnBaseTokens = savedTurnBase;
+    this.accumulatedToolTokens = savedAccumulated;
+    contextTargetTokens = savedTarget;
+  }
+
+  @override
+  void beginResponse({DateTime? now, bool btwMode = false}) {
+    resetMetrics();
+    isResponding = true;
+    responseStartTime = now ?? DateTime.now();
+    this.btwMode = btwMode;
+    interrupted = false;
+  }
+
+  @override
+  void beginModelRound({DateTime? now}) {
+    roundStartTime = now ?? DateTime.now();
+    roundStreaming = true;
+  }
+
+  @override
+  void recordContentStarted(DateTime now) {
+    if (contentStartTime != null) return;
+    contentStartTime = now;
+  }
+
+  @override
+  void recordFirstToken(DateTime now) {
+    final start = responseStartTime;
+    if (start == null) return;
+    if (!ttftReceived) {
+      ttftMs = now.difference(start).inMicroseconds / 1000.0;
+      ttftReceived = true;
+      firstTokenTime = now;
+    }
+    roundFirstTokenTime ??= now;
+  }
+
+  @override
+  void recordRoundFirstToken(DateTime now) {
+    roundFirstTokenTime ??= now;
+  }
+
+  @override
+  void addCompletionTokens(int estimatedTokens) {
+    if (estimatedTokens <= 0) return;
+    cumulativeCompletionTokens += estimatedTokens;
+  }
+
+  @override
+  void finishModelRound({DateTime? now, bool accumulateGeneration = false}) {
+    final end = now ?? DateTime.now();
+    if (accumulateGeneration &&
+        roundStreaming &&
+        roundFirstTokenTime != null) {
+      cumulativeGenMs +=
+          end.difference(roundFirstTokenTime!).inMicroseconds / 1000.0;
+    }
+    roundStartTime = null;
+    roundFirstTokenTime = null;
+    roundStreaming = false;
+  }
+
+  @override
+  void finishResponse({bool interrupted = false}) {
+    pauseStreamingTimer();
+    isResponding = false;
+    this.interrupted = interrupted;
+    roundStreaming = false;
+    roundStartTime = null;
+    roundFirstTokenTime = null;
+    if (!interrupted) btwMode = false;
+  }
+
+  @override
+  void updateContext({
+    int? turnBaseTokens,
+    int? accumulatedToolTokens,
+    int? targetTokens,
+  }) {
+    if (turnBaseTokens != null) this.turnBaseTokens = turnBaseTokens;
+    if (accumulatedToolTokens != null) {
+      this.accumulatedToolTokens = accumulatedToolTokens;
+    }
+    if (targetTokens != null) contextTargetTokens = targetTokens;
+  }
+
+  @override
+  void recordCacheHitPct({required int hitTokens, required int missTokens}) {
+    final total = hitTokens + missTokens;
+    cacheHitPct = total > 0
+        ? ((hitTokens / total) * 1000).roundToDouble() / 10.0
+        : null;
   }
 
   void startStreamingTimer() {
