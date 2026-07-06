@@ -8,52 +8,235 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-07-06
+
+93c4c02
+
+### Features
+
+- **Bloc cubits land as passive read-side mirrors**
+  (`457ee81` + `5ff78f8` + `6a723f2` → `93c4c02`) — seven
+  cubits (SessionCubit, StreamingCubit, MetricsCubit,
+  ChatTurnCubit, BtwCubit, CompactionCubit, OverlayCubit)
+  now sit alongside the existing `SessionController` /
+  `SessionBloc` and mirror every controller write. The
+  controller remains the write-side single source of
+  truth; the cubits are the read-side SoT for any UI
+  subscriber. This is the same pattern nocterm_bloc
+  encourages: keep business logic in the controller /
+  bloc, expose pure state to widgets through fine-grained
+  cubits so a 50ms metrics tick doesn't force a full
+  ChatPanel rebuild. The refactor was rolled out in five
+  focused slices — `SessionCubit` as the first mirror
+  (`6a723f2`), `BtwCubit` alongside it (`1bd6817`),
+  `MetricsCubit` as the third (`4738efd`), `ChatTurnCubit`
+  as the fourth (`a877e5e`), then `StreamingCubit` last
+  (`d93fdfc` → `2428cce` → `3bda2e4` → `768daad`) — with
+  the read-side migrations of `chat_history`, `chat_input`,
+  `chat_panel`, `chat_toolbar`, `context_bar`,
+  `metrics_display`, and the per-tick `updateLiveMetrics`
+  loop landing in lockstep. Backed by
+  `docs/refactor/bloc-architecture.md` (the architectural
+  record added in `f358ff9`) and `test/bloc/*` (90+ new
+  cases across `session_controller_cubit_mirror_test`,
+  `streaming_cubit_test`, `chat_panel_boot_state_test`,
+  `btw_cubit_test`, `btw_session_controller_test`,
+  `chat_toolbar_bloc_selector_test`, `turn_registry_test`).
+
+- **`/temperature` slash command for session-scoped override**
+  (`a612514`) — adds a `/temperature <value>` slash command
+  that sets the sampling temperature for the current
+  session only, persisted on the session row and mirrored
+  to the runtime on every request. Overrides the model's
+  TOML-configured default without touching any other
+  session. Goes through the existing CommandRegistry +
+  `_executeCommand` path so it picks up the slash-command
+  suggestions + alias matching for free (typo-tolerant:
+  `/temp`, `/temperature 0.4`, etc. all resolve). Backed
+  by the temperature command unit tests; the storage
+  layer's `temperature_override` column is added by the
+  v26 migration (see Fixes below).
+
+- **`top_p` is paired with `temperature` on every stream request**
+  (`93c4c02`) — `LlmProvider.buildRequestBody` gains a
+  `topP` parameter and `chat_turn_executor` derives it
+  from the active temperature at request-build time so
+  the two sampling knobs always move together:
+
+  ```
+  top_p = 1.0 - 0.15 * clamp(temperature, 0.0, 1.0)
+  ```
+
+  Endpoints: `temperature=0.0` → `top_p=1.0` (full
+  nucleus), `temperature=1.0` → `top_p=0.85` (narrowed).
+  Both endpoints are clamped so a TOML-configured
+  OpenAI-default `temperature` (which may legally be 1.5
+  in the `[0.0, 2.0]` range) still produces an API-valid
+  `top_p` inside `[0.0, 1.0]`. Rationale: as the
+  temperature distribution widens, a narrower nucleus
+  prevents the model from selecting truly low-probability
+  tokens. The two are inseparable — `top_p` is not
+  user-tunable independently. Per-provider wire support
+  verified for OpenAI (Chat Completions), Anthropic
+  (Messages), and MiniMax (Anthropic-compatible). Backed
+  by 7 new mapping cases (endpoints, in-range interp,
+  clamp above/below, monotonicity, always-valid range)
+  plus 4 cases verifying `top_p` lands in each provider's
+  body.
+
+- **Compaction "not worth it" UX** (`8b478d2`, second
+  half) — when `/compact` is rejected because the
+  projected post-compaction size clears the 95% bar
+  (i.e. compaction wouldn't meaningfully shrink the
+  context), the panel now shows a toast explaining the
+  rejection with the projected savings percentage and
+  token count instead of silently no-op'ing. Uses a
+  small `_fmtNum` helper on `_ChatPanelState` for
+  thousands-separator formatting so the toast reads
+  naturally.
+
+- **Context-bar target lerp animates during streaming**
+  (`8b478d2`, first half) — the context-window widget's
+  right edge now animates smoothly as the model streams
+  deltas instead of staying frozen until the round
+  ends. The orchestrator already updates
+  `rt.contextTargetTokens` on every chunk; the
+  `MetricsCubit` mirror at the end of the 50ms tick
+  keeps the cubit in lockstep, so the bar's
+  `_lastSeenTarget` comparison picks up the change on
+  the next build and the lerp animation starts.
+
 ### Fixes
 
-- **Anthropic-compatible providers repair orphan `tool_use` blocks
-  before sending** — `AnthropicCompatibleProvider.sanitizeMessages`
-  now walks the wire-format message list and drops orphan
-  `tool_use` blocks from assistant messages and orphan `tool_result`
-  blocks from user messages, mirroring the
-  `OpenAICompatibleProvider.sanitizeMessages` repair that has been
-  in place for DeepSeek / OpenAI-compatible providers since the
-  wire-format sanitization hooks landed. Crux's storage layer
-  generally maintains the pairing invariant (`addToolRound` wraps
-  the tool_call row and all matching tool result rows in one
-  transaction), but it can still break in two real situations:
+- **Anthropic-compatible providers repair orphan `tool_use`
+  blocks before sending** (`866369a`) —
+  `AnthropicCompatibleProvider.sanitizeMessages` now walks
+  the wire-format message list and drops orphan
+  `tool_use` blocks from assistant messages and orphan
+  `tool_result` blocks from user messages, mirroring the
+  `OpenAICompatibleProvider.sanitizeMessages` repair that
+  has been in place for DeepSeek / OpenAI-compatible
+  providers since the wire-format sanitization hooks
+  landed. Crux's storage layer generally maintains the
+  pairing invariant (`addToolRound` wraps the tool_call
+  row and all matching tool result rows in one
+  transaction), but it can still break in two real
+  situations:
 
-  1. **Mid-round interruption.** A `tool_call` row is persisted but
-     the round aborts before its tool results are written — the
-     next request sees a dangling `tool_use` block nothing answers.
-  2. **Wire-family switch.** Switching the session model from an
-     OpenAI-wire provider to an Anthropic-wire provider
-     (MiniMax etc.) re-serializes the history with the new shape;
-     half-persisted rounds or empty `tool_calls` arrays after
-     orphan pruning can become malformed payloads the new endpoint
-     rejects.
+  1. **Mid-round interruption.** A `tool_call` row is
+     persisted but the round aborts before its tool
+     results are written — the next request sees a
+     dangling `tool_use` block nothing answers.
+  2. **Wire-family switch.** Switching the session model
+     from an OpenAI-wire provider to an Anthropic-wire
+     provider (MiniMax etc.) re-serializes the history
+     with the new shape; half-persisted rounds or empty
+     `tool_calls` arrays after orphan pruning can become
+     malformed payloads the new endpoint rejects.
 
-  Without the repair, the MiniMax API rejects the request with a
-  400 `tool result's tool id ... not found (2013)` and the session
-  is stuck — every subsequent retry re-sends the same broken
-  history. With the repair, the next request from a stuck session
-  goes out clean without any database surgery: orphan `tool_use`
-  blocks get pruned from the assistant content list (with
-  `thinking` and `text` blocks preserved — the API needs the
-  thinking signature on extended-thinking turns), orphan
-  `tool_result` blocks get pruned from the user content list, and
-  assistant messages whose content was only `tool_use` get dropped
-  entirely. The well-formed-history fast path returns the same
-  list reference unchanged, so providers and sessions that don't
-  hit this path pay zero per-request allocation cost. Unblocks the
-  "bloc refactor" session that hit this loop on MiniMax-M3.
+  Without the repair, the MiniMax API rejects the request
+  with a 400 `tool result's tool id ... not found (2013)`
+  and the session is stuck — every subsequent retry
+  re-sends the same broken history. With the repair, the
+  next request from a stuck session goes out clean
+  without any database surgery: orphan `tool_use` blocks
+  get pruned from the assistant content list (with
+  `thinking` and `text` blocks preserved — the API needs
+  the thinking signature on extended-thinking turns),
+  orphan `tool_result` blocks get pruned from the user
+  content list, and assistant messages whose content was
+  only `tool_use` get dropped entirely. The
+  well-formed-history fast path returns the same list
+  reference unchanged, so providers and sessions that
+  don't hit this path pay zero per-request allocation
+  cost. Unblocks the "bloc refactor" session that hit
+  this loop on MiniMax-M3.
 
-  Backed by `test/llm_provider_test.dart` (10 new cases covering
-  the well-formed fast path, mid-round interrupt, partial-pair
-  preservation, single-tool-use assistant dropping, orphan
-  `tool_result` dropping, malformed `tool_result` blocks, thinking
-  block preservation under orphan pruning, system-message
-  interleavings, mixed text + `tool_result` user messages, and
-  no-mutation invariants).
+  Backed by `test/llm_provider_test.dart` (10 new cases
+  covering the well-formed fast path, mid-round
+  interrupt, partial-pair preservation, single-tool-use
+  assistant dropping, orphan `tool_result` dropping,
+  malformed `tool_result` blocks, thinking block
+  preservation under orphan pruning, system-message
+  interleavings, mixed text + `tool_result` user
+  messages, and no-mutation invariants).
+
+- **v26 migration is idempotent** (`0b2cf48`) — the
+  `temperature_override` column added by the v26 migration
+  is now created with `IF NOT EXISTS`, so re-running the
+  migration on an existing database is a no-op instead of
+  erroring out. Required because the bloc-cubit migration
+  repeatedly loads sessions whose schema was upgraded in
+  a prior process, and any startup-time migration re-run
+  was hitting the duplicate-column error and aborting
+  the cubit wiring before the mirrors could register.
+
+- **`updateLiveMetrics` reads metrics fields from the
+  runtime, not the cubit** (`69d4a3d`) — slice 26 jumped
+  the gun on the read-side migration: it moved the
+  per-tick `updateLiveMetrics` reads of `responseStartTime`,
+  `ttftReceived`, `roundStreaming`, `roundFirstTokenTime`,
+  `cumulativeCompletionTokens`, and `cumulativeGenMs` to
+  the `MetricsCubit`, but none of those fields have a
+  controller→cubit mirror path yet (only `tokPerSec` and
+  `ttftMs` do, from the slice-21 hotfix). Result: the
+  early-return guard `if (!turn.isResponding ||
+  metrics.responseStartTime == null)` fired on every tick,
+  the metrics display's tok/s and TTFT went stale, and
+  the context-bar projection stopped updating. The
+  hotfix reverts those six fields to read from the
+  runtime (the write-side SoT) while keeping the
+  streaming content / reasoning reads on the cubit (those
+  mirrors landed in slices 23 + 24 and are stable).
+  Follow-up slice to add the missing mirrors is tracked
+  separately; until then the controller is the
+  write-side SoT for the metrics fields and the cubit is
+  the passive read-side mirror holding only the fields
+  explicitly mirrored (`tokPerSec`, `ttftMs`,
+  `contextTargetTokens`, `cacheHitPct`, streaming
+  content / reasoning / tool-calls / timers).
+
+- **`MetricsCubit` preserves `contextTargetTokens` across
+  live-metric mirrors** (`09479d9`) — earlier slice
+  dropped the field from the `updateLiveMetrics` mirror
+  payload, so the context bar's `_lastSeenTarget`
+  comparison froze after the first tick. The mirror
+  re-includes the field and the bar's lerp animation
+  now picks up subsequent changes correctly.
+
+- **`chat_history.isResponding` resets on normal turn
+  completion** (`234f676`) — the lifecycle flag was
+  stuck `true` after a clean round end if the final
+  delta's `onComplete` fired before the controller's
+  `isResponding` flip propagated to the cubit. The
+  cubit mirror in `SessionController.completeTurn` now
+  fires synchronously with the controller write, so
+  the history's "typing…" indicator clears at the same
+  moment the runtime does.
+
+- **TLDR updates + `/new` route through cubit mirrors**
+  (`de5f953`) — both paths previously wrote to the
+  controller but skipped the `ChatTurnCubit` mirror,
+  so the history pane kept showing the pre-TLDR text
+  and pre-`/new` session state until the next manual
+  cubit refresh. Now both go through the mirror
+  helpers so every controller write has a matching
+  cubit write.
+
+- **`SessionCubit` mirrors all controller writes**
+  (`e7543f7`) — earlier slice missed several
+  controller writes (queued messages, pending image
+  stash, title-generation state) so the cubit drifted
+  out of sync after any of those paths fired. The
+  mirror now covers every controller write site, with
+  a `session_controller_cubit_mirror_test` case for
+  each (22 cases).
+
+- **Stale `/image` command references removed** (`cbfbfdb`)
+  — the docs + autocomplete entries referenced an
+  `/image` slash command that was never landed.
+  Cleaned up so the suggestion popover only shows
+  commands that actually exist.
 
 ## [0.11.3] - 2026-07-03
 
