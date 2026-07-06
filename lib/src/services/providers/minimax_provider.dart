@@ -173,6 +173,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+    double topP = 1.0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
@@ -185,6 +186,10 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
       'max_tokens': maxTokens ?? 16384,
       'stream': true,
       'temperature': temperature,
+      // Nucleus-sampling ceiling — derived from `temperature` by
+      // `chat_turn_executor.topPForTemperature`. MiniMax's
+      // Anthropic-compatible wire accepts [0.0, 1.0].
+      'top_p': topP,
     };
     if (systemMsg.isNotEmpty) {
       body['system'] = buildCachedSystemBlocks(systemMsg);

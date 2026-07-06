@@ -20,6 +20,7 @@ class OpenAICompatibleProvider extends LlmProvider {
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+    double topP = 1.0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
@@ -29,6 +30,12 @@ class OpenAICompatibleProvider extends LlmProvider {
       'stream': true,
       'stream_options': {'include_usage': true},
       'temperature': temperature,
+      // Nucleus-sampling ceiling — derived from `temperature` by
+      // `chat_turn_executor.topPForTemperature` so the two always
+      // move together. OpenAI accepts [0.0, 1.0] and recommends
+      // altering either this OR temperature (we pair them
+      // automatically).
+      'top_p': topP,
       'thinking': {'type': thinkingMode},
       if (thinkingMode != 'disabled' && reasoningEffort != null)
         'reasoning_effort': mapEffort(reasoningEffort),

@@ -236,6 +236,13 @@ abstract class LlmProvider {
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+    /// Nucleus-sampling ceiling in [0.0, 1.0]. Crux's
+    /// `chat_turn_executor` derives this from the effective
+    /// temperature (see `topPForTemperature`); production callers
+    /// always pass an explicit value, and the default of 1.0 just
+    /// matches the temp=0 endpoint so existing tests that don't
+    /// care about top_p get a harmless full-nucleus body.
+    double topP = 1.0,
     List<Map<String, dynamic>>? tools,
     String? userId,
   });

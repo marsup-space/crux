@@ -76,6 +76,7 @@ class FakeLlmClient extends LlmClient {
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+    double topP = 1.0,
     List<Map<String, dynamic>>? tools,
     String? userId,
     LlmStreamCancelToken? cancelToken,

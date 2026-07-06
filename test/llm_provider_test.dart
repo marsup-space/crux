@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
+import 'package:crux/src/services/chat_turn_executor.dart';
 import 'package:crux/src/services/install_slug.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
@@ -1256,6 +1257,116 @@ void main() {
       expect(slug, isNotEmpty);
       expect(RegExp(r'^[a-zA-Z0-9\-_]+$').hasMatch(slug), isTrue);
       expect(slug.length, 12);
+    });
+  });
+
+  group('topPForTemperature (temperature ↔ top_p mapping)', () {
+    test('maps temp 0 to top_p 1.0 (full nucleus)', () {
+      expect(topPForTemperature(0.0), 1.0);
+    });
+
+    test('maps temp 1 to top_p 0.85 (narrowed nucleus)', () {
+      expect(topPForTemperature(1.0), closeTo(0.85, 1e-9));
+    });
+
+    test('interpolates linearly for in-range values', () {
+      // 1.0 - 0.15 * 0.4 = 0.94 (temp 0.4)
+      expect(topPForTemperature(0.4), closeTo(0.94, 1e-9));
+      // 1.0 - 0.15 * 0.5 = 0.925 (temp 0.5)
+      expect(topPForTemperature(0.5), closeTo(0.925, 1e-9));
+      // 1.0 - 0.15 * 0.7 = 0.895 (temp 0.7)
+      expect(topPForTemperature(0.7), closeTo(0.895, 1e-9));
+    });
+
+    test('clamps temperatures above 1.0 to the temp=1.0 endpoint', () {
+      // An OpenAI-configured model could have a TOML default of
+      // 1.5 (OpenAI accepts 0–2). The clamp keeps `top_p` inside
+      // the API-valid [0.0, 1.0] range.
+      expect(topPForTemperature(1.5), closeTo(0.85, 1e-9));
+      expect(topPForTemperature(2.0), closeTo(0.85, 1e-9));
+    });
+
+    test('clamps temperatures below 0.0 to the temp=0.0 endpoint', () {
+      // Defensive — user-facing `/temperature` already clamps to
+      // [0.0, 1.0], but a TOML-configured negative should still
+      // produce a valid `top_p`.
+      expect(topPForTemperature(-0.2), 1.0);
+      expect(topPForTemperature(-1.0), 1.0);
+    });
+
+    test('is monotonically non-increasing as temperature rises', () {
+      // Important for the user-facing model: dragging temperature
+      // up should never widen the nucleus. Sanity-check the
+      // trend across the full domain.
+      const samples = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
+      double? previous;
+      for (final t in samples) {
+        final topP = topPForTemperature(t);
+        final prev = previous;
+        if (prev != null) {
+          expect(topP, lessThanOrEqualTo(prev),
+              reason: 'top_p must not widen as temperature rises');
+        }
+        previous = topP;
+      }
+    });
+
+    test('output is always in [0.85, 1.0] for any reasonable input', () {
+      // The whole purpose of the mapping: `top_p` stays inside the
+      // OpenAI / Anthropic [0.0, 1.0] window even when fed bizarre
+      // inputs.
+      for (final t in [-100.0, -1.0, 0.0, 0.5, 1.0, 2.0, 100.0]) {
+        expect(topPForTemperature(t), inInclusiveRange(0.85, 1.0),
+            reason: 'top_p at temp=$t must be in [0.85, 1.0]');
+      }
+    });
+  });
+
+  group('top_p plumbing through provider bodies', () {
+    test('Anthropic body includes the supplied top_p', () {
+      final provider = AnthropicCompatibleProvider();
+      final body = provider.buildRequestBody(
+        'claude-sonnet-4-6',
+        userMsg,
+        topP: 0.93,
+      );
+      expect(body['top_p'], 0.93);
+    });
+
+    test('OpenAI body includes the supplied top_p', () {
+      final provider = OpenAICompatibleProvider();
+      final body = provider.buildRequestBody(
+        'gpt-4o',
+        userMsg,
+        topP: 0.9,
+      );
+      expect(body['top_p'], 0.9);
+    });
+
+    test('MiniMax body includes the supplied top_p', () {
+      final provider = MiniMaxProvider();
+      final body = provider.buildRequestBody(
+        'MiniMax/M2',
+        userMsg,
+        topP: 0.88,
+      );
+      expect(body['top_p'], 0.88);
+    });
+
+    test('default top_p is 1.0 when caller doesn\'t supply one', () {
+      // The LlmProvider.buildRequestBody default is 1.0 (the temp=0
+      // endpoint of the mapping) so test bodies that don't care
+      // about top_p get a harmless full-nucleus default.
+      final anthropic = AnthropicCompatibleProvider().buildRequestBody(
+        'claude-sonnet-4-6',
+        userMsg,
+      );
+      expect(anthropic['top_p'], 1.0);
+      final openai = OpenAICompatibleProvider().buildRequestBody(
+        'gpt-4o',
+        userMsg,
+      );
+      expect(openai['top_p'], 1.0);
     });
   });
 }
