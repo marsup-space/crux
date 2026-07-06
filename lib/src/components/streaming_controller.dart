@@ -381,6 +381,27 @@ class StreamingController {
       rt.ttftMs = elapsedMs;
     }
 
+    // Mirror the live TTFT (and contextTargetTokens, which the
+    // orchestrator updates per chunk) into MetricsCubit BEFORE the
+    // second early-return. The next early-return pauses tok/s when
+    // we're between model rounds (before the first delta, during
+    // local tool execution, between LLM requests), but the live TTFT
+    // timer must keep ticking through those gaps — that's the
+    // "start ticking when the turn begins, stop after receiving the
+    // first token" feature. Without this pre-early-return mirror, the
+    // display would only see the latest ttftMs when a model round
+    // is actually streaming, missing the gaps between rounds.
+    _sessionController.metricsCubit.replaceSessionState(
+      sessionId,
+      _sessionController.metricsCubit.state
+          .sessionState(sessionId)
+          .copyWith(
+            ttftMs: rt.ttftMs,
+            ttftReceived: rt.ttftReceived,
+            contextTargetTokens: rt.contextTargetTokens,
+          ),
+    );
+
     // Pause tok/s while we're outside active token generation. That means:
     // before the first model delta arrives, during local tool execution,
     // between LLM requests, and during idle UI time.
