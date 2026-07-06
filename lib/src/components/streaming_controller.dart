@@ -425,6 +425,14 @@ class StreamingController {
             tokPerSec: rt.tokPerSec,
             ttftMs: rt.ttftMs,
             ttftReceived: rt.ttftReceived,
+            // Mirror contextTargetTokens too — the orchestrator
+            // updates rt.contextTargetTokens per chunk during
+            // streaming (onChunk / onToolRound / onToolExecutionStart
+            // / onComplete) and the context bar reads from the
+            // cubit. Without this mirror, the bar stays frozen at
+            // its seeded value for the whole turn and the lerp
+            // animation never starts.
+            contextTargetTokens: rt.contextTargetTokens,
           ),
     );
   }

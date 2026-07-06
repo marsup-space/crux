@@ -661,6 +661,7 @@ class _ChatPanelState extends State<ChatPanel> {
       if (sessionId != null) {
         final cached = _compactEstimates[sessionId];
         if (ContextBarState.isCompactCounterproductive(cached?.estimate)) {
+          _showCompactCounterproductiveToast(cached?.estimate);
           return;
         }
       }
@@ -718,11 +719,41 @@ class _ChatPanelState extends State<ChatPanel> {
     if (sessionId != null) {
       final cached = _compactEstimates[sessionId];
       if (ContextBarState.isCompactCounterproductive(cached?.estimate)) {
+        _showCompactCounterproductiveToast(cached?.estimate);
         return;
       }
     }
     unawaited(_executeCommand('/compact'));
   }
+
+  /// Surfaces a status toast explaining why /compact was rejected
+  /// by the 95%-threshold gate. The estimate carries pre / post
+  /// token counts so the toast can show the projected savings
+  /// the user would have seen.
+  void _showCompactCounterproductiveToast(ChatLogCompactionEstimate? est) {
+    if (est == null || est.preTokens <= 0) {
+      _showToast('Compaction is not worth it — no history to compact.',
+          mode: ToastMode.info);
+      return;
+    }
+    final pre = est.preTokens;
+    final post = est.postEstimateTokens;
+    final saved = pre - post;
+    final pct = (saved * 100 / pre).round();
+    _showToast(
+      'Compaction would save only $pct% (≈${_fmtNum(saved)} tokens) — below the 5% threshold. Skipping.',
+      mode: ToastMode.info,
+    );
+  }
+
+  /// Local copy of the comma-grouped number formatter used by
+  /// [ContextBarState]. We can't reach into the widget's private
+  /// helper from here; duplicating the trivial regex keeps the
+  /// toast human-friendly without a public export.
+  String _fmtNum(int n) => n.toString().replaceAllMapped(
+        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+        (m) => '${m[1]},',
+      );
 
   void _onAuxiliaryModelButtonPressed() {
     _chatInputKey.currentState?.stashAndSetCommand('/auxiliary ');
