@@ -291,6 +291,175 @@ class MessageStore {
     return deleted;
   }
 
+  /// Storage-side counterpart to
+  /// [AnthropicCompatibleProvider._enforceToolUsePairing]. Walks
+  /// the session's `tool_call` and `tool` rows and removes the
+  /// orphans the per-request sanitizer would otherwise strip at
+  /// wire-format time:
+  ///
+  ///   - `tool_call` rows (the assistant message announcing one
+  ///     or more `tool_use` blocks) lose entries whose `callId`
+  ///     no subsequent `tool` row references. A `tool_call` row
+  ///     whose `toolCalls` become empty after pruning is deleted
+  ///     entirely — an empty tool_call assistant message is
+  ///     meaningless and would re-trigger the same orphan error
+  ///     on the next request.
+  ///   - `tool` rows (the persisted result for a single
+  ///     `tool_use`) are deleted when their `toolCallId` doesn't
+  ///     appear in any preceding `tool_call` row, or when the
+  ///     preceding `tool_call` row's flow has been terminated by
+  ///     a `user` or `ai` message that came in before the result
+  ///     was written (the canonical interrupted-round symptom).
+  ///
+  /// The walk is in id (chronological) order. A regular `user`,
+  /// `ai`, or any other role in between `tool_call` and its
+  /// `tool` results terminates the pending flow — those orphan
+  /// `tool_use` ids and any `tool` rows whose flow has been
+  /// terminated this way are both pruned.
+  ///
+  /// Runs in a single transaction so a failure in the middle of
+  /// the walk leaves the DB unchanged. Returns the total number
+  /// of rows modified (each deleted `tool_call` counts as 1,
+  /// each deleted `tool` counts as 1; an updated `tool_call`
+  /// row with at least one entry pruned also counts as 1 — so
+  /// the same row can contribute at most 1 per kind, not per
+  /// entry). A well-formed history returns 0 and is the
+  /// expected common case.
+  ///
+  /// Used by the chat executor's auto-repair-and-retry hook on
+  /// the first occurrence of an orphan-tool-use error per round.
+  /// Gated on `LlmProvider.supportsOrphanToolRepair` — only
+  /// Anthropic-compatible providers invoke this, mirroring the
+  /// wire-format sanitizer on the Anthropic side.
+  Future<int> repairOrphanToolRows(int sessionId) async {
+    var modifiedCount = 0;
+
+    await _db.transaction(() async {
+      // Pull the rows we care about, in chronological order.
+      // Reading only the columns we need keeps the snapshot
+      // small for sessions with many messages.
+      final toolRows = await (_db.select(_db.messages)
+            ..where((t) =>
+                t.sessionId.equals(sessionId) &
+                (t.role.equals('tool_call') |
+                    t.role.equals('tool') |
+                    t.role.equals('ai') |
+                    t.role.equals('user') |
+                    t.role.equals('system') |
+                    t.role.equals('compaction') |
+                    t.role.equals('parallel_praise') |
+                    t.role.equals('single_call_reminder')))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.id),
+            ]))
+          .get();
+
+      // ── Pass 1: identify orphan tool_use ids ────────────────────
+      //
+      // The walk mirrors
+      // AnthropicCompatibleProvider._enforceToolUsePairing on the
+      // Anthropic wire family: tool_call rows push ids onto
+      // pending; tool rows match against pending; anything else
+      // (ai / user / system / etc.) terminates the pending flow.
+      // Unmatched ids and unprovoked tool rows become orphans.
+      final orphanUseIds = <String>{};
+      Set<String>? pending;
+
+      for (final row in toolRows) {
+        final role = row.role;
+        if (role == 'tool_call') {
+          final ids = <String>{};
+          for (final c in Message.parseToolCallsJson(row.toolCalls)) {
+            ids.add(c.callId);
+          }
+          if (ids.isNotEmpty) {
+            // A new tool_call supersedes the previous pending
+            // flow without answering it — that previous flow's
+            // unresponded-to ids are orphan by definition.
+            if (pending != null) orphanUseIds.addAll(pending);
+            pending = ids;
+          } else {
+            // tool_call row with no toolCalls is meaningless;
+            // treat it like an ai row (terminates pending).
+            if (pending != null) {
+              orphanUseIds.addAll(pending);
+              pending = null;
+            }
+          }
+        } else if (role == 'tool') {
+          if (pending == null || !pending.remove(row.toolCallId)) {
+            // Either there's no preceding tool_call announcing
+            // this id, or the preceding flow has already been
+            // terminated by an intervening message. Either way:
+            // orphan.
+            if (row.toolCallId.isNotEmpty) {
+              orphanUseIds.add(row.toolCallId);
+            } else {
+              // tool row with no toolCallId — used as a fallback
+              // marker only; we still want to clean it up.
+              orphanUseIds.add('__orphan_no_id_${row.id}__');
+            }
+          }
+        } else {
+          // ai / user / system / compaction / parallel_praise /
+          // single_call_reminder all terminate the pending tool
+          // flow (a regular user message sandwiched between a
+          // tool_call and its tools is the canonical interrupted
+          // round).
+          if (pending != null) {
+            orphanUseIds.addAll(pending);
+            pending = null;
+          }
+        }
+      }
+      // End of input — anything still pending never got its
+      // results written.
+      if (pending != null) orphanUseIds.addAll(pending);
+
+      if (orphanUseIds.isEmpty) return;
+
+      // ── Pass 2: prune the DB ────────────────────────────────────
+      //
+      // For each row whose ids touch the orphan set, either
+      // update with the kept ids or delete the whole row.
+      for (final row in toolRows) {
+        if (row.role == 'tool_call') {
+          final calls = Message.parseToolCallsJson(row.toolCalls);
+          if (calls.isEmpty) continue;
+          final kept =
+              calls.where((c) => !orphanUseIds.contains(c.callId)).toList();
+          if (kept.length == calls.length) continue;
+          if (kept.isEmpty) {
+            await (_db.delete(_db.messages)
+                  ..where((t) => t.id.equals(row.id)))
+                .go();
+            modifiedCount++;
+          } else {
+            await (_db.update(_db.messages)
+                  ..where((t) => t.id.equals(row.id)))
+                .write(db.MessagesCompanion(
+                  toolCalls: Value(Message.encodeToolCalls(kept)),
+                ));
+            modifiedCount++;
+          }
+        } else if (row.role == 'tool') {
+          if (orphanUseIds.contains(row.toolCallId) ||
+              orphanUseIds.contains('__orphan_no_id_${row.id}__')) {
+            await (_db.delete(_db.messages)
+                  ..where((t) => t.id.equals(row.id)))
+                .go();
+            modifiedCount++;
+          }
+        }
+      }
+    });
+
+    if (modifiedCount > 0) {
+      await sessionStore.touchSession(sessionId);
+    }
+    return modifiedCount;
+  }
+
   Future<int> deleteCompleteCompactions(int sessionId) async {
     final rows = await (_db.select(_db.messages)
           ..where((t) =>
