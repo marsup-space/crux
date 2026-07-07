@@ -59,6 +59,27 @@ abstract class LlmProvider {
   /// polling lifecycle.
   bool get isCreditBalance => false;
 
+  /// `true` when this provider's wire family is susceptible to
+  /// "orphan tool history" errors — a `tool_result` referencing
+  /// a `tool_use_id` that doesn't appear in any preceding
+  /// assistant `tool_use` — and exposes a DB-side repair that
+  /// the chat executor can run and retry once on detection.
+  ///
+  /// Default `false`. Anthropic-compatible providers override
+  /// to `true`: their wire format encodes the pairing inside
+  /// content blocks, so the per-request sanitizer in
+  /// `AnthropicCompatibleProvider` strips orphans from the wire
+  /// payload but doesn't heal the underlying DB — this flag
+  /// additionally arms the executor with the storage-side
+  /// repair. MiniMax inherits the override and picks up the
+  /// `true` value with no MiniMax-specific code.
+  ///
+  /// Used at exactly one site — the orphan-tool auto-repair
+  /// branch in `ChatTurnExecutor.sendMessage` — so the
+  /// capability is intentionally scoped narrowly: it doesn't
+  /// authorize any other DB-side intervention.
+  bool get supportsOrphanToolRepair => false;
+
   /// Reasoning presets for a model, with TOML-driven label overrides applied.
   ///
   /// Resolution priority (highest wins on label conflicts):

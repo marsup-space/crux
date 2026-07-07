@@ -592,4 +592,144 @@ void main() {
           LlmVendor.unknown);
     });
   });
+
+  // ─── LlmError.isOrphanToolUseError ────────────────────────────
+  //
+  // Detection helper used by the chat executor to gate the
+  // auto-repair-and-retry hook on Anthropic-compatible providers.
+  // The classifier must be narrow so unrelated invalid_request_error
+  // shapes (malformed JSON, schema failures, bad parameter names)
+  // don't accidentally trigger a session-wide repair.
+
+  group('LlmError.isOrphanToolUseError', () {
+    test('MiniMax 2013 is the orphan-tool case', () {
+      // Regression for the MiniMax M3 session that hit this loop
+      // before the orphan-repair commit landed on
+      // AnthropicCompatibleProvider.sanitizeMessages.
+      final err = parseHttpError(
+        statusCode: 400,
+        body: jsonEncode({
+          'base_resp': {
+            'status_code': 2013,
+            'status_msg':
+                "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
+                'not found',
+          },
+        }),
+        vendor: LlmVendor.minimax,
+        providerName: 'minimax',
+      );
+      expect(err.kind, LlmErrorKind.invalidRequest);
+      expect(err.vendorCode, '2013');
+      expect(
+        err.isOrphanToolUseError,
+        isTrue,
+        reason: 'MiniMax 2013 is the canonical orphan-tool code',
+      );
+    });
+
+    test('MiniMax 1042 (other invalidRequest) is NOT orphan-tool', () {
+      // The 1042 code shares the invalidRequest kind with 2013 but
+      // covers different invalid-payload conditions (e.g. malformed
+      // request bodies). It must NOT trigger the repair — the DB
+      // isn't the problem, the request is.
+      final err = parseHttpError(
+        statusCode: 400,
+        body: jsonEncode({
+          'base_resp': {
+            'status_code': 1042,
+            'status_msg': 'invalid parameter',
+          },
+        }),
+        vendor: LlmVendor.minimax,
+        providerName: 'minimax',
+      );
+      expect(err.kind, LlmErrorKind.invalidRequest);
+      expect(err.vendorCode, '1042');
+      expect(err.isOrphanToolUseError, isFalse);
+    });
+
+    test('Anthropic 400 with tool_use_id text is orphan-tool', () {
+      // Anthropic invalid_request_error shapes vary by message.
+      // The substring match on tool_use_id / tool_result / "tool use
+      // id" covers the cases we know about; the test exercises each
+      // term to guard against message-format drift.
+      for (final msgText in [
+        "messages.4: tool_use ids were not found in tool_result blocks",
+        'messages.0.content.0: tool result for tool use call_x was not found',
+        'tool_use_id foo referenced but not found',
+      ]) {
+        final err = parseHttpError(
+          statusCode: 400,
+          body: jsonEncode({
+            'type': 'error',
+            'error': {
+              'type': 'invalid_request_error',
+              'message': msgText,
+            },
+          }),
+          vendor: LlmVendor.anthropic,
+          providerName: 'anthropic',
+        );
+        expect(
+          err.isOrphanToolUseError,
+          isTrue,
+          reason: 'must match message containing: "$msgText"',
+        );
+      }
+    });
+
+    test(
+        'Anthropic 400 with non-tool invalid_request_error is NOT orphan',
+        () {
+      // A schema-validation 400 (e.g. wrong tool input_schema) uses
+      // the same `invalid_request_error` kind but a totally
+      // different cause. Must NOT trigger a session-wide repair.
+      const err = LlmError(
+        kind: LlmErrorKind.invalidRequest,
+        vendor: LlmVendor.anthropic,
+        message: 'tools.0.input_schema: invalid JSON Schema',
+        providerName: 'anthropic',
+      );
+      expect(err.isOrphanToolUseError, isFalse);
+    });
+
+    test('OpenAI invalid_request_error is NEVER orphan-tool', () {
+      // OpenAI's wire family uses `tool_call_id` instead of
+      // `tool_use_id`, and its own per-request sanitizer
+      // (`OpenAICompatibleProvider._enforceToolCallPairing`) handles
+      // orphans at wire-format time. The DB-side repair is gated on
+      // Anthropic providers, so OpenAI errors — even if they
+      // happened to mention "tool" — must not trigger the path.
+      const err = LlmError(
+        kind: LlmErrorKind.invalidRequest,
+        vendor: LlmVendor.openai,
+        message: 'messages.4: tool_use_id foo not found in history',
+        providerName: 'openai',
+      );
+      expect(err.isOrphanToolUseError, isFalse);
+    });
+
+    test('non-invalidRequest kinds are never orphan-tool', () {
+      // Even with a vendor that would otherwise match (anthropic),
+      // a non-invalidRequest kind (rateLimit, overloaded, …) must
+      // never classify as orphan-tool — the repair path is for
+      // tool-pairing failures specifically, not transient upstream
+      // issues.
+      for (final kind in LlmErrorKind.values) {
+        if (kind == LlmErrorKind.invalidRequest) continue;
+        final err = LlmError(
+          kind: kind,
+          vendor: LlmVendor.anthropic,
+          message: 'tool_use_id foo not found',
+          providerName: 'anthropic',
+        );
+        expect(
+          err.isOrphanToolUseError,
+          isFalse,
+          reason: '$kind should NOT classify as orphan-tool',
+        );
+      }
+    });
+  });
 }

@@ -11,6 +11,21 @@ class AnthropicCompatibleProvider extends LlmProvider {
   @override
   AuthStyle get authStyle => AuthStyle.anthropicApiKey;
 
+  /// The Anthropic-compatible wire family encodes tool pairing
+  /// inside content blocks (`tool_use` ↔ `tool_result`), so a
+  /// half-persisted round surfaces as a 400 from the upstream
+  /// (MiniMax's `base_resp.status_code == 2013`, Anthropic's
+  /// `invalid_request_error` with a `tool_use_id not found`
+  /// message). The chat executor uses this flag to gate an
+  /// auto-repair + retry on the first occurrence of that error
+  /// shape per round.
+  ///
+  /// MiniMax inherits the override — picking up `true` without
+  /// any MiniMax-specific code, keeping the "target anthropic
+  /// not minimax" architecture intact.
+  @override
+  bool get supportsOrphanToolRepair => true;
+
   @override
   Map<String, dynamic> buildRequestBody(
     String modelId,

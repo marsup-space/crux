@@ -324,6 +324,47 @@ class LlmError {
     }
   }
 
+  /// `true` when this error indicates that the upstream API
+  /// rejected the request because a `tool_result` referenced a
+  /// `tool_use_id` that doesn't appear in a preceding assistant
+  /// `tool_use` — the canonical orphan-tool-history symptom on
+  /// Anthropic-style wire families.
+  ///
+  /// Triggers an auto-repair-and-retry hook in the chat executor
+  /// (gated to providers whose wire family is Anthropic-compatible
+  /// via [LlmProvider.supportsOrphanToolRepair]). The check is
+  /// intentionally narrow so unrelated `invalid_request_error`
+  /// shapes (malformed JSON, schema failures, bad parameter
+  /// names) don't accidentally trigger a session-wide repair.
+  ///
+  /// Returning `true` does NOT mean we'll actually repair — the
+  /// executor additionally gates on the provider's wire family
+  /// and on a one-shot per-round flag. This getter just classifies
+  /// the *error shape*.
+  bool get isOrphanToolUseError {
+    if (kind != LlmErrorKind.invalidRequest) return false;
+    if (vendor != LlmVendor.anthropic && vendor != LlmVendor.minimax) {
+      return false;
+    }
+    // MiniMax encodes the orphan-tool case as
+    // `base_resp.status_code == 2013` with a fixed message shape
+    // — unambiguous when the code matches.
+    if (vendor == LlmVendor.minimax && vendorCode == '2013') return true;
+    // Anthropic and other variants: match the technical terms
+    // that the upstream embeds in the error message. These are
+    // the wire-format keys Anthropic's parser puts verbatim in
+    // the message body (e.g. `"messages.N: tool_use ids were not
+    // found in tool_result blocks"`, or the prose form
+    // `"tool result for tool use call_x was not found"`),
+    // so a substring match on a few exact phrasings is robust.
+    final m = message.toLowerCase();
+    return m.contains('tool_result') || // wire-format key
+        m.contains('tool_result ') || // prose form (post-key)
+        m.contains('tool use ') || // prose form (pre-id / post-id)
+        m.contains('tool_use_id') || // wire-format key (other vendors)
+        m.contains('tool use id'); // prose form
+  }
+
   /// JSON encode for storage in the `messages.error` column.
   /// Round-trips through [LlmErrorCodec.fromJson].
   ///

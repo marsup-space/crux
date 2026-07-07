@@ -749,6 +749,32 @@ void main() {
     });
   });
 
+  // ─── supportsOrphanToolRepair capability flag ────────────────
+  //
+  // Gates the chat executor's auto-repair-and-retry hook. The
+  // capability must live on the Anthropic side of the inheritance
+  // chain — MiniMax picks it up through `extends
+  // AnthropicCompatibleProvider`, with no MiniMax-specific code.
+
+  group('LlmProvider.supportsOrphanToolRepair', () {
+    test('default is false on the LlmProvider base', () {
+      // The base class doesn't override; only Anthropic-compatible
+      // providers do.
+      expect(AnthropicCompatibleProvider().supportsOrphanToolRepair, isTrue);
+      expect(OpenAICompatibleProvider().supportsOrphanToolRepair, isFalse);
+      expect(DeepSeekProvider().supportsOrphanToolRepair, isFalse);
+    });
+
+    test('MiniMax inherits the Anthropic override (no MiniMax override)',
+        () {
+      // The "target anthropic not minimax" property: the capability
+      // is declared once on AnthropicCompatibleProvider and
+      // inherited. Any future Anthropic-compatible provider gets
+      // the same flag automatically.
+      expect(MiniMaxProvider().supportsOrphanToolRepair, isTrue);
+    });
+  });
+
   group('DeepSeekProvider.sanitizeMessages', () {
     final provider = DeepSeekProvider();
 
