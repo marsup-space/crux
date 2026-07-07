@@ -574,6 +574,305 @@ void main() {
       },
     );
   });
+
+  // ─── Orphan tool history auto-repair + retry ────────────────
+  //
+  // Wires the storage-side `repairOrphanToolRows` (commit 2) to
+  // the executor, gated on `LlmProvider.supportsOrphanToolRepair`
+  // (commit 1). The hook fires once on the first 2013-shaped
+  // error per round; a second occurrence falls through to the
+  // existing non-retriable path so the user gets the standard
+  // ▶ retry button.
+
+  group('ChatTurnExecutor.sendMessage — orphan tool auto-repair', () {
+    late SessionStore store;
+    late ProviderService providerService;
+
+    setUp(() async {
+      // Skip the production backoff sleeps during tests so a repair-
+      // and-retry scenario runs instantly. The orphan-tool path
+      // resets `attempt` to 0 (no backoff) so this override is
+      // belt-and-suspenders.
+      ChatTurnExecutor.debugBackoffOverride = (_) => Duration.zero;
+      store = await _freshStore();
+      providerService = _StubProviderService(
+        userProvidersDir: await _makeTempProvidersDir(),
+      );
+      await providerService.initialize();
+    });
+
+    tearDown(() {
+      ChatTurnExecutor.debugBackoffOverride = null;
+    });
+
+    test(
+      'first 2013 triggers repairOrphanToolRows, retry succeeds',
+      () async {
+        // Anthropic-compatible provider (the default test provider
+        // is openai-compatible, so we use a transient one via
+        // local.toml). For this test, reuse the retry-test provider
+        // but override `supportsOrphanToolRepair` semantics by
+        // patching the resolved provider. The cleanest path is to
+        // provision an anthropic_compatible provider for this
+        // group.
+        final anthropicDir = await _makeAnthropicProvidersDir();
+        final anthropicService = _StubProviderService(
+          userProvidersDir: anthropicDir,
+        );
+        await anthropicService.initialize();
+        final anthropicStore = await _freshStore();
+
+        // First attempt: a MiniMax 2013 / anthropic
+        // invalid_request_error with the orphan-tool message
+        // shape. The per-request sanitizer can't catch this (the
+        // DB is the source of truth and still has orphans), so
+        // the chunk surfaces an LlmError.
+        // Second attempt: success.
+        final fakeLlm = FakeLlmClient([
+          [
+            LlmChunk(
+              error: const LlmError(
+                kind: LlmErrorKind.invalidRequest,
+                vendor: LlmVendor.minimax,
+                vendorCode: '2013',
+                message:
+                    "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
+                    'not found',
+                providerName: 'anthropic',
+              ),
+            ),
+          ],
+          _successStream('after repair'),
+        ]);
+        final executor = _buildExecutor(
+          store: anthropicStore,
+          providerService: anthropicService,
+          llmClient: fakeLlm,
+        );
+        final session = await _createSession(anthropicStore);
+
+        await _runTurn(executor, session, (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hello',
+          );
+        });
+
+        // Two streamChat calls: one for the failed attempt and one
+        // for the repaired retry.
+        expect(fakeLlm.calls, 2,
+            reason: 'first 2013 must trigger a repair + retry');
+        // Successful retry surfaces onComplete, not onError.
+        expect(_lastError, isNull,
+            reason: 'a successful retry must not surface onError');
+        expect(_lastComplete, isNotNull,
+            reason: 'a successful retry must surface onComplete');
+        expect(fakeLlm.allText.toString(), 'after repair');
+        // The status toast must announce the repair.
+        expect(
+          _statusMessages,
+          contains(
+            allOf(
+              contains('orphan tool rows'),
+              contains('repairing'),
+            ),
+          ),
+          reason: 'the repair branch must surface a status toast',
+        );
+      },
+    );
+
+    test(
+      'second 2013 in the same round falls through to onError',
+      () async {
+        // The anti-loop guard: after the first repair fires, a
+        // second 2013 must NOT trigger another repair. Instead it
+        // surfaces as a normal non-retriable error so the user
+        // gets the standard ▶ retry button.
+        final anthropicDir = await _makeAnthropicProvidersDir();
+        final anthropicService = _StubProviderService(
+          userProvidersDir: anthropicDir,
+        );
+        await anthropicService.initialize();
+        final anthropicStore = await _freshStore();
+
+        final orphanErr = const LlmError(
+          kind: LlmErrorKind.invalidRequest,
+          vendor: LlmVendor.minimax,
+          vendorCode: '2013',
+          message:
+              'tool result\'s tool id(call_8dce37e6aed5418ebe0ed8ec) '
+              'not found',
+          providerName: 'anthropic',
+        );
+        final fakeLlm = FakeLlmClient([
+          [LlmChunk(error: orphanErr)],
+          [LlmChunk(error: orphanErr)],
+        ]);
+        final executor = _buildExecutor(
+          store: anthropicStore,
+          providerService: anthropicService,
+          llmClient: fakeLlm,
+        );
+        final session = await _createSession(anthropicStore);
+
+        await _runTurn(executor, session, (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hello',
+          );
+        });
+
+        // Two calls — the first triggers the repair and retries,
+        // the second is the second-2013 aftermath, which falls
+        // through to onError.
+        expect(fakeLlm.calls, 2);
+        expect(_lastComplete, isNull,
+            reason: 'a second 2013 must NOT trigger another retry');
+        expect(_lastError, isNotNull,
+            reason:
+                'a second 2013 must surface as a normal non-retriable '
+                'error so the user can /retry');
+        expect(_lastError!.kind, LlmErrorKind.invalidRequest);
+        // Exactly one repair toast — the second 2013 didn't fire
+        // another repair.
+        final repairToasts = _statusMessages
+            .where((m) => m.contains('orphan tool rows'))
+            .toList();
+        expect(repairToasts, hasLength(1),
+            reason:
+                'orphanToolRepairAttempted must fire the repair only '
+                'once per round');
+      },
+    );
+
+    test(
+      '2013 on a non-Anthropic provider falls through to onError',
+      () async {
+        // The capability flag is set on Anthropic-compatible
+        // providers only. OpenAI-compatible providers (the default
+        // in this test file) must NOT trigger the auto-repair —
+        // even when their (hypothetical) 2013-shaped message
+        // arrives.
+        final fakeLlm = FakeLlmClient([
+          [
+            LlmChunk(
+              error: const LlmError(
+                kind: LlmErrorKind.invalidRequest,
+                vendor: LlmVendor.openai,
+                message:
+                    "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
+                    'not found',
+                providerName: _providerName,
+              ),
+            ),
+          ],
+        ]);
+        final executor = _buildExecutor(
+          store: store,
+          providerService: providerService,
+          llmClient: fakeLlm,
+        );
+        final session = await _createSession(store);
+
+        await _runTurn(executor, session, (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hello',
+          );
+        });
+
+        expect(fakeLlm.calls, 1,
+            reason:
+                'openai-compatible providers must not auto-repair; the '
+                'error surfaces directly to onError');
+        expect(_lastError, isNotNull);
+        expect(_statusMessages.where((m) => m.contains('orphan tool rows')),
+            isEmpty,
+            reason:
+                'no repair toast on a non-Anthropic provider');
+      },
+    );
+
+    test(
+      'non-tool invalidRequest on an Anthropic provider is not auto-repaired',
+      () async {
+        // A different invalidRequest shape (e.g. malformed schema)
+        // must NOT trigger the repair path, even on an
+        // Anthropic-compatible provider. Otherwise unrelated 400s
+        // could mutate the DB unnecessarily.
+        final anthropicDir = await _makeAnthropicProvidersDir();
+        final anthropicService = _StubProviderService(
+          userProvidersDir: anthropicDir,
+        );
+        await anthropicService.initialize();
+        final anthropicStore = await _freshStore();
+
+        final fakeLlm = FakeLlmClient([
+          [
+            LlmChunk(
+              error: const LlmError(
+                kind: LlmErrorKind.invalidRequest,
+                vendor: LlmVendor.anthropic,
+                message: 'tools.0.input_schema: invalid JSON Schema',
+                providerName: 'anthropic',
+              ),
+            ),
+          ],
+        ]);
+        final executor = _buildExecutor(
+          store: anthropicStore,
+          providerService: anthropicService,
+          llmClient: fakeLlm,
+        );
+        final session = await _createSession(anthropicStore);
+
+        await _runTurn(executor, session, (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hello',
+          );
+        });
+
+        expect(fakeLlm.calls, 1);
+        expect(_lastError, isNotNull);
+        expect(_statusMessages.where((m) => m.contains('orphan tool rows')),
+            isEmpty);
+      },
+    );
+  });
 }
 
 /// Construct a single-shot success stream: one text chunk and a stop chunk.
@@ -599,6 +898,34 @@ endpoint_url = "http://localhost:8080/v1"
 [[models]]
 id = "$_modelId"
 name = "Test Model"
+context_size = 8000
+image_support = false
+thinking = false
+reasoning_effort = "none"
+temperature = 0
+stream_lerp = false
+''');
+  return dir.path;
+}
+
+/// Write a minimal `anthropic.toml` provider into a fresh temp dir and
+/// return the path. Used by the orphan-tool auto-repair group — the
+/// auto-repair hook only fires when
+/// `LlmProvider.supportsOrphanToolRepair == true`, which is the
+/// Anthropic-compatible family's flag; the default openai-compatible
+/// test provider must NOT trigger the repair.
+Future<String> _makeAnthropicProvidersDir() async {
+  final dir = await Directory.systemTemp.createTemp('crux_anthropic_prov_');
+  addTearDown(() async {
+    if (await dir.exists()) await dir.delete(recursive: true);
+  });
+  await File(p.join(dir.path, '$_providerName.toml')).writeAsString('''
+type = "anthropic_compatible"
+endpoint_url = "http://localhost:8080/v1"
+
+[[models]]
+id = "$_modelId"
+name = "Test Anthropic Model"
 context_size = 8000
 image_support = false
 thinking = false

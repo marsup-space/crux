@@ -264,6 +264,13 @@ class ChatTurnExecutor {
         ? compositeKey.substring(slashIndex + 1)
         : compositeKey;
 
+    // Cache the resolved LlmProvider for the orphan-tool auto-repair
+    // hook (`providerService.llmProviderByName` is just a config
+    // lookup but resolving it once avoids per-attempt overhead). The
+    // hook itself only acts when `supportsOrphanToolRepair == true`,
+    // so OpenAI-compatible providers (the default) pay nothing.
+    final llmProvider = providerService.llmProviderByName(providerName);
+
     final provider = providerService.providerByName(providerName);
     final apiKey = providerService.getApiKey(providerName);
     final modelConfig = provider?.modelById(modelId);
@@ -372,6 +379,25 @@ class ChatTurnExecutor {
       LlmError? streamError;
       Object? thrownError;
 
+      // Track whether this round already triggered the orphan-tool
+      // auto-repair, so a second 2013 after the repair surfaces
+      // normally (the user gets the existing ▶ retry button) instead
+      // of looping us into another repair. Resets at the top of
+      // each round so a multi-round turn can repair fresh rounds if
+      // a totally-different round also breaks.
+      var orphanToolRepairAttempted = false;
+
+      // One-shot sentinel for the orphan-repair branch: when set at
+      // the bottom of the previous iteration, the next iteration
+      // starts at attempt 0 (the `attempt = -1` trick skips the
+      // backoff block) AND clears the residual error state so the
+      // bottom-of-loop success check on the rebuilt request behaves
+      // correctly. The standard `streamError = null; thrownError =
+      // null;` reset inside `if (attempt > 0)` doesn't fire at
+      // attempt = 0, so this sentinel is the only path that
+      // re-clears on the post-repair iteration.
+      var orphanToolRepairJustFired = false;
+
       // Declared outside the retry loop so they remain in scope for
       // the post-stream processing that follows.
       final chunks = <LlmChunk>[];
@@ -408,6 +434,21 @@ class ChatTurnExecutor {
             leaseManager.clearCancelRequest(sessionId);
             return;
           }
+          streamError = null;
+          thrownError = null;
+        }
+        // On the orphan-tool auto-repair path the previous
+        // iteration landed here on `attempt = -1` (so post-step
+        // would put us back at 0 with no backoff). The standard
+        // attempt-N clear above didn't run — re-run it now so the
+        // bottom-of-loop success check (`streamError == null &&
+        // thrownError == null`) recognises a clean attempt as
+        // clean. Only fires when the previous iteration was the
+        // orphan-tool repair branch, since the regular retriable
+        // path lands at attempt > 0 and clears via the block
+        // above.
+        if (orphanToolRepairJustFired) {
+          orphanToolRepairJustFired = false;
           streamError = null;
           thrownError = null;
         }
@@ -554,6 +595,51 @@ class ChatTurnExecutor {
               lerpTimer?.cancel();
               if (chunk.error!.isRetriable && attempt < kMaxLlmRetries) {
                 streamError = chunk.error!;
+                break;
+              }
+
+              // ── Orphan tool history auto-repair + retry ─────────
+              //
+              // Only on Anthropic-compatible providers
+              // (`supportsOrphanToolRepair == true`); OpenAI /
+              // DeepSeek have their own per-request sanitizer
+              // handling a different orphan-tool case, and they
+              // don't reach this hook. Only fires once per round
+              // (the `!orphanToolRepairAttempted` guard) so a
+              // second 2013 after the repair falls through to
+              // the existing non-retriable path — the user gets
+              // the standard ▶ retry button, no loop.
+              //
+              // Sets `streamError` so the bottom-of-loop success
+              // check (`streamError == null && thrownError ==
+              // null`) does NOT fire immediately after the
+              // `break` — we want another iteration of the for
+              // (the rebuild) before the check is allowed to
+              // exit the loop. The next iteration lands at
+              // attempt 0 via `attempt = -1`, so the standard
+              // `if (attempt > 0)` clear doesn't run; the
+              // `orphanToolRepairJustFired` sentinel clears
+              // them at iter start instead, so a successful
+              // rebuilt request does exit the loop normally.
+              if (chunk.error!.isOrphanToolUseError &&
+                  llmProvider?.supportsOrphanToolRepair == true &&
+                  !orphanToolRepairAttempted) {
+                onStatus?.call(
+                  'Detected orphan tool rows from a previous round — '
+                  'repairing and retrying…',
+                );
+                await store.messageStore.repairOrphanToolRows(sessionId);
+                orphanToolRepairAttempted = true;
+                orphanToolRepairJustFired = true;
+                streamError = chunk.error!;
+                // Reset `attempt` to -1 so the post-increment at
+                // the end of this iteration lands on `attempt = 0`
+                // — no backoff, just an immediate retry of the
+                // rebuilt request. The repair was the side-effect;
+                // the rebuild itself goes out clean (the
+                // per-request sanitizer in LlmClient still runs
+                // and acts as defense-in-depth).
+                attempt = -1;
                 break;
               }
               runtime.pauseStreamingTimer();
