@@ -8,6 +8,184 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.11.7] - 2026-07-07
+
+a04290e
+
+### Fixes
+
+- **Quick reply label duplication when labels contain inline code
+  spans** — `applyQuickReplyTokens` (`lib/src/utils/quick_reply_parser.dart`)
+  used to emit a token's label once per flat entry the token's source
+  range straddled. When a label contained `` `…` `` code spans, the
+  markdown parser split it into multiple inline spans, so the same
+  label rendered N times in a row (e.g. 7× for a label with three
+  backtick pairs, 3× for one pair, 1× for none). Tracked down via
+  ses://2579 / message 135160. Fix tracks which replies have been
+  emitted (`emittedReplies` keyed on `sourceStart`), restricts the
+  per-entry overlap check to replies whose `sourceStart` lies inside
+  the current entry, and skips entries that fall entirely inside an
+  already-emitted reply's range. A follow-up edge fix: when a
+  straddling reply's `sourceEnd` lands in the MIDDLE of a later flat
+  entry (e.g. the closing `}` shares its text span with trailing
+  prose), the renderer now emits only the tail past `sourceEnd`
+  instead of dropping the whole entry — so text after the token
+  survives. Four regression tests added under
+  `applyQuickReplyTokens — code spans inside the LABEL` in
+  `test/utils/quick_reply_parser_test.dart`. See
+  `docs/quick-reply-label-rendering-bug.md` for the full postmortem.
+
+## [0.11.6] - 2026-07-07
+
+a04290e
+
+### Features
+
+- **Auto-repair orphan tool history and retry once on first hit**
+  (`5788996` + `4fd2fc3` + `a04290e`) — the 0.11.5
+  orphan-`tool_use` repair only cleaned the wire payload
+  per-request; the underlying DB still held the broken
+  history, so every session that hit a MiniMax 2013 (or
+  an Anthropic invalid_request_error referencing
+  `tool_result` / `tool_use_id`) had to eat the
+  per-request repair cost forever. 0.11.6 closes the
+  loop with a three-part feature: when a request fails
+  with an orphan-tool-use error, Crux now (a) detects
+  the error class, (b) cleans the underlying `tool_call`
+  and `tool` rows in one transaction, and (c) rebuilds
+  the request and retries once. The repair is
+  per-round, automatic, and self-limiting: a second
+  2013 in the same round falls through to the existing
+  non-retriable surface (the user gets the standard
+  "▶ retry (/continue)" bubble), and `/retry` re-arms
+  the hook for the next round.
+
+  - `5788996` — `LlmError.isOrphanToolUseError` recognizes
+    MiniMax `base_resp.status_code == 2013` plus
+    Anthropic / other `invalid_request_error` shapes
+    whose message contains `tool_result`, `tool_use_id`,
+    or prose forms like "tool result for tool use".
+    Intentionally narrow so unrelated
+    `invalid_request_error` shapes (malformed JSON,
+    schema failures, bad parameter names) don't
+    accidentally trigger a session-wide repair. The
+    `LlmProvider.supportsOrphanToolRepair` capability
+    flag defaults to `false`; only
+    `AnthropicCompatibleProvider` overrides it to
+    `true`. MiniMax inherits the override via the
+    existing extends chain — no MiniMax-specific code
+    ("target Anthropic not MiniMax" property holds).
+  - `4fd2fc3` — `MessageStore.repairOrphanToolRows`
+    walks a session's `tool_call` and `tool` rows,
+    finds orphans, and prunes them in a single
+    transaction. `tool_call` rows drop entries whose
+    `callId` no subsequent `tool` row references; a
+    `tool_call` whose `toolCalls` becomes empty after
+    pruning is deleted entirely (an empty `tool_call`
+    is meaningless and would re-trigger the same
+    orphan error on the next request). `tool` rows
+    whose `toolCallId` doesn't appear in any preceding
+    `tool_call`, or whose preceding flow has been
+    terminated by an intervening ai / user / system
+    row, are deleted. Returns the number of rows
+    modified; well-formed histories return 0 so the
+    executor's per-round flag and status toast stay
+    quiet on a healthy session.
+  - `a04290e` — `ChatTurnExecutor` wires the hook:
+    the per-attempt `chunk.error` handler checks
+    `isOrphanToolUseError` BEFORE the existing
+    non-retriable fallthrough, calls
+    `repairOrphanToolRows(sessionId)`, emits a status
+    toast ("Detected orphan tool rows from a previous
+    round — repairing and retrying…"), sets
+    `orphanToolRepairAttempted = true`, and resets
+    `attempt` to `-1` so the post-increment lands
+    back at attempt 0 with no backoff (the repair was
+    the action; upstream had nothing to wait for). An
+    `orphanToolRepairJustFired` one-shot sentinel
+    clears `streamError` at the TOP of the next
+    iteration so a successful rebuilt request exits
+    the loop normally without re-firing the
+    bottom-of-loop success check on the failed
+    iteration.
+
+  Backed by `test/llm_error_test.dart` (140 lines
+  covering the MiniMax 2013 positive, MiniMax 1042
+  negative, three Anthropic message variants, schema
+  negative, OpenAI negative, and a sweep of all
+  non-invalidRequest kinds), `test/llm_provider_test.dart`
+  (+26 cases for the capability flag), and
+  `test/repair_orphan_tool_rows_test.dart` (303 lines
+  covering empty history, well-formed round, mid-round
+  partial persist, total mid-round interrupt, orphan
+  tool rows, intervening ai row terminating pending,
+  idempotence, multi-round sessions, and end-of-input
+  terminating). Executor behavior covered by 4 cases
+  (first 2013 fires + succeeds, second 2013 surfaces
+  to onError with no second repair, non-Anthropic
+  2013 falls through, non-tool invalidRequest doesn't
+  trigger).
+
+### Fixes
+
+- **Live TTFT keeps ticking between model rounds**
+  (`d078c1a`) — `MetricsCubit.updateLiveMetrics`'s
+  50ms tick had the TTFT mirror AFTER the second
+  early-return. That early-return fires between
+  model rounds (before the first delta, during local
+  tool execution, between LLM requests) to skip the
+  tok/s computation when no tokens are being
+  generated, but the live TTFT timer should keep
+  ticking through those gaps — the turn is still
+  responding, the user is still waiting for the
+  first token, and the displayed TTFT should count
+  up monotonically. The fix splits the cubit mirror
+  into two stages: BEFORE the second early-return,
+  mirror the basic fields (`ttftMs`, `ttftReceived`,
+  `contextTargetTokens`) so TTFT flows through the
+  gaps; AT the end, mirror the full set including
+  `tokPerSec` (which only updates during a streaming
+  round, which is correct). After this slice, the
+  metrics display's TTFT starts at 0 when the turn
+  begins, ticks up smoothly through the round and
+  through any gaps between model rounds inside the
+  same turn, freezes at the first-delta value when
+  the first token arrives (`rt.ttftReceived = true`),
+  and continues to display the frozen value after
+  the turn ends.
+
+- **Bloc-refactor follow-up fixes** (`c9adb95`) —
+  five small fixes landed together to close out the
+  cubit migration:
+  - `SessionRuntimeState` now implements
+    `SessionRuntimeSink` (Phase 1 requirement from
+    `docs/refactor/bloc-migration.md`); added
+    `beginResponse`, `finishModelRound`,
+    `finishResponse`, `recordFirstToken`,
+    `updateContext`, `recordCacheHitPct`, etc.
+  - `/undo` now restores the undone user message to
+    the input box — the slash command was a no-op
+    because `setInputText` was never passed into
+    `CommandContext`. The callback is now wired so
+    undoing a sent user message pops it back into
+    the input field for editing.
+  - `/temperature` toast/persist order reverted
+    back to the original (await `persistTemperature`
+    THEN `showToast`); the refactored order (toast
+    then unawaited/await persist) caused the toast
+    to be lost because pending `setState` from
+    `textController.clear()` overwrote the toast's
+    dirty flag before the frame rendered.
+  - `test/btw_bubble_test.dart` rewritten to use
+    `BlocBuilder` + `BtwBubble.ai` instead of the
+    non-existent `BtwStreamingBubble`.
+  - `test/run_metrics_test.dart` color assertion
+    fixed to 8-bit indexed (`38;5;141`) instead of
+    truecolor (`38;2;189;147;249`) — the metrics
+    display falls back to indexed color when the
+    terminal doesn't advertise truecolor, and the
+    test was hardcoded to truecolor.
+
 ## [0.11.5] - 2026-07-06
 
 93c4c02

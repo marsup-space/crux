@@ -386,20 +386,67 @@ List<InlineSpan> applyQuickReplyTokens(
   final result = <_FlatSpan>[];
   var pos = 0;
   var renderedPos = 0;
+  // Tracks which replies have already had their label emitted.
+  // Without this, a reply whose source range spans multiple flat
+  // entries — e.g. because its label or answer contains inline
+  // backtick code spans, which the markdown parser splits into
+  // separate inline spans — would be processed once per overlapping
+  // entry and emit its label N times in a row. Match on sourceStart
+  // since that's stable per reply across the sweep.
+  final emittedReplies = <int>{};
   for (final entry in flat) {
     final (text, baseStyle) = entry;
     final spanStart = pos;
     final spanEnd = pos + text.length;
 
+    // Only consider replies whose START falls inside this entry's
+    // range. Replies whose start is before this entry have already
+    // been processed in a previous iteration (we emit their label
+    // exactly once, at the entry that contains their sourceStart).
+    // Replies whose start is at or after this entry are not yet
+    // processed — the loop below will pick them up.
     final overlapping = <QuickReply>[];
     for (final r in replies) {
       if (r.sourceStart >= spanEnd) break;
-      if (r.sourceEnd > spanStart) {
-        overlapping.add(r);
-      }
+      if (r.sourceStart < spanStart) continue;
+      if (r.sourceEnd <= spanStart) continue;
+      if (emittedReplies.contains(r.sourceStart)) continue;
+      overlapping.add(r);
     }
 
     if (overlapping.isEmpty) {
+      // This entry starts no new reply. It may still be (partly)
+      // covered by an already-emitted reply that started in an
+      // earlier entry and straddles into this one — e.g. a reply
+      // whose label/answer contains an inline code span, which the
+      // markdown parser splits into separate inline spans.
+      //
+      // The covered portion `[spanStart, straddling.sourceEnd)` has
+      // already been replaced by the reply's label, so re-emitting it
+      // would duplicate the label's source text. But any text AFTER
+      // the reply's `sourceEnd` (e.g. the `}` plus trailing prose that
+      // shares a text span with the reply's tail) is ordinary text
+      // and MUST survive. Emitting the whole entry duplicates; skipping
+      // the whole entry drops that trailing text — so slice at
+      // `sourceEnd` and emit only the tail.
+      QuickReply? straddling;
+      for (final r in replies) {
+        if (r.sourceStart >= spanEnd) break;
+        if (!emittedReplies.contains(r.sourceStart)) continue;
+        if (r.sourceStart < spanStart && r.sourceEnd > spanStart) {
+          straddling = r;
+          break;
+        }
+      }
+      if (straddling != null) {
+        if (straddling.sourceEnd < spanEnd) {
+          final tail = text.substring(straddling.sourceEnd - spanStart);
+          result.add((tail, baseStyle));
+          renderedPos += tail.length;
+        }
+        pos = spanEnd;
+        continue;
+      }
       result.add(entry);
       renderedPos += text.length;
       pos = spanEnd;
@@ -438,6 +485,7 @@ List<InlineSpan> applyQuickReplyTokens(
       r.renderedLength = r.label.length;
       renderedPos += r.label.length;
       result.add((r.label, style));
+      emittedReplies.add(r.sourceStart);
       cursor = replyEnd;
     }
     if (cursor < spanEnd) {

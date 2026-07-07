@@ -13,6 +13,27 @@ List<InlineSpan> _spansFromSegments(List<(String, TextStyle?)> segments) {
       .toList();
 }
 
+/// Walks an InlineSpan tree and concatenates every leaf text segment.
+/// Used to assert what the rendered output WOULD display (ignoring
+/// styling). Lives at top level so multiple test groups can share it.
+String _plainText(List<InlineSpan> spans) {
+  final buf = StringBuffer();
+  void walk(InlineSpan s) {
+    if (s is TextSpan) {
+      if (s.text != null) buf.write(s.text);
+      if (s.children != null) {
+        for (final c in s.children!) {
+          walk(c);
+        }
+      }
+    }
+  }
+  for (final s in spans) {
+    walk(s);
+  }
+  return buf.toString();
+}
+
 void main() {
   group('parseQuickReplies — basic matching (explicit form)', () {
     test('finds a single explicit-form token', () {
@@ -466,6 +487,163 @@ void main() {
       expect(refs[3].label, 'release.sh 加个检查');
       expect(refs[3].answer,
           '在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理');
+    });
+  });
+
+  // Regression for the bug observed in ses://2579 / message 135160:
+  // the agent wrote `ask://...{...}` tokens whose LABEL (not just
+  // answer) contained inline backticks, e.g.
+  //   ask://(推荐) remove `localPlayer.CurrentRoom == this/room`
+  //     guards in `ClientRpcRoomEvent(EncounterEnemy)` +
+  //     `CloseDoorWhenMonsterPresent` — ...{推荐}
+  // The markdown parser splits each backtick pair into its own code
+  // span, so the token's source range straddles multiple flat
+  // entries. The old `applyQuickReplyTokens` loop re-emitted the
+  // label once per overlapping entry — the first token (3 code
+  // spans → 7 sub-spans) was rendered 7 times, the second (1 code
+  // span → 3 sub-spans) was rendered 3 times, the third (no code
+  // spans → 1 sub-span) was rendered once. Each label should appear
+  // EXACTLY once in the rendered output regardless of how many
+  // inline spans the markdown parser splits it into.
+  group('applyQuickReplyTokens — code spans inside the LABEL', () {
+    test('label containing inline code spans is rendered once, not per-span',
+        () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source markdown would be (three separate lines, each one
+      // ask:// token). After markdown parsing, each token is split
+      // into multiple inline spans because its label contains
+      // backtick code spans.
+      final spans = <InlineSpan>[
+        // Token 1: label has 3 code spans → 7 inline sub-spans.
+        const TextSpan(text: 'ask://(推荐) remove ', style: text),
+        const TextSpan(text: 'localPlayer.CurrentRoom == this/room', style: code),
+        const TextSpan(text: ' guards in ', style: text),
+        const TextSpan(text: 'ClientRpcRoomEvent(EncounterEnemy)', style: code),
+        const TextSpan(text: ' + ', style: text),
+        const TextSpan(text: 'CloseDoorWhenMonsterPresent', style: code),
+        const TextSpan(
+            text: ' — InBattle always wins when triggered{推荐}\n',
+            style: text),
+        // Token 2: label has 1 code span → 3 inline sub-spans.
+        const TextSpan(text: 'ask://keep guards, but add ', style: text),
+        const TextSpan(text: 'localPlayer.CurrentRoom = room', style: code),
+        const TextSpan(
+            text:
+                ' defensive sync before the guard in the encounter path{不删 guard, 加防御 sync}\n',
+            style: text),
+        // Token 3: no code spans → 1 inline span.
+        const TextSpan(
+            text:
+                'ask://hold off on code change — first let me trace runtime to see which guard actually fails in your test{先调查，不动代码}',
+            style: text),
+      ];
+
+      final replies = parseQuickReplies(spans);
+      expect(replies, hasLength(3));
+
+      final styled = applyQuickReplyTokens(spans, replies);
+      final rendered = _plainText(styled);
+
+      // Each label appears exactly once, never repeated.
+      const label1 =
+          '(推荐) remove localPlayer.CurrentRoom == this/room guards in ClientRpcRoomEvent(EncounterEnemy) + CloseDoorWhenMonsterPresent — InBattle always wins when triggered';
+      const label2 =
+          'keep guards, but add localPlayer.CurrentRoom = room defensive sync before the guard in the encounter path';
+      const label3 =
+          'hold off on code change — first let me trace runtime to see which guard actually fails in your test';
+
+      expect(label1.allMatches(rendered).length, 1,
+          reason: 'label with 3 code spans must be rendered exactly once');
+      expect(label2.allMatches(rendered).length, 1,
+          reason: 'label with 1 code span must be rendered exactly once');
+      expect(label3.allMatches(rendered).length, 1,
+          reason: 'label with 0 code spans must be rendered exactly once');
+    });
+
+    test('token straddling two adjacent code spans does not double-emit',
+        () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: ask://A{run `npm install`} — the answer crosses a
+      // code span. The token's source range therefore spans three
+      // flat entries: regular, code, regular. Before the fix this
+      // emitted the label "A" three times.
+      final spans = <InlineSpan>[
+        const TextSpan(text: 'ask://A{run ', style: text),
+        const TextSpan(text: '`npm install`', style: code),
+        const TextSpan(text: '}', style: text),
+      ];
+
+      final replies = parseQuickReplies(spans);
+      expect(replies, hasLength(1));
+
+      final styled = applyQuickReplyTokens(spans, replies);
+      final rendered = _plainText(styled);
+
+      expect('A'.allMatches(rendered).length, 1);
+    });
+
+    test('adjacent text inside a straddling reply is dropped, not duplicated',
+        () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: prefix ask://A{a} `tail` suffix
+      // The reply sits in the middle; the code span `tail` falls
+      // AFTER the reply's source range, so it's plain text that
+      // must still render. Verify it's preserved (not dropped) and
+      // the label is emitted once.
+      final spans = <InlineSpan>[
+        const TextSpan(text: 'prefix ask://A{a} ', style: text),
+        const TextSpan(text: 'tail', style: code),
+        const TextSpan(text: ' suffix', style: text),
+      ];
+
+      final replies = parseQuickReplies(spans);
+      expect(replies, hasLength(1));
+
+      final styled = applyQuickReplyTokens(spans, replies);
+      final rendered = _plainText(styled);
+
+      expect(rendered, 'prefix A tail suffix');
+    });
+
+    test('trailing text after the token in a straddling span survives', () {
+      const text = TextStyle(color: Color(0xFFFFFFFF));
+      const code = TextStyle(
+        color: Color(0xFF00FF00),
+        backgroundColor: Color(0xFF333333),
+      );
+      // Source: ask://A{run `cmd`} more text
+      // The reply's answer straddles a code span, and the closing `}`
+      // shares its text span with the trailing " more text". The
+      // reply's sourceEnd lands in the MIDDLE of that final entry:
+      // everything up to `}` is inside the reply (replaced by the
+      // label), but " more text" after it is ordinary prose that must
+      // still render. Skipping the whole entry would drop it.
+      final spans = <InlineSpan>[
+        const TextSpan(text: 'ask://A{run ', style: text),
+        const TextSpan(text: 'cmd', style: code),
+        const TextSpan(text: '} more text', style: text),
+      ];
+
+      final replies = parseQuickReplies(spans);
+      expect(replies, hasLength(1));
+
+      final styled = applyQuickReplyTokens(spans, replies);
+      final rendered = _plainText(styled);
+
+      expect(rendered, 'A more text');
+      expect('A'.allMatches(rendered).length, 1);
     });
   });
 
