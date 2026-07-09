@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
+import '../utils/skill_chip_parser.dart';
 import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../utils/frame_profiler.dart';
@@ -134,6 +135,140 @@ class MessageBubble extends StatelessComponent {
       'messageBubble.build',
       () => _buildInner(context),
     );
+  }
+
+  /// Builds the user message content with chip rendering for
+  /// `$skill-name`, `@path`, and `[ image N ]` tokens.
+  Component _buildUserMessageContent(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    final content = message.content;
+
+    // Prefix for images.
+    final imagePrefix = message.images.isNotEmpty ? '📎 ${message.images.length} • ' : '';
+
+    // Build styled spans.
+    final spans = <TextSpan>[];
+    if (imagePrefix.isNotEmpty) {
+      spans.add(TextSpan(
+        text: imagePrefix,
+        style: TextStyle(color: theme.foreground),
+      ));
+    }
+
+    if (content.isNotEmpty) {
+      final baseStyle = TextStyle(color: theme.foreground);
+      final chipStyle = TextStyle(
+        color: theme.onColor(theme.chipBackground),
+        backgroundColor: theme.chipBackground,
+      );
+      final invisibleTrigger = TextStyle(
+        color: theme.chipBackground,
+        backgroundColor: theme.chipBackground,
+      );
+      final imagePattern = RegExp(r'\[ image (\d+) \]');
+
+      var i = 0;
+      while (i < content.length) {
+        final ch = content[i];
+
+        // Image marker: `[ image N ]`
+        if (ch == '[' && imagePattern.hasMatch(content.substring(i))) {
+          final m = imagePattern.firstMatch(content.substring(i))!;
+          spans.add(TextSpan(text: m.group(0), style: chipStyle));
+          i += m.group(0)!.length;
+          continue;
+        }
+
+        // Skill chip: `$name`
+        if (ch == r'$' &&
+            (i == 0 || !isSkillNameChar(content[i - 1])) &&
+            i + 1 < content.length &&
+            isSkillNameChar(content[i + 1])) {
+          var j = i + 1;
+          while (j < content.length && isSkillNameChar(content[j])) {
+            j++;
+          }
+          spans.add(TextSpan(text: r'$', style: invisibleTrigger));
+          spans.add(TextSpan(text: content.substring(i + 1, j), style: chipStyle));
+          i = j;
+          continue;
+        }
+
+        // At-mention: `@path`
+        if (ch == '@' &&
+            (i == 0 || !_isIdentifierChar(content[i - 1])) &&
+            i + 1 < content.length &&
+            _isPathChar(content[i + 1])) {
+          var j = i + 1;
+          while (j < content.length && _isPathChar(content[j])) {
+            j++;
+          }
+          spans.add(TextSpan(text: '@', style: invisibleTrigger));
+          spans.add(TextSpan(text: content.substring(i + 1, j), style: chipStyle));
+          i = j;
+          continue;
+        }
+
+        // Regular text.
+        var j = i + 1;
+        while (j < content.length) {
+          if (content[j] == r'$' &&
+              (j == 0 || !isSkillNameChar(content[j - 1])) &&
+              j + 1 < content.length &&
+              isSkillNameChar(content[j + 1])) {
+            break;
+          }
+          if (content[j] == '@' &&
+              (j == 0 || !_isIdentifierChar(content[j - 1])) &&
+              j + 1 < content.length &&
+              _isPathChar(content[j + 1])) {
+            break;
+          }
+          if (content[j] == '[' && imagePattern.hasMatch(content.substring(j))) {
+            break;
+          }
+          j++;
+        }
+        spans.add(TextSpan(text: content.substring(i, j), style: baseStyle));
+        i = j;
+      }
+    }
+
+    if (spans.isEmpty) {
+      // Fallback for empty content with images.
+      return Text(
+        message.images.isNotEmpty ? '📎 ${message.images.length} image(s)' : '',
+        style: TextStyle(color: theme.foreground),
+      );
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+      softWrap: true,
+    );
+  }
+
+  static bool _isIdentifierChar(String c) {
+    if (c.isEmpty) return false;
+    final cc = c.codeUnitAt(0);
+    return (cc >= 0x30 && cc <= 0x39) ||
+        (cc >= 0x41 && cc <= 0x5A) ||
+        (cc >= 0x61 && cc <= 0x7A) ||
+        cc == 0x5F ||
+        cc == 0x2D;
+  }
+
+  static bool _isPathChar(String c) {
+    if (c.isEmpty) return false;
+    final cc = c.codeUnitAt(0);
+    return (cc >= 0x30 && cc <= 0x39) ||
+        (cc >= 0x41 && cc <= 0x5A) ||
+        (cc >= 0x61 && cc <= 0x7A) ||
+        cc == 0x5F ||
+        cc == 0x2D ||
+        cc == 0x2E ||
+        cc == 0x2F ||
+        cc == 0x20;
   }
 
   Component _buildInner(BuildContext context) {
@@ -311,16 +446,7 @@ class MessageBubble extends StatelessComponent {
               ),
               Expanded(
                 child: isUser
-                    ? Text(
-                        message.images.isNotEmpty
-                            ? (message.content.isEmpty
-                                  ? '📎 ${message.images.length} image(s)'
-                                  : '📎 ${message.images.length} • ${message.content}')
-                            : message.content,
-                        style: TextStyle(
-                          color: CruxTheme.of(context).foreground,
-                        ),
-                      )
+                    ? _buildUserMessageContent(context)
                     : HighlightedMarkdownText(
                         message.content,
                         highlightText: highlightText,
