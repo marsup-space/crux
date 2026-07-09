@@ -10,6 +10,7 @@ import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/frame_profiler.dart';
+import '../utils/skill_chip_parser.dart';
 import '../commands/registry.dart';
 import 'chat_turn_orchestrator.dart';
 import 'input_keys.dart';
@@ -406,6 +407,80 @@ class ChatInputState extends State<ChatInput> {
     );
   }
 
+  /// Builds styled segments so that `$<skill-name>` and `[ image N ]`
+  /// tokens in the input render with a chip background.
+  ///
+  /// Skill chips: any `$` followed by valid skill-name chars is
+  /// treated as a chip (the `$` stays in the text for submit-time
+  /// parsing but is styled invisible). Image markers use the same
+  /// chip style. Non-chip text uses [baseStyle].
+  List<StyledTextSegment>? _buildChipSegments(
+    String text,
+    CruxThemeData theme,
+    TextStyle baseStyle,
+  ) {
+    if (text.isEmpty) return null;
+
+    final chipStyle = TextStyle(
+      color: theme.onColor(theme.chipBackground),
+      backgroundColor: theme.chipBackground,
+    );
+    final invisibleDollar = TextStyle(
+      color: theme.chipBackground,
+      backgroundColor: theme.chipBackground,
+    );
+
+    final segments = <StyledTextSegment>[];
+    var i = 0;
+    while (i < text.length) {
+      final ch = text[i];
+
+      // Image marker: `[ image N ]`
+      if (ch == '[' && _imageMarkerPattern.hasMatch(text.substring(i))) {
+        final m = _imageMarkerPattern.firstMatch(text.substring(i))!;
+        final marker = m.group(0)!;
+        segments.add(StyledTextSegment(marker, chipStyle));
+        i += marker.length;
+        continue;
+      }
+
+      // Skill chip: `$name`
+      if (ch == r'$' &&
+          (i == 0 || !isSkillNameChar(text[i - 1])) &&
+          i + 1 < text.length &&
+          isSkillNameChar(text[i + 1])) {
+        var j = i + 1;
+        while (j < text.length && isSkillNameChar(text[j])) {
+          j++;
+        }
+        segments.add(StyledTextSegment(r'$', invisibleDollar));
+        segments.add(
+            StyledTextSegment(text.substring(i + 1, j), chipStyle));
+        i = j;
+        continue;
+      }
+
+      // Regular text — collect until the next chip/marker.
+      var j = i + 1;
+      while (j < text.length) {
+        if (text[j] == r'$' &&
+            (j == 0 || !isSkillNameChar(text[j - 1])) &&
+            j + 1 < text.length &&
+            isSkillNameChar(text[j + 1])) {
+          break;
+        }
+        if (text[j] == '[' &&
+            _imageMarkerPattern.hasMatch(text.substring(j))) {
+          break;
+        }
+        j++;
+      }
+      segments.add(StyledTextSegment(text.substring(i, j), baseStyle));
+      i = j;
+    }
+    return segments;
+  }
+
   Component _buildInner(BuildContext context) {
     final sessionId = component.sessionController.currentSessionId;
     // Read both flags from cubits rather than controller.runtime().
@@ -426,6 +501,18 @@ class ChatInputState extends State<ChatInput> {
     final hasImages = pendingImages.isNotEmpty;
 
     final overlay = component.overlayController;
+    final theme = CruxTheme.of(context);
+    final inputStyle = TextStyle(color: theme.foreground);
+
+    // Build styled segments for skill chips (`$skill-name`) and
+    // image markers (`[ image N ]`) so they render with a chip
+    // background inside the input box.
+    final styleSegments = _buildChipSegments(
+      component.textController.text,
+      theme,
+      inputStyle,
+    );
+
     final placeholder = isStreaming
         ? _keyHandler.ctrlCQuitHint
               ? 'Press Ctrl+C again to quit...'
@@ -456,11 +543,12 @@ class ChatInputState extends State<ChatInput> {
               controller: component.textController,
               focused: !overlay.showSessionManager,
               maxLines: null,
-              style: TextStyle(color: CruxTheme.of(context).foreground),
+              style: inputStyle,
               placeholder: placeholder,
               onKeyEvent: _keyHandler.handleKeyEvent,
               onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
               wordBoundaryProvider: cjkWordBoundaryProvider,
+              styleSegments: styleSegments,
             ),
           ),
           Button(

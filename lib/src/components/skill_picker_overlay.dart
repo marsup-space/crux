@@ -134,6 +134,7 @@ class SkillPickerOverlay extends StatelessComponent {
         ? '${skill.description.substring(0, 57)}...'
         : skill.description;
     final fg = isSelected ? theme.wizardTextSelected : theme.wizardTextUnselected;
+    final chipFg = isSelected ? fg : theme.onColor(theme.chipBackground);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1),
       child: Row(
@@ -141,7 +142,8 @@ class SkillPickerOverlay extends StatelessComponent {
           Text(
             '\$$name',
             style: TextStyle(
-              color: fg,
+              color: chipFg,
+              backgroundColor: theme.chipBackground,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
