@@ -139,9 +139,13 @@ class MessageBubble extends StatelessComponent {
 
   /// Builds the user message content with chip rendering for
   /// `$skill-name`, `@path`, and `[ image N ]` tokens.
+  ///
+  /// Strips any appended `Skill: <name>\n<body>` blocks that were
+  /// added for the LLM — the chat log should only show what the
+  /// user actually typed.
   Component _buildUserMessageContent(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final content = message.content;
+    final content = _stripSkillBodies(message.content);
 
     // Prefix for images.
     final imagePrefix = message.images.isNotEmpty ? '📎 ${message.images.length} • ' : '';
@@ -269,6 +273,18 @@ class MessageBubble extends StatelessComponent {
         cc == 0x2E ||
         cc == 0x2F ||
         cc == 0x20;
+  }
+
+  /// Strips appended `Skill: <name>\n<body>` blocks from the
+  /// content. These are added for the LLM at send time but should
+  /// not appear in the chat log. The pattern is: a blank line
+  /// followed by `Skill: <name>\n` and then the body text, all the
+  /// way to the end of the message (bodies are always appended at
+  /// the end, after the user's prose).
+  static String _stripSkillBodies(String content) {
+    final idx = content.indexOf('\n\nSkill: ');
+    if (idx == -1) return content;
+    return content.substring(0, idx);
   }
 
   Component _buildInner(BuildContext context) {
