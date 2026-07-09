@@ -160,13 +160,11 @@ class ChatTurnOrchestrator {
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
 
-    // Expand any `$<skill>` chips in the user-submitted text. The
-    // `$` is stripped, the skill name stays in the prose, and
-    // the skill body is appended at the end of the message with
-    // a `Skill: <name>` header. The chip stays visible in the
-    // chat log via the stored raw text — the substitution is
-    // applied only to what goes to the LLM, not to what the
-    // user sees in the message bubble.
+    // Compute the LLM-bound expansion of any `$<skill>` chips but
+    // keep `text` as the user's raw input for the message bubble.
+    // The chat log shows the chip (`$gitnexus-exploring`); only
+    // the LLM sees the expanded form with the body appended.
+    String? llmText;
     if (text != null && text.isNotEmpty) {
       final session = _sessionController.currentSession;
       final cwd = session.projectPath;
@@ -174,7 +172,7 @@ class ChatTurnOrchestrator {
         input: text,
         available: discoverSkills(cwd: cwd),
       );
-      text = expansion.userMessage;
+      llmText = expansion.userMessage;
     }
 
     if (allowAutoCompact && text != null && text.trim().isNotEmpty) {
@@ -339,7 +337,7 @@ class ChatTurnOrchestrator {
     _chatService
         .sendMessage(
           sessionId: sessionId,
-          userContent: text,
+          userContent: llmText ?? text,
           images: images,
           session: _sessionController.currentSession,
           runtime: rt,

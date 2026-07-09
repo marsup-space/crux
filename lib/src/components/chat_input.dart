@@ -460,16 +460,22 @@ class ChatInputState extends State<ChatInput> {
                 // Never replace this with a custom widget — IME
                 // and cursor blink are core features and the
                 // TextField is the only thing that gets them
-                // right out of the box.
-                TextField(
-                  controller: component.textController,
-                  focused: !overlay.showSessionManager,
-                  maxLines: null,
-                  style: TextStyle(color: CruxTheme.of(context).foreground),
-                  placeholder: placeholder,
-                  onKeyEvent: _keyHandler.handleKeyEvent,
-                  onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
-                  wordBoundaryProvider: cjkWordBoundaryProvider,
+                // right out of the box. Positioned.fill so the
+                // TextField gets the full Stack bounds (a
+                // non-positioned child would be sized to its
+                // intrinsic content width, which would be
+                // narrower than the available chat-input width).
+                Positioned.fill(
+                  child: TextField(
+                    controller: component.textController,
+                    focused: !overlay.showSessionManager,
+                    maxLines: null,
+                    style: TextStyle(color: CruxTheme.of(context).foreground),
+                    placeholder: placeholder,
+                    onKeyEvent: _keyHandler.handleKeyEvent,
+                    onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
+                    wordBoundaryProvider: cjkWordBoundaryProvider,
+                  ),
                 ),
                 // Layer 2: the chip backdrop. Read-only; paints
                 // a colored band over $skill chips so the user
