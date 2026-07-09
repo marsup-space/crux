@@ -316,9 +316,32 @@ class InputOverlay {
   /// sensitive, matches the open-standard name shape).
   List<SkillInfo> _filterSkills(List<SkillInfo> available, String query) {
     if (query.isEmpty) return available;
+    final lower = query.toLowerCase();
     return available
-        .where((s) => s.name.startsWith(query))
+        .where((s) => _fuzzyMatch(s.name, lower))
         .toList(growable: false);
+  }
+
+  /// True if [query] is a fuzzy subsequence of [target]. Each char
+  /// in [query] must appear in [target] in order, but not
+  /// necessarily adjacent. Case-insensitive.
+  static bool _fuzzyMatch(String target, String query) {
+    final t = target.toLowerCase();
+    var ti = 0;
+    for (var qi = 0; qi < query.length; qi++) {
+      final ch = query[qi];
+      var found = false;
+      while (ti < t.length) {
+        if (t[ti] == ch) {
+          ti++;
+          found = true;
+          break;
+        }
+        ti++;
+      }
+      if (!found) return false;
+    }
+    return true;
   }
 
   void _showAtMention(AtMentionPosition mention) {
