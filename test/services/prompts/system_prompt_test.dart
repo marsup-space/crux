@@ -271,5 +271,46 @@ void main() {
         tempRoot.deleteSync(recursive: true);
       }
     });
+
+    test('available skills layer 3.5 is inserted between project notes '
+        'and env meta when skills are present', () {
+      final tempRoot = Directory.systemTemp.createTempSync('crux_skills_');
+      try {
+        // Write a real SKILL.md into .crux/skills/<name>/.
+        final skillDir = Directory(p.join(tempRoot.path, '.crux', 'skills',
+            'pr-review'))..createSync(recursive: true);
+        File(p.join(skillDir.path, 'SKILL.md')).writeAsStringSync(
+          '---\n'
+          'name: pr-review\n'
+          'description: Reviews pull requests for correctness, style, and risks.\n'
+          '---\n'
+          '# PR Review\n',
+        );
+
+        final out = buildSystemPrompt(
+          provider: _provider(),
+          model: _provider().models.first,
+          cwd: tempRoot.path,
+          worktree: tempRoot.path,
+          sessionStarted: DateTime.utc(2026, 1, 1),
+        );
+
+        // The block is present.
+        expect(out, contains('<available_skills>'));
+        expect(out, contains('- pr-review: Reviews pull requests'));
+        // And it's positioned between the universal layer and
+        // the env meta — the agent sees skill names and
+        // descriptions, then the env meta, never the other way
+        // around.
+        final skillsIdx = out.indexOf('<available_skills>');
+        final envIdx = out.indexOf('<env>');
+        expect(skillsIdx, greaterThan(-1));
+        expect(envIdx, greaterThan(skillsIdx));
+        // The block tells the LLM about the `skill` tool.
+        expect(out, contains('`skill` tool'));
+      } finally {
+        tempRoot.deleteSync(recursive: true);
+      }
+    });
   });
 }

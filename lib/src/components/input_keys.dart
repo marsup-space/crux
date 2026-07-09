@@ -1,10 +1,42 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../utils/at_mention_parser.dart';
+import '../utils/skill_chip_parser.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'chat_turn_orchestrator.dart';
 import 'ui/toast.dart';
+
+/// Find the dollar-offset of a skill chip that ends at [cursor].
+///
+/// Returns the offset of the `$` if [text] (0..cursor) ends with
+/// a `$<name>` token where every name char is a skill-name char
+/// and the char before the `$` is not a name char. Returns null
+/// otherwise.
+///
+/// Mirrors the at-mention parser's chip-detection rules so the
+/// picker and the backspace handler agree on what counts as a
+/// chip. Used by the chip-aware backspace shortcut — see the
+/// "Backspace that crosses a whole skill chip" branch in
+/// [InputKeyHandler.handleKeyEvent].
+int? _skillChipDollarOffsetAt(String text, int cursor) {
+  if (cursor <= 0 || cursor > text.length) return null;
+  var i = cursor - 1;
+  // Walk back collecting skill-name chars.
+  while (i >= 0 && isSkillNameChar(text[i])) {
+    i--;
+  }
+  // `i` now points at the char just before the name-token
+  // (or -1 if the token started at offset 0). For a chip we
+  // need that char to be the `$`.
+  if (i < 0 || text[i] != r'$') return null;
+  // The char before the `$` must not be a name char (so we
+  // don't accidentally catch a `$` in the middle of a longer
+  // token like `foo$pr-review` — that one is rejected by the
+  // parser at submit time too).
+  if (i > 0 && isSkillNameChar(text[i - 1])) return null;
+  return i;
+}
 
 /// Handles all keyboard events for the chat input.
 ///
@@ -155,6 +187,42 @@ class InputKeyHandler {
         }
         textController.text = '/';
         textController.selection = const TextSelection.collapsed(offset: 1);
+        return true;
+      }
+    }
+
+    // --- Backspace that crosses a whole skill chip ---
+    //
+    // When the user presses backspace and the cursor sits at the
+    // end of a `$<name>` token (or inside it), one backspace
+    // removes the whole chip — `$<name>` and all — instead of
+    // one character at a time. The chip-parser walk below is the
+    // same rules the picker uses to detect an in-progress chip,
+    // so the two stay in sync.
+    //
+    // Only fires when the selection is collapsed (a non-collapsed
+    // selection is a range delete, not a chip erase). Skips
+    // command mode entirely — `/...` has its own backspace
+    // contract that would otherwise fight with this one.
+    if (!inCommandMode &&
+        event.logicalKey == LogicalKey.backspace &&
+        !event.isControlPressed &&
+        !event.isAltPressed &&
+        selection.isCollapsed &&
+        cursorOffset > 0) {
+      final dollarOffset = _skillChipDollarOffsetAt(text, cursorOffset);
+      if (dollarOffset != null) {
+        // The chip runs from dollarOffset (the `$`) to
+        // cursorOffset (exclusive). Removing the whole chip
+        // means deleting the span [dollarOffset, cursorOffset).
+        final newText =
+            text.substring(0, dollarOffset) + text.substring(cursorOffset);
+        textController.text = newText;
+        textController.selection =
+            TextSelection.collapsed(offset: dollarOffset);
+        // Dismiss the picker — the chip it was anchored to is
+        // gone, so the picker has nothing to show.
+        overlayController.setOverlayOff();
         return true;
       }
     }
@@ -542,6 +610,57 @@ class InputKeyHandler {
           textController.selection.extentOffset,
         );
         overlayController.insertAtMention(mention?.atOffset);
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.escape) {
+        overlayController.setOverlayOff();
+        refresh();
+        return true;
+      }
+      return false;
+    }
+
+    if (overlayController.overlayMode == OverlayMode.skillPicker) {
+      // No matches — ESC dismisses, Enter dismisses (nothing to
+      // pick). Don't accept the Enter for send-on-Enter, since
+      // the user is mid-`$query` and probably wants to keep
+      // typing.
+      if (overlayController.filteredSkills.isEmpty) {
+        if (event.logicalKey == LogicalKey.escape) {
+          overlayController.setOverlayOff();
+          refresh();
+          return true;
+        }
+        if (event.logicalKey == LogicalKey.enter) {
+          overlayController.setOverlayOff();
+          refresh();
+          return true;
+        }
+        return false;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        overlayController.moveSkillSelectionUp();
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        overlayController.moveSkillSelectionDown();
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.tab ||
+          event.logicalKey == LogicalKey.enter) {
+        // Find the active chip position; the cubit already
+        // stored the most recent one but recomputing here keeps
+        // the key handler decoupled from the cubit's exact
+        // shape (and tolerates the text changing under us).
+        final chip = findActiveSkillChip(
+          textController.text,
+          textController.selection.extentOffset,
+        );
+        overlayController.insertSkillChip(chip?.dollarOffset);
         refresh();
         return true;
       }

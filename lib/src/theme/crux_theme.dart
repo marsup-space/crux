@@ -69,6 +69,13 @@ class CruxThemeData implements MarkdownThemeFields {
   final Color syntaxVariable;
   final Color syntaxTag;
   final Color syntaxAttribute;
+
+  /// Background color for `$<skill>` chips in the chat input.
+  /// Distinct from the body background so a chip is visible
+  /// at a glance. Tied to the warning hue in default themes
+  /// (yellow family) to nudge the user's eye to "this is a
+  /// reference, not a literal name in your prose".
+  final Color chipBackground;
   @override
   final Color syntaxOperator;
   final Color syntaxPunctuation;
@@ -125,6 +132,7 @@ class CruxThemeData implements MarkdownThemeFields {
     required this.syntaxOperator,
     required this.syntaxPunctuation,
     required this.syntaxMeta,
+    required this.chipBackground,
   });
 
   Color mix(Color target, double amount) =>
@@ -391,6 +399,7 @@ class CruxThemeData implements MarkdownThemeFields {
     syntaxAttribute: Color(0xF8F8F2),
     syntaxOperator: Color(0xFF79C6),
     syntaxPunctuation: Color(0xF8F8F2),
+    chipBackground: Color(0x44475A),
     syntaxMeta: Color(0xF8F8F2),
   );
 }

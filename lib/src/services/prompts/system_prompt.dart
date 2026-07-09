@@ -1,19 +1,20 @@
 /// Crux system prompt — orchestrator.
 ///
-/// Composes the four layers of the system prompt in the fixed
+/// Composes the five layers of the system prompt in the fixed
 /// order documented in `docs/design-system-prompt.md`:
 ///
 ///     [1] kCruxSystemPrompt                       — universal, static
 ///     [2] provider/model system_prompt_addition   — per model, from TOML
 ///     [3] project notes (AGENTS.md|CLAUDE.md +
 ///                  crux-addition.md)              — per session
+///     [3.5] available skills (names + descs only)  — per session
 ///     [4] env meta                                — per session
 ///
-/// Layers 1-3 form the cross-turn cache prefix. Layer 4 (env meta)
-/// is session-scoped but stable within a session, so the cache
-/// key doesn't change between turns.
+/// Layers 1-3.5 form the cross-turn cache prefix. Layer 4 (env
+/// meta) is session-scoped but stable within a session, so the
+/// cache key doesn't change between turns.
 ///
-/// The output is a single `String` containing all four layers
+/// The output is a single `String` containing all five layers
 /// joined by a blank line, ready to be sent as one
 /// `role: 'system'` message. The whole prompt is then stored
 /// verbatim on the `Session` row, so the Anthropic provider's
@@ -22,6 +23,8 @@
 library;
 
 import '../../models/provider_config.dart';
+import '../skills/skill_discovery.dart';
+import '../skills/skills_prompt.dart';
 import 'environment_meta.dart';
 import 'project_notes_discovery.dart';
 
@@ -238,6 +241,16 @@ String buildSystemPrompt({
   final projectNotes = discoverProjectNotes(cwd: cwd, worktree: worktree);
   if (projectNotes != null) {
     blocks.add(projectNotes);
+  }
+
+  // Layer 3.5: available skills — names + descriptions only.
+  // The LLM uses the `skill` tool to load any body it wants to
+  // read, so this layer stays cheap (one line per skill). The
+  // block is omitted entirely when no skills are discovered.
+  final skills = discoverSkills(cwd: cwd);
+  final skillsBlock = buildAvailableSkillsBlock(skills);
+  if (skillsBlock != null) {
+    blocks.add(skillsBlock);
   }
 
   // Layer 4: env meta. Always present.

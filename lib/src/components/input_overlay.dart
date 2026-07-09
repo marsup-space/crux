@@ -6,10 +6,13 @@ import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
+import '../services/skills/skill.dart';
+import '../services/skills/skill_discovery.dart';
 import '../services/web_provider_registry.dart';
 import '../theme/theme_controller.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
+import '../utils/skill_chip_parser.dart';
 import '../commands/registry.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
@@ -61,7 +64,18 @@ class InputOverlay {
   void onTextChanged() {
     final text = textController.text;
 
-    // First, check for an @-mention trigger.
+    // First, check for a `$` skill chip. The chip is the only
+    // trigger that can be active at the same time as an at-mention
+    // (they have different trigger chars), but for clarity we
+    // check it before the at-mention.
+    final chip = findActiveSkillChip(text, textController.selection.extentOffset);
+    if (chip != null) {
+      _showSkillChip(chip);
+      _maybeRefresh();
+      return;
+    }
+
+    // Then check for an @-mention trigger.
     final mention = _findActiveMention();
     if (mention != null) {
       _showAtMention(mention);
@@ -268,6 +282,43 @@ class InputOverlay {
       textController.text,
       textController.selection.extentOffset,
     );
+  }
+
+  void _showSkillChip(SkillChipPosition chip) {
+    // Discover synchronously — the skill set is static for the
+    // duration of the picker. For very large projects the walk
+    // can take a few hundred ms, but typing `$` is a deliberate
+    // gesture, so the latency is acceptable. (We can move this
+    // to a Future + cached set later if profiles show a problem.)
+    final available = discoverSkills(cwd: projectPath);
+    final filtered = _filterSkills(available, chip.query);
+    if (filtered.isEmpty) {
+      overlayController.setOverlayOff();
+      return;
+    }
+
+    final stayingOnSameChip =
+        overlayController.overlayMode == OverlayMode.skillPicker &&
+        overlayController.skillChipDollarOffset == chip.dollarOffset;
+    if (!stayingOnSameChip) {
+      overlayController.selectedSkillIndex = 0;
+      overlayController.skillScrollOffset = 0;
+    }
+
+    overlayController.overlayMode = OverlayMode.skillPicker;
+    overlayController.skillChipDollarOffset = chip.dollarOffset;
+    overlayController.skillChipQuery = chip.query;
+    overlayController.filteredSkills = filtered;
+  }
+
+  /// Filter [available] by [query]: empty query returns everything;
+  /// otherwise the skill name must start with the query (case-
+  /// sensitive, matches the open-standard name shape).
+  List<SkillInfo> _filterSkills(List<SkillInfo> available, String query) {
+    if (query.isEmpty) return available;
+    return available
+        .where((s) => s.name.startsWith(query))
+        .toList(growable: false);
   }
 
   void _showAtMention(AtMentionPosition mention) {

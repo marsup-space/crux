@@ -168,6 +168,11 @@ class ThemeLoader {
       syntaxOperator: color(syntax, 'operator'),
       syntaxPunctuation: color(syntax, 'punctuation'),
       syntaxMeta: color(syntax, 'meta'),
+      // Chip background is optional in user theme TOML — we
+      // fall back to `surface_variant` when not provided.
+      chipBackground: colors.containsKey('chip_background')
+          ? color(colors, 'chip_background')
+          : color(colors, 'surface_variant'),
     );
   }
 

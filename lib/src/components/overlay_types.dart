@@ -1,3 +1,3 @@
-enum OverlayMode { off, command, parameter, wizard, atMention }
+enum OverlayMode { off, command, parameter, wizard, atMention, skillPicker }
 
 enum ProviderWizardSubcommand { builtin }

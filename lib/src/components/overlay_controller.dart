@@ -1,9 +1,10 @@
 import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
+import '../services/skills/skill.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
 
-enum OverlayMode { off, command, parameter, wizard, atMention }
+enum OverlayMode { off, command, parameter, wizard, atMention, skillPicker }
 
 enum ProviderWizardSubcommand { builtin }
 
@@ -40,6 +41,16 @@ class OverlayController {
   /// the empty popover is a temporary state.
   bool isSearching = false;
 
+  /// Skill-picker state. The popover shows while [overlayMode] is
+  /// [OverlayMode.skillPicker]; [skillChipQuery] is the text
+  /// after the `$` up to the cursor, and [filteredSkills] is the
+  /// skill set filtered by the query (empty query = every skill).
+  String skillChipQuery = '';
+  int? skillChipDollarOffset;
+  List<SkillInfo> filteredSkills = [];
+  int selectedSkillIndex = 0;
+  int skillScrollOffset = 0;
+
   final int maxVisibleItems;
   final TextEditingController textController;
   final void Function(String) executeCommandCallback;
@@ -66,6 +77,11 @@ class OverlayController {
     selectedFileIndex = 0;
     fileScrollOffset = 0;
     isSearching = false;
+    skillChipQuery = '';
+    skillChipDollarOffset = null;
+    filteredSkills = [];
+    selectedSkillIndex = 0;
+    skillScrollOffset = 0;
     showSessionManager = false;
     showFullpane = false;
   }
@@ -335,6 +351,103 @@ class OverlayController {
     textController.text = newText;
     textController.selection = TextSelection.collapsed(
       offset: resolvedStart + insertion.length,
+    );
+
+    setOverlayOff();
+  }
+
+  // ── Skill picker (dollar trigger) ───────────────────────────────
+  //
+  // When the user types `$` in the chat input, the chip parser
+  // detects the in-progress chip, the available skills are
+  // filtered against the typed query, and the picker shows.
+  //
+  // The picker mirrors the at-mention file browser closely:
+  // arrow keys move the cursor, Enter / tap inserts the selected
+  // skill into the text controller (replacing the `$<query>`
+  // fragment), and ESC dismisses without changing the text.
+  //
+  // The trigger char (`$`) is a UI affordance only — it's never
+  // sent to the LLM. The submit pipeline strips it from the
+  // user message; the picker just leaves the chip visible in
+  // the input so the user can see what they picked.
+
+  void moveSkillSelectionUp() {
+    if (filteredSkills.isEmpty) return;
+    selectedSkillIndex = selectedSkillIndex > 0
+        ? selectedSkillIndex - 1
+        : filteredSkills.length - 1;
+    skillScrollOffset = computeScrollOffset(
+      selectedSkillIndex,
+      skillScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void moveSkillSelectionDown() {
+    if (filteredSkills.isEmpty) return;
+    selectedSkillIndex = selectedSkillIndex < filteredSkills.length - 1
+        ? selectedSkillIndex + 1
+        : 0;
+    skillScrollOffset = computeScrollOffset(
+      selectedSkillIndex,
+      skillScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void onHoverSkill(int index) {
+    selectedSkillIndex = index;
+    skillScrollOffset = computeScrollOffset(
+      index,
+      skillScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void onScrollSkill(MouseEvent event) {
+    final maxOffset = filteredSkills.length > maxVisibleItems
+        ? filteredSkills.length - maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp && skillScrollOffset > 0) {
+      skillScrollOffset = (skillScrollOffset - maxVisibleItems).clamp(
+        0,
+        maxOffset,
+      );
+    } else if (event.button == MouseButton.wheelDown &&
+        skillScrollOffset < maxOffset) {
+      skillScrollOffset = (skillScrollOffset + maxVisibleItems).clamp(
+        0,
+        maxOffset,
+      );
+    }
+  }
+
+  /// Insert the currently-selected skill into the text
+  /// controller, replacing the `$<query>` fragment the user
+  /// typed. The inserted form is `$<skill-name> ` (with
+  /// trailing space) so the chip is well-formed for the
+  /// substitution at submit time and the picker dismisses on the
+  /// next text-change.
+  ///
+  /// If [dollarOffset] is null, falls back to the most recent
+  /// active-chip position recorded in [skillChipDollarOffset].
+  void insertSkillChip(int? dollarOffset) {
+    if (filteredSkills.isEmpty) return;
+    final selected = filteredSkills[selectedSkillIndex];
+    final resolvedDollar = dollarOffset ?? skillChipDollarOffset;
+    if (resolvedDollar == null) return;
+
+    final text = textController.text;
+    final cursor = textController.selection.extentOffset;
+    // The query runs from the `$` to the cursor. The chip is
+    // guaranteed to be unbroken here because the parser only
+    // sets skillChipDollarOffset when it found an unbroken chip.
+    final insertion = '${r'$'}${selected.name} ';
+    final newText = text.replaceRange(resolvedDollar, cursor, insertion);
+    textController.text = newText;
+    textController.selection = TextSelection.collapsed(
+      offset: resolvedDollar + insertion.length,
     );
 
     setOverlayOff();

@@ -4,7 +4,7 @@
 > constant is `kCruxSystemPrompt` in `system_prompt.dart`. Keep them
 > in sync — the runtime value is what the LLM actually sees.
 
-The system prompt is composed in four layers (see
+The system prompt is composed in five layers (see
 `docs/design-system-prompt.md` for the full design). This file
 documents layer 1: the **universal, static** layer that is identical
 for every Crux session, regardless of model, provider, or project.
@@ -24,6 +24,8 @@ for every Crux session, regardless of model, provider, or project.
 - Task rules / actions-with-care (kept out for v1; add if observed
   failure modes warrant it)
 - Project-specific instructions (layer 3: project notes)
+- Available skills (layer 3.5: names + descriptions only, body loaded on
+  demand via the `skill` tool)
 - Env meta / model info (layer 4)
 
 ## Current text

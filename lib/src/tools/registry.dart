@@ -13,6 +13,7 @@ import 'find_similar_code_tool.dart';
 import 'read_tool.dart';
 import 'semantic_search_tool.dart';
 import 'session_tool.dart';
+import 'skill_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
 import 'websearch_tool.dart';
@@ -85,6 +86,7 @@ class ToolRegistry {
     register(EditTool(tracker: tracker, lsp: lsp));
     register(GrepTool());
     register(GlobTool());
+    register(SkillTool());
     if (Platform.isWindows) {
       register(CmdTool());
       register(PowerShellTool());

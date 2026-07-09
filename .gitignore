@@ -37,3 +37,11 @@ AGENTS.md
 CLAUDE.md
 .claude/
 .codegraph/
+
+# Local chat-input skill scaffold (used during development to test
+# the picker; not part of the shipped app).
+.crux/
+
+# Semble model files fetched locally by the semantic search engine
+# (binary model, not source — see third_party/manifest.json).
+/third_party/semblemodel/

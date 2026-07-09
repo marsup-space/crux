@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:nocterm/nocterm.dart';
 
 import '../models/slash_command.dart';
+import '../services/skills/skill.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
 import 'overlay_types.dart';
@@ -29,9 +30,15 @@ class OverlayState {
     this.selectedFileIndex = 0,
     this.fileScrollOffset = 0,
     this.isSearching = false,
+    this.skillChipQuery = '',
+    this.skillChipDollarOffset,
+    List<SkillInfo> filteredSkills = const [],
+    this.selectedSkillIndex = 0,
+    this.skillScrollOffset = 0,
   }) : filteredCommands = List.unmodifiable(filteredCommands),
        filteredSuggestions = List.unmodifiable(filteredSuggestions),
-       filteredFiles = List.unmodifiable(filteredFiles);
+       filteredFiles = List.unmodifiable(filteredFiles),
+       filteredSkills = List.unmodifiable(filteredSkills);
 
   final OverlayMode overlayMode;
   final List<SlashCommand> filteredCommands;
@@ -52,6 +59,16 @@ class OverlayState {
   final int selectedFileIndex;
   final int fileScrollOffset;
   final bool isSearching;
+
+  /// Skill-picker state. While [overlayMode] is
+  /// [OverlayMode.skillPicker], the picker shows the skills
+  /// whose name is a prefix of [skillChipQuery] (empty query =
+  /// every skill).
+  final String skillChipQuery;
+  final int? skillChipDollarOffset;
+  final List<SkillInfo> filteredSkills;
+  final int selectedSkillIndex;
+  final int skillScrollOffset;
 
   static OverlayState off() => OverlayState();
 
@@ -75,6 +92,11 @@ class OverlayState {
     int? selectedFileIndex,
     int? fileScrollOffset,
     bool? isSearching,
+    String? skillChipQuery,
+    Object? skillChipDollarOffset = _unset,
+    List<SkillInfo>? filteredSkills,
+    int? selectedSkillIndex,
+    int? skillScrollOffset,
   }) {
     return OverlayState(
       overlayMode: overlayMode ?? this.overlayMode,
@@ -106,6 +128,13 @@ class OverlayState {
       selectedFileIndex: selectedFileIndex ?? this.selectedFileIndex,
       fileScrollOffset: fileScrollOffset ?? this.fileScrollOffset,
       isSearching: isSearching ?? this.isSearching,
+      skillChipQuery: skillChipQuery ?? this.skillChipQuery,
+      skillChipDollarOffset: identical(skillChipDollarOffset, _unset)
+          ? this.skillChipDollarOffset
+          : skillChipDollarOffset as int?,
+      filteredSkills: filteredSkills ?? this.filteredSkills,
+      selectedSkillIndex: selectedSkillIndex ?? this.selectedSkillIndex,
+      skillScrollOffset: skillScrollOffset ?? this.skillScrollOffset,
     );
   }
 
@@ -137,7 +166,12 @@ class OverlayState {
         _listEquals(other.filteredFiles, filteredFiles) &&
         other.selectedFileIndex == selectedFileIndex &&
         other.fileScrollOffset == fileScrollOffset &&
-        other.isSearching == isSearching;
+        other.isSearching == isSearching &&
+        other.skillChipQuery == skillChipQuery &&
+        other.skillChipDollarOffset == skillChipDollarOffset &&
+        _listEquals(other.filteredSkills, filteredSkills) &&
+        other.selectedSkillIndex == selectedSkillIndex &&
+        other.skillScrollOffset == skillScrollOffset;
   }
 
   @override
@@ -578,6 +612,141 @@ class OverlayCubit extends Cubit<OverlayState> {
     textController.text = newText;
     textController.selection = TextSelection.collapsed(
       offset: resolvedStart + insertion.length,
+    );
+
+    setOverlayOff();
+  }
+
+  // ── Skill picker (dollar trigger) ────────────────────────────────
+  //
+  // Mirrors the at-mention flow: when the chat input's chip
+  // parser finds an in-progress `$<query>`, the input calls
+  // [showSkillPicker] with the dollar offset, the query, and
+  // the list of skills whose names start with the query (every
+  // skill when the query is empty). The picker shows; arrow
+  // keys move; Enter / tap inserts the selected skill into the
+  // text controller, replacing the `$<query>` fragment.
+
+  void showSkillPicker({
+    required int dollarOffset,
+    required String query,
+    required List<SkillInfo> skills,
+  }) {
+    if (skills.isEmpty) {
+      setOverlayOff();
+      return;
+    }
+    emit(
+      state.copyWith(
+        overlayMode: OverlayMode.skillPicker,
+        skillChipDollarOffset: dollarOffset,
+        skillChipQuery: query,
+        filteredSkills: skills,
+        selectedSkillIndex: 0,
+        skillScrollOffset: 0,
+        filteredCommands: const [],
+        selectedCommandIndex: 0,
+        commandScrollOffset: 0,
+        filteredSuggestions: const [],
+        activeCommand: null,
+        currentParamIndex: 0,
+        selectedSuggestionIndex: 0,
+        suggestionScrollOffset: 0,
+        filteredFiles: const [],
+        atMentionOffset: null,
+        atMentionQuery: '',
+        isSearching: false,
+      ),
+    );
+  }
+
+  void moveSkillSelectionUp() {
+    if (state.filteredSkills.isEmpty) return;
+    final selectedIndex = state.selectedSkillIndex > 0
+        ? state.selectedSkillIndex - 1
+        : state.filteredSkills.length - 1;
+    emit(
+      state.copyWith(
+        selectedSkillIndex: selectedIndex,
+        skillScrollOffset: computeScrollOffset(
+          selectedIndex,
+          state.skillScrollOffset,
+          maxVisibleItems,
+        ),
+      ),
+    );
+  }
+
+  void moveSkillSelectionDown() {
+    if (state.filteredSkills.isEmpty) return;
+    final selectedIndex =
+        state.selectedSkillIndex < state.filteredSkills.length - 1
+        ? state.selectedSkillIndex + 1
+        : 0;
+    emit(
+      state.copyWith(
+        selectedSkillIndex: selectedIndex,
+        skillScrollOffset: computeScrollOffset(
+          selectedIndex,
+          state.skillScrollOffset,
+          maxVisibleItems,
+        ),
+      ),
+    );
+  }
+
+  void onHoverSkill(int index) {
+    emit(
+      state.copyWith(
+        selectedSkillIndex: index,
+        skillScrollOffset: computeScrollOffset(
+          index,
+          state.skillScrollOffset,
+          maxVisibleItems,
+        ),
+      ),
+    );
+  }
+
+  void onScrollSkill(MouseEvent event) {
+    final maxOffset = state.filteredSkills.length > maxVisibleItems
+        ? state.filteredSkills.length - maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp && state.skillScrollOffset > 0) {
+      emit(
+        state.copyWith(
+          skillScrollOffset: (state.skillScrollOffset - maxVisibleItems).clamp(
+            0,
+            maxOffset,
+          ),
+        ),
+      );
+    } else if (event.button == MouseButton.wheelDown &&
+        state.skillScrollOffset < maxOffset) {
+      emit(
+        state.copyWith(
+          skillScrollOffset: (state.skillScrollOffset + maxVisibleItems).clamp(
+            0,
+            maxOffset,
+          ),
+        ),
+      );
+    }
+  }
+
+  void insertSkillChip(int? dollarOffset) {
+    if (state.filteredSkills.isEmpty) return;
+    final selected = state.filteredSkills[state.selectedSkillIndex];
+    final resolvedDollar = dollarOffset ?? state.skillChipDollarOffset;
+    if (resolvedDollar == null) return;
+
+    final text = textController.text;
+    final cursor = textController.selection.extentOffset;
+    final insertion = '${r'$'}${selected.name} ';
+    final newText = text.replaceRange(resolvedDollar, cursor, insertion);
+    textController.text = newText;
+    textController.selection = TextSelection.collapsed(
+      offset: resolvedDollar + insertion.length,
     );
 
     setOverlayOff();

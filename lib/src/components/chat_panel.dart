@@ -43,6 +43,7 @@ import 'chat_turn_orchestrator.dart';
 import 'command_overlay.dart';
 import 'extra_info_panel.dart';
 import 'file_browser_overlay.dart';
+import 'skill_picker_overlay.dart';
 import 'overlay_controller.dart';
 import 'polling_coordinator.dart';
 import 'quit_handler.dart';
@@ -1005,6 +1006,34 @@ class _ChatPanelState extends State<ChatPanel> {
                 setState(() {
                   overlay.selectedFileIndex = i;
                   overlay.insertAtMention(null);
+                });
+              },
+            ),
+          ),
+        ),
+      );
+    } else if (overlay.overlayMode == OverlayMode.skillPicker) {
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: (e) {
+              setState(() => overlay.onScrollSkill(e));
+            },
+            opaque: false,
+            child: SkillPickerOverlay(
+              skills: overlay.filteredSkills,
+              selectedIndex: overlay.selectedSkillIndex,
+              scrollOffset: overlay.skillScrollOffset,
+              maxVisible: _maxVisibleItems,
+              query: overlay.skillChipQuery,
+              onHover: (i) => setState(() => overlay.onHoverSkill(i)),
+              onTap: (i) {
+                setState(() {
+                  overlay.selectedSkillIndex = i;
+                  overlay.insertSkillChip(null);
                 });
               },
             ),

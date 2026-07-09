@@ -13,6 +13,7 @@ export 'semble_warmup.dart';
 export 'session_tool.dart';
 export 'shell_base.dart';
 export 'shell_guard.dart';
+export 'skill_tool.dart';
 export 'tool_def.dart';
 export 'webfetch_tool.dart';
 export 'websearch_tool.dart';

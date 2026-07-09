@@ -11,6 +11,7 @@ import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
+import '../services/skills/skill_discovery.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
 import '../tools/file_read_tracker.dart';
@@ -18,6 +19,7 @@ import '../tools/registry.dart';
 import '../tools/shell_base.dart';
 import '../tools/tool_def.dart';
 import '../utils/run_metrics.dart';
+import '../utils/skill_chip_substitution.dart';
 import '../utils/token_estimate.dart';
 import 'btw_turn_handler.dart';
 import 'session_controller.dart';
@@ -157,6 +159,23 @@ class ChatTurnOrchestrator {
     if (sessionId == null) return;
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
+
+    // Expand any `$<skill>` chips in the user-submitted text. The
+    // `$` is stripped, the skill name stays in the prose, and
+    // the skill body is appended at the end of the message with
+    // a `Skill: <name>` header. The chip stays visible in the
+    // chat log via the stored raw text — the substitution is
+    // applied only to what goes to the LLM, not to what the
+    // user sees in the message bubble.
+    if (text != null && text.isNotEmpty) {
+      final session = _sessionController.currentSession;
+      final cwd = session.projectPath;
+      final expansion = expandSkillChips(
+        input: text,
+        available: discoverSkills(cwd: cwd),
+      );
+      text = expansion.userMessage;
+    }
 
     if (allowAutoCompact && text != null && text.trim().isNotEmpty) {
       if (rt.turnsSinceLastCompact > 0) {
