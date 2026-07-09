@@ -209,7 +209,8 @@ class InputKeyHandler {
         !event.isControlPressed &&
         !event.isAltPressed &&
         selection.isCollapsed &&
-        cursorOffset > 0) {
+        cursorOffset > 0 &&
+        overlayController.overlayMode != OverlayMode.skillPicker) {
       final dollarOffset = _skillChipDollarOffsetAt(text, cursorOffset);
       if (dollarOffset != null) {
         // The chip runs from dollarOffset (the `$`) to
