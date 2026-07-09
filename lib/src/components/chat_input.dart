@@ -17,6 +17,7 @@ import 'input_overlay.dart';
 import 'input_paste.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
+import 'skill_chip_backdrop.dart';
 import 'streaming_controller.dart';
 import 'ui/button.dart';
 
@@ -452,15 +453,40 @@ class ChatInputState extends State<ChatInput> {
               style: TextStyle(color: CruxTheme.of(context).metricsActive),
             ),
           Expanded(
-            child: TextField(
-              controller: component.textController,
-              focused: !overlay.showSessionManager,
-              maxLines: null,
-              style: TextStyle(color: CruxTheme.of(context).foreground),
-              placeholder: placeholder,
-              onKeyEvent: _keyHandler.handleKeyEvent,
-              onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
-              wordBoundaryProvider: cjkWordBoundaryProvider,
+            child: Stack(
+              children: [
+                // Layer 1: nocterm's TextField. Owns editing,
+                // IME, cursor blink, paste, click-drag selection.
+                // Never replace this with a custom widget — IME
+                // and cursor blink are core features and the
+                // TextField is the only thing that gets them
+                // right out of the box.
+                TextField(
+                  controller: component.textController,
+                  focused: !overlay.showSessionManager,
+                  maxLines: null,
+                  style: TextStyle(color: CruxTheme.of(context).foreground),
+                  placeholder: placeholder,
+                  onKeyEvent: _keyHandler.handleKeyEvent,
+                  onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
+                  wordBoundaryProvider: cjkWordBoundaryProvider,
+                ),
+                // Layer 2: the chip backdrop. Read-only; paints
+                // a colored band over $skill chips so the user
+                // can see which tokens are references. Leaves
+                // the cursor cell alone (no segment rendered
+                // there) so the TextField's native cursor
+                // character shows through.
+                Positioned.fill(
+                  child: SkillChipBackdrop(
+                    controller: component.textController,
+                    textStyle: TextStyle(
+                      color: CruxTheme.of(context).foreground,
+                    ),
+                    chipBackground: CruxTheme.of(context).chipBackground,
+                  ),
+                ),
+              ],
             ),
           ),
           Button(
