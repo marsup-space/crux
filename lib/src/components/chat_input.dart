@@ -407,13 +407,14 @@ class ChatInputState extends State<ChatInput> {
     );
   }
 
-  /// Builds styled segments so that `$<skill-name>` and `[ image N ]`
-  /// tokens in the input render with a chip background.
+  /// Builds styled segments so that `$<skill-name>`, `[ image N ]`,
+  /// and `@<path>` tokens in the input render with a chip background.
   ///
   /// Skill chips: any `$` followed by valid skill-name chars is
   /// treated as a chip (the `$` stays in the text for submit-time
-  /// parsing but is styled invisible). Image markers use the same
-  /// chip style. Non-chip text uses [baseStyle].
+  /// parsing but is styled invisible). At-mentions use the same
+  /// treatment — `@` is kept but invisible. Image markers use the
+  /// same chip style. Non-chip text uses [baseStyle].
   List<StyledTextSegment>? _buildChipSegments(
     String text,
     CruxThemeData theme,
@@ -425,7 +426,7 @@ class ChatInputState extends State<ChatInput> {
       color: theme.onColor(theme.chipBackground),
       backgroundColor: theme.chipBackground,
     );
-    final invisibleDollar = TextStyle(
+    final invisibleTrigger = TextStyle(
       color: theme.chipBackground,
       backgroundColor: theme.chipBackground,
     );
@@ -453,7 +454,23 @@ class ChatInputState extends State<ChatInput> {
         while (j < text.length && isSkillNameChar(text[j])) {
           j++;
         }
-        segments.add(StyledTextSegment(r'$', invisibleDollar));
+        segments.add(StyledTextSegment(r'$', invisibleTrigger));
+        segments.add(
+            StyledTextSegment(text.substring(i + 1, j), chipStyle));
+        i = j;
+        continue;
+      }
+
+      // At-mention: `@path` (not preceded by identifier char).
+      if (ch == '@' &&
+          (i == 0 || !_isIdentifierChar(text[i - 1])) &&
+          i + 1 < text.length &&
+          _isPathChar(text[i + 1])) {
+        var j = i + 1;
+        while (j < text.length && _isPathChar(text[j])) {
+          j++;
+        }
+        segments.add(StyledTextSegment('@', invisibleTrigger));
         segments.add(
             StyledTextSegment(text.substring(i + 1, j), chipStyle));
         i = j;
@@ -469,6 +486,12 @@ class ChatInputState extends State<ChatInput> {
             isSkillNameChar(text[j + 1])) {
           break;
         }
+        if (text[j] == '@' &&
+            (j == 0 || !_isIdentifierChar(text[j - 1])) &&
+            j + 1 < text.length &&
+            _isPathChar(text[j + 1])) {
+          break;
+        }
         if (text[j] == '[' &&
             _imageMarkerPattern.hasMatch(text.substring(j))) {
           break;
@@ -479,6 +502,29 @@ class ChatInputState extends State<ChatInput> {
       i = j;
     }
     return segments;
+  }
+
+  static bool _isIdentifierChar(String c) {
+    if (c.isEmpty) return false;
+    final cc = c.codeUnitAt(0);
+    return (cc >= 0x30 && cc <= 0x39) || // 0-9
+        (cc >= 0x41 && cc <= 0x5A) || // A-Z
+        (cc >= 0x61 && cc <= 0x7A) || // a-z
+        cc == 0x5F || // _
+        cc == 0x2D; // -
+  }
+
+  static bool _isPathChar(String c) {
+    if (c.isEmpty) return false;
+    final cc = c.codeUnitAt(0);
+    return (cc >= 0x30 && cc <= 0x39) || // 0-9
+        (cc >= 0x41 && cc <= 0x5A) || // A-Z
+        (cc >= 0x61 && cc <= 0x7A) || // a-z
+        cc == 0x5F || // _
+        cc == 0x2D || // -
+        cc == 0x2E || // .
+        cc == 0x2F || // /
+        cc == 0x20; // space (multi-word paths)
   }
 
   Component _buildInner(BuildContext context) {
