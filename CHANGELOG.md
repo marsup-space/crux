@@ -8,6 +8,136 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-10
+
+b6364d5
+
+### Features
+
+- **Skill system with dollar-chip UX** (`9b3ad98` +
+  `7671f69`) — Crux now speaks the open-standard Agent Skills
+  format. A skill is a folder containing a `SKILL.md` with
+  YAML frontmatter (name, description, body). The user
+  activates one by typing `$<skill-name>` in the chat input
+  — the trigger parses as a chip (rendered with chip
+  styling; the `$` is invisible), and on submit the chip
+  expands to `Skill: <name>\n<body>` before being sent to
+  the LLM. Discovery is priority-ordered across
+  `.crux/skills/`, `.crux/skill/`, `~/.claude/skills/`,
+  `~/.agents/skills/`, `~/.local/share/crux/skills/`. The
+  LLM sees skill names + descriptions via a new
+  system-prompt layer 3.5 (compact listing, no bodies) AND
+  can call a dedicated `skill` tool to load a body on its
+  own. The picker overlay (opens when the user types `$`)
+  supports arrow / tab / enter to insert the selected skill
+  at the cursor. Chip-aware backspace removes the whole
+  chip on one keypress. Frontmatter parser is strict (name
+  must match the folder and match `[a-z0-9][a-z0-9-]*`,
+  description required and ≤ 1024 chars, unknown fields
+  silently ignored).
+
+  Backed by `test/services/skills/skill_frontmatter_test.dart`
+  (274 lines for the frontmatter parser), `test/services/skills/skill_discovery_test.dart`
+  (299 lines for discovery priority / folder matching), `test/utils/skill_chip_parser_test.dart`
+  (188 lines for chip tokenization), `test/utils/skill_chip_substitution_test.dart`
+  (175 lines for submit-time expansion), `test/tools/skill_tool_test.dart`
+  (9 cases covering parameter schema, missing-name error,
+  not-found message, `<skill_content>` rendering, sibling
+  sampling, prune rendering, prune extraction), and the
+  registry default-set count test bumped to include the new
+  tool. 70+ new tests in total.
+
+- **Skill + @-mention + image chips render inline in chat
+  input** (`6bc5fd1` + `ff6356b`) — `$skill-name`,
+  `@path/to/file`, and `[ image N ]` tokens now render as
+  chip-styled text (background color matching the theme;
+  the `$` / `@` trigger chars are kept in the text but
+  styled invisible so submit-time parsing still works).
+  Skill picker overlay rows also show the chip background.
+  TextField gains a `styleSegments` prop in the nocterm
+  submodule to support per-segment styling without
+  splitting the field.
+
+- **Skill + @-mention + image chips render inline in chat
+  history** (`3c47b7b`) — user messages in the chat log
+  now render their embedded `$skill`, `@path`, and
+  `[ image N ]` tokens as chip-styled text via RichText,
+  matching the input box behavior. Same invisible-trigger
+  convention.
+
+- **Skill picker uses fuzzy subsequence matching**
+  (`c8a0aaf`) — typing "gce" matches "gitnexus-exploring"
+  (case-insensitive subsequence), consistent with the
+  existing file @-mention search. Prefix-only matching was
+  too restrictive for skills whose names are descriptive
+  compound words.
+
+### Fixes
+
+- **Chat bubble shows the chip, not the skill body**
+  (`bd8d196`) — `sendTurn` previously mutated `text` to the
+  expanded form BEFORE storing the `Message`, so the chat
+  log saw the body. Split into two: `Message` stores the
+  raw input (with the chip); the LLM API call uses the
+  expanded `llmText` form. Title generation also uses the
+  raw text — the chip name itself is descriptive enough
+  ("gitnexus-exploring" rather than the 200-line body).
+
+- **Skill bodies stripped from chat history on reload**
+  (`96feedf`) — the chat turn executor persists the
+  LLM-bound message (which includes appended
+  `Skill: <name><body>` blocks) to the message store. When
+  reloading from disk, user bubbles were showing those
+  bodies. Strip them before rendering — the chat log should
+  only show what the user actually typed.
+
+- **Backspace deletes one char, not the whole chip, when
+  the picker is open** (`b6364d5`) — when the skill picker
+  is visible, backspace now deletes a single character
+  instead of the whole chip. The user is still refining
+  their query and likely wants to edit it, not start over.
+
+- **Visual-chip Stack overlay reverted; chat input goes
+  back to plain TextField** (`369e317` → `bd8d196` →
+  `02e3e62` → `25005df`) — the first attempt at a
+  visual chip (`369e317`) built it as a `Stack` overlay
+  painted on top of nocterm's `TextField`, so the
+  `TextField` would keep ownership of editing semantics
+  (IME, cursor blink, paste, click-drag selection). Two
+  regressions appeared:
+  1. The chat bubble showed the full skill body (the
+     expansion was applied to `text` before storing the
+     `Message` — fixed in `bd8d196`).
+  2. The chat input was narrower than before — the
+     `TextField` was a non-positioned child of the `Stack`,
+     so nocterm sized it to its intrinsic content width
+     instead of the available chat-input width. The paste
+     button no longer visually separated the input from
+     the chat output. The fix in `bd8d196` was to wrap the
+     `TextField` in `Positioned.fill`, matching the
+     pre-Stack behavior.
+
+  The user then decided the Stack overlay changed the
+  chat input's layout in subtle ways that broke multi-line
+  paste and made the input look indented. `02e3e62` reverts
+  the Stack overlay entirely — the chat input goes back to
+  nocterm's `TextField` directly inside the `Expanded`. The
+  colored background band on the chip in the input is
+  deferred to a v2 that doesn't change the chat input's
+  layout (e.g. a post-render pass that reads the
+  `TextField`'s `RenderObject` and paints chip cells on top
+  of the actual rendered text, the way opencode / openclaude
+  rendering hooks work). `25005df` cleans up the orphaned
+  `skill_chip_backdrop.dart` (252 lines) and its test file
+  (227 lines).
+
+  What stays from the Stack arc: `$` chip detection in the
+  input (the parser runs on `textController.text`); picker
+  overlay when the user types `$`; chip-aware backspace;
+  submit substitution (LLM gets the body, chat bubble shows
+  the chip); the LLM-facing `skill` tool; the system-prompt
+  layer 3.5.
+
 ## [0.11.7] - 2026-07-07
 
 a04290e
