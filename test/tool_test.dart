@@ -258,6 +258,297 @@ void main() {
       tracker.clear();
       expect(tracker.toMap().length, 0);
     });
+
+    test(
+        'recordWrite updates the in-memory cache so a follow-up guard check '
+        'does not false-trigger drift', () async {
+      final file = File('${tempDir.path}/record_write_cache.dart');
+      await file.writeAsString('original');
+      final m1 = file.statSync().modified.millisecondsSinceEpoch;
+      await tracker.recordWrite(
+        file.path,
+        mtimeMs: m1,
+        intent: 'fix typo',
+      );
+      // No real edit happened, but for the guard's purposes the
+      // recorded mtime should now equal on-disk mtime.
+      final guard = await tracker.checkWriteGuard(file.path);
+      expect(guard, isNull);
+    });
+
+    test(
+        'recordWrite fires onRecordWrite with sessionId, path, mtime, intent',
+        () async {
+      final writes = <(int, String, int, String)>[];
+      final t = FileReadTracker(
+        sessionId: 11,
+        onRecordWrite: (sid, path, mtime, intent) async {
+          writes.add((sid, path, mtime, intent));
+        },
+      );
+      await t.recordWrite('/x.dart', mtimeMs: 999, intent: 'add helper');
+      expect(writes, [(11, '/x.dart', 999, 'add helper')]);
+    });
+
+    test(
+        'checkWriteGuard drift branch shows attribution when lookupAttribution '
+        'returns a different session with matching mtime', () async {
+      final file = File('${tempDir.path}/cross_session.dart');
+      await file.writeAsString('original');
+      final m1 = file.statSync().modified.millisecondsSinceEpoch;
+      // One tracker for both recordRead and checkWriteGuard so the
+      // drift branch (not the "never read" branch) is what fires.
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async {
+          return (
+            sessionId: 42,
+            intent: 'refactor parser',
+            title: 'Refactor parser session',
+          );
+        },
+      );
+      await t.recordRead(file.path, m1);
+      // External write by another session — bump mtime on disk.
+      await Future.delayed(const Duration(milliseconds: 1100));
+      await file.writeAsString('updated');
+      final m2 = file.statSync().modified.millisecondsSinceEpoch;
+
+      final guard = await t.checkWriteGuard(file.path);
+      expect(guard, isNotNull);
+      expect(guard!.header, contains('Last modified by session://42'));
+      expect(guard.header, contains('[Refactor parser session]'));
+      expect(guard.header, contains('with intent: "refactor parser"'));
+      expect(guard.header, contains('Use the session tool'));
+      // Sanity: m2 > m1 so the drift branch is what we're testing.
+      expect(m2, greaterThan(m1));
+    });
+
+    test(
+        'checkWriteGuard drift branch hides attribution when recorded mtime '
+        'does not match on-disk mtime (external edit since the write)',
+        () async {
+      final file = File('${tempDir.path}/stale_attribution.dart');
+      await file.writeAsString('original');
+      var lookupCalls = 0;
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async {
+          lookupCalls++;
+          // Mirror the real chat_panel callback: drop the
+          // attribution row when its mtime no longer matches the
+          // on-disk mtime. External edit between the write and
+          // the guard check is exactly this case.
+          return null;
+        },
+      );
+      await t.recordRead(
+        file.path,
+        file.statSync().modified.millisecondsSinceEpoch,
+      );
+      await Future.delayed(const Duration(milliseconds: 1100));
+      await file.writeAsString('updated');
+      final m2 = file.statSync().modified.millisecondsSinceEpoch;
+
+      final guard = await t.checkWriteGuard(file.path);
+      expect(guard, isNotNull);
+      expect(guard!.header, isNot(contains('Last modified by')));
+      expect(guard.header, contains('modified since last read'));
+      expect(lookupCalls, 1); // queried, but callback returned null
+      expect(m2, greaterThan(0));
+    });
+
+    test(
+        'checkWriteGuard drift branch hides attribution when the writer is '
+        'the same session (no cross-session info to add)', () async {
+      final file = File('${tempDir.path}/self_write.dart');
+      await file.writeAsString('original');
+      final m1 = file.statSync().modified.millisecondsSinceEpoch;
+      final t = FileReadTracker(
+        sessionId: 7,
+        onLookupAttribution: (path, currentMtime) async {
+          return (sessionId: 7, intent: 'self', title: 'me');
+        },
+      );
+      await t.recordRead(file.path, m1);
+      await Future.delayed(const Duration(milliseconds: 1100));
+      await file.writeAsString('updated');
+
+      final guard = await t.checkWriteGuard(file.path);
+      expect(guard, isNotNull);
+      expect(guard!.header, isNot(contains('Last modified by')));
+    });
+
+    test(
+        'readAttributionBanner returns [NOTE: …] line when lookupAttribution '
+        'returns a different session with matching mtime', () async {
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async {
+          return (
+            sessionId: 42,
+            intent: 'refactor parser',
+            title: 'Refactor parser session',
+          );
+        },
+      );
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, startsWith('[NOTE: last written by session://42'));
+      expect(banner, contains('[Refactor parser session]'));
+      expect(banner, contains('with intent: "refactor parser"'));
+      expect(banner, contains('Use the session tool'));
+      expect(banner, endsWith('.]'));
+    });
+
+    test(
+        'readAttributionBanner returns empty string when lookupAttribution '
+        'returns null (no row or mtime mismatch)', () async {
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async => null,
+      );
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, isEmpty);
+    });
+
+    test(
+        'readAttributionBanner returns empty when writer is the current session',
+        () async {
+      final t = FileReadTracker(
+        sessionId: 7,
+        onLookupAttribution: (path, currentMtime) async {
+          return (sessionId: 7, intent: 'self', title: 'me');
+        },
+      );
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, isEmpty);
+    });
+
+    test(
+        'readAttributionBanner returns empty when both title and intent are '
+        'empty (nothing meaningful to say)', () async {
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async {
+          return (sessionId: 42, intent: '', title: '');
+        },
+      );
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, isEmpty);
+    });
+
+    test(
+        'readAttributionBanner returns empty when onLookupAttribution is null '
+        '(tracker constructed without attribution support)', () async {
+      final t = FileReadTracker();
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, isEmpty);
+    });
+
+    test(
+        'readAttributionBanner swallows lookup failures (returns empty, '
+        'does not throw)', () async {
+      final t = FileReadTracker(
+        onLookupAttribution: (path, currentMtime) async {
+          throw StateError('db down');
+        },
+      );
+      final banner = await t.readAttributionBanner('/foo.dart', 12345);
+      expect(banner, isEmpty);
+    });
+  });
+
+  group('ReadTool attribution banner', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_read_banner_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    ToolContext makeCtx() => ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+
+    test(
+        'read pre-pends [NOTE: …] attribution banner when the file was last '
+        'written by a different session', () async {
+      final file = File('${tempDir.path}/attributed.dart');
+      await file.writeAsString('line one\nline two\n');
+
+      final tracker = FileReadTracker(
+        sessionId: 1,
+        onLookupAttribution: (path, currentMtime) async {
+          return (
+            sessionId: 99,
+            intent: 'add tests',
+            title: 'Test coverage session',
+          );
+        },
+      );
+      final tool = ReadTool(tracker: tracker);
+      final result = await tool.execute({"filePath": file.path}, makeCtx());
+
+      // Banner sits at the very top of the output.
+      expect(result.output, startsWith('[NOTE: last written by session://99'));
+      expect(result.output, contains('[Test coverage session]'));
+      expect(result.output, contains('with intent: "add tests"'));
+      // Followed by the line-range header (since endLine < totalLines
+      // is false here, header is omitted) and then the numbered body.
+      expect(result.output, contains('1: line one'));
+      expect(result.output, contains('2: line two'));
+    });
+
+    test(
+        'read omits the banner when lookupAttribution returns null',
+        () async {
+      final file = File('${tempDir.path}/no_attribution.dart');
+      await file.writeAsString('plain content\n');
+
+      final tracker = FileReadTracker(
+        sessionId: 1,
+        onLookupAttribution: (path, currentMtime) async => null,
+      );
+      final tool = ReadTool(tracker: tracker);
+      final result = await tool.execute({"filePath": file.path}, makeCtx());
+
+      expect(result.output, isNot(contains('[NOTE:')));
+      expect(result.output, contains('1: plain content'));
+    });
+
+    test(
+        'read omits the banner when the writer is the current session',
+        () async {
+      final file = File('${tempDir.path}/self_write.dart');
+      await file.writeAsString('our own work\n');
+
+      final tracker = FileReadTracker(
+        sessionId: 7,
+        onLookupAttribution: (path, currentMtime) async {
+          return (sessionId: 7, intent: 'self', title: 'me');
+        },
+      );
+      final tool = ReadTool(tracker: tracker);
+      final result = await tool.execute({"filePath": file.path}, makeCtx());
+
+      expect(result.output, isNot(contains('[NOTE:')));
+    });
+
+    test(
+        'read omits the banner when no attribution callback is wired '
+        '(tracker constructed without onLookupAttribution)', () async {
+      final file = File('${tempDir.path}/plain.dart');
+      await file.writeAsString('content\n');
+
+      final tool = ReadTool(tracker: FileReadTracker());
+      final result = await tool.execute({"filePath": file.path}, makeCtx());
+
+      expect(result.output, isNot(contains('[NOTE:')));
+      expect(result.output, contains('1: content'));
+    });
   });
 
   group('ExactMatcher', () {

@@ -296,7 +296,11 @@ class WriteTool extends ToolDef with IntentionalTool {
     }
 
     if (tracker != null) {
-      await tracker!.recordRead(resolved, await _mtimeMs(file));
+      await tracker!.recordWrite(
+        resolved,
+        mtimeMs: await _mtimeMs(file),
+        intent: (args['intent'] as String?) ?? '',
+      );
     }
 
     final relPath = relativePath(resolved, ctx.workingDirectory);

@@ -267,6 +267,31 @@ class _ChatPanelState extends State<ChatPanel> {
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);
       },
+      onRecordWrite: (sessionId, normalizedPath, mtimeMs, intent) {
+        return _store.saveLastWriter(
+          sessionId,
+          normalizedPath,
+          mtimeMs,
+          intent,
+        );
+      },
+      onLookupAttribution: (normalizedPath, currentMtimeMs) async {
+        // Live attribution lookup for the read-before-write guard.
+        // Returns null when no row exists, when the recorded writer
+        // is the current session (no attribution to show — the
+        // drift message is enough), or when the recorded mtime
+        // no longer matches the on-disk mtime (external edit since
+        // the write — the intent would be misleading). The title
+        // is looked up live so `/rename` is reflected immediately.
+        final last = await _store.loadLastWriter(normalizedPath);
+        if (last == null) return null;
+        if (last.mtimeMs != currentMtimeMs) return null;
+        if (last.sessionId == _sessionController.currentSessionId) {
+          return null;
+        }
+        final title = await _store.lookupSessionTitle(last.sessionId);
+        return (sessionId: last.sessionId, intent: last.intent, title: title);
+      },
     );
     _tracker = tracker;
     _lspManager = LspManager(

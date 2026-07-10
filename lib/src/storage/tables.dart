@@ -106,6 +106,34 @@ class FileReadState extends Table {
   Set<Column> get primaryKey => {sessionId, path};
 }
 
+/// Tracks which session last wrote each file, plus the intent string
+/// the LLM passed to that edit/write. One row per path (not per
+/// session+path like `FileReadState`), because attribution is
+/// "who last touched this file globally" rather than "which
+/// sessions have observed it".
+///
+/// The read-before-write guard looks this up when mtime drift is
+/// detected and the file was last modified by a *different*
+/// session — the guard's response then names that session and its
+/// intent so the agent can `session show` / `session messages` it
+/// for context before retrying.
+///
+/// `mtimeMs` is stored alongside the attribution so the guard can
+/// refuse to show it when the on-disk mtime no longer matches what
+/// the recorded writer produced — i.e. when an external process or
+/// user edit changed the file after the recorded write, in which
+/// case the intent no longer reflects the file's actual state.
+class FileLastWriter extends Table {
+  TextColumn get path => text()();
+  IntColumn get writerSessionId =>
+      integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
+  TextColumn get intent => text().withDefault(const Constant(''))();
+  IntColumn get mtimeMs => integer()();
+
+  @override
+  Set<Column> get primaryKey => {path};
+}
+
 class Parts extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get messageId =>

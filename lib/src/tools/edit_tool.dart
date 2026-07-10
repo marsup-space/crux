@@ -316,7 +316,11 @@ class EditTool extends ToolDef with IntentionalTool {
         await _writePreservingEncoding(file, newString, meta);
       }
       if (tracker != null) {
-        await tracker!.recordRead(resolved, await _mtimeMs(file));
+        await tracker!.recordWrite(
+          resolved,
+          mtimeMs: await _mtimeMs(file),
+          intent: (args['intent'] as String?) ?? '',
+        );
       }
       final newLines = newString.isEmpty
           ? 0
@@ -385,7 +389,11 @@ class EditTool extends ToolDef with IntentionalTool {
       await _writePreservingEncoding(file, newContent, meta);
     }
     if (tracker != null) {
-      await tracker!.recordRead(resolved, await _mtimeMs(file));
+      await tracker!.recordWrite(
+        resolved,
+        mtimeMs: await _mtimeMs(file),
+        intent: (args['intent'] as String?) ?? '',
+      );
     }
 
     final count = matchResult.positions.length;

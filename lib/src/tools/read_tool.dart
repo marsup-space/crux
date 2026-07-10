@@ -211,7 +211,21 @@ class ReadTool extends ToolDef {
         ? '[showing lines ${startLine + 1}-$endLine of $totalLines]'
         : '';
 
-    final output = header.isNotEmpty ? '$header\n$numbered' : numbered;
+    // Surface the file's cross-session provenance before the
+    // agent commits to any edits. The banner is informational —
+    // empty when no attribution applies — and sits above the
+    // line-range header so the LLM sees it on the very first
+    // tokens of the result. Same `[NOTE: …]` tag convention as
+    // `[GUARD]` / `[AUTOREAD]` so the model already knows the
+    // shape is metadata, not file content.
+    final attributionBanner = mtimeMs != null
+        ? await _tracker?.readAttributionBanner(path, mtimeMs) ?? ''
+        : '';
+
+    final body = header.isNotEmpty ? '$header\n$numbered' : numbered;
+    final output = attributionBanner.isNotEmpty
+        ? '$attributionBanner\n$body'
+        : body;
 
     // Warm the LSP server in the background. Fire-and-forget:
     // the read tool must complete immediately without waiting

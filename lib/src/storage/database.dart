@@ -12,7 +12,7 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState])
+@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter])
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
@@ -95,8 +95,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         to `[0.0, 1.0]` at write time; `null` means "use the
   ///         model's TOML `temperature` default". See
   ///         `lib/src/commands/cmd_temperature.dart`.
+///   v27 – added `file_last_writer` table, one row per path,
+  ///         tracking the session id and intent string of the last
+  ///         edit/write that touched each file. The read-before-write
+  ///         guard looks this up when mtime drift is detected and
+  ///         the writer is a different session, so the guard's
+  ///         response can name the writer and its intent. See
+  ///         `docs/design-tools.md` and `file_read_tracker.dart`.
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 27;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -345,6 +352,23 @@ CREATE TABLE offloaded_content (
         if (hasTemperatureOverride.isEmpty) {
           await m.addColumn(sessions, sessions.temperatureOverride);
         }
+      }
+      if (from < 27) {
+        // Add `file_last_writer` for cross-session write attribution.
+        // The read-before-write guard reads this on mtime drift to
+        // name the session + intent that produced the file's current
+        // content, so the agent can `session show` the writer before
+        // retrying. `path` is the PK (one row per file), and the
+        // FK to sessions cascades on session delete — losing the
+        // attribution row is fine, the file just falls back to the
+        // unattributed drift message.
+        //
+        // CREATE TABLE IF NOT EXISTS is unnecessary here: drift's
+        // createTable on a fresh install (onCreate) already covers
+        // it, and the only path leading into this branch is an
+        // upgrade from v26 or earlier where the table didn't exist.
+        // Plain createTable is enough.
+        await m.createTable(fileLastWriter);
       }
     },
   );

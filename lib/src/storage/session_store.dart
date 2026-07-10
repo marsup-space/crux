@@ -371,6 +371,63 @@ WHERE id = ?
     return {for (final r in rows) r.path: r.mtimeMs};
   }
 
+  /// Upsert the `file_last_writer` row for [path]. Called by the
+  /// edit/write tools after a successful mutation, so other
+  /// sessions' read-before-write guards can name this session and
+  /// its intent when they hit mtime drift on the same file.
+  ///
+  /// One row per path (PK = path) — overwriting a previous writer
+  /// is the point. The recorded `mtimeMs` is the post-write mtime
+  /// the tracker observed; the guard cross-checks it against the
+  /// current on-disk mtime and drops the attribution line when
+  /// they don't match (external edit between our write and the
+  /// guard check).
+  Future<void> saveLastWriter(
+    int sessionId,
+    String normalizedPath,
+    int mtimeMs,
+    String intent,
+  ) async {
+    await _db.into(_db.fileLastWriter).insertOnConflictUpdate(
+      db.FileLastWriterCompanion.insert(
+        path: normalizedPath,
+        writerSessionId: sessionId,
+        intent: Value(intent),
+        mtimeMs: mtimeMs,
+      ),
+    );
+  }
+
+  /// Look up who last wrote [path]. Returns `null` when no
+  /// attribution row exists (file was never written by a tracked
+  /// session, or the row was cascade-deleted with its writer).
+  Future<({int sessionId, String intent, int mtimeMs})?> loadLastWriter(
+    String normalizedPath,
+  ) async {
+    final row = await (_db.select(_db.fileLastWriter)
+          ..where((t) => t.path.equals(normalizedPath)))
+        .getSingleOrNull();
+    if (row == null) return null;
+    return (
+      sessionId: row.writerSessionId,
+      intent: row.intent,
+      mtimeMs: row.mtimeMs,
+    );
+  }
+
+  /// Look up the live title for a session. Used by the guard to
+  /// render the attribution line — looked up live (not snapshotted
+  /// at write time) so `/rename` changes are reflected immediately.
+  /// Returns `''` when the session doesn't exist (was deleted
+  /// between the write and the guard check) — the guard still
+  /// names the id, just without a title.
+  Future<String> lookupSessionTitle(int sessionId) async {
+    final row = await (_db.select(_db.sessions)
+          ..where((t) => t.id.equals(sessionId)))
+        .getSingleOrNull();
+    return row?.title ?? '';
+  }
+
   Future<int> deleteByProjectPath(String projectPath) async {
     final sessionIds =
         await (_db.select(_db.sessions)

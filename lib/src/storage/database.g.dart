@@ -3105,6 +3105,329 @@ class FileReadStateCompanion extends UpdateCompanion<FileReadStateData> {
   }
 }
 
+class $FileLastWriterTable extends FileLastWriter
+    with TableInfo<$FileLastWriterTable, FileLastWriterData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileLastWriterTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _writerSessionIdMeta = const VerificationMeta(
+    'writerSessionId',
+  );
+  @override
+  late final GeneratedColumn<int> writerSessionId = GeneratedColumn<int>(
+    'writer_session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES sessions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _intentMeta = const VerificationMeta('intent');
+  @override
+  late final GeneratedColumn<String> intent = GeneratedColumn<String>(
+    'intent',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _mtimeMsMeta = const VerificationMeta(
+    'mtimeMs',
+  );
+  @override
+  late final GeneratedColumn<int> mtimeMs = GeneratedColumn<int>(
+    'mtime_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    path,
+    writerSessionId,
+    intent,
+    mtimeMs,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_last_writer';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileLastWriterData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('writer_session_id')) {
+      context.handle(
+        _writerSessionIdMeta,
+        writerSessionId.isAcceptableOrUnknown(
+          data['writer_session_id']!,
+          _writerSessionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_writerSessionIdMeta);
+    }
+    if (data.containsKey('intent')) {
+      context.handle(
+        _intentMeta,
+        intent.isAcceptableOrUnknown(data['intent']!, _intentMeta),
+      );
+    }
+    if (data.containsKey('mtime_ms')) {
+      context.handle(
+        _mtimeMsMeta,
+        mtimeMs.isAcceptableOrUnknown(data['mtime_ms']!, _mtimeMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mtimeMsMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {path};
+  @override
+  FileLastWriterData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileLastWriterData(
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      writerSessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}writer_session_id'],
+      )!,
+      intent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}intent'],
+      )!,
+      mtimeMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mtime_ms'],
+      )!,
+    );
+  }
+
+  @override
+  $FileLastWriterTable createAlias(String alias) {
+    return $FileLastWriterTable(attachedDatabase, alias);
+  }
+}
+
+class FileLastWriterData extends DataClass
+    implements Insertable<FileLastWriterData> {
+  final String path;
+  final int writerSessionId;
+  final String intent;
+  final int mtimeMs;
+  const FileLastWriterData({
+    required this.path,
+    required this.writerSessionId,
+    required this.intent,
+    required this.mtimeMs,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['path'] = Variable<String>(path);
+    map['writer_session_id'] = Variable<int>(writerSessionId);
+    map['intent'] = Variable<String>(intent);
+    map['mtime_ms'] = Variable<int>(mtimeMs);
+    return map;
+  }
+
+  FileLastWriterCompanion toCompanion(bool nullToAbsent) {
+    return FileLastWriterCompanion(
+      path: Value(path),
+      writerSessionId: Value(writerSessionId),
+      intent: Value(intent),
+      mtimeMs: Value(mtimeMs),
+    );
+  }
+
+  factory FileLastWriterData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileLastWriterData(
+      path: serializer.fromJson<String>(json['path']),
+      writerSessionId: serializer.fromJson<int>(json['writerSessionId']),
+      intent: serializer.fromJson<String>(json['intent']),
+      mtimeMs: serializer.fromJson<int>(json['mtimeMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'path': serializer.toJson<String>(path),
+      'writerSessionId': serializer.toJson<int>(writerSessionId),
+      'intent': serializer.toJson<String>(intent),
+      'mtimeMs': serializer.toJson<int>(mtimeMs),
+    };
+  }
+
+  FileLastWriterData copyWith({
+    String? path,
+    int? writerSessionId,
+    String? intent,
+    int? mtimeMs,
+  }) => FileLastWriterData(
+    path: path ?? this.path,
+    writerSessionId: writerSessionId ?? this.writerSessionId,
+    intent: intent ?? this.intent,
+    mtimeMs: mtimeMs ?? this.mtimeMs,
+  );
+  FileLastWriterData copyWithCompanion(FileLastWriterCompanion data) {
+    return FileLastWriterData(
+      path: data.path.present ? data.path.value : this.path,
+      writerSessionId: data.writerSessionId.present
+          ? data.writerSessionId.value
+          : this.writerSessionId,
+      intent: data.intent.present ? data.intent.value : this.intent,
+      mtimeMs: data.mtimeMs.present ? data.mtimeMs.value : this.mtimeMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileLastWriterData(')
+          ..write('path: $path, ')
+          ..write('writerSessionId: $writerSessionId, ')
+          ..write('intent: $intent, ')
+          ..write('mtimeMs: $mtimeMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(path, writerSessionId, intent, mtimeMs);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileLastWriterData &&
+          other.path == this.path &&
+          other.writerSessionId == this.writerSessionId &&
+          other.intent == this.intent &&
+          other.mtimeMs == this.mtimeMs);
+}
+
+class FileLastWriterCompanion extends UpdateCompanion<FileLastWriterData> {
+  final Value<String> path;
+  final Value<int> writerSessionId;
+  final Value<String> intent;
+  final Value<int> mtimeMs;
+  final Value<int> rowid;
+  const FileLastWriterCompanion({
+    this.path = const Value.absent(),
+    this.writerSessionId = const Value.absent(),
+    this.intent = const Value.absent(),
+    this.mtimeMs = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileLastWriterCompanion.insert({
+    required String path,
+    required int writerSessionId,
+    this.intent = const Value.absent(),
+    required int mtimeMs,
+    this.rowid = const Value.absent(),
+  }) : path = Value(path),
+       writerSessionId = Value(writerSessionId),
+       mtimeMs = Value(mtimeMs);
+  static Insertable<FileLastWriterData> custom({
+    Expression<String>? path,
+    Expression<int>? writerSessionId,
+    Expression<String>? intent,
+    Expression<int>? mtimeMs,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (path != null) 'path': path,
+      if (writerSessionId != null) 'writer_session_id': writerSessionId,
+      if (intent != null) 'intent': intent,
+      if (mtimeMs != null) 'mtime_ms': mtimeMs,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileLastWriterCompanion copyWith({
+    Value<String>? path,
+    Value<int>? writerSessionId,
+    Value<String>? intent,
+    Value<int>? mtimeMs,
+    Value<int>? rowid,
+  }) {
+    return FileLastWriterCompanion(
+      path: path ?? this.path,
+      writerSessionId: writerSessionId ?? this.writerSessionId,
+      intent: intent ?? this.intent,
+      mtimeMs: mtimeMs ?? this.mtimeMs,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (writerSessionId.present) {
+      map['writer_session_id'] = Variable<int>(writerSessionId.value);
+    }
+    if (intent.present) {
+      map['intent'] = Variable<String>(intent.value);
+    }
+    if (mtimeMs.present) {
+      map['mtime_ms'] = Variable<int>(mtimeMs.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileLastWriterCompanion(')
+          ..write('path: $path, ')
+          ..write('writerSessionId: $writerSessionId, ')
+          ..write('intent: $intent, ')
+          ..write('mtimeMs: $mtimeMs, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
@@ -3112,6 +3435,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   late final $MessagesTable messages = $MessagesTable(this);
   late final $PartsTable parts = $PartsTable(this);
   late final $FileReadStateTable fileReadState = $FileReadStateTable(this);
+  late final $FileLastWriterTable fileLastWriter = $FileLastWriterTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3121,6 +3445,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     messages,
     parts,
     fileReadState,
+    fileLastWriter,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3151,6 +3476,13 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('file_read_state', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'sessions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('file_last_writer', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -3263,6 +3595,27 @@ final class $$SessionsTableReferences
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_fileReadStateRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$FileLastWriterTable, List<FileLastWriterData>>
+  _fileLastWriterRefsTable(_$CruxDatabase db) => MultiTypedResultKey.fromTable(
+    db.fileLastWriter,
+    aliasName: $_aliasNameGenerator(
+      db.sessions.id,
+      db.fileLastWriter.writerSessionId,
+    ),
+  );
+
+  $$FileLastWriterTableProcessedTableManager get fileLastWriterRefs {
+    final manager = $$FileLastWriterTableTableManager(
+      $_db,
+      $_db.fileLastWriter,
+    ).filter((f) => f.writerSessionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_fileLastWriterRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3460,6 +3813,31 @@ class $$SessionsTableFilterComposer
           }) => $$FileReadStateTableFilterComposer(
             $db: $db,
             $table: $db.fileReadState,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> fileLastWriterRefs(
+    Expression<bool> Function($$FileLastWriterTableFilterComposer f) f,
+  ) {
+    final $$FileLastWriterTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.fileLastWriter,
+      getReferencedColumn: (t) => t.writerSessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FileLastWriterTableFilterComposer(
+            $db: $db,
+            $table: $db.fileLastWriter,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3767,6 +4145,31 @@ class $$SessionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> fileLastWriterRefs<T extends Object>(
+    Expression<T> Function($$FileLastWriterTableAnnotationComposer a) f,
+  ) {
+    final $$FileLastWriterTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.fileLastWriter,
+      getReferencedColumn: (t) => t.writerSessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FileLastWriterTableAnnotationComposer(
+            $db: $db,
+            $table: $db.fileLastWriter,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$SessionsTableTableManager
@@ -3786,6 +4189,7 @@ class $$SessionsTableTableManager
             bool messagesRefs,
             bool partsRefs,
             bool fileReadStateRefs,
+            bool fileLastWriterRefs,
           })
         > {
   $$SessionsTableTableManager(_$CruxDatabase db, $SessionsTable table)
@@ -3912,6 +4316,7 @@ class $$SessionsTableTableManager
                 messagesRefs = false,
                 partsRefs = false,
                 fileReadStateRefs = false,
+                fileLastWriterRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -3919,6 +4324,7 @@ class $$SessionsTableTableManager
                     if (messagesRefs) db.messages,
                     if (partsRefs) db.parts,
                     if (fileReadStateRefs) db.fileReadState,
+                    if (fileLastWriterRefs) db.fileLastWriter,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -3986,6 +4392,27 @@ class $$SessionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (fileLastWriterRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          FileLastWriterData
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._fileLastWriterRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).fileLastWriterRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.writerSessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -4010,6 +4437,7 @@ typedef $$SessionsTableProcessedTableManager =
         bool messagesRefs,
         bool partsRefs,
         bool fileReadStateRefs,
+        bool fileLastWriterRefs,
       })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -5423,6 +5851,318 @@ typedef $$FileReadStateTableProcessedTableManager =
       FileReadStateData,
       PrefetchHooks Function({bool sessionId})
     >;
+typedef $$FileLastWriterTableCreateCompanionBuilder =
+    FileLastWriterCompanion Function({
+      required String path,
+      required int writerSessionId,
+      Value<String> intent,
+      required int mtimeMs,
+      Value<int> rowid,
+    });
+typedef $$FileLastWriterTableUpdateCompanionBuilder =
+    FileLastWriterCompanion Function({
+      Value<String> path,
+      Value<int> writerSessionId,
+      Value<String> intent,
+      Value<int> mtimeMs,
+      Value<int> rowid,
+    });
+
+final class $$FileLastWriterTableReferences
+    extends
+        BaseReferences<
+          _$CruxDatabase,
+          $FileLastWriterTable,
+          FileLastWriterData
+        > {
+  $$FileLastWriterTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $SessionsTable _writerSessionIdTable(_$CruxDatabase db) =>
+      db.sessions.createAlias(
+        $_aliasNameGenerator(db.fileLastWriter.writerSessionId, db.sessions.id),
+      );
+
+  $$SessionsTableProcessedTableManager get writerSessionId {
+    final $_column = $_itemColumn<int>('writer_session_id')!;
+
+    final manager = $$SessionsTableTableManager(
+      $_db,
+      $_db.sessions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_writerSessionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$FileLastWriterTableFilterComposer
+    extends Composer<_$CruxDatabase, $FileLastWriterTable> {
+  $$FileLastWriterTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mtimeMs => $composableBuilder(
+    column: $table.mtimeMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$SessionsTableFilterComposer get writerSessionId {
+    final $$SessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.writerSessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileLastWriterTableOrderingComposer
+    extends Composer<_$CruxDatabase, $FileLastWriterTable> {
+  $$FileLastWriterTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get mtimeMs => $composableBuilder(
+    column: $table.mtimeMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$SessionsTableOrderingComposer get writerSessionId {
+    final $$SessionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.writerSessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileLastWriterTableAnnotationComposer
+    extends Composer<_$CruxDatabase, $FileLastWriterTable> {
+  $$FileLastWriterTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<String> get intent =>
+      $composableBuilder(column: $table.intent, builder: (column) => column);
+
+  GeneratedColumn<int> get mtimeMs =>
+      $composableBuilder(column: $table.mtimeMs, builder: (column) => column);
+
+  $$SessionsTableAnnotationComposer get writerSessionId {
+    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.writerSessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FileLastWriterTableTableManager
+    extends
+        RootTableManager<
+          _$CruxDatabase,
+          $FileLastWriterTable,
+          FileLastWriterData,
+          $$FileLastWriterTableFilterComposer,
+          $$FileLastWriterTableOrderingComposer,
+          $$FileLastWriterTableAnnotationComposer,
+          $$FileLastWriterTableCreateCompanionBuilder,
+          $$FileLastWriterTableUpdateCompanionBuilder,
+          (FileLastWriterData, $$FileLastWriterTableReferences),
+          FileLastWriterData,
+          PrefetchHooks Function({bool writerSessionId})
+        > {
+  $$FileLastWriterTableTableManager(
+    _$CruxDatabase db,
+    $FileLastWriterTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileLastWriterTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileLastWriterTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileLastWriterTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> path = const Value.absent(),
+                Value<int> writerSessionId = const Value.absent(),
+                Value<String> intent = const Value.absent(),
+                Value<int> mtimeMs = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileLastWriterCompanion(
+                path: path,
+                writerSessionId: writerSessionId,
+                intent: intent,
+                mtimeMs: mtimeMs,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String path,
+                required int writerSessionId,
+                Value<String> intent = const Value.absent(),
+                required int mtimeMs,
+                Value<int> rowid = const Value.absent(),
+              }) => FileLastWriterCompanion.insert(
+                path: path,
+                writerSessionId: writerSessionId,
+                intent: intent,
+                mtimeMs: mtimeMs,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$FileLastWriterTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({writerSessionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (writerSessionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.writerSessionId,
+                                referencedTable: $$FileLastWriterTableReferences
+                                    ._writerSessionIdTable(db),
+                                referencedColumn:
+                                    $$FileLastWriterTableReferences
+                                        ._writerSessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$FileLastWriterTableProcessedTableManager =
+    ProcessedTableManager<
+      _$CruxDatabase,
+      $FileLastWriterTable,
+      FileLastWriterData,
+      $$FileLastWriterTableFilterComposer,
+      $$FileLastWriterTableOrderingComposer,
+      $$FileLastWriterTableAnnotationComposer,
+      $$FileLastWriterTableCreateCompanionBuilder,
+      $$FileLastWriterTableUpdateCompanionBuilder,
+      (FileLastWriterData, $$FileLastWriterTableReferences),
+      FileLastWriterData,
+      PrefetchHooks Function({bool writerSessionId})
+    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -5435,4 +6175,6 @@ class $CruxDatabaseManager {
       $$PartsTableTableManager(_db, _db.parts);
   $$FileReadStateTableTableManager get fileReadState =>
       $$FileReadStateTableTableManager(_db, _db.fileReadState);
+  $$FileLastWriterTableTableManager get fileLastWriter =>
+      $$FileLastWriterTableTableManager(_db, _db.fileLastWriter);
 }
