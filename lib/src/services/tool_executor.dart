@@ -34,6 +34,15 @@ class ToolExecutor {
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
+  /// Names of every tool currently registered, in registry
+  /// declaration order. Used by the streaming-time unknown-tool
+  /// abort (see `_StreamingGuardAccumulator.accumulateAndCheck` in
+  /// `chat_turn_executor.dart`) so the model can be told which
+  /// tools *do* exist when it hallucinates a tool name (e.g.
+  /// `ask`) that doesn't.
+  List<String> allToolNames() =>
+      [for (final tool in _registry.all) tool.name];
+
   Future<GuardResult?> checkWriteGuard({
     required String filePath,
     required String workingDirectory,

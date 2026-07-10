@@ -843,8 +843,20 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       final isGuardAborted = output.contains(
         '[Crux system note — tool-call early abort]',
       );
+      final isUnknownToolAborted =
+          isGuardAborted && output.startsWith('[UNKNOWN TOOL]');
       final isAutoRead = output.startsWith('[AUTOREAD]');
-      if (isGuardAborted) {
+      if (isUnknownToolAborted) {
+        // `[UNKNOWN TOOL] … no tool named "X" is registered …`
+        // — surface the bad name in the banner so the user
+        // understands the abort without scanning the body.
+        final requested =
+            RegExp(r'no tool named "([^"]+)"').firstMatch(output)?.group(1);
+        final bannerText = requested != null
+            ? "Aborted mid-stream: unknown tool '$requested'"
+            : 'Aborted mid-stream: unknown tool';
+        children.add(_banner(bannerText, theme.warning, theme));
+      } else if (isGuardAborted) {
         children.add(
           _banner('Aborted mid-stream by Crux (early abort)', theme.warning, theme),
         );

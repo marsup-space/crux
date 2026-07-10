@@ -121,6 +121,69 @@ void main() {
     });
   });
 
+  group('ToolExecutor', () {
+    late ToolRegistry registry;
+
+    setUp(() {
+      registry = ToolRegistry();
+    });
+
+    test('allToolNames returns registered names in declaration order', () {
+      registry.register(BashTool());
+      registry.register(ReadTool());
+      registry.register(GrepTool());
+      final executor = ToolExecutor(registry);
+      expect(
+        executor.allToolNames(),
+        orderedEquals(['bash', 'read', 'grep']),
+      );
+    });
+
+    test('allToolNames is empty when nothing is registered', () {
+      final executor = ToolExecutor(registry);
+      expect(executor.allToolNames(), isEmpty);
+    });
+
+    test(
+      'lookupTool is case-insensitive (so the unknown-tool abort '
+      'cannot be tricked by mixed-case tool names)',
+      () {
+        registry.register(BashTool());
+        final executor = ToolExecutor(registry);
+        expect(executor.lookupTool('Bash'), isNotNull);
+        expect(executor.lookupTool('ASK'), isNull,
+            reason: 'hallucinated tool names like "ask" must miss the '
+                'registry look-up so the streaming-time abort fires');
+      },
+    );
+
+    test(
+      'executeTool returns the same defensive "Unknown tool" error '
+      'post-stream that the abort path is purely additive on top of',
+      () async {
+        final executor = ToolExecutor(registry);
+        final ctx = ToolContext(
+          sessionId: 0,
+          messageId: 0,
+          abort: AbortSignal(),
+          workingDirectory: Directory.systemTemp.path,
+        );
+        // No tool is registered. The post-stream `executeTool`
+        // path remains as a defense-in-depth fallback for race
+        // conditions where a tool was registered when the stream
+        // started but unregistered before execution.
+        final call = ToolCall(
+          callId: 'cb-1',
+          name: 'ask',
+          input: {},
+        );
+        final result = await executor.executeTool(call, ctx);
+        expect(result.title, 'Error');
+        expect(result.output, contains('Unknown tool: ask'));
+      },
+    );
+  });
+
   group('ToolDef', () {
     test('BashTool has correct name and schema', () {
       final tool = BashTool();

@@ -936,6 +936,24 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
   }
 
   String _guardAbortedLabel(String content) {
+    // Unknown-tool aborts use a different body prefix (`[UNKNOWN
+    // TOOL]` instead of `[GUARD]`) and the file-guard helper would
+    // fall through to its generic fallback. Detect the unknown-tool
+    // shape up front and emit a label that names the bad tool so
+    // the collapsed row explains what happened.
+    if (content.startsWith('[UNKNOWN TOOL]')) {
+      final requested =
+          RegExp(r'no tool named "([^"]+)"').firstMatch(content)?.group(1);
+      final tokenMatch = RegExp(
+        r'Aborted after ~(\d+) generated tool-argument tokens\.',
+      ).firstMatch(content);
+      final tokenCount = tokenMatch?.group(1);
+      final base = requested != null
+          ? "unknown tool '$requested', aborted mid-stream"
+          : 'unknown tool, aborted mid-stream';
+      if (tokenCount == null) return base;
+      return '$base (~$tokenCount t)';
+    }
     final label = _guardLabel(content);
     final tokenMatch = RegExp(
       r'Aborted after ~(\d+) generated tool-argument tokens\.',

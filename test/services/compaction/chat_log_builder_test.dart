@@ -12,6 +12,7 @@ import 'package:test/test.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/services/compaction/chat_log_builder.dart';
 import 'package:crux/src/tools/edit_tool.dart';
+import 'package:crux/src/tools/read_tool.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/tools/write_tool.dart';
@@ -844,6 +845,60 @@ void main() {
       expect(result.markdown, isNot(contains('edit: lib/foo.dart')));
       expect(result.markdown, isNot(contains('[GUARD]')));
       expect(result.markdown, isNot(contains('tool-call early abort')));
+    });
+
+    test('unknown-tool streaming abort is dropped', () {
+      // Streaming-time abort path for non-existent tools
+      // (`_buildGuardAbortedToolResult` with `isUnknownTool ==
+      // true`) emits a different body prefix — `[UNKNOWN TOOL]`
+      // instead of `[GUARD]` — but the early-abort marker
+      // (and the `_aborted_by_unknown_tool` stub flag) make
+      // it behave identically under compaction. The tool
+      // call should not appear in the inline log or the
+      // summary; the registry's tool list should never leak.
+      final abortResult =
+          '[UNKNOWN TOOL] Crux stopped this \'ask\' tool call while '
+          'its arguments were still streaming — no tool named "ask" '
+          'is registered in this Crux session.\n\n'
+          'Available tools: bash, edit, read, write\n\n'
+          '[Crux system note — tool-call early abort]\n'
+          'Crux stopped this ask tool call while its arguments '
+          'were still streaming. The tool was not executed. '
+          'Reason: unknown-tool.';
+      final registry = ToolRegistry();
+      registry.register(ReadTool());
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'ask me a question'),
+          _toolCall(
+            id: 2,
+            toolName: 'ask',
+            input: {
+              '_aborted_by_unknown_tool': true,
+              'requestedName': 'ask',
+              'availableTools': ['bash', 'edit', 'read', 'write'],
+              'question': 'hello',
+            },
+          ),
+          _toolResult(id: 3, content: abortResult),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // The aborted call should not appear in any of the
+      // summary sections — its body is treated like a guard
+      // message: dropped wholesale.
+      expect(result.markdown, isNot(contains('[UNKNOWN TOOL]')),
+          reason: 'unknown-tool header must not leak into the '
+              'compacted log');
+      expect(result.markdown, isNot(contains('tool-call early abort')),
+          reason: 'early-abort marker should not survive compaction');
+      expect(result.markdown, isNot(contains('asked me a question')),
+          reason: 'no surrounding-text or summary contribution '
+              'should remain from the aborted round');
     });
 
     test('edit "Tool aborted" output is dropped', () {

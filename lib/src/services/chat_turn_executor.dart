@@ -695,13 +695,19 @@ class ChatTurnExecutor {
                       callId: guardAbort.callId,
                       name: guardAbort.name,
                       filePath: guardAbort.filePath,
-                      reason: guardAbort.guard.reason ?? 'guard',
+                      // `_PendingStreamingGuardAbort.reason` is the
+                      // canonical source of truth for every abort
+                      // kind (`read-before-write`,
+                      // `oldString-no-match`, `unknown-tool`); the
+                      // event surface and the LlmClient cancel
+                      // reason both consume it.
+                      reason: guardAbort.reason,
                       abortedInputTokensEstimate:
                           guardAbort.abortedInputTokensEstimate,
                     ),
                   );
                   await streamCancelToken.cancelActiveStream(
-                    reason: guardAbort.guard.reason ?? 'guard',
+                    reason: guardAbort.reason,
                     guardAbort: true,
                   );
                   lerpTimer?.cancel();
@@ -873,13 +879,28 @@ class ChatTurnExecutor {
       final guardAbort = pendingGuardAbort;
       if (guardAbort != null) {
         toolCalls = _completeToolCallsBeforeIndex(chunks, guardAbort.index);
+        // The stub input shape persists "what would have been
+        // here" so future replays can distinguish an aborted file
+        // guard from an aborted unknown-tool. File guards carry
+        // `filePath`; unknown-tool guards carry the bad name and
+        // the names of the tools the LLM *could* have used. The
+        // `_aborted_*` markers are inert to the model — they're
+        // here for humans/compaction, not in the LLM-visible
+        // wire (the synthetic ToolResult carries the message).
+        final stubInput = guardAbort.isUnknownTool
+            ? <String, dynamic>{
+                '_aborted_by_unknown_tool': true,
+                'requestedName': guardAbort.name,
+                'availableTools': guardAbort.availableTools,
+              }
+            : <String, dynamic>{
+                '_aborted_by_guard': guardAbort.reason,
+                'filePath': guardAbort.filePath,
+              };
         final stubCall = ToolCall(
           callId: guardAbort.callId,
           name: guardAbort.name,
-          input: {
-            '_aborted_by_guard': guardAbort.guard.reason ?? 'guard',
-            'filePath': guardAbort.filePath,
-          },
+          input: stubInput,
         );
         toolCalls.add(stubCall);
         precomputedCallResults[stubCall.callId] = _buildGuardAbortedToolResult(
@@ -1488,24 +1509,68 @@ class ChatTurnExecutor {
   static ToolResult _buildGuardAbortedToolResult(
     _PendingStreamingGuardAbort pending,
   ) {
-    final reason = pending.guard.reason ?? 'guard';
-    return ToolResult(
-      title: 'Tool call aborted by guard',
-      output:
-          '${pending.guard.header}\n\n'
-          '${pending.guard.content}\n\n'
+    // Two paths share this builder: the existing file-edit/write
+    // guards (read-before-write, oldString-no-match) and the new
+    // unknown-tool abort (`ask`, stale registration, etc.). The
+    // body differs but the *system-note marker* and the
+    // `guardAbortedMidStream` metadata flag are identical so the
+    // existing display banners and the compaction filters pick
+    // both paths up the same way.
+    final reason = pending.reason;
+    final String title;
+    final String body;
+    final Map<String, dynamic> metadata;
+    if (pending.isUnknownTool) {
+      title = 'Tool call aborted: unknown tool';
+      final toolList = pending.availableTools.isEmpty
+          ? '<no tools registered>'
+          : pending.availableTools.join(', ');
+      body =
+          '[UNKNOWN TOOL] Crux stopped this \'${pending.name}\' tool call '
+          'while its arguments were still streaming — no tool named '
+          '"${pending.name}" is registered in this Crux session.\n\n'
+          'Available tools: $toolList\n\n'
           '$earlyAbortSystemNoteMarker\n'
           'Crux stopped this ${pending.name} tool call while its arguments '
-          'were still streaming. The tool was not executed. Reason: $reason. '
+          'were still streaming. The tool was not executed. '
+          'Reason: $reason. '
           'Aborted after ~${pending.abortedInputTokensEstimate} generated '
           'tool-argument tokens. '
-          'Use the current file content above to retry with a valid tool call.',
-      metadata: {
+          'Call one of the tools listed in "Available tools" above '
+          'instead of "${pending.name}".';
+      metadata = {
+        'guardTriggered': true,
+        'guardAbortedMidStream': true,
+        'guardReason': reason,
+        'guardUnknownTool': true,
+        'requestedToolName': pending.name,
+        'availableTools': pending.availableTools,
+        'tokensBeforeAbortEstimate': pending.abortedInputTokensEstimate,
+      };
+    } else {
+      final guard = pending.guard!;
+      title = 'Tool call aborted by guard';
+      body =
+          '${guard.header}\n\n'
+          '${guard.content}\n\n'
+          '$earlyAbortSystemNoteMarker\n'
+          'Crux stopped this ${pending.name} tool call while its arguments '
+          'were still streaming. The tool was not executed. '
+          'Reason: $reason. '
+          'Aborted after ~${pending.abortedInputTokensEstimate} generated '
+          'tool-argument tokens. '
+          'Use the current file content above to retry with a valid tool call.';
+      metadata = {
         'guardTriggered': true,
         'guardAbortedMidStream': true,
         'guardReason': reason,
         'tokensBeforeAbortEstimate': pending.abortedInputTokensEstimate,
-      },
+      };
+    }
+    return ToolResult(
+      title: title,
+      output: body,
+      metadata: metadata,
     );
   }
 
@@ -1524,8 +1589,27 @@ class _PendingStreamingGuardAbort {
   final int index;
   final String callId;
   final String name;
+
+  /// Path the LLM was targeting. Only meaningful for the
+  /// `read-before-write` and `oldString-no-match` guards; empty for
+  /// the `unknown-tool` abort.
   final String filePath;
-  final GuardResult guard;
+
+  /// File-guard result. Non-null for `read-before-write` and
+  /// `oldString-no-match` aborts; null for the `unknown-tool` abort.
+  final GuardResult? guard;
+
+  /// Names of tools currently registered in the session, in
+  /// registry order. Non-empty only for the `unknown-tool` abort —
+  /// surfaced in the synthetic ToolResult so the LLM can pick a
+  /// real tool on its retry.
+  final List<String> availableTools;
+
+  /// One of `read-before-write`, `oldString-no-match`,
+  /// `unknown-tool`. Persisted to `metadata.guardReason` and used
+  /// by the display layer to pick the right label / banner.
+  final String reason;
+
   final int abortedInputTokensEstimate;
 
   const _PendingStreamingGuardAbort({
@@ -1534,8 +1618,15 @@ class _PendingStreamingGuardAbort {
     required this.name,
     required this.filePath,
     required this.guard,
+    required this.availableTools,
+    required this.reason,
     required this.abortedInputTokensEstimate,
   });
+
+  /// True when the abort was triggered because the LLM emitted a
+  /// tool name that isn't registered (e.g. `ask`). False for the
+  /// existing file-edit/write guards.
+  bool get isUnknownTool => guard == null;
 }
 
 class _StreamingToolAccum {
@@ -1565,6 +1656,35 @@ class _StreamingGuardAccumulator {
     if (chunk.index > _maxSeenIndex) _maxSeenIndex = chunk.index;
 
     final toolName = acc.name;
+
+    // Unknown-tool abort: the LLM emitted a tool name the registry
+    // doesn't know (e.g. `ask`, `question`, or any tool that was
+    // registered earlier in the session but unregistered via
+    // `/web-provider` mid-stream). We detect this on the very
+    // first chunk that names the tool — the abort fires BEFORE
+    // any arguments stream, so we save the full cost of the
+    // arguments the LLM was about to generate for a tool that
+    // can never run. Mirror the parallel-tool guard behaviour
+    // (only the latest-index tool stream triggers abort) so
+    // earlier siblings still get persisted normally.
+    if (toolName != null &&
+        toolExecutor.lookupTool(toolName) == null &&
+        chunk.index == _maxSeenIndex) {
+      return pendingAbort = _PendingStreamingGuardAbort(
+        index: chunk.index,
+        callId: acc.callId ?? '',
+        name: toolName,
+        filePath: '',
+        guard: null,
+        availableTools: toolExecutor.allToolNames(),
+        reason: 'unknown-tool',
+        abortedInputTokensEstimate: estimateTokens(acc.input.toString()),
+      );
+    }
+
+    // Existing file-edit/write guard path. Tools other than write/edit
+    // (and not in our `unknown` branch above) have no streaming-time
+    // guard from partial JSON, so they pass through uneventfully.
     if (toolName != 'write' && toolName != 'edit') return null;
     if (chunk.index != _maxSeenIndex) return null;
 
@@ -1590,6 +1710,8 @@ class _StreamingGuardAccumulator {
         name: toolName!,
         filePath: filePath,
         guard: guard,
+        availableTools: const [],
+        reason: guard.reason ?? 'guard',
         abortedInputTokensEstimate: estimateTokens(acc.input.toString()),
       );
     }
@@ -1614,6 +1736,8 @@ class _StreamingGuardAccumulator {
       name: toolName!,
       filePath: filePath,
       guard: guard,
+      availableTools: const [],
+      reason: guard.reason ?? 'guard',
       abortedInputTokensEstimate: estimateTokens(acc.input.toString()),
     );
   }
