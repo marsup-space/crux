@@ -483,11 +483,14 @@ void main() {
         snapshot: sample(),
         theme: theme,
       );
-      // The Dracula primary is purple (#BD93F9). nocterm's
-      // TextStyle.toAnsi() emits it as the 8-bit indexed color
-      // 141 (xterm palette), so the SGR foreground sequence is
-      // `38;5;141` rather than a 24-bit truecolor triple.
-      expect(summary, contains('38;5;141'));
+      // The Dracula primary is purple (#BD93F9 = R:189,
+      // G:147, B:249). nocterm's TextStyle.toAnsi()
+      // emits RGB as 24-bit truecolor (`38;2;R;G;B`),
+      // so the SGR foreground sequence around the title
+      // must carry those exact components — not the
+      // 8-bit indexed variant (`38;5;141`) that an older
+      // nocterm revision emitted.
+      expect(summary, contains('38;2;189;147;249'));
     });
   });
 }
