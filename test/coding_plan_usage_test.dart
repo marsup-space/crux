@@ -478,6 +478,7 @@ void main() {
         syntaxOperator: const Color(0xFFFFFF),
         syntaxPunctuation: const Color(0xFFFFFF),
         syntaxMeta: const Color(0xFFFFFF),
+        chipBackground: const Color(0x222222),
       );
       // The widget selects error for decrement and
       // success for increment — verify against the
@@ -560,6 +561,7 @@ void main() {
         syntaxStorage: const Color(0xFFFFFF),
         syntaxFunction: const Color(0xFFFFFF),
         syntaxType: const Color(0xFFFFFF),
+        chipBackground: const Color(0x222222),
       );
     }
 
