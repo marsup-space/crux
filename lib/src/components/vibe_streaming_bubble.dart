@@ -129,25 +129,49 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
+    final rt = component.runtimeState;
+
+    // Active-generation time for the live think box, computed each
+    // build from [SessionRuntimeState.roundFirstTokenTime]. The bubble
+    // rebuilds every 33 ms while streaming, so this stays in lockstep
+    // with the live token row (which lerps as reasoning deltas land).
+    //
+    // Before the first delta lands (roundFirstTokenTime == null),
+    // fall back to [_waitingSeconds] — the "time waiting for the
+    // model" counter — so the think box still has a meaningful time
+    // row during the TTFT phase and the user sees a tick before any
+    // tokens exist. The two clocks never run simultaneously, since
+    // _waitingSeconds freezes once the first delta arrives.
+    //
+    // Previously this row used [_waitingSeconds] for the entire
+    // thinking phase, which froze at the small TTFT value once
+    // reasoning actually streamed — the time row visually stopped
+    // moving while the token row kept growing, so the two never
+    // ticked together.
+    final liveSeconds = rt?.roundFirstTokenTime == null
+        ? _waitingSeconds
+        : DateTime.now()
+            .difference(rt!.roundFirstTokenTime!)
+            .inMicroseconds / 1000000.0;
+
     final boxes = <Component>[];
 
     // Think box: show whenever reasoning is streaming OR has streamed
     // in this round (even if the response body has started, the final
     // values are still relevant).
-    final hasThink = _reasoning.isNotEmpty || _waitingSeconds != null;
+    final hasThink = _reasoning.isNotEmpty || liveSeconds != null;
     final thinkActive = _reasoning.isNotEmpty && _content.isEmpty;
 
     if (hasThink) {
       final rows = <String>[];
-      // Time
-      final secs = _waitingSeconds ?? 0.0;
-      rows.add('${secs.toStringAsFixed(1)}s');
-      // Tokens
+      if (liveSeconds != null) {
+        rows.add('${liveSeconds.toStringAsFixed(1)}s');
+      }
       if (_reasoning.isNotEmpty) {
         rows.add(formatTokens(estimateTokens(_reasoning)));
       }
       // Effort — known from the start, not just when reasoning arrives
-      final effort = _displayEffort(component.runtimeState?.reasoningEffort);
+      final effort = _displayEffort(rt?.reasoningEffort);
       if (effort.isNotEmpty) {
         rows.add(effort);
       }
