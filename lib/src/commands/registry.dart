@@ -257,6 +257,28 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
+  // Toggle the chat log display mode between verbose (per-call
+  // detail) and vibe (aggregated metadata boxes). Pure viewer-mode
+  // setting — never touches the in-flight stream. `/view` with no
+  // arg reports the current mode.
+  SlashCommand(
+    name: '/view',
+    description: 'Switch chat log display mode (verbose|vibe)',
+    params: ['mode'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(
+          value: 'verbose',
+          description: 'Show all detail (current default)',
+        ),
+        CommandSuggestion(
+          value: 'vibe',
+          description: 'Aggregated metadata boxes (denser)',
+        ),
+      ],
+    ],
+    availableDuringResponse: true,
+  ),
   // Override the LLM sampling temperature for the rest of the
   // session. Input is clamped to [0.0, 1.0] regardless of what is
   // typed — the underlying APIs accept up to 2.0, but Crux

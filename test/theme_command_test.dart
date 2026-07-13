@@ -65,6 +65,7 @@ void main() {
       createNewSession: () async {},
       runtime: (_) => runtime,
       persistThinkingLevel: (_) {},
+      persistChatDisplayMode: (_) {},
       persistTemperature: (_) async {},
       resolveAuxiliaryModel: () {},
       themeController: controller,

@@ -294,6 +294,22 @@ abstract class ToolDef {
     return null;
   }
 
+  /// Structured per-call modification summary, used by vibe mode's
+  /// `files` box. Default implementation returns `null` (no
+  /// modifications reported). Tools that mutate files
+  /// (`write_tool`, `edit_tool`) override this to report the file
+  /// path + line deltas.
+  ///
+  /// The [args] map is the fully-parsed input the LLM emitted
+  /// (or whatever the tool received and stored in
+  /// `ToolCallData.input`); [result] is the final [ToolResult].
+  ModSummary? modSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    return null;
+  }
+
   /// Whether this tool's results should be dropped entirely from
   /// chat logs. Override to `true` for discovery / introspection
   /// tools (`grep` / `glob` / `session`) whose success is implied
@@ -400,6 +416,26 @@ abstract class ToolDef {
 String _capitalize(String s) {
   if (s.isEmpty) return s;
   return s[0].toUpperCase() + s.substring(1);
+}
+
+/// Structured per-call modification summary for vibe mode's `files`
+/// box. Returned by [ToolDef.modSummary] on tools that mutate files
+/// (`write_tool`, `edit_tool`).
+class ModSummary {
+  final List<ModFileChange> changes;
+
+  const ModSummary({required this.changes});
+}
+
+/// One file's line delta within a [ModSummary]. [path] is the
+/// display path (relative when possible), [linesAdded] /
+/// [linesRemoved] are the diff counts for that file in this call.
+class ModFileChange {
+  final String path;
+  final int linesAdded;
+  final int linesRemoved;
+
+  const ModFileChange(this.path, this.linesAdded, this.linesRemoved);
 }
 
 String _intentOf(ToolCallData c) {

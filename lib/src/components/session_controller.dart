@@ -1126,6 +1126,20 @@ class SessionController {
     );
   }
 
+  /// Mirror the in-memory runtime's `chatDisplayMode` so the rest of
+  /// the UI (chat panel, chat history) can read it off the [Session]
+  /// model without reaching into the runtime. In-memory only — not
+  /// persisted to the database (pure viewer-mode setting). Called by
+  /// the `/view` slash command and the top-right toggle button.
+  void persistChatDisplayMode(SessionRuntimeState rt) {
+    final sid = currentSessionId;
+    if (sid == null) return;
+    final session = findSession(sid);
+    if (session != null) {
+      session.chatDisplayMode = rt.chatDisplayMode;
+    }
+  }
+
   /// Mirror the in-memory runtime's `temperatureOverride` onto the
   /// `Session` and persist it via `SessionStore.update`. Called by
   /// the `/temperature` slash command — the runtime owns the

@@ -9,6 +9,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/message.dart';
+import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../utils/frame_profiler.dart';
@@ -31,6 +32,9 @@ import 'session_cubit.dart';
 import 'streaming_bubble.dart';
 import 'streaming_controller.dart';
 import 'tldr_bubble.dart';
+import 'vibe_box_data.dart';
+import 'vibe_segment_bubble.dart';
+import 'vibe_streaming_bubble.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 
@@ -363,7 +367,42 @@ class _ChatHistoryState extends State<ChatHistory> {
     // not on the individual message, so calling it per-message in
     // the loop was redundant — N redundant provider/model lookups
     // for an N-message session.
+    // Vibe mode: render aggregated segment bubbles instead of
+    // per-message MessageBubbles. System-role messages are hidden
+    // entirely (walkSegments skips them).
+    final isVibeMode = rt?.chatDisplayMode == ChatDisplayMode.vibe;
+
+    // Computed once for both vibe and verbose paths — vibe mode's
+    // VibeStreamingBubble needs it to map effort → display label.
     final reasoningPresets = _currentReasoningPresets();
+
+    if (isVibeMode) {
+      final segments = walkSegments(
+        messages,
+        resultByCallId,
+        component.toolRegistry,
+      );
+      for (final seg in segments) {
+        // Mirror the verbose-mode path so the annotated scrollbar
+        // still has one dot per user turn in vibe mode. We use
+        // [VibeSegment.showUserMessage] (the same flag that gates
+        // the visible 'you:' line) so a multi-segment turn still
+        // produces exactly one dot — the segment whose first row is
+        // the user line. Without this, `userItemIndices` stays
+        // empty and the scrollbar has no markers.
+        if (seg.showUserMessage) {
+          userItemIndices.add(items.length);
+          final text =
+              seg.userMessage.content.replaceAll('\n', ' ').trim();
+          userItemLabels.add(text);
+        }
+        items.add((ctx) => VibeSegmentBubble(segment: seg));
+        items.add((ctx) => const SizedBox(height: 1));
+      }
+    }
+
+    // Verbose mode: existing per-message rendering.
+    if (!isVibeMode) {
 
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
@@ -513,6 +552,7 @@ class _ChatHistoryState extends State<ChatHistory> {
         }
       }
     }
+    } // end if (!isVibeMode)
 
     // Render the in-memory `/btw` chain. Read from the list captured
     // at the top of this method (BtwCubit subscription) instead of
@@ -547,6 +587,16 @@ class _ChatHistoryState extends State<ChatHistory> {
             streaming: true,
           );
         });
+      } else if (isVibeMode) {
+        // Vibe mode: show live boxes instead of the verbose streaming bubble.
+        items.add((ctx) {
+          return VibeStreamingBubble(
+            streamingController: component.streamingController,
+            sessionId: component.sessionController.currentSessionId ?? 0,
+            runtimeState: rt,
+            reasoningPresets: reasoningPresets,
+          );
+        });
       } else {
         items.add((ctx) {
           return StreamingBubble(
@@ -564,6 +614,7 @@ class _ChatHistoryState extends State<ChatHistory> {
                 ),
             toolRegistry: component.toolRegistry,
             runtimeState: rt,
+            hideReasoning: isVibeMode,
           );
         });
       }

@@ -108,6 +108,22 @@ class WriteTool extends ToolDef with IntentionalTool {
     );
   }
 
+  @override
+  ModSummary? modSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    final filePath = args['filePath'] as String? ?? '';
+    if (filePath.isEmpty) return null;
+    final content = args['content'] as String? ?? '';
+    final existingLineCount = _existingLineCountFromOutput(result.output);
+    final newLines =
+        content.isEmpty ? 0 : '\n'.allMatches(content).length + 1;
+    return ModSummary(changes: [
+      ModFileChange(filePath, newLines, existingLineCount),
+    ]);
+  }
+
   /// Extract the prior line count from a WriteTool success
   /// message. Matches the two shapes [_doWrite] emits:
   ///   - new file:        `"... +4 lines, ..."`

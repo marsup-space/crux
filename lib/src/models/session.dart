@@ -1,3 +1,5 @@
+import 'session_runtime_state.dart';
+
 enum SessionStatus { idle, running, needUserAction, done, interrupted }
 
 class Session {
@@ -17,6 +19,12 @@ class Session {
   int promptCacheHitTokens;
   String thinkingMode;
   String? reasoningEffort;
+
+  /// Per-session chat display mode (verbose vs vibe). In-memory only —
+  /// mirrored from [SessionRuntimeState.chatDisplayMode] by
+  /// [SessionController.persistChatDisplayMode]. Not persisted to the
+  /// database; defaults to [ChatDisplayMode.verbose] on app restart.
+  ChatDisplayMode chatDisplayMode;
 
   /// Optional per-session override for the sampling temperature
   /// that the `/temperature` slash command sets. When non-null this
@@ -55,6 +63,7 @@ class Session {
     this.promptCacheHitTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.chatDisplayMode = ChatDisplayMode.verbose,
     this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,

@@ -113,6 +113,30 @@ class EditTool extends ToolDef with IntentionalTool {
     );
   }
 
+  @override
+  ModSummary? modSummary(
+    Map<String, dynamic> args,
+    ToolResult result,
+  ) {
+    final filePath = args['filePath'] as String? ?? '';
+    if (filePath.isEmpty) return null;
+    final oldString = args['oldString'] as String? ?? '';
+    final newString = args['newString'] as String? ?? '';
+    final replaceAll = (args['replaceAll'] as bool?) ?? false;
+    final replaceCount =
+        _replaceCountFromOutput(result.output) ??
+        (replaceAll ? _allFallbackCount(args) : 1);
+    final oldLines = oldString.isEmpty
+        ? 0
+        : '\n'.allMatches(oldString).length + 1;
+    final newLines = newString.isEmpty
+        ? 0
+        : '\n'.allMatches(newString).length + 1;
+    return ModSummary(changes: [
+      ModFileChange(filePath, newLines * replaceCount, oldLines * replaceCount),
+    ]);
+  }
+
   /// Parse the replacement count out of an EditTool success
   /// message. Looks for the canonical
   /// `"Replaced N occurrence(s) of oldString ..."` form that

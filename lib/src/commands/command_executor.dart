@@ -20,6 +20,7 @@ import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
 import 'cmd_think.dart';
+import 'cmd_view.dart';
 import 'cmd_temperature.dart';
 import 'cmd_project.dart';
 import 'cmd_tldr.dart';
@@ -52,6 +53,7 @@ class CommandContext {
   final Future<void> Function() createNewSession;
   final SessionRuntimeState Function(int) runtime;
   final void Function(SessionRuntimeState) persistThinkingLevel;
+  final void Function(SessionRuntimeState) persistChatDisplayMode;
   final Future<void> Function(SessionRuntimeState) persistTemperature;
   final void Function() resolveAuxiliaryModel;
   final void Function(int, Message, TldrDetail, String?)? triggerTldr;
@@ -84,6 +86,7 @@ class CommandContext {
     required this.createNewSession,
     required this.runtime,
     required this.persistThinkingLevel,
+    required this.persistChatDisplayMode,
     required this.persistTemperature,
     required this.resolveAuxiliaryModel,
     this.triggerTldr,
@@ -126,6 +129,8 @@ class CommandExecutor {
         await executeTheme(parts, ctx);
       case '/think':
         await executeThink(parts, ctx);
+      case '/view':
+        await executeView(parts, ctx);
       case '/temperature':
         await executeTemperature(parts, ctx);
       case '/tldr':

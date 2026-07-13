@@ -56,12 +56,19 @@ class StreamingBubble extends StatefulComponent {
   /// the default capitalized-name + token-budget label.
   final ToolRegistry? toolRegistry;
 
+  /// When true, the reasoning blocks are not rendered. Used by
+  /// vibe mode to suppress the verbose reasoning display during
+  /// streaming — the vibe segment bubble handles reasoning
+  /// summarisation instead.
+  final bool hideReasoning;
+
   const StreamingBubble({
     required this.streamingController,
     required this.sessionId,
     this.runtimeState,
     this.streamingToolCalls = const [],
     this.toolRegistry,
+    this.hideReasoning = false,
     super.key,
   });
 
@@ -361,7 +368,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   }
 
   Component _buildInner(BuildContext context) {
-    final hasReasoning = _reasoning.isNotEmpty;
+    final hasReasoning = !component.hideReasoning && _reasoning.isNotEmpty;
     final waitingSeconds = _waitingForModelSeconds;
     final executingSeconds = _executingToolsSeconds;
 

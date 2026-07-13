@@ -2,6 +2,17 @@ import 'dart:async';
 
 import 'session_runtime_sink.dart';
 
+/// Per-session chat log display mode. New sessions open in [verbose]
+/// (current behaviour, zero change for existing users). The user
+/// flips to [vibe] via the `/view vibe` slash command or the top-right
+/// toggle button. In vibe mode the chat history renders aggregated
+/// metadata boxes instead of per-call detail rows.
+///
+/// This is a pure viewer-mode setting — stored in-memory on
+/// [SessionRuntimeState], not persisted to the database. The mode
+/// resets to [verbose] on app restart, which is the desired default.
+enum ChatDisplayMode { verbose, vibe }
+
 class SessionRuntimeState implements SessionRuntimeSink {
   @override
   final int sessionId;
@@ -75,6 +86,12 @@ class SessionRuntimeState implements SessionRuntimeSink {
   int accumulatedToolTokens;
   String thinkingMode;
   String? reasoningEffort;
+
+  /// Per-session chat display mode (verbose vs vibe). See
+  /// [ChatDisplayMode]. In-memory only — resets to [verbose] on
+  /// app restart. Toggled by the `/view` slash command and the
+  /// top-right toggle button in the chat panel.
+  ChatDisplayMode chatDisplayMode;
 
   /// Per-session override for the LLM sampling temperature set by
   /// the `/temperature` slash command. When non-null, this wins
@@ -228,6 +245,7 @@ class SessionRuntimeState implements SessionRuntimeSink {
     this.accumulatedToolTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
+    this.chatDisplayMode = ChatDisplayMode.verbose,
     this.temperatureOverride,
     this.cacheHitPct,
     this.isGeneratingTldr = false,

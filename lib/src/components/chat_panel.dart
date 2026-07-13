@@ -53,6 +53,7 @@ import 'streaming_controller.dart';
 import 'suggestion_overlay.dart';
 import 'tool_detail_pane.dart';
 import 'ui/toast.dart';
+import 'ui/button.dart';
 import 'ui/fullpane.dart';
 
 /// Number of messages to load synchronously at boot.
@@ -710,6 +711,7 @@ class _ChatPanelState extends State<ChatPanel> {
       createNewSession: _createNewSession,
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
+      persistChatDisplayMode: _sessionController.persistChatDisplayMode,
       persistTemperature: _sessionController.persistTemperature,
       resolveAuxiliaryModel: _sessionController.resolveAuxiliaryModel,
       triggerTldr: (sessionId, aiMsg, detail, userQuestion) {
@@ -1125,6 +1127,36 @@ class _ChatPanelState extends State<ChatPanel> {
                               ? _openCompactionFullpane
                               : null,
                     ),
+                    // Vibe/verbose toggle — absolutely positioned
+                    // top-right, outside the chat scroll view.
+                    // Reuses the project's Button component for
+                    // hover/focus theming via CruxTheme. Label shows
+                    // the current mode; click flips it.
+                    //
+                    // The `right: 2` (instead of `right: 0`) leaves
+                    // the scrollbar's thumb + marker column free at
+                    // the panel's right edge — without it, the
+                    // button visually overlaps the scrollbar and
+                    // blocks its hit testing in the top corner.
+                    if (rt != null)
+                      Positioned(
+                        top: 0,
+                        right: 2,
+                        child: Button(
+                          label: rt.chatDisplayMode == ChatDisplayMode.vibe
+                              ? 'vibe'
+                              : 'verbose',
+                          onPressed: () {
+                            final newMode =
+                                rt.chatDisplayMode == ChatDisplayMode.vibe
+                                ? ChatDisplayMode.verbose
+                                : ChatDisplayMode.vibe;
+                            rt.chatDisplayMode = newMode;
+                            _sessionController.persistChatDisplayMode(rt);
+                            setState(() {});
+                          },
+                        ),
+                      ),
                     ...overlays,
                   ],
                 ),
