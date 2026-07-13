@@ -120,46 +120,32 @@ class VibeSegmentBubble extends StatelessComponent {
               ],
             ),
           ),
-        // Prose line. Composes mid-round prose from any
-        // `tool_call with content` rows (stashed in
-        // [VibeSegment.midProse]) with the closing `ai`'s content
-        // ([VibeSegment.prose]), separated by a blank line so the
-        // temporal order reads naturally ("Let me check first." →
-        // "Here is the answer."). Either side may be null on a
-        // pending or boxes-only segment.
-        if (segment.prose != null || segment.midProse != null) ...[
-          Builder(builder: (context) {
-            final mid = segment.midProse?.trim();
-            final main = segment.prose?.content.trim();
-            final combined = (() {
-              if (mid != null && mid.isNotEmpty && main != null && main.isNotEmpty) {
-                return '$mid\n\n$main';
-              }
-              if (mid != null && mid.isNotEmpty) return mid;
-              if (main != null && main.isNotEmpty) return main;
-              return null;
-            })();
-            if (combined == null) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ' Crux: ',
-                    style: TextStyle(
-                      color: theme.responsePrefix,
-                      fontWeight: FontWeight.bold,
-                    ),
+        // Prose line. Single closing message — its `content` is
+        // rendered under the `crux:` prefix. Either `role: 'ai'`
+        // (the agent's prose reply) or `role: 'tool_call'` with
+        // non-empty content (a mid-round remark that itself
+        // closed a prose boundary). Null on a pending or
+        // boxes-only segment.
+        if (segment.prose != null &&
+            segment.prose!.content.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ' Crux: ',
+                  style: TextStyle(
+                    color: theme.responsePrefix,
+                    fontWeight: FontWeight.bold,
                   ),
-                  Expanded(
-                    child: HighlightedMarkdownText(combined),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
+                ),
+                Expanded(
+                  child: HighlightedMarkdownText(segment.prose!.content),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
