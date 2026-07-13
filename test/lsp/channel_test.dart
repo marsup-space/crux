@@ -244,14 +244,19 @@ void main() {
       ch1.send(const LspCmdStart(root: '/a', file: '/a/x.echo'));
       ch2.send(const LspCmdStart(root: '/b', file: '/b/x.echo'));
 
+      // 10s timeout — passes in <50ms under normal load
+      // but tolerates the heavy CPU contention this test
+      // sees when run as part of the full suite (other
+      // tests, isolate spawn churn, etc.). 2s was too
+      // tight and caused sporadic failures under load.
       final a = await _firstMatching<LspEventStarted>(
         ch1.events,
         (e) => e is LspEventStarted,
-      ).timeout(const Duration(seconds: 2));
+      ).timeout(const Duration(seconds: 10));
       final b = await _firstMatching<LspEventStarted>(
         ch2.events,
         (e) => e is LspEventStarted,
-      ).timeout(const Duration(seconds: 2));
+      ).timeout(const Duration(seconds: 10));
 
       expect(a.root, '/a');
       expect(b.root, '/b');
