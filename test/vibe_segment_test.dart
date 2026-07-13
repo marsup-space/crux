@@ -95,12 +95,22 @@ void main() {
       expect(segments[0].prose, isNull);
     });
 
-    test('user message shown only once across multi-segment turn', () {
+    test('one user turn produces one segment even with mid-round prose', () {
+      // Mid-round prose (a tool_call row with content alongside
+      // tools) used to close the segment and emit a sibling before
+      // the closing ai, which duplicated think/tools boxes inside
+      // what looks like one logical turn. The walker now collapses
+      // to one segment per user turn, with mid-round prose stashed
+      // in [VibeSegment.midProse] and the ai's content in
+      // [VibeSegment.prose].
       final callId = 'call-1';
       final messages = [
         _userMsg('show me', id: 1),
         _toolCallMsg(
           id: 2,
+          reasoningContent: 'Thinking...',
+          reasoningTokens: 250,
+          thinkingDurationMs: 1500,
           content: 'Let me check that for you.',
           toolCalls: [
             ToolCallData(callId: callId, name: 'bash', input: {}),
@@ -112,11 +122,20 @@ void main() {
       final resultsByCallId = {callId: messages[2]};
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
 
-      expect(segments.length, 2);
-      // First segment shows the user message.
+      expect(segments.length, 1);
+      expect(segments[0].userMessage.content, 'show me');
       expect(segments[0].showUserMessage, isTrue);
-      // Second segment (from the ai message) does NOT repeat the user message.
-      expect(segments[1].showUserMessage, isFalse);
+      // Boxes aggregate across rounds inside the same user turn.
+      expect(segments[0].think, isNotNull);
+      expect(segments[0].think!.tokens, 250);
+      expect(segments[0].tools, isNotNull);
+      expect(segments[0].tools!.entries.length, 1);
+      expect(segments[0].tools!.entries[0].name, 'bash');
+      // Prose is split between mid-round (tool_call content) and
+      // the closing ai.
+      expect(segments[0].midProse, 'Let me check that for you.');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content, 'Here is the full answer.');
     });
 
     test('reasoning is accumulated into think box', () {
@@ -232,7 +251,11 @@ void main() {
       expect(segments[1].prose!.content, 'second answer');
     });
 
-    test('tool_call with non-empty content closes segment (mixed round)', () {
+    test('user boundary in middle of mid-round prose starts a new segment', () {
+      // The new boundary rule: tool_call_with_content does NOT close
+      // a segment — its content goes into the segment's midProse
+      // buffer. A subsequent user message DOES close. The first
+      // segment here carries the midProse; the second is plain.
       final messages = [
         _userMsg('mixed round', id: 1),
         _toolCallMsg(
@@ -248,14 +271,28 @@ void main() {
       final segments = walkSegments(messages, {}, ToolRegistry());
 
       expect(segments.length, 2);
-      expect(segments[0].prose!.content, 'Here is some prose alongside tools.');
+      // First segment: mid-prose carried as midProse, no closing ai.
+      expect(segments[0].userMessage.content, 'mixed round');
+      expect(segments[0].midProse, 'Here is some prose alongside tools.');
+      expect(segments[0].prose, isNull);
+      // Tools box came from the same tool_call row.
+      expect(segments[0].tools, isNotNull);
+      expect(segments[0].tools!.entries.length, 1);
+      expect(segments[0].tools!.entries[0].name, 'read');
+      // Second segment: clean — user boundary flushes the previous.
       expect(segments[1].userMessage.content, 'next turn');
+      expect(segments[1].prose!.content, 'answer');
+      expect(segments[1].midProse, isNull);
     });
 
-    test('tool_call with content followed by ai message produces two segments', () {
-      // Regression: the tool_call's content was closing the segment
-      // and clearing currentUser, so the ai message's full response
-      // was silently lost in vibe mode.
+    test('mid-round prose merges into the closing ai segment (one segment per turn)', () {
+      // Regression on the regression: the previous fix emitted
+      // [tool_call prose, ai prose] as two separate segments in the
+      // same user turn, duplicating the think/tools boxes. Collapsing
+      // to one segment per turn merges the mid-prose into the same
+      // segment's midProse field and keeps the final ai's content
+      // in [VibeSegment.prose] — so the renderer can compose them
+      // on a single row and the boxes only render once.
       final callId = 'call-1';
       final messages = [
         _userMsg('show me the log', id: 1),
@@ -285,16 +322,21 @@ void main() {
       };
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
 
-      // Both the tool_call content AND the ai content should produce
-      // segments — the ai message must not be lost.
-      expect(segments.length, 2);
-      expect(segments[0].prose!.content,
-          'Yes — all 4 fixes are committed. Confirmed just now:');
-      expect(segments[1].prose!.content,
-          'Four atomic commits on top of 3622efb...');
-      // Both segments share the same user message.
+      expect(segments.length, 1);
       expect(segments[0].userMessage.content, 'show me the log');
-      expect(segments[1].userMessage.content, 'show me the log');
+      // Mid-round prose preserved on the same segment.
+      expect(segments[0].midProse,
+          'Yes — all 4 fixes are committed. Confirmed just now:');
+      // Closing ai prose preserved alongside it.
+      expect(segments[0].prose!.content,
+          'Four atomic commits on top of 3622efb...');
+      // Boxes aggregate across the multi-round turn.
+      expect(segments[0].think, isNotNull);
+      expect(segments[0].think!.duration.inMilliseconds, 3000);
+      expect(segments[0].tools, isNotNull);
+      expect(segments[0].tools!.entries.length, 1);
+      expect(segments[0].tools!.entries[0].name, 'bash');
+      expect(segments[0].tools!.entries[0].callCount, 2);
     });
 
     test('formatTokens formats correctly', () {

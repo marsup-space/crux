@@ -71,24 +71,29 @@ class ModBoxData {
   });
 }
 
-/// One segment per prose-bearing round. Boxes are `null` when their
-/// data is empty — the renderer emits nothing in that case rather than
+/// One segment per user turn. Boxes are `null` when their data is
+/// empty — the renderer emits nothing in that case rather than
 /// rendering an empty bordered region.
 ///
-/// [showUserMessage] is `true` only for the first segment after a user
-/// turn, so the user's input appears exactly once. Subsequent segments
-/// (from `tool_call` with content + later `ai` message) omit the user
-/// line to avoid repetition.
+/// [showUserMessage] is always `true`: with one segment per turn,
+/// there's no second segment to dedupe against.
 ///
-/// [prose] is `null` for a "pending" segment — the user has typed but
-/// the agent hasn't emitted a closing `ai` message yet. The renderer
-/// shows the user line + any accumulated boxes but no prose.
+/// [prose] is the closing `ai` message's content. [midProse] is
+/// mid-round prose accumulated from `tool_call` messages with
+/// non-empty `content` (e.g. the agent says "Let me check that for
+/// you." alongside a bash call) — kept separately so the renderer
+/// can render it above [prose] in temporal order. When [prose] is
+/// `null` (pending segment — no closing `ai` yet) and only [midProse]
+/// is non-null, the renderer falls back to showing [midProse]
+/// alone. Either or both may be null for a pending / boxes-only
+/// segment.
 class VibeSegment {
   final Message userMessage;
   final ThinkBoxData? think;
   final ToolBoxData? tools;
   final ModBoxData? mods;
   final Message? prose;
+  final String? midProse;
   final bool showUserMessage;
 
   const VibeSegment({
@@ -97,6 +102,7 @@ class VibeSegment {
     this.tools,
     this.mods,
     this.prose,
+    this.midProse,
     this.showUserMessage = true,
   });
 }
@@ -114,13 +120,28 @@ const _systemRoles = {
 
 /// Pure function: messages + results → segment list. No side effects.
 ///
-/// Walks messages in order, grouping into segments bounded by
-/// `role: 'ai'` response bodies (or `role: 'tool_call'` messages with
-/// non-empty `content`). System-role messages are skipped entirely.
+/// Walks messages in order and emits **one [VibeSegment] per user
+/// turn** — bounded by the user's `role: 'user'` row on the start
+/// side and the closing `role: 'ai'` row on the end side. The
+/// boundary is asymmetric on purpose:
 ///
-/// [resultsByCallId] maps tool-call IDs to their result messages so
-/// the per-call [CollapsedSummary] can be computed. [toolRegistry] is
-/// used to look up each [ToolDef] for the summary computation.
+/// * A `role: 'tool_call'` with non-empty `content` (a mid-round
+///   remark like "Let me check that for you.") does **not** close a
+///   segment. Its `content` is captured into the segment's
+///   [VibeSegment.midProse] buffer and rendered above the closing
+///   `ai`'s prose. The earlier design closed on `tool_call` with
+///   content, which made a multi-round turn with mid-prose emit
+///   **two** segments — each carrying its own think/tools boxes —
+///   so the user saw duplicate think/tools inside what looked like
+///   one logical turn. Collapsing to one segment per user turn
+///   keeps the boxes aggregated and the prose naturally merged.
+/// * A `role: 'ai'` row always closes the current segment, with
+///   its `content` becoming [VibeSegment.prose].
+///
+/// System-role messages are skipped entirely (they never enter a
+/// segment). [resultsByCallId] maps tool-call IDs to their result
+/// messages so the per-call [CollapsedSummary] can be computed;
+/// [toolRegistry] is used to look up each [ToolDef] for the summary.
 List<VibeSegment> walkSegments(
   List<Message> messages,
   Map<String, Message> resultsByCallId,
@@ -129,7 +150,6 @@ List<VibeSegment> walkSegments(
   final segments = <VibeSegment>[];
 
   Message? currentUser;
-  bool userMessageShown = false;
   Duration thinkDuration = Duration.zero;
   int thinkTokens = 0;
   String? thinkEffort;
@@ -140,18 +160,34 @@ List<VibeSegment> walkSegments(
   final modPaths = <String>[];
   final modLinesAdded = <String, int>{};
   final modLinesRemoved = <String, int>{};
+  // Mid-round prose buffer: tool_call messages with non-empty
+  // content append here; the closing ai (or end-of-walk) merges
+  // it into the final segment's VibeSegment.midProse field.
+  String? pendingMidProse;
 
   for (final msg in messages) {
     // Skip system-role messages entirely.
     if (_systemRoles.contains(msg.role)) continue;
 
     if (msg.role == 'user') {
-      // Start a new user turn — flush any pending segment first.
-      _emitPending(segments, currentUser, userMessageShown, thinkDuration,
-          thinkTokens, thinkEffort, toolEntries, toolOrder, toolTotalTokens,
-          modPaths, modLinesAdded, modLinesRemoved);
+      // User boundary: close the previous turn's segment (if any)
+      // with whatever prose we've accumulated, then reset.
+      _emitSegment(
+        segments,
+        currentUser,
+        thinkDuration,
+        thinkTokens,
+        thinkEffort,
+        toolEntries,
+        toolOrder,
+        toolTotalTokens,
+        modPaths,
+        modLinesAdded,
+        modLinesRemoved,
+        pendingMidProse,
+        null,
+      );
       currentUser = msg;
-      userMessageShown = false;
       thinkDuration = Duration.zero;
       thinkTokens = 0;
       thinkEffort = null;
@@ -161,6 +197,7 @@ List<VibeSegment> walkSegments(
       modPaths.clear();
       modLinesAdded.clear();
       modLinesRemoved.clear();
+      pendingMidProse = null;
       continue;
     }
 
@@ -229,45 +266,25 @@ List<VibeSegment> walkSegments(
         }
       }
 
-      // Check if this message closes the segment.
-      // A `role: 'ai'` row always closes. A `role: 'tool_call'` with
-      // non-empty `content` also closes (mixed round with prose).
-      final closesSegment = msg.role == 'ai' ||
-          (msg.role == 'tool_call' && msg.content.isNotEmpty);
-
-      if (closesSegment && currentUser != null) {
-        final entries = toolOrder
-            .map((name) => toolEntries[name]!)
-            .toList();
-
-        segments.add(VibeSegment(
-          userMessage: currentUser,
-          showUserMessage: !userMessageShown,
-          think: thinkDuration.inMilliseconds > 0 || thinkTokens > 0
-              ? ThinkBoxData(
-                  duration: thinkDuration,
-                  tokens: thinkTokens,
-                  effort: thinkEffort,
-                )
-              : null,
-          tools: entries.isNotEmpty
-              ? ToolBoxData(entries: entries, totalTokens: toolTotalTokens)
-              : null,
-          mods: modPaths.isNotEmpty
-              ? ModBoxData(
-                  paths: modPaths.take(8).toList(),
-                  linesAdded: modPaths.take(8).fold(0,
-                      (sum, p) => sum + (modLinesAdded[p] ?? 0)),
-                  linesRemoved: modPaths.take(8).fold(0,
-                      (sum, p) => sum + (modLinesRemoved[p] ?? 0)),
-                  overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
-                )
-              : null,
-          prose: msg,
-        ));
-        userMessageShown = true;
-
-        // Reset accumulators for the next segment.
+      // Track prose. A tool_call with content appends to the
+      // mid-round buffer (no close); an ai row closes the segment.
+      if (msg.role == 'ai') {
+        _emitSegment(
+          segments,
+          currentUser,
+          thinkDuration,
+          thinkTokens,
+          thinkEffort,
+          toolEntries,
+          toolOrder,
+          toolTotalTokens,
+          modPaths,
+          modLinesAdded,
+          modLinesRemoved,
+          pendingMidProse,
+          msg,
+        );
+        // Reset accumulators for the next turn.
         thinkDuration = Duration.zero;
         thinkTokens = 0;
         thinkEffort = null;
@@ -277,14 +294,13 @@ List<VibeSegment> walkSegments(
         modPaths.clear();
         modLinesAdded.clear();
         modLinesRemoved.clear();
-        // Only clear currentUser when the closing message is 'ai'.
-        // When a 'tool_call' with content closes (mixed round), keep
-        // currentUser so the subsequent 'ai' message can emit another
-        // segment with the full response. Without this, the agent's
-        // final reply is silently lost in vibe mode.
-        if (msg.role == 'ai') {
-          currentUser = null;
-        }
+        pendingMidProse = null;
+        currentUser = null;
+      } else if (msg.content.isNotEmpty) {
+        // Mid-round prose: append to the buffer, do NOT close.
+        pendingMidProse = pendingMidProse == null
+            ? msg.content
+            : '$pendingMidProse\n\n${msg.content}';
       }
     }
     // `role: 'tool'` messages are result rows — they pair with the
@@ -293,29 +309,46 @@ List<VibeSegment> walkSegments(
     // don't need to process tool-result messages here.
   }
 
-  // After walking all messages, emit a pending segment if the user
-  // has typed but the agent hasn't emitted a closing message yet.
-  // This ensures the user's input appears immediately, and any
-  // accumulated think/tools boxes from completed-but-unclosed rounds
-  // are visible during streaming.
-  _emitPending(segments, currentUser, userMessageShown, thinkDuration,
-      thinkTokens, thinkEffort, toolEntries, toolOrder, toolTotalTokens,
-      modPaths, modLinesAdded, modLinesRemoved);
+  // Trailing flush: emit a pending segment for any unclosed turn.
+  _emitSegment(
+    segments,
+    currentUser,
+    thinkDuration,
+    thinkTokens,
+    thinkEffort,
+    toolEntries,
+    toolOrder,
+    toolTotalTokens,
+    modPaths,
+    modLinesAdded,
+    modLinesRemoved,
+    pendingMidProse,
+    null,
+  );
 
   return segments;
 }
 
-/// Emit a pending segment if there's an unclosed user turn.
+/// Emit a [VibeSegment] for the current user turn, if any. Used at
+/// three sites:
 ///
-/// Called when a new user message arrives (flushing the previous
-/// turn's pending state) and after walking all messages (flushing
-/// the current turn). Only emits if [currentUser] is non-null AND
-/// there's something to show: either the user message hasn't been
-/// shown yet, or there are accumulated think/tools/mods boxes.
-void _emitPending(
+///   * on a new `role: 'user'` row (flushing the previous turn),
+///   * on a closing `role: 'ai'` row (midProse + mainProse attached),
+///   * at end-of-walk (trailing segment for an unclosed turn).
+///
+/// [currentUser] is the segment anchor (the user message that
+/// opened the turn). When null, no emission — caller's responsibility
+/// to skip.
+///
+/// When [currentUser] is non-null, emission always happens. The
+/// "pending" case (user just typed, agent hasn't replied — no
+/// boxes, no prose yet) is legitimate: the renderer shows the
+/// `you:` line so the user sees their own input reflected back.
+/// Boxes and prose fields stay null and the renderer simply hides
+/// them.
+void _emitSegment(
   List<VibeSegment> segments,
   Message? currentUser,
-  bool userMessageShown,
   Duration thinkDuration,
   int thinkTokens,
   String? thinkEffort,
@@ -325,23 +358,17 @@ void _emitPending(
   List<String> modPaths,
   Map<String, int> modLinesAdded,
   Map<String, int> modLinesRemoved,
+  String? midProse,
+  Message? mainProse,
 ) {
   if (currentUser == null) return;
 
   final entries = toolOrder.map((name) => toolEntries[name]!).toList();
-  final hasBoxes = thinkDuration.inMilliseconds > 0 ||
-      thinkTokens > 0 ||
-      entries.isNotEmpty ||
-      modPaths.isNotEmpty;
-
-  // Only emit if the user message hasn't been shown yet, or there
-  // are accumulated boxes to display.
-  if (userMessageShown && !hasBoxes) return;
+  final hasThink = thinkDuration.inMilliseconds > 0 || thinkTokens > 0;
 
   segments.add(VibeSegment(
     userMessage: currentUser,
-    showUserMessage: !userMessageShown,
-    think: thinkDuration.inMilliseconds > 0 || thinkTokens > 0
+    think: hasThink
         ? ThinkBoxData(
             duration: thinkDuration,
             tokens: thinkTokens,
@@ -361,7 +388,8 @@ void _emitPending(
             overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
           )
         : null,
-    prose: null,
+    prose: mainProse,
+    midProse: midProse,
   ));
 }
 

@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import 'package:path/path.dart' as p;
 
 import '../theme/crux_theme.dart';
 import 'ui/highlighted_markdown_text.dart';
@@ -72,10 +73,16 @@ class VibeSegmentBubble extends StatelessComponent {
 
     if (segment.mods != null) {
       final mods = segment.mods!;
+      // Show just the filename — the directory prefix is rarely
+      // interesting at a glance and the box is narrow enough that
+      // full paths would push the +N -M diff off the visible
+      // region. The full path is still in [ModBoxData.paths] for
+      // any future tooltip / filter / drill-down.
       final rows = mods.paths.map((path) {
+        final name = p.basename(path);
         final added = mods.linesAdded;
         final removed = mods.linesRemoved;
-        return '$path +$added -$removed';
+        return '$name +$added -$removed';
       }).toList();
       if (mods.overflowCount > 0) {
         rows.add('+${mods.overflowCount} more files');
@@ -113,29 +120,46 @@ class VibeSegmentBubble extends StatelessComponent {
               ],
             ),
           ),
-        // Prose line (null for pending segments during streaming).
-        // Uses the same Row + Expanded pattern as MessageBubble so
-        // the 'crux:' prefix sits inline with the first line of the
-        // markdown content, not on a separate line.
-        if (segment.prose != null && segment.prose!.content.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  ' Crux: ',
-                  style: TextStyle(
-                    color: theme.responsePrefix,
-                    fontWeight: FontWeight.bold,
+        // Prose line. Composes mid-round prose from any
+        // `tool_call with content` rows (stashed in
+        // [VibeSegment.midProse]) with the closing `ai`'s content
+        // ([VibeSegment.prose]), separated by a blank line so the
+        // temporal order reads naturally ("Let me check first." →
+        // "Here is the answer."). Either side may be null on a
+        // pending or boxes-only segment.
+        if (segment.prose != null || segment.midProse != null) ...[
+          Builder(builder: (context) {
+            final mid = segment.midProse?.trim();
+            final main = segment.prose?.content.trim();
+            final combined = (() {
+              if (mid != null && mid.isNotEmpty && main != null && main.isNotEmpty) {
+                return '$mid\n\n$main';
+              }
+              if (mid != null && mid.isNotEmpty) return mid;
+              if (main != null && main.isNotEmpty) return main;
+              return null;
+            })();
+            if (combined == null) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ' Crux: ',
+                    style: TextStyle(
+                      color: theme.responsePrefix,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: HighlightedMarkdownText(segment.prose!.content),
-                ),
-              ],
-            ),
-          ),
+                  Expanded(
+                    child: HighlightedMarkdownText(combined),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
