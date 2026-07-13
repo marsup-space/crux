@@ -1472,11 +1472,22 @@ void main() {
         markTestSkipped('No HOME/USERPROFILE in env');
         return;
       }
-      final children = Directory(
-        home,
-      ).listSync(followLinks: false).whereType<Directory>().toList();
+      // Filter out directories whose basename contains
+      // whitespace — the executor splits the command line on
+      // /\s+/, so a path with spaces would be split before
+      // reaching `_expandHome` and the test would fail for
+      // reasons unrelated to ~ expansion (e.g. on macOS where
+      // `~/Unity user templates` exists out of the box).
+      final children = Directory(home)
+          .listSync(followLinks: false)
+          .whereType<Directory>()
+          .where((d) => !p.basename(d.path).contains(RegExp(r'\s')))
+          .toList();
       if (children.isEmpty) {
-        markTestSkipped('Home directory has no child directory to target');
+        markTestSkipped(
+          'Home directory has no child directory '
+          '(with a whitespace-free basename) to target',
+        );
         return;
       }
       final realTarget = children.first.path;
