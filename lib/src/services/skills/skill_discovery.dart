@@ -11,9 +11,11 @@
 ///     1. Project .crux/skills/<name>/SKILL.md   (walking cwd → worktree,
 ///                                                closer-to-cwd wins)
 ///     2. Project .crux/skill/<name>/SKILL.md    (singular alias, same walk)
-///     3. Global  ~/.claude/skills/<name>/SKILL.md   (cross-agent, portable)
-///     4. Global  ~/.agents/skills/<name>/SKILL.md   (open-standard portable)
-///     5. Global  ~/.local/share/crux/skills/<name>/SKILL.md   (crux-native)
+///     3. Project .claude/skills/<name>/SKILL.md (cross-agent, committed, same walk)
+///     4. Project .agents/skills/<name>/SKILL.md (open-standard, committed, same walk)
+///     5. Global  ~/.claude/skills/<name>/SKILL.md   (cross-agent, portable)
+///     6. Global  ~/.agents/skills/<name>/SKILL.md   (open-standard portable)
+///     7. Global  ~/.local/share/crux/skills/<name>/SKILL.md   (crux-native)
 ///
 /// Malformed skills (bad YAML, missing `name`/`description`, name
 /// doesn't match the folder, etc.) are silently skipped — same
@@ -272,11 +274,20 @@ class SkillParseResult {
 // Discovery
 // =============================================================================
 
-/// Project-local skills roots, in priority order. The plural
-/// spelling comes first because it matches the open standard and
+/// Project-local skills roots, in priority order. The crux-native
+/// spellings come first (plural matches the open standard and
 /// opencode; the singular is kept as an alias for users who
-/// happened to spell it that way.
-const _projectSkillsDirNames = ['.crux/skills', '.crux/skill'];
+/// happened to spell it that way), then the portable / cross-agent
+/// conventions that projects commit alongside their code
+/// (`.claude/skills`, `.agents/skills`) — the same folders scanned
+/// globally under `$HOME`, but resolved relative to each level of
+/// the project walk so a repo can ship its own skills.
+const _projectSkillsDirNames = [
+  '.crux/skills',
+  '.crux/skill',
+  '.claude/skills',
+  '.agents/skills',
+];
 
 /// Global skills roots, in priority order. Portable / cross-agent
 /// locations come first (largest existing user base, most likely
@@ -325,8 +336,9 @@ String _resolveCruxUserDataDir({String? home}) {
 ///
 /// Walks the directory tree from [cwd] upward, stopping at the
 /// git root (`.git` directory) when present, otherwise at the
-/// filesystem root. At each level it checks both `.crux/skills/`
-/// and `.crux/skill/`. After the project walk, it always scans
+/// filesystem root. At each level it checks the project skill
+/// roots (`.crux/skills`, `.crux/skill`, `.claude/skills`,
+/// `.agents/skills`). After the project walk, it always scans
 /// the three global roots.
 ///
 /// Returned order: project skills first (closer-to-cwd first),

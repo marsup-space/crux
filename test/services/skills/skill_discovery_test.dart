@@ -109,6 +109,54 @@ void main() {
       expect(result, hasLength(1));
       expect(result.first.description, 'From plural.');
     });
+
+    test('finds project-committed skills in .claude/skills/ and '
+        '.agents/skills/', () {
+      _writeSkill(
+        Directory(p.join(projectRoot.path, '.claude', 'skills')),
+        folder: 'from-claude',
+        name: 'from-claude',
+        description: 'Committed under .claude/skills.',
+      );
+      _writeSkill(
+        Directory(p.join(projectRoot.path, '.agents', 'skills')),
+        folder: 'from-agents',
+        name: 'from-agents',
+        description: 'Committed under .agents/skills.',
+      );
+      final result = discoverSkills(
+        cwd: projectRoot.path,
+        homeOverride: fakeHome.path,
+        userDataDirOverride: fakeUserData.path,
+      );
+      expect(
+        result.map((s) => s.name),
+        containsAll(<String>['from-claude', 'from-agents']),
+      );
+    });
+
+    test('project .claude/skills/ shadows the global ~/.claude/skills/ '
+        'copy of the same name', () {
+      _writeSkill(
+        Directory(p.join(projectRoot.path, '.claude', 'skills')),
+        folder: 'shared',
+        name: 'shared',
+        description: 'From project.',
+      );
+      _writeSkill(
+        Directory(p.join(fakeHome.path, '.claude', 'skills')),
+        folder: 'shared',
+        name: 'shared',
+        description: 'From global home.',
+      );
+      final result = discoverSkills(
+        cwd: projectRoot.path,
+        homeOverride: fakeHome.path,
+        userDataDirOverride: fakeUserData.path,
+      );
+      expect(result, hasLength(1));
+      expect(result.first.description, 'From project.');
+    });
   });
 
   group('discoverSkills — global scan', () {
