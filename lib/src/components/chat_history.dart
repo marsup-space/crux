@@ -184,7 +184,8 @@ class _ChatHistoryState extends State<ChatHistory> {
     // interrupt, btw start/end), so this read returns the same
     // value as rt.isResponding without chat_history depending on the
     // runtime being mutated directly.
-    final isStreaming = sessionId != null &&
+    final isStreaming =
+        sessionId != null &&
         context.select<ChatTurnCubit, bool>(
           (cubit) => cubit.state.sessionState(sessionId).isResponding,
         );
@@ -194,11 +195,13 @@ class _ChatHistoryState extends State<ChatHistory> {
     // fields; the mirrorTurnFlags calls in chat_turn_orchestrator /
     // btw_turn_handler / tldr_handler keep them in lockstep with the
     // runtime's flags.
-    final isBtwTurn = sessionId != null &&
+    final isBtwTurn =
+        sessionId != null &&
         context.select<ChatTurnCubit, bool>(
           (cubit) => cubit.state.sessionState(sessionId).btwMode,
         );
-    final isGeneratingTldr = sessionId != null &&
+    final isGeneratingTldr =
+        sessionId != null &&
         context.select<ChatTurnCubit, bool>(
           (cubit) => cubit.state.sessionState(sessionId).isGeneratingTldr,
         );
@@ -217,25 +220,27 @@ class _ChatHistoryState extends State<ChatHistory> {
     // updates its progress counters, so the rebuild rate there is
     // bounded.
     final messages = context.select<SessionCubit, List<Message>>(
-      (cubit) =>
-          sessionId == null ? const <Message>[] : cubit.state.messagesFor(sessionId),
+      (cubit) => sessionId == null
+          ? const <Message>[]
+          : cubit.state.messagesFor(sessionId),
     );
-    final loadingState = context.select<
-        SessionCubit, ({bool isLoading, int? total, int? loaded})>(
-      (cubit) {
-        if (sessionId == null) {
-          return (isLoading: false, total: null, loaded: null);
-        }
-        return (
-          isLoading: cubit.state.isLoadingMessages(sessionId),
-          total: cubit.state.loadingMessageTotal(sessionId),
-          loaded: cubit.state.loadingMessageLoaded(sessionId),
-        );
-      },
-    );
+    final loadingState = context
+        .select<SessionCubit, ({bool isLoading, int? total, int? loaded})>((
+          cubit,
+        ) {
+          if (sessionId == null) {
+            return (isLoading: false, total: null, loaded: null);
+          }
+          return (
+            isLoading: cubit.state.isLoadingMessages(sessionId),
+            total: cubit.state.loadingMessageTotal(sessionId),
+            loaded: cubit.state.loadingMessageLoaded(sessionId),
+          );
+        });
     final btwTurns = context.select<BtwCubit, List<BtwTurn>>(
-      (cubit) =>
-          sessionId == null ? const <BtwTurn>[] : cubit.state.turnsFor(sessionId),
+      (cubit) => sessionId == null
+          ? const <BtwTurn>[]
+          : cubit.state.turnsFor(sessionId),
     );
 
     final lastRoundStart = isStreaming
@@ -279,7 +284,8 @@ class _ChatHistoryState extends State<ChatHistory> {
     // every round boundary) and only becomes non-empty once the
     // current round's first reasoning delta lands. So this flag is
     // exactly the "a new think has appeared" signal we need.
-    final newReasoningStarted = isStreaming &&
+    final newReasoningStarted =
+        isStreaming &&
         component.sessionController.streamingCubit.state
             .streamingReasoningFor(sessionId)
             .isNotEmpty;
@@ -357,9 +363,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           onSessionLinkTap: component.onSessionLinkTap,
         ),
       );
-      items.add(
-        (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
-      );
+      items.add((ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1));
     }
 
     // Resolve the reasoning-effort display mapping once for the
@@ -400,8 +404,7 @@ class _ChatHistoryState extends State<ChatHistory> {
       for (final msg in messages) {
         if (msg.role == 'user') {
           if (lastAgentTime != null) {
-            userMessageGaps[msg.id] =
-                DateTime.now().difference(lastAgentTime);
+            userMessageGaps[msg.id] = DateTime.now().difference(lastAgentTime);
           }
         } else if (msg.role == 'ai' || msg.role == 'tool_call') {
           lastAgentTime = msg.createdAt;
@@ -448,6 +451,26 @@ class _ChatHistoryState extends State<ChatHistory> {
       if (isStreaming && segments.isNotEmpty && segments.last.prose == null) {
         liveVibeBaseSegment = segments.last;
       }
+      // The walker fans an agent turn into one segment per `role: 'ai'`
+      // / `tool_call`-with-content boundary. Quick-reply buttons should
+      // only be live on the most-recently-persisted AI segment — earlier
+      // turns' asks are stale (the conversation has moved on), and a
+      // mid-round `tool_call` remark isn't an actionable reply. Compute
+      // the latest closed AI segment by picking the segment whose `prose`
+      // has the highest `Message.id` (later inserts are later ids) and
+      // whose `prose.role == 'ai'`. While a turn is streaming the walker
+      // hasn't emitted the in-flight reply yet, so this naturally
+      // resolves to the previous turn — exactly what the verbose path
+      // does via `i == latestAiIndex` plus `!isStreaming`.
+      VibeSegment? latestClosedAiSegment;
+      for (final seg in segments) {
+        final prose = seg.prose;
+        if (prose == null || prose.role != 'ai') continue;
+        if (latestClosedAiSegment == null ||
+            prose.id > latestClosedAiSegment.prose!.id) {
+          latestClosedAiSegment = seg;
+        }
+      }
       for (final seg in segments) {
         final isLiveOpenSegment = identical(seg, liveVibeBaseSegment);
         // Mirror the verbose-mode path so the annotated scrollbar
@@ -473,16 +496,14 @@ class _ChatHistoryState extends State<ChatHistory> {
           if (clusterFirstUserMessageIds.contains(seg.userMessage.id)) {
             final gap = userMessageGaps[seg.userMessage.id];
             if (gap != null) {
-              items.add(
-                (ctx) => VibeTurnDivider(sinceLastTurn: gap),
-              );
+              items.add((ctx) => VibeTurnDivider(sinceLastTurn: gap));
             }
           }
           userItemIndices.add(items.length);
-          final text =
-              seg.userMessage.content.replaceAll('\n', ' ').trim();
+          final text = seg.userMessage.content.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
+        final isLatestClosedAi = identical(seg, latestClosedAiSegment);
         if (isLiveOpenSegment) {
           // Preserve the user line / scrollbar anchor, but do not render the
           // pending segment's boxes a second time. VibeStreamingBubble merges
@@ -495,7 +516,15 @@ class _ChatHistoryState extends State<ChatHistory> {
             items.add((ctx) => VibeSegmentBubble(segment: userOnly));
           }
         } else {
-          items.add((ctx) => VibeSegmentBubble(segment: seg));
+          items.add(
+            (ctx) => VibeSegmentBubble(
+              segment: seg,
+              onQuickReplyTap: component.onQuickReplyTap,
+              enableQuickReplies: isLatestClosedAi,
+              onSessionLinkTap: component.onSessionLinkTap,
+              onLinkTap: component.onLinkTap,
+            ),
+          );
           items.add((ctx) => const SizedBox(height: 1));
         }
       }
@@ -503,155 +532,156 @@ class _ChatHistoryState extends State<ChatHistory> {
 
     // Verbose mode: existing per-message rendering.
     if (!isVibeMode) {
-
-    for (var i = 0; i < messages.length; i++) {
-      final msg = messages[i];
-      // Reasoning-bearing messages — `ai` and `tool_call` rows that
-      // carry `reasoningContent` — collapse to a summary line unless
-      // they're the most-recent reasoning the user can currently see
-      // (the "one" expanded block). That "one" is:
-      //   * the live round's reasoning in the streaming bubble, when
-      //     new reasoning is actually being streamed (`newReasoningStarted`),
-      //   * otherwise the most-recent persisted reasoning
-      //     ([lastReasoningIndex]).
-      // Anything older than that collapses into a `Think: 5.2s,
-      // 1234 tokens [normal]` summary line, matching how a previous
-      // agent turn's think bubble renders. For other roles (`user`,
-      // `tool`, system bubbles) `reasoningCollapsed` is ignored by
-      // [MessageBubble], so the original `lastRoundStart` rule is
-      // fine.
-      final isReasoningMsg =
-          (msg.role == 'ai' || msg.role == 'tool_call') &&
-              msg.reasoningContent.isNotEmpty;
-      final collapsed = isReasoningMsg
-          ? i != lastReasoningIndex || newReasoningStarted
-          : i < lastRoundStart;
-      Message? pairedResult;
-      final pairedResultsByCallId = <String, Message>{};
-      if (msg.role == 'tool_call') {
-        for (final tc in msg.toolCalls) {
-          final result = resultByCallId[tc.callId];
-          if (result != null) {
-            pairedResultsByCallId[tc.callId] = result;
-            pairedResult ??= result;
+      for (var i = 0; i < messages.length; i++) {
+        final msg = messages[i];
+        // Reasoning-bearing messages — `ai` and `tool_call` rows that
+        // carry `reasoningContent` — collapse to a summary line unless
+        // they're the most-recent reasoning the user can currently see
+        // (the "one" expanded block). That "one" is:
+        //   * the live round's reasoning in the streaming bubble, when
+        //     new reasoning is actually being streamed (`newReasoningStarted`),
+        //   * otherwise the most-recent persisted reasoning
+        //     ([lastReasoningIndex]).
+        // Anything older than that collapses into a `Think: 5.2s,
+        // 1234 tokens [normal]` summary line, matching how a previous
+        // agent turn's think bubble renders. For other roles (`user`,
+        // `tool`, system bubbles) `reasoningCollapsed` is ignored by
+        // [MessageBubble], so the original `lastRoundStart` rule is
+        // fine.
+        final isReasoningMsg =
+            (msg.role == 'ai' || msg.role == 'tool_call') &&
+            msg.reasoningContent.isNotEmpty;
+        final collapsed = isReasoningMsg
+            ? i != lastReasoningIndex || newReasoningStarted
+            : i < lastRoundStart;
+        Message? pairedResult;
+        final pairedResultsByCallId = <String, Message>{};
+        if (msg.role == 'tool_call') {
+          for (final tc in msg.toolCalls) {
+            final result = resultByCallId[tc.callId];
+            if (result != null) {
+              pairedResultsByCallId[tc.callId] = result;
+              pairedResult ??= result;
+            }
           }
         }
-      }
 
-      if (msg.role == 'user') {
-        userItemIndices.add(items.length);
-        final text = msg.content.replaceAll('\n', ' ').trim();
-        userItemLabels.add(text);
-      }
+        if (msg.role == 'user') {
+          userItemIndices.add(items.length);
+          final text = msg.content.replaceAll('\n', ' ').trim();
+          userItemLabels.add(text);
+        }
 
-      // Compaction messages render as a divider instead of a
-      // [MessageBubble] — the chat log content is meant for the
-      // LLM, not the user; the divider is the user-facing marker
-      // that this boundary exists. In debug mode the divider is
-      // clickable and opens a fullpane showing the raw content
-      // + metadata for inspection. Under the "replace from
-      // scratch" compaction model there is at most ONE such
-      // divider per session, so it carries no per-session index.
-      if (msg.role == 'compaction') {
-        items.add(
-          (ctx) => CompactionDivider(
-            onTap: component.onCompactionTap == null
-                ? null
-                : () => component.onCompactionTap!(msg),
-          ),
-        );
-        continue;
-      }
-
-      // Build the MessageBubble inside a closure so the inner
-      // widget tree (and the markdown parse in
-      // [HighlightedMarkdownText.build]) only runs when
-      // `itemBuilder` is called for this index — i.e. when the
-      // bubble is actually laid out. Off-screen bubbles stay
-      // un-built, which is the whole point of the change.
-      //
-      // Quick-reply buttons are gated to the latest `ai` message
-      // and only when no turn is currently streaming. Every other
-      // message (older AI, user, tool, compaction summary) gets
-      // `onQuickReplyTap: null` — with the callback null,
-      // [HighlightedMarkdownText] skips parsing `ask://` tokens
-      // entirely, so the source text renders as plain markdown
-      // (no button styling, no hover, no click handling). The
-      // answer is effectively invisible — what shows is just the
-      // literal `ask://label{answer}` or `ask://label` text.
-      final isLatestAi = i == latestAiIndex;
-      final enableQuickReplies = isLatestAi && !isStreaming;
-      items.add((ctx) {
-        return MessageBubble(
-          message: msg,
-          reasoningCollapsed: collapsed,
-          pairedResult: pairedResult,
-          resultByCallId: pairedResultsByCallId,
-          toolRegistry: component.toolRegistry,
-          highlightText:
-              msg.id == _highlightMessageId ? _highlightText : null,
-          reasoningPresets: reasoningPresets,
-          onToolCallTap: component.onToolCallTap,
-          onSessionLinkTap: component.onSessionLinkTap,
-          onQuickReplyTap:
-              enableQuickReplies ? component.onQuickReplyTap : null,
-          onLinkTap: component.onLinkTap,
-          // The retry button on a `stream_error` bubble should
-          // always be live when the bubble is rendered (i.e. NOT
-          // suppressed by the "latest AI" / streaming rules that
-          // gate quick-reply tokens). Stream errors don't appear
-          // in the middle of an active turn — they only get
-          // persisted when the turn has fully errored out — so
-          // there's no stale-retry concern here.
-          onRetryContinue: component.onRetryContinue,
-        );
-      });
-
-      if (msg.role == 'ai' && msg.id > 0 && rt != null) {
-        final hasTldr = msg.tldr.isNotEmpty;
-        if (hasTldr || isGeneratingTldr) {
-          final aiMessageItemIndex = items.length - 1;
-          final aiMessageId = msg.id;
-          final aiMessageContent = msg.content;
+        // Compaction messages render as a divider instead of a
+        // [MessageBubble] — the chat log content is meant for the
+        // LLM, not the user; the divider is the user-facing marker
+        // that this boundary exists. In debug mode the divider is
+        // clickable and opens a fullpane showing the raw content
+        // + metadata for inspection. Under the "replace from
+        // scratch" compaction model there is at most ONE such
+        // divider per session, so it carries no per-session index.
+        if (msg.role == 'compaction') {
           items.add(
-            (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+            (ctx) => CompactionDivider(
+              onTap: component.onCompactionTap == null
+                  ? null
+                  : () => component.onCompactionTap!(msg),
+            ),
           );
-          items.add((ctx) {
-            // Defer [extractHeadings] until the TldrBubble is
-            // actually laid out. For a 500-message session with
-            // ~80 TLDR bubbles, the eager path was parsing 80
-            // markdown ASTs up front — now only the 2–4 that fit
-            // in the viewport pay that cost.
-            return TldrBubble(
-              tldrText: msg.tldr,
-              headings: extractHeadings(msg.content),
-              isGenerating: isGeneratingTldr && !hasTldr,
-              hasAuxiliaryModel:
-                  component.providerService.auxiliaryModel != null &&
-                  component.providerService.auxiliaryModel != 'none',
-              onHeadingTap: (heading, url) => _handleTldrReferenceTap(
-                itemIndex: aiMessageItemIndex,
-                messageId: aiMessageId,
-                messageContent: aiMessageContent,
-                heading: heading,
-                url: url,
-              ),
-            );
-          });
-          items.add(
-            (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+          continue;
+        }
+
+        // Build the MessageBubble inside a closure so the inner
+        // widget tree (and the markdown parse in
+        // [HighlightedMarkdownText.build]) only runs when
+        // `itemBuilder` is called for this index — i.e. when the
+        // bubble is actually laid out. Off-screen bubbles stay
+        // un-built, which is the whole point of the change.
+        //
+        // Quick-reply buttons are gated to the latest `ai` message
+        // and only when no turn is currently streaming. Every other
+        // message (older AI, user, tool, compaction summary) gets
+        // `onQuickReplyTap: null` — with the callback null,
+        // [HighlightedMarkdownText] skips parsing `ask://` tokens
+        // entirely, so the source text renders as plain markdown
+        // (no button styling, no hover, no click handling). The
+        // answer is effectively invisible — what shows is just the
+        // literal `ask://label{answer}` or `ask://label` text.
+        final isLatestAi = i == latestAiIndex;
+        final enableQuickReplies = isLatestAi && !isStreaming;
+        items.add((ctx) {
+          return MessageBubble(
+            message: msg,
+            reasoningCollapsed: collapsed,
+            pairedResult: pairedResult,
+            resultByCallId: pairedResultsByCallId,
+            toolRegistry: component.toolRegistry,
+            highlightText: msg.id == _highlightMessageId
+                ? _highlightText
+                : null,
+            reasoningPresets: reasoningPresets,
+            onToolCallTap: component.onToolCallTap,
+            onSessionLinkTap: component.onSessionLinkTap,
+            onQuickReplyTap: enableQuickReplies
+                ? component.onQuickReplyTap
+                : null,
+            onLinkTap: component.onLinkTap,
+            // The retry button on a `stream_error` bubble should
+            // always be live when the bubble is rendered (i.e. NOT
+            // suppressed by the "latest AI" / streaming rules that
+            // gate quick-reply tokens). Stream errors don't appear
+            // in the middle of an active turn — they only get
+            // persisted when the turn has fully errored out — so
+            // there's no stale-retry concern here.
+            onRetryContinue: component.onRetryContinue,
           );
-        } else {
-          final nextIsUser =
-              i + 1 < messages.length && messages[i + 1].role == 'user';
-          if (nextIsUser) {
+        });
+
+        if (msg.role == 'ai' && msg.id > 0 && rt != null) {
+          final hasTldr = msg.tldr.isNotEmpty;
+          if (hasTldr || isGeneratingTldr) {
+            final aiMessageItemIndex = items.length - 1;
+            final aiMessageId = msg.id;
+            final aiMessageContent = msg.content;
             items.add(
               (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
             );
+            items.add((ctx) {
+              // Defer [extractHeadings] until the TldrBubble is
+              // actually laid out. For a 500-message session with
+              // ~80 TLDR bubbles, the eager path was parsing 80
+              // markdown ASTs up front — now only the 2–4 that fit
+              // in the viewport pay that cost.
+              return TldrBubble(
+                tldrText: msg.tldr,
+                headings: extractHeadings(msg.content),
+                isGenerating: isGeneratingTldr && !hasTldr,
+                hasAuxiliaryModel:
+                    component.providerService.auxiliaryModel != null &&
+                    component.providerService.auxiliaryModel != 'none',
+                onHeadingTap: (heading, url) => _handleTldrReferenceTap(
+                  itemIndex: aiMessageItemIndex,
+                  messageId: aiMessageId,
+                  messageContent: aiMessageContent,
+                  heading: heading,
+                  url: url,
+                ),
+              );
+            });
+            items.add(
+              (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+            );
+          } else {
+            final nextIsUser =
+                i + 1 < messages.length && messages[i + 1].role == 'user';
+            if (nextIsUser) {
+              items.add(
+                (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+              );
+            }
           }
         }
       }
-    }
     } // end if (!isVibeMode)
 
     // Render the in-memory `/btw` chain. Read from the list captured
@@ -666,8 +696,7 @@ class _ChatHistoryState extends State<ChatHistory> {
       for (var i = 0; i < btwTurns.length; i++) {
         final turn = btwTurns[i];
         items.add((ctx) => BtwBubble.user(content: turn.userText));
-        final isPendingLast =
-            i == lastIndex && isBtwTurn && isStreaming;
+        final isPendingLast = i == lastIndex && isBtwTurn && isStreaming;
         if (!isPendingLast) {
           items.add((ctx) => BtwBubble.ai(content: turn.aiText));
         }
@@ -682,8 +711,8 @@ class _ChatHistoryState extends State<ChatHistory> {
           return BtwBubble.ai(
             content: component.sessionController.streamingCubit.state
                 .streamingContentFor(
-              component.sessionController.currentSessionId ?? 0,
-            ),
+                  component.sessionController.currentSessionId ?? 0,
+                ),
             streaming: true,
           );
         });
@@ -695,6 +724,9 @@ class _ChatHistoryState extends State<ChatHistory> {
             sessionId: component.sessionController.currentSessionId ?? 0,
             runtimeState: rt,
             baseSegment: liveVibeBaseSegment,
+            onQuickReplyTap: component.onQuickReplyTap,
+            onSessionLinkTap: component.onSessionLinkTap,
+            onLinkTap: component.onLinkTap,
             reasoningPresets: reasoningPresets,
           );
         });

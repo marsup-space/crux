@@ -6,6 +6,8 @@ import 'package:path/path.dart' as p;
 import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
+import '../utils/markdown_links.dart';
+import '../utils/quick_reply_parser.dart';
 import '../utils/token_estimate.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
@@ -40,6 +42,26 @@ class VibeStreamingBubble extends StatefulComponent {
   /// Its [VibeSegment.prose] is always null at the call site.
   final VibeSegment? baseSegment;
 
+  /// Quick-reply handler. The live bubble does NOT enable ask buttons
+  /// while a turn is streaming (the active reply is still being
+  /// emitted; clicking a stale quick reply would race the live
+  /// content). The handler is accepted here so [ChatHistory] can
+  /// pass one callback through to both the streaming and the persisted
+  /// children, but it is wired to the prose [HighlightedMarkdownText]
+  /// only when [enableQuickReplies] is true — and this bubble
+  /// always passes `enableQuickReplies: false`.
+  final void Function(QuickReply reply)? onQuickReplyTap;
+
+  /// `ses://<id>` reference handler. The live bubble is happy to
+  /// forward session links from the in-flight reply (the user can
+  /// jump to a referenced session at any time).
+  final void Function(int sessionId)? onSessionLinkTap;
+
+  /// Markdown link (`[label](url)`) handler. The live bubble also
+  /// forwards link clicks so the user can open referenced docs
+  /// from the in-flight reply.
+  final void Function(MarkdownLink link)? onLinkTap;
+
   /// Reasoning presets from the session's provider, used to map
   /// internal effort values to display labels (e.g. `normal` →
   /// `adaptive` for MiniMax). If null, the raw internal value is
@@ -51,6 +73,9 @@ class VibeStreamingBubble extends StatefulComponent {
     required this.sessionId,
     this.runtimeState,
     this.baseSegment,
+    this.onQuickReplyTap,
+    this.onSessionLinkTap,
+    this.onLinkTap,
     this.reasoningPresets = const [],
     super.key,
   });
@@ -337,7 +362,13 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Expanded(child: HighlightedMarkdownText(_content)),
+                Expanded(
+                  child: HighlightedMarkdownText(
+                    _content,
+                    onSessionLinkTap: component.onSessionLinkTap,
+                    onLinkTap: component.onLinkTap,
+                  ),
+                ),
               ],
             ),
           ),
