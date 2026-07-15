@@ -1,3 +1,11 @@
+// We import nocterm's internal `UnicodeWidth` (the same util its
+// `Text` widget uses to compute display width) so the dash/label
+// math here matches what the renderer actually paints to the
+// terminal. Without this, `String.length` would under-count
+// any wide unicode character (CJK ideographs, full-width
+// punctuation, etc.) and the line would silently wrap.
+// ignore_for_file: implementation_imports
+import 'package:nocterm/src/utils/unicode_width.dart';
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
@@ -49,28 +57,45 @@ class VibeTurnDivider extends StatelessComponent {
           builder: (ctx, constraints) {
             final maxWidth = constraints.maxWidth.isFinite
                 ? constraints.maxWidth.toInt()
-                : 0;
+            : 0;
             final label = ' ${formatAgentTurnGap(sinceLastTurn)} ';
-            final remaining = maxWidth - label.length;
-
-            // Same edge-to-edge dash pattern as [CompactionDivider].
-            // Use ASCII `-` (U+002D) — many terminal fonts render
-            // U+2500 LIGHT HORIZONTAL as 2 cells while nocterm's
-            // wcwidth returns 1, leading to a "fit" that doesn't
-            // fit. ASCII `-` is exactly 1 cell in every font.
-            return remaining > 0
-                ? (() {
-                    final leftPad = remaining ~/ 2;
-                    final rightPad = remaining - leftPad;
-                    return Text(
-                      '-' * leftPad + label + '-' * rightPad,
-                      style: TextStyle(color: theme.onSurfaceDim),
-                    );
-                  })()
-                : Text(
-                    label,
-                    style: TextStyle(color: theme.onSurfaceDim),
-                  );
+            // Use nocterm's display-width util so the math here
+            // matches what the inner `Text` widget actually paints
+            // to the terminal. Plain `label.length` would be off
+            // for any wide unicode character (CJK ideograph, full-
+            // width punctuation, etc.) — the `Text` widget would
+            // still paint at its real width, the line would just
+            // appear visually mis-cropped.
+            final labelWidth = UnicodeWidth.stringWidth(label);
+            final dashWidth = UnicodeWidth.stringWidth('-');
+            // Available cell count after the label is set aside.
+            // `maxWidth` already reflects whatever Padding above
+            // us consumed, so we don't subtract it again here.
+            final remaining = maxWidth - labelWidth;
+            if (remaining <= 0 || dashWidth == 0) {
+              // Either the line is too narrow for the label alone,
+              // or for some reason `-` is zero-width (shouldn't
+              // happen on any sane terminal, but guard). Either
+              // way, dropping the dashes is the right call: the
+              // label still renders, just without the flanking
+              // padding.
+              return Text(
+                label,
+                style: TextStyle(color: theme.onSurfaceDim),
+              );
+            }
+            // Distribute the remaining cells as evenly as possible
+            // on both sides of the label. `leftPad` is the smaller
+            // side; if `remaining` is odd, the extra cell lands on
+            // the right (matching [CompactionDivider]'s convention,
+            // which keeps the right edge flush with what the
+            // `TextOverflow` math would expect).
+            final leftPad = remaining ~/ (2 * dashWidth);
+            final rightPad = (remaining - leftPad * dashWidth) ~/ dashWidth;
+            return Text(
+              '-' * leftPad + label + '-' * rightPad,
+              style: TextStyle(color: theme.onSurfaceDim),
+            );
           },
         ),
       ),
