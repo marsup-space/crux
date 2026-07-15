@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:nocterm/nocterm.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
@@ -209,6 +212,45 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       );
     }
 
+    // Files box: file-modifying tools (`edit`, `write`) that are
+    // currently streaming or executing. The persisted `VibeSegment`
+    // shows `path +N -M` after the tool completes; here we just
+    // surface the path the moment the tool is recognised, so the
+    // user sees what file the agent is about to touch *now* — not
+    // after the tool returns. Without this, edit/write rounds
+    // would only show in the `files` box on the next `walkSegments`
+    // pass, which can be many seconds later for slow tools.
+    //
+    // For streaming tools the input is still partial JSON, so we
+    // try `jsonDecode` first and fall back to a regex on the
+    // accumulated text. `filePath` is the first key in both
+    // `edit` and `write` arg shapes, so it almost always lands in
+    // the first few chunks. For executing tools the input is
+    // already parsed and `inputPreview` carries the path (see
+    // `_toolExecutionPreview` in `chat_turn_orchestrator.dart`).
+    final liveFilePaths = _collectLiveFilePaths();
+    if (liveFilePaths.isNotEmpty) {
+      final filesActive = _executingToolCalls.any(
+        (tc) => tc.name == 'edit' || tc.name == 'write',
+      );
+      // Basename only — the box is narrow, full paths overflow
+      // and push the +/- delta off-screen. Persisted boxes do the
+      // same.
+      final rows = liveFilePaths.map((path) {
+        final base = p.basename(path);
+        return base.isEmpty ? path : base;
+      }).toList();
+      boxes.add(
+        VibeBox(
+          title: 'files',
+          bodyRows: rows,
+          active: filesActive,
+          mutedColor: theme.success,
+          activeColor: theme.warning,
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -237,15 +279,74 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
                   style: TextStyle(
                     color: theme.responsePrefix,
                     fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Expanded(
-                  child: HighlightedMarkdownText(_content),
-                ),
-              ],
-            ),
-          ),
+                                     ),
+                 ),
+                 Expanded(
+                   child: HighlightedMarkdownText(_content),
+                 ),
+               ],
+             ),
+           ),
       ],
     );
+  }
+
+  /// Collect file paths from any in-flight `edit` / `write` tool
+  /// calls — both mid-JSON (in [_streamingToolCalls]) and
+  /// already-executing (in [_executingToolCalls]). Order is
+  /// preserved (streaming first, then executing). Returns the
+  /// path as-is; the renderer trims to basename for the row.
+  List<String> _collectLiveFilePaths() {
+    final paths = <String>[];
+    for (final tc in _streamingToolCalls) {
+      if (tc.name == 'edit' || tc.name == 'write') {
+        final path = _extractFilePathFromJson(tc.accumulatedInputJson);
+        if (path != null && path.isNotEmpty) paths.add(path);
+      }
+    }
+    for (final tc in _executingToolCalls) {
+      if (tc.name == 'edit' || tc.name == 'write') {
+        // `inputPreview` is the rendered preview from
+        // `_toolExecutionPreview` in `chat_turn_orchestrator.dart`.
+        // For `edit` / `write` the priority list starts with
+        // `filePath`, so the preview is the path (possibly made
+        // project-relative). We use it directly here — the path
+        // is preserved verbatim in the underlying ToolCallData.
+        final path = tc.inputPreview;
+        if (path.isNotEmpty) paths.add(path);
+      }
+    }
+    return paths;
+  }
+
+  /// Pull the `filePath` value out of an `edit` / `write`
+  /// tool-call input. The input arrives as raw JSON, possibly
+  /// partial (open string, missing closing braces, etc.) — the
+  /// streaming layer doesn't wait for parseability to start
+  /// surfacing chunks, and we want the box to appear the moment
+  /// the path lands, not after the full JSON is parseable.
+  ///
+  /// Strategy: try `jsonDecode` first (handles any time the
+  /// accumulated JSON happens to be complete); fall back to a
+  /// regex that matches `"filePath":"..."` even in the middle of
+  /// a partial payload.
+  String? _extractFilePathFromJson(String json) {
+    if (json.isEmpty) return null;
+    // Try the full parse — works once the input is well-formed.
+    try {
+      final parsed = jsonDecode(json);
+      if (parsed is Map<String, dynamic>) {
+        final fp = parsed['filePath'];
+        if (fp is String && fp.isNotEmpty) return fp;
+      }
+    } catch (_) {
+      // Fall through to the regex below.
+    }
+    // Regex on partial JSON. `filePath` is the first key in the
+    // arg shape for both `edit` and `write`, so it lands in the
+    // first one or two chunks — usually visible before any of
+    // `oldString` / `content` / `intent` arrive.
+    final m = RegExp(r'"filePath"\s*:\s*"([^"]*)"').firstMatch(json);
+    return m?.group(1);
   }
 }
