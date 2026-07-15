@@ -141,28 +141,58 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     final theme = CruxTheme.of(context);
     final rt = component.runtimeState;
 
-    // Active-generation time for the live think box, computed each
-    // build from [SessionRuntimeState.roundFirstTokenTime]. The bubble
+    // Active-generation time for the live think box. The bubble
     // rebuilds every 33 ms while streaming, so this stays in lockstep
     // with the live token row (which lerps as reasoning deltas land).
     //
-    // Before the first delta lands (roundFirstTokenTime == null),
-    // fall back to [_waitingSeconds] — the "time waiting for the
-    // model" counter — so the think box still has a meaningful time
-    // row during the TTFT phase and the user sees a tick before any
-    // tokens exist. The two clocks never run simultaneously, since
-    // _waitingSeconds freezes once the first delta arrives.
+    // Three clocks feed the row, chosen by the current phase of the
+    // round:
     //
-    // Previously this row used [_waitingSeconds] for the entire
-    // thinking phase, which froze at the small TTFT value once
-    // reasoning actually streamed — the time row visually stopped
-    // moving while the token row kept growing, so the two never
-    // ticked together.
-    final liveSeconds = rt?.roundFirstTokenTime == null
-        ? _waitingSeconds
-        : DateTime.now()
-            .difference(rt!.roundFirstTokenTime!)
-            .inMicroseconds / 1000000.0;
+    // * Pre-first-delta (roundFirstTokenTime == null) — the round
+    //   has started but no deltas have arrived yet. Fall back to
+    //   [_waitingSeconds] (the "time waiting for the model" counter)
+    //   so the think box still has a meaningful time row during the
+    //   TTFT phase. The two clocks never run simultaneously, since
+    //   _waitingSeconds freezes once the first delta arrives.
+    //
+    // * Reasoning phase active — the LLM is emitting reasoning
+    //   deltas. Tick from the first reasoning delta so the row
+    //   advances in lockstep with the live token row. Tracks
+    //   [StreamingController.reasoningFirstAtFor] which is set on
+    //   the first reasoning delta and cleared on round boundaries.
+    //
+    // * Reasoning phase ended — the model has moved on to tool
+    //   calls, tool execution, or response prose. Freeze the time
+    //   at `lastReasoningAt - reasoningFirstAt` so the row stops
+    //   ticking while the rest of the round runs. Without this,
+    //   the think time kept growing through the tool write and
+    //   execution phases, which felt like the model was still
+    //   thinking.
+    //
+    // `lastReasoningAt == null` means the round hasn't produced any
+    // reasoning yet (e.g. it started with a tool call or the
+    // response). In that case the live bubble has no think row,
+    // so we return `null` to signal "no think time this round."
+    final ctrl = component.streamingController;
+    final reasoningFirstAt = ctrl.reasoningFirstAtFor(component.sessionId);
+    final lastReasoningAt = ctrl.lastReasoningAtFor(component.sessionId);
+    final isReasoningActive = ctrl.isReasoningPhaseActiveFor(
+      component.sessionId,
+    );
+    final double? liveSeconds;
+    if (rt?.roundFirstTokenTime == null) {
+      liveSeconds = _waitingSeconds;
+    } else if (reasoningFirstAt == null || lastReasoningAt == null) {
+      liveSeconds = null;
+    } else if (isReasoningActive) {
+      liveSeconds =
+          DateTime.now().difference(reasoningFirstAt).inMicroseconds /
+          1000000.0;
+    } else {
+      liveSeconds =
+          lastReasoningAt.difference(reasoningFirstAt).inMicroseconds /
+          1000000.0;
+    }
 
     final boxes = <Component>[];
 
@@ -173,7 +203,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     final baseThink = component.baseSegment?.think;
     final hasLiveThink = _reasoning.isNotEmpty || liveSeconds != null;
     final hasThink = baseThink != null || hasLiveThink;
-    final thinkActive = _reasoning.isNotEmpty && _content.isEmpty;
+    final thinkActive = isReasoningActive && _content.isEmpty;
 
     if (hasThink) {
       final rows = <String>[];
@@ -189,9 +219,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
         rows.add(formatTokens(totalTokens));
       }
 
-      final effort = _displayEffort(
-        rt?.reasoningEffort ?? baseThink?.effort,
-      );
+      final effort = _displayEffort(rt?.reasoningEffort ?? baseThink?.effort);
       if (effort.isNotEmpty) {
         rows.add(effort);
       }
@@ -233,7 +261,8 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
         VibeBox(
           title: 'tools',
           bodyRows: rows,
-          active: _executingToolCalls.isNotEmpty,
+          active:
+              _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
           mutedColor: theme.toolPrefix,
           activeColor: theme.accent,
         ),
@@ -308,9 +337,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Expanded(
-                  child: HighlightedMarkdownText(_content),
-                ),
+                Expanded(child: HighlightedMarkdownText(_content)),
               ],
             ),
           ),

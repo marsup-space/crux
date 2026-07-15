@@ -90,6 +90,26 @@ class StreamingController {
   final Map<int, DateTime> _executingToolsSince = {};
   final Map<int, List<ExecutingToolCall>> _executingToolCalls = {};
 
+  /// Timestamp of the first reasoning delta of the current round. Reset
+  /// on every [beginWaitingForModel] and stays populated through the
+  /// rest of the round so the vibe streaming bubble can freeze the
+  /// `think` time once reasoning has ended. Without this, the live
+  /// `think` row kept ticking the wall clock while tools were being
+  /// written or executed.
+  final Map<int, DateTime> _reasoningFirstAt = {};
+
+  /// Timestamp of the most recent reasoning delta. Combined with
+  /// [_reasoningFirstAt] this gives the total reasoning time of the
+  /// current round, even after the model has stopped emitting
+  /// reasoning text.
+  final Map<int, DateTime> _lastReasoningAt = {};
+
+  /// True while the LLM is actively emitting reasoning text for the
+  /// current round. Flipped to false the moment a tool call, tool
+  /// execution, or response text delta arrives. The vibe streaming
+  /// bubble freezes the think time while this is false.
+  final Map<int, bool> _reasoningPhaseActive = {};
+
   /// Per-session, per-tool-call-index accumulator for streaming
   /// `tool_use` chunks. Keyed first by session id, then by the
   /// `index` field the LLM emits on the chunk (parallel calls
@@ -107,20 +127,22 @@ class StreamingController {
   void appendStreamingContent(int sessionId, String delta) {
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
+    _endReasoningPhase(sessionId);
     _streamingContent[sessionId] = (_streamingContent[sessionId] ?? '') + delta;
     // Mirror to StreamingCubit so chat_panel consumers can
     // subscribe to the streaming text without going through this
     // controller. The cubit is a passive mirror — its value
     // matches `_streamingContent[sessionId]` after this call.
-    _sessionController.streamingCubit.appendStreamingContent(
-      sessionId,
-      delta,
-    );
+    _sessionController.streamingCubit.appendStreamingContent(sessionId, delta);
   }
 
   void appendStreamingReasoning(int sessionId, String delta) {
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
+    final now = DateTime.now();
+    _reasoningFirstAt.putIfAbsent(sessionId, () => now);
+    _lastReasoningAt[sessionId] = now;
+    _reasoningPhaseActive[sessionId] = true;
     _streamingReasoning[sessionId] =
         (_streamingReasoning[sessionId] ?? '') + delta;
     _sessionController.streamingCubit.appendStreamingReasoning(
@@ -141,6 +163,7 @@ class StreamingController {
   void updateStreamingToolCall(int sessionId, ToolUseChunk chunk) {
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
+    _endReasoningPhase(sessionId);
     final perSession = _streamingToolCalls.putIfAbsent(
       sessionId,
       () => <int, StreamingToolCall>{},
@@ -159,10 +182,7 @@ class StreamingController {
         accumulatedInputJson: existing.accumulatedInputJson + chunk.inputDelta,
       );
     }
-    _sessionController.streamingCubit.updateStreamingToolCall(
-      sessionId,
-      chunk,
-    );
+    _sessionController.streamingCubit.updateStreamingToolCall(sessionId, chunk);
   }
 
   void beginWaitingForModel(int sessionId) {
@@ -170,6 +190,9 @@ class StreamingController {
     _streamingReasoning.remove(sessionId);
     _streamingToolCalls.remove(sessionId);
     _clearExecutingTools(sessionId);
+    _reasoningFirstAt.remove(sessionId);
+    _lastReasoningAt.remove(sessionId);
+    _reasoningPhaseActive.remove(sessionId);
     _waitingForModelSince[sessionId] = DateTime.now();
     _sessionController.streamingCubit.beginWaitingForModel(sessionId);
     _refresh();
@@ -186,17 +209,17 @@ class StreamingController {
     _streamingReasoning.remove(sessionId);
     _streamingToolCalls.remove(sessionId);
     _waitingForModelSince.remove(sessionId);
+    _endReasoningPhase(sessionId);
     _executingToolsSince[sessionId] = DateTime.now();
     _executingToolCalls[sessionId] = calls;
-    _sessionController.streamingCubit.beginExecutingTools(
-      sessionId,
-      [for (final c in calls)
+    _sessionController.streamingCubit.beginExecutingTools(sessionId, [
+      for (final c in calls)
         cubit.ExecutingToolCall(
           callId: c.callId,
           name: c.name,
           inputPreview: c.inputPreview,
-        )],
-    );
+        ),
+    ]);
     _refresh();
   }
 
@@ -282,6 +305,36 @@ class StreamingController {
     return perSession.values.any((tc) => tc.abortInfo != null);
   }
 
+  /// First reasoning delta of the current reasoning phase, or
+  /// null if the round hasn't started reasoning yet. Used by
+  /// [VibeStreamingBubble] to freeze the `think` time once
+  /// reasoning has ended and the model has moved on to tool calls,
+  /// tool execution, or response prose.
+  DateTime? reasoningFirstAtFor(int sessionId) => _reasoningFirstAt[sessionId];
+
+  /// Last reasoning delta within the current round. Combined with
+  /// [reasoningFirstAtFor] this gives the total reasoning time,
+  /// even after the model has stopped emitting reasoning text.
+  DateTime? lastReasoningAtFor(int sessionId) => _lastReasoningAt[sessionId];
+
+  /// True while the LLM is still emitting reasoning text for the
+  /// current round. Flipped to false the moment a tool call,
+  /// tool execution, or response text delta arrives. The vibe
+  /// streaming bubble uses this to decide whether the `think`
+  /// time should tick live or freeze at the last value.
+  bool isReasoningPhaseActiveFor(int sessionId) =>
+      _reasoningPhaseActive[sessionId] ?? false;
+
+  /// Mark the current round's reasoning phase as ended. Called by
+  /// tool/content/response transitions so the think time freezes
+  /// and subsequent reasoning deltas (rare but possible) start a
+  /// fresh phase. The fields stay populated so the frozen
+  /// [reasoningFirstAtFor] - [lastReasoningAtFor] window still
+  /// reports the correct duration.
+  void _endReasoningPhase(int sessionId) {
+    _reasoningPhaseActive[sessionId] = false;
+  }
+
   /// Snapshot of in-progress tool calls for a session, in the
   /// order the LLM declared them (i.e. by chunk index). Empty
   /// if the round hasn't emitted any `tool_use` deltas yet, or
@@ -299,6 +352,9 @@ class StreamingController {
     _streamingToolCalls.remove(sessionId);
     _waitingForModelSince.remove(sessionId);
     _clearExecutingTools(sessionId);
+    _reasoningFirstAt.remove(sessionId);
+    _lastReasoningAt.remove(sessionId);
+    _reasoningPhaseActive.remove(sessionId);
     _sessionController.streamingCubit.clearStreamingFor(sessionId);
   }
 
@@ -375,7 +431,7 @@ class StreamingController {
 
     final elapsedMs =
         DateTime.now().difference(rt.responseStartTime!).inMicroseconds /
-            1000.0;
+        1000.0;
 
     if (!rt.ttftReceived) {
       rt.ttftMs = elapsedMs;
@@ -424,7 +480,7 @@ class StreamingController {
     var genMs = rt.cumulativeGenMs;
     genMs +=
         DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
-            1000.0;
+        1000.0;
 
     final elapsedSec = genMs / 1000.0;
     if (elapsedSec > 0) {
