@@ -407,6 +407,34 @@ class _ChatHistoryState extends State<ChatHistory> {
         }
       }
 
+      // A "user input cluster" is a maximal run of consecutive
+      // `role: 'user'` messages — the user typed one or more things
+      // in a row without an agent response in between. The divider
+      // should appear at the top of each cluster, not at every user
+      // line. Concretely: if the user has typed three messages in a
+      // row without agent activity, walker emits three segments all
+      // carrying `showUserMessage: true` (each is the first emit of
+      // its respective "unclosed-pending" turn). Without this filter
+      // the chat_history would insert three stacked dividers, all
+      // carrying the same gap text — exactly the "shouldn't be two
+      // lines" symptom.
+      //
+      // The set below is the message-id of the FIRST user message in
+      // each cluster. The segment whose `userMessage.id` is in this
+      // set is the "top of cluster" — the divider anchor.
+      final clusterFirstUserMessageIds = <int>{};
+      int? lastSeenUserMessageId;
+      for (final msg in messages) {
+        if (msg.role == 'user') {
+          if (lastSeenUserMessageId == null) {
+            clusterFirstUserMessageIds.add(msg.id);
+          }
+          lastSeenUserMessageId = msg.id;
+        } else if (msg.role == 'ai' || msg.role == 'tool_call') {
+          lastSeenUserMessageId = null;
+        }
+      }
+
       final segments = walkSegments(
         messages,
         resultByCallId,
@@ -426,12 +454,20 @@ class _ChatHistoryState extends State<ChatHistory> {
           // [CompactionDivider]'s centered-dash visual so the chat
           // history's structural markers all look the same;
           // it just labels the gap instead of "Compaction".
-          // First user message has no entry → no divider.
-          final gap = userMessageGaps[seg.userMessage.id];
-          if (gap != null) {
-            items.add(
-              (ctx) => VibeTurnDivider(sinceLastTurn: gap),
-            );
+          //
+          // Only emit the divider for the first user message in
+          // each cluster — see the cluster detection above. Within
+          // a single cluster, every other user message has no
+          // divider (the cluster's gap is "owned" by the first
+          // one). First user message of a session has no
+          // userMessageGaps entry → no divider.
+          if (clusterFirstUserMessageIds.contains(seg.userMessage.id)) {
+            final gap = userMessageGaps[seg.userMessage.id];
+            if (gap != null) {
+              items.add(
+                (ctx) => VibeTurnDivider(sinceLastTurn: gap),
+              );
+            }
           }
           userItemIndices.add(items.length);
           final text =
