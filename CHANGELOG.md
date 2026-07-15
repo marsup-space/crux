@@ -8,6 +8,320 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-15
+
+d93b665
+
+### Features
+
+- **Vibe mode — aggregated chat display is the new default**
+  (`51ea77e` + `3622efb` + `8ce1911`) — Crux gains a second
+  chat render mode. Vibe collapses each agent turn into
+  three metadata boxes stacked under the user line:
+  **think** (duration, tokens, effort), **tools** (per-name
+  call count + tokens), and **files** (per-path +N -M line
+  deltas via `ToolDef.modSummary`). A separate
+  `VibeStreamingBubble` renders the in-flight turn with the
+  active box (think / tools / files) highlighted at ~33 ms
+  poll cadence, mirroring what `StreamingController` knows
+  about which phase the round is in. Use `/view verbose` /
+  `/view vibe` to flip (or click the position-top-right
+  toggle in the chat panel). The setting is in-memory
+  only — resets to vibe on app restart, matching the
+  design doc's "pure viewer-mode setting" framing. 14 files
+  modified, 7 new files (~283 lines added). Backed by
+  `test/vibe_segment_test.dart` (snapshot-style assertions
+  on `walkSegments` against hand-built message lists:
+  single-round, multi-round, mixed `tool_call + content`,
+  auto-emit-pending, system-role filtering) and
+  `test/vibe_box_test.dart` (VibeBox rendering shape +
+  active styling). The design doc is `docs/design-vibe-mode.md`.
+
+- **Cross-session file write attribution in read +
+  edit/write guard** (`1da2322`) — when the read-before-write
+  guard fires because a file was modified since the local
+  session last read it, the guard now names the session that
+  produced the current content and quotes the `intent` that
+  session passed to its edit / write. The `read` tool
+  surfaces the same provenance proactively — before the
+  agent commits to any edits — as a one-line `[NOTE: …]`
+  banner prepended above the file content. Multi-session
+  workflows were producing wasted rounds where one session
+  would overwrite another's intent without realizing it;
+  the guard could already detect the drift but couldn't
+  tell the agent *whose* version it was about to overwrite.
+  New `file_last_writer` table (PK `path`, columns
+  `writer_session_id` FK → `sessions` ON DELETE CASCADE,
+  `intent`, `mtime_ms`). Schema 26 → 27, single migration
+  calling `createTable(fileLastWriter)` for existing
+  installs. Attribution shown only when (a) a row exists,
+  (b) its `mtime_ms` matches the current on-disk mtime
+  (otherwise something external touched the file after the
+  recorded write and the intent no longer reflects the
+  file's actual state), and (c) the writer is a different
+  session (self-attribution is noise). The session title is
+  looked up live from `sessions.title` at guard time so
+  `/rename` reflects immediately; not snapshotted.
+  Failure modes are silent: `onRecordWrite` and
+  `onLookupAttribution` exceptions are swallowed and the
+  feature degrades to the existing generic drift message
+  or no banner. Persistence failure is non-fatal in both
+  directions (matches the existing `onRecordRead`
+  behavior). Backed by 10 new tests in `test/tool_test.dart`
+  covering `recordWrite` cache + callback wiring,
+  drift-branch attribution under all three filter
+  conditions, `readAttributionBanner` formatting under
+  success / no-row / self-write / empty-fields /
+  no-callback / throw, and the read-tool end-to-end with a
+  real `FileReadTracker`. All 165 tool + edit + write + LSP
+  integration tests pass.
+
+- **Mid-stream early abort for unknown tool calls**
+  (`6ceaafc`) — extends the streaming-time early-abort
+  mechanism (already used for the edit/write
+  read-before-write and oldString-no-match guards) to catch
+  the LLM emitting a tool name that is not registered.
+  Cuts off the stream before the LLM spends tokens
+  generating arguments for a tool that can never run.
+  Three trigger categories:
+  1. *Hallucinated tool names* (`ask`, `question`,
+     `terminal_run`) — would otherwise generate the full
+     input JSON for a tool the registry cannot resolve.
+  2. *Stale registrations* — a tool that was in the LLM
+     tools list when the request went out but was
+     unregistered mid-session (e.g. `/web-provider`
+     flipping `websearch` off between turns).
+  3. *Provider / upstream drift* — tool schemas that
+     changed across Crux versions.
+
+  `_PendingStreamingGuardAbort` now carries nullable
+  guard / filePath, an explicit `reason` field
+  (`read-before-write` | `oldString-no-match` |
+  `unknown-tool`), the registered tool names, and an
+  `isUnknownTool` helper. The chunk-loop event and the
+  `LlmClient` cancel reason both consume `reason`
+  directly, so all abort kinds share one surface.
+  `_StreamingGuardAccumulator.accumulateAndCheck` adds an
+  early branch triggered on the very first chunk that
+  names a tool the registry cannot resolve. Gated on
+  `chunk.index == _maxSeenIndex` to mirror the
+  parallel-tool guard behavior so earlier siblings still
+  get persisted normally. `_buildGuardAbortedToolResult`
+  produces two synthetic bodies from one helper. Both
+  share the `[Crux system note - tool-call early abort]`
+  marker so the existing display banners and compaction
+  filter pick them up unchanged. The unknown-tool body
+  lists the registered tools so the LLM can retry on the
+  next turn without guessing. Tool-call stub carries
+  `_aborted_by_unknown_tool` / `requestedName` /
+  `availableTools` instead of `_aborted_by_guard` /
+  `filePath` so the persisted round is self-describing.
+  `ToolExecutor.allToolNames()` exposes registry names to
+  the accumulator; the post-stream "Unknown tool: <name>"
+  error path remains as defense-in-depth. Display:
+  collapsed row label and detail-pane banner specialize on
+  the new body prefix (`[UNKNOWN TOOL]`) and pull the
+  requested name out of the body so users see
+  `unknown tool 'ask'` rather than the generic guard copy.
+
+  Backed by a new `ToolExecutor` group in
+  `test/tool_test.dart` (covering `allToolNames`
+  declaration order, case-insensitive lookup so mixed-case
+  hallucinated names still hit the abort, and the
+  post-stream "Unknown tool" defense-in-depth fallback)
+  plus a new compaction-filter test in
+  `test/chat_log_builder_test.dart` verifying the
+  `[UNKNOWN TOOL]` body is dropped from the compacted
+  log the same way the existing early-abort filter drops
+  file-guard bodies. `docs/design-streaming-guards.md`
+  reason-taxonomy table gains the unknown-tool row;
+  Non-Goals clarifies that file-guard checks stay
+  edit/write-only while the unknown-tool check is a
+  separate concern that applies broadly.
+
+- **Project-committed skills via `.claude/skills/` and
+  `.agents/skills/`** (`da4530e`) — extends the 0.12.0
+  skill system so a repo can commit portable cross-agent
+  skills alongside its code. Project-level discovery now
+  scans `.claude/skills/` and `.agents/skills/` at each
+  level of the cwd → git-root walk, in addition to the
+  existing `.crux/skills/` and `.crux/skill/`. Project
+  copies shadow same-named `~/.claude` and `~/.agents`
+  skills so teams can pin a project-specific version of
+  any skill and override the user's global copy.
+
+### Fixes
+
+- **Vibe mode segmentation model — settled on
+  prose-boundary closes with `tool_call_with_content` also
+  closing** (`d18b3c0` → `a2a3eba` → `1b8b221` → `fe16725`
+  → `c87c4da` → `ae4fdff`) — the vibe walker went through
+  several iterations to settle on the correct boundary
+  semantics. The final model (`ae4fdff`):
+
+  > A segment = the think + tools accumulated between two
+  > response bodies. Response bodies are `role: 'ai'` rows
+  > AND `role: 'tool_call'` rows with non-empty content
+  > (per spec rule 2.3). Each prose boundary emits its
+  > own `VibeSegment`; multiple consecutive closes within
+  > one user turn produce multiple segments. The walker
+  > resets the box accumulators right after every close.
+  > `currentUser` is NOT cleared on close (the fix for
+  > the "two consecutive `role: 'ai'` rows silently drop
+  > the second one" symptom). `showUserMessage` is true on
+  > the first emit of a user turn, false on siblings, so
+  > the `you:` line appears exactly once per turn
+  > regardless of how many segments land.
+
+  Earlier attempts:
+  - `d18b3c0` — initial collapse to one segment per user
+    turn (mistook the spec's "between two responses" as
+    "one segment per turn"). Restored in `a2a3eba`.
+  - `1b8b221` — second attempt at per-turn. Reverted in
+    `fe16725` after user-reported "boxes split across
+    segments" symptom.
+  - `c87c4da` — third attempt at role:'ai'-only close
+    (which produced a single trailing segment for any
+    turn ending on a tool_call — exactly the
+    "all merged into agent turn" symptom the user
+    flagged). Restored to spec model in `ae4fdff`.
+
+- **Turn divider with time-since-last-agent-turn**
+  (`1839d2d`) — user messages in vibe mode now sit under
+  a centered-dash divider that labels the gap from the
+  previous agent turn's end. The label uses minute
+  precision and breaks down to days / hours / minutes
+  when the gap is large enough (`just now` | `X minutes
+  ago` | `X hours [Y minutes] ago` | `X days [and Y hours
+  Z minutes] ago`). New util `formatAgentTurnGap(Duration)`
+  in `duration_format.dart` owns the bucket boundaries
+  and grammar. New widget `VibeTurnDivider` mirrors
+  `CompactionDivider`'s centered-dash visual so the
+  chat history's structural markers all look the same.
+  Single-row, no `onTap` (turn gap is purely
+  informational). Inserted only above the FIRST segment
+  of a user turn so multi-segment turns don't get
+  duplicate dividers. The first user message of a session
+  has no prior agent activity, so no entry is recorded and
+  no divider renders. Backed by 6 unit tests on
+  `formatAgentTurnGap` covering all four buckets plus the
+  multi-day cumulative wrap and the whole-day / whole-hour
+  drop-zero sub-units edge cases. 70 / 70 pass.
+
+- **Divider math fixes** (`be8a2f5` + `9ef9472` +
+  `9d4b428`) — three coordinated fixes for the turn
+  divider rendering:
+  1. *ASCII `-` instead of U+2500 `─`.* Many terminal
+     fonts render `─` as 2 cells in practice, even though
+     wcwidth says 1. Symptom: the vibe divider wrapped to
+     two stacked horizontal lines. Switching to ASCII `-`
+     (universally 1 cell in any font) fixes it.
+  2. *`UnicodeWidth.stringWidth` for the math.* The
+     previous build used `String.length` to size the
+     dash + label line; that counts Dart code units, only
+     equal to display cells for ASCII. Any wide Unicode
+     character (CJK, full-width punctuation, emoji) would
+     be under-counted. Imports nocterm's own
+     `UnicodeWidth.stringWidth` (with `// ignore_for_file:
+     implementation_imports`) so the math stays in sync
+     with what `Text` actually paints.
+  3. *Padding OUTSIDE the LayoutBuilder.* The previous
+     structure had `LayoutBuilder` outside `Padding`, so
+     the builder saw the parent's un-padded `maxWidth`
+     and computed a line of N cells, then `Padding`
+     shrunk the available width by 2 and the `Text` widget
+     overflowed. Restructured to match the
+     `[CompactionDivider]` pattern: `Padding` outside the
+     builder, math and `Text` constraints line up, line
+     fits in one row.
+
+- **Vibe files box in live bubble for streaming /
+  executing edit / write** (`4c20d68`) — the persisted
+  `VibeSegmentBubble` already renders a files box once a
+  turn closes, with the full path +N -M line delta. The
+  live `VibeStreamingBubble` previously showed no file
+  info at all — only the think box (while reasoning
+  streamed) and the tools box (while a tool was being
+  named or executed). For an edit / write, the user
+  couldn't tell *which file* was about to be touched
+  until the tool returned and `walkSegments` ran again,
+  which can be many seconds later for slow tools or
+  large edits. Add a third live box — files — that
+  surfaces the path the moment the edit/write tool is
+  recognised. For streaming tools, `jsonDecode` on the
+  accumulated input (with a regex fallback for
+  `"filePath":"..."`); `filePath` is the first key in
+  both edit and write arg shapes so it lands in the first
+  one or two chunks. For executing tools, use
+  `ToolCall.filePath` (priority list starts with
+  `filePath`). Row text is `p.basename` only — full paths
+  overflow and push everything else off-screen. The box
+  is "active" (highlighted via warning color + tint)
+  while any edit/write tool is in the executing list.
+
+- **`you:` label aligns with `crux:` label in vibe
+  segment bubble** (`de51764`) — the user line was a
+  plain `Text` widget with no padding, so `you:` rendered
+  at column 0. The boxes wrapped in `Padding(left: 2)`
+  and the prose line wrapped in `Padding(horizontal: 1)`
+  with a leading space inside the text (` Crux: `) — both
+  landing at column 2. Wrap the user line in the same
+  `Padding(horizontal: 1)` + leading space as the prose
+  row. `you:` now lands at column 2, matching where the
+  boxes start and where `crux:` starts.
+
+- **Live think box time row uses active generation time**
+  (`22c67cc`) — previously the live think box's time row
+  used the streaming controller's waiting-time counter
+  (time waiting for the model to start). That counter
+  ticks before the first delta but freezes as soon as
+  reasoning actually streams — so the time row visually
+  stopped moving while the token row kept growing, and
+  the two rows never ticked together during a thinking
+  phase. Switch the source to
+  `SessionRuntimeState.roundFirstTokenTime` and compute
+  `now - roundFirstTokenTime` on each build. The bubble
+  rebuilds every 33 ms while active, so the value updates
+  in lockstep with the live token estimate. Fall back to
+  the waiting-time counter during the pre-first-delta
+  (TTFT) phase so the think box still shows a meaningful
+  time row before reasoning lands.
+
+- **Vibe persists + live open-segment boxes merge**
+  (`a85def8`) — when the live streaming bubble emits an
+  open segment and the persisted walk concurrently emits
+  a different segment for the same user turn (during the
+  round's persistence path), the two were rendered as
+  separate segment blocks. Merge them into one bubble
+  that tracks the union of box states so the user sees
+  one continuous segment during the brief overlap.
+
+- **Metrics cubit mirrors compacted target**
+  (`b6c586c`) — `MetricsCubit` mirrors live metrics
+  fields at the end of the 50 ms tick. When `/compact`
+  finishes and updates `rt.contextTargetTokens` to the
+  new compacted target, the cubit mirror path was
+  dropping the field on the post-compact update. The
+  context bar's `_lastSeenTarget` comparison then froze
+  until the next user-driven change. Mirror re-includes
+  the field on the compact-write path.
+
+- **Test fixes** (`a1e5804` + `db1b9bc` + `1ff07c5` +
+  `3cb9579` + `d93b665`) — `run_metrics_test.dart`'s
+  Dracula color assertion fixed to 24-bit truecolor
+  `(38;2;189;147;249)` (nocterm's `TextStyle.toAnsi()`
+  emits truecolor, not 8-bit indexed); `IsolateChannel`'s
+  "two channels run independently" test timeout bumped
+  from 2 s to 10 s to absorb cross-isolate event delivery
+  delays under full-suite load; `/project` test now
+  filters whitespace-bearing HOME children (macOS
+  `~/Unity user templates` was breaking the path
+  splitter); two `CruxThemeData()` test constructors
+  missing the new `chipBackground` parameter were
+  blocking the suite from compiling; `vibe` headless
+  test no longer mutates `process.cwd` (was leaking
+  state to subsequent tests).
+
 ## [0.12.0] - 2026-07-10
 
 b6364d5
