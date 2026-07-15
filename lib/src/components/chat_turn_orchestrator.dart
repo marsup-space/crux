@@ -199,6 +199,12 @@ class ChatTurnOrchestrator {
                 reason: CompactionReason.auto,
               );
               if (result != null) {
+                // ContextBar reads MetricsCubit, while the compaction service
+                // updates the legacy runtime. Keep the read-side target in sync.
+                _sessionController.metricsCubit.updateContext(
+                  sessionId: sessionId,
+                  targetTokens: result.postEstimateTokens,
+                );
                 for (final marker in result.fileMarkers) {
                   await _tracker.recordRead(
                     resolvePath(marker.path, Directory.current.path),
@@ -653,6 +659,12 @@ class ChatTurnOrchestrator {
         _showToast('Nothing to compact', mode: ToastMode.status);
         return;
       }
+      // ContextBar reads MetricsCubit, while the compaction service updates
+      // the legacy runtime. Mirror the compacted target before refreshing.
+      _sessionController.metricsCubit.updateContext(
+        sessionId: sessionId,
+        targetTokens: result.postEstimateTokens,
+      );
       for (final marker in result.fileMarkers) {
         await _tracker.recordRead(
           resolvePath(marker.path, Directory.current.path),
