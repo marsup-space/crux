@@ -26,13 +26,19 @@ import 'vibe_box_data.dart';
 ///   Active while tools are executing.
 /// - **prose**: live response text (via HighlightedMarkdownText)
 ///
-/// Does NOT show the user message (already rendered by the pending
-/// segment from [walkSegments]) or the files box (no tools have
-/// completed in the current round yet).
+/// When [baseSegment] is non-null, its completed-round think/tools/files
+/// data is merged with the current in-flight round. This keeps one open
+/// response-bounded segment under a single set of boxes instead of rendering
+/// the persisted tail and the live round as two visually separate segments.
+/// The user line remains owned by [ChatHistory].
 class VibeStreamingBubble extends StatefulComponent {
   final StreamingController streamingController;
   final int sessionId;
   final SessionRuntimeState? runtimeState;
+
+  /// Persisted, still-open tail of the current response-bounded segment.
+  /// Its [VibeSegment.prose] is always null at the call site.
+  final VibeSegment? baseSegment;
 
   /// Reasoning presets from the session's provider, used to map
   /// internal effort values to display labels (e.g. `normal` →
@@ -44,6 +50,7 @@ class VibeStreamingBubble extends StatefulComponent {
     required this.streamingController,
     required this.sessionId,
     this.runtimeState,
+    this.baseSegment,
     this.reasoningPresets = const [],
     super.key,
   });
@@ -159,22 +166,32 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
 
     final boxes = <Component>[];
 
-    // Think box: show whenever reasoning is streaming OR has streamed
-    // in this round (even if the response body has started, the final
-    // values are still relevant).
-    final hasThink = _reasoning.isNotEmpty || liveSeconds != null;
+    // One think box for the whole open segment: completed rounds come from
+    // [baseSegment], while [_reasoning]/[liveSeconds] describe only the
+    // current in-flight round. Rendering these sources independently was the
+    // duplicate-box bug seen from the second model round onward.
+    final baseThink = component.baseSegment?.think;
+    final hasLiveThink = _reasoning.isNotEmpty || liveSeconds != null;
+    final hasThink = baseThink != null || hasLiveThink;
     final thinkActive = _reasoning.isNotEmpty && _content.isEmpty;
 
     if (hasThink) {
       final rows = <String>[];
-      if (liveSeconds != null) {
-        rows.add('${liveSeconds.toStringAsFixed(1)}s');
+      final totalSeconds =
+          (baseThink?.duration.inMicroseconds ?? 0) / 1000000.0 +
+          (liveSeconds ?? 0.0);
+      rows.add('${totalSeconds.toStringAsFixed(1)}s');
+
+      final totalTokens =
+          (baseThink?.tokens ?? 0) +
+          (_reasoning.isEmpty ? 0 : estimateTokens(_reasoning));
+      if (baseThink != null || _reasoning.isNotEmpty) {
+        rows.add(formatTokens(totalTokens));
       }
-      if (_reasoning.isNotEmpty) {
-        rows.add(formatTokens(estimateTokens(_reasoning)));
-      }
-      // Effort — known from the start, not just when reasoning arrives
-      final effort = _displayEffort(rt?.reasoningEffort);
+
+      final effort = _displayEffort(
+        rt?.reasoningEffort ?? baseThink?.effort,
+      );
       if (effort.isNotEmpty) {
         rows.add(effort);
       }
@@ -189,8 +206,16 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       );
     }
 
-    // Tools box: from streaming + executing tool calls.
+    // One tools box for the whole open segment. Seed it with completed calls
+    // from the persisted tail, then fold in the current streaming/executing
+    // calls. Map insertion order preserves the original first-seen ordering.
     final allToolNames = <String, int>{};
+    final completedToolTokens = <String, int>{};
+    for (final entry
+        in component.baseSegment?.tools?.entries ?? const <ToolBoxEntry>[]) {
+      allToolNames[entry.name] = entry.callCount;
+      completedToolTokens[entry.name] = entry.totalTokens;
+    }
     for (final tc in _streamingToolCalls) {
       allToolNames[tc.name] = (allToolNames[tc.name] ?? 0) + 1;
     }
@@ -199,7 +224,10 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     }
     if (allToolNames.isNotEmpty) {
       final rows = allToolNames.entries.map((e) {
-        return '${e.key} x${e.value}';
+        final completedTokens = completedToolTokens[e.key];
+        return completedTokens == null
+            ? '${e.key} x${e.value}'
+            : '${e.key} x${e.value}: ${formatTokens(completedTokens)}';
       }).toList();
       boxes.add(
         VibeBox(
@@ -212,38 +240,37 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       );
     }
 
-    // Files box: file-modifying tools (`edit`, `write`) that are
-    // currently streaming or executing. The persisted `VibeSegment`
-    // shows `path +N -M` after the tool completes; here we just
-    // surface the path the moment the tool is recognised, so the
-    // user sees what file the agent is about to touch *now* — not
-    // after the tool returns. Without this, edit/write rounds
-    // would only show in the `files` box on the next `walkSegments`
-    // pass, which can be many seconds later for slow tools.
-    //
-    // For streaming tools the input is still partial JSON, so we
-    // try `jsonDecode` first and fall back to a regex on the
-    // accumulated text. `filePath` is the first key in both
-    // `edit` and `write` arg shapes, so it almost always lands in
-    // the first few chunks. For executing tools the input is
-    // already parsed and `inputPreview` carries the path (see
-    // `_toolExecutionPreview` in `chat_turn_orchestrator.dart`).
+    // Files follow the same ownership rule as think/tools: completed edits
+    // live on the persisted open segment; current edit/write calls come from
+    // the controller. Render both in one box and dedupe by path.
+    final baseMods = component.baseSegment?.mods;
     final liveFilePaths = _collectLiveFilePaths();
-    if (liveFilePaths.isNotEmpty) {
+    final fileRows = <String>[];
+    final seenFilePaths = <String>{};
+    if (baseMods != null) {
+      for (final path in baseMods.paths) {
+        if (!seenFilePaths.add(path)) continue;
+        final base = p.basename(path);
+        final name = base.isEmpty ? path : base;
+        fileRows.add('$name +${baseMods.linesAdded} -${baseMods.linesRemoved}');
+      }
+    }
+    for (final path in liveFilePaths) {
+      if (!seenFilePaths.add(path)) continue;
+      final base = p.basename(path);
+      fileRows.add(base.isEmpty ? path : base);
+    }
+    if (baseMods != null && baseMods.overflowCount > 0) {
+      fileRows.add('+${baseMods.overflowCount} more files');
+    }
+    if (fileRows.isNotEmpty) {
       final filesActive = _executingToolCalls.any(
         (tc) => tc.name == 'edit' || tc.name == 'write',
       );
-      // Basename only — the box is narrow, full paths overflow
-      // and push the +/- delta off-screen. Persisted boxes do the
-      // same.
-      final rows = liveFilePaths.map((path) {
-        final base = p.basename(path);
-        return base.isEmpty ? path : base;
-      }).toList();
       boxes.add(
         VibeBox(
           title: 'files',
-          bodyRows: rows,
+          bodyRows: fileRows,
           active: filesActive,
           mutedColor: theme.success,
           activeColor: theme.warning,
@@ -279,14 +306,14 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
                   style: TextStyle(
                     color: theme.responsePrefix,
                     fontWeight: FontWeight.bold,
-                                     ),
-                 ),
-                 Expanded(
-                   child: HighlightedMarkdownText(_content),
-                 ),
-               ],
-             ),
-           ),
+                  ),
+                ),
+                Expanded(
+                  child: HighlightedMarkdownText(_content),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

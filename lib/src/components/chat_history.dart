@@ -377,6 +377,7 @@ class _ChatHistoryState extends State<ChatHistory> {
     // VibeStreamingBubble needs it to map effort → display label.
     final reasoningPresets = _currentReasoningPresets();
 
+    VibeSegment? liveVibeBaseSegment;
     if (isVibeMode) {
       // Pre-compute the time gap from "previous agent turn end" to
       // each user message. The walker builds one [VibeSegment] per
@@ -440,7 +441,15 @@ class _ChatHistoryState extends State<ChatHistory> {
         resultByCallId,
         component.toolRegistry,
       );
+      // The trailing `prose == null` segment is not a completed segment —
+      // it is the persisted portion of the same response-bounded segment
+      // that VibeStreamingBubble is about to continue. Keep its user line
+      // here, but hand its boxes to the live renderer for aggregation.
+      if (isStreaming && segments.isNotEmpty && segments.last.prose == null) {
+        liveVibeBaseSegment = segments.last;
+      }
       for (final seg in segments) {
+        final isLiveOpenSegment = identical(seg, liveVibeBaseSegment);
         // Mirror the verbose-mode path so the annotated scrollbar
         // still has one dot per user turn in vibe mode. We use
         // [VibeSegment.showUserMessage] (the same flag that gates
@@ -474,8 +483,21 @@ class _ChatHistoryState extends State<ChatHistory> {
               seg.userMessage.content.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
-        items.add((ctx) => VibeSegmentBubble(segment: seg));
-        items.add((ctx) => const SizedBox(height: 1));
+        if (isLiveOpenSegment) {
+          // Preserve the user line / scrollbar anchor, but do not render the
+          // pending segment's boxes a second time. VibeStreamingBubble merges
+          // these base boxes with the current round immediately below.
+          if (seg.showUserMessage) {
+            final userOnly = VibeSegment(
+              userMessage: seg.userMessage,
+              showUserMessage: true,
+            );
+            items.add((ctx) => VibeSegmentBubble(segment: userOnly));
+          }
+        } else {
+          items.add((ctx) => VibeSegmentBubble(segment: seg));
+          items.add((ctx) => const SizedBox(height: 1));
+        }
       }
     }
 
@@ -672,6 +694,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             streamingController: component.streamingController,
             sessionId: component.sessionController.currentSessionId ?? 0,
             runtimeState: rt,
+            baseSegment: liveVibeBaseSegment,
             reasoningPresets: reasoningPresets,
           );
         });
