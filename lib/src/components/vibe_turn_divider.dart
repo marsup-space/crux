@@ -46,6 +46,21 @@ class VibeTurnDivider extends StatelessComponent {
         // — SizedBox(forced-width) so the LayoutBuilder sees a real
         // maxWidth even when the divider sits inside a Row's
         // MainAxisSize.min column, then dashes+label+dashes.
+        //
+        // Use ASCII `-` (U+002D HYPHEN-MINUS) for the dash, not
+        // `─` (U+2500 BOX DRAWINGS LIGHT HORIZONTAL). Both are
+        // classified as East Asian Width "Narrow" in the Unicode
+        // table and both return wcwidth=1 in nocterm's lookup,
+        // so the LayoutBuilder math above treats them as equal.
+        // However, many terminal fonts (especially those that
+        // fall back to a CJK / wide glyph for U+2500) actually
+        // render `─` as 2 cells — and nocterm's Text widget
+        // does NOT post-render-correct against the terminal's
+        // font, so the layout math would compute "this line is
+        // 80 cells" while the terminal paints 136 cells and
+        // wraps. ASCII `-` is rendered as exactly 1 cell by
+        // every font the project supports, so the rendered
+        // line width always matches the math.
         final line = SizedBox(
           width: double.infinity,
           child: Padding(
@@ -56,7 +71,7 @@ class VibeTurnDivider extends StatelessComponent {
                     final leftPad = remaining ~/ 2;
                     final rightPad = remaining - leftPad;
                     return Text(
-                      '─' * leftPad + label + '─' * rightPad,
+                      '-' * leftPad + label + '-' * rightPad,
                       style: TextStyle(color: theme.onSurfaceDim),
                     );
                   })()
