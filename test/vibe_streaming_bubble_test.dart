@@ -30,7 +30,6 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 
 void main() {
-  late Directory originalCwd;
   late Directory tempDir;
   late CruxDatabase db;
   late SessionStore store;
@@ -44,11 +43,9 @@ void main() {
   late AutoScrollController scrollController;
 
   setUp(() async {
-    originalCwd = Directory.current;
     tempDir = await Directory.systemTemp.createTemp(
       'crux_vibe_streaming_merge_',
     );
-    Directory.current = tempDir;
 
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     store = SessionStore(db, instanceId: 'local');
@@ -99,7 +96,6 @@ void main() {
     chatService.dispose();
     gitStatusService.dispose();
     await db.close();
-    Directory.current = originalCwd;
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
