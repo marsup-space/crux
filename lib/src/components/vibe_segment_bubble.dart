@@ -130,14 +130,14 @@ class VibeSegmentBubble extends StatelessComponent {
               ],
             ),
           ),
-        // Prose line. Per the per-`role: 'ai'` model,
-        // [segment.prose] is the concatenated prose string for the
-        // segment — the closing `role: 'ai'` row's `content`
-        // joined with `\n\n` to any non-empty `role: 'tool_call'`
-        // row's `content` that landed in the segment's window.
-        // Renders under the `crux:` prefix. Null on a pending or
+        // Prose line. Single closing message — its `content` is
+        // rendered under the `crux:` prefix. Either `role: 'ai'`
+        // (the agent's prose reply) or `role: 'tool_call'` with
+        // non-empty content (a mid-round remark that itself
+        // closed a prose boundary). Null on a pending or
         // boxes-only segment.
-        if (segment.prose != null && segment.prose!.trim().isNotEmpty)
+        if (segment.prose != null &&
+            segment.prose!.content.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
@@ -151,7 +151,7 @@ class VibeSegmentBubble extends StatelessComponent {
                   ),
                 ),
                 Expanded(
-                  child: HighlightedMarkdownText(segment.prose!),
+                  child: HighlightedMarkdownText(segment.prose!.content),
                 ),
               ],
             ),

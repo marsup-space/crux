@@ -71,23 +71,18 @@ class ModBoxData {
   });
 }
 
-/// One [VibeSegment] per `role: 'ai'` row (response body).
+/// One [VibeSegment] per prose boundary in the message list.
 ///
 /// Spec (see `docs/design-vibe-mode.md`, "Segmentation" section):
-/// segments are bounded by response bodies — every `role: 'ai'`
-/// row closes the running segment and emits a fresh one. The
-/// agent's reasoning, tool calls, and tool results that landed
-/// since the previous `role: 'ai'` (or the user start of turn)
-/// are folded into the segment's think/tools/files boxes; the
-/// `role: 'ai'` row's `content` is the segment's prose.
-///
-/// `role: 'tool_call'` rows do **not** close a segment on their
-/// own — they just contribute to the running segment's boxes
-/// and (for any non-empty `content`) to the prose buffer.
-/// Multiple consecutive `role: 'ai'` rows in one user turn
-/// (the agent emitting follow-up prose without a tool call
-/// between them) produce multiple segments that share the same
-/// [userMessage].
+/// segments are bounded by **response bodies** — every
+/// `role: 'tool_call'` row whose embedded `content` is non-empty
+/// (a mid-round remark alongside a tool call) and every
+/// `role: 'ai'` row closes the running segment and emits a fresh
+/// one. Multiple consecutive closings within one user turn
+/// produce multiple segments: for example, two consecutive
+/// `role: 'ai'` rows (the agent emitting follow-up prose without
+/// a tool call between them) yield two segments that share the
+/// same [userMessage].
 ///
 /// Each segment's boxes are the **window** of work that landed
 /// since the previous close: reasoning/tool rounds accumulate,
@@ -98,14 +93,13 @@ class ModBoxData {
 /// over means no duplicate think/tools boxes across segments in
 /// the same turn.
 ///
-/// [prose] is the **concatenated** prose string for the
-/// segment: the closing `role: 'ai'` row's `content`, joined
-/// with `\n\n` to any non-empty `role: 'tool_call'` row's
-/// `content` that landed in the segment's window. The walker's
-/// per-`role: 'ai'` close fires AFTER the `tool_call_with_content`
-/// has been accumulated, so the segment's prose can include
-/// mid-round text ("let me check first") plus the final answer
-/// ("here is the result") on the same row.
+/// [prose] is the closing message itself — a [Message] whose
+/// `content` is what the renderer displays. For a `role: 'ai'`
+/// that's the final reply; for a `role: 'tool_call'` with
+/// content that's the mid-round remark that provoked this
+/// close. Null on a user-boundary flush where the previous turn
+/// had no close, or on a trailing flush of a pending turn
+/// without an ai yet.
 ///
 /// [showUserMessage] is `true` on the **first** segment that each
 /// user turn produces, `false` thereafter. With multiple
@@ -117,7 +111,7 @@ class VibeSegment {
   final ThinkBoxData? think;
   final ToolBoxData? tools;
   final ModBoxData? mods;
-  final String? prose;
+  final Message? prose;
   final bool showUserMessage;
 
   const VibeSegment({
@@ -177,12 +171,6 @@ List<VibeSegment> walkSegments(
   final modPaths = <String>[];
   final modLinesAdded = <String, int>{};
   final modLinesRemoved = <String, int>{};
-  // Prose buffer for the current user turn. Every `role: 'ai'`
-  // row's `content` and every non-empty `role: 'tool_call'`
-  // row's `content` is appended (via [_appendProse]) until the
-  // turn ends at a user boundary or end of walk. The buffer
-  // becomes the segment's [VibeSegment.prose] at emit time.
-  String? proseBuffer;
   // `true` once the current user turn has produced its first
   // emitted segment. The first segment carries the `you:` line;
   // siblings in the same turn render prose only. Reset on
@@ -210,7 +198,7 @@ List<VibeSegment> walkSegments(
         modPaths,
         modLinesAdded,
         modLinesRemoved,
-        proseBuffer,
+        null,
         showUserLine: !userLineShown,
       );
       currentUser = msg;
@@ -224,7 +212,6 @@ List<VibeSegment> walkSegments(
       modPaths.clear();
       modLinesAdded.clear();
       modLinesRemoved.clear();
-      proseBuffer = null;
       continue;
     }
 
@@ -293,34 +280,39 @@ List<VibeSegment> walkSegments(
         }
       }
 
-      // Prose-buffer accumulation. The segment's prose is the
-      // closing `role: 'ai'` row's content, joined with `\n\n` to
-      // any non-empty `role: 'tool_call'` row's `content` that
-      // landed in the segment's window. We accumulate into
-      // `proseBuffer` rather than emit-on-tool_call-with-content
-      // so the segment's prose carries the mid-round remark
-      // ("let me check first") AND the final answer ("here is
-      // the result") on the same row — both belong to the
-      // same response-window per the per-`role: 'ai'` model.
+      // Prose-boundary check. Per spec rule 2.3 / rule 3:
+      // * role: 'tool_call' with non-empty content — close.
+      // * role: 'ai' — close.
+      // Either kind closes the running segment; the closing
+      // message's content becomes the segment's prose.
       //
-      // The `trim().isNotEmpty` guard on tool_call content keeps
-      // whitespace-only / single-token "OK"-style mid-round
-      // remarks from polluting the buffer (and matches the
-      // renderer's notion of "actually has prose").
-      if (msg.role == 'ai') {
-        proseBuffer = _appendProse(proseBuffer, msg.content);
-      } else if (msg.content.trim().isNotEmpty) {
-        proseBuffer = _appendProse(proseBuffer, msg.content);
-      }
+      // Why both paths close: rule 2.3 explicitly lists
+      // tool_call-with-content as a prose boundary. Skipping
+      // that close was the mistake that collapsed multi-emit
+      // turns into a single segment and made consecutive
+      // `role: 'ai'` rows appear as one vibe segment.
+      //
+      // Tool-call's `content` here is checked with `trim().isNotEmpty`
+      // rather than the literal `isNotEmpty`: the LLM frequently
+      // emits tool_call rows with whitespace-only or single-token
+      // content ("OK", "got it", " ".trim()==""), and treating those
+      // as prose boundaries would emit a segment whose prose the
+      // renderer then refuses to draw (the renderer's
+      // `content.trim().isNotEmpty` guard skips the whole crux:
+      // row). That left a "two box groups with no response
+      // between them" gap in vibe mode. The trim() check matches
+      // the renderer's notion of "actually has prose" so the
+      // walker and renderer agree on what counts as a boundary.
+      final closesSegment = msg.role == 'ai' ||
+          (msg.role == 'tool_call' && msg.content.trim().isNotEmpty);
 
-      // Close boundary. Per the per-`role: 'ai'` model, only
-      // `role: 'ai'` closes a segment. `role: 'tool_call'`
-      // never closes (regardless of `content`) — its content
-      // (when non-empty) joins the prose buffer above, and its
-      // tools accumulate to the segment's tools box. This
-      // matches the spec's "segment is bounded by a response
-      // body from the LLM (role: 'ai')" framing.
-      if (msg.role == 'ai' && currentUser != null) {
+      if (closesSegment && currentUser != null) {
+        // The segment's prose is the closing message itself —
+        // its `content` is what the renderer displays. For
+        // a `role: 'ai'` that's the final reply; for a
+        // `role: 'tool_call'` with content that's the mid-round
+        // remark that provoked this close. Either way the
+        // segment carries the closing row in [VibeSegment.prose].
         _emitSegment(
           segments,
           currentUser,
@@ -333,7 +325,7 @@ List<VibeSegment> walkSegments(
           modPaths,
           modLinesAdded,
           modLinesRemoved,
-          proseBuffer,
+          msg,
           showUserLine: !userLineShown,
         );
         userLineShown = true;
@@ -350,7 +342,6 @@ List<VibeSegment> walkSegments(
         modPaths.clear();
         modLinesAdded.clear();
         modLinesRemoved.clear();
-        proseBuffer = null;
         // Critically, do NOT clear `currentUser` here. The
         // spec doesn't say to, and the earlier implementation
         // did — that's what silently dropped a 2nd
@@ -366,13 +357,8 @@ List<VibeSegment> walkSegments(
   }
 
   // Trailing flush: a user has typed (currentUser set) but no
-  // `role: 'ai'` row arrived — emit a pending segment for the
-  // open turn so the `you:` line shows the user's input
-  // immediately and any accumulated boxes (think from a fresh
-  // reasoning burst, etc.) render. `proseBuffer` carries any
-  // mid-round content (`role: 'tool_call'` rows that landed
-  // since the user) so a thinking-only or tool-only turn still
-  // shows the mid-round remark on the pending segment's row.
+  // closing message landed — emit a pending segment so the
+  // `you:` line shows the user's input immediately.
   _emitSegment(
     segments,
     currentUser,
@@ -385,7 +371,7 @@ List<VibeSegment> walkSegments(
     modPaths,
     modLinesAdded,
     modLinesRemoved,
-    proseBuffer,
+    null,
     showUserLine: !userLineShown,
   );
 
@@ -396,12 +382,12 @@ List<VibeSegment> walkSegments(
 ///
 /// [currentUser] is the segment anchor. When null, no emit.
 ///
-/// [prose] is the pre-joined prose string for the segment
-/// (built up by [walkSegments] across every `ai` and non-empty
-/// `tool_call` row in the segment's window). When null this is
-/// either a user-boundary flush where the previous turn never
-/// produced any prose, or a trailing-flush of a pending-but-not-
-/// closed turn.
+/// [closing] is the closing message — `role: 'ai'` (final reply)
+/// or `role: 'tool_call'` with non-empty content (mid-round
+/// remark). Its `content` becomes the segment's prose via the
+/// caller binding it onto [VibeSegment.prose]. When null this is
+/// either a user-boundary flush or a trailing-flush of a
+/// pending-but-not-closed turn.
 ///
 /// [showUserLine] controls [VibeSegment.showUserMessage]:
 /// `true` on the first emit of a user turn, `false` thereafter so
@@ -424,7 +410,7 @@ void _emitSegment(
   List<String> modPaths,
   Map<String, int> modLinesAdded,
   Map<String, int> modLinesRemoved,
-  String? prose, {
+  Message? closing, {
   required bool showUserLine,
 }) {
   if (currentUser == null) return;
@@ -432,17 +418,14 @@ void _emitSegment(
   final entries = toolOrder.map((name) => toolEntries[name]!).toList();
   final hasThink = thinkDuration.inMilliseconds > 0 || thinkTokens > 0;
   final hasBoxes = hasThink || entries.isNotEmpty || modPaths.isNotEmpty;
-  // A non-null and non-empty prose is the test for whether the
-  // row actually has content to draw. Empty-string prose is
-  // treated like null — the row is hidden.
-  final hasProse = prose != null && prose.isNotEmpty;
+  final hasProse = closing != null;
 
   // Skip when the flush has nothing to show: no boxes, no
-  // prose. Pending-only emission (user just typed, no agent
-  // output yet) lands here too when currentUser is set but
-  // accumulators are empty and there's no closing — we want
-  // to emit that case (showUserLine=true makes it carry the
-  // user line), so the guard is gated on showUserLine.
+  // closing message. Pending-only emission (user just typed,
+  // no agent output yet) lands here too when currentUser is
+  // set but accumulators are empty and there's no closing —
+  // we want to emit that case (showUserLine=true makes it
+  // carry the user line), so the guard is gated on showUserLine.
   if (!hasBoxes && !hasProse && !showUserLine) return;
 
   segments.add(VibeSegment(
@@ -468,23 +451,8 @@ void _emitSegment(
             overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
           )
         : null,
-    prose: prose,
+    prose: closing,
   ));
-}
-
-/// Join two prose snippets with a blank line, treating empty /
-/// whitespace-only inputs as no-op. Used by [walkSegments] to
-/// fold every `role: 'ai'` row's `content` and every non-empty
-/// `role: 'tool_call'` row's `content` into a single
-/// concatenated [VibeSegment.prose] string for the segment.
-String? _appendProse(String? existing, String addition) {
-  final trimmedAdd = addition.trim();
-  if (trimmedAdd.isEmpty) return existing;
-  final trimmedExisting = existing?.trim();
-  if (trimmedExisting == null || trimmedExisting.isEmpty) {
-    return trimmedAdd;
-  }
-  return '$trimmedExisting\n\n$trimmedAdd';
 }
 
 /// Format a token count for display in the tools box.

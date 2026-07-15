@@ -75,7 +75,8 @@ void main() {
 
       expect(segments.length, 1);
       expect(segments[0].userMessage.content, 'fix the bug');
-      expect(segments[0].prose, 'Fixed it.');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content, 'Fixed it.');
       expect(segments[0].think, isNull);
       expect(segments[0].tools, isNull);
       expect(segments[0].mods, isNull);
@@ -136,14 +137,16 @@ void main() {
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'read');
-      expect(segments[0].prose, 'First answer.');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content, 'First answer.');
       // Second segment: same user anchor, no boxes (the reset
       // between closes left them empty), no repeated user line.
       expect(segments[1].userMessage.content, 'explain');
       expect(segments[1].showUserMessage, isFalse);
       expect(segments[1].think, isNull);
       expect(segments[1].tools, isNull);
-      expect(segments[1].prose, 'Second answer.');
+      expect(segments[1].prose, isNotNull);
+      expect(segments[1].prose!.content, 'Second answer.');
     });
 
     test('reasoning is accumulated into think box', () {
@@ -211,7 +214,8 @@ void main() {
 
       expect(segments.length, 1);
       expect(segments[0].userMessage.content, 'hello');
-      expect(segments[0].prose, 'Hi!');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content, 'Hi!');
     });
 
     test('multi-round turn: two reasoning rounds collapse into one think box', () {
@@ -254,9 +258,11 @@ void main() {
 
       expect(segments.length, 2);
       expect(segments[0].userMessage.content, 'first question');
-      expect(segments[0].prose, 'first answer');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content, 'first answer');
       expect(segments[1].userMessage.content, 'second question');
-      expect(segments[1].prose, 'second answer');
+      expect(segments[1].prose, isNotNull);
+      expect(segments[1].prose!.content, 'second answer');
     });
 
     test('tool_call with non-empty content closes the segment (mixed round)', () {
@@ -283,16 +289,14 @@ void main() {
       final segments = walkSegments(messages, {}, ToolRegistry());
 
       expect(segments.length, 2);
-      // First segment: closed by the user boundary (the prior
-      // turn's tool_call content joined the prose buffer; user
-      // boundary emits with that as the prose, the tool_call's
-      // tools box comes from the same row).
+      // First segment: closed by the tool_call's content (a prose
+      // boundary per spec rule 2.3). The mixed-round content is
+      // the closing prose, the tools box comes from the same row.
       expect(segments[0].userMessage.content, 'mixed round');
       expect(segments[0].showUserMessage, isTrue);
-      expect(
-        segments[0].prose,
-        'Here is some prose alongside tools.',
-      );
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content,
+          'Here is some prose alongside tools.');
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'read');
@@ -300,7 +304,8 @@ void main() {
       // ai close lands the next segment.
       expect(segments[1].userMessage.content, 'next turn');
       expect(segments[1].showUserMessage, isTrue);
-      expect(segments[1].prose, 'answer');
+      expect(segments[1].prose, isNotNull);
+      expect(segments[1].prose!.content, 'answer');
       expect(segments[1].tools, isNull);
       expect(segments[1].think, isNull);
     });
@@ -354,15 +359,16 @@ void main() {
       check('', expectedSegments: 1);
     });
 
-    test('per-`role: \'ai\'` model: multi-round turn collapses into one segment', () {
-      // Per the per-`role: 'ai'` model, segments are bounded
-      // exclusively by `role: 'ai'` rows. A `role: 'tool_call'`
-      // row never closes — it just contributes its content to
-      // the prose buffer and its tools to the running segment's
-      // tools box. So the entire multi-round turn (two bash
-      // calls + final ai) folds into one [VibeSegment] emitted
-      // on the ai row. The prose is the concatenated mid-round
-      // remark + the final answer; the tools box lists bash x2.
+    test('tool_call content followed by ai message produces two segments', () {
+      // Per the per-close (prose-boundary) model: every
+      // `role: 'tool_call'` row whose embedded `content` is
+      // non-empty AND every `role: 'ai'` row closes the running
+      // segment. So this scenario (two rounds: tools-only then
+      // tools-with-mid-prose, then final ai) produces two
+      // segments. Segment #0 carries the first round's tools
+      // plus the second round's mid-prose; segment #1 carries
+      // only the final ai prose (accumulators were reset on
+      // segment #0's close).
       final callId = 'call-1';
       final messages = [
         _userMsg('show me the log', id: 1),
@@ -392,23 +398,33 @@ void main() {
       };
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
 
-      // One user turn → one segment (ai is the only close).
-      expect(segments.length, 1);
+      // Two segments: tool_call_with_content closes the first
+      // (segment #0), the ai closes the second (segment #1).
+      expect(segments.length, 2);
+      // Segment #0: the mid-round tool_call with content closes.
+      // Both rounds' tools (bash x2) and the second round's
+      // mid-prose land in this segment; the first round had
+      // empty content so it didn't close on its own.
       expect(segments[0].userMessage.content, 'show me the log');
       expect(segments[0].showUserMessage, isTrue);
-      // Boxes aggregate across both rounds.
       expect(segments[0].think, isNotNull);
       expect(segments[0].think!.duration.inMilliseconds, 3000);
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'bash');
       expect(segments[0].tools!.entries[0].callCount, 2);
-      // Prose is the concatenated mid-round + final-prose content.
-      expect(
-        segments[0].prose,
-        'Yes — all 4 fixes are committed. Confirmed just now:'
-        '\n\nFour atomic commits on top of 3622efb...',
-      );
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content,
+          'Yes — all 4 fixes are committed. Confirmed just now:');
+      // Segment #1: the ai close. Accumulators were reset on
+      // segment #0's close, so no boxes here; only the ai prose.
+      expect(segments[1].userMessage.content, 'show me the log');
+      expect(segments[1].showUserMessage, isFalse);
+      expect(segments[1].think, isNull);
+      expect(segments[1].tools, isNull);
+      expect(segments[1].prose, isNotNull);
+      expect(segments[1].prose!.content,
+          'Four atomic commits on top of 3622efb...');
     });
 
     test('formatTokens formats correctly', () {
