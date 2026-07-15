@@ -23,7 +23,7 @@ class Session {
   /// Per-session chat display mode (verbose vs vibe). In-memory only —
   /// mirrored from [SessionRuntimeState.chatDisplayMode] by
   /// [SessionController.persistChatDisplayMode]. Not persisted to the
-  /// database; defaults to [ChatDisplayMode.verbose] on app restart.
+  /// database; defaults to [ChatDisplayMode.vibe] on app restart.
   ChatDisplayMode chatDisplayMode;
 
   /// Optional per-session override for the sampling temperature
@@ -63,7 +63,7 @@ class Session {
     this.promptCacheHitTokens = 0,
     this.thinkingMode = 'enabled',
     this.reasoningEffort = 'normal',
-    this.chatDisplayMode = ChatDisplayMode.verbose,
+    this.chatDisplayMode = ChatDisplayMode.vibe,
     this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,
