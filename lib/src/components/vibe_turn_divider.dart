@@ -34,39 +34,31 @@ class VibeTurnDivider extends StatelessComponent {
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
 
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        final maxWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth.toInt()
-            : 0;
-        final label = ' ${formatAgentTurnGap(sinceLastTurn)} ';
-        final remaining = maxWidth - label.length;
+    // Padding is OUTSIDE the LayoutBuilder so the builder sees
+    // the post-padding maxWidth. The reverse ordering (builder
+    // outside, padding inside) was the cause of a 2-cell wrap
+    // visible at narrow panel widths: the math said "this line
+    // is N cells" using the un-padded width, then the Text
+    // widget inside Padding tried to fit N cells into N-2 and
+    // wrapped the last 2 dashes onto a second line.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+      child: SizedBox(
+        width: double.infinity,
+        child: LayoutBuilder(
+          builder: (ctx, constraints) {
+            final maxWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth.toInt()
+                : 0;
+            final label = ' ${formatAgentTurnGap(sinceLastTurn)} ';
+            final remaining = maxWidth - label.length;
 
-        // Body: same edge-to-edge dash pattern as CompactionDivider
-        // — SizedBox(forced-width) so the LayoutBuilder sees a real
-        // maxWidth even when the divider sits inside a Row's
-        // MainAxisSize.min column, then dashes+label+dashes.
-        //
-        // Use ASCII `-` (U+002D HYPHEN-MINUS) for the dash, not
-        // `─` (U+2500 BOX DRAWINGS LIGHT HORIZONTAL). Both are
-        // classified as East Asian Width "Narrow" in the Unicode
-        // table and both return wcwidth=1 in nocterm's lookup,
-        // so the LayoutBuilder math above treats them as equal.
-        // However, many terminal fonts (especially those that
-        // fall back to a CJK / wide glyph for U+2500) actually
-        // render `─` as 2 cells — and nocterm's Text widget
-        // does NOT post-render-correct against the terminal's
-        // font, so the layout math would compute "this line is
-        // 80 cells" while the terminal paints 136 cells and
-        // wraps. ASCII `-` is rendered as exactly 1 cell by
-        // every font the project supports, so the rendered
-        // line width always matches the math.
-        final line = SizedBox(
-          width: double.infinity,
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-            child: remaining > 0
+            // Same edge-to-edge dash pattern as [CompactionDivider].
+            // Use ASCII `-` (U+002D) — many terminal fonts render
+            // U+2500 LIGHT HORIZONTAL as 2 cells while nocterm's
+            // wcwidth returns 1, leading to a "fit" that doesn't
+            // fit. ASCII `-` is exactly 1 cell in every font.
+            return remaining > 0
                 ? (() {
                     final leftPad = remaining ~/ 2;
                     final rightPad = remaining - leftPad;
@@ -78,12 +70,10 @@ class VibeTurnDivider extends StatelessComponent {
                 : Text(
                     label,
                     style: TextStyle(color: theme.onSurfaceDim),
-                  ),
-          ),
-        );
-
-        return line;
-      },
+                  );
+          },
+        ),
+      ),
     );
   }
 }
