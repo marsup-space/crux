@@ -286,8 +286,20 @@ List<VibeSegment> walkSegments(
       // that close was the mistake that collapsed multi-emit
       // turns into a single segment and made consecutive
       // `role: 'ai'` rows appear as one vibe segment.
+      //
+      // Tool-call's `content` here is checked with `trim().isNotEmpty`
+      // rather than the literal `isNotEmpty`: the LLM frequently
+      // emits tool_call rows with whitespace-only or single-token
+      // content ("OK", "got it", " ".trim()==""), and treating those
+      // as prose boundaries would emit a segment whose prose the
+      // renderer then refuses to draw (the renderer's
+      // `content.trim().isNotEmpty` guard skips the whole crux:
+      // row). That left a "two box groups with no response
+      // between them" gap in vibe mode. The trim() check matches
+      // the renderer's notion of "actually has prose" so the
+      // walker and renderer agree on what counts as a boundary.
       final closesSegment = msg.role == 'ai' ||
-          (msg.role == 'tool_call' && msg.content.isNotEmpty);
+          (msg.role == 'tool_call' && msg.content.trim().isNotEmpty);
 
       if (closesSegment && currentUser != null) {
         // The segment's prose is the closing message itself —

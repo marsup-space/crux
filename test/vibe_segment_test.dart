@@ -303,6 +303,55 @@ void main() {
       expect(segments[1].think, isNull);
     });
 
+    test('tool_call with whitespace-only content does NOT close a segment', () {
+      // The LLM occasionally emits tool_call rows whose `content`
+      // is whitespace or a single token like "OK" / "got it" /
+      // " ". Treating those as prose boundaries would emit a
+      // segment whose prose the renderer refuses to draw (the
+      // renderer's `content.trim().isNotEmpty` guard skips the
+      // whole crux: row), leaving a "two box groups with no
+      // response between" visual gap in vibe mode. The walker
+      // and the renderer now agree on what counts as a
+      // boundary — only `content.trim().isNotEmpty` closes.
+      //
+      // Below: a `tool_call` with `content: 'OK'` (non-empty
+      // string but trims to 'OK' which is real prose, so still
+      // closes — that's correct, real prose) is NOT what this
+      // test covers. The whitespace path uses `content: ' '` and
+      // `content: ''`, both of which must NOT close.
+      void check(String content, {required int expectedSegments}) {
+        final messages = [
+          _userMsg('hi', id: 1),
+          _toolCallMsg(
+            id: 2,
+            content: content,
+            toolCalls: [
+              ToolCallData(callId: 'c1', name: 'read', input: {}),
+            ],
+          ),
+          _toolResultMsg(id: 3, toolCallId: 'c1', content: 'data'),
+          _aiMsg('Done.', id: 4),
+        ];
+        final resultsByCallId = {'c1': messages[2]};
+        final segments =
+            walkSegments(messages, resultsByCallId, ToolRegistry());
+        expect(
+          segments.length,
+          expectedSegments,
+          reason: 'content=${content.isEmpty ? "<empty>" : "<whitespace>"} '
+              'should not close a segment',
+        );
+      }
+
+      // Single space — isNotEmpty(' ') is true but trims to ''.
+      check(' ', expectedSegments: 1);
+      // Newlines / tabs only.
+      check('\n\t  \n', expectedSegments: 1);
+      // Empty string. isNotEmpty('') is false already; covered
+      // for completeness.
+      check('', expectedSegments: 1);
+    });
+
     test('tool_call content followed by ai message produces two segments', () {
       // Each prose boundary in the message list emits a segment.
       // The mixed-round tool_call's prose becomes segment #0's
