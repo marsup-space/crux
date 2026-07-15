@@ -35,6 +35,7 @@ import 'tldr_bubble.dart';
 import 'vibe_box_data.dart';
 import 'vibe_segment_bubble.dart';
 import 'vibe_streaming_bubble.dart';
+import 'vibe_turn_divider.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 
@@ -377,6 +378,35 @@ class _ChatHistoryState extends State<ChatHistory> {
     final reasoningPresets = _currentReasoningPresets();
 
     if (isVibeMode) {
+      // Pre-compute the time gap from "previous agent turn end" to
+      // each user message. The walker builds one [VibeSegment] per
+      // prose boundary (each `role: 'ai'` row, plus each
+      // `role: 'tool_call'` row with non-empty content), so we can't
+      // derive the gap from the segment list itself — we need the
+      // raw message timestamps. We scan `messages` once, tracking
+      // the most recent agent activity (`role: 'ai'` or
+      // `role: 'tool_call'`) and recording the gap at each subsequent
+      // `role: 'user'`. The first user message has no prior agent
+      // activity → no entry.
+      //
+      // `createdAt` is the row's persist time, which for `ai` /
+      // `tool_call` is "when this round closed" — close enough to
+      // "end of agent turn" for the user's purpose. If the user
+      // interrupted the agent mid-round, the last persisted row is
+      // still the most recent activity and the gap is honest.
+      final userMessageGaps = <int, Duration>{};
+      DateTime? lastAgentTime;
+      for (final msg in messages) {
+        if (msg.role == 'user') {
+          if (lastAgentTime != null) {
+            userMessageGaps[msg.id] =
+                DateTime.now().difference(lastAgentTime);
+          }
+        } else if (msg.role == 'ai' || msg.role == 'tool_call') {
+          lastAgentTime = msg.createdAt;
+        }
+      }
+
       final segments = walkSegments(
         messages,
         resultByCallId,
@@ -391,6 +421,18 @@ class _ChatHistoryState extends State<ChatHistory> {
         // the user line. Without this, `userItemIndices` stays
         // empty and the scrollbar has no markers.
         if (seg.showUserMessage) {
+          // Insert a "time since last agent turn" divider above
+          // this user line. The divider matches the
+          // [CompactionDivider]'s centered-dash visual so the chat
+          // history's structural markers all look the same;
+          // it just labels the gap instead of "Compaction".
+          // First user message has no entry → no divider.
+          final gap = userMessageGaps[seg.userMessage.id];
+          if (gap != null) {
+            items.add(
+              (ctx) => VibeTurnDivider(sinceLastTurn: gap),
+            );
+          }
           userItemIndices.add(items.length);
           final text =
               seg.userMessage.content.replaceAll('\n', ' ').trim();
