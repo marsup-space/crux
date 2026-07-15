@@ -101,10 +101,20 @@ class VibeSegmentBubble extends StatelessComponent {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // User line — only on the first segment of a user turn.
+        // Wrapped in the same `Padding(horizontal: 1)` + leading
+        // space as the prose row below so the `you:` label and the
+        // `crux:` label land on the same column (column 2 — 1 cell
+        // of padding + 1 leading space inside the text). Without
+        // this, the user line renders flush-left at column 0 while
+        // the boxes (Padding(left: 2)) and crux line both start at
+        // column 2, which makes the prefix labels look misaligned.
         if (segment.showUserMessage)
-          Text(
-            'you: $userText',
-            style: TextStyle(color: theme.userPrefix),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Text(
+              ' you: $userText',
+              style: TextStyle(color: theme.userPrefix),
+            ),
           ),
         // Boxes (only render if at least one box exists)
         if (boxes.isNotEmpty)
