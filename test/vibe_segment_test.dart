@@ -75,7 +75,7 @@ void main() {
 
       expect(segments.length, 1);
       expect(segments[0].userMessage.content, 'fix the bug');
-      expect(segments[0].prose, 'Fixed it.');
+      expect(segments[0].prose!.content, 'Fixed it.');
       expect(segments[0].think, isNull);
       expect(segments[0].tools, isNull);
       expect(segments[0].mods, isNull);
@@ -95,15 +95,20 @@ void main() {
       expect(segments[0].prose, isNull);
     });
 
-    test('per-turn model: consecutive ai rows + tools collapse to one segment', () {
-      // Per the per-turn model, segments are bounded by user
-      // rows, not by every ai close. Reasoning, tools, and prose
-      // all accumulate across the turn and emit as a single
-      // segment on the next user boundary (or end of walk).
-      // Consecutive `role: 'ai'` rows therefore both contribute
-      // to the same segment's concatenated [VibeSegment.prose],
-      // and the boxes include the round's tools + think rather
-      // than splitting them across multiple segments.
+    test('consecutive ai rows emit one segment per row, anchored to the same user', () {
+      // Per spec rule 3 (`role: 'ai'` closes the segment) and the
+      // "one segment per response body" summary: each `role: 'ai'`
+      // row in the message list emits a [VibeSegment]. When two
+      // close-emitting rows land back to back without a fresh
+      // `role: 'user'` between them, both segments anchor to the
+      // same user and the walker does NOT clear `currentUser` on
+      // close (so the second ai is anchored and emitted, not
+      // silently dropped).
+      //
+      // Boxes are window-scoped: the first close resets the
+      // accumulators, so any tools accumulated between the two
+      // ais would land in seg[1]'s window — but in this scenario
+      // there are none, so seg[1] is prose-only.
       final messages = [
         _userMsg('explain', id: 1),
         _toolCallMsg(
@@ -122,10 +127,8 @@ void main() {
       final resultsByCallId = {'c1': messages[2]};
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
 
-      // One turn → one segment. No duplicate boxes. No "second
-      // segment with the same user line, no boxes, second prose"
-      // pattern from the per-close model.
-      expect(segments.length, 1);
+      expect(segments.length, 2);
+      // First segment: window-bounded boxes + first ai's prose.
       expect(segments[0].userMessage.content, 'explain');
       expect(segments[0].showUserMessage, isTrue);
       expect(segments[0].think, isNotNull);
@@ -133,9 +136,14 @@ void main() {
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'read');
-      // Prose is the concatenated content of every ai/tool_call
-      // row in the turn, joined with `\n\n` in emission order.
-      expect(segments[0].prose, 'First answer.\n\nSecond answer.');
+      expect(segments[0].prose!.content, 'First answer.');
+      // Second segment: same user anchor, no boxes (the reset
+      // between closes left them empty), no repeated user line.
+      expect(segments[1].userMessage.content, 'explain');
+      expect(segments[1].showUserMessage, isFalse);
+      expect(segments[1].think, isNull);
+      expect(segments[1].tools, isNull);
+      expect(segments[1].prose!.content, 'Second answer.');
     });
 
     test('reasoning is accumulated into think box', () {
@@ -203,7 +211,7 @@ void main() {
 
       expect(segments.length, 1);
       expect(segments[0].userMessage.content, 'hello');
-      expect(segments[0].prose, 'Hi!');
+      expect(segments[0].prose!.content, 'Hi!');
     });
 
     test('multi-round turn: two reasoning rounds collapse into one think box', () {
@@ -246,18 +254,20 @@ void main() {
 
       expect(segments.length, 2);
       expect(segments[0].userMessage.content, 'first question');
-      expect(segments[0].prose, 'first answer');
+      expect(segments[0].prose!.content, 'first answer');
       expect(segments[1].userMessage.content, 'second question');
-      expect(segments[1].prose, 'second answer');
+      expect(segments[1].prose!.content, 'second answer');
     });
 
-    test('tool_call with non-empty content is part of the same turn\'s prose', () {
-      // Per the per-turn model, a `role: 'tool_call'` row with
-      // non-empty content does NOT close a segment on its own.
-      // Its `content` joins the turn's prose buffer alongside any
-      // final `role: 'ai'` row's content, joined with `\n\n` in
-      // emission order. Each user turn produces exactly one
-      // segment with all the boxes + concatenated prose.
+    test('tool_call with non-empty content closes the segment (mixed round)', () {
+      // Per spec rule 2.3: a `role: 'tool_call'` row whose
+      // embedded `content` is non-empty is itself a prose
+      // boundary — its `content` becomes the segment's prose.
+      // Combined with rule 3 (a subsequent `role: 'ai'` closes
+      // again), this scenario produces two segments within the
+      // first user turn (the mixed-round close + the next user
+      // boundary doesn't emit anything new; the second user +
+      // ai close yields the second segment).
       final messages = [
         _userMsg('mixed round', id: 1),
         _toolCallMsg(
@@ -273,22 +283,22 @@ void main() {
       final segments = walkSegments(messages, {}, ToolRegistry());
 
       expect(segments.length, 2);
-      // First turn: tool_call content becomes the prose. No ai
-      // row in this turn → the prose is just the tool_call's
-      // "Here is some prose alongside tools." string. The tools
-      // box carries the read call.
+      // First segment: closed by the tool_call's prose; the
+      // mixed-round content is the closing prose, the tools
+      // box comes from the same row.
       expect(segments[0].userMessage.content, 'mixed round');
       expect(segments[0].showUserMessage, isTrue);
-      expect(segments[0].prose, 'Here is some prose alongside tools.');
+      expect(segments[0].prose, isNotNull);
+      expect(segments[0].prose!.content,
+          'Here is some prose alongside tools.');
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'read');
-      // Second turn: the ai row's content is the prose. No
-      // tools in this turn → no tools box. showUserMessage is
-      // still true (every per-turn segment shows the you: line).
+      // Second segment: clean — user boundary resets state, the
+      // ai close lands the next segment.
       expect(segments[1].userMessage.content, 'next turn');
       expect(segments[1].showUserMessage, isTrue);
-      expect(segments[1].prose, 'answer');
+      expect(segments[1].prose!.content, 'answer');
       expect(segments[1].tools, isNull);
       expect(segments[1].think, isNull);
     });
@@ -342,17 +352,12 @@ void main() {
       check('', expectedSegments: 1);
     });
 
-    test('per-turn model: multi-round turn collapses everything into one segment', () {
-      // Per the per-turn model, a turn can have multiple rounds
-      // of thinking + tool execution + prose — and the entire
-      // turn folds into one [VibeSegment] emitted on the next
-      // user boundary (or end of walk). The boxes aggregate
-      // across rounds: tools roll up to bash x2, the prose is
-      // the concatenated mid-round + final-prose content. This
-      // is the case where the per-close model previously lost
-      // the tools box on the "intermediate" segment because the
-      // close reset the accumulators before the next round's
-      // tools landed.
+    test('tool_call content followed by ai message produces two segments', () {
+      // Each prose boundary in the message list emits a segment.
+      // The mixed-round tool_call's prose becomes segment #0's
+      // prose; the ai's prose becomes segment #1's prose. Boxes
+      // between the two are scoped to seg[0] because the close
+      // resets the accumulators before the ai lands.
       final callId = 'call-1';
       final messages = [
         _userMsg('show me the log', id: 1),
@@ -382,24 +387,28 @@ void main() {
       };
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
 
-      // One user turn → one segment, regardless of how many
-      // ai/tool_call rounds it contained.
-      expect(segments.length, 1);
+      expect(segments.length, 2);
+      // Segment #0: closed by the mixed-round tool_call. Round 1's
+      // bash + round 2's bash both belong to this segment's
+      // window (the close fires AFTER the second bash is
+      // accumulated), so the tools box lists bash x2.
       expect(segments[0].userMessage.content, 'show me the log');
-      expect(segments[0].showUserMessage, isTrue);
-      // Boxes aggregate across both rounds.
+      expect(segments[0].prose!.content,
+          'Yes — all 4 fixes are committed. Confirmed just now:');
       expect(segments[0].think, isNotNull);
       expect(segments[0].think!.duration.inMilliseconds, 3000);
       expect(segments[0].tools, isNotNull);
       expect(segments[0].tools!.entries.length, 1);
       expect(segments[0].tools!.entries[0].name, 'bash');
       expect(segments[0].tools!.entries[0].callCount, 2);
-      // Prose is the concatenated mid-round + final-prose content.
-      expect(
-        segments[0].prose,
-        'Yes — all 4 fixes are committed. Confirmed just now:'
-        '\n\nFour atomic commits on top of 3622efb...',
-      );
+      // Segment #1: closed by the ai. Reset on the previous close
+      // means no boxes here; only the ai's prose.
+      expect(segments[1].userMessage.content, 'show me the log');
+      expect(segments[1].prose!.content,
+          'Four atomic commits on top of 3622efb...');
+      expect(segments[1].think, isNull);
+      expect(segments[1].tools, isNull);
+      expect(segments[1].showUserMessage, isFalse);
     });
 
     test('formatTokens formats correctly', () {
