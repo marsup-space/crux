@@ -321,6 +321,70 @@ class ChatTurnExecutor {
     final roundTextBuffer = StringBuffer();
     final roundReasoningBuffer = StringBuffer();
     final roundReasoningSignatureBuffer = StringBuffer();
+
+    // -- Repetition (doom loop) detection --------------------------------
+    // Tracks sentence hashes across rounds. When the same sequence of
+    // `cycleLen` sentences repeats `threshold` times consecutively,
+    // we flag a doom loop and cancel the stream.
+    final repSentences = <int>[];
+    final repBuffer = StringBuffer();
+    const repCycleLen = 9;
+    const repThreshold = 3;
+    int repMatchStreak = 0;
+    bool repDetected = false;
+
+    int findSentenceEnd(String s) {
+      for (int i = 0; i < s.length; i++) {
+        final c = s.codeUnitAt(i);
+        // . ! ? 。
+        if (c == 46 || c == 33 || c == 63 || c == 12290) {
+          // Must be followed by whitespace or end of string
+          if (i + 1 >= s.length || s.codeUnitAt(i + 1) <= 32) {
+            return i + 1;
+          }
+        }
+      }
+      return -1;
+    }
+
+    bool listEquals(List<int> a, List<int> b) {
+      if (a.length != b.length) return false;
+      for (int i = 0; i < a.length; i++) {
+        if (a[i] != b[i]) return false;
+      }
+      return true;
+    }
+
+    void checkRepetition(String text) {
+      repBuffer.write(text);
+      // Extract complete sentences (ending with . ! ? 。)
+      while (true) {
+        final s = repBuffer.toString();
+        final endIdx = findSentenceEnd(s);
+        if (endIdx < 0) break;
+        final sent = s.substring(0, endIdx).trim();
+        repBuffer.clear();
+        if (endIdx < s.length) {
+          repBuffer.write(s.substring(endIdx));
+        }
+        if (sent.length <= 5) continue;
+        repSentences.add(sent.hashCode);
+        if (repSentences.length >= repCycleLen * 2) {
+          final len = repSentences.length;
+          final recent = repSentences.sublist(len - repCycleLen);
+          final previous =
+              repSentences.sublist(len - repCycleLen * 2, len - repCycleLen);
+          if (listEquals(recent, previous)) {
+            repMatchStreak++;
+            if (repMatchStreak >= repThreshold) {
+              repDetected = true;
+            }
+          } else {
+            repMatchStreak = 0;
+          }
+        }
+      }
+    }
     int promptTokens = 0;
     int completionTokens = 0;
     int promptCacheHitTokens = 0;
@@ -727,6 +791,7 @@ class ChatTurnExecutor {
               }
               if (chunk.textDelta != null) {
                 roundTextBuffer.write(chunk.textDelta);
+                checkRepetition(chunk.textDelta!);
                 roundFirstContentTime ??= now;
                 if (useLerp) {
                   lerpPendingText += chunk.textDelta!;
@@ -737,6 +802,7 @@ class ChatTurnExecutor {
               }
               if (chunk.reasoningContent != null) {
                 roundReasoningBuffer.write(chunk.reasoningContent);
+                checkRepetition(chunk.reasoningContent!);
                 roundFirstReasoningTime ??= now;
                 roundLastReasoningTime = now;
                 if (useLerp) {
@@ -745,6 +811,16 @@ class ChatTurnExecutor {
                 } else {
                   onReasoning(chunk.reasoningContent!);
                 }
+              }
+              if (repDetected) {
+                lerpTimer?.cancel();
+                await streamCancelToken.cancelActiveStream(
+                  reason: 'doom_loop',
+                  guardAbort: false,
+                );
+                // Break out of the stream loop. After lerpStreamDone,
+                // we'll save the partial message and nudge the LLM.
+                break;
               }
               if ((!useLerp &&
                       (chunk.textDelta != null ||
@@ -924,7 +1000,52 @@ class ChatTurnExecutor {
 
         toolCalls = ToolExecutor.parseToolUseFromChunks(chunks);
       }
-      if (toolCalls.isEmpty) break;
+      if (toolCalls.isEmpty) {
+        // No tool calls. If doom loop was detected, save the partial
+        // message, nudge the LLM, and let it retry. Otherwise exit.
+        if (repDetected) {
+          // Persist the partial AI message so the user sees what was
+          // generated before the loop was caught.
+          final partialContent = roundTextBuffer.toString();
+          final partialReasoning = roundReasoningBuffer.toString();
+          final partialSig = roundReasoningSignatureBuffer.toString();
+          if (partialContent.isNotEmpty || partialReasoning.isNotEmpty) {
+            await store.messageStore.addMessage(
+              sessionId,
+              role: 'ai',
+              content: partialContent,
+              reasoningContent: partialReasoning,
+              reasoningSignature: partialSig,
+              model: compositeKey,
+              tokensIn: promptTokens,
+              tokensOut: completionTokens,
+            );
+          }
+          // Nudge the LLM to break out of the loop.
+          const nudge = '[Crux system note — doom loop detected] '
+              'Your response became repetitive — you were repeating the '
+              'same sentences over and over. Stop this approach entirely. '
+              'Take a different tactic, summarize what you know so far, '
+              'or ask the user for clarification if you are stuck.';
+          await store.messageStore.addMessage(
+            sessionId,
+            role: 'user',
+            content: nudge,
+          );
+          apiMessages.add({'role': 'user', 'content': nudge});
+          // Reset detection state and continue the agentic loop.
+          repSentences.clear();
+          repBuffer.clear();
+          repMatchStreak = 0;
+          repDetected = false;
+          roundTextBuffer.clear();
+          roundReasoningBuffer.clear();
+          roundReasoningSignatureBuffer.clear();
+          // Do not count this as a tool round — no onToolRound callback.
+          continue;
+        }
+        break;
+      }
 
       final roundText = roundTextBuffer.toString();
       final roundReasoning = roundReasoningBuffer.toString();
@@ -1335,6 +1456,12 @@ class ChatTurnExecutor {
 
       roundTextBuffer.clear();
       roundReasoningBuffer.clear();
+      // Reset repetition detection at round boundary — sentences
+      // from prior rounds must not count against the next round.
+      repSentences.clear();
+      repBuffer.clear();
+      repMatchStreak = 0;
+      repDetected = false;
       await onToolRound?.call(roundResultTokens);
 
       final queuedContent = onQueueDrain?.call();
