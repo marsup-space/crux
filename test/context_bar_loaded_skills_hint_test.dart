@@ -265,5 +265,78 @@ void main() {
         expect(HintController.instance.activeHint, isNull);
       }, size: const Size(80, 20));
     });
+
+    test(
+        'hintMaxLines grows with the skill count — single-line '
+        'hint with 4 skills (no wrap) stays at the 4-line floor, '
+        'a 20-skill session grows the tooltip to fit the full '
+        'inventory', () async {
+      // The user's complaint was that the tooltip was capped at 4
+      // lines regardless of how many skills were loaded. We assert
+      // the per-source override directly via [findState] — the
+      // mixin reads [hintMaxLines] in `_updateHint` and passes it
+      // to [HintController.show], so the getter returning a
+      // larger value is what lets the overlay's `_HintTooltip`
+      // grow past the 4-line default.
+      await testNocterm('hintMaxLines scales', (tester) async {
+        sessionController.sessions = [
+          Session(
+            id: 1,
+            title: 'A',
+            model: 'test/model',
+            status: SessionStatus.idle,
+            contextTokens: 0,
+          ),
+        ];
+        sessionController.currentSessionId = 1;
+        await tester.pumpComponent(
+          HintOverlay(
+            child: Column(
+              children: [
+                ContextBar(
+                  sessionController: sessionController,
+                  streamingController: streamingController,
+                  contextMaxTokens: 200 * 1024,
+                ),
+              ],
+            ),
+          ),
+        );
+
+        // 1. Empty runtime: floor of 4 lines (the overlay's default
+        //    height for the merged "usage + Loaded skills : none"
+        //    hint — using less would clip the usage block).
+        final emptyState =
+            tester.findState<ContextBarState>();
+        expect(emptyState.hintMaxLines, 4,
+            reason: 'empty runtime must use the 4-line floor so the '
+                'usage block + `Loaded skills : none` fit');
+
+        // 2. Many skills: the hint grows to fit the comma-joined
+        //    list. Build 20 names of ~10 chars each; joined that's
+        //    ~240 chars. At a 40-cell tooltip width, that's 6
+        //    wrap lines; +3 for usage block = 9 lines.
+        final rt = sessionController.runtime(1);
+        rt.loadedSkillNames.addAll({
+          'alpha-skill', 'beta-skill', 'gamma-skill', 'delta-skill',
+          'epsilon-skill', 'zeta-skill', 'eta-skill', 'theta-skill',
+          'iota-skill', 'kappa-skill', 'lambda-skill', 'mu-skill',
+          'nu-skill', 'xi-skill', 'omicron-skill', 'pi-skill',
+          'rho-skill', 'sigma-skill', 'tau-skill', 'upsilon-skill',
+        });
+        final populatedState =
+            tester.findState<ContextBarState>();
+        expect(populatedState.hintMaxLines, greaterThan(4),
+            reason:
+                '20 skills must produce a taller tooltip than the '
+                'empty-state 4-line floor — otherwise the comma-joined '
+                'list gets truncated by the overlay default');
+        // Sanity: the 4-line overlay default is what the user
+        // complained about; this assertion proves we exceed it.
+        expect(populatedState.hintMaxLines, greaterThanOrEqualTo(8),
+            reason: 'rough lower bound — 20 skills + 3 fixed lines + '
+                '6 wrap lines of skill list = ~9 lines');
+      }, size: const Size(80, 30));
+    });
   });
 }

@@ -383,6 +383,49 @@ class ContextBarState extends State<ContextBar>
   @override
   HintPlacement get hintPlacement => HintPlacement.below;
 
+  /// Tooltip height in lines. The hint is 2 lines of usage block +
+  /// 1 blank separator + 1 line per ceil(skillChars/tooltipMaxWidth)
+  /// of the comma-joined skills list. The overlay's default of 4
+  /// lines caps a single skills line to ~38 cells of names, which
+  /// truncates any session with more than ~3-4 loaded skills. We
+  /// size the tooltip to the actual content so the full inventory
+  /// always fits — for a session with 20 skills the hint grows to
+  /// ~8 lines, which still fits between the bar and the chat input
+  /// on a typical terminal.
+  ///
+  /// Floor of 4 preserves the overlay's "minimum useful" size for
+  /// the no-skills case (so the empty hint still has the same
+  /// visual weight as a default 4-line tooltip).
+  @override
+  int get hintMaxLines {
+    final sessionId = component.sessionController.currentSessionId;
+    final names = sessionId == null
+        ? const <String>{}
+        : component.sessionController.runtime(sessionId).loadedSkillNames;
+    if (names.isEmpty) {
+      // Usage block (2) + blank (1) + 'Loaded skills : none' (1).
+      return 4;
+    }
+    // The skills line is one logical line; the overlay's
+    // `_HintTooltip` word-wraps it to fit `tooltipMaxWidth` (40 by
+    // default, configurable on the overlay). Each wrap adds a
+    // line, so the height is 3 (fixed) + ceil(nameChars / width).
+    // We estimate the joined string's character count — the
+    // overlay's word-wrap considers spaces, but for a
+    // comma-separated list the dominant wrap point is the width
+    // boundary, not individual words, so character-count is a
+    // good upper bound.
+    final joined = (names.toList()..sort()).join(', ');
+    // 40 is the overlay's default `tooltipMaxWidth`; if the
+    // app's overlay was configured wider, the same logic still
+    // holds — we just need a per-cell count. The character /
+    // width math is an upper bound (the actual wrap is one less
+    // when the line ends on a space), so we add +1 to cover that
+    // edge.
+    const width = 40;
+    return 3 + (joined.length / width).ceil() + 1;
+  }
+
   /// Override the mixin's default enter handler so the existing
   /// hover-driven in-bar label swap still runs. The
   /// `super.onHintEnter(event)` at the bottom delegates the
