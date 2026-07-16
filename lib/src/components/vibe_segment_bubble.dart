@@ -79,7 +79,26 @@ class VibeSegmentBubble extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final userText = segment.userMessage.content.replaceAll('\n', ' ').trim();
+    // Preserve the user's line breaks in the prose row. The ` you: `
+    // prefix takes columns 1-6 inside the [Padding(horizontal: 1)]
+    // (column 0 is the left padding), so the first text character
+    // lands at column 7. Continuation lines are pre-indented with
+    // 7 spaces to line up with the first line — the verbose path
+    // gets this for free because [Text] + [Expanded] handles
+    // soft-wrapping, but the vibe row is a flat [Text] widget,
+    // so we have to manage the indentation explicitly. Without this,
+    // long user messages wrap flush-left under the first column of
+    // the bubble and the prompt prefix loses its visual anchor.
+    final rawUserText = segment.userMessage.content.trim();
+    final userTextLines = rawUserText.split('\n');
+    const userIndent = '       '; // 7 spaces: align with column 7
+    final userText = userTextLines.first +
+        (userTextLines.length > 1
+            ? userTextLines
+                .skip(1)
+                .map((l) => '\n$userIndent$l')
+                .join()
+            : '');
 
     final boxes = <Component>[];
 
