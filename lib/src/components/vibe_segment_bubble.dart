@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
+import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
@@ -67,38 +68,40 @@ class VibeSegmentBubble extends StatelessComponent {
   /// links render as plain prose.
   final void Function(MarkdownLink link)? onLinkTap;
 
+  /// Reasoning presets from the session's provider, used to map
+  /// the persisted [ThinkBoxData.effort] internal value to its
+  /// display label (e.g. `normal` → `adaptive` for MiniMax).
+  /// Mirrors the same parameter on [VibeStreamingBubble] and
+  /// `MessageBubble` so the live and consolidated bubbles agree
+  /// on how the same effort renders. When null/empty, the raw
+  /// internal value is used (identity mapping).
+  final List<ReasoningPreset> reasoningPresets;
+
   const VibeSegmentBubble({
     required this.segment,
     this.onQuickReplyTap,
     this.enableQuickReplies = false,
     this.onSessionLinkTap,
     this.onLinkTap,
+    this.reasoningPresets = const [],
     super.key,
   });
+
+  /// Map a persisted effort internal value to its display label
+  /// using the provider's reasoning presets. Returns the raw
+  /// value when there's no preset entry — same fallback as the
+  /// streaming bubble and `MessageBubble` so all three renderers
+  /// agree on what the user sees.
+  String _displayEffort(String internal) {
+    for (final p in reasoningPresets) {
+      if (p.internalValue == internal) return p.displayLabel;
+    }
+    return internal;
+  }
 
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    // Preserve the user's line breaks in the prose row. The ` you: `
-    // prefix takes columns 1-6 inside the [Padding(horizontal: 1)]
-    // (column 0 is the left padding), so the first text character
-    // lands at column 7. Continuation lines are pre-indented with
-    // 7 spaces to line up with the first line — the verbose path
-    // gets this for free because [Text] + [Expanded] handles
-    // soft-wrapping, but the vibe row is a flat [Text] widget,
-    // so we have to manage the indentation explicitly. Without this,
-    // long user messages wrap flush-left under the first column of
-    // the bubble and the prompt prefix loses its visual anchor.
-    final rawUserText = segment.userMessage.content.trim();
-    final userTextLines = rawUserText.split('\n');
-    const userIndent = '       '; // 7 spaces: align with column 7
-    final userText = userTextLines.first +
-        (userTextLines.length > 1
-            ? userTextLines
-                .skip(1)
-                .map((l) => '\n$userIndent$l')
-                .join()
-            : '');
 
     final boxes = <Component>[];
 
@@ -109,7 +112,16 @@ class VibeSegmentBubble extends StatelessComponent {
       rows.add('${secs.toStringAsFixed(1)}s');
       rows.add(formatTokens(think.tokens));
       if (think.effort != null) {
-        rows.add(think.effort!);
+        // Apply the provider's internal→display mapping (e.g.
+        // `normal` → `adaptive` for MiniMax). Without this the
+        // consolidated segment bubble shows the raw internal
+        // value while the streaming bubble next to it shows the
+        // mapped label — the same effort rendering two ways in
+        // the same view. `ThinkBoxData.effort` is documented as
+        // "stored as a raw string because many models override
+        // the display value", so the mapping belongs here, not
+        // at the walker.
+        rows.add(_displayEffort(think.effort!));
       }
       boxes.add(
         VibeBox(
@@ -166,19 +178,37 @@ class VibeSegmentBubble extends StatelessComponent {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // User line — only on the first segment of a user turn.
-        // Wrapped in the same `Padding(horizontal: 1)` + leading
-        // space as the prose row below so the `you:` label and the
-        // `crux:` label land on the same column (column 2 — 1 cell
-        // of padding + 1 leading space inside the text). Without
-        // this, the user line renders flush-left at column 0 while
-        // the boxes (Padding(left: 2)) and crux line both start at
-        // column 2, which makes the prefix labels look misaligned.
+        // Mirrors the verbose `MessageBubble` layout:
+        //   `Padding(horizontal: 1) → Row(Text(' You: '), Expanded(Text(userText)))`
+        // so the user prose starts at the same column as the
+        // agent prose below (column 8 — 1 cell of padding + the
+        // 7-char `' You: '` prefix). Earlier this used a single
+        // flat `Text(' you: $userText')` whose 6-char `' you: '`
+        // prefix put the text at column 7, off by one from the
+        // crux row. The `Expanded` also gives the user text a
+        // real width budget so terminal-driven soft-wrap aligns
+        // continuation lines at the same column as the first
+        // line — without it, a long message wrapped flush-left
+        // under the bubble's column 1, breaking the visual
+        // anchor the prefix establishes. Explicit user newlines
+        // keep their natural indentation inside `Expanded`.
         if (segment.showUserMessage)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Text(
-              ' you: $userText',
-              style: TextStyle(color: theme.userPrefix),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ' You: ',
+                  style: TextStyle(
+                    color: theme.userPrefix,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Expanded(
+                  child: Text(segment.userMessage.content.trim()),
+                ),
+              ],
             ),
           ),
         // Boxes (only render if at least one box exists)

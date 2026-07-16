@@ -531,9 +531,9 @@ class ContextBarState extends State<ContextBar> {
         // target by a leftover cooling tick.
         final sessionId = component.sessionController.currentSessionId;
         if (sessionId != null) {
-        final target = _contextTargetFor(sessionId).toDouble();
-        if ((target - _displayTokens).abs() >= 0.5) {
-          _displayTokens = target;
+          final target = _contextTargetFor(sessionId).toDouble();
+          if ((target - _displayTokens).abs() >= 0.5) {
+            _displayTokens = target;
             _animState = _AnimState.idle;
             _coolingStartedAt = null;
             _stopTimer();

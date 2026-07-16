@@ -523,6 +523,16 @@ class _ChatHistoryState extends State<ChatHistory> {
               enableQuickReplies: isLatestClosedAi,
               onSessionLinkTap: component.onSessionLinkTap,
               onLinkTap: component.onLinkTap,
+              // Pass the provider's reasoning presets so the
+              // persisted segment's think box maps the internal
+              // effort (e.g. `normal`) to its display label
+              // (`adaptive` for MiniMax). Without this the
+              // consolidated bubble shows the raw value while the
+              // live [VibeStreamingBubble] — which receives the
+              // same presets via [reasoningPresets] below — shows
+              // the mapped label, and the same effort renders two
+              // different ways in the same view.
+              reasoningPresets: reasoningPresets,
             ),
           );
           items.add((ctx) => const SizedBox(height: 1));

@@ -227,6 +227,31 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// (on app launch or when a new chat starts a fresh runtime).
   int semanticSearchHintLastThreshold;
 
+  /// The set of skill names currently "loaded" into this session's
+  /// active context. A skill is added in two ways:
+  ///
+  ///   1. The user types a `$<skill-name>` chip in a chat input
+  ///      and submits it. The chip-substitution step in
+  ///      `chat_turn_orchestrator.sendTurn` adds every resolved
+  ///      name from the chip-expansion result.
+  ///   2. The LLM calls the `skill` tool with a valid name — the
+  ///      tool adds the resolved name on success (failure paths
+  ///      don't touch the set).
+  ///
+  /// The set persists for the lifetime of the session — across
+  /// compactions, because the LLM still has the skill's content
+  /// via the bottom-of-log summary (`SkillTool.extractPruneSummary`
+  /// routes the body into `skill-bodies` and survives a compact).
+  /// Each new session starts empty. App restart clears the set
+  /// (it's in-memory only).
+  ///
+  /// Read by [LoadedSkillChips] (rendered inline in the chat
+  /// toolbar) so the user can see at a glance which skills are
+  /// currently contributing to the displayed context — the chip
+  /// row reads as "what's loaded into this session" leading into
+  /// the context bar's "how full is it".
+  Set<String> loadedSkillNames = <String>{};
+
   SessionRuntimeState({
     required this.sessionId,
     this.isResponding = false,

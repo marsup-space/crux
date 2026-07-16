@@ -173,6 +173,16 @@ class ChatTurnOrchestrator {
         available: discoverSkills(cwd: cwd),
       );
       llmText = expansion.userMessage;
+      // Mirror the resolved chip names onto the runtime so the
+      // [ContextBar] hover hint can show the currently-loaded
+      // skill list. We track names only (not full [SkillInfo])
+      // because the hint just needs to enumerate them. Late
+      // arrivals (the LLM calling `skill` during the turn) are
+      // appended by [SkillTool.execute] directly into the same
+      // set; the union is what the hint renders.
+      if (expansion.includedSkills.isNotEmpty) {
+        rt.loadedSkillNames.addAll(expansion.includedSkills);
+      }
     }
 
     if (allowAutoCompact && text != null && text.trim().isNotEmpty) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -246,7 +247,7 @@ class ReadTool extends ToolDef {
 
     for (var attempt = 0; attempt < 3; attempt++) {
       final beforeStat = file.statSync();
-      lines = await file.readAsLines();
+      lines = await _readLinesTolerant(file);
       afterStat = file.statSync();
       if (afterStat.modified == beforeStat.modified &&
           afterStat.size == beforeStat.size) {
@@ -257,7 +258,47 @@ class ReadTool extends ToolDef {
       }
     }
 
-    return _TextFileSnapshot(lines: await file.readAsLines(), mtimeMs: null);
+    return _TextFileSnapshot(
+      lines: await _readLinesTolerant(file),
+      mtimeMs: null,
+    );
+  }
+
+  /// Reads [file] as a list of lines using a decoder that tolerates
+  /// non-UTF-8 bytes. Unity's `Library/*.asset` files in particular
+  /// routinely contain bytes that strict UTF-8 decoding rejects,
+  /// which would otherwise terminate the read tool with a
+  /// `FileSystemException` and stop the agent mid-task.
+  ///
+  /// Strategy:
+  ///   1. Strip a UTF-8 BOM if present.
+  ///   2. Decode as UTF-8 with `allowMalformed: true` — equivalent
+  ///      to `readAsLines` for valid input, but substitutes the
+  ///      Unicode replacement character instead of throwing on
+  ///      malformed sequences.
+  ///   3. If even malformed-tolerant UTF-8 fails (rare — usually
+  ///      only when the bytes aren't UTF-8 at all, e.g. UTF-16
+  ///      without BOM), fall back to latin1 which maps every byte
+  ///      1:1 and is guaranteed not to throw.
+  Future<List<String>> _readLinesTolerant(File file) async {
+    final bytes = await file.readAsBytes();
+    final content = _decodeTolerant(bytes);
+    return const LineSplitter().convert(content);
+  }
+
+  String _decodeTolerant(List<int> bytes) {
+    var start = 0;
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xEF &&
+        bytes[1] == 0xBB &&
+        bytes[2] == 0xBF) {
+      start = 3;
+    }
+    try {
+      return utf8.decode(bytes.sublist(start), allowMalformed: true);
+    } on FormatException {
+      return latin1.decode(bytes.sublist(start));
+    }
   }
 
   /// Suggest up to 5 entries in [path]'s directory that fuzzy-match

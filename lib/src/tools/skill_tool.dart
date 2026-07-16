@@ -92,6 +92,17 @@ class SkillTool extends ToolDef {
     final siblingFiles = _sampleSiblings(skill);
     final output = _renderSkillContent(skill, siblingFiles);
 
+    // Mirror onto the runtime's loaded-skill set so the [ContextBar]
+    // hover hint reflects "this skill is now active in the
+    // conversation context". Failure paths (unknown name, missing
+    // parameter) deliberately skip this — the LLM didn't actually
+    // pull a body into context. Idempotent: re-loading an already
+    // loaded skill is a no-op for the hint, and the same is true for
+    // `Set.add`. The next chat-panel `_refresh()` (called from the
+    // tool-round callback) picks up the mutation and the bar's
+    // tooltip re-renders on the next mouse move / refresh.
+    ctx.sessionRuntime?.loadedSkillNames.add(skill.name);
+
     return ToolResult(
       title: 'skill: ${skill.name}',
       output: output,
