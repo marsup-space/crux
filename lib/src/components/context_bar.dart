@@ -89,7 +89,8 @@ class ContextBar extends StatefulComponent {
 /// - idle: nothing happening, timer is stopped.
 enum _AnimState { active, cooling, idle }
 
-class ContextBarState extends State<ContextBar> {
+class ContextBarState extends State<ContextBar>
+    with HintStateMixin<ContextBar> {
   static const double _lerpSpeed = 6.0;
 
   /// The currently displayed token count, lerped from the
@@ -326,6 +327,115 @@ class ContextBarState extends State<ContextBar> {
     )}k';
   }
 
+  // =====================================================================
+  // HintStateMixin — hover tooltip with context-window summary +
+  // loaded-skill list
+  // =====================================================================
+  //
+  // The bar's in-bar label only has room for the token count (or the
+  // compact projection), so the "what does this bar do / what's
+  // loaded into my context" questions get answered via a hover
+  // tooltip instead. Two pieces of info share one tooltip so the
+  // user doesn't have to remember to hover two separate widgets.
+  //
+  // The tooltip is *always* shown — even when no skills are loaded,
+  // in which case the loaded-skills line reads `Loaded skills :
+  // none` so the user has a clear "feature works, just empty"
+  // signal rather than a missing section they have to wonder about.
+
+  /// Tooltip content. Always returns a non-empty string so the
+  /// mixin doesn't auto-hide. Composed of two sections:
+  ///
+  ///   1. The context-window summary — what the bar represents and
+  ///      what the click does (or doesn't, when the session is
+  ///      running and compaction is gated).
+  ///   2. The loaded-skills list — `Loaded skills : <comma list>`
+  ///      or `Loaded skills : none` when the set is empty.
+  ///
+  /// A blank line separates the two so the overlay's word wrap
+  /// doesn't run them together visually.
+  @override
+  String? get hintContent {
+    final sessionId = component.sessionController.currentSessionId;
+    final names = sessionId == null
+        ? const <String>{}
+        : component.sessionController.runtime(sessionId).loadedSkillNames;
+    final skillsLine = names.isEmpty
+        ? 'Loaded skills : none'
+        : 'Loaded skills : ${(names.toList()..sort()).join(', ')}';
+    final usageBlock = component.disabled
+        ? 'Context window usage.\n'
+            'Compaction unavailable while the agent is responding.'
+        : 'Context window usage.\n'
+            'Click to compact the session history.';
+    return '$usageBlock\n\n$skillsLine';
+  }
+
+    /// Tooltip placement: prefer *below* the bar rather than above.
+  /// The bar lives at the very top of the chat panel, so the
+  /// overlay's preferred-side attempt of "above" would run off
+  /// the top edge of the terminal. Declaring "below" lands
+  /// directly on the side that fits without the failed-first
+  /// fallback round-trip. The merged hint (usage + skills list)
+  /// is 3 lines + a blank separator, so a 4-line tooltip max would
+  /// truncate — the placement doesn't change that, but the overlay
+  /// still fits it under the bar on a typical terminal.
+  @override
+  HintPlacement get hintPlacement => HintPlacement.below;
+
+  /// Override the mixin's default enter handler so the existing
+  /// hover-driven in-bar label swap still runs. The
+  /// `super.onHintEnter(event)` at the bottom delegates the
+  /// tooltip update to the mixin so the loaded-skills hint
+  /// still appears.
+  @override
+  void onHintEnter(MouseEvent event) {
+    component.streamingController.contextBarHovered = true;
+    _hovered = true;
+    // Snap the displayed value to the runtime's current target so
+    // the bar's number matches the `post ← pre` shown on hover.
+    // Resets the timer to `idle` so the just-snap doesn't get
+    // immediately re-driven toward the (now-equal) target by a
+    // leftover cooling tick.
+    final sessionId = component.sessionController.currentSessionId;
+    if (sessionId != null) {
+      final target = _contextTargetFor(sessionId).toDouble();
+      if ((target - _displayTokens).abs() >= 0.5) {
+        _displayTokens = target;
+        _animState = _AnimState.idle;
+        _coolingStartedAt = null;
+        _stopTimer();
+      }
+    }
+    _pushToRenderObject();
+    super.onHintEnter(event);
+  }
+
+  /// Mirror of [onHintEnter] for the exit side — clears the
+  /// hover flag the bar's render path reads, then delegates to
+  /// the mixin so the tooltip gets dismissed.
+  @override
+  void onHintExit(MouseEvent event) {
+    component.streamingController.contextBarHovered = false;
+    _hovered = false;
+    _pushToRenderObject();
+    super.onHintExit(event);
+  }
+
+  /// When the host rebuilds with a new `ContextBar` instance
+  /// (which happens on every chat-panel `_refresh()` — including
+  /// the ones fired by `SkillTool.execute` mutations), re-push
+  /// the current `hintContent` to the controller. Without this
+  /// hook the tooltip would keep stale text painted on screen
+  /// until the user moves the mouse, defeating the whole point
+  /// of the live loaded-skills list while a tool call is in
+  /// flight.
+  @override
+  void didUpdateComponent(covariant ContextBar oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    refreshHintFromLastEvent();
+  }
+
   void _tick(Duration elapsed) {
     final sessionId = component.sessionController.currentSessionId;
     if (sessionId == null) {
@@ -515,39 +625,8 @@ class ContextBarState extends State<ContextBar> {
     final labelEmptyFg =
         showHovered ? theme.metricsActive : theme.progressLabelEmpty;
 
-    return MouseRegion(
-      onEnter: (_) {
-        component.streamingController.contextBarHovered = true;
-        _hovered = true;
-        // Snap the displayed value to the runtime's current
-        // target so the bar's number matches the `post ← pre`
-        // shown on hover. The lerp is purely cosmetic for
-        // streaming transitions; while the user is hovering
-        // (i.e. inspecting the exact value), the bar should
-        // agree with the pre side of the `Y ← X` projection
-        // rather than lag behind it by a few thousand tokens.
-        // Resets the timer to `idle` so the just-snap doesn't
-        // get immediately re-driven toward the (now-equal)
-        // target by a leftover cooling tick.
-        final sessionId = component.sessionController.currentSessionId;
-        if (sessionId != null) {
-          final target = _contextTargetFor(sessionId).toDouble();
-          if ((target - _displayTokens).abs() >= 0.5) {
-            _displayTokens = target;
-            _animState = _AnimState.idle;
-            _coolingStartedAt = null;
-            _stopTimer();
-          }
-        }
-        _pushToRenderObject();
-      },
-      onExit: (_) {
-        component.streamingController.contextBarHovered = false;
-        _hovered = false;
-        _pushToRenderObject();
-      },
-      opaque: false,
-      child: GestureDetector(
+    return buildWithHint(
+      GestureDetector(
         // `onTap: null` makes the GestureDetector a no-op for
         // taps — the runtime guard in `compactCurrentSession`
         // remains as a backstop, but the UX-level gate lives

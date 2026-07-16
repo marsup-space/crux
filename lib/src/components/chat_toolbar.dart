@@ -19,7 +19,6 @@ import '../utils/sampling.dart';
 import 'coding_plan_usage_display.dart';
 import 'credit_balance_display.dart';
 import 'context_bar.dart';
-import 'loaded_skill_chips.dart';
 import 'metrics_display.dart';
 import 'session_controller.dart';
 import 'session_cubit.dart';
@@ -236,20 +235,6 @@ class _ChatToolbarState extends State<ChatToolbar> {
       disabled: isSessionRunning,
       debugMode: component.debugMode,
     );
-  }
-
-  /// Build the inline skill chips that surface the skills currently
-  /// "loaded" into this session's active context. Delegates to
-  /// [LoadedSkillChips] which handles the actual rendering — this
-  /// wrapper exists to read from `_rt.loadedSkillNames` and to
-  /// return `null` when the runtime is detached (transient state
-  /// during session switch). The chip styling (verbose-mode color
-  /// scheme, alphabetical sort, no-wrap policy) lives on the widget.
-  Component? _buildLoadedSkillChips(BuildContext context) {
-    final rt = _rt;
-    if (rt == null) return null;
-    if (rt.loadedSkillNames.isEmpty) return null;
-    return LoadedSkillChips(names: rt.loadedSkillNames);
   }
 
   Component _buildAuxiliaryModelButton(BuildContext context) {
@@ -494,23 +479,6 @@ class _ChatToolbarState extends State<ChatToolbar> {
         final auxLabel =
             '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
-        // Loaded-skill chips width budget. [LoadedSkillChips.widthBudget]
-        // computes the row's terminal-cell cost from the name set;
-        // we add `smallSpacer` here so the row has at least one
-        // breathing cell of gap before the context bar divider.
-        //
-        // `widthBudget` returns 0 for an empty set, so the budget
-        // collapses to `smallSpacer` (1 cell) when no skills are
-        // loaded. That's still non-zero, which would trick the
-        // `showSkillChips` flag below into thinking there's a row
-        // to render — and the actual builder returns null when
-        // `rt` is detached, so the `!` would throw. Gate the
-        // whole reservation on "at least one skill loaded" so the
-        // idle and transient cases both produce `skillChipsW = 0`.
-        final skillNames = rt?.loadedSkillNames ?? const <String>{};
-        final skillChipsW = skillNames.isEmpty
-            ? 0
-            : LoadedSkillChips.widthBudget(skillNames) + smallSpacer;
 
         var remaining = constraints.maxWidth.toInt() - 2 - modelW - imageW;
 
@@ -520,16 +488,6 @@ class _ChatToolbarState extends State<ChatToolbar> {
         final showThinking =
             thinkingLabel != null && (remaining - thinkingW) >= 0;
         if (showThinking) remaining -= thinkingW;
-
-        // Loaded-skill chips live between the thinking readout
-        // and the context bar — they read as "what's in this
-        // session's context" leading into "how full is the
-        // context". Compute the show flag *before* the context
-        // budget so a chip-rich session can borrow from the
-        // metrics area if needed.
-        final showSkillChips =
-            skillChipsW > 0 && (remaining - skillChipsW) >= 0;
-        if (showSkillChips) remaining -= skillChipsW;
 
         final showContext = (remaining - contextW) >= 0;
         if (showContext) remaining -= contextW;
@@ -613,28 +571,20 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                   ),
                 ),
-              // Loaded-skill chips — read as "what's loaded into this
-              // session's context" leading into the context bar's
-              // "how full is it". Each chip is a colored block
-              // holding the skill name (no body content leaked into
-              // the chrome), styled the same way the user-message
-              // bubble and chat input render `$skill-name` chips
-              // in verbose mode.
-              if (showSkillChips) _buildLoadedSkillChips(context)!,
               if (showContext) ...[
                 Text(
                   '  ',
                   style: TextStyle(color: CruxTheme.of(context).divider),
                 ),
-                Hinted(
-                  hint: isSessionRunning
-                      ? 'Context window usage.\n'
-                            'Compaction unavailable while the agent '
-                            'is responding.'
-                      : 'Context window usage.\n'
-                            'Click to compact the session history.',
-                  child: _buildContextBar(context),
-                ),
+                // No [Hinted] wrapper here — the context bar
+                // owns its own hover hint via [HintStateMixin]
+                // (see [ContextBarState.hintContent]). The
+                // loaded-skills list is what should surface on
+                // hover, not a generic "click to compact"
+                // affordance; the click hint is already
+                // conveyed by the in-bar label swap from `X / Y`
+                // to `Compact` (see [ContextBarState._formatLabel]).
+                _buildContextBar(context),
               ],
               if (showTokPerSec || showTtft)
                 // Delegate the live tok/s + TTFT readout to
