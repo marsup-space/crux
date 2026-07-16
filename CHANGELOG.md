@@ -8,6 +8,109 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-07-16
+
+e976f6a
+
+### Features
+
+- **Loaded skills moved to context bar hover hint**
+  (`4ed3b57`) — replaces the inline `LoadedSkillChips`
+  widget in the chat toolbar (added in 0.14.0) with a
+  hover tooltip on the context bar. The bar already had
+  a hint slot ("Context window usage. Click to compact
+  the session history"); merging the loaded-skills list
+  into that hint means one hover surfaces both pieces of
+  info, instead of inline chrome that clutters the
+  toolbar.
+
+  What changed:
+  - `chat_toolbar.dart` — drop the outer `Hinted`
+    wrapper around the context bar; the bar's own
+    `HintStateMixin` now drives the hint. Drop the
+    inline-chip row + width budget + `LoadedSkillChips`
+    dependency.
+  - `context_bar.dart` — mix in `HintStateMixin`;
+    `hintContent` composes the usage block + a blank
+    line + the loaded-skills line. Empty runtime reads
+    "Loaded skills : none" (positive empty state, not a
+    hidden tooltip) so the user has a "feature works,
+    just empty" signal. Placement = below (bar lives
+    at row 0; above would always overflow).
+  - `loaded_skill_chips.dart` — deleted (replaced by
+    the tooltip path).
+
+  Hint format (4 lines max in the overlay):
+
+  ```
+  Context window usage.
+  Click to compact the session history.
+
+  Loaded skills : alpha, mu, zeta
+  ```
+
+  Or "Loaded skills : none" when the runtime set is
+  empty. `disabled: true` swaps the usage block to the
+  "compaction unavailable while the agent is
+  responding" wording (preserves the original
+  `ChatToolbar.Hinted` behavior).
+
+  Backed by `test/context_bar_loaded_skills_hint_test.dart`
+  (4 cases pinning the empty / populated / running-state
+  / no-session hint text) and
+  `test/context_bar_loaded_skills_e2e_test.dart` (2 cases
+  wiring real `expandSkillChips` + a temp `.agents/skills/`
+  tree + the `ContextBar` in `testNocterm` so the full
+  chip-submit-to-tooltip pipeline is exercised end-to-end
+  — both the chip path and the tool path show up in the
+  merged skills line).
+
+  Runtime tracking (`SessionRuntimeState.loadedSkillNames`,
+  `chat_turn_orchestrator.sendTurn`, `SkillTool.execute`)
+  is unchanged from `afe0bf9`; only the read path moved
+  from inline chips to tooltip.
+
+### Fixes
+
+- **Vibe files box dedupes by basename, not full path**
+  (`e976f6a`) — the files box in vibe mode deduped by
+  string equality on the full path. When the LLM (or
+  the executing-side `_toolExecutionPreview`) reported
+  the same file under different path strings — e.g.
+  absolute vs. relative, project-relative preview vs.
+  the raw LLM path — dedup failed and the basename
+  rendered twice with the same `+N -M` diff. Symptom:
+  a vibe-mode turn that ended with edit + edit on the
+  same file showed two rows in the files box.
+
+  Switch the files-box dedup key to `p.basename` in
+  two layers:
+  - `walkSegments` (`vibe_box_data.dart`) — `modPaths`
+    is now deduped by basename. `modLinesAdded` /
+    `modLinesRemoved` are keyed by basename, so the diff
+    sums across tool calls that name the same file with
+    different path strings (the two edits collapse to
+    one row with `+N +M -K -J` rather than two rows
+    each with the wrong total). The `_emitSegment` fold
+    translates back via `p.basename` when summing
+    across the 8-row cap.
+  - `VibeStreamingBubble` (`vibe_streaming_bubble.dart`)
+    — the rendering loop dedupes `baseMods.paths` and
+    `_collectLiveFilePaths()` by basename. `baseMods`
+    wins on overlap because it carries the `+N -M`
+    diff; the live row would be a strict downgrade.
+
+  Backed by a walker dedup regression in
+  `vibe_segment_test.dart` (two edit calls with
+  different path strings for the same file produce ONE
+  row with the summed `+N -M`, plus a sanity test that
+  genuinely-different files like `foo.dart` vs.
+  `foo.dart.bak` keep separate rows) and a streaming
+  bubble dedup regression in `vibe_streaming_bubble_test.dart`
+  (persisted edit on `lib/foo.dart` + live edit on
+  `${tempDir.path}/lib/foo.dart` renders exactly one
+  `foo.dart` row in the files box).
+
 ## [0.14.0] - 2026-07-16
 
 b090a48
