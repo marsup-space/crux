@@ -8,6 +8,171 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-16
+
+b090a48
+
+### Features
+
+- **Loaded skill chips surface in the chat toolbar**
+  (`lib/src/components/loaded_skill_chips.dart` + `chat_toolbar.dart`
+  + `chat_turn_orchestrator.dart` + `skill_tool.dart` +
+  `session_runtime_state.dart`) — the chat toolbar now
+  renders a row of `$<skill-name>` chips inline, between
+  the thinking readout and the context bar, so the user
+  can see at a glance which skills are currently
+  contributing to the session's active context. The chips
+  read as "what's in my context" leading into the context
+  bar's "how full is it". A skill enters the loaded set
+  in two ways:
+  1. The user submits a `$<skill-name>` chip — the chip
+     substitution step in `chat_turn_orchestrator.sendTurn`
+     adds every resolved name from the expansion result.
+  2. The LLM calls the `skill` tool with a valid name —
+     `SkillTool.execute` adds the resolved name on
+     success (failure paths deliberately skip).
+
+  The set persists for the session lifetime and survives
+  compactions (the LLM still has the skill's content via
+  the bottom-of-log `skill-bodies` summary). Each new
+  session starts empty; app restart clears the set
+  (in-memory only — `Set<String> loadedSkillNames = <String>{}`
+  on `SessionRuntimeState`).
+
+  `LoadedSkillChips.widthBudget(names)` is the
+  pre-mount width check the toolbar uses to decide
+  whether the row fits before mounting — returns `0` for
+  empty sets so the row silently collapses when no skills
+  are loaded. Sort is alphabetical, not insertion order,
+  so the row doesn't visually reshuffle when a mid-stream
+  skill lands at the bottom of an unsorted set. The `$`
+  trigger is rendered with the chip-background color so it
+  visually disappears (still takes up a cell so the chip
+  width matches the input form). `softWrap: false` +
+  `TextOverflow.visible` together refuse to wrap or
+  ellipsize, which would break the visual contract that
+  each chip is one contiguous colored block.
+
+  Backed by `test/loaded_skill_chips_test.dart` (116
+  lines covering empty-set, single-name, multi-name,
+  alphabetical-sort, hidden-state, width-budget math) and
+  `test/chat_toolbar_loaded_skills_test.dart` (183 lines
+  covering the toolbar integration: chips appear when the
+  runtime has skills, hidden when it doesn't, width-budget
+  reservation, idle + transient-detached-runtimes cases).
+
+- **Doom-loop detection breaks LLM response loops**
+  (`daa727d`) — when the model repeats the same sentences
+  over and over ("doom loop"), the detector:
+  1. Tracks sentence hashes across rounds.
+  2. Triggers after a 9-sentence cycle repeats 3 times
+     consecutively.
+  3. Cancels the stream and saves the partial AI message.
+  4. Injects a user-nudge message telling the LLM to
+     change approach.
+  5. Continues the agentic loop so the LLM can retry.
+
+  Without this guard, a model stuck in a doom loop
+  would burn tokens on the same content until the
+  upstream max-duration or idle watchdog fired. The
+  cycle-threshold tuning (9 sentences × 3 repeats) keeps
+  the detector conservative — a legitimate repeated
+  phrasing in a single answer doesn't trigger.
+
+### Fixes
+
+- **`ReadTool` tolerates non-UTF-8 bytes** (`read_tool.dart`)
+  — Unity's `Library/*.asset` files routinely contain
+  bytes that strict UTF-8 decoding rejects, which would
+  otherwise terminate the read tool with a
+  `FileSystemException` and stop the agent mid-task.
+  New `_readLinesTolerant` strips a UTF-8 BOM if present,
+  decodes as UTF-8 with `allowMalformed: true`
+  (substitutes the Unicode replacement character instead
+  of throwing on malformed sequences), and falls back to
+  latin1 if even malformed-tolerant UTF-8 fails (rare —
+  usually only when the bytes aren't UTF-8 at all, e.g.
+  UTF-16 without BOM). Latin1 maps every byte 1:1 and is
+  guaranteed not to throw. Replaces both call sites of
+  `file.readAsLines()` in the read loop.
+
+- **Vibe think-box effort uses the provider's
+  internal→display mapping** (`vibe_segment_bubble.dart`)
+  — `ThinkBoxData.effort` is documented as "stored as a
+  raw string because many models override the display
+  value". Without the mapping, the consolidated segment
+  bubble would show the raw internal value (e.g.
+  `normal`) while the streaming bubble next to it shows
+  the mapped label (e.g. `adaptive` for MiniMax) — the
+  same effort rendering two ways in the same view. New
+  `reasoningPresets` parameter on `VibeSegmentBubble`
+  (mirroring the same parameter on `VibeStreamingBubble`
+  and `MessageBubble`) feeds a `_displayEffort` helper
+  that returns the matched preset's `displayLabel` when
+  found, the raw internal value otherwise (identity
+  fallback, matching the streaming bubble).
+
+- **Vibe user line uses `Row(Text, Expanded(Text))`
+  layout for proper alignment + soft-wrap**
+  (`vibe_segment_bubble.dart`) — earlier the user line
+  was a single flat `Text(' you: $userText')` with a
+  manual `userIndent = '       '` (7 spaces) hack to
+  align continuation lines. Replaced with the verbose
+  `MessageBubble` layout: `Padding(horizontal: 1) →
+  Row(Text(' You: ', bold), Expanded(Text(userText)))`.
+  The `Expanded` gives the user text a real width budget
+  so terminal-driven soft-wrap aligns continuation lines
+  at the same column as the first line — without it, a
+  long message wrapped flush-left under the bubble's
+  column 1, breaking the visual anchor the prefix
+  establishes. Explicit user newlines keep their natural
+  indentation inside `Expanded`. Prefix label is bolded
+  (matching the verbose bubble) and 'You:' is
+  title-cased (also matching verbose). The
+  `b090a48 fix(vibe): preserve user-message line breaks`
+  commit's 7-space pre-indent hack is now obsolete;
+  the new layout supersedes it.
+
+- **Vibe persists segment bubble forwards `ses://` and
+  markdown link callbacks in the prose row**
+  (`d4d60f9`) — when the consolidated `VibeSegmentBubble`
+  rendered the agent's prose as a flat `Text`, clickable
+  session links (`ses://<id>`) and markdown links
+  (`[label](url)`) were inert. Forward the parent
+  component's `onSessionLinkTap` and `onLinkTap` through
+  the prose widget so the click affordances work in the
+  consolidated view, matching verbose mode.
+
+- **Vibe freezes the think time and activates tools
+  while writing tools** (`7fa0322`) — the live
+  `VibeStreamingBubble`'s think-box time row would keep
+  ticking during a `write` tool execution (the round
+  hasn't emitted the first delta for the next round's
+  reasoning yet, but the previous round's think time
+  counter was still updating). Freeze the think time on
+  tool execution and activate the tools box until the
+  next round's first delta. Matches the user's mental
+  model: while a tool is being named / parsed /
+  executed, the model's "thinking" phase is paused, not
+  in progress.
+
+- **Vibe persists segment bubble gains dedicated test
+  suite** (`test/vibe_segment_bubble_test.dart`, 340
+  lines) — first dedicated widget test for the
+  consolidated `VibeSegmentBubble` covering: user line
+  layout (Row vs flat Text, prefix alignment), think
+  box with / without effort, tools box, files box,
+  prose row with markdown link callbacks, prose row
+  with quick replies enabled, multi-segment turn, empty
+  user turn. Existing `vibe_segment_test.dart` only
+  covered the walker; this covers the rendering.
+
+- **Context bar refresh indent** (`context_bar.dart`) —
+  drive-by whitespace fix in the post-compact target
+  update path (the if-block was missing one level of
+  indent from a prior refactor; the logic was correct
+  but the code was visually misleading).
+
 ## [0.13.0] - 2026-07-15
 
 d93b665
