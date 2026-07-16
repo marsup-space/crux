@@ -1,3 +1,5 @@
+import 'package:path/path.dart' as p;
+
 import '../models/message.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
@@ -46,10 +48,7 @@ class ToolBoxData {
   final List<ToolBoxEntry> entries;
   final int totalTokens;
 
-  const ToolBoxData({
-    required this.entries,
-    required this.totalTokens,
-  });
+  const ToolBoxData({required this.entries, required this.totalTokens});
 }
 
 /// Aggregated files-box data for one vibe segment.
@@ -168,7 +167,17 @@ List<VibeSegment> walkSegments(
   final toolOrder = <String>[];
   int toolTotalTokens = 0;
   // Files-box accumulators.
+  //
+  // `modPaths` is the list of full paths in first-seen order.
+  // `seenModBasenames` is the basename-keyed dedup set: two
+  // tool calls naming the same file with different path strings
+  // land on the same basename entry, so the files box never
+  // shows the same basename twice. `modLinesAdded` /
+  // `modLinesRemoved` are keyed by basename for the same reason.
+  // The `_emitSegment` fold translates back to basenames when
+  // summing diffs across the 8-row cap.
   final modPaths = <String>[];
+  final seenModBasenames = <String>{};
   final modLinesAdded = <String, int>{};
   final modLinesRemoved = <String, int>{};
   // `true` once the current user turn has produced its first
@@ -210,6 +219,7 @@ List<VibeSegment> walkSegments(
       toolOrder.clear();
       toolTotalTokens = 0;
       modPaths.clear();
+      seenModBasenames.clear();
       modLinesAdded.clear();
       modLinesRemoved.clear();
       continue;
@@ -261,19 +271,35 @@ List<VibeSegment> walkSegments(
           toolTotalTokens += callTokens;
 
           // Accumulate file-modification data via the modSummary hook.
+          // Dedupe by `p.basename`, NOT by the full path string:
+          // the LLM can name the same file with different path
+          // strings across tool calls (absolute vs. relative,
+          // with or without a leading `./`, occasionally with
+          // redundant `.` segments). String equality on the full
+          // path would miss those, leaving the file with two
+          // rows in the files box — same basename, same +N -M
+          // diff, twice. The box only ever renders the basename
+          // anyway, so basename is the right key.
           if (toolDef != null && toolResult != null) {
             final modSummary = toolDef.modSummary(tc.input, toolResult);
             if (modSummary != null) {
               for (final change in modSummary.changes) {
-                if (!modPaths.contains(change.path)) {
-                  modPaths.add(change.path);
-                  modLinesAdded[change.path] = 0;
-                  modLinesRemoved[change.path] = 0;
+                final base = p.basename(change.path);
+                if (base.isEmpty) continue;
+                if (!seenModBasenames.add(base)) {
+                  // Same file already in this segment under a
+                  // different path string — fold the diff into
+                  // the existing entry rather than creating a new
+                  // row.
+                  modLinesAdded[base] =
+                      (modLinesAdded[base] ?? 0) + change.linesAdded;
+                  modLinesRemoved[base] =
+                      (modLinesRemoved[base] ?? 0) + change.linesRemoved;
+                  continue;
                 }
-                modLinesAdded[change.path] =
-                    modLinesAdded[change.path]! + change.linesAdded;
-                modLinesRemoved[change.path] =
-                    modLinesRemoved[change.path]! + change.linesRemoved;
+                modPaths.add(change.path);
+                modLinesAdded[base] = change.linesAdded;
+                modLinesRemoved[base] = change.linesRemoved;
               }
             }
           }
@@ -303,7 +329,8 @@ List<VibeSegment> walkSegments(
       // between them" gap in vibe mode. The trim() check matches
       // the renderer's notion of "actually has prose" so the
       // walker and renderer agree on what counts as a boundary.
-      final closesSegment = msg.role == 'ai' ||
+      final closesSegment =
+          msg.role == 'ai' ||
           (msg.role == 'tool_call' && msg.content.trim().isNotEmpty);
 
       if (closesSegment && currentUser != null) {
@@ -340,6 +367,7 @@ List<VibeSegment> walkSegments(
         toolOrder.clear();
         toolTotalTokens = 0;
         modPaths.clear();
+        seenModBasenames.clear();
         modLinesAdded.clear();
         modLinesRemoved.clear();
         // Critically, do NOT clear `currentUser` here. The
@@ -428,31 +456,47 @@ void _emitSegment(
   // carry the user line), so the guard is gated on showUserLine.
   if (!hasBoxes && !hasProse && !showUserLine) return;
 
-  segments.add(VibeSegment(
-    userMessage: currentUser,
-    showUserMessage: showUserLine,
-    think: hasThink
-        ? ThinkBoxData(
-            duration: thinkDuration,
-            tokens: thinkTokens,
-            effort: thinkEffort,
-          )
-        : null,
-    tools: entries.isNotEmpty
-        ? ToolBoxData(entries: entries, totalTokens: toolTotalTokens)
-        : null,
-    mods: modPaths.isNotEmpty
-        ? ModBoxData(
-            paths: modPaths.take(8).toList(),
-            linesAdded: modPaths.take(8).fold(0,
-                (sum, p) => sum + (modLinesAdded[p] ?? 0)),
-            linesRemoved: modPaths.take(8).fold(0,
-                (sum, p) => sum + (modLinesRemoved[p] ?? 0)),
-            overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
-          )
-        : null,
-    prose: closing,
-  ));
+  segments.add(
+    VibeSegment(
+      userMessage: currentUser,
+      showUserMessage: showUserLine,
+      think: hasThink
+          ? ThinkBoxData(
+              duration: thinkDuration,
+              tokens: thinkTokens,
+              effort: thinkEffort,
+            )
+          : null,
+      tools: entries.isNotEmpty
+          ? ToolBoxData(entries: entries, totalTokens: toolTotalTokens)
+          : null,
+      mods: modPaths.isNotEmpty
+          ? ModBoxData(
+              paths: modPaths.take(8).toList(),
+              // Sum diffs by basename (the dedup key) — modLinesAdded
+              // is keyed by basename, not by the full path in `paths`.
+              // Loop var `path` deliberately shadows the `path` package
+              // alias `p` so the fold reads naturally; `p.basename(path)`
+              // would be a self-call.
+              linesAdded: modPaths
+                  .take(8)
+                  .fold(
+                    0,
+                    (sum, path) => sum + (modLinesAdded[p.basename(path)] ?? 0),
+                  ),
+              linesRemoved: modPaths
+                  .take(8)
+                  .fold(
+                    0,
+                    (sum, path) =>
+                        sum + (modLinesRemoved[p.basename(path)] ?? 0),
+                  ),
+              overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
+            )
+          : null,
+      prose: closing,
+    ),
+  );
 }
 
 /// Format a token count for display in the tools box.
@@ -463,9 +507,7 @@ void _emitSegment(
 String formatTokens(int tokens) {
   if (tokens >= 1000) {
     final k = tokens / 1000;
-    final str = k >= 10
-        ? k.round().toString()
-        : k.toStringAsFixed(1);
+    final str = k >= 10 ? k.round().toString() : k.toStringAsFixed(1);
     return '${k >= 10 ? k.round() : str}k tokens';
   }
   return '$tokens tokens';

@@ -268,4 +268,156 @@ void main() {
       );
     },
   );
+
+  test(
+    'live edit on a file already in baseSegment mods dedupes to one row',
+    () async {
+      // Regression: when the persisted open segment already
+      // reported a file edit (`baseSegment.mods.paths`) and the
+      // current round is editing the same file, the streaming
+      // bubble used to render two rows for the same basename —
+      // once with the `+N -M` diff from the persisted segment,
+      // once as a bare basename from the live edit. The two
+      // sources also pass different path strings (raw
+      // `args['filePath']` from the walker vs. the
+      // `_extractFilePathFromJson` regex match on the streaming
+      // JSON), so a string-keyed dedupe misses them.
+      // Files-box dedupe is basename-based.
+      const sessionId = 2;
+      final session = Session(
+        id: sessionId,
+        title: 'Duplicate file dedup',
+        model: '',
+        projectPath: tempDir.path,
+        status: SessionStatus.running,
+      );
+      // The persisted round: a completed edit on `lib/foo.dart`.
+      // The walker dedupes by basename, so this populates
+      // `baseSegment.mods.paths` with one entry for foo.dart.
+      // (If the walker ever re-introduced the path-string
+      // dup, this test would fail with TWO foo.dart rows
+      // even before the live edit arrives.)
+      final messages = <Message>[
+        Message(
+          id: 1,
+          sessionId: sessionId,
+          role: 'user',
+          content: 'tweak foo',
+        ),
+        Message(
+          id: 2,
+          sessionId: sessionId,
+          role: 'tool_call',
+          content: '',
+          toolCalls: const [
+            ToolCallData(
+              callId: 'persisted-edit',
+              name: 'edit',
+              input: {
+                'filePath': 'lib/foo.dart',
+                'oldString': 'old',
+                'newString': 'new long string',
+              },
+            ),
+          ],
+        ),
+        Message(
+          id: 3,
+          sessionId: sessionId,
+          role: 'tool',
+          toolCallId: 'persisted-edit',
+          content: 'Edit applied',
+        ),
+      ];
+
+      sessionController
+        ..sessions = [session]
+        ..currentSessionId = sessionId
+        ..putCachedMessages(sessionId, messages);
+      sessionController.cubit.replaceSessions(
+        sessions: [session],
+        archivedCount: 0,
+        currentSessionId: sessionId,
+      );
+
+      sessionController.runtime(sessionId)
+        ..chatDisplayMode = ChatDisplayMode.vibe
+        ..isResponding = true
+        ..roundFirstTokenTime = DateTime.now();
+      sessionController.mirrorTurnFlags(sessionId);
+
+      // Live edit on the SAME file (foo.dart) with a DIFFERENT
+      // path string (absolute, prefixed with the project root).
+      // Without basename-based dedup, the rendering loop would
+      // produce a second foo.dart row beneath the persisted
+      // `foo.dart +N -M` row.
+      streamingController.updateStreamingToolCall(
+        sessionId,
+        ToolUseChunk(
+          index: 0,
+          callId: 'live-edit',
+          name: 'edit',
+          inputDelta: '{"filePath":"${tempDir.path}/lib/foo.dart"',
+        ),
+      );
+
+      await testNocterm(
+        'live edit dedupes against persisted mods by basename',
+        (tester) async {
+          await tester.pumpComponent(
+            MultiBlocProvider(
+              providers: [
+                BlocProvider<SessionCubit>.value(
+                  value: sessionController.cubit,
+                ),
+                BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
+                BlocProvider<MetricsCubit>.value(
+                  value: sessionController.metricsCubit,
+                ),
+                BlocProvider<ChatTurnCubit>.value(
+                  value: sessionController.chatTurnCubit,
+                ),
+                BlocProvider<StreamingCubit>.value(
+                  value: sessionController.streamingCubit,
+                ),
+              ],
+              child: CruxTheme(
+                data: CruxThemeData.draculaFallback,
+                child: Container(
+                  width: 120,
+                  height: 24,
+                  child: ChatHistory(
+                    scrollController: scrollController,
+                    sessionController: sessionController,
+                    streamingController: streamingController,
+                    turnOrchestrator: turnOrchestrator,
+                    providerService: providerService,
+                    toolRegistry: toolRegistry,
+                    showToast: (_, {mode = ToastMode.info}) {},
+                    refresh: () {},
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          final rendered = tester.renderToString(showBorders: false);
+          // One files box (title appears once).
+          expect(
+            RegExp(r'\bfiles\b').allMatches(rendered),
+            hasLength(1),
+            reason: rendered,
+          );
+          // Exactly one foo.dart row. A duplicate bare-basename
+          // row from the live edit (the regression) would
+          // produce 2 matches.
+          final fooRows = RegExp(
+            r'foo\.dart(?: \+\d+ -\d+)?',
+          ).allMatches(rendered).length;
+          expect(fooRows, 1, reason: rendered);
+        },
+        size: const Size(120, 24),
+      );
+    },
+  );
 }

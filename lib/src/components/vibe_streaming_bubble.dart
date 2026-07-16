@@ -296,23 +296,31 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
 
     // Files follow the same ownership rule as think/tools: completed edits
     // live on the persisted open segment; current edit/write calls come from
-    // the controller. Render both in one box and dedupe by path.
+    // the controller. Render both in one box and dedupe by **basename** —
+    // not by the raw path string — because the LLM (and the
+    // executing-side `_toolExecutionPreview`) can return the same file
+    // under different path strings (absolute vs relative, project-relative
+    // preview vs the raw LLM path, etc.). The displayed row is the
+    // basename either way, so basename is the correct dedup key.
+    // baseMods wins on overlap because it carries the +N -M diff; the
+    // live row would be a strict downgrade of information.
     final baseMods = component.baseSegment?.mods;
     final liveFilePaths = _collectLiveFilePaths();
     final fileRows = <String>[];
-    final seenFilePaths = <String>{};
+    final seenBasenames = <String>{};
     if (baseMods != null) {
       for (final path in baseMods.paths) {
-        if (!seenFilePaths.add(path)) continue;
         final base = p.basename(path);
         final name = base.isEmpty ? path : base;
+        if (name.isEmpty || !seenBasenames.add(name)) continue;
         fileRows.add('$name +${baseMods.linesAdded} -${baseMods.linesRemoved}');
       }
     }
     for (final path in liveFilePaths) {
-      if (!seenFilePaths.add(path)) continue;
       final base = p.basename(path);
-      fileRows.add(base.isEmpty ? path : base);
+      final name = base.isEmpty ? path : base;
+      if (name.isEmpty || !seenBasenames.add(name)) continue;
+      fileRows.add(name);
     }
     if (baseMods != null && baseMods.overflowCount > 0) {
       fileRows.add('+${baseMods.overflowCount} more files');
