@@ -10,10 +10,7 @@ void main() {
 
     test('buildLspPayload encodes a diagnostic as JSON in the marker', () {
       final diag = LspDiagnostic(
-        range: const LspRange(
-          LspPosition(2, 9),
-          LspPosition(2, 17),
-        ),
+        range: const LspRange(LspPosition(2, 9), LspPosition(2, 17)),
         message: "A value of type 'String' can't be returned",
         severity: LspDiagnosticSeverity.error,
         source: 'dart',
@@ -22,7 +19,7 @@ void main() {
       final payload = buildLspPayload([diag]);
       expect(payload, contains('<crux-lsp>'));
       expect(payload, contains('</crux-lsp>'));
-      expect(payload, contains("can't be returned"));  // message preserved
+      expect(payload, contains("can't be returned")); // message preserved
       expect(payload, contains('"source":"dart"'));
       expect(payload, contains('"severity":1'));
     });
@@ -137,8 +134,10 @@ void main() {
         makeDiag(LspDiagnosticSeverity.warning, 'warn'),
       ]);
       expect(result, hasLength(2));
-      expect(result.map((d) => d.message),
-          containsAll(['no-severity', 'explicit-error']));
+      expect(
+        result.map((d) => d.message),
+        containsAll(['no-severity', 'explicit-error']),
+      );
     });
 
     test('returns empty list for an all-warnings input', () {
@@ -154,6 +153,86 @@ void main() {
 
     test('empty input → empty output', () {
       expect(errorDiagnostics(const []), isEmpty);
+    });
+  });
+
+  group('reportDiagnostics', () {
+    LspDiagnostic makeDiag(
+      LspDiagnosticSeverity? severity,
+      String message, {
+      int line = 0,
+      int col = 0,
+    }) {
+      return LspDiagnostic(
+        range: LspRange(LspPosition(line, col), LspPosition(line, col + 1)),
+        message: message,
+        severity: severity,
+      );
+    }
+
+    test('renders only error-severity entries in a file block', () {
+      final out = reportDiagnostics('a.dart', [
+        makeDiag(LspDiagnosticSeverity.error, 'boom', line: 2, col: 4),
+        makeDiag(LspDiagnosticSeverity.warning, 'meh'),
+      ]);
+      expect(
+        out,
+        '<diagnostics file="a.dart">\nERROR [3:5] boom\n</diagnostics>',
+      );
+    });
+
+    test('treats null severity as error (LSP spec default)', () {
+      final out = reportDiagnostics('a.dart', [makeDiag(null, 'no-sev')]);
+      expect(out, contains('ERROR [1:1] no-sev'));
+    });
+
+    test('returns empty string when nothing is error-level', () {
+      expect(
+        reportDiagnostics('a.dart', [
+          makeDiag(LspDiagnosticSeverity.warning, 'w'),
+        ]),
+        '',
+      );
+      expect(reportDiagnostics('a.dart', const []), '');
+    });
+
+    test('caps entries at maxPerFile and summarizes the remainder', () {
+      final diags = List.generate(
+        7,
+        (i) => makeDiag(LspDiagnosticSeverity.error, 'err $i'),
+      );
+      final out = reportDiagnostics('a.dart', diags, maxPerFile: 5);
+      expect(out, contains('err 4'));
+      expect(out, isNot(contains('err 5')));
+      expect(out, contains('... and 2 more'));
+    });
+
+    test('truncates over-long messages when maxMessageChars is set', () {
+      final longMessage = 'x' * 300;
+      final out = reportDiagnostics('a.dart', [
+        makeDiag(LspDiagnosticSeverity.error, longMessage),
+      ], maxMessageChars: 160);
+      expect(out, contains('${'x' * 160}…'));
+      expect(out, isNot(contains('x' * 161)));
+    });
+  });
+
+  group('reportDiagnosticsSameTurn', () {
+    test('applies the same-turn budget (5 entries, 160 chars/message)', () {
+      final diags = List.generate(
+        8,
+        (i) => LspDiagnostic(
+          range: LspRange(LspPosition(i, 0), LspPosition(i, 1)),
+          message: 'err $i ${'y' * 200}',
+          severity: LspDiagnosticSeverity.error,
+        ),
+      );
+      final out = reportDiagnosticsSameTurn('a.dart', diags);
+      expect(out, startsWith('<diagnostics file="a.dart">'));
+      expect(out, contains('... and 3 more'));
+      expect(out, isNot(contains('err 5')));
+      // Each message capped at 160 chars + ellipsis.
+      expect(out, isNot(contains('y' * 161)));
     });
   });
 }

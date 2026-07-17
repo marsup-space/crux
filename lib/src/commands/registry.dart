@@ -75,11 +75,7 @@ class CommandRegistry extends ChangeNotifier {
   /// catalog before the user has typed anything.
   List<SlashCommand> filterCommands(String query) {
     final list = all;
-    return fuzzyRankMulti<SlashCommand>(
-      list,
-      (cmd) => cmd.allNames,
-      query,
-    );
+    return fuzzyRankMulti<SlashCommand>(list, (cmd) => cmd.allNames, query);
   }
 
   /// Returns the SlashCommand matching the exact given name, or any
@@ -107,11 +103,7 @@ class CommandRegistry extends ChangeNotifier {
     List<CommandSuggestion> suggestions,
     String query,
   ) {
-    return fuzzyRank<CommandSuggestion>(
-      suggestions,
-      (s) => s.value,
-      query,
-    );
+    return fuzzyRank<CommandSuggestion>(suggestions, (s) => s.value, query);
   }
 }
 
@@ -157,28 +149,16 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
-  SlashCommand(name: '/clear', description: 'Clear the chat log'),
   SlashCommand(name: '/compact', description: 'Compact the context window'),
+  // Print the help sheet into the chat history as a local info
+  // message. The sheet is generated from this registry at call time
+  // (see cmd_help.dart), so `/help` can never drift from what Tab
+  // completion actually offers. No params — the previous entry
+  // promised `commands|models|shortcuts` topics that were never
+  // implemented.
   SlashCommand(
     name: '/help',
-    description: 'Show help information',
-    params: ['topic'],
-    suggestionsPerParam: [
-      [
-        CommandSuggestion(
-          value: 'commands',
-          description: 'Show available commands',
-        ),
-        CommandSuggestion(
-          value: 'models',
-          description: 'Show model information',
-        ),
-        CommandSuggestion(
-          value: 'shortcuts',
-          description: 'Show keyboard shortcuts',
-        ),
-      ],
-    ],
+    description: '帮助 (show the help sheet: commands, shortcuts, tips)',
     availableDuringResponse: true,
   ),
   SlashCommand(
@@ -186,19 +166,6 @@ const List<SlashCommand> _baseCommands = [
     description: 'Change the UI theme',
     params: ['name'],
     availableDuringResponse: true,
-  ),
-  SlashCommand(
-    name: '/history',
-    description: 'Show conversation history',
-    params: ['limit'],
-    suggestionsPerParam: [
-      [
-        CommandSuggestion(value: '10', description: 'Last 10 messages'),
-        CommandSuggestion(value: '20', description: 'Last 20 messages'),
-        CommandSuggestion(value: '50', description: 'Last 50 messages'),
-        CommandSuggestion(value: 'all', description: 'Show all messages'),
-      ],
-    ],
   ),
   SlashCommand(
     name: '/provider',
@@ -374,6 +341,17 @@ const List<SlashCommand> _baseCommands = [
     description: '重试 (re-send the last user input from scratch)',
     aliases: ['/重试'],
   ),
+  // Wipe the last round (the user prompt plus everything it
+  // produced) and copy the original prompt back into the input box
+  // for editing — unlike /retry, nothing is re-sent automatically.
+  // Alias `/撤销` mirrors /retry's `/重试`. Not available mid-stream:
+  // the executor refuses while a response is in flight, so the
+  // overlay hides it too.
+  SlashCommand(
+    name: '/undo',
+    description: '撤销 (wipe the last round; restore prompt for editing)',
+    aliases: ['/撤销'],
+  ),
   // Ephemeral side-question: ask the model a quick question without
   // polluting the real conversation. The AI's reply is rendered in a
   // boxed, dim bubble and lives only in memory. Consecutive `/btw`
@@ -415,9 +393,11 @@ const List<SlashCommand> _baseCommands = [
     availableDuringResponse: true,
   ),
   // Exit Crux cleanly. When the agent is streaming, the
-  // command is rejected with a toast that tells the user to
-  // press Ctrl+C×2 to force-quit (same affordance as
-  // Ctrl+C). Otherwise it calls `shutdownApp()` from
+  // command is rejected with a toast that points at the
+  // keyboard affordances under the current Ctrl+C semantics:
+  // Ctrl+C cancels the in-flight response, and pressing
+  // Ctrl+C twice in quick succession exits the app.
+  // Otherwise it calls `shutdownApp()` from
   // nocterm, which tears down the alt-screen, then
   // `runApp()` returns to `bin/crux.dart` and the per-run
   // summary is printed to stdout. `/exit` is registered as

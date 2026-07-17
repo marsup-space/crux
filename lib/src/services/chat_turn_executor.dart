@@ -40,9 +40,6 @@ const String earlyAbortSystemNoteMarker =
 /// [kMaxLlmRetries] + 1.
 const int kMaxLlmRetries = 5;
 
-
-
-
 /// Returns a short, user-facing label describing the error that triggered
 /// a retry attempt. Used in the status toast shown between attempts.
 String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
@@ -226,7 +223,7 @@ class ChatTurnExecutor {
     String? userContent,
     List<ImageAttachment> images = const [],
   }) async {
-          await store.messageStore.clearStreamErrorsFor(sessionId);
+    await store.messageStore.clearStreamErrorsFor(sessionId);
 
     final updatedSession = await store.update(
       sessionId,
@@ -280,13 +277,33 @@ class ChatTurnExecutor {
       session.status = SessionStatus.needUserAction;
       runtime.isResponding = false;
       leaseManager.markSessionInactive(sessionId);
+      // A bare model id (composite key without the "provider/" prefix)
+      // parses out to an empty [providerName], which used to produce
+      // the useless `No API key for provider ""` message. Resolve the
+      // provider that actually serves this model so the error names it
+      // and tells the user the exact next step.
+      final effectiveProviderName = providerName.isNotEmpty
+          ? providerName
+          : (_providerServingModel(modelId)?.name ?? '');
+      final String authMessage;
+      if (effectiveProviderName.isNotEmpty) {
+        authMessage =
+            'No API key for provider "$effectiveProviderName". '
+            'Use /provider $effectiveProviderName to configure an API '
+            'key, then try again.';
+      } else {
+        authMessage =
+            'No configured provider serves model "$modelId" '
+            '(session model "$compositeKey" has no provider prefix). '
+            'Use /provider to configure a provider and API key, then '
+            'try again.';
+      }
       onError(
         LlmError(
           kind: LlmErrorKind.auth,
-          vendor: LlmVendorX.fromProviderName(providerName),
-          message: 'No API key for provider "$providerName". '
-              'Use /provider to connect.',
-          providerName: providerName,
+          vendor: LlmVendorX.fromProviderName(effectiveProviderName),
+          message: authMessage,
+          providerName: effectiveProviderName,
         ),
       );
       return;
@@ -372,8 +389,10 @@ class ChatTurnExecutor {
         if (repSentences.length >= repCycleLen * 2) {
           final len = repSentences.length;
           final recent = repSentences.sublist(len - repCycleLen);
-          final previous =
-              repSentences.sublist(len - repCycleLen * 2, len - repCycleLen);
+          final previous = repSentences.sublist(
+            len - repCycleLen * 2,
+            len - repCycleLen,
+          );
           if (listEquals(recent, previous)) {
             repMatchStreak++;
             if (repMatchStreak >= repThreshold) {
@@ -385,6 +404,7 @@ class ChatTurnExecutor {
         }
       }
     }
+
     int promptTokens = 0;
     int completionTokens = 0;
     int promptCacheHitTokens = 0;
@@ -477,10 +497,10 @@ class ChatTurnExecutor {
         if (attempt > 0) {
           // Production backoff: 1s, 2s, 4s, 8s, 16s (capped at 30s).
           // Tests can set `debugBackoffOverride` to skip the wait entirely.
-          final backoff = ChatTurnExecutor.debugBackoffOverride?.call(attempt) ??
+          final backoff =
+              ChatTurnExecutor.debugBackoffOverride?.call(attempt) ??
               Duration(
-                milliseconds:
-                    (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
+                milliseconds: (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
               );
           onStatus?.call(
             'Retrying ($attempt/$kMaxLlmRetries) after '
@@ -635,8 +655,7 @@ class ChatTurnExecutor {
                   final take = remaining.clamp(0, lerpPendingReasoning.length);
                   if (take > 0) {
                     final emit = lerpPendingReasoning.substring(0, take);
-                    lerpPendingReasoning =
-                        lerpPendingReasoning.substring(take);
+                    lerpPendingReasoning = lerpPendingReasoning.substring(take);
                     onReasoning(emit);
                   }
                 }
@@ -725,8 +744,9 @@ class ChatTurnExecutor {
             chunks.add(chunk);
 
             if (chunk.reasoningSignatureDelta != null) {
-              roundReasoningSignatureBuffer
-                  .write(chunk.reasoningSignatureDelta);
+              roundReasoningSignatureBuffer.write(
+                chunk.reasoningSignatureDelta,
+              );
             }
 
             if (chunk.textDelta != null ||
@@ -1022,7 +1042,8 @@ class ChatTurnExecutor {
             );
           }
           // Nudge the LLM to break out of the loop.
-          const nudge = '[Crux system note — doom loop detected] '
+          const nudge =
+              '[Crux system note — doom loop detected] '
               'Your response became repetitive — you were repeating the '
               'same sentences over and over. Stop this approach entirely. '
               'Take a different tactic, summarize what you know so far, '
@@ -1149,9 +1170,9 @@ class ChatTurnExecutor {
         // ── semantic_search preference hint ──────────────────────
         if (!runtime.hasShownsemanticSearchHint ||
             nextSemanticSearchHintThreshold(
-              runtime.contextTargetTokens,
-              runtime.semanticSearchHintLastThreshold,
-            ) !=
+                  runtime.contextTargetTokens,
+                  runtime.semanticSearchHintLastThreshold,
+                ) !=
                 null) {
           const hintTriggerTools = <String>{'grep', 'glob'};
           for (final call in toolCalls) {
@@ -1187,23 +1208,35 @@ class ChatTurnExecutor {
 
         for (final call in toolCalls) {
           final result = callResults[call.callId]!;
+          // Same-turn LSP feedback: write/edit collect diagnostics but
+          // historically only persistence attached them (the
+          // `<crux-lsp>` payload in [_buildToolResultForPersist]), so
+          // the model saw the errors its own edit introduced one turn
+          // late. Attach a compact, budget-capped error block to the
+          // result sent to the API right now. `callResults` itself is
+          // left untouched so persistence keeps its original behavior.
+          final apiOutput = _outputWithSameTurnLspDiagnostics(
+            call,
+            result,
+            session.projectPath,
+          );
           if (isAnthropic) {
             content!.add({
               'type': 'tool_result',
               'tool_use_id': call.callId,
-              'content': result.output,
+              'content': apiOutput,
             });
           } else {
             apiMessages.add({
               'role': 'tool',
               'tool_call_id': call.callId,
-              'content': result.output,
+              'content': apiOutput,
             });
           }
           roundResultTokens += estimateToolRoundTripTokens(
             toolName: call.name,
             args: call.input,
-            resultOutput: result.output,
+            resultOutput: apiOutput,
           );
           if (call.parseError == null &&
               result.title != 'Error' &&
@@ -1532,7 +1565,8 @@ class ChatTurnExecutor {
         LlmError(
           kind: LlmErrorKind.unknown,
           vendor: LlmVendorX.fromProviderName(providerName),
-          message: 'Step limit reached ($maxRounds tool rounds). '
+          message:
+              'Step limit reached ($maxRounds tool rounds). '
               'Send another message to continue.',
           providerName: providerName,
         ),
@@ -1556,6 +1590,45 @@ class ChatTurnExecutor {
   // Tool/guard helpers
   // ══════════════════════════════════════════════════════════════════
 
+  /// Find the configured provider that serves [modelId] (first match
+  /// in load order). Used to make the no-API-key error actionable when
+  /// the session's composite model key is a bare model id with no
+  /// "provider/" prefix (e.g. sessions created before composite keys
+  /// became mandatory): `providerName` then parses out as `''` and the
+  /// error would otherwise read `No API key for provider ""`.
+  ProviderConfig? _providerServingModel(String modelId) {
+    for (final candidate in providerService.providers()) {
+      if (candidate.modelById(modelId) != null) return candidate;
+    }
+    return null;
+  }
+
+  /// Append a compact, error-only LSP diagnostics block to the tool
+  /// result sent back to the API on the SAME turn a write/edit ran.
+  ///
+  /// The full diagnostic list still reaches the model on later turns
+  /// via the persisted `<crux-lsp>` payload (see
+  /// [_buildToolResultForPersist]); this block closes the same-turn
+  /// feedback loop so the model can self-correct immediately, at a
+  /// deliberately small token budget ([kSameTurnMaxDiagnostics]
+  /// entries, [kSameTurnMaxMessageChars] chars per message). Returns
+  /// [result]'s output unchanged when there is nothing error-level
+  /// to report (or no LSP metadata at all).
+  static String _outputWithSameTurnLspDiagnostics(
+    ToolCall call,
+    ToolResult result,
+    String projectPath,
+  ) {
+    final lsp = result.metadata['lsp'];
+    if (lsp is! List || lsp.isEmpty) return result.output;
+    final block = reportDiagnosticsSameTurn(
+      relativeFilePathFromCall(call, projectPath),
+      lsp.cast<LspDiagnostic>(),
+    );
+    if (block.isEmpty) return result.output;
+    return '${result.output}\n\n$block';
+  }
+
   ({String callId, String output, String meta}) _buildToolResultForPersist(
     String callId,
     ToolResult result,
@@ -1574,7 +1647,11 @@ class ChatTurnExecutor {
     if (payload.isEmpty) {
       return (callId: callId, output: result.output, meta: meta ?? '');
     }
-    return (callId: callId, output: '${result.output}$payload', meta: meta ?? '');
+    return (
+      callId: callId,
+      output: '${result.output}$payload',
+      meta: meta ?? '',
+    );
   }
 
   static String _jsonString(String s) {
@@ -1694,11 +1771,7 @@ class ChatTurnExecutor {
         'tokensBeforeAbortEstimate': pending.abortedInputTokensEstimate,
       };
     }
-    return ToolResult(
-      title: title,
-      output: body,
-      metadata: metadata,
-    );
+    return ToolResult(title: title, output: body, metadata: metadata);
   }
 
   /// Dispose of the executor and its LLM client.

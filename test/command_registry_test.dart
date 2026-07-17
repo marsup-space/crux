@@ -83,17 +83,13 @@ void main() {
 
     test('base commands are always present', () {
       // Debug off
-      final offNames = CommandRegistry.instance.all
-          .map((c) => c.name)
-          .toList();
+      final offNames = CommandRegistry.instance.all.map((c) => c.name).toList();
       expect(offNames, contains('/model'));
       expect(offNames, contains('/new'));
       expect(offNames, contains('/session'));
-      expect(offNames, contains('/clear'));
       expect(offNames, contains('/compact'));
       expect(offNames, contains('/help'));
       expect(offNames, contains('/theme'));
-      expect(offNames, contains('/history'));
       expect(offNames, contains('/provider'));
       expect(offNames, contains('/think'));
       expect(offNames, contains('/temperature'));
@@ -103,6 +99,7 @@ void main() {
       expect(offNames, contains('/debug'));
       expect(offNames, contains('/continue'));
       expect(offNames, contains('/retry'));
+      expect(offNames, contains('/undo'));
       expect(offNames, contains('/rename'));
 
       // Debug on
@@ -143,17 +140,20 @@ void main() {
       expect(cmd.aliases, contains('/重试'));
     });
 
-    test('/rename exposes /重命名 as a Chinese alias and is available mid-stream', () {
-      // /rename only mutates the session row, not the in-flight chat
-      // stream, so it's safe to invoke while the AI is responding.
-      // Mirrors the /continue and /retry alias tests.
-      final cmd = findCommand('/rename');
-      expect(cmd, isNotNull);
-      expect(cmd!.name, equals('/rename'));
-      expect(cmd.aliases, contains('/重命名'));
-      expect(cmd.params, equals(['title']));
-      expect(cmd.availableDuringResponse, isTrue);
-    });
+    test(
+      '/rename exposes /重命名 as a Chinese alias and is available mid-stream',
+      () {
+        // /rename only mutates the session row, not the in-flight chat
+        // stream, so it's safe to invoke while the AI is responding.
+        // Mirrors the /continue and /retry alias tests.
+        final cmd = findCommand('/rename');
+        expect(cmd, isNotNull);
+        expect(cmd!.name, equals('/rename'));
+        expect(cmd.aliases, contains('/重命名'));
+        expect(cmd.params, equals(['title']));
+        expect(cmd.availableDuringResponse, isTrue);
+      },
+    );
 
     test('SlashCommand.allNames includes the primary name and aliases', () {
       final cmd = findCommand('/continue')!;
@@ -182,17 +182,20 @@ void main() {
       expect(names, contains('/continue'));
     });
 
-    test('/continue and /retry are not available during an active response', () {
-      // The whole point of these commands is to act on a round that
-      // has finished (or errored out). Sending them mid-stream would
-      // race with the in-flight chat service call.
-      final cont = findCommand('/continue');
-      final retry = findCommand('/retry');
-      expect(cont, isNotNull);
-      expect(retry, isNotNull);
-      expect(cont!.availableDuringResponse, isFalse);
-      expect(retry!.availableDuringResponse, isFalse);
-    });
+    test(
+      '/continue and /retry are not available during an active response',
+      () {
+        // The whole point of these commands is to act on a round that
+        // has finished (or errored out). Sending them mid-stream would
+        // race with the in-flight chat service call.
+        final cont = findCommand('/continue');
+        final retry = findCommand('/retry');
+        expect(cont, isNotNull);
+        expect(retry, isNotNull);
+        expect(cont!.availableDuringResponse, isFalse);
+        expect(retry!.availableDuringResponse, isFalse);
+      },
+    );
   });
 
   group('Top-level registry helpers', () {
@@ -218,8 +221,7 @@ void main() {
       // `/debug` is a prefix match, so the per-tier
       // guarantee is: every prefix-match command must
       // outrank every non-prefix match.
-      final prefixMatches =
-          names.where((n) => n.startsWith('/d')).toList();
+      final prefixMatches = names.where((n) => n.startsWith('/d')).toList();
       // With debug off, only `/debug` is a prefix match.
       expect(prefixMatches, equals(['/debug']));
     });
@@ -251,13 +253,16 @@ void main() {
       expect(findCommand('/d-toast'), isNotNull);
     });
 
-    test('/d-toast has a single message param and is available during response', () {
-      CommandRegistry.instance.enableDebug();
-      final cmd = findCommand('/d-toast');
-      expect(cmd, isNotNull);
-      expect(cmd!.params, equals(['message']));
-      expect(cmd.availableDuringResponse, isTrue);
-    });
+    test(
+      '/d-toast has a single message param and is available during response',
+      () {
+        CommandRegistry.instance.enableDebug();
+        final cmd = findCommand('/d-toast');
+        expect(cmd, isNotNull);
+        expect(cmd!.params, equals(['message']));
+        expect(cmd.availableDuringResponse, isTrue);
+      },
+    );
 
     test('/debug takes no params and is available during response', () {
       final cmd = findCommand('/debug');
@@ -279,12 +284,12 @@ void main() {
     });
 
     test('prefix query returns matching commands', () {
-      // /con matches /continue as a prefix. /clear also starts
-      // with /cle, not /con, so it should NOT appear.
+      // /con matches /continue as a prefix. /compact starts
+      // with /com, not /con, so it should NOT appear.
       final hits = filterCommands('/con');
       final names = hits.map((c) => c.name).toList();
       expect(names, contains('/continue'));
-      expect(names, isNot(contains('/clear')));
+      expect(names, isNot(contains('/compact')));
     });
 
     test('substring query still matches', () {
@@ -314,12 +319,12 @@ void main() {
     });
 
     test('exact matches outrank prefix matches in display order', () {
-      // `/c` is a prefix of `/clear`, `/compact`, `/continue`.
-      // None of them equals `/c` exactly, so the prefix tier
-      // applies to all. The shorter candidate wins, so
-      // `/clear` should rank first.
+      // `/c` is a prefix of `/compact` and `/continue`.
+      // Neither equals `/c` exactly, so the prefix tier
+      // applies to both. The shorter candidate wins, so
+      // `/compact` should rank first.
       final hits = filterCommands('/c');
-      expect(hits.first.name, equals('/clear'));
+      expect(hits.first.name, equals('/compact'));
     });
 
     test('returns matches ordered by descending score', () {
@@ -351,8 +356,11 @@ void main() {
       if (firstNonPrefix >= 0) {
         final lastPrefix = firstNonPrefix - 1;
         for (var i = 0; i <= lastPrefix; i++) {
-          expect(onNames[i].startsWith('/d'), isTrue,
-              reason: '${onNames[i]} should be a /d prefix match');
+          expect(
+            onNames[i].startsWith('/d'),
+            isTrue,
+            reason: '${onNames[i]} should be a /d prefix match',
+          );
         }
       }
       // `/debug` is shorter than every `/d-*` command, so
@@ -474,6 +482,57 @@ void main() {
       ];
       final filtered = filterSuggestions(suggestions, 'xyzzy');
       expect(filtered, isEmpty);
+    });
+  });
+
+  group('P0 command-set fixes', () {
+    setUp(() {
+      CommandRegistry.instance.disableDebug();
+    });
+
+    test('/undo is registered with the /撤销 alias', () {
+      final cmd = findCommand('/undo');
+      expect(cmd, isNotNull);
+      expect(cmd!.name, equals('/undo'));
+      expect(cmd.aliases, contains('/撤销'));
+      // Mid-stream undo would race the in-flight turn — the
+      // executor rejects it, so the overlay hides it as well.
+      expect(cmd.availableDuringResponse, isFalse);
+    });
+
+    test('findCommand resolves /撤销 back to /undo', () {
+      final primary = findCommand('/undo');
+      final byAlias = findCommand('/撤销');
+      expect(byAlias, isNotNull);
+      expect(byAlias, same(primary));
+    });
+
+    test('filterCommands surfaces /undo via the Chinese alias', () {
+      final hits = filterCommands('/撤');
+      final names = hits.map((c) => c.name).toList();
+      expect(names, contains('/undo'));
+    });
+
+    test('/clear and /history are no longer registered', () {
+      // Locked P0 decision: both commands were dropped (they were
+      // never implemented). They must not appear in Tab completion
+      // or in findCommand lookups.
+      expect(findCommand('/clear'), isNull);
+      expect(findCommand('/history'), isNull);
+      final names = filterCommands('').map((c) => c.name).toList();
+      expect(names, isNot(contains('/clear')));
+      expect(names, isNot(contains('/history')));
+    });
+
+    test('/help takes no params and is available during response', () {
+      // The old entry promised `commands|models|shortcuts` topic
+      // params that were never implemented; the real /help prints
+      // one generated sheet, so it takes no params.
+      final cmd = findCommand('/help');
+      expect(cmd, isNotNull);
+      expect(cmd!.params, isEmpty);
+      expect(cmd.suggestionsPerParam, isEmpty);
+      expect(cmd.availableDuringResponse, isTrue);
     });
   });
 }

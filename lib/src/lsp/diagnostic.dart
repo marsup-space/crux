@@ -63,7 +63,12 @@ List<LspDiagnostic> errorDiagnostics(List<LspDiagnostic> diagnostics) {
 
 /// Pretty-print a single diagnostic for the agent. Lines are 1-based
 /// (LSP is 0-based; the LLM thinks in editor coordinates).
-String prettyDiagnostic(LspDiagnostic d) {
+///
+/// When [maxMessageChars] is > 0, an over-long `message` is truncated
+/// to that many characters with an ellipsis — a pathological analyzer
+/// (multi-KB single diagnostic) must not blow up the token budget of
+/// whatever surface embeds the line.
+String prettyDiagnostic(LspDiagnostic d, {int maxMessageChars = 0}) {
   final severity = switch (d.severity) {
     LspDiagnosticSeverity.error => 'ERROR',
     LspDiagnosticSeverity.warning => 'WARN',
@@ -73,20 +78,61 @@ String prettyDiagnostic(LspDiagnostic d) {
   };
   final line = d.range.start.line + 1;
   final col = d.range.start.character + 1;
-  return '$severity [$line:$col] ${d.message}';
+  var message = d.message;
+  if (maxMessageChars > 0 && message.length > maxMessageChars) {
+    message = '${message.substring(0, maxMessageChars)}…';
+  }
+  return '$severity [$line:$col] $message';
 }
 
 /// Render diagnostics for one file into the agent-facing block. Returns
 /// the empty string if there are no error-severity items.
-String reportDiagnostics(String file, List<LspDiagnostic> issues) {
-  final errors = issues.where((d) => d.severity == LspDiagnosticSeverity.error);
+///
+/// Error filtering follows [errorDiagnostics] semantics: a missing
+/// `severity` defaults to Error per the LSP spec. [maxPerFile] caps
+/// how many entries are shown (remainder is summarized as
+/// `... and N more`); [maxMessageChars] truncates each message
+/// (0 = no truncation). Both knobs exist so same-turn tool results
+/// can spend a much smaller budget than the historical per-file cap.
+String reportDiagnostics(
+  String file,
+  List<LspDiagnostic> issues, {
+  int maxPerFile = _kMaxPerFile,
+  int maxMessageChars = 0,
+}) {
+  final errors = errorDiagnostics(issues);
   if (errors.isEmpty) return '';
-  final shown = errors.take(_kMaxPerFile).map(prettyDiagnostic).join('\n');
+  final shown = errors
+      .take(maxPerFile)
+      .map((d) => prettyDiagnostic(d, maxMessageChars: maxMessageChars))
+      .join('\n');
   final total = errors.length;
-  final suffix = total > _kMaxPerFile
-      ? '\n... and ${total - _kMaxPerFile} more'
+  final suffix = total > maxPerFile
+      ? '\n... and ${total - maxPerFile} more'
       : '';
   return '<diagnostics file="$file">\n$shown$suffix\n</diagnostics>';
+}
+
+/// Same-turn feedback budget: how many error diagnostics a write/edit
+/// tool result may carry back to the API on the turn that produced
+/// them, and how long each message may be. Kept deliberately small —
+/// the model only needs enough signal to self-correct; the full list
+/// (up to [_kMaxPerFile]) travels in the persisted `<crux-lsp>` payload.
+const int kSameTurnMaxDiagnostics = 5;
+const int kSameTurnMaxMessageChars = 160;
+
+/// [reportDiagnostics] with the same-turn budget applied. Used by the
+/// chat turn executor to append a compact error-only block to the
+/// tool result sent to the API on the very turn a write/edit ran —
+/// closing the loop that previously only opened on the NEXT turn
+/// (via the persisted payload replayed from history).
+String reportDiagnosticsSameTurn(String file, List<LspDiagnostic> issues) {
+  return reportDiagnostics(
+    file,
+    issues,
+    maxPerFile: kSameTurnMaxDiagnostics,
+    maxMessageChars: kSameTurnMaxMessageChars,
+  );
 }
 
 /// Same as [reportDiagnostics] but uses a relative path for display.
@@ -120,16 +166,18 @@ String encodeLspDiagnostics(List<LspDiagnostic> diagnostics) {
   if (diagnostics.isEmpty) return '';
   return jsonEncode(
     diagnostics
-        .map((d) => {
-              'range': {
-                'start': d.range.start.toJson(),
-                'end': d.range.end.toJson(),
-              },
-              'message': d.message,
-              'severity': d.severity?.wireValue,
-              'source': d.source,
-              'code': d.code,
-            })
+        .map(
+          (d) => {
+            'range': {
+              'start': d.range.start.toJson(),
+              'end': d.range.end.toJson(),
+            },
+            'message': d.message,
+            'severity': d.severity?.wireValue,
+            'source': d.source,
+            'code': d.code,
+          },
+        )
         .toList(growable: false),
   );
 }
@@ -158,7 +206,8 @@ String buildLspPayload(List<LspDiagnostic> diagnostics) {
 /// best-effort. The visible content is the original `content` with
 /// the marker and the surrounding blank lines removed.
 ({String visible, List<LspDiagnostic> diagnostics}) extractLspPayload(
-    String content) {
+  String content,
+) {
   final openTagIdx = content.indexOf(lspTagOpen);
   if (openTagIdx == -1) {
     return (visible: content, diagnostics: const <LspDiagnostic>[]);
@@ -212,15 +261,22 @@ List<LspDiagnostic> _decodeLspPayload(String body) {
 }
 
 LspDiagnostic _diagnosticFromMap(Map<String, dynamic> json) {
-  final rangeJson = (json['range'] as Map?)?.cast<String, dynamic>() ?? const {};
+  final rangeJson =
+      (json['range'] as Map?)?.cast<String, dynamic>() ?? const {};
   final startJson =
       (rangeJson['start'] as Map?)?.cast<String, dynamic>() ?? const {};
   final endJson =
       (rangeJson['end'] as Map?)?.cast<String, dynamic>() ?? const {};
   return LspDiagnostic(
     range: LspRange(
-      LspPosition(startJson['line'] as int? ?? 0, startJson['character'] as int? ?? 0),
-      LspPosition(endJson['line'] as int? ?? 0, endJson['character'] as int? ?? 0),
+      LspPosition(
+        startJson['line'] as int? ?? 0,
+        startJson['character'] as int? ?? 0,
+      ),
+      LspPosition(
+        endJson['line'] as int? ?? 0,
+        endJson['character'] as int? ?? 0,
+      ),
     ),
     message: json['message'] as String? ?? '',
     severity: LspDiagnosticSeverity.fromJson(json['severity']),

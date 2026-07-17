@@ -273,8 +273,9 @@ class ChatInputState extends State<ChatInput> {
     // controller's mutable Map<int, List<ImageAttachment>>. The
     // setter sites still mutate the controller directly — see
     // slice 4 / bug fix e7543f7 for those.
-    final pending = component.sessionController.cubit.state
-        .pendingImagesFor(sessionId);
+    final pending = component.sessionController.cubit.state.pendingImagesFor(
+      sessionId,
+    );
     if (pending.isEmpty) return;
 
     final text = component.textController.text;
@@ -330,8 +331,9 @@ class ChatInputState extends State<ChatInput> {
     // the [role == 'user'] indices — but pulling from the cubit
     // keeps the chat_input on the cubit side of the read boundary
     // for message data.
-    final messages = component.sessionController.cubit.state
-        .messagesFor(component.sessionController.currentSessionId ?? -1);
+    final messages = component.sessionController.cubit.state.messagesFor(
+      component.sessionController.currentSessionId ?? -1,
+    );
     final userIndices = <int>[];
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].role == 'user') userIndices.add(i);
@@ -364,8 +366,9 @@ class ChatInputState extends State<ChatInput> {
   }
 
   void _jumpToNextUserInput() {
-    final messages = component.sessionController.cubit.state
-        .messagesFor(component.sessionController.currentSessionId ?? -1);
+    final messages = component.sessionController.cubit.state.messagesFor(
+      component.sessionController.currentSessionId ?? -1,
+    );
     final userIndices = <int>[];
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].role == 'user') userIndices.add(i);
@@ -455,8 +458,7 @@ class ChatInputState extends State<ChatInput> {
           j++;
         }
         segments.add(StyledTextSegment(r'$', invisibleTrigger));
-        segments.add(
-            StyledTextSegment(text.substring(i + 1, j), chipStyle));
+        segments.add(StyledTextSegment(text.substring(i + 1, j), chipStyle));
         i = j;
         continue;
       }
@@ -471,8 +473,7 @@ class ChatInputState extends State<ChatInput> {
           j++;
         }
         segments.add(StyledTextSegment('@', invisibleTrigger));
-        segments.add(
-            StyledTextSegment(text.substring(i + 1, j), chipStyle));
+        segments.add(StyledTextSegment(text.substring(i + 1, j), chipStyle));
         i = j;
         continue;
       }
@@ -492,8 +493,7 @@ class ChatInputState extends State<ChatInput> {
             _isPathChar(text[j + 1])) {
           break;
         }
-        if (text[j] == '[' &&
-            _imageMarkerPattern.hasMatch(text.substring(j))) {
+        if (text[j] == '[' && _imageMarkerPattern.hasMatch(text.substring(j))) {
           break;
         }
         j++;
@@ -534,15 +534,15 @@ class ChatInputState extends State<ChatInput> {
     // fields go through ChatTurnCubit, its message data through
     // SessionCubit. chat_input now holds zero direct reads of the
     // runtime's mutable fields.
-    final isStreaming = sessionId != null &&
+    final isStreaming =
+        sessionId != null &&
         component.sessionController.chatTurnCubit.state
             .sessionState(sessionId)
             .isResponding;
     final wasInterrupted = component.turnOrchestrator.wasInterrupted(sessionId);
 
     final pendingImages = sessionId != null
-        ? component.sessionController.cubit.state
-            .pendingImagesFor(sessionId)
+        ? component.sessionController.cubit.state.pendingImagesFor(sessionId)
         : <ImageAttachment>[];
     final hasImages = pendingImages.isNotEmpty;
 
@@ -564,7 +564,7 @@ class ChatInputState extends State<ChatInput> {
               ? 'Press Ctrl+C again to quit...'
               : _keyHandler.escInterruptHint
               ? 'Press ESC again to interrupt...'
-              : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
+              : 'Enter message to queue, Ctrl+C or ESC×2 to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
         ? 'Response was interrupted. Type a new message...'
         : hasImages
@@ -592,7 +592,8 @@ class ChatInputState extends State<ChatInput> {
               style: inputStyle,
               placeholder: placeholder,
               onKeyEvent: _keyHandler.handleKeyEvent,
-              onPaste: (pastedText) => _paste.handlePaste(pastedText, sessionId),
+              onPaste: (pastedText) =>
+                  _paste.handlePaste(pastedText, sessionId),
               wordBoundaryProvider: cjkWordBoundaryProvider,
               styleSegments: styleSegments,
             ),

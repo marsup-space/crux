@@ -25,6 +25,7 @@ import 'cmd_temperature.dart';
 import 'cmd_project.dart';
 import 'cmd_tldr.dart';
 import 'cmd_compact.dart';
+import 'cmd_help.dart';
 import 'cmd_continue.dart';
 import 'cmd_retry.dart';
 import 'cmd_undo.dart';
@@ -69,6 +70,14 @@ class CommandContext {
   final VoidCallback? showFullpane;
   final RecentProjectsStore? recentProjectsStore;
 
+  /// Appends a local, UI-only info message to the *visible* chat
+  /// history. The wired implementation persists the sheet under the
+  /// `info` role (never sent to the LLM — see cmd_help.dart) and
+  /// refreshes the on-screen history in one step. `null` in tests
+  /// and legacy harnesses, in which case `/help` falls back to
+  /// persisting through [SessionStore.messageStore] directly.
+  final Future<void> Function(String markdown)? appendLocalMessage;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -101,6 +110,7 @@ class CommandContext {
     this.quitApp,
     this.showFullpane,
     this.recentProjectsStore,
+    this.appendLocalMessage,
   });
 }
 
@@ -137,6 +147,8 @@ class CommandExecutor {
         await executeTldr(parts, ctx);
       case '/compact':
         await executeCompact(ctx);
+      case '/help':
+        await executeHelp(ctx);
       case '/continue':
       case '/继续':
         await executeContinue(ctx);

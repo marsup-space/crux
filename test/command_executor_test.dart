@@ -19,7 +19,9 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'package:crux/src/commands/cmd_help.dart';
 import 'package:crux/src/commands/command_executor.dart';
+import 'package:crux/src/commands/registry.dart';
 import 'package:crux/src/components/ui/toast.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/models/session.dart';
@@ -85,7 +87,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () => {},
         sendTurn: sendTurnImpl,
@@ -342,7 +344,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -442,7 +444,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -494,7 +496,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -535,7 +537,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -590,7 +592,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -638,133 +640,139 @@ void main() {
       }
     });
 
-    test('wipes the last round and copies the user text into the input box',
-        () async {
-      // Mirrors the /retry happy-path test, but expects setInputText
-      // to fire with the original user text instead of sendTurn. The
-      // user wanted to edit their prompt before resending, so we
-      // never kick off a new turn.
-      const userText = 'reword this for me';
-      final userMsg = await store.messageStore.addMessage(
-        session.id,
-        role: 'user',
-        content: userText,
-      );
-      await store.messageStore.addMessage(
-        session.id,
-        role: 'ai',
-        content: 'Sure, here is a rewrite...',
-      );
-      final currentMessages = await store.messageStore.getMessages(session.id);
+    test(
+      'wipes the last round and copies the user text into the input box',
+      () async {
+        // Mirrors the /retry happy-path test, but expects setInputText
+        // to fire with the original user text instead of sendTurn. The
+        // user wanted to edit their prompt before resending, so we
+        // never kick off a new turn.
+        const userText = 'reword this for me';
+        final userMsg = await store.messageStore.addMessage(
+          session.id,
+          role: 'user',
+          content: userText,
+        );
+        await store.messageStore.addMessage(
+          session.id,
+          role: 'ai',
+          content: 'Sure, here is a rewrite...',
+        );
+        final currentMessages = await store.messageStore.getMessages(
+          session.id,
+        );
 
-      final events = <String>[];
-      String? inputText;
-      await CommandExecutor().execute(
-        '/undo',
-        CommandContext(
-          store: store,
-          providerService: providerService,
-          providerServiceReady: false,
-          webProviderRegistry: WebProviderRegistry(),
-          currentSession: session,
-          currentSessionId: session.id,
-          sessions: [session],
-          currentMessages: currentMessages,
-          projectPath: tempDir.path,
-          refresh: () {},
-          showToast: (message, {ToastMode? mode}) {},
-          switchSession: (_) async {},
-          initSessions: () async {},
-          createNewSession: () async {},
-          runtime: (id) => runtime,
-          persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
-          persistTemperature: (_) async {},
-          resolveAuxiliaryModel: () {},
-          sendTurn: ({String? text}) async {
-            events.add('sendTurn:${text ?? '<null>'}');
-          },
-          findLastUserMessage: () async {
-            events.add('findLastUserMessage');
-            return userMsg;
-          },
-          deleteMessagesFrom: (fromId) async {
-            events.add('deleteMessagesFrom:$fromId');
-          },
-          sendBtwTurn: (_) async {},
-          clearBtwTurns: (_) {},
-          setInputText: (text) {
-            events.add('setInputText:$text');
-            inputText = text;
-          },
-        ),
-      );
+        final events = <String>[];
+        String? inputText;
+        await CommandExecutor().execute(
+          '/undo',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            webProviderRegistry: WebProviderRegistry(),
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: currentMessages,
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {},
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            persistChatDisplayMode: (_) {},
+            persistTemperature: (_) async {},
+            resolveAuxiliaryModel: () {},
+            sendTurn: ({String? text}) async {
+              events.add('sendTurn:${text ?? '<null>'}');
+            },
+            findLastUserMessage: () async {
+              events.add('findLastUserMessage');
+              return userMsg;
+            },
+            deleteMessagesFrom: (fromId) async {
+              events.add('deleteMessagesFrom:$fromId');
+            },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
+            setInputText: (text) {
+              events.add('setInputText:$text');
+              inputText = text;
+            },
+          ),
+        );
 
-      expect(
-        events,
-        equals(<String>[
-          'findLastUserMessage',
-          'deleteMessagesFrom:${userMsg.id}',
-          'setInputText:$userText',
-        ]),
-      );
-      // Critical: /undo must NOT call sendTurn, otherwise we'd
-      // race the freshly-cleared message cache with a re-fire of
-      // the same prompt.
-      expect(events, isNot(contains(matches(RegExp(r'^sendTurn:')))));
-      expect(inputText, equals(userText));
-    });
+        expect(
+          events,
+          equals(<String>[
+            'findLastUserMessage',
+            'deleteMessagesFrom:${userMsg.id}',
+            'setInputText:$userText',
+          ]),
+        );
+        // Critical: /undo must NOT call sendTurn, otherwise we'd
+        // race the freshly-cleared message cache with a re-fire of
+        // the same prompt.
+        expect(events, isNot(contains(matches(RegExp(r'^sendTurn:')))));
+        expect(inputText, equals(userText));
+      },
+    );
 
-    test('is a no-op (no wipe, no input change) when AI is responding',
-        () async {
-      runtime.isResponding = true;
+    test(
+      'is a no-op (no wipe, no input change) when AI is responding',
+      () async {
+        runtime.isResponding = true;
 
-      var deleteCalls = 0;
-      var sendTurnCalls = 0;
-      String? inputText;
-      await CommandExecutor().execute(
-        '/undo',
-        CommandContext(
-          store: store,
-          providerService: providerService,
-          providerServiceReady: false,
-          webProviderRegistry: WebProviderRegistry(),
-          currentSession: session,
-          currentSessionId: session.id,
-          sessions: [session],
-          currentMessages: const <Message>[],
-          projectPath: tempDir.path,
-          refresh: () {},
-          showToast: (message, {ToastMode? mode}) {},
-          switchSession: (_) async {},
-          initSessions: () async {},
-          createNewSession: () async {},
-          runtime: (id) => runtime,
-          persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
-          persistTemperature: (_) async {},
-          resolveAuxiliaryModel: () {},
-          sendTurn: ({String? text}) async {
-            sendTurnCalls++;
-          },
-          findLastUserMessage: () async => null,
-          deleteMessagesFrom: (fromId) async {
-            deleteCalls++;
-          },
-          sendBtwTurn: (_) async {},
-          clearBtwTurns: (_) {},
-          setInputText: (text) {
-            inputText = text;
-          },
-        ),
-      );
+        var deleteCalls = 0;
+        var sendTurnCalls = 0;
+        String? inputText;
+        await CommandExecutor().execute(
+          '/undo',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            webProviderRegistry: WebProviderRegistry(),
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: const <Message>[],
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {},
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            persistChatDisplayMode: (_) {},
+            persistTemperature: (_) async {},
+            resolveAuxiliaryModel: () {},
+            sendTurn: ({String? text}) async {
+              sendTurnCalls++;
+            },
+            findLastUserMessage: () async => null,
+            deleteMessagesFrom: (fromId) async {
+              deleteCalls++;
+            },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {},
+            setInputText: (text) {
+              inputText = text;
+            },
+          ),
+        );
 
-      expect(deleteCalls, equals(0));
-      expect(sendTurnCalls, equals(0));
-      // No prior user message was found, so the input box should
-      // not be touched at all (the responding-state toast wins).
-      expect(inputText, isNull);
-    });
+        expect(deleteCalls, equals(0));
+        expect(sendTurnCalls, equals(0));
+        // No prior user message was found, so the input box should
+        // not be touched at all (the responding-state toast wins).
+        expect(inputText, isNull);
+      },
+    );
 
     test('is a no-op when there is no user message to undo', () async {
       var deleteCalls = 0;
@@ -789,7 +797,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -848,7 +856,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {
@@ -871,66 +879,70 @@ void main() {
       expect(sendTurnCalls, equals(0));
     });
 
-    test('still wipes and restores the input when setInputText is null',
-        () async {
-      // Backwards-compat: a caller that doesn't wire setInputText
-      // (e.g. a legacy test harness) should still get the DB wipe
-      // and the btw-chain clear. The input-box side-effect simply
-      // becomes a no-op, mirroring how other optional callbacks
-      // degrade.
-      const userText = 'draft me a release note';
-      final userMsg = await store.messageStore.addMessage(
-        session.id,
-        role: 'user',
-        content: userText,
-      );
-      await store.messageStore.addMessage(
-        session.id,
-        role: 'ai',
-        content: 'Here is your release note...',
-      );
-      final currentMessages = await store.messageStore.getMessages(session.id);
+    test(
+      'still wipes and restores the input when setInputText is null',
+      () async {
+        // Backwards-compat: a caller that doesn't wire setInputText
+        // (e.g. a legacy test harness) should still get the DB wipe
+        // and the btw-chain clear. The input-box side-effect simply
+        // becomes a no-op, mirroring how other optional callbacks
+        // degrade.
+        const userText = 'draft me a release note';
+        final userMsg = await store.messageStore.addMessage(
+          session.id,
+          role: 'user',
+          content: userText,
+        );
+        await store.messageStore.addMessage(
+          session.id,
+          role: 'ai',
+          content: 'Here is your release note...',
+        );
+        final currentMessages = await store.messageStore.getMessages(
+          session.id,
+        );
 
-      var deleteFromId = -1;
-      var clearBtwCalls = 0;
-      await CommandExecutor().execute(
-        '/undo',
-        CommandContext(
-          store: store,
-          providerService: providerService,
-          providerServiceReady: false,
-          webProviderRegistry: WebProviderRegistry(),
-          currentSession: session,
-          currentSessionId: session.id,
-          sessions: [session],
-          currentMessages: currentMessages,
-          projectPath: tempDir.path,
-          refresh: () {},
-          showToast: (message, {ToastMode? mode}) {},
-          switchSession: (_) async {},
-          initSessions: () async {},
-          createNewSession: () async {},
-          runtime: (id) => runtime,
-          persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
-          persistTemperature: (_) async {},
-          resolveAuxiliaryModel: () {},
-          sendTurn: ({String? text}) async {},
-          findLastUserMessage: () async => userMsg,
-          deleteMessagesFrom: (fromId) async {
-            deleteFromId = fromId;
-          },
-          sendBtwTurn: (_) async {},
-          clearBtwTurns: (_) {
-            clearBtwCalls++;
-          },
-          // setInputText intentionally omitted.
-        ),
-      );
+        var deleteFromId = -1;
+        var clearBtwCalls = 0;
+        await CommandExecutor().execute(
+          '/undo',
+          CommandContext(
+            store: store,
+            providerService: providerService,
+            providerServiceReady: false,
+            webProviderRegistry: WebProviderRegistry(),
+            currentSession: session,
+            currentSessionId: session.id,
+            sessions: [session],
+            currentMessages: currentMessages,
+            projectPath: tempDir.path,
+            refresh: () {},
+            showToast: (message, {ToastMode? mode}) {},
+            switchSession: (_) async {},
+            initSessions: () async {},
+            createNewSession: () async {},
+            runtime: (id) => runtime,
+            persistThinkingLevel: (_) {},
+            persistChatDisplayMode: (_) {},
+            persistTemperature: (_) async {},
+            resolveAuxiliaryModel: () {},
+            sendTurn: ({String? text}) async {},
+            findLastUserMessage: () async => userMsg,
+            deleteMessagesFrom: (fromId) async {
+              deleteFromId = fromId;
+            },
+            sendBtwTurn: (_) async {},
+            clearBtwTurns: (_) {
+              clearBtwCalls++;
+            },
+            // setInputText intentionally omitted.
+          ),
+        );
 
-      expect(deleteFromId, equals(userMsg.id));
-      expect(clearBtwCalls, equals(1));
-    });
+        expect(deleteFromId, equals(userMsg.id));
+        expect(clearBtwCalls, equals(1));
+      },
+    );
   });
 
   group('CommandExecutor — /btw', () {
@@ -986,7 +998,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
@@ -1036,7 +1048,7 @@ void main() {
             createNewSession: () async {},
             runtime: (id) => runtime,
             persistThinkingLevel: (_) {},
-                  persistChatDisplayMode: (_) {},
+            persistChatDisplayMode: (_) {},
             persistTemperature: (_) async {},
             resolveAuxiliaryModel: () {},
             sendTurn: ({String? text}) async {},
@@ -1094,7 +1106,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
@@ -1142,7 +1154,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () {},
           sendTurn: ({String? text}) async {},
@@ -1207,7 +1219,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () => {},
         sendTurn: ({String? text}) async {},
@@ -1345,7 +1357,7 @@ void main() {
           createNewSession: () async {},
           runtime: (id) => runtime,
           persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
+          persistChatDisplayMode: (_) {},
           persistTemperature: (_) async {},
           resolveAuxiliaryModel: () => {},
           sendTurn: ({String? text}) async {},
@@ -1434,7 +1446,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1604,7 +1616,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1645,7 +1657,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1675,8 +1687,9 @@ void main() {
     // Capture every toast the executor fires so a test can
     // assert on its text + mode (most importantly: that an
     // attempted quit while the agent is busy was rejected
-    // with the "press Ctrl+C×2" message rather than
-    // actually calling the quit callback).
+    // with the Ctrl+C affordance message — cancel the
+    // response, or Ctrl+C×2 to exit — rather than actually
+    // calling the quit callback).
     final List<({String message, ToastMode? mode})> toasts = [];
 
     setUp(() async {
@@ -1722,7 +1735,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1776,11 +1789,9 @@ void main() {
       expect(toasts.first.mode, ToastMode.error);
     });
 
-    test(
-        'rejects /quit when a *background* session is running, even '
+    test('rejects /quit when a *background* session is running, even '
         'if the current one is idle (regression test for the bug '
-        'where /quit slipped through on a different session)',
-        () async {
+        'where /quit slipped through on a different session)', () async {
       // Build a second session and mark *it* as running while the
       // current one is idle. The old check only looked at the
       // current session's `isResponding`, so this case used to let
@@ -1812,7 +1823,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1823,8 +1834,11 @@ void main() {
         quitApp: () => quitCalls++,
       );
       await CommandExecutor().execute('/quit', ctx);
-      expect(quitCalls, 0,
-          reason: 'must not quit when any background session is running');
+      expect(
+        quitCalls,
+        0,
+        reason: 'must not quit when any background session is running',
+      );
       expect(toasts, hasLength(1));
       expect(toasts.first.message, contains('Ctrl+C'));
       expect(toasts.first.mode, ToastMode.error);
@@ -1853,7 +1867,7 @@ void main() {
         createNewSession: () async {},
         runtime: (id) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1918,7 +1932,7 @@ void main() {
         createNewSession: () async {},
         runtime: (_) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (_) async {},
         resolveAuxiliaryModel: () {},
         sendTurn: ({String? text}) async {},
@@ -1988,41 +2002,48 @@ void main() {
         final toasts = <({String message, ToastMode? mode})>[];
         final ctx = buildContext(toasts);
         await CommandExecutor().execute('/temperature $bad', ctx);
-        expect(runtime.temperatureOverride, isNull,
-            reason: 'bad input "$bad" must not mutate runtime');
-        expect(toasts.last.mode, ToastMode.error,
-            reason: 'bad input "$bad" must produce error toast');
+        expect(
+          runtime.temperatureOverride,
+          isNull,
+          reason: 'bad input "$bad" must not mutate runtime',
+        );
+        expect(
+          toasts.last.mode,
+          ToastMode.error,
+          reason: 'bad input "$bad" must produce error toast',
+        );
       }
     });
 
-    test('with no argument reports current state and does not mutate',
-        () async {
-      final toasts = <({String message, ToastMode? mode})>[];
-      final ctx = buildContext(toasts);
-      // No override set yet.
-      await CommandExecutor().execute('/temperature', ctx);
-      expect(toasts, hasLength(1));
-      expect(toasts.first.message, contains('model default'));
-      // Bare-call toast is informational state, not an error or a
-      // transient status change — must render as `info`.
-      expect(toasts.first.mode, ToastMode.info);
-      expect(runtime.temperatureOverride, isNull);
+    test(
+      'with no argument reports current state and does not mutate',
+      () async {
+        final toasts = <({String message, ToastMode? mode})>[];
+        final ctx = buildContext(toasts);
+        // No override set yet.
+        await CommandExecutor().execute('/temperature', ctx);
+        expect(toasts, hasLength(1));
+        expect(toasts.first.message, contains('model default'));
+        // Bare-call toast is informational state, not an error or a
+        // transient status change — must render as `info`.
+        expect(toasts.first.mode, ToastMode.info);
+        expect(runtime.temperatureOverride, isNull);
 
-      // With an override set, the same command reports the override.
-      toasts.clear();
-      runtime.temperatureOverride = 0.4;
-      await CommandExecutor().execute('/temperature', ctx);
-      expect(toasts, hasLength(1));
-      expect(toasts.first.message, contains('0.4'));
-      expect(toasts.first.message, contains('override'));
-      expect(toasts.first.mode, ToastMode.info);
-      // `executeTemperature` only reports when called with no arg;
-      // it should not write the runtime back.
-      expect(runtime.temperatureOverride, 0.4);
-    });
+        // With an override set, the same command reports the override.
+        toasts.clear();
+        runtime.temperatureOverride = 0.4;
+        await CommandExecutor().execute('/temperature', ctx);
+        expect(toasts, hasLength(1));
+        expect(toasts.first.message, contains('0.4'));
+        expect(toasts.first.message, contains('override'));
+        expect(toasts.first.mode, ToastMode.info);
+        // `executeTemperature` only reports when called with no arg;
+        // it should not write the runtime back.
+        expect(runtime.temperatureOverride, 0.4);
+      },
+    );
 
-    test('persists the override through the supplied callback',
-        () async {
+    test('persists the override through the supplied callback', () async {
       final toasts = <({String message, ToastMode? mode})>[];
       SessionRuntimeState? persistedFor;
       double? persistedValue;
@@ -2045,7 +2066,7 @@ void main() {
         createNewSession: () async {},
         runtime: (_) => runtime,
         persistThinkingLevel: (_) {},
-              persistChatDisplayMode: (_) {},
+        persistChatDisplayMode: (_) {},
         persistTemperature: (rt) async {
           persistedFor = rt;
           persistedValue = rt.temperatureOverride;
@@ -2062,23 +2083,22 @@ void main() {
       expect(persistedValue, 0.55);
     });
 
-    test(
-      'with no argument surfaces the model-configured default when '
-      'provider service is ready',
-      () async {
-        // Drop a minimal OpenAI-compatible provider into a separate
-        // subdir, register a model with a non-zero TOML temperature,
-        // and point the session at it. The no-arg toast should
-        // include the resolved value, not just the abstract
-        // "model default" string.
-        final providersDir =
-            await Directory.systemTemp.createTemp('crux_temp_prov_');
-        addTearDown(() async {
-          if (await providersDir.exists()) {
-            await providersDir.delete(recursive: true);
-          }
-        });
-        await File(p.join(providersDir.path, 'tmpl.toml')).writeAsString('''
+    test('with no argument surfaces the model-configured default when '
+        'provider service is ready', () async {
+      // Drop a minimal OpenAI-compatible provider into a separate
+      // subdir, register a model with a non-zero TOML temperature,
+      // and point the session at it. The no-arg toast should
+      // include the resolved value, not just the abstract
+      // "model default" string.
+      final providersDir = await Directory.systemTemp.createTemp(
+        'crux_temp_prov_',
+      );
+      addTearDown(() async {
+        if (await providersDir.exists()) {
+          await providersDir.delete(recursive: true);
+        }
+      });
+      await File(p.join(providersDir.path, 'tmpl.toml')).writeAsString('''
 type = "openai_compatible"
 endpoint_url = "http://localhost:65535/v1"
 
@@ -2092,65 +2112,303 @@ reasoning_effort = "none"
 temperature = 0.6
 stream_lerp = false
 ''');
-        final liveService = ProviderService(
-          userProvidersDir: providersDir.path,
-        );
-        await liveService.initialize();
-        // Reassign so buildContext picks up the live service.
-        providerService = liveService;
-        session = await store.update(
-          session.id,
-          model: 'tmpl/tmpl-model',
-        );
+      final liveService = ProviderService(userProvidersDir: providersDir.path);
+      await liveService.initialize();
+      // Reassign so buildContext picks up the live service.
+      providerService = liveService;
+      session = await store.update(session.id, model: 'tmpl/tmpl-model');
 
-        // No-arg, no override — should include the resolved default.
-        final toasts = <({String message, ToastMode? mode})>[];
-        final ctx = CommandContext(
-          store: store,
-          providerService: providerService,
-          providerServiceReady: true,
-          webProviderRegistry: WebProviderRegistry(),
-          currentSession: session,
-          currentSessionId: session.id,
-          sessions: [session],
-          currentMessages: const <Message>[],
-          projectPath: tempDir.path,
-          refresh: () {},
-          showToast: (message, {ToastMode? mode}) {
-            toasts.add((message: message, mode: mode));
+      // No-arg, no override — should include the resolved default.
+      final toasts = <({String message, ToastMode? mode})>[];
+      final ctx = CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: true,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: (message, {ToastMode? mode}) {
+          toasts.add((message: message, mode: mode));
+        },
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (_) => runtime,
+        persistThinkingLevel: (_) {},
+        persistChatDisplayMode: (_) {},
+        persistTemperature: (_) async {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+      await CommandExecutor().execute('/temperature', ctx);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('model default'));
+      expect(toasts.first.message, contains('0.6'));
+      expect(toasts.first.message, contains('no override'));
+      expect(toasts.first.mode, ToastMode.info);
+
+      // With an override in place, the same toast should still
+      // surface the resolved default — that's the comparison
+      // signal users want when they're deciding what to pick.
+      toasts.clear();
+      runtime.temperatureOverride = 0.85;
+      await CommandExecutor().execute('/temperature', ctx);
+      expect(toasts, hasLength(1));
+      expect(toasts.first.message, contains('0.85'));
+      expect(toasts.first.message, contains('override'));
+      expect(toasts.first.message, contains('default 0.6'));
+      expect(toasts.first.mode, ToastMode.info);
+    });
+  });
+
+  group('CommandExecutor — /help', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      CommandRegistry.instance.disableDebug();
+      tempDir = await Directory.systemTemp.createTemp('crux_help_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      CommandRegistry.instance.disableDebug();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext({
+      void Function(String message, {ToastMode? mode})? onToast,
+      Future<void> Function(String markdown)? appendLocalMessage,
+    }) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: onToast ?? (String message, {ToastMode? mode}) {},
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        persistChatDisplayMode: (_) {},
+        persistTemperature: (_) async {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        appendLocalMessage: appendLocalMessage,
+      );
+    }
+
+    test('fallback path persists the sheet as a local info message', () async {
+      // No appendLocalMessage wired — /help writes the sheet into the
+      // session history under the `info` role (visible on next load,
+      // never sent to the LLM) and tells the user via a toast.
+      final toasts = <String>[];
+      await CommandExecutor().execute(
+        '/help',
+        buildContext(onToast: (m, {ToastMode? mode}) => toasts.add(m)),
+      );
+
+      final msgs = await store.messageStore.getMessages(session.id);
+      final info = msgs.where((m) => m.role == localInfoRole).toList();
+      expect(
+        info,
+        hasLength(1),
+        reason: 'exactly one info row should be written',
+      );
+      final sheet = info.single.content;
+      expect(sheet, contains('/undo'));
+      expect(sheet, contains('/provider'));
+      expect(sheet, contains('ESC'));
+      expect(sheet, contains('Ctrl+C'));
+      expect(sheet, contains('Tab'));
+      // Dropped commands must not be advertised.
+      expect(sheet, isNot(contains('/clear')));
+      expect(sheet, isNot(contains('/history')));
+      // The user is told where the sheet went.
+      expect(toasts, hasLength(1));
+      expect(toasts.single, contains('history'));
+    });
+
+    test('delegates to appendLocalMessage when the host wires it', () async {
+      String? posted;
+      final toasts = <String>[];
+      await CommandExecutor().execute(
+        '/help',
+        buildContext(
+          onToast: (m, {ToastMode? mode}) => toasts.add(m),
+          appendLocalMessage: (markdown) async {
+            posted = markdown;
           },
-          switchSession: (_) async {},
-          initSessions: () async {},
-          createNewSession: () async {},
-          runtime: (_) => runtime,
-          persistThinkingLevel: (_) {},
-                persistChatDisplayMode: (_) {},
-          persistTemperature: (_) async {},
-          resolveAuxiliaryModel: () {},
-          sendTurn: ({String? text}) async {},
-          findLastUserMessage: () async => null,
-          deleteMessagesFrom: (_) async {},
-          sendBtwTurn: (_) async {},
-          clearBtwTurns: (_) {},
-        );
-        await CommandExecutor().execute('/temperature', ctx);
-        expect(toasts, hasLength(1));
-        expect(toasts.first.message, contains('model default'));
-        expect(toasts.first.message, contains('0.6'));
-        expect(toasts.first.message, contains('no override'));
-        expect(toasts.first.mode, ToastMode.info);
+        ),
+      );
 
-        // With an override in place, the same toast should still
-        // surface the resolved default — that's the comparison
-        // signal users want when they're deciding what to pick.
-        toasts.clear();
-        runtime.temperatureOverride = 0.85;
-        await CommandExecutor().execute('/temperature', ctx);
-        expect(toasts, hasLength(1));
-        expect(toasts.first.message, contains('0.85'));
-        expect(toasts.first.message, contains('override'));
-        expect(toasts.first.message, contains('default 0.6'));
-        expect(toasts.first.mode, ToastMode.info);
+      expect(posted, isNotNull);
+      expect(posted, contains('Crux Help'));
+      // The host owns persistence in this path — executeHelp must
+      // not double-write, and no fallback toast fires.
+      final msgs = await store.messageStore.getMessages(session.id);
+      expect(msgs.where((m) => m.role == localInfoRole), isEmpty);
+      expect(toasts, isEmpty);
+    });
+
+    test('help sheet lists every registered command', () {
+      // The sheet is generated from the registry, so it can never
+      // drift from what Tab completion offers.
+      final sheet = buildHelpText();
+      for (final cmd in CommandRegistry.instance.all) {
+        expect(
+          sheet,
+          contains(cmd.name),
+          reason: '${cmd.name} missing from /help output',
+        );
+      }
+    });
+  });
+
+  group('CommandExecutor — registry ↔ executor consistency', () {
+    // P0 trust repair: the review found commands advertised by the
+    // registry (Tab completion) that the executor could only answer
+    // with "not yet implemented" — and an implemented /undo that the
+    // registry never advertised. This group walks the whole registry
+    // and asserts neither mismatch can come back.
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      CommandRegistry.instance.disableDebug();
+      tempDir = await Directory.systemTemp.createTemp('crux_consistency_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      // /debug toggles global registry state — always reset.
+      CommandRegistry.instance.disableDebug();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext({
+      required void Function(String message, {ToastMode? mode}) onToast,
+    }) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: onToast,
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        persistChatDisplayMode: (_) {},
+        persistTemperature: (_) async {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+      );
+    }
+
+    test('every registered command (and alias) is executable', () async {
+      final snapshot = CommandRegistry.instance.all;
+      final failures = <String>[];
+      for (final cmd in snapshot) {
+        for (final name in cmd.allNames) {
+          final toasts = <String>[];
+          try {
+            await CommandExecutor().execute(
+              name,
+              buildContext(onToast: (m, {ToastMode? mode}) => toasts.add(m)),
+            );
+          } catch (e) {
+            failures.add('$name threw $e');
+            continue;
+          }
+          if (toasts.any((t) => t == '$name — not yet implemented')) {
+            failures.add('$name hit the not-implemented branch');
+          }
+          // /debug toggles the global registry as a side effect;
+          // keep the walk deterministic.
+          CommandRegistry.instance.disableDebug();
+        }
+      }
+      expect(failures, isEmpty, reason: failures.join('\n'));
+    });
+
+    test(
+      '/undo is advertised by the registry and routed by the executor',
+      () async {
+        // The original P0 bug: executeUndo existed behind an executor
+        // case, but the registry never listed /undo, so Tab completion
+        // hid it and findCommand returned null.
+        expect(findCommand('/undo'), isNotNull);
+        expect(findCommand('/撤销'), isNotNull);
+
+        var undoRan = false;
+        await CommandExecutor().execute(
+          '/undo',
+          buildContext(
+            onToast: (m, {ToastMode? mode}) {
+              // executeUndo with no prior user message surfaces this
+              // exact toast — proof the call routed to executeUndo.
+              if (m.contains('Nothing to undo')) undoRan = true;
+            },
+          ),
+        );
+        expect(undoRan, isTrue);
       },
     );
   });

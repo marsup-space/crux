@@ -241,9 +241,12 @@ class MessageStore {
   /// Delete every message in [sessionId] whose id is `>=` [fromId].
   /// Used by `/retry` to wipe the last "round" (the user prompt plus
   /// the AI response, tool calls, and tool results that came after
-  /// it) so a fresh attempt can be made. The `parts` table cascades
-  /// on `messageId`, so a plain DELETE here is enough to clean up
-  /// attachment rows too.
+  /// it) so a fresh attempt can be made. The attached `parts` rows
+  /// are removed by the `ON DELETE CASCADE` on `Parts.messageId` —
+  /// which only fires on connections with `PRAGMA foreign_keys=ON`.
+  /// The production connection setup enables that pragma (see
+  /// database.dart); executors that don't set it (e.g. a bare
+  /// in-memory test database) leave the `parts` rows behind.
   Future<int> deleteMessagesFrom(int sessionId, int fromId) async {
     final deleted =
         await (_db.delete(_db.messages)..where(
@@ -281,10 +284,12 @@ class MessageStore {
   /// Returns the count deleted (zero is normal — no prior error
   /// bubble, or one already cleared by a prior new turn).
   Future<int> clearStreamErrorsFor(int sessionId) async {
-    final deleted = await (_db.delete(_db.messages)..where(
-          (t) => t.sessionId.equals(sessionId) & t.role.equals('stream_error'),
-        ))
-        .go();
+    final deleted =
+        await (_db.delete(_db.messages)..where(
+              (t) =>
+                  t.sessionId.equals(sessionId) & t.role.equals('stream_error'),
+            ))
+            .go();
     if (deleted > 0) {
       await sessionStore.touchSession(sessionId);
     }
@@ -317,6 +322,11 @@ class MessageStore {
   /// `tool_use` ids and any `tool` rows whose flow has been
   /// terminated this way are both pruned.
   ///
+  /// A `tool_call` row whose `toolCalls` JSON fails to parse is
+  /// skipped entirely: it neither terminates the pending flow
+  /// (its announced ids are unknowable) nor is itself pruned.
+  /// Only rows that parse cleanly are eligible for repair.
+  ///
   /// Runs in a single transaction so a failure in the middle of
   /// the walk leaves the DB unchanged. Returns the total number
   /// of rows modified (each deleted `tool_call` counts as 1,
@@ -338,21 +348,22 @@ class MessageStore {
       // Pull the rows we care about, in chronological order.
       // Reading only the columns we need keeps the snapshot
       // small for sessions with many messages.
-      final toolRows = await (_db.select(_db.messages)
-            ..where((t) =>
-                t.sessionId.equals(sessionId) &
-                (t.role.equals('tool_call') |
-                    t.role.equals('tool') |
-                    t.role.equals('ai') |
-                    t.role.equals('user') |
-                    t.role.equals('system') |
-                    t.role.equals('compaction') |
-                    t.role.equals('parallel_praise') |
-                    t.role.equals('single_call_reminder')))
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.id),
-            ]))
-          .get();
+      final toolRows =
+          await (_db.select(_db.messages)
+                ..where(
+                  (t) =>
+                      t.sessionId.equals(sessionId) &
+                      (t.role.equals('tool_call') |
+                          t.role.equals('tool') |
+                          t.role.equals('ai') |
+                          t.role.equals('user') |
+                          t.role.equals('system') |
+                          t.role.equals('compaction') |
+                          t.role.equals('parallel_praise') |
+                          t.role.equals('single_call_reminder')),
+                )
+                ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+              .get();
 
       // ── Pass 1: identify orphan tool_use ids ────────────────────
       //
@@ -368,8 +379,19 @@ class MessageStore {
       for (final row in toolRows) {
         final role = row.role;
         if (role == 'tool_call') {
+          final calls = _tryParseToolCalls(row.toolCalls);
+          if (calls == null) {
+            // Corrupt toolCalls JSON: skip the row entirely. It
+            // must NOT terminate the pending flow — we can't know
+            // which ids it announced, so treating it as an empty
+            // terminator would wrongly orphan the previous flow's
+            // unanswered ids (and pass 2 would then prune rows
+            // based on that misreading). The row itself is left
+            // untouched in pass 2 as well.
+            continue;
+          }
           final ids = <String>{};
-          for (final c in Message.parseToolCallsJson(row.toolCalls)) {
+          for (final c in calls) {
             ids.add(c.callId);
           }
           if (ids.isNotEmpty) {
@@ -424,30 +446,36 @@ class MessageStore {
       // update with the kept ids or delete the whole row.
       for (final row in toolRows) {
         if (row.role == 'tool_call') {
-          final calls = Message.parseToolCallsJson(row.toolCalls);
-          if (calls.isEmpty) continue;
-          final kept =
-              calls.where((c) => !orphanUseIds.contains(c.callId)).toList();
+          final calls = _tryParseToolCalls(row.toolCalls);
+          // Unreadable rows were skipped in pass 1, so none of
+          // their ids can be in the orphan set — leave them alone
+          // rather than guessing.
+          if (calls == null || calls.isEmpty) continue;
+          final kept = calls
+              .where((c) => !orphanUseIds.contains(c.callId))
+              .toList();
           if (kept.length == calls.length) continue;
           if (kept.isEmpty) {
-            await (_db.delete(_db.messages)
-                  ..where((t) => t.id.equals(row.id)))
-                .go();
+            await (_db.delete(
+              _db.messages,
+            )..where((t) => t.id.equals(row.id))).go();
             modifiedCount++;
           } else {
-            await (_db.update(_db.messages)
-                  ..where((t) => t.id.equals(row.id)))
-                .write(db.MessagesCompanion(
-                  toolCalls: Value(Message.encodeToolCalls(kept)),
-                ));
+            await (_db.update(
+              _db.messages,
+            )..where((t) => t.id.equals(row.id))).write(
+              db.MessagesCompanion(
+                toolCalls: Value(Message.encodeToolCalls(kept)),
+              ),
+            );
             modifiedCount++;
           }
         } else if (row.role == 'tool') {
           if (orphanUseIds.contains(row.toolCallId) ||
               orphanUseIds.contains('__orphan_no_id_${row.id}__')) {
-            await (_db.delete(_db.messages)
-                  ..where((t) => t.id.equals(row.id)))
-                .go();
+            await (_db.delete(
+              _db.messages,
+            )..where((t) => t.id.equals(row.id))).go();
             modifiedCount++;
           }
         }
@@ -460,36 +488,68 @@ class MessageStore {
     return modifiedCount;
   }
 
-  Future<int> deleteCompleteCompactions(int sessionId) async {
-    final rows = await (_db.select(_db.messages)
-          ..where((t) =>
-              t.sessionId.equals(sessionId) &
-              t.role.equals('compaction')))
-        .get();
-    var deleted = 0;
-    for (final row in rows) {
-      // Mirror ChatService._isCompleteCompactionMessage: empty
-      // or unparseable meta is treated as complete (the only
-      // sentinel is the literal `status: 'compacting'`).
-      if (row.meta.isEmpty) {
-        await (_db.delete(_db.messages)..where((t) => t.id.equals(row.id))).go();
-        deleted++;
-        continue;
-      }
-      bool isComplete = true;
-      try {
-        final decoded = jsonDecode(row.meta);
-        if (decoded is Map<String, dynamic>) {
-          isComplete = (decoded['status'] as String? ?? 'complete') == 'complete';
-        }
-      } catch (_) {
-        isComplete = true;
-      }
-      if (isComplete) {
-        await (_db.delete(_db.messages)..where((t) => t.id.equals(row.id))).go();
-        deleted++;
-      }
+  /// Parse a `messages.tool_calls` payload, returning `null` when
+  /// the JSON is corrupt (as opposed to a legitimately empty list,
+  /// which yields `[]`). [repairOrphanToolRows] uses this to tell
+  /// "row announces no calls" apart from "row can't be read" —
+  /// [Message.parseToolCallsJson] deliberately collapses both into
+  /// an empty list for UI rendering, which is the wrong signal for
+  /// a repair walk.
+  static List<ToolCallData>? _tryParseToolCalls(String json) {
+    if (json.isEmpty) return const [];
+    try {
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((e) => ToolCallData.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return null;
     }
+  }
+
+  Future<int> deleteCompleteCompactions(int sessionId) async {
+    var deleted = 0;
+    // Read + deletes in a single transaction. The compaction
+    // caller inserts the replacement message immediately after
+    // this returns, so a half-applied delete (or a concurrent
+    // write landing between the read and the deletes) must not
+    // leave the session with duplicate or missing compaction rows.
+    await _db.transaction(() async {
+      final rows =
+          await (_db.select(_db.messages)..where(
+                (t) =>
+                    t.sessionId.equals(sessionId) & t.role.equals('compaction'),
+              ))
+              .get();
+      for (final row in rows) {
+        // Mirror ChatService._isCompleteCompactionMessage: empty
+        // or unparseable meta is treated as complete (the only
+        // sentinel is the literal `status: 'compacting'`).
+        if (row.meta.isEmpty) {
+          await (_db.delete(
+            _db.messages,
+          )..where((t) => t.id.equals(row.id))).go();
+          deleted++;
+          continue;
+        }
+        bool isComplete = true;
+        try {
+          final decoded = jsonDecode(row.meta);
+          if (decoded is Map<String, dynamic>) {
+            isComplete =
+                (decoded['status'] as String? ?? 'complete') == 'complete';
+          }
+        } catch (_) {
+          isComplete = true;
+        }
+        if (isComplete) {
+          await (_db.delete(
+            _db.messages,
+          )..where((t) => t.id.equals(row.id))).go();
+          deleted++;
+        }
+      }
+    });
     if (deleted > 0) {
       await sessionStore.touchSession(sessionId);
     }

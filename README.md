@@ -81,7 +81,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 **十字星（Crux）** 是一个运行在终端中的 AI 编程助手（AI Coding Agent），通过智能体编排（Agentic Orchestration）帮助你更高效地编写代码、管理项目。
 
-当前版本：**0.11.2**。项目已经进入日常可用状态，仍保持快速迭代。
+当前版本见 [CHANGELOG](CHANGELOG.md)。项目已经进入日常可用状态，仍保持快速迭代。
 
 | 中文名 | 十字星 |
 |--------|--------|
@@ -172,10 +172,16 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 | Provider | 命令 | 模型 |
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro |
+| Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | Local | `/provider local` | Llama 3 / Mistral |
 | LongCat | `/provider longcat` | 2.0 |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | 自定义 | `/provider custom` | 任意兼容 API |
+
+也可以用环境变量直接提供 API key（无需交互，适合 CI / 脚本场景）：
+
+- `CRUX_API_KEY` — 全局默认 key
+- `CRUX_API_KEY_<PROVIDER>` — 按 Provider 覆盖（Provider 名大写），如 `CRUX_API_KEY_DEEPSEEK`、`CRUX_API_KEY_MINIMAX`
 
 ### 命令列表
 
@@ -184,18 +190,20 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 | `/model` | 切换 AI 模型 |
 | `/new` | 创建新会话 |
 | `/session` | 切换会话 |
-| `/clear` | 清空聊天记录 |
 | `/compact` | 压缩上下文窗口 |
 | `/help` | 查看帮助 |
 | `/theme` | 切换主题 |
-| `/history` | 查看当前会话历史 |
 | `/provider` | 管理 Provider |
+| `/web-provider` | 配置 web 搜索/抓取 Provider（列出 / 查看状态 / 设置或移除 key） |
 | `/think` | 切换思考模式 |
+| `/temperature` | 覆盖本会话的采样温度（取值范围 0.0–1.0） |
+| `/view` | 切换聊天记录显示模式（verbose\|vibe） |
 | `/auxiliary` | 配置辅助模型 |
-| `/tldr` | 为上一条 AI 回复生成摘要 |
+| `/tldr` | 为上一条 AI 回复生成摘要（档位：concise\|default\|detailed） |
 | `/project` | 切换项目目录 |
 | `/continue` | 继续生成（别名：`/继续`） |
 | `/retry` | 重试上一条用户输入（别名：`/重试`） |
+| `/undo` | 撤销上一轮对话，把上一条输入放回输入框重新编辑（别名：`/撤销`） |
 | `/btw` | 临时侧问 — 不入对话记录，下次正常消息时丢弃 |
 | `/archive` | 归档当前会话 |
 | `/unarchive` | 恢复已归档会话 |
@@ -206,8 +214,13 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 ### 快捷键
 
 - `Tab` — 命令补全
-- `Ctrl+C` — 取消当前流式响应
-- `↑/↓` — 浏览历史消息（在会话管理面板中）
+- `Ctrl+C`（流式输出中）— 取消当前响应
+- 双击 `Ctrl+C` — 退出 Crux
+- `ESC`×2 — 中断流式输出
+- `Ctrl+V` — 粘贴图片（需当前模型支持图片输入）
+- 会话管理面板中：`Ctrl+D` 删除会话 / `Ctrl+R` 重命名会话
+- `@` — 文件提及
+- `$` — 技能
 
 ### 技术栈
 
@@ -297,7 +310,7 @@ What they do:
 
 **Crux** is a terminal-based AI coding agent with agentic orchestration. Named after the Southern Cross constellation (Latin for "cross"), it embodies both the guiding star and the core challenge — helping you cross the crux of development.
 
-Current version: **0.11.2**. Crux is now considered usable for daily work, while still moving quickly.
+See [CHANGELOG](CHANGELOG.md) for the current version. Crux is now considered usable for daily work, while still moving quickly.
 
 | Chinese name | 十字星 (Cross Star) |
 |-------------|--------------------|
@@ -370,6 +383,24 @@ a stable smoke-test suite; pushing a `v*` tag automatically builds Linux,
 macOS, and Windows release bundles and uploads them to GitHub Releases, while
 manual packaging is also available from the Actions page.
 
+### Configure Providers
+
+Connect LLM providers with the `/provider` command:
+
+| Provider | Command | Models |
+|----------|---------|--------|
+| DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro |
+| Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
+| Local | `/provider local` | Llama 3 / Mistral |
+| LongCat | `/provider longcat` | 2.0 |
+| MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
+| Custom | `/provider custom` | Any compatible API |
+
+API keys can also be supplied via environment variables (no interaction needed; handy for CI / scripts):
+
+- `CRUX_API_KEY` — global default key
+- `CRUX_API_KEY_<PROVIDER>` — per-provider override (provider name uppercased), e.g. `CRUX_API_KEY_DEEPSEEK`, `CRUX_API_KEY_MINIMAX`
+
 ### Commands
 
 | Command | Description |
@@ -377,24 +408,37 @@ manual packaging is also available from the Actions page.
 | `/model` | Switch AI model |
 | `/new` | Create new session |
 | `/session` | Switch session |
-| `/clear` | Clear chat log |
 | `/compact` | Compact context window |
 | `/help` | Show help |
 | `/theme` | Change theme |
-| `/history` | Show current session history |
 | `/provider` | Manage providers |
+| `/web-provider` | Configure web search/fetch providers (list / status / set or remove key) |
 | `/think` | Toggle thinking mode |
+| `/temperature` | Override the sampling temperature for this session (clamped 0.0–1.0) |
+| `/view` | Switch chat log display mode (verbose\|vibe) |
 | `/auxiliary` | Configure auxiliary model |
-| `/tldr` | Generate a summary for the last AI response |
+| `/tldr` | Generate a summary for the last AI response (levels: concise\|default\|detailed) |
 | `/project` | Switch project directory |
 | `/continue` | Continue generation (alias: `/继续`) |
 | `/retry` | Retry the last user input (alias: `/重试`) |
+| `/undo` | Undo the last turn and put the prompt back in the input for editing (alias: `/撤销`) |
 | `/btw` | Ephemeral side-question — never persisted, dropped on next real turn |
 | `/archive` | Archive the current session |
 | `/unarchive` | Restore an archived session |
 | `/rename` | Rename the current session |
 | `/debug` | Toggle debug commands |
 | `/quit` | Exit Crux — prints a run summary (duration / turns / tokens / cache hit %) to the terminal's main buffer |
+
+### Shortcuts
+
+- `Tab` — command completion
+- `Ctrl+C` (while streaming) — cancel the current response
+- Double-press `Ctrl+C` — quit Crux
+- `ESC`×2 — interrupt streaming output
+- `Ctrl+V` — paste an image (requires a model with image input)
+- In the session panel: `Ctrl+D` delete a session / `Ctrl+R` rename a session
+- `@` — file mention
+- `$` — skill
 
 ### Themes
 

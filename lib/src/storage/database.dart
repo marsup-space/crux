@@ -12,7 +12,9 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter])
+@DriftDatabase(
+  tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter],
+)
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
 
@@ -79,7 +81,7 @@ class CruxDatabase extends _$CruxDatabase {
   ///         INDEX itself scans the table once, so first-time
   ///         upgrades to v23 take a few seconds longer; subsequent
   ///         launches benefit.
-///   v24 – upgraded `idx_messages_session_id` to the composite
+  ///   v24 – upgraded `idx_messages_session_id` to the composite
   ///         `idx_messages_session_id_id` on `(session_id, id DESC)`.
   ///         The leading column still serves the `WHERE session_id
   ///         = ?` lookup; the `id DESC` ordering lets SQLite skip
@@ -87,15 +89,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         loader does (rows come back already in newest-first
   ///         order). Cheap win — saves a sort per chunk — and
   ///         also drops the now-redundant single-column index.
-///   v25 – added composite index on `(project_path, archived_at)`
+  ///   v25 – added composite index on `(project_path, archived_at)`
   ///         so the auto-archive / archived-count queries stay
   ///         O(log n).
-///   v26 – added `sessions.temperature_override` for the
+  ///   v26 – added `sessions.temperature_override` for the
   ///         `/temperature` slash command. Nullable REAL clamped
   ///         to `[0.0, 1.0]` at write time; `null` means "use the
   ///         model's TOML `temperature` default". See
   ///         `lib/src/commands/cmd_temperature.dart`.
-///   v27 – added `file_last_writer` table, one row per path,
+  ///   v27 – added `file_last_writer` table, one row per path,
   ///         tracking the session id and intent string of the last
   ///         edit/write that touched each file. The read-before-write
   ///         guard looks this up when mtime drift is detected and
@@ -382,10 +384,27 @@ LazyDatabase _openConnection() {
 
     open.overrideFor(OperatingSystem.linux, _openLinuxSqlite);
 
-    return NativeDatabase.createInBackground(file, setup: (db) {
-      db.execute('PRAGMA journal_mode=WAL;');
-      db.execute('PRAGMA busy_timeout=5000;');
-    });
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (db) {
+        db.execute('PRAGMA journal_mode=WAL;');
+        db.execute('PRAGMA busy_timeout=5000;');
+        // Foreign-key enforcement is a per-connection setting — SQLite
+        // never persists it in the DB file, so it must be re-applied
+        // every time a connection opens. Drift guarantees that: it
+        // invokes this [setup] callback from its connection-init path
+        // on every open of the underlying sqlite3 connection (the
+        // single background-isolate connection `createInBackground`
+        // uses, readPool defaulting to 0), so every production
+        // connection ends up with enforcement on.
+        //
+        // Without it, the `onDelete: KeyAction.cascade` foreign keys
+        // declared in tables.dart are parsed but never enforced, and
+        // any delete that relies on a cascade silently leaves orphan
+        // rows behind.
+        db.execute('PRAGMA foreign_keys=ON;');
+      },
+    );
   });
 }
 

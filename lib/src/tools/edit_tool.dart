@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../lsp/manager.dart' show LspManager;
-import '../lsp/protocol.dart' show LspDiagnostic;
 import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
 import 'file_read_tracker.dart';
+import 'lsp_diagnostics.dart';
 import 'matchers/matcher.dart';
 import 'matchers/exact_matcher.dart';
 import 'matchers/whitespace_matcher.dart';
@@ -114,10 +114,7 @@ class EditTool extends ToolDef with IntentionalTool {
   }
 
   @override
-  ModSummary? modSummary(
-    Map<String, dynamic> args,
-    ToolResult result,
-  ) {
+  ModSummary? modSummary(Map<String, dynamic> args, ToolResult result) {
     final filePath = args['filePath'] as String? ?? '';
     if (filePath.isEmpty) return null;
     final oldString = args['oldString'] as String? ?? '';
@@ -132,9 +129,15 @@ class EditTool extends ToolDef with IntentionalTool {
     final newLines = newString.isEmpty
         ? 0
         : '\n'.allMatches(newString).length + 1;
-    return ModSummary(changes: [
-      ModFileChange(filePath, newLines * replaceCount, oldLines * replaceCount),
-    ]);
+    return ModSummary(
+      changes: [
+        ModFileChange(
+          filePath,
+          newLines * replaceCount,
+          oldLines * replaceCount,
+        ),
+      ],
+    );
   }
 
   /// Parse the replacement count out of an EditTool success
@@ -349,14 +352,15 @@ class EditTool extends ToolDef with IntentionalTool {
       final newLines = newString.isEmpty
           ? 0
           : '\n'.allMatches(newString).length + 1;
-      final lspResult = await _collectLspDiagnostics(
-        resolved,
-        _successMessage(
+      final lspResult = await collectLspDiagnostics(
+        lsp: lsp,
+        filePath: resolved,
+        baseOutput: _successMessage(
           relativePath(resolved, ctx.workingDirectory),
           'Created file with $newLines lines (+$newLines lines)',
           args,
         ),
-        ctx,
+        ctx: ctx,
       );
       // The output text stays as just the diff line; the LSP
       // count is surfaced via the [LspDiagnosticsBubble] in the
@@ -430,15 +434,16 @@ class EditTool extends ToolDef with IntentionalTool {
     final linesRemoved = oldLines * count;
     final linesAdded = newLines * count;
     final occLabel = count == 1 ? 'occurrence' : 'occurrences';
-    final lspResult = await _collectLspDiagnostics(
-      resolved,
-      _successMessage(
+    final lspResult = await collectLspDiagnostics(
+      lsp: lsp,
+      filePath: resolved,
+      baseOutput: _successMessage(
         relativePath(resolved, ctx.workingDirectory),
         'Replaced $count $occLabel of oldString '
         '(+$linesAdded -$linesRemoved lines)',
         args,
       ),
-      ctx,
+      ctx: ctx,
     );
     return ToolResult(
       title: 'Edit file: $resolved',
@@ -457,60 +462,6 @@ class EditTool extends ToolDef with IntentionalTool {
       return 'Edit applied to $relPath (intent: \'$intent\'): $body';
     }
     return 'Edit applied to $relPath: $body';
-  }
-
-  /// Append LSP diagnostics for [filePath] to [baseOutput], if any.
-  ///
-  /// Returns the (possibly-modified) output text and the raw
-  /// diagnostic list. The list is exposed in [ToolResult.metadata]
-  /// under the `lsp` key so [collapsedSummary] can show the count
-  /// and the UI/agent can render or query the details.
-  ///
-  /// The output text gets a brief one-liner only (no verbose
-  /// `<diagnostics>` block) — the count goes in the hint bubble
-  /// instead, keeping the tool output scannable. The model can
-  /// always call `read` or re-run the analyzer for details.
-  ///
-  /// Best-effort: any failure (no LSP, no server, timeout, malformed
-  /// response) returns ([baseOutput], const []). The tool must
-  /// never fail because of LSP.
-  Future<({String output, List<LspDiagnostic> diagnostics})>
-  _collectLspDiagnostics(
-    String filePath,
-    String baseOutput,
-    ToolContext ctx,
-  ) async {
-    final mgr = lsp;
-    if (mgr == null) {
-      return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
-    }
-    try {
-      if (ctx.abort.isAborted) {
-        return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
-      }
-      final diagnostics = await mgr.touchFileAndWait(
-        filePath,
-        isCancelled: () => ctx.abort.isAborted,
-      );
-      if (diagnostics.isEmpty) {
-        return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
-      }
-      // Output text stays clean; the count is surfaced via the
-      // [LspDiagnosticsBubble] in the chat history, not appended
-      // to the tool's textual output.
-      return (output: baseOutput, diagnostics: diagnostics);
-    } catch (_) {
-      return (output: baseOutput, diagnostics: const <LspDiagnostic>[]);
-    }
-  }
-
-  /// (Deprecated stub kept for source compatibility with tests.)
-  /// The LSP count hint is now surfaced via [LspDiagnosticsBubble]
-  /// in the chat history rather than appended to the collapsed
-  /// summary.
-  // ignore: unused_element
-  static String _appendLspHint(String text, Map<String, dynamic> metadata) {
-    return text;
   }
 
   MatchResult? _findMatch(String content, String oldString, bool replaceAll) {

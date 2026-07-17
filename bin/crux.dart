@@ -179,6 +179,15 @@ void main(List<String> args) async {
         ),
         if (results.themeController.startupWarning != null)
           results.themeController.startupWarning!,
+        // First-run onboarding: without any usable API key the
+        // model can't respond at all, so say so once at startup
+        // instead of letting the first message fail. Goes through
+        // ProviderService.getApiKey, which covers auth.toml,
+        // CRUX_API_KEY_<PROVIDER>, and the global CRUX_API_KEY
+        // environment variable.
+        if (!_hasAnyApiKey(results.chatPanelBootState.providerService))
+          'No API key configured — run /provider <name> <key> to '
+              'connect a model.',
         // When launched under `--observe` / `--enable-vm-service`,
         // the Dart runtime prints the VM service URL to stderr
         // BEFORE our app enters alt-screen mode, so the user
@@ -267,6 +276,21 @@ List<String> _vmServiceStartupWarnings() {
     // Ignore – env var not set or not a valid URI.
   }
   return [];
+}
+
+/// Whether at least one loaded provider resolves to a usable API key.
+///
+/// Resolution goes through [ProviderService.getApiKey], so every
+/// supported source counts: keys persisted in `auth.toml`,
+/// per-provider `CRUX_API_KEY_<PROVIDER>` environment variables, and
+/// the global `CRUX_API_KEY` fallback (from either source). Used to
+/// emit the one-time "no API key configured" startup warning.
+bool _hasAnyApiKey(ProviderService providerService) {
+  for (final name in providerService.providerNames()) {
+    final key = providerService.getApiKey(name);
+    if (key != null && key.isNotEmpty) return true;
+  }
+  return false;
 }
 
 /// Load the recent-projects JSON from disk and record the current
@@ -488,7 +512,7 @@ Future<void> _runDoctor() async {
   final store = SessionStore(db);
 
   try {
-    stdout.writeln('[1/2] Migrating database to current schema...');
+    stdout.writeln('[1/3] Migrating database to current schema...');
     await db.customSelect('PRAGMA schema_version').get();
     stdout.writeln(
       '  ${terminalSymbol('✓', '+')} Schema is up to date (v${db.schemaVersion})',

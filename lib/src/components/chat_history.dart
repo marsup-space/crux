@@ -332,17 +332,12 @@ class _ChatHistoryState extends State<ChatHistory> {
         );
       }
       // Empty-state check: any /btw turn for this session is enough
-      // to clear the 'No messages yet.' placeholder. Derived from the
+      // to clear the empty-state placeholder. Derived from the
       // list we already captured at the top of this method, so this
       // site does NOT register a separate cubit subscription.
       final hasBtwTurns = btwTurns.isNotEmpty;
       if (!hasBtwTurns) {
-        return Center(
-          child: Text(
-            'No messages yet.',
-            style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
-          ),
-        );
+        return Center(child: _buildEmptyStateGuidance(context));
       }
     }
 
@@ -920,6 +915,38 @@ class _ChatHistoryState extends State<ChatHistory> {
       return 'Loading $total messages…';
     }
     return 'Loading messages…';
+  }
+
+  /// The placeholder for a genuinely empty session (no messages, no
+  /// /btw turns). When no provider resolves to a usable API key —
+  /// checked through [ProviderService.getApiKey], so `auth.toml`,
+  /// `CRUX_API_KEY_<PROVIDER>`, and the global `CRUX_API_KEY` all
+  /// count — sending a message would fail outright, so the
+  /// placeholder doubles as onboarding and points at /provider.
+  /// Once a key exists it degrades to the short getting-started
+  /// hints.
+  Component _buildEmptyStateGuidance(BuildContext context) {
+    final style = TextStyle(color: CruxTheme.of(context).onSurfaceDim);
+    final hasApiKey = component.providerService.providerNames().any((name) {
+      final key = component.providerService.getApiKey(name);
+      return key != null && key.isNotEmpty;
+    });
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: hasApiKey
+          ? [
+              Text('No messages yet.', style: style),
+              Text('Type / for commands, @ to mention files.', style: style),
+            ]
+          : [
+              Text('No provider configured yet.', style: style),
+              Text(
+                'Run /provider <name> <key> to connect a model — '
+                'type / to see all commands.',
+                style: style,
+              ),
+            ],
+    );
   }
 
   /// Find the session id and title of the conversation this

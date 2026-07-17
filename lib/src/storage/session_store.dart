@@ -132,10 +132,7 @@ class SessionStore implements SessionStoreAccessor {
   Future<void> archiveSession(int id) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
-      db.SessionsCompanion(
-        archivedAt: Value(nowMs),
-        updatedAt: Value(nowMs),
-      ),
+      db.SessionsCompanion(archivedAt: Value(nowMs), updatedAt: Value(nowMs)),
     );
   }
 
@@ -159,8 +156,7 @@ class SessionStore implements SessionStoreAccessor {
     String? projectPath,
     required Duration olderThan,
   }) async {
-    final cutoffMs =
-        DateTime.now().subtract(olderThan).millisecondsSinceEpoch;
+    final cutoffMs = DateTime.now().subtract(olderThan).millisecondsSinceEpoch;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
     final query = _db.update(_db.sessions)
@@ -172,10 +168,7 @@ class SessionStore implements SessionStoreAccessor {
     }
 
     return query.write(
-      db.SessionsCompanion(
-        archivedAt: Value(nowMs),
-        updatedAt: Value(nowMs),
-      ),
+      db.SessionsCompanion(archivedAt: Value(nowMs), updatedAt: Value(nowMs)),
     );
   }
 
@@ -342,17 +335,43 @@ WHERE id = ?
     return heartbeatAt.isAfter(staleBefore);
   }
 
+  /// Delete a session and every row that belongs to it.
+  ///
+  /// Runs in a single transaction so a failure midway can never
+  /// leave a half-deleted session behind. Child rows are deleted
+  /// explicitly rather than relying on the `ON DELETE CASCADE`
+  /// foreign keys declared in tables.dart: cascades only fire on
+  /// connections with `PRAGMA foreign_keys=ON` (the production
+  /// connection setup enables it — see database.dart), and the
+  /// explicit deletes keep cleanup correct on executors that don't
+  /// set the pragma (e.g. bare in-memory test databases).
+  ///
+  /// `file_last_writer` rows pointing at the deleted session are
+  /// removed as well. They were never cleaned up before FK
+  /// enforcement existed, so existing installs can carry orphans
+  /// that would make the read-before-write guard attribute writes
+  /// to a session that no longer exists.
   Future<void> deleteSession(int id) async {
-    await (_db.delete(_db.fileReadState)
-          ..where((t) => t.sessionId.equals(id)))
-        .go();
-    await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
-    await (_db.delete(_db.messages)..where((t) => t.sessionId.equals(id))).go();
-    await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
+    await _db.transaction(() async {
+      await (_db.delete(
+        _db.fileLastWriter,
+      )..where((t) => t.writerSessionId.equals(id))).go();
+      await (_db.delete(
+        _db.fileReadState,
+      )..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(
+        _db.messages,
+      )..where((t) => t.sessionId.equals(id))).go();
+      await (_db.delete(_db.sessions)..where((t) => t.id.equals(id))).go();
+    });
   }
 
   Future<void> saveFileReadState(
-      int sessionId, String normalizedPath, int mtimeMs) async {
+    int sessionId,
+    String normalizedPath,
+    int mtimeMs,
+  ) async {
     await _db
         .into(_db.fileReadState)
         .insertOnConflictUpdate(
@@ -365,9 +384,9 @@ WHERE id = ?
   }
 
   Future<Map<String, int>> loadFileReadState(int sessionId) async {
-    final rows = await (_db.select(_db.fileReadState)
-          ..where((t) => t.sessionId.equals(sessionId)))
-        .get();
+    final rows = await (_db.select(
+      _db.fileReadState,
+    )..where((t) => t.sessionId.equals(sessionId))).get();
     return {for (final r in rows) r.path: r.mtimeMs};
   }
 
@@ -388,25 +407,33 @@ WHERE id = ?
     int mtimeMs,
     String intent,
   ) async {
-    await _db.into(_db.fileLastWriter).insertOnConflictUpdate(
-      db.FileLastWriterCompanion.insert(
-        path: normalizedPath,
-        writerSessionId: sessionId,
-        intent: Value(intent),
-        mtimeMs: mtimeMs,
-      ),
-    );
+    await _db
+        .into(_db.fileLastWriter)
+        .insertOnConflictUpdate(
+          db.FileLastWriterCompanion.insert(
+            path: normalizedPath,
+            writerSessionId: sessionId,
+            intent: Value(intent),
+            mtimeMs: mtimeMs,
+          ),
+        );
   }
 
   /// Look up who last wrote [path]. Returns `null` when no
-  /// attribution row exists (file was never written by a tracked
-  /// session, or the row was cascade-deleted with its writer).
+  /// attribution row exists. That can mean the file was never
+  /// written by a tracked session, or that the writer's row was
+  /// removed together with the session: [deleteSession] and
+  /// [deleteByProjectPath] delete `file_last_writer` rows
+  /// explicitly, and a direct `sessions`-row delete also cascades
+  /// here — but only on connections with `PRAGMA foreign_keys=ON`
+  /// (the production connection setup enables it; executors without
+  /// the pragma rely on the explicit deletes).
   Future<({int sessionId, String intent, int mtimeMs})?> loadLastWriter(
     String normalizedPath,
   ) async {
-    final row = await (_db.select(_db.fileLastWriter)
-          ..where((t) => t.path.equals(normalizedPath)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.fileLastWriter,
+    )..where((t) => t.path.equals(normalizedPath))).getSingleOrNull();
     if (row == null) return null;
     return (
       sessionId: row.writerSessionId,
@@ -422,31 +449,47 @@ WHERE id = ?
   /// between the write and the guard check) — the guard still
   /// names the id, just without a title.
   Future<String> lookupSessionTitle(int sessionId) async {
-    final row = await (_db.select(_db.sessions)
-          ..where((t) => t.id.equals(sessionId)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.sessions,
+    )..where((t) => t.id.equals(sessionId))).getSingleOrNull();
     return row?.title ?? '';
   }
 
+  /// Delete every session for [projectPath] and all of their
+  /// dependent rows. Returns the number of sessions deleted.
+  ///
+  /// The id-list read and all deletes run in one transaction, so
+  /// the operation is all-or-nothing and a concurrently created
+  /// session can't slip between the read and the deletes. Child
+  /// rows — including `file_last_writer` — are deleted explicitly
+  /// rather than relying on FK cascades; see [deleteSession] for
+  /// why.
   Future<int> deleteByProjectPath(String projectPath) async {
-    final sessionIds =
-        await (_db.select(_db.sessions)
-              ..where((t) => t.projectPath.equals(projectPath)))
-            .map((row) => row.id)
-            .get();
-    for (final id in sessionIds) {
+    return _db.transaction(() async {
+      final sessionIds =
+          await (_db.select(_db.sessions)
+                ..where((t) => t.projectPath.equals(projectPath)))
+              .map((row) => row.id)
+              .get();
+      for (final id in sessionIds) {
+        await (_db.delete(
+          _db.fileLastWriter,
+        )..where((t) => t.writerSessionId.equals(id))).go();
+        await (_db.delete(
+          _db.fileReadState,
+        )..where((t) => t.sessionId.equals(id))).go();
+        await (_db.delete(
+          _db.parts,
+        )..where((t) => t.sessionId.equals(id))).go();
+        await (_db.delete(
+          _db.messages,
+        )..where((t) => t.sessionId.equals(id))).go();
+      }
       await (_db.delete(
-        _db.messages,
-      )..where((t) => t.sessionId.equals(id))).go();
-      await (_db.delete(_db.parts)..where((t) => t.sessionId.equals(id))).go();
-      await (_db.delete(_db.fileReadState)
-            ..where((t) => t.sessionId.equals(id)))
-          .go();
-    }
-    await (_db.delete(
-      _db.sessions,
-    )..where((t) => t.projectPath.equals(projectPath))).go();
-    return sessionIds.length;
+        _db.sessions,
+      )..where((t) => t.projectPath.equals(projectPath))).go();
+      return sessionIds.length;
+    });
   }
 
   /// Bump the `updated_at` timestamp for [sessionId]. Called by

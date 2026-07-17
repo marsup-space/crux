@@ -1,11 +1,12 @@
 import '../components/ui/toast.dart';
 import '../models/session.dart';
 import 'command_executor.dart';
+
 Future<void> executeQuit(CommandContext ctx) async {
   final anyRunning = ctx.sessions.any((s) => s.status == SessionStatus.running);
   if (anyRunning) {
     ctx.showToast(
-      'A session is running — press Ctrl+C×2 to force quit',
+      'A session is running — Ctrl+C cancels the response, Ctrl+C×2 exits',
       mode: ToastMode.error,
     );
     return;

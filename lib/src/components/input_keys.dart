@@ -89,39 +89,73 @@ class InputKeyHandler {
   }
 
   bool handleKeyEvent(KeyboardEvent event) {
-    // --- Ctrl+C quit handler ---
+    // --- Ctrl+C: cancel streaming / double-press quit ---
+    //
+    // Semantics match mainstream CLIs:
+    // 1. While a response is streaming, Ctrl+C cancels the current
+    //    response (same effect as ESC×2) and arms the quit guard.
+    // 2. A quick second Ctrl+C (within 3s, while the hint is armed)
+    //    quits — this works both during and outside streaming.
+    // 3. Outside streaming the existing double-press exit guard is
+    //    unchanged: guarded when any session is running, immediate
+    //    quit when nothing is running.
     if (event.logicalKey == LogicalKey.keyC &&
         event.isControlPressed &&
         !event.isShiftPressed &&
         !event.isAltPressed &&
         !event.isMetaPressed) {
-      final anyRunning = sessionController.hasAnyRunningSession;
+      final sessionId = sessionController.currentSessionId;
+      final isStreaming =
+          sessionId != null &&
+          sessionController.runtime(sessionId).isResponding;
+      final now = DateTime.now();
 
-      if (anyRunning) {
-        final now = DateTime.now();
-        if (_lastCtrlCPressTime != null &&
-            now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
-            _ctrlCQuitHint) {
-          _lastCtrlCPressTime = null;
-          _ctrlCQuitHint = false;
-          onQuitRequest?.call();
-          return true;
-        } else {
-          _lastCtrlCPressTime = now;
-          _ctrlCQuitHint = true;
-          turnOrchestrator.showToast(
-            'A session is running. Press Ctrl+C again to quit.',
-            mode: ToastMode.info,
-          );
-          Future.delayed(const Duration(seconds: 3), () {
-            if (_ctrlCQuitHint) {
-              _ctrlCQuitHint = false;
-              onStateChanged();
-            }
-          });
-          onStateChanged();
-          return true;
-        }
+      // Quick double-press always quits, regardless of streaming state.
+      if (_lastCtrlCPressTime != null &&
+          now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
+          _ctrlCQuitHint) {
+        _lastCtrlCPressTime = null;
+        _ctrlCQuitHint = false;
+        onQuitRequest?.call();
+        return true;
+      }
+
+      if (isStreaming) {
+        // First press during streaming: interrupt the response and arm
+        // the quit guard so a fast second press still exits.
+        _lastCtrlCPressTime = now;
+        _ctrlCQuitHint = true;
+        turnOrchestrator.interruptResponse(textController: textController);
+        turnOrchestrator.showToast(
+          'Response interrupted. Press Ctrl+C again to quit.',
+          mode: ToastMode.info,
+        );
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_ctrlCQuitHint) {
+            _ctrlCQuitHint = false;
+            onStateChanged();
+          }
+        });
+        onStateChanged();
+        return true;
+      }
+
+      // Not streaming: keep the existing double-press exit guard.
+      if (sessionController.hasAnyRunningSession) {
+        _lastCtrlCPressTime = now;
+        _ctrlCQuitHint = true;
+        turnOrchestrator.showToast(
+          'A session is running. Press Ctrl+C again to quit.',
+          mode: ToastMode.info,
+        );
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_ctrlCQuitHint) {
+            _ctrlCQuitHint = false;
+            onStateChanged();
+          }
+        });
+        onStateChanged();
+        return true;
       }
 
       onQuitRequest?.call();
@@ -219,8 +253,9 @@ class InputKeyHandler {
         final newText =
             text.substring(0, dollarOffset) + text.substring(cursorOffset);
         textController.text = newText;
-        textController.selection =
-            TextSelection.collapsed(offset: dollarOffset);
+        textController.selection = TextSelection.collapsed(
+          offset: dollarOffset,
+        );
         // Dismiss the picker — the chip it was anchored to is
         // gone, so the picker has nothing to show.
         overlayController.setOverlayOff();
@@ -370,9 +405,7 @@ class InputKeyHandler {
               now.difference(_lastEscPressTime!).inMilliseconds < 1000) {
             _lastEscPressTime = null;
             _escInterruptHint = false;
-            turnOrchestrator.interruptResponse(
-              textController: textController,
-            );
+            turnOrchestrator.interruptResponse(textController: textController);
           } else {
             _lastEscPressTime = now;
             _escInterruptHint = true;
@@ -451,15 +484,11 @@ class InputKeyHandler {
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowUp && event.isControlPressed) {
-        scrollController.scrollUp(
-          scrollController.viewportDimension / 2,
-        );
+        scrollController.scrollUp(scrollController.viewportDimension / 2);
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown && event.isControlPressed) {
-        scrollController.scrollDown(
-          scrollController.viewportDimension / 2,
-        );
+        scrollController.scrollDown(scrollController.viewportDimension / 2);
         return true;
       }
       if (event.logicalKey == LogicalKey.home && event.isControlPressed) {
@@ -519,7 +548,9 @@ class InputKeyHandler {
         return true;
       }
       if (event.logicalKey == LogicalKey.enter) {
-        overlayController.onTapSuggestion(overlayController.selectedSuggestionIndex);
+        overlayController.onTapSuggestion(
+          overlayController.selectedSuggestionIndex,
+        );
         refresh();
         return true;
       }
@@ -686,7 +717,8 @@ class InputKeyHandler {
   }
 
   // --- Callbacks wired by ChatInputState ---
-  Future<bool> Function(int sessionId, {bool showEmptyToast})? tryClipboardImage;
+  Future<bool> Function(int sessionId, {bool showEmptyToast})?
+  tryClipboardImage;
   void Function()? onSendMessage;
   void Function()? onJumpToPrevious;
   void Function()? onJumpToNext;

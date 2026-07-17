@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
+import '../commands/cmd_help.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
 import '../lsp/actors/dart.dart';
@@ -312,7 +313,12 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
-    _chatService = ChatService(_store, _providerService, LlmClient(), toolExecutor);
+    _chatService = ChatService(
+      _store,
+      _providerService,
+      LlmClient(),
+      toolExecutor,
+    );
     _webProviderChangesSub = _webProviderRegistry.changes.listen((_) {
       registry.registerWebTools(_webProviderRegistry);
       setState(() {});
@@ -382,7 +388,10 @@ class _ChatPanelState extends State<ChatPanel> {
       // session switch. Push the legacy state into the cubit once
       // before the panel builds its first frame.
       _sessionController.syncCubitFromLegacyState();
-      _tracker.loadSession(bootState.currentSessionId, bootState.currentFileReadState);
+      _tracker.loadSession(
+        bootState.currentSessionId,
+        bootState.currentFileReadState,
+      );
 
       final bootMessagesLoaded =
           bootState.messageCache[bootState.currentSessionId]?.length ?? 0;
@@ -442,8 +451,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final contextTarget = _sessionController.metricsCubit.state
         .sessionState(sessionId)
         .contextTargetTokens;
-    final messages = _sessionController.cubit.state
-        .messagesFor(sessionId);
+    final messages = _sessionController.cubit.state.messagesFor(sessionId);
     final cached = _compactEstimates[sessionId];
     if (cached != null &&
         cached.messageCount == messages.length &&
@@ -481,9 +489,15 @@ class _ChatPanelState extends State<ChatPanel> {
       case OpenDirectoryResult.launched:
         return;
       case OpenDirectoryResult.notFound:
-        _showToast('Directory not found: ${Directory.current.path}', mode: ToastMode.error);
+        _showToast(
+          'Directory not found: ${Directory.current.path}',
+          mode: ToastMode.error,
+        );
       case OpenDirectoryResult.failed:
-        _showToast("Couldn't open file manager for ${Directory.current.path}", mode: ToastMode.error);
+        _showToast(
+          "Couldn't open file manager for ${Directory.current.path}",
+          mode: ToastMode.error,
+        );
     }
   }
 
@@ -552,9 +566,7 @@ class _ChatPanelState extends State<ChatPanel> {
     // .mirrorTurnFlags). The runtime's `isResponding` flag and the
     // cubit's `state.sessionState(id).isResponding` carry the same
     // value here — using the cubit is the read-side SSoT.
-    if (_sessionController.chatTurnCubit.state
-        .sessionState(id)
-        .isResponding) {
+    if (_sessionController.chatTurnCubit.state.sessionState(id).isResponding) {
       _streamingController.startMetricsTimer(id);
     }
 
@@ -642,8 +654,9 @@ class _ChatPanelState extends State<ChatPanel> {
     // lookup per session.
     final turnStates = _sessionController.chatTurnCubit.state.sessions;
     final ts = sessionId != null ? turnStates[sessionId] : null;
-    final messages = _sessionController.cubit.state
-        .messagesFor(sessionId ?? -1);
+    final messages = _sessionController.cubit.state.messagesFor(
+      sessionId ?? -1,
+    );
     return {
       'sessionId': sessionId,
       'isResponding': ts?.isResponding ?? false,
@@ -652,10 +665,11 @@ class _ChatPanelState extends State<ChatPanel> {
       'interrupted': ts?.interrupted ?? false,
       'isGeneratingTitle': _sessionController.isGeneratingTitle,
       'messageCount': messages.length,
-      'reasoningMsgs': messages.where((m) => m.reasoningContent.isNotEmpty).length,
+      'reasoningMsgs': messages
+          .where((m) => m.reasoningContent.isNotEmpty)
+          .length,
       'contextAnimActive': _streamingController.contextAnimTimerIsActive(),
-      'anySessionResponding':
-          turnStates.values.any((s) => s.isResponding),
+      'anySessionResponding': turnStates.values.any((s) => s.isResponding),
     };
   }
 
@@ -666,7 +680,9 @@ class _ChatPanelState extends State<ChatPanel> {
       model: model,
       projectPath: Directory.current.path,
     );
-    _sessionController.sessions = await _store.list(projectPath: Directory.current.path);
+    _sessionController.sessions = await _store.list(
+      projectPath: Directory.current.path,
+    );
     // Direct field write above bypasses the per-mutation cubit mirror
     // helpers that slice 4 wired into SessionController. Force the cubit
     // to see the new session list so chat_history / sidebar / anything
@@ -732,13 +748,22 @@ class _ChatPanelState extends State<ChatPanel> {
       clearBtwTurns: _sessionController.clearBtwTurnsFor,
       setInputText: (text) {
         textController.text = text;
-        textController.selection = TextSelection.collapsed(
-          offset: text.length,
-        );
+        textController.selection = TextSelection.collapsed(offset: text.length);
       },
       quitApp: _quitHandler.quitAndPrintSummary,
       showFullpane: _openFullpane,
       recentProjectsStore: _recentProjectsStore,
+      appendLocalMessage: (markdown) async {
+        final sessionId = _sessionController.currentSessionId;
+        if (sessionId == null) return;
+        await _store.messageStore.addMessage(
+          sessionId,
+          role: localInfoRole,
+          content: markdown,
+        );
+        await _sessionController.loadMessages(sessionId);
+        _refresh();
+      },
     );
     await _commandExecutor.execute(text, ctx);
     setState(() {});
@@ -766,8 +791,10 @@ class _ChatPanelState extends State<ChatPanel> {
   /// the user would have seen.
   void _showCompactCounterproductiveToast(ChatLogCompactionEstimate? est) {
     if (est == null || est.preTokens <= 0) {
-      _showToast('Compaction is not worth it — no history to compact.',
-          mode: ToastMode.info);
+      _showToast(
+        'Compaction is not worth it — no history to compact.',
+        mode: ToastMode.info,
+      );
       return;
     }
     final pre = est.preTokens;
@@ -785,9 +812,9 @@ class _ChatPanelState extends State<ChatPanel> {
   /// helper from here; duplicating the trivial regex keeps the
   /// toast human-friendly without a public export.
   String _fmtNum(int n) => n.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-        (m) => '${m[1]},',
-      );
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]},',
+  );
 
   void _onAuxiliaryModelButtonPressed() {
     _chatInputKey.currentState?.stashAndSetCommand('/auxiliary ');
@@ -822,8 +849,18 @@ class _ChatPanelState extends State<ChatPanel> {
         const [];
     if (presets.isEmpty) return;
 
-    final current = rt.thinkingMode == 'disabled' ? 'off' : rt.reasoningEffort ?? 'normal';
+    final current = rt.thinkingMode == 'disabled'
+        ? 'off'
+        : rt.reasoningEffort ?? 'normal';
 
+    // Find the current effort in the preset list. If it's
+    // not there (e.g. a session created before the runtime
+    // resolved a stale `normal` value, or a model switch
+    // mid-session whose new preset list doesn't include the
+    // old value), fall back to idx = -1 so the cycle picks
+    // the first preset — the same behavior as a freshly
+    // loaded session whose runtime value happens to be the
+    // legacy default.
     int idx = -1;
     for (var i = 0; i < presets.length; i++) {
       if (presets[i].internalValue == current) {
@@ -1087,185 +1124,218 @@ class _ChatPanelState extends State<ChatPanel> {
         providers: [
           BlocProvider<SessionCubit>.value(value: _sessionController.cubit),
           BlocProvider<BtwCubit>.value(value: _sessionController.btwCubit),
-          BlocProvider<MetricsCubit>.value(value: _sessionController.metricsCubit),
-          BlocProvider<ChatTurnCubit>.value(value: _sessionController.chatTurnCubit),
-          BlocProvider<StreamingCubit>.value(value: _sessionController.streamingCubit),
+          BlocProvider<MetricsCubit>.value(
+            value: _sessionController.metricsCubit,
+          ),
+          BlocProvider<ChatTurnCubit>.value(
+            value: _sessionController.chatTurnCubit,
+          ),
+          BlocProvider<StreamingCubit>.value(
+            value: _sessionController.streamingCubit,
+          ),
         ],
         child: LayoutBuilder(
-        builder: (context, constraints) {
-          final showInfoPanel = constraints.maxWidth >= _infoPanelShowThreshold;
+          builder: (context, constraints) {
+            final showInfoPanel =
+                constraints.maxWidth >= _infoPanelShowThreshold;
 
-          final sessionId = _sessionController.currentSessionId;
-          final rt = sessionId != null
-              ? _sessionController.runtime(sessionId)
-              : null;
+            final sessionId = _sessionController.currentSessionId;
+            final rt = sessionId != null
+                ? _sessionController.runtime(sessionId)
+                : null;
 
-          final overlays = _buildOverlays();
+            final overlays = _buildOverlays();
 
-          final mainContent = Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ChatHistory(
-                      scrollController: scrollController,
-                      sessionController: _sessionController,
-                      streamingController: _streamingController,
-                      turnOrchestrator: _turnOrchestrator,
-                      providerService: _providerService,
-                      toolRegistry: _toolRegistry,
-                      showToast: _showToast,
-                      refresh: _refresh,
-                      onToolCallTap: _openToolDetail,
-                      onSessionLinkTap: _handleSessionLinkTap,
-                      onQuickReplyTap: _handleQuickReplyTap,
-                      onLinkTap: _handleMarkdownLinkTap,
-                      onRetryContinue: _retryContinue,
-                      onCompactionTap:
-                          CommandRegistry.instance.debugEnabled
-                              ? _openCompactionFullpane
-                              : null,
-                    ),
-                    // Vibe/verbose toggle — absolutely positioned
-                    // top-right, outside the chat scroll view.
-                    // Reuses the project's Button component for
-                    // hover/focus theming via CruxTheme. Label shows
-                    // the current mode; click flips it.
-                    //
-                    // The `right: 2` (instead of `right: 0`) leaves
-                    // the scrollbar's thumb + marker column free at
-                    // the panel's right edge — without it, the
-                    // button visually overlaps the scrollbar and
-                    // blocks its hit testing in the top corner.
-                    if (rt != null)
-                      Positioned(
-                        top: 0,
-                        right: 2,
-                        child: Button(
-                          label: rt.chatDisplayMode == ChatDisplayMode.vibe
-                              ? 'vibe'
-                              : 'verbose',
-                          onPressed: () {
-                            final newMode =
-                                rt.chatDisplayMode == ChatDisplayMode.vibe
-                                ? ChatDisplayMode.verbose
-                                : ChatDisplayMode.vibe;
-                            rt.chatDisplayMode = newMode;
-                            _sessionController.persistChatDisplayMode(rt);
-                            setState(() {});
-                          },
-                        ),
-                      ),
-                    ...overlays,
-                  ],
-                ),
-              ),
-              ChatToolbar(
-                sessionController: _sessionController,
-                streamingController: _streamingController,
-                providerService: _providerService,
-                providerServiceReady: _providerServiceReady,
-                codingPlanProvider: _polling.activeCodingPlanProvider,
-                creditBalanceProvider: _polling.activeCreditBalanceProvider,
-                onCodingPlanTap: _polling.activeCodingPlanProvider?.refreshNow,
-                onCreditBalanceTap: _polling.activeCreditBalanceProvider?.refreshNow,
-                runtime: rt,
-                contextMaxTokens: _contextMaxTokens,
-                onModelPressed: _onModelButtonPressed,
-                onCompactPressed: _onCompactButtonPressed,
-                onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
-                onCycleThinking: _cycleThinkingLevel,
-                onTemperaturePressed: _onTemperatureChipPressed,
-                compactEstimate: sessionId == null
-                    ? null
-                    : _compactEstimates[sessionId]?.estimate,
-                debugMode: CommandRegistry.instance.debugEnabled,
-              ),
-              Divider(color: CruxTheme.of(context).divider, height: 1),
-              ChatInput(
-                key: _chatInputKey,
-                textController: textController,
-                overlayController: _overlayController,
-                sessionController: _sessionController,
-                streamingController: _streamingController,
-                turnOrchestrator: _turnOrchestrator,
-                providerService: _providerService,
-                providerServiceReady: _providerServiceReady,
-                webProviderRegistry: _webProviderRegistry,
-                themeController: component.themeController,
-                scrollController: scrollController,
-                refresh: _refresh,
-                projectPath: Directory.current.path,
-                recentProjectsStore: _recentProjectsStore,
-                onSendTurn: (text) {
-                  final sid = _sessionController.currentSessionId;
-                  final images = sid != null
-                      ? _sessionController.drainPendingImages(sid)
-                      : <ImageAttachment>[];
-                  _turnOrchestrator.sendMessage(
-                    text: text,
-                    textController: textController,
-                    images: images,
-                  );
-                  scrollController.scrollToBottom();
-                },
-                onExecuteCommand: _executeCommand,
-                onSwitchSession: _switchSession,
-                onInitSessions: _initSessions,
-                onCreateNewSession: _createNewSession,
-                onQuitRequest: _quitHandler.quitAndPrintSummary,
-                onAttachClipboardImage: (image) {
-                  final sid = _sessionController.currentSessionId;
-                  if (sid != null) {
-                    _sessionController.addPendingImage(sid, image);
-                    final index = _sessionController.pendingImagesFor(sid).length;
-                    _chatInputKey.currentState?.insertImageMarker(index);
-                    _refresh();
-                  }
-                },
-              ),
-            ],
-          );
-
-          if (showInfoPanel) {
-            final panelWidth =
-                (_infoPanelWidthMin +
-                        0.3 * (constraints.maxWidth - _infoPanelShowThreshold))
-                    .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
-
-            final body = Row(
+            final mainContent = Column(
               children: [
-                Expanded(child: mainContent),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: CruxTheme.of(context).divider,
-                ),
-                SizedBox(
-                  width: panelWidth,
-                  child: ExtraInfoPanel(
-                    sessions: _sessionController.sessions,
-                    currentSessionId: _sessionController.currentSessionId ?? 0,
-                    onSwitchSession: _switchSession,
-                    archivedCount: _sessionController.archivedCount,
-                    gitStatusService: _gitStatusService,
-                    onSessionTitleTap: () {
-                      setState(() {
-                        _overlayController.showSessionManager = true;
-                      });
-                    },
-                    onOpenProject: _openProjectInExplorer,
-                    onSwitchProject: _switchProject,
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ChatHistory(
+                        scrollController: scrollController,
+                        sessionController: _sessionController,
+                        streamingController: _streamingController,
+                        turnOrchestrator: _turnOrchestrator,
+                        providerService: _providerService,
+                        toolRegistry: _toolRegistry,
+                        showToast: _showToast,
+                        refresh: _refresh,
+                        onToolCallTap: _openToolDetail,
+                        onSessionLinkTap: _handleSessionLinkTap,
+                        onQuickReplyTap: _handleQuickReplyTap,
+                        onLinkTap: _handleMarkdownLinkTap,
+                        onRetryContinue: _retryContinue,
+                        onCompactionTap: CommandRegistry.instance.debugEnabled
+                            ? _openCompactionFullpane
+                            : null,
+                      ),
+                      // Vibe/verbose toggle — absolutely positioned
+                      // top-right, outside the chat scroll view.
+                      // Reuses the project's Button component for
+                      // hover/focus theming via CruxTheme. Label shows
+                      // the current mode; click flips it.
+                      //
+                      // The `right: 2` (instead of `right: 0`) leaves
+                      // the scrollbar's thumb + marker column free at
+                      // the panel's right edge — without it, the
+                      // button visually overlaps the scrollbar and
+                      // blocks its hit testing in the top corner.
+                      if (rt != null)
+                        Positioned(
+                          top: 0,
+                          right: 2,
+                          child: Button(
+                            label: rt.chatDisplayMode == ChatDisplayMode.vibe
+                                ? 'vibe'
+                                : 'verbose',
+                            onPressed: () {
+                              final newMode =
+                                  rt.chatDisplayMode == ChatDisplayMode.vibe
+                                  ? ChatDisplayMode.verbose
+                                  : ChatDisplayMode.vibe;
+                              rt.chatDisplayMode = newMode;
+                              _sessionController.persistChatDisplayMode(rt);
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      ...overlays,
+                    ],
                   ),
+                ),
+                ChatToolbar(
+                  sessionController: _sessionController,
+                  streamingController: _streamingController,
+                  providerService: _providerService,
+                  providerServiceReady: _providerServiceReady,
+                  codingPlanProvider: _polling.activeCodingPlanProvider,
+                  creditBalanceProvider: _polling.activeCreditBalanceProvider,
+                  onCodingPlanTap:
+                      _polling.activeCodingPlanProvider?.refreshNow,
+                  onCreditBalanceTap:
+                      _polling.activeCreditBalanceProvider?.refreshNow,
+                  runtime: rt,
+                  contextMaxTokens: _contextMaxTokens,
+                  onModelPressed: _onModelButtonPressed,
+                  onCompactPressed: _onCompactButtonPressed,
+                  onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
+                  onCycleThinking: _cycleThinkingLevel,
+                  onTemperaturePressed: _onTemperatureChipPressed,
+                  compactEstimate: sessionId == null
+                      ? null
+                      : _compactEstimates[sessionId]?.estimate,
+                  debugMode: CommandRegistry.instance.debugEnabled,
+                ),
+                Divider(color: CruxTheme.of(context).divider, height: 1),
+                ChatInput(
+                  key: _chatInputKey,
+                  textController: textController,
+                  overlayController: _overlayController,
+                  sessionController: _sessionController,
+                  streamingController: _streamingController,
+                  turnOrchestrator: _turnOrchestrator,
+                  providerService: _providerService,
+                  providerServiceReady: _providerServiceReady,
+                  webProviderRegistry: _webProviderRegistry,
+                  themeController: component.themeController,
+                  scrollController: scrollController,
+                  refresh: _refresh,
+                  projectPath: Directory.current.path,
+                  recentProjectsStore: _recentProjectsStore,
+                  onSendTurn: (text) {
+                    final sid = _sessionController.currentSessionId;
+                    final images = sid != null
+                        ? _sessionController.drainPendingImages(sid)
+                        : <ImageAttachment>[];
+                    _turnOrchestrator.sendMessage(
+                      text: text,
+                      textController: textController,
+                      images: images,
+                    );
+                    scrollController.scrollToBottom();
+                  },
+                  onExecuteCommand: _executeCommand,
+                  onSwitchSession: _switchSession,
+                  onInitSessions: _initSessions,
+                  onCreateNewSession: _createNewSession,
+                  onQuitRequest: _quitHandler.quitAndPrintSummary,
+                  onAttachClipboardImage: (image) {
+                    final sid = _sessionController.currentSessionId;
+                    if (sid != null) {
+                      _sessionController.addPendingImage(sid, image);
+                      final index = _sessionController
+                          .pendingImagesFor(sid)
+                          .length;
+                      _chatInputKey.currentState?.insertImageMarker(index);
+                      _refresh();
+                    }
+                  },
                 ),
               ],
             );
 
+            if (showInfoPanel) {
+              final panelWidth =
+                  (_infoPanelWidthMin +
+                          0.3 *
+                              (constraints.maxWidth - _infoPanelShowThreshold))
+                      .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
+
+              final body = Row(
+                children: [
+                  Expanded(child: mainContent),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: CruxTheme.of(context).divider,
+                  ),
+                  SizedBox(
+                    width: panelWidth,
+                    child: ExtraInfoPanel(
+                      sessions: _sessionController.sessions,
+                      currentSessionId:
+                          _sessionController.currentSessionId ?? 0,
+                      onSwitchSession: _switchSession,
+                      archivedCount: _sessionController.archivedCount,
+                      gitStatusService: _gitStatusService,
+                      onSessionTitleTap: () {
+                        setState(() {
+                          _overlayController.showSessionManager = true;
+                        });
+                      },
+                      onOpenProject: _openProjectInExplorer,
+                      onSwitchProject: _switchProject,
+                    ),
+                  ),
+                ],
+              );
+
+              if (_overlayController.showFullpane) {
+                return Stack(
+                  children: [
+                    Positioned.fill(child: body),
+                    Positioned.fill(child: _buildFullpane()),
+                  ],
+                );
+              }
+
+              if (_overlayController.showSessionManager) {
+                return Stack(
+                  children: [
+                    Positioned.fill(child: body),
+                    Positioned.fill(child: _buildSessionManager()),
+                  ],
+                );
+              }
+
+              return body;
+            }
+
             if (_overlayController.showFullpane) {
               return Stack(
                 children: [
-                  Positioned.fill(child: body),
+                  Positioned.fill(child: mainContent),
                   Positioned.fill(child: _buildFullpane()),
                 ],
               );
@@ -1274,37 +1344,16 @@ class _ChatPanelState extends State<ChatPanel> {
             if (_overlayController.showSessionManager) {
               return Stack(
                 children: [
-                  Positioned.fill(child: body),
+                  Positioned.fill(child: mainContent),
                   Positioned.fill(child: _buildSessionManager()),
                 ],
               );
             }
 
-            return body;
-          }
-
-          if (_overlayController.showFullpane) {
-            return Stack(
-              children: [
-                Positioned.fill(child: mainContent),
-                Positioned.fill(child: _buildFullpane()),
-              ],
-            );
-          }
-
-          if (_overlayController.showSessionManager) {
-            return Stack(
-              children: [
-                Positioned.fill(child: mainContent),
-                Positioned.fill(child: _buildSessionManager()),
-              ],
-            );
-          }
-
-          return mainContent;
-        },
-      ),
-    );
+            return mainContent;
+          },
+        ),
+      );
     });
   }
 }

@@ -56,8 +56,28 @@ class BtwTurnHandler {
     final provider = providerService.providerByName(providerName);
     final apiKey = providerService.getApiKey(providerName);
     if (provider == null || apiKey == null || apiKey.isEmpty) {
+      // A bare model id (no "provider/" prefix) parses out to an
+      // empty providerName, which used to produce the useless
+      // `No API key for provider ""` toast. Resolve the provider
+      // that actually serves this model so the error names it and
+      // gives the exact next step.
+      var effectiveName = providerName;
+      if (effectiveName.isEmpty) {
+        for (final candidate in providerService.providers()) {
+          if (candidate.modelById(modelId) != null) {
+            effectiveName = candidate.name;
+            break;
+          }
+        }
+      }
       showToast(
-        'No API key for provider "$providerName". Use /provider to connect.',
+        effectiveName.isNotEmpty
+            ? 'No API key for provider "$effectiveName". '
+                  'Use /provider $effectiveName to configure an API key, '
+                  'then try again.'
+            : 'No configured provider serves model "$modelId". '
+                  'Use /provider to configure a provider and API key, '
+                  'then try again.',
         mode: ToastMode.error,
       );
       return;
@@ -66,12 +86,22 @@ class BtwTurnHandler {
     final history = await messageStore.getMessages(sessionId);
     final wireFamily = provider.wireFamily;
     final apiMessages = <Map<String, dynamic>>[
-      ...buildApiMessages(history, wireFamily, systemPrompt: session.systemPrompt),
+      ...buildApiMessages(
+        history,
+        wireFamily,
+        systemPrompt: session.systemPrompt,
+      ),
     ];
     final priorBtw = sessionController.btwTurnsFor(sessionId);
     for (final t in priorBtw) {
-      apiMessages.add({'role': 'user', 'content': btwRenderUserMessage(t.userText)});
-      apiMessages.add({'role': 'assistant', 'content': t.aiText.isEmpty ? null : t.aiText});
+      apiMessages.add({
+        'role': 'user',
+        'content': btwRenderUserMessage(t.userText),
+      });
+      apiMessages.add({
+        'role': 'assistant',
+        'content': t.aiText.isEmpty ? null : t.aiText,
+      });
     }
     apiMessages.add({'role': 'user', 'content': btwRenderUserMessage(prompt)});
 
@@ -132,16 +162,20 @@ class BtwTurnHandler {
           break;
         }
         if (chunk.promptTokens != null) btwTokensIn = chunk.promptTokens!;
-        if (chunk.completionTokens != null) btwTokensOut = chunk.completionTokens!;
-        if (chunk.promptCacheHitTokens != null) btwCacheHit = chunk.promptCacheHitTokens!;
-        if (chunk.promptCacheMissTokens != null) btwCacheMiss = chunk.promptCacheMissTokens!;
+        if (chunk.completionTokens != null)
+          btwTokensOut = chunk.completionTokens!;
+        if (chunk.promptCacheHitTokens != null)
+          btwCacheHit = chunk.promptCacheHitTokens!;
+        if (chunk.promptCacheMissTokens != null)
+          btwCacheMiss = chunk.promptCacheMissTokens!;
         final deltaText = chunk.textDelta;
         final deltaReasoning = chunk.reasoningContent;
         if (deltaText != null || deltaReasoning != null) {
           rt.roundFirstTokenTime ??= DateTime.now();
           if (firstTokenEver && (deltaText != null || deltaReasoning != null)) {
             final now = DateTime.now();
-            final elapsed = now.difference(rt.responseStartTime!).inMicroseconds / 1000.0;
+            final elapsed =
+                now.difference(rt.responseStartTime!).inMicroseconds / 1000.0;
             rt.ttftMs = elapsed;
             rt.ttftReceived = true;
             rt.firstTokenTime = now;
@@ -155,10 +189,16 @@ class BtwTurnHandler {
               rt.contentStartTime = DateTime.now();
             }
             streamingController.appendStreamingContent(sessionId, deltaText);
-            sessionController.updateLastBtwTurnAiText(sessionId, buffer.toString());
+            sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              buffer.toString(),
+            );
           }
           if (deltaReasoning != null) {
-            streamingController.appendStreamingReasoning(sessionId, deltaReasoning);
+            streamingController.appendStreamingReasoning(
+              sessionId,
+              deltaReasoning,
+            );
           }
           refresh();
         }
@@ -181,7 +221,8 @@ class BtwTurnHandler {
 
     if (rt.roundStreaming && rt.roundFirstTokenTime != null) {
       rt.cumulativeGenMs +=
-          DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds / 1000.0;
+          DateTime.now().difference(rt.roundFirstTokenTime!).inMicroseconds /
+          1000.0;
     }
     rt.roundStreaming = false;
     rt.roundStartTime = null;
@@ -201,8 +242,14 @@ class BtwTurnHandler {
         sessionController.clearBtwTurnsFor(sessionId);
         if (turns.length > 1) {
           for (var i = 0; i < turns.length - 1; i++) {
-            sessionController.appendPendingBtwTurn(sessionId, turns[i].userText);
-            sessionController.updateLastBtwTurnAiText(sessionId, turns[i].aiText);
+            sessionController.appendPendingBtwTurn(
+              sessionId,
+              turns[i].userText,
+            );
+            sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              turns[i].aiText,
+            );
           }
         }
       }
