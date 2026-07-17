@@ -221,7 +221,8 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // `onTap: null` so the gesture detector drops the click
     // while the hover label keeps showing `X · skip`.
     final isSkip = ContextBarState.isCompactCounterproductive(
-        component.compactEstimate);
+      component.compactEstimate,
+    );
     return ContextBar(
       sessionController: _sessionController,
       streamingController: _streamingController,
@@ -318,6 +319,31 @@ class _ChatToolbarState extends State<ChatToolbar> {
   ) {
     final rt = _rt;
     final override = rt?.temperatureOverride;
+
+    // If the active provider pins a fixed temperature (Kimi
+    // Code: `1.0` for every model, with the API 400ing on any
+    // other value), render a non-interactive "T:1 (fixed)" chip
+    // regardless of the override. The override's wire value
+    // would be silently overridden by the provider, so showing
+    // the user's value here would be misleading.
+    final fixedTemp = _providerForcedTemperature();
+    if (fixedTemp != null) {
+      final label = 'T:${formatSamplingValue(fixedTemp)} (fixed)';
+      final hint =
+          'Temperature: ${formatSamplingValue(fixedTemp)} '
+          '(fixed by the provider — /temperature has no effect)';
+      return Hinted(
+        hint: hint,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          child: Text(
+            label,
+            style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
+          ),
+        ),
+      );
+    }
+
     if (rt == null || override == null) return null;
 
     final modelDefault = _modelDefaultTemperature();
@@ -328,8 +354,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // float drift (the runtime value comes from `double.tryParse`
     // of the user input, the model default from TOML — same
     // semantic value but possibly different bit-level doubles).
-    if (modelDefault != null &&
-        (override - modelDefault).abs() < 1e-9) {
+    if (modelDefault != null && (override - modelDefault).abs() < 1e-9) {
       return null;
     }
 
@@ -346,9 +371,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
       ..writeln('Temperature: ${formatSamplingValue(override)}')
       ..writeln('top_p = ${formatSamplingValue(topP)}');
     if (modelDefault != null) {
-      buffer.writeln(
-        'Model default: ${formatSamplingValue(modelDefault)}',
-      );
+      buffer.writeln('Model default: ${formatSamplingValue(modelDefault)}');
     } else {
       buffer.writeln('Model default: (unknown)');
     }
@@ -359,8 +382,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
       hint: hint.trimRight(),
       child: Button(
         label: label,
-        onPressed:
-            isSessionRunning ? null : component.onTemperaturePressed,
+        onPressed: isSessionRunning ? null : component.onTemperaturePressed,
         // Theme: match the thinking-label color so the chip reads
         // as "another knob you've tuned" — but a different hue so
         // the user can tell at a glance that it's not the
@@ -373,6 +395,22 @@ class _ChatToolbarState extends State<ChatToolbar> {
         padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       ),
     );
+  }
+
+  /// The provider-pinned temperature for the active model, or
+  /// `null` if the provider passes the caller's value through
+  /// unchanged. Reads from
+  /// [LlmProvider.forcedTemperature] on the resolved
+  /// [LlmProvider] for the current session's model.
+  double? _providerForcedTemperature() {
+    if (!component.providerServiceReady) return null;
+    final modelKey = _sessionController.currentSession.model;
+    if (modelKey.isEmpty) return null;
+    final slashIdx = modelKey.indexOf('/');
+    if (slashIdx <= 0) return null;
+    final providerName = modelKey.substring(0, slashIdx);
+    final llm = _providerService.llmProviderByName(providerName);
+    return llm?.forcedTemperature;
   }
 
   @override
@@ -414,12 +452,23 @@ class _ChatToolbarState extends State<ChatToolbar> {
     // equals the model default (visually misleading to show
     // "T:0" when the effective temperature IS already the model
     // default of 0).
+    //
+    // When the provider pins a fixed temperature (Kimi Code
+    // forces `1.0` for every model), the label reflects the
+    // pinned value, not the caller's override. The override is
+    // silently discarded on the wire, so showing its value
+    // would be misleading — and the chip's own "T:1 (fixed)"
+    // label is what the user actually needs to see.
+    final fixedTemp = _providerForcedTemperature();
     final tempOverride = rt?.temperatureOverride;
     final tempModelDefault = _modelDefaultTemperature();
-    final tempSuppressesChip = tempOverride != null &&
+    final tempSuppressesChip =
+        tempOverride != null &&
         tempModelDefault != null &&
         (tempOverride - tempModelDefault).abs() < 1e-9;
-    final tempLabel = (tempOverride != null && !tempSuppressesChip)
+    final tempLabel = fixedTemp != null
+        ? 'T:${formatSamplingValue(fixedTemp)} (fixed)'
+        : (tempOverride != null && !tempSuppressesChip)
         ? 'T:${formatSamplingValue(tempOverride)}'
         : null;
 

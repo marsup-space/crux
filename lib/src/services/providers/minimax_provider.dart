@@ -83,13 +83,14 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
           final request = await client
               .getUrl(Uri.parse(_codingPlanApiUrl))
               .timeout(const Duration(seconds: 10));
-          request.headers
-              .set(HttpHeaders.authorizationHeader, 'Bearer $key');
-          request.headers
-              .set(HttpHeaders.contentTypeHeader, 'application/json');
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
+          request.headers.set(
+            HttpHeaders.contentTypeHeader,
+            'application/json',
+          );
           final response = await request.close().timeout(
-                const Duration(seconds: 10),
-              );
+            const Duration(seconds: 10),
+          );
           if (response.statusCode != 200) {
             throw CodingPlanUsageError(
               CodingPlanUsageErrorKind.network,
@@ -149,9 +150,14 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
   void startCodingPlanPolling({
     required String apiKey,
     Duration? interval,
+    String? baseUrl,
   }) {
     _currentCodingPlanApiKey = apiKey;
-    super.startCodingPlanPolling(apiKey: apiKey, interval: interval);
+    super.startCodingPlanPolling(
+      apiKey: apiKey,
+      interval: interval,
+      baseUrl: baseUrl,
+    );
   }
 
   @override
@@ -212,9 +218,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
         // budget_tokens` is explicit about this
         // (`expect(requestBody.thinking.budget_tokens).toBeUndefined()`).
         body['thinking'] = {'type': 'adaptive'};
-        body['output_config'] = {
-          'effort': super.mapEffort(reasoningEffort),
-        };
+        body['output_config'] = {'effort': super.mapEffort(reasoningEffort)};
       } else {
         // Budget-driven path: emit `thinking: {type: "enabled",
         // budget_tokens: ...}` plus `output_config.effort` for
@@ -224,9 +228,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
           'type': 'enabled',
           'budget_tokens': thinkingBudget ?? 10000,
         };
-        body['output_config'] = {
-          'effort': super.mapEffort(reasoningEffort),
-        };
+        body['output_config'] = {'effort': super.mapEffort(reasoningEffort)};
       }
     } else {
       // ── M2.x: thinking is always on, cannot be disabled. The
@@ -239,9 +241,7 @@ class MiniMaxProvider extends AnthropicCompatibleProvider
         'budget_tokens': thinkingBudget ?? 10000,
       };
       if (reasoningEffort != null) {
-        body['output_config'] = {
-          'effort': super.mapEffort(reasoningEffort),
-        };
+        body['output_config'] = {'effort': super.mapEffort(reasoningEffort)};
       }
     }
 

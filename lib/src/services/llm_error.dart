@@ -100,67 +100,61 @@ extension LlmErrorKindX on LlmErrorKind {
   /// retriable — retrying with the same payload is either useless
   /// or actively misleading.
   bool get isRetriable => switch (this) {
-        LlmErrorKind.rateLimit ||
-        LlmErrorKind.overloaded ||
-        LlmErrorKind.serverError ||
-        LlmErrorKind.timeout ||
-        LlmErrorKind.network =>
-          true,
-        LlmErrorKind.auth ||
-        LlmErrorKind.permission ||
-        LlmErrorKind.billing ||
-        LlmErrorKind.quota ||
-        LlmErrorKind.invalidRequest ||
-        LlmErrorKind.contentPolicy ||
-        LlmErrorKind.contextLength ||
-        LlmErrorKind.notFound ||
-        LlmErrorKind.conflict ||
-        LlmErrorKind.cancelled ||
-        LlmErrorKind.unknown =>
-          false,
-      };
+    LlmErrorKind.rateLimit ||
+    LlmErrorKind.overloaded ||
+    LlmErrorKind.serverError ||
+    LlmErrorKind.timeout ||
+    LlmErrorKind.network => true,
+    LlmErrorKind.auth ||
+    LlmErrorKind.permission ||
+    LlmErrorKind.billing ||
+    LlmErrorKind.quota ||
+    LlmErrorKind.invalidRequest ||
+    LlmErrorKind.contentPolicy ||
+    LlmErrorKind.contextLength ||
+    LlmErrorKind.notFound ||
+    LlmErrorKind.conflict ||
+    LlmErrorKind.cancelled ||
+    LlmErrorKind.unknown => false,
+  };
 
   /// Short, capitalised label for UI / logs. Kept singular so it
   /// reads naturally in a sentence ("Rate limited — …").
   String get displayLabel => switch (this) {
-        LlmErrorKind.auth => 'Authentication error',
-        LlmErrorKind.permission => 'Permission error',
-        LlmErrorKind.billing => 'Billing error',
-        LlmErrorKind.quota => 'Quota exceeded',
-        LlmErrorKind.rateLimit => 'Rate limited',
-        LlmErrorKind.invalidRequest => 'Invalid request',
-        LlmErrorKind.contentPolicy => 'Content policy',
-        LlmErrorKind.contextLength => 'Context too long',
-        LlmErrorKind.overloaded => 'Upstream overloaded',
-        LlmErrorKind.serverError => 'Upstream server error',
-        LlmErrorKind.timeout => 'Timed out',
-        LlmErrorKind.notFound => 'Not found',
-        LlmErrorKind.conflict => 'Conflict',
-        LlmErrorKind.network => 'Network error',
-        LlmErrorKind.cancelled => 'Cancelled',
-        LlmErrorKind.unknown => 'Unknown error',
-      };
+    LlmErrorKind.auth => 'Authentication error',
+    LlmErrorKind.permission => 'Permission error',
+    LlmErrorKind.billing => 'Billing error',
+    LlmErrorKind.quota => 'Quota exceeded',
+    LlmErrorKind.rateLimit => 'Rate limited',
+    LlmErrorKind.invalidRequest => 'Invalid request',
+    LlmErrorKind.contentPolicy => 'Content policy',
+    LlmErrorKind.contextLength => 'Context too long',
+    LlmErrorKind.overloaded => 'Upstream overloaded',
+    LlmErrorKind.serverError => 'Upstream server error',
+    LlmErrorKind.timeout => 'Timed out',
+    LlmErrorKind.notFound => 'Not found',
+    LlmErrorKind.conflict => 'Conflict',
+    LlmErrorKind.network => 'Network error',
+    LlmErrorKind.cancelled => 'Cancelled',
+    LlmErrorKind.unknown => 'Unknown error',
+  };
 }
 
 /// Which vendor produced the error. Affects how the vendor-specific
 /// code in [LlmError.vendorCode] is interpreted by humans (MiniMax
 /// 1002 → "rate limit"; OpenAI "slow_down" → "throttled").
-enum LlmVendor {
-  anthropic,
-  openai,
-  minimax,
-  unknown,
-}
+enum LlmVendor { anthropic, openai, minimax, kimi, unknown }
 
 extension LlmVendorX on LlmVendor {
   /// Display label for the vendor — used in `toUserMessage` so the
   /// hint ("check your Anthropic key") reads naturally.
   String get displayLabel => switch (this) {
-        LlmVendor.anthropic => 'Anthropic',
-        LlmVendor.openai => 'OpenAI',
-        LlmVendor.minimax => 'MiniMax',
-        LlmVendor.unknown => 'the upstream',
-      };
+    LlmVendor.anthropic => 'Anthropic',
+    LlmVendor.openai => 'OpenAI',
+    LlmVendor.minimax => 'MiniMax',
+    LlmVendor.kimi => 'Kimi',
+    LlmVendor.unknown => 'the upstream',
+  };
 
   static LlmVendor fromProviderName(String name) {
     switch (name) {
@@ -173,6 +167,8 @@ extension LlmVendorX on LlmVendor {
         return LlmVendor.openai;
       case 'minimax':
         return LlmVendor.minimax;
+      case 'kimi':
+        return LlmVendor.kimi;
       default:
         return LlmVendor.unknown;
     }
@@ -372,14 +368,14 @@ class LlmError {
   /// round-trip cleanly through JSON, and the structured fields
   /// carry enough information for the persisted bubble.
   Map<String, dynamic> toJsonMap() => {
-        'kind': kind.name,
-        'vendor': vendor.name,
-        if (statusCode != null) 'statusCode': statusCode,
-        if (vendorCode != null) 'vendorCode': vendorCode,
-        'message': message,
-        if (requestId != null) 'requestId': requestId,
-        'providerName': providerName,
-      };
+    'kind': kind.name,
+    'vendor': vendor.name,
+    if (statusCode != null) 'statusCode': statusCode,
+    if (vendorCode != null) 'vendorCode': vendorCode,
+    'message': message,
+    if (requestId != null) 'requestId': requestId,
+    'providerName': providerName,
+  };
 
   String toJson() => jsonEncode(toJsonMap());
 }
@@ -424,9 +420,7 @@ LlmError parseHttpError({
       if (rawCode is int || rawCode is String) {
         return _fromMiniMax(
           code: rawCode.toString(),
-          msg: rawMsg is String
-              ? rawMsg
-              : (json['message'] as String? ?? ''),
+          msg: rawMsg is String ? rawMsg : (json['message'] as String? ?? ''),
           statusCode: statusCode,
           providerName: providerName,
         );

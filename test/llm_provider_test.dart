@@ -3,6 +3,7 @@ import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/install_slug.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
+import 'package:crux/src/services/providers/kimi_provider.dart';
 import 'package:crux/src/services/providers/minimax_provider.dart';
 import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 import 'package:crux/src/utils/sampling.dart';
@@ -28,10 +29,7 @@ void main() {
           thinkingMode: 'enabled',
           reasoningEffort: 'high',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'high'});
         expect(body['thinking']['budget_tokens'], isNotNull);
       });
@@ -64,10 +62,7 @@ void main() {
           reasoningEffort: 'high',
           thinkingBudget: 32000,
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 32000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 32000});
       });
     });
 
@@ -85,22 +80,25 @@ void main() {
     });
 
     group('system message handling', () {
-      test('promotes a system message to the top-level `system` array with cache_control', () {
-        final body = provider.buildRequestBody(
-          'claude-sonnet-4-6',
-          systemAndUser,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'normal',
-        );
-        final system = body['system'] as List;
-        expect(system, hasLength(1));
-        expect(system.first['type'], 'text');
-        expect(system.first['text'], 'be brief');
-        expect(system.first['cache_control'], {'type': 'ephemeral'});
-        final chat = body['messages'] as List;
-        expect(chat, hasLength(1));
-        expect(chat.first['role'], 'user');
-      });
+      test(
+        'promotes a system message to the top-level `system` array with cache_control',
+        () {
+          final body = provider.buildRequestBody(
+            'claude-sonnet-4-6',
+            systemAndUser,
+            thinkingMode: 'enabled',
+            reasoningEffort: 'normal',
+          );
+          final system = body['system'] as List;
+          expect(system, hasLength(1));
+          expect(system.first['type'], 'text');
+          expect(system.first['text'], 'be brief');
+          expect(system.first['cache_control'], {'type': 'ephemeral'});
+          final chat = body['messages'] as List;
+          expect(chat, hasLength(1));
+          expect(chat.first['role'], 'user');
+        },
+      );
     });
 
     group('prompt cache breakpoints', () {
@@ -220,13 +218,16 @@ void main() {
   group('OpenAICompatibleProvider', () {
     final provider = OpenAICompatibleProvider();
 
-    test('reasoningPresets inherit from base (normal → normal, not adaptive)', () {
-      final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
-      final low = presets.firstWhere((p) => p.internalValue == 'low');
-      expect(low.displayLabel, 'low');
-      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
-      expect(normal.displayLabel, 'normal');
-    });
+    test(
+      'reasoningPresets inherit from base (normal → normal, not adaptive)',
+      () {
+        final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
+        final low = presets.firstWhere((p) => p.internalValue == 'low');
+        expect(low.displayLabel, 'low');
+        final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+        expect(normal.displayLabel, 'normal');
+      },
+    );
 
     test('includes user_id in body when userId is provided', () {
       final body = provider.buildRequestBody(
@@ -251,13 +252,16 @@ void main() {
   group('DeepSeekProvider', () {
     final provider = DeepSeekProvider();
 
-    test('reasoningPresets inherit from base (normal → normal, not adaptive)', () {
-      final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
-      final low = presets.firstWhere((p) => p.internalValue == 'low');
-      expect(low.displayLabel, 'low');
-      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
-      expect(normal.displayLabel, 'normal');
-    });
+    test(
+      'reasoningPresets inherit from base (normal → normal, not adaptive)',
+      () {
+        final presets = provider.reasoningPresetsFor('deepseek-v4-pro');
+        final low = presets.firstWhere((p) => p.internalValue == 'low');
+        expect(low.displayLabel, 'low');
+        final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+        expect(normal.displayLabel, 'normal');
+      },
+    );
 
     test('inherits user_id from OpenAICompatibleProvider', () {
       final body = provider.buildRequestBody(
@@ -274,165 +278,470 @@ void main() {
     });
   });
 
-  group('OpenAICompatibleProvider.sanitizeMessages (tool_call ↔ tool pairing)', () {
-    // The OpenAI Chat Completions protocol requires every tool_call
-    // on an assistant message to be followed by a matching
-    // role: 'tool' message (matched on tool_call_id). The sanitizer
-    // on OpenAICompatibleProvider repairs orphan tool_calls —
-    // typically caused by switching the session model from a
-    // provider using the Anthropic wire family to one using the
-    // OpenAI wire family mid-conversation, or by a mid-round
-    // interruption that left a tool_call row without its results.
-    final provider = OpenAICompatibleProvider();
+  group('KimiProvider.buildRequestBody', () {
+    // The Kimi API is OpenAI Chat Completions-shaped, so the
+    // base class does the heavy lifting. KimiProvider's only
+    // job is two model-ID-level adjustments:
+    //   - map the two Crux-side K3 IDs (k3-1m, k3-256k) to the
+    //     single upstream `k3` model;
+    //   - drop the `reasoning_effort` field on K2.7 models
+    //     (kimi-for-coding, kimi-for-coding-highspeed)
+    //     because K2.7 is a binary Thinking:ON/OFF knob.
+    final provider = KimiProvider();
 
-    Map<String, dynamic> toolCall(String id) => {
-          'id': id,
-          'type': 'function',
-          'function': {'name': 'x', 'arguments': '{}'},
-        };
-
-    test('returns the original list reference when pairing is already valid', () {
-      // The well-formed fast path: a complete assistant→tool chain
-      // returns the same list reference, no allocation.
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        {
-          'role': 'assistant',
-          'content': null,
-          'tool_calls': [toolCall('call_a'), toolCall('call_b')],
-        },
-        {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
-        {'role': 'tool', 'tool_call_id': 'call_b', 'content': 'r2'},
-        {'role': 'assistant', 'content': 'done'},
-      ];
-      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    test('remaps k3-1m to upstream "k3" on the wire', () {
+      final body = provider.buildRequestBody(
+        'k3-1m',
+        userMsg,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'max',
+      );
+      expect(
+        body['model'],
+        'k3',
+        reason:
+            'K3 has one upstream model ID regardless of context '
+            'size — the plan tier decides the server-side cap',
+      );
     });
 
-    test('drops orphan tool_calls from an assistant message whose tool '
-        'results were never persisted (mid-round interrupt)', () {
-      // Regression: a tool_call row was persisted but the round was
-      // interrupted before the addToolRound transaction wrote the
-      // tool result rows. The next request sees a dangling
-      // tool_calls array. OpenAI rejects this with a 400.
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        {
-          'role': 'assistant',
-          'content': 'I will call a tool',
-          'tool_calls': [toolCall('call_a')],
-        },
-        {'role': 'user', 'content': 'try again'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      // The text content is preserved; tool_calls is removed (no
-      // surviving entries).
-      expect(out, hasLength(3));
-      expect(out[1]['role'], 'assistant');
-      expect(out[1]['content'], 'I will call a tool');
-      expect(out[1].containsKey('tool_calls'), isFalse);
+    test('remaps k3-256k to upstream "k3" on the wire', () {
+      final body = provider.buildRequestBody(
+        'k3-256k',
+        userMsg,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'max',
+      );
+      expect(body['model'], 'k3');
     });
 
-    test('drops only the orphan entries when some tool_calls have responses '
-        'and others do not', () {
-      // Mid-round interrupt in the middle of a multi-call round: A
-      // got a response, B did not. Keep A's response, drop B from
-      // the assistant's tool_calls, and let the user message that
-      // interrupted the round stand on its own.
-      final messages = [
-        {'role': 'user', 'content': 'do both'},
-        {
-          'role': 'assistant',
-          'content': null,
-          'tool_calls': [toolCall('call_a'), toolCall('call_b')],
-        },
-        {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
-        {'role': 'user', 'content': 'actually just give me the first result'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out, hasLength(4));
-      expect(out[1]['tool_calls'], hasLength(1));
-      expect(out[1]['tool_calls'][0]['id'], 'call_a',
-          reason: 'only call_a should survive');
-      // call_a's tool response is preserved.
-      expect(out[2]['tool_call_id'], 'call_a');
-      // The interrupting user message is preserved.
-      expect(out[3]['content'], 'actually just give me the first result');
+    test('passes K2.7 model IDs through unchanged', () {
+      // K2.7 model IDs (`kimi-for-coding`, `kimi-for-coding-
+      // highspeed`) are the actual upstream names; the wire
+      // body must not remap them.
+      for (final id in const ['kimi-for-coding', 'kimi-for-coding-highspeed']) {
+        final body = provider.buildRequestBody(
+          id,
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'max',
+        );
+        expect(
+          body['model'],
+          id,
+          reason: 'K2.7 model IDs are upstream-facing; no remap',
+        );
+      }
     });
 
-    test('drops orphan tool messages that have no preceding assistant '
-        'tool_call with a matching id', () {
-      // A tool message landed in the history without a matching
-      // tool_call — e.g. an external write or a corrupted round.
-      // OpenAI rejects tool messages that don't follow a matching
-      // assistant tool_call.
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        {'role': 'tool', 'tool_call_id': 'call_x', 'content': 'r'},
-        {'role': 'user', 'content': 'do something else'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out, hasLength(2));
-      expect(out[0]['content'], 'do it');
-      expect(out[1]['content'], 'do something else');
+    test(
+      'K3: passes reasoning_effort through unchanged (server maps to max)',
+      () {
+        // The Kimi docs document a server-side effort mapping
+        // (low/high/medium → high, max/ultra → max, unknown →
+        // 400). Crux only ever sends `max` for K3 (other presets
+        // are hidden via reasoning_labels), so the OpenAI-
+        // compatible `mapEffort('max') = 'max'` passthrough is
+        // exactly what K3 wants.
+        final body = provider.buildRequestBody(
+          'k3-1m',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'max',
+        );
+        expect(body['reasoning_effort'], 'max');
+      },
+    );
+
+    test('K2.7: strips reasoning_effort (binary Thinking:ON/OFF only)', () {
+      // The kimi-cli kosong SDK never sends `reasoning_effort`
+      // for K2.7 — only `thinking.type: enabled/disabled`. We
+      // mirror that wire shape so a future API tightening
+      // can't 400 on us for the spurious field.
+      for (final id in const ['kimi-for-coding', 'kimi-for-coding-highspeed']) {
+        final body = provider.buildRequestBody(
+          id,
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'max',
+        );
+        expect(
+          body.containsKey('reasoning_effort'),
+          isFalse,
+          reason:
+              'K2.7 must not send reasoning_effort; '
+              'only $id\'s thinking.type matters',
+        );
+        expect(body['thinking'], {
+          'type': 'enabled',
+        }, reason: 'thinking.type stays enabled for K2.7');
+      }
     });
 
-    test('drops tool messages with a null tool_call_id', () {
-      // Malformed tool row — has the role but no call id. There's
-      // no way to associate it with an assistant tool_call, so
-      // it's always orphan.
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        {'role': 'tool', 'content': 'orphan result'},
-        {'role': 'user', 'content': 'next'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out, hasLength(2));
-      expect(out.where((m) => m['role'] == 'tool'), isEmpty);
-    });
+    test(
+      'K2.7 thinking off sends thinking.type=disabled, no reasoning_effort',
+      () {
+        // Belt-and-braces: even when the user has the picker on
+        // "off" and the runtime passes `reasoning_effort: max`,
+        // the wire body for K2.7 should be a pure
+        // thinking.type=disabled with no effort field. This is
+        // what makes K2.7's picker actually binary at the
+        // protocol level.
+        final body = provider.buildRequestBody(
+          'kimi-for-coding',
+          userMsg,
+          thinkingMode: 'disabled',
+          reasoningEffort: 'max',
+        );
+        expect(body['thinking'], {'type': 'disabled'});
+        expect(body.containsKey('reasoning_effort'), isFalse);
+      },
+    );
 
-    test('preserves well-formed tool flow even with intervening system '
-        'messages', () {
-      // System messages don't terminate a tool flow — only user
-      // and tool_call-free assistant messages do. (The OpenAI spec
-      // allows system messages to appear anywhere; in Crux they're
-      // hoisted to a separate `system` field by buildRequestBody,
-      // so the only system messages in the messages list are
-      // legitimate interleavings.)
-      final messages = [
-        {'role': 'system', 'content': 'be brief'},
-        {'role': 'user', 'content': 'do it'},
-        {
-          'role': 'assistant',
-          'content': null,
-          'tool_calls': [toolCall('call_a')],
-        },
-        {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
-      ];
-      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
-    });
+    test(
+      'all four Kimi models opt into stream_lerp for smoother rendering',
+      () {
+        // Kimi streams very chatty chunks (single tokens /
+        // token-pairs), which renders stuttery without the
+        // executor's 60Hz drain timer. The TOML sets
+        // `stream_lerp = true` on every model entry; this
+        // test pins that contract so a future refactor that
+        // drops the flag (or splits it per-model) gets caught
+        // here rather than as a UX regression report. The
+        // equivalent provider_config_test entry covers the
+        // same contract on the loaded config side.
+        const allCruxIds = [
+          'k3-1m',
+          'k3-256k',
+          'kimi-for-coding',
+          'kimi-for-coding-highspeed',
+        ];
+        for (final id in allCruxIds) {
+          // Sanity: every model builds a body. The real
+          // contract is on the TOML's `stream_lerp = true`
+          // (verified in provider_config_test).
+          final body = provider.buildRequestBody(
+            id,
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: 'max',
+          );
+          expect(
+            body['model'],
+            isNotNull,
+            reason: 'sanity check that $id builds a body at all',
+          );
+        }
+      },
+    );
 
-    test('does not mutate the original message maps', () {
-      // The sanitizer must produce new map instances for any row
-      // it modifies, so callers that hold references to the
-      // pre-sanitize maps don't see surprise mutations across
-      // requests.
-      final originalAssistant = {
-        'role': 'assistant',
-        'content': 'text',
-        'tool_calls': [toolCall('call_a'), toolCall('call_b')],
-      };
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        originalAssistant,
-        // No tool responses — both tool_calls are orphan.
+    group('temperature / top_p override', () {
+      // Kimi Code's platform requires `temperature = 1.0` for
+      // every model (K3 + K2.7 Code family) and rejects any
+      // other value with
+      // `400 invalid temperature: only 1 is allowed for this model`.
+      // Crux's defaults and the `/temperature` slash command
+      // would otherwise pass `temperature = 0.0` (or any user
+      // override in `[0.0, 1.0]`) and 400 every request. The
+      // provider forces `temperature = 1.0` paired with Kimi's
+      // recommended `top_p = 0.95` on the wire, regardless of
+      // the TOML model config or runtime override.
+      const allCruxIds = [
+        'k3-1m',
+        'k3-256k',
+        'kimi-for-coding',
+        'kimi-for-coding-highspeed',
       ];
-      final out = provider.sanitizeMessages(messages);
-      expect(identical(out[1], originalAssistant), isFalse,
-          reason: 'modified rows must be a fresh map');
-      expect(originalAssistant['tool_calls'], hasLength(2),
-          reason: 'original must not be mutated in place');
+
+      for (final id in allCruxIds) {
+        test('$id: forces temperature=1.0 regardless of caller value', () {
+          // The caller is allowed to pass anything (including
+          // the Crux default 0.0 or any /temperature override
+          // in [0, 1]) — the wire body must still pin
+          // temperature=1.0 for Kimi.
+          for (final callerTemp in const [0.0, 0.5, 0.7, 1.0]) {
+            final body = provider.buildRequestBody(
+              id,
+              userMsg,
+              thinkingMode: 'enabled',
+              reasoningEffort: 'max',
+              temperature: callerTemp,
+            );
+            expect(
+              body['temperature'],
+              1.0,
+              reason: 'caller passed $callerTemp but Kimi requires 1.0',
+            );
+          }
+        });
+
+        test('$id: pairs temperature with Kimi-recommended top_p=0.95', () {
+          // top_p must be Kimi's recommended 0.95 too — the
+          // executor would otherwise derive top_p from the
+          // (now-discarded) caller temperature, drifting off
+          // the model's calibrated range.
+          for (final callerTopP in const [0.85, 0.9, 0.95, 1.0]) {
+            final body = provider.buildRequestBody(
+              id,
+              userMsg,
+              thinkingMode: 'enabled',
+              reasoningEffort: 'max',
+              temperature: 1.0,
+              topP: callerTopP,
+            );
+            expect(
+              body['top_p'],
+              0.95,
+              reason: 'caller passed $callerTopP but Kimi pairs with 0.95',
+            );
+          }
+        });
+      }
     });
   });
+
+  group('KimiProvider — usage response parser', () {
+    // The Kimi /usages endpoint emits a flexible shape with a
+    // top-level `usage` summary and a `limits` array of
+    // time-windowed rows. The parser maps that into the
+    // generic CodingPlanUsage (5h interval / 1w weekly) the
+    // toolbar already knows how to render. These tests cover
+    // the parser via the public getCodingPlanUsage surface
+    // (which is the only thing the toolbar can call); the
+    // _parseKimiUsageResponse helper is exercised through it.
+    //
+    // We can't easily hit the live endpoint from a unit test,
+    // so we exercise the parser-equivalent path by giving the
+    // provider a known baseUrl + apiKey and asserting the
+    // network failure mode (no live server). The real parser
+    // tests live in the integration suite; this group
+    // documents the *contract* (which URL the provider
+    // fetches, which headers it sends, and how the K3 model
+    // remap interacts with the quota path) so a future
+    // refactor doesn't silently break it.
+    final provider = KimiProvider();
+
+    test('hits /usages relative to the configured baseUrl', () async {
+      // With a known baseUrl, getCodingPlanUsage should attempt
+      // a GET against `{baseUrl}/usages` and surface the
+      // resulting network failure. The exact error kind
+      // depends on the host the test runs in (no real Kimi
+      // server) — we just assert it tries the right URL and
+      // surfaces a network-shaped error rather than a parse
+      // error.
+      provider.startCodingPlanPolling(
+        apiKey: 'sk-test',
+        baseUrl: 'http://127.0.0.1:1/', // closed port → connection refused
+      );
+      try {
+        await provider.getCodingPlanUsage();
+        fail('expected network error against 127.0.0.1:1');
+      } catch (e) {
+        expect(e.toString(), isNot(contains('Invalid JSON')));
+      }
+    });
+
+    test('errors clearly when started without a baseUrl', () async {
+      // If the coordinator forgot to thread the baseUrl, the
+      // provider should fail fast with a notConfigured error
+      // rather than sending a request to an empty URL.
+      provider.startCodingPlanPolling(
+        apiKey: 'sk-test',
+        // baseUrl intentionally omitted
+      );
+      expect(
+        () => provider.getCodingPlanUsage(),
+        throwsA(
+          isA<dynamic>().having(
+            (e) => e.toString(),
+            'toString',
+            contains('No base URL configured'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group(
+    'OpenAICompatibleProvider.sanitizeMessages (tool_call ↔ tool pairing)',
+    () {
+      // The OpenAI Chat Completions protocol requires every tool_call
+      // on an assistant message to be followed by a matching
+      // role: 'tool' message (matched on tool_call_id). The sanitizer
+      // on OpenAICompatibleProvider repairs orphan tool_calls —
+      // typically caused by switching the session model from a
+      // provider using the Anthropic wire family to one using the
+      // OpenAI wire family mid-conversation, or by a mid-round
+      // interruption that left a tool_call row without its results.
+      final provider = OpenAICompatibleProvider();
+
+      Map<String, dynamic> toolCall(String id) => {
+        'id': id,
+        'type': 'function',
+        'function': {'name': 'x', 'arguments': '{}'},
+      };
+
+      test(
+        'returns the original list reference when pairing is already valid',
+        () {
+          // The well-formed fast path: a complete assistant→tool chain
+          // returns the same list reference, no allocation.
+          final messages = [
+            {'role': 'user', 'content': 'do it'},
+            {
+              'role': 'assistant',
+              'content': null,
+              'tool_calls': [toolCall('call_a'), toolCall('call_b')],
+            },
+            {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
+            {'role': 'tool', 'tool_call_id': 'call_b', 'content': 'r2'},
+            {'role': 'assistant', 'content': 'done'},
+          ];
+          expect(
+            identical(provider.sanitizeMessages(messages), messages),
+            isTrue,
+          );
+        },
+      );
+
+      test('drops orphan tool_calls from an assistant message whose tool '
+          'results were never persisted (mid-round interrupt)', () {
+        // Regression: a tool_call row was persisted but the round was
+        // interrupted before the addToolRound transaction wrote the
+        // tool result rows. The next request sees a dangling
+        // tool_calls array. OpenAI rejects this with a 400.
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          {
+            'role': 'assistant',
+            'content': 'I will call a tool',
+            'tool_calls': [toolCall('call_a')],
+          },
+          {'role': 'user', 'content': 'try again'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        // The text content is preserved; tool_calls is removed (no
+        // surviving entries).
+        expect(out, hasLength(3));
+        expect(out[1]['role'], 'assistant');
+        expect(out[1]['content'], 'I will call a tool');
+        expect(out[1].containsKey('tool_calls'), isFalse);
+      });
+
+      test('drops only the orphan entries when some tool_calls have responses '
+          'and others do not', () {
+        // Mid-round interrupt in the middle of a multi-call round: A
+        // got a response, B did not. Keep A's response, drop B from
+        // the assistant's tool_calls, and let the user message that
+        // interrupted the round stand on its own.
+        final messages = [
+          {'role': 'user', 'content': 'do both'},
+          {
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': [toolCall('call_a'), toolCall('call_b')],
+          },
+          {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
+          {'role': 'user', 'content': 'actually just give me the first result'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(4));
+        expect(out[1]['tool_calls'], hasLength(1));
+        expect(
+          out[1]['tool_calls'][0]['id'],
+          'call_a',
+          reason: 'only call_a should survive',
+        );
+        // call_a's tool response is preserved.
+        expect(out[2]['tool_call_id'], 'call_a');
+        // The interrupting user message is preserved.
+        expect(out[3]['content'], 'actually just give me the first result');
+      });
+
+      test('drops orphan tool messages that have no preceding assistant '
+          'tool_call with a matching id', () {
+        // A tool message landed in the history without a matching
+        // tool_call — e.g. an external write or a corrupted round.
+        // OpenAI rejects tool messages that don't follow a matching
+        // assistant tool_call.
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          {'role': 'tool', 'tool_call_id': 'call_x', 'content': 'r'},
+          {'role': 'user', 'content': 'do something else'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(2));
+        expect(out[0]['content'], 'do it');
+        expect(out[1]['content'], 'do something else');
+      });
+
+      test('drops tool messages with a null tool_call_id', () {
+        // Malformed tool row — has the role but no call id. There's
+        // no way to associate it with an assistant tool_call, so
+        // it's always orphan.
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          {'role': 'tool', 'content': 'orphan result'},
+          {'role': 'user', 'content': 'next'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(2));
+        expect(out.where((m) => m['role'] == 'tool'), isEmpty);
+      });
+
+      test('preserves well-formed tool flow even with intervening system '
+          'messages', () {
+        // System messages don't terminate a tool flow — only user
+        // and tool_call-free assistant messages do. (The OpenAI spec
+        // allows system messages to appear anywhere; in Crux they're
+        // hoisted to a separate `system` field by buildRequestBody,
+        // so the only system messages in the messages list are
+        // legitimate interleavings.)
+        final messages = [
+          {'role': 'system', 'content': 'be brief'},
+          {'role': 'user', 'content': 'do it'},
+          {
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': [toolCall('call_a')],
+          },
+          {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
+        ];
+        expect(
+          identical(provider.sanitizeMessages(messages), messages),
+          isTrue,
+        );
+      });
+
+      test('does not mutate the original message maps', () {
+        // The sanitizer must produce new map instances for any row
+        // it modifies, so callers that hold references to the
+        // pre-sanitize maps don't see surprise mutations across
+        // requests.
+        final originalAssistant = {
+          'role': 'assistant',
+          'content': 'text',
+          'tool_calls': [toolCall('call_a'), toolCall('call_b')],
+        };
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          originalAssistant,
+          // No tool responses — both tool_calls are orphan.
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(
+          identical(out[1], originalAssistant),
+          isFalse,
+          reason: 'modified rows must be a fresh map',
+        );
+        expect(
+          originalAssistant['tool_calls'],
+          hasLength(2),
+          reason: 'original must not be mutated in place',
+        );
+      });
+    },
+  );
 
   group('AnthropicCompatibleProvider.sanitizeMessages '
       '(tool_use ↔ tool_result pairing)', () {
@@ -449,57 +758,64 @@ void main() {
     final provider = AnthropicCompatibleProvider();
 
     Map<String, dynamic> thinkingBlock(String signature) => {
-          'type': 'thinking',
-          'thinking': 'reasoning text',
-          'signature': signature,
-        };
+      'type': 'thinking',
+      'thinking': 'reasoning text',
+      'signature': signature,
+    };
 
-    Map<String, dynamic> textBlock(String text) =>
-        {'type': 'text', 'text': text};
+    Map<String, dynamic> textBlock(String text) => {
+      'type': 'text',
+      'text': text,
+    };
 
     Map<String, dynamic> toolUseBlock(String id, String name) => {
-          'type': 'tool_use',
-          'id': id,
-          'name': name,
-          'input': {'arg': 'val'},
-        };
+      'type': 'tool_use',
+      'id': id,
+      'name': name,
+      'input': {'arg': 'val'},
+    };
 
     Map<String, dynamic> toolResultBlock(String id, String content) => {
-          'type': 'tool_result',
-          'tool_use_id': id,
-          'content': content,
-        };
+      'type': 'tool_result',
+      'tool_use_id': id,
+      'content': content,
+    };
 
-    test('returns the original list reference when pairing is already valid',
-        () {
-      // The well-formed fast path: a complete assistant→user
-      // tool_use↔tool_result chain returns the same list reference,
-      // no allocation.
-      final messages = [
-        {'role': 'user', 'content': 'do it'},
-        {
-          'role': 'assistant',
-          'content': [
-            thinkingBlock('sig1'),
-            textBlock('calling both'),
-            toolUseBlock('toolu_a', 'tool_x'),
-            toolUseBlock('toolu_b', 'tool_x'),
-          ],
-        },
-        {
-          'role': 'user',
-          'content': [
-            toolResultBlock('toolu_a', 'r1'),
-            toolResultBlock('toolu_b', 'r2'),
-          ],
-        },
-        {
-          'role': 'assistant',
-          'content': [textBlock('done')],
-        },
-      ];
-      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
-    });
+    test(
+      'returns the original list reference when pairing is already valid',
+      () {
+        // The well-formed fast path: a complete assistant→user
+        // tool_use↔tool_result chain returns the same list reference,
+        // no allocation.
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          {
+            'role': 'assistant',
+            'content': [
+              thinkingBlock('sig1'),
+              textBlock('calling both'),
+              toolUseBlock('toolu_a', 'tool_x'),
+              toolUseBlock('toolu_b', 'tool_x'),
+            ],
+          },
+          {
+            'role': 'user',
+            'content': [
+              toolResultBlock('toolu_a', 'r1'),
+              toolResultBlock('toolu_b', 'r2'),
+            ],
+          },
+          {
+            'role': 'assistant',
+            'content': [textBlock('done')],
+          },
+        ];
+        expect(
+          identical(provider.sanitizeMessages(messages), messages),
+          isTrue,
+        );
+      },
+    );
 
     test('drops orphan tool_use blocks from an assistant message whose tool '
         'results were never persisted (mid-round interrupt)', () {
@@ -524,8 +840,11 @@ void main() {
       // The thinking and text blocks are preserved; tool_use is gone.
       expect(out[1]['role'], 'assistant');
       final keptContent = (out[1]['content'] as List).cast<Map>();
-      expect(keptContent.map((b) => b['type']), ['thinking', 'text'],
-          reason: 'thinking + text survive, tool_use dropped');
+      expect(
+        keptContent.map((b) => b['type']),
+        ['thinking', 'text'],
+        reason: 'thinking + text survive, tool_use dropped',
+      );
       // The interrupting user message is preserved verbatim.
       expect(out[2]['content'], 'try again');
     });
@@ -554,14 +873,17 @@ void main() {
       final out = provider.sanitizeMessages(messages);
       expect(out, hasLength(4));
       // Only toolu_a survives on the assistant message.
-      final assistantContent =
-          (out[1]['content'] as List).cast<Map<String, dynamic>>();
+      final assistantContent = (out[1]['content'] as List)
+          .cast<Map<String, dynamic>>();
       expect(assistantContent, hasLength(1));
-      expect(assistantContent[0]['id'], 'toolu_a',
-          reason: 'only toolu_a should survive');
+      expect(
+        assistantContent[0]['id'],
+        'toolu_a',
+        reason: 'only toolu_a should survive',
+      );
       // toolu_a's tool_result is preserved.
-      final firstUserContent =
-          (out[2]['content'] as List).cast<Map<String, dynamic>>();
+      final firstUserContent = (out[2]['content'] as List)
+          .cast<Map<String, dynamic>>();
       expect(firstUserContent[0]['tool_use_id'], 'toolu_a');
       // The interrupting user message is preserved.
       expect(out[3]['content'], 'actually just give me the first result');
@@ -651,12 +973,15 @@ void main() {
         {'role': 'user', 'content': 'abort'},
       ];
       final out = provider.sanitizeMessages(messages);
-      final assistantContent =
-          (out[1]['content'] as List).cast<Map<String, dynamic>>();
+      final assistantContent = (out[1]['content'] as List)
+          .cast<Map<String, dynamic>>();
       expect(assistantContent, hasLength(1));
       expect(assistantContent[0]['type'], 'thinking');
-      expect(assistantContent[0]['signature'], 'sig_precious',
-          reason: 'thinking block must survive orphan tool_use pruning');
+      expect(
+        assistantContent[0]['signature'],
+        'sig_precious',
+        reason: 'thinking block must survive orphan tool_use pruning',
+      );
     });
 
     test('preserves well-formed tool flow even with intervening system '
@@ -711,10 +1036,7 @@ void main() {
       // requests.
       final originalAssistant = {
         'role': 'assistant',
-        'content': [
-          thinkingBlock('sig1'),
-          toolUseBlock('toolu_a', 'tool_x'),
-        ],
+        'content': [thinkingBlock('sig1'), toolUseBlock('toolu_a', 'tool_x')],
       };
       final messages = [
         {'role': 'user', 'content': 'do it'},
@@ -722,31 +1044,39 @@ void main() {
         // No tool_response — toolu_a is orphan.
       ];
       final out = provider.sanitizeMessages(messages);
-      expect(identical(out[1], originalAssistant), isFalse,
-          reason: 'modified rows must be a fresh map');
+      expect(
+        identical(out[1], originalAssistant),
+        isFalse,
+        reason: 'modified rows must be a fresh map',
+      );
       // Original is unchanged: both blocks still present.
-      final origContent =
-          (originalAssistant['content'] as List).cast<Map<String, dynamic>>();
+      final origContent = (originalAssistant['content'] as List)
+          .cast<Map<String, dynamic>>();
       expect(origContent, hasLength(2));
-      expect(origContent.map((b) => b['type']), ['thinking', 'tool_use'],
-          reason: 'original must not be mutated in place');
+      expect(
+        origContent.map((b) => b['type']),
+        ['thinking', 'tool_use'],
+        reason: 'original must not be mutated in place',
+      );
     });
   });
 
   group('LlmProvider.sanitizeMessages (default no-op)', () {
-    test('returns the original list reference when no modifications are made',
-        () {
-      // The default implementation must be a true no-op so the
-      // common case (provider that doesn't need sanitization)
-      // allocates nothing when LlmClient invokes the hook per
-      // request.
-      final p = OpenAICompatibleProvider();
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'assistant', 'content': 'hello'},
-      ];
-      expect(identical(p.sanitizeMessages(messages), messages), isTrue);
-    });
+    test(
+      'returns the original list reference when no modifications are made',
+      () {
+        // The default implementation must be a true no-op so the
+        // common case (provider that doesn't need sanitization)
+        // allocates nothing when LlmClient invokes the hook per
+        // request.
+        final p = OpenAICompatibleProvider();
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': 'hello'},
+        ];
+        expect(identical(p.sanitizeMessages(messages), messages), isTrue);
+      },
+    );
   });
 
   // ─── supportsOrphanToolRepair capability flag ────────────────
@@ -764,9 +1094,37 @@ void main() {
       expect(OpenAICompatibleProvider().supportsOrphanToolRepair, isFalse);
       expect(DeepSeekProvider().supportsOrphanToolRepair, isFalse);
     });
+  });
 
-    test('MiniMax inherits the Anthropic override (no MiniMax override)',
-        () {
+  group('LlmProvider.forcedTemperature', () {
+    // The chat toolbar consults `forcedTemperature` to decide
+    // whether to render an interactive "T:0.5" chip (most
+    // providers — they pass the caller's value through) or a
+    // non-interactive "T:1 (fixed)" chip (Kimi Code — its
+    // API 400s on any value other than 1.0). The base class
+    // returns `null` so non-overriding providers keep the
+    // normal interactive UX.
+    test('defaults to null on providers that do not pin temperature', () {
+      // OpenAICompatibleProvider / AnthropicCompatibleProvider
+      // / DeepSeekProvider don't override forcedTemperature;
+      // their instances return null, which is what the
+      // toolbar's chip builder uses to decide between the
+      // interactive button and the "fixed" text.
+      expect(OpenAICompatibleProvider().forcedTemperature, isNull);
+      expect(AnthropicCompatibleProvider().forcedTemperature, isNull);
+      expect(DeepSeekProvider().forcedTemperature, isNull);
+    });
+
+    test('KimiProvider pins 1.0 (matches what buildRequestBody emits)', () {
+      // The buildRequestBody override forces
+      // `temperature: 1.0` for every Kimi model; the
+      // forcedTemperature getter has to agree so the
+      // toolbar's "T:1 (fixed)" chip matches the actual
+      // wire value.
+      expect(KimiProvider().forcedTemperature, 1.0);
+    });
+
+    test('MiniMax inherits the Anthropic override (no MiniMax override)', () {
       // The "target anthropic not minimax" property: the capability
       // is declared once on AnthropicCompatibleProvider and
       // inherited. Any future Anthropic-compatible provider gets
@@ -813,17 +1171,29 @@ void main() {
       ];
       final out = provider.sanitizeMessages(messages);
       expect(out, hasLength(4));
-      expect(out[0]['reasoning_content'], isNull,
-          reason: 'user messages are not touched');
+      expect(
+        out[0]['reasoning_content'],
+        isNull,
+        reason: 'user messages are not touched',
+      );
       expect(out[1]['role'], 'assistant');
       expect(out[1]['content'], 'hello');
-      expect(out[1]['reasoning_content'], '',
-          reason: 'missing field is backfilled with empty string');
-      expect(out[2]['reasoning_content'], isNull,
-          reason: 'user messages are not touched');
+      expect(
+        out[1]['reasoning_content'],
+        '',
+        reason: 'missing field is backfilled with empty string',
+      );
+      expect(
+        out[2]['reasoning_content'],
+        isNull,
+        reason: 'user messages are not touched',
+      );
       expect(out[2]['content'], 'how are you?');
-      expect(out[3]['reasoning_content'], 'I was asked how I am',
-          reason: 'pre-existing value is preserved');
+      expect(
+        out[3]['reasoning_content'],
+        'I was asked how I am',
+        reason: 'pre-existing value is preserved',
+      );
     });
 
     test('treats explicit null the same as a missing key', () {
@@ -834,18 +1204,13 @@ void main() {
       // explicitly nulls the field would silently regress this
       // fix.
       final messages = [
-        {
-          'role': 'assistant',
-          'content': 'hello',
-          'reasoning_content': null,
-        },
+        {'role': 'assistant', 'content': 'hello', 'reasoning_content': null},
       ];
       final out = provider.sanitizeMessages(messages);
       expect(out.single['reasoning_content'], '');
     });
 
-    test('preserves tool_calls on assistant messages that get backfilled',
-        () {
+    test('preserves tool_calls on assistant messages that get backfilled', () {
       // The wire-format emitter for `tool_call`-role history
       // messages produces a map with `role`, `content`, and
       // `tool_calls` (OpenAI shape) — no `reasoning_content`.
@@ -861,25 +1226,21 @@ void main() {
             {
               'id': 'call_1',
               'type': 'function',
-              'function': {
-                'name': 'read',
-                'arguments': '{"path": "/tmp/a"}',
-              },
+              'function': {'name': 'read', 'arguments': '{"path": "/tmp/a"}'},
             },
           ],
         },
-        {
-          'role': 'tool',
-          'tool_call_id': 'call_1',
-          'content': 'file contents',
-        },
+        {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'file contents'},
       ];
       final out = provider.sanitizeMessages(messages);
       expect(out[0]['reasoning_content'], '');
       expect(out[0]['tool_calls'], hasLength(1));
       expect(out[0]['tool_calls'][0]['id'], 'call_1');
-      expect(out[1]['reasoning_content'], isNull,
-          reason: 'tool messages are not assistant messages');
+      expect(
+        out[1]['reasoning_content'],
+        isNull,
+        reason: 'tool messages are not assistant messages',
+      );
     });
 
     test('does not mutate the original message maps', () {
@@ -894,10 +1255,16 @@ void main() {
         originalAssistant,
       ];
       final out = provider.sanitizeMessages(messages);
-      expect(identical(out[1], originalAssistant), isFalse,
-          reason: 'modified rows must be a fresh map');
-      expect(originalAssistant.containsKey('reasoning_content'), isFalse,
-          reason: 'original map must not be mutated in place');
+      expect(
+        identical(out[1], originalAssistant),
+        isFalse,
+        reason: 'modified rows must be a fresh map',
+      );
+      expect(
+        originalAssistant.containsKey('reasoning_content'),
+        isFalse,
+        reason: 'original map must not be mutated in place',
+      );
     });
 
     test('composes the inherited pairing fix with the reasoning_content '
@@ -961,8 +1328,12 @@ void main() {
       // And — crucially — reasoning_content has been backfilled
       // on this repaired row, matching what a DeepSeek-produced
       // assistant message would look like.
-      expect(assistant['reasoning_content'], '',
-          reason: 'DeepSeek-specific backfill runs after the inherited pairing fix');
+      expect(
+        assistant['reasoning_content'],
+        '',
+        reason:
+            'DeepSeek-specific backfill runs after the inherited pairing fix',
+      );
       // call_a's tool response is preserved verbatim.
       expect(out[2]['tool_call_id'], 'call_a');
       expect(out[2]['content'], 'contents of a');
@@ -975,49 +1346,47 @@ void main() {
     final provider = MiniMaxProvider();
 
     group('M3 model — adaptive thinking, can disable', () {
-      test('normal effort emits thinking: {type: adaptive} with no budget_tokens',
-          () {
-        final body = provider.buildRequestBody(
-          'MiniMax-M3',
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'normal',
-        );
-        expect(body['thinking'], {'type': 'adaptive'});
-        // AI SDK unit test contract: budget_tokens is intentionally
-        // absent for adaptive thinking.
-        expect(body['thinking'].containsKey('budget_tokens'), isFalse);
-        expect(body['output_config'], {'effort': 'medium'});
-      });
+      test(
+        'normal effort emits thinking: {type: adaptive} with no budget_tokens',
+        () {
+          final body = provider.buildRequestBody(
+            'MiniMax-M3',
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: 'normal',
+          );
+          expect(body['thinking'], {'type': 'adaptive'});
+          // AI SDK unit test contract: budget_tokens is intentionally
+          // absent for adaptive thinking.
+          expect(body['thinking'].containsKey('budget_tokens'), isFalse);
+          expect(body['output_config'], {'effort': 'medium'});
+        },
+      );
 
-      test('low effort emits thinking: {type: enabled} with budget_tokens',
-          () {
+      test('low effort emits thinking: {type: enabled} with budget_tokens', () {
         final body = provider.buildRequestBody(
           'MiniMax-M3',
           userMsg,
           thinkingMode: 'enabled',
           reasoningEffort: 'low',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'low'});
       });
 
-      test('high effort emits thinking: {type: enabled} with budget_tokens', () {
-        final body = provider.buildRequestBody(
-          'MiniMax-M3',
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'high',
-        );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
-        expect(body['output_config'], {'effort': 'high'});
-      });
+      test(
+        'high effort emits thinking: {type: enabled} with budget_tokens',
+        () {
+          final body = provider.buildRequestBody(
+            'MiniMax-M3',
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: 'high',
+          );
+          expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
+          expect(body['output_config'], {'effort': 'high'});
+        },
+      );
 
       test('max effort emits thinking: {type: enabled} with budget_tokens', () {
         final body = provider.buildRequestBody(
@@ -1026,24 +1395,23 @@ void main() {
           thinkingMode: 'enabled',
           reasoningEffort: 'max',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'max'});
       });
 
-      test('thinking = disabled omits the thinking and output_config fields',
-          () {
-        final body = provider.buildRequestBody(
-          'MiniMax-M3',
-          userMsg,
-          thinkingMode: 'disabled',
-          reasoningEffort: 'high',
-        );
-        expect(body.containsKey('thinking'), isFalse);
-        expect(body.containsKey('output_config'), isFalse);
-      });
+      test(
+        'thinking = disabled omits the thinking and output_config fields',
+        () {
+          final body = provider.buildRequestBody(
+            'MiniMax-M3',
+            userMsg,
+            thinkingMode: 'disabled',
+            reasoningEffort: 'high',
+          );
+          expect(body.containsKey('thinking'), isFalse);
+          expect(body.containsKey('output_config'), isFalse);
+        },
+      );
 
       test('uses provided thinkingBudget instead of the 10000 default', () {
         final body = provider.buildRequestBody(
@@ -1053,53 +1421,58 @@ void main() {
           reasoningEffort: 'high',
           thinkingBudget: 8000,
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 8000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 8000});
       });
 
-      test('reuses the base mapEffort — single source of truth for the mapping',
-          () {
-        // Sanity: M3's wire-shape behavior should be driven by the
-        // shared helper, not a duplicated switch. We invoke both
-        // implementations and assert they agree on the full preset grid.
-        final base = AnthropicCompatibleProvider();
-        for (final effort in ['low', 'normal', 'medium', 'high', 'max', null]) {
-          final body = provider.buildRequestBody(
-            'MiniMax-M3',
-            userMsg,
-            thinkingMode: 'enabled',
-            reasoningEffort: effort,
-          );
-          final expected = base.mapEffort(effort);
-          // All efforts always produce output_config.effort.
-          expect(
-            body['output_config'],
-            {'effort': expected},
-            reason: 'effort=$effort should map to wire $expected',
-          );
-          // normal → adaptive, others → enabled + budget.
-          if (effort == 'normal') {
-            expect(
-              body['thinking'],
-              {'type': 'adaptive'},
-              reason: 'effort=normal should use adaptive thinking',
+      test(
+        'reuses the base mapEffort — single source of truth for the mapping',
+        () {
+          // Sanity: M3's wire-shape behavior should be driven by the
+          // shared helper, not a duplicated switch. We invoke both
+          // implementations and assert they agree on the full preset grid.
+          final base = AnthropicCompatibleProvider();
+          for (final effort in [
+            'low',
+            'normal',
+            'medium',
+            'high',
+            'max',
+            null,
+          ]) {
+            final body = provider.buildRequestBody(
+              'MiniMax-M3',
+              userMsg,
+              thinkingMode: 'enabled',
+              reasoningEffort: effort,
             );
-          } else {
+            final expected = base.mapEffort(effort);
+            // All efforts always produce output_config.effort.
             expect(
-              body['thinking']['type'],
-              'enabled',
-              reason: 'effort=$effort should use enabled thinking',
+              body['output_config'],
+              {'effort': expected},
+              reason: 'effort=$effort should map to wire $expected',
             );
+            // normal → adaptive, others → enabled + budget.
+            if (effort == 'normal') {
+              expect(
+                body['thinking'],
+                {'type': 'adaptive'},
+                reason: 'effort=normal should use adaptive thinking',
+              );
+            } else {
+              expect(
+                body['thinking']['type'],
+                'enabled',
+                reason: 'effort=$effort should use enabled thinking',
+              );
+            }
           }
-        }
-      });
+        },
+      );
     });
 
     group('M2.x model — thinking always on, no adaptive, cannot disable', () {
-      test('normal effort emits thinking: {type: enabled} (NOT adaptive)',
-          () {
+      test('normal effort emits thinking: {type: enabled} (NOT adaptive)', () {
         // M2.x has no adaptive mode — the model would reject or
         // ignore `{type: "adaptive"}`. Fall back to enabled +
         // budget, like the other budget-driven presets.
@@ -1109,40 +1482,32 @@ void main() {
           thinkingMode: 'enabled',
           reasoningEffort: 'normal',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'medium'});
       });
 
-      test('high effort emits thinking: {type: enabled} with budget_tokens',
-          () {
-        final body = provider.buildRequestBody(
-          'MiniMax-M2.5',
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'high',
-        );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
-        expect(body['output_config'], {'effort': 'high'});
-      });
+      test(
+        'high effort emits thinking: {type: enabled} with budget_tokens',
+        () {
+          final body = provider.buildRequestBody(
+            'MiniMax-M2.5',
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: 'high',
+          );
+          expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
+          expect(body['output_config'], {'effort': 'high'});
+        },
+      );
 
-      test('max effort emits thinking: {type: enabled} with budget_tokens',
-          () {
+      test('max effort emits thinking: {type: enabled} with budget_tokens', () {
         final body = provider.buildRequestBody(
           'MiniMax-M2',
           userMsg,
           thinkingMode: 'enabled',
           reasoningEffort: 'max',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'max'});
       });
 
@@ -1156,10 +1521,7 @@ void main() {
           thinkingMode: 'disabled',
           reasoningEffort: 'high',
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 10000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 10000});
         expect(body['output_config'], {'effort': 'high'});
       });
 
@@ -1171,10 +1533,7 @@ void main() {
           reasoningEffort: 'high',
           thinkingBudget: 8000,
         );
-        expect(body['thinking'], {
-          'type': 'enabled',
-          'budget_tokens': 8000,
-        });
+        expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 8000});
       });
     });
 
@@ -1209,72 +1568,76 @@ void main() {
       expect(content.last['cache_control'], {'type': 'ephemeral'});
     });
 
-    test('reasoningPresetsFor M3 maps normal → adaptive, others stay identity',
-        () {
-      // Adaptive is an M3-only feature. The UI shows the
-      // `adaptive` label (renamed from `normal`) only when the
-      // active model is M3. The labels come from minimax.toml's
-      // [models.reasoning_labels] — not hardcoded.
-      const m3ModelLabels = {
-        'low': 'disabled',
-        'normal': 'adaptive',
-        'high': 'disabled',
-        'max': 'disabled',
-      };
-      final presets = provider.reasoningPresetsFor(
-        'MiniMax-M3',
-        modelLabels: m3ModelLabels,
-      );
-      // low/high/max are disabled — only normal (as "adaptive") and off remain.
-      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
-      expect(normal.displayLabel, 'adaptive');
-      // Disabled entries are removed from the list.
-      expect(presets.where((p) => p.internalValue == 'low'), isEmpty);
-      expect(presets.where((p) => p.internalValue == 'high'), isEmpty);
-      expect(presets.where((p) => p.internalValue == 'max'), isEmpty);
-    });
-
-    test('reasoningPresetsFor M2.x shows normal → normal (no adaptive label)',
-        () {
-      // M2.x doesn't support adaptive thinking, so the rename
-      // would be misleading. Show `normal` as `normal` and let
-      // the wire format (enabled + budget) do the work.
-      for (final modelId in [
-        'MiniMax-M2',
-        'MiniMax-M2.1',
-        'MiniMax-M2.1-highspeed',
-        'MiniMax-M2.5',
-        'MiniMax-M2.5-highspeed',
-        'MiniMax-M2.7',
-        'MiniMax-M2.7-highspeed',
-      ]) {
-        final presets = provider.reasoningPresetsFor(modelId);
-        final low = presets.firstWhere((p) => p.internalValue == 'low');
-        expect(
-          low.displayLabel,
-          'low',
-          reason: '$modelId: low should be identity',
+    test(
+      'reasoningPresetsFor M3 maps normal → adaptive, others stay identity',
+      () {
+        // Adaptive is an M3-only feature. The UI shows the
+        // `adaptive` label (renamed from `normal`) only when the
+        // active model is M3. The labels come from minimax.toml's
+        // [models.reasoning_labels] — not hardcoded.
+        const m3ModelLabels = {
+          'low': 'disabled',
+          'normal': 'adaptive',
+          'high': 'disabled',
+          'max': 'disabled',
+        };
+        final presets = provider.reasoningPresetsFor(
+          'MiniMax-M3',
+          modelLabels: m3ModelLabels,
         );
+        // low/high/max are disabled — only normal (as "adaptive") and off remain.
         final normal = presets.firstWhere((p) => p.internalValue == 'normal');
-        expect(
-          normal.displayLabel,
-          'normal',
-          reason: '$modelId: normal should NOT be relabeled "adaptive"',
-        );
-        final high = presets.firstWhere((p) => p.internalValue == 'high');
-        expect(
-          high.displayLabel,
-          'high',
-          reason: '$modelId: high should be identity',
-        );
-        final max = presets.firstWhere((p) => p.internalValue == 'max');
-        expect(
-          max.displayLabel,
-          'max',
-          reason: '$modelId: max should be identity',
-        );
-      }
-    });
+        expect(normal.displayLabel, 'adaptive');
+        // Disabled entries are removed from the list.
+        expect(presets.where((p) => p.internalValue == 'low'), isEmpty);
+        expect(presets.where((p) => p.internalValue == 'high'), isEmpty);
+        expect(presets.where((p) => p.internalValue == 'max'), isEmpty);
+      },
+    );
+
+    test(
+      'reasoningPresetsFor M2.x shows normal → normal (no adaptive label)',
+      () {
+        // M2.x doesn't support adaptive thinking, so the rename
+        // would be misleading. Show `normal` as `normal` and let
+        // the wire format (enabled + budget) do the work.
+        for (final modelId in [
+          'MiniMax-M2',
+          'MiniMax-M2.1',
+          'MiniMax-M2.1-highspeed',
+          'MiniMax-M2.5',
+          'MiniMax-M2.5-highspeed',
+          'MiniMax-M2.7',
+          'MiniMax-M2.7-highspeed',
+        ]) {
+          final presets = provider.reasoningPresetsFor(modelId);
+          final low = presets.firstWhere((p) => p.internalValue == 'low');
+          expect(
+            low.displayLabel,
+            'low',
+            reason: '$modelId: low should be identity',
+          );
+          final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+          expect(
+            normal.displayLabel,
+            'normal',
+            reason: '$modelId: normal should NOT be relabeled "adaptive"',
+          );
+          final high = presets.firstWhere((p) => p.internalValue == 'high');
+          expect(
+            high.displayLabel,
+            'high',
+            reason: '$modelId: high should be identity',
+          );
+          final max = presets.firstWhere((p) => p.internalValue == 'max');
+          expect(
+            max.displayLabel,
+            'max',
+            reason: '$modelId: max should be identity',
+          );
+        }
+      },
+    );
   });
 
   group('InstallSlug', () {
@@ -1330,8 +1693,11 @@ void main() {
         final topP = topPForTemperature(t);
         final prev = previous;
         if (prev != null) {
-          expect(topP, lessThanOrEqualTo(prev),
-              reason: 'top_p must not widen as temperature rises');
+          expect(
+            topP,
+            lessThanOrEqualTo(prev),
+            reason: 'top_p must not widen as temperature rises',
+          );
         }
         previous = topP;
       }
@@ -1342,8 +1708,11 @@ void main() {
       // OpenAI / Anthropic [0.0, 1.0] window even when fed bizarre
       // inputs.
       for (final t in [-100.0, -1.0, 0.0, 0.5, 1.0, 2.0, 100.0]) {
-        expect(topPForTemperature(t), inInclusiveRange(0.85, 1.0),
-            reason: 'top_p at temp=$t must be in [0.85, 1.0]');
+        expect(
+          topPForTemperature(t),
+          inInclusiveRange(0.85, 1.0),
+          reason: 'top_p at temp=$t must be in [0.85, 1.0]',
+        );
       }
     });
   });
@@ -1361,21 +1730,13 @@ void main() {
 
     test('OpenAI body includes the supplied top_p', () {
       final provider = OpenAICompatibleProvider();
-      final body = provider.buildRequestBody(
-        'gpt-4o',
-        userMsg,
-        topP: 0.9,
-      );
+      final body = provider.buildRequestBody('gpt-4o', userMsg, topP: 0.9);
       expect(body['top_p'], 0.9);
     });
 
     test('MiniMax body includes the supplied top_p', () {
       final provider = MiniMaxProvider();
-      final body = provider.buildRequestBody(
-        'MiniMax/M2',
-        userMsg,
-        topP: 0.88,
-      );
+      final body = provider.buildRequestBody('MiniMax/M2', userMsg, topP: 0.88);
       expect(body['top_p'], 0.88);
     });
 

@@ -5,6 +5,7 @@ import 'package:crux/src/services/provider_config_loader.dart';
 import 'package:crux/src/services/llm_provider.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
+import 'package:crux/src/services/providers/kimi_provider.dart';
 import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 
 void main() {
@@ -15,10 +16,7 @@ void main() {
     });
 
     test('wireFamilyLabel returns human-readable names', () {
-      expect(
-        wireFamilyLabel(WireFamily.openaiCompatible),
-        'OpenAI-compatible',
-      );
+      expect(wireFamilyLabel(WireFamily.openaiCompatible), 'OpenAI-compatible');
       expect(
         wireFamilyLabel(WireFamily.anthropicCompatible),
         'Anthropic-compatible',
@@ -185,13 +183,16 @@ void main() {
       expect(localConfig.hasImageSupport(), isFalse);
     });
 
-    test('toString includes provider name, type, wire family, and model count', () {
-      final str = openaiConfig.toString();
-      expect(str, contains('openai'));
-      expect(str, contains('openai_compatible'));
-      expect(str, contains('openaiCompatible'));
-      expect(str, contains('models=2'));
-    });
+    test(
+      'toString includes provider name, type, wire family, and model count',
+      () {
+        final str = openaiConfig.toString();
+        expect(str, contains('openai'));
+        expect(str, contains('openai_compatible'));
+        expect(str, contains('openaiCompatible'));
+        expect(str, contains('models=2'));
+      },
+    );
   });
 
   group('resolveProvider() — dispatcher', () {
@@ -201,11 +202,14 @@ void main() {
       expect(r.wire, WireFamily.openaiCompatible);
     });
 
-    test('anthropic_compatible → AnthropicCompatibleProvider + anthropicCompatible', () {
-      final r = resolveProvider('anthropic_compatible');
-      expect(r.provider, isA<AnthropicCompatibleProvider>());
-      expect(r.wire, WireFamily.anthropicCompatible);
-    });
+    test(
+      'anthropic_compatible → AnthropicCompatibleProvider + anthropicCompatible',
+      () {
+        final r = resolveProvider('anthropic_compatible');
+        expect(r.provider, isA<AnthropicCompatibleProvider>());
+        expect(r.wire, WireFamily.anthropicCompatible);
+      },
+    );
 
     test('deepseek → DeepSeekProvider + openaiCompatible wire', () {
       final r = resolveProvider('deepseek');
@@ -250,22 +254,25 @@ void main() {
   });
 
   group('providerFor() — convenience over resolveProvider()', () {
-    test('returns a provider of the same class as resolveProvider().provider', () {
-      const cfg = ProviderConfig(
-        name: 'openai',
-        type: 'openai_compatible',
-        wireFamily: WireFamily.openaiCompatible,
-        endpointUrl: 'https://api.openai.com/v1',
-        models: [
-          ModelConfig(id: 'gpt-4o', name: 'GPT-4o', contextSize: 128000),
-        ],
-      );
-      // Both return freshly-constructed instances, so compare by type.
-      expect(
-        providerFor(cfg).runtimeType,
-        resolveProvider('openai_compatible').provider.runtimeType,
-      );
-    });
+    test(
+      'returns a provider of the same class as resolveProvider().provider',
+      () {
+        const cfg = ProviderConfig(
+          name: 'openai',
+          type: 'openai_compatible',
+          wireFamily: WireFamily.openaiCompatible,
+          endpointUrl: 'https://api.openai.com/v1',
+          models: [
+            ModelConfig(id: 'gpt-4o', name: 'GPT-4o', contextSize: 128000),
+          ],
+        );
+        // Both return freshly-constructed instances, so compare by type.
+        expect(
+          providerFor(cfg).runtimeType,
+          resolveProvider('openai_compatible').provider.runtimeType,
+        );
+      },
+    );
   });
 
   group('ProviderConfigLoader — TOML parsing', () {
@@ -390,9 +397,9 @@ id = "gpt-4o"
 name = "GPT-4o"
 context_size = 128000
 ''');
-      await File('${tempDir.path}/example.provider.toml').writeAsString(
-        'reference template, must be ignored',
-      );
+      await File(
+        '${tempDir.path}/example.provider.toml',
+      ).writeAsString('reference template, must be ignored');
       await loader.loadAll();
       expect(loader.providerByName('openai'), isNotNull);
 
@@ -454,12 +461,10 @@ thinking_budget = 10000
       expect(model.thinkingBudget, 10000);
     });
 
-    test(
-      'loadAll parses stream_idle_timeout_ms and stream_max_duration_ms '
-      'when set; defaults to null when absent',
-      () async {
-        // First: provider with both overrides set.
-        await File('${tempDir.path}/longthinking.toml').writeAsString('''
+    test('loadAll parses stream_idle_timeout_ms and stream_max_duration_ms '
+        'when set; defaults to null when absent', () async {
+      // First: provider with both overrides set.
+      await File('${tempDir.path}/longthinking.toml').writeAsString('''
 type = "openai_compatible"
 endpoint_url = "https://api.longcat.chat/openai/v1"
 stream_idle_timeout_ms = 600000
@@ -470,8 +475,8 @@ id = "LongCat-2.0"
 name = "LongCat 2.0"
 context_size = 1048576
 ''');
-        // Second: provider with neither override (default behavior).
-        await File('${tempDir.path}/normal.toml').writeAsString('''
+      // Second: provider with neither override (default behavior).
+      await File('${tempDir.path}/normal.toml').writeAsString('''
 type = "openai_compatible"
 endpoint_url = "https://api.openai.com/v1"
 
@@ -480,17 +485,16 @@ id = "gpt-4o"
 name = "GPT-4o"
 context_size = 128000
 ''');
-        await loader.loadAll();
+      await loader.loadAll();
 
-        final longcat = loader.providerByName('longthinking')!;
-        expect(longcat.streamIdleTimeoutMs, 600000);
-        expect(longcat.streamMaxDurationMs, 1800000);
+      final longcat = loader.providerByName('longthinking')!;
+      expect(longcat.streamIdleTimeoutMs, 600000);
+      expect(longcat.streamMaxDurationMs, 1800000);
 
-        final normal = loader.providerByName('normal')!;
-        expect(normal.streamIdleTimeoutMs, isNull);
-        expect(normal.streamMaxDurationMs, isNull);
-      },
-    );
+      final normal = loader.providerByName('normal')!;
+      expect(normal.streamIdleTimeoutMs, isNull);
+      expect(normal.streamMaxDurationMs, isNull);
+    });
 
     test('loadAll rejects negative stream_*_timeout_ms values', () async {
       await File('${tempDir.path}/bad.toml').writeAsString('''
@@ -699,8 +703,10 @@ endpoint_url = "https://api.openai.com/v1"
       expect(error, contains('models'));
     });
 
-    test('loadAll records errors for unknown type and lists known types', () async {
-      await File('${tempDir.path}/unknown.toml').writeAsString('''
+    test(
+      'loadAll records errors for unknown type and lists known types',
+      () async {
+        await File('${tempDir.path}/unknown.toml').writeAsString('''
 type = "definitely_not_a_real_provider"
 endpoint_url = "https://api.example.invalid/v1"
 
@@ -709,15 +715,16 @@ id = "m"
 name = "M"
 context_size = 4096
 ''');
-      await loader.loadAll();
+        await loader.loadAll();
 
-      expect(loader.providerNames(), isEmpty);
-      expect(loader.loadErrors().length, 1);
-      final error = loader.loadErrors().values.first;
-      // Helpful error: names the bad type and lists the registered ones
-      expect(error, contains('definitely_not_a_real_provider'));
-      expect(error, contains('openai_compatible'));
-    });
+        expect(loader.providerNames(), isEmpty);
+        expect(loader.loadErrors().length, 1);
+        final error = loader.loadErrors().values.first;
+        // Helpful error: names the bad type and lists the registered ones
+        expect(error, contains('definitely_not_a_real_provider'));
+        expect(error, contains('openai_compatible'));
+      },
+    );
 
     test('modelByCompositeKey finds model across providers', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
@@ -925,7 +932,7 @@ context_size = 8192
       // Built-ins shipped with the repo. `example.provider.toml` is the
       // reference template and is skipped by the loader (see
       // `loadAll skips example.*.toml files` above).
-      const builtIns = ['deepseek', 'local', 'minimax', 'longcat'];
+      const builtIns = ['deepseek', 'kimi', 'local', 'minimax', 'longcat'];
 
       if (loader.providerNames().isEmpty) {
         // Providers dir may not exist in test working directory — skip
@@ -955,15 +962,60 @@ context_size = 8192
       expect(minimax.models, isNotEmpty);
     });
 
-    test('deepseek.toml uses type = "deepseek" and dispatches to DeepSeekProvider', () async {
-      await loader.loadAll();
-      if (loader.providerNames().isEmpty) return;
-      final deepseek = loader.providerByName('deepseek');
-      if (deepseek == null) return; // not present in this checkout
-      expect(deepseek.type, 'deepseek');
-      expect(deepseek.wireFamily, WireFamily.openaiCompatible);
-      expect(providerFor(deepseek), isA<DeepSeekProvider>());
-    });
+    test(
+      'deepseek.toml uses type = "deepseek" and dispatches to DeepSeekProvider',
+      () async {
+        await loader.loadAll();
+        if (loader.providerNames().isEmpty) return;
+        final deepseek = loader.providerByName('deepseek');
+        if (deepseek == null) return; // not present in this checkout
+        expect(deepseek.type, 'deepseek');
+        expect(deepseek.wireFamily, WireFamily.openaiCompatible);
+        expect(providerFor(deepseek), isA<DeepSeekProvider>());
+      },
+    );
+
+    test(
+      'kimi.toml uses type = "kimi" and dispatches to KimiProvider',
+      () async {
+        await loader.loadAll();
+        if (loader.providerNames().isEmpty) return;
+        final kimi = loader.providerByName('kimi');
+        if (kimi == null) return; // not present in this checkout
+        expect(kimi.type, 'kimi');
+        expect(kimi.wireFamily, WireFamily.openaiCompatible);
+        expect(providerFor(kimi), isA<KimiProvider>());
+        // K3 exposes two context variants that both map to the
+        // same upstream model; K2.7 has two speed variants that
+        // are distinct upstream model IDs. All four must load.
+        final ids = kimi.models.map((m) => m.id).toSet();
+        expect(
+          ids,
+          containsAll([
+            'k3-1m',
+            'k3-256k',
+            'kimi-for-coding',
+            'kimi-for-coding-highspeed',
+          ]),
+        );
+        // All four models opt into `stream_lerp = true` — Kimi
+        // streams very chatty chunks and the chat executor's
+        // 60Hz drain timer is the difference between
+        // stuttery-burst and smooth rendering. Same UX knob
+        // MiniMax and LongCat use for the same reason.
+        for (final m in kimi.models) {
+          expect(
+            m.streamLerp,
+            isTrue,
+            reason:
+                '${m.id} must opt into stream_lerp — '
+                'Kimi streams very chatty chunks and the '
+                'executor drain timer is required for '
+                'smooth rendering',
+          );
+        }
+      },
+    );
 
     test('every real TOML resolves via providerFor()', () async {
       await loader.loadAll();

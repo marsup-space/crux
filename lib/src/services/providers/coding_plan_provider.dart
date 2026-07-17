@@ -83,12 +83,27 @@ mixin CodingPlanProvider on LlmProvider {
   /// provider, passing the key it pulled from
   /// [ProviderService.getApiKey].
   ///
+  /// The optional [baseUrl] is the provider's API root URL
+  /// (e.g. `https://api.kimi.com/coding/v1`). It is purely a
+  /// pass-through for subclasses that derive their quota
+  /// endpoint from a per-provider `endpoint_url` TOML field
+  /// (Kimi) — the mixin does not cache it. Providers that
+  /// need it must save it on their own instance before
+  /// calling `super.startCodingPlanPolling`, and read it back
+  /// from there in their [getCodingPlanUsage] implementation.
+  /// Providers with a fixed quota URL (e.g. MiniMax) ignore
+  /// the parameter; the chat panel always passes it for
+  /// uniformity.
+  ///
   /// Idempotent: calling repeatedly with the same key and
   /// interval is a no-op. Changing [interval] reschedules
-  /// the next tick on the new cadence.
+  /// the next tick on the new cadence. [baseUrl] is a
+  /// pass-through — see the note above; the mixin doesn't
+  /// observe changes to it.
   void startCodingPlanPolling({
     required String apiKey,
     Duration? interval,
+    String? baseUrl,
   }) {
     _codingPlanApiKey = apiKey;
     final needsRestart = _codingPlanTimer != null;

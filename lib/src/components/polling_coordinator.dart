@@ -80,13 +80,20 @@ class PollingCoordinator {
       activeCodingPlanProvider = null;
     }
 
-    if (provider != null && apiKey != null) {
+    if (provider != null && apiKey != null && providerName != null) {
       activeCodingPlanProvider = provider;
+      // Pass the provider's `endpoint_url` as `baseUrl` so
+      // providers whose quota endpoint is derived from a
+      // per-provider TOML field (Kimi) can resolve the URL at
+      // fetch time. Providers with a hardcoded quota URL
+      // (MiniMax) ignore the parameter.
+      final providerConfig = providerService.providerByName(providerName);
       provider.startCodingPlanPolling(
         apiKey: apiKey,
         interval: hasActive
             ? kCodingPlanActiveInterval
             : kCodingPlanIdleInterval,
+        baseUrl: providerConfig?.endpointUrl,
       );
     }
 

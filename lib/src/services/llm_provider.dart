@@ -1,6 +1,7 @@
 import '../models/provider_config.dart';
 import 'providers/anthropic_compatible_provider.dart';
 import 'providers/deepseek_provider.dart';
+import 'providers/kimi_provider.dart';
 import 'providers/minimax_provider.dart';
 import 'providers/openai_compatible_provider.dart';
 
@@ -22,8 +23,8 @@ class ReasoningPreset {
 
   /// Convenience: when display label equals internal value.
   const ReasoningPreset.same(String value)
-      : internalValue = value,
-        displayLabel = value;
+    : internalValue = value,
+      displayLabel = value;
 
   @override
   String toString() => 'ReasoningPreset($internalValue → $displayLabel)';
@@ -139,10 +140,12 @@ abstract class LlmProvider {
         continue;
       } else {
         // Renamed — keep with new display label
-        result.add(ReasoningPreset(
-          internalValue: p.internalValue,
-          displayLabel: override,
-        ));
+        result.add(
+          ReasoningPreset(
+            internalValue: p.internalValue,
+            displayLabel: override,
+          ),
+        );
       }
     }
     return result;
@@ -257,6 +260,7 @@ abstract class LlmProvider {
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+
     /// Nucleus-sampling ceiling in [0.0, 1.0]. Crux's
     /// `chat_turn_executor` derives this from the effective
     /// temperature (see `topPForTemperature`); production callers
@@ -267,6 +271,31 @@ abstract class LlmProvider {
     List<Map<String, dynamic>>? tools,
     String? userId,
   });
+
+  /// The temperature the provider pins on the wire, or `null`
+  /// if the provider passes the caller's temperature through
+  /// unchanged.
+  ///
+  /// Most providers (OpenAI-compatible, Anthropic-compatible,
+  /// etc.) honor any `temperature` in `[0.0, 1.0]` so the
+  /// caller's value is the wire value — `forcedTemperature`
+  /// is `null` and the toolbar renders the normal interactive
+  /// "T:0.5" chip.
+  ///
+  /// Some providers have a fixed sampling temperature the API
+  /// rejects any deviation from (e.g. Kimi Code, which 400s on
+  /// any `temperature != 1.0`). For those, the provider's
+  /// [buildRequestBody] discards the caller's value and pins
+  /// a hardcoded one; this getter surfaces the pinned value
+  /// so the toolbar can render a non-interactive "T:1 (fixed)"
+  /// chip instead — the user can still issue `/temperature`
+  /// but the chip honestly reflects what the API will see.
+  ///
+  /// The value is purely advisory for the UI; the source of
+  /// truth is the provider's [buildRequestBody] implementation,
+  /// which MUST honor the documented constant regardless of
+  /// the caller's input.
+  double? get forcedTemperature => null;
 
   /// Last-chance hook to mutate the wire-format message list before
   /// it gets sent to the model. Default: no-op (returns [messages]
@@ -330,6 +359,12 @@ ResolvedProvider resolveProvider(String type) {
         wire: WireFamily.anthropicCompatible,
         authStyle: AuthStyle.bearer,
       );
+    case 'kimi':
+      return ResolvedProvider(
+        provider: KimiProvider(),
+        wire: WireFamily.openaiCompatible,
+        authStyle: AuthStyle.bearer,
+      );
     default:
       throw ArgumentError(
         'Unknown provider type "$type". Known types: '
@@ -340,11 +375,12 @@ ResolvedProvider resolveProvider(String type) {
 }
 
 List<String> knownProviderTypes() => [
-      'openai_compatible',
-      'anthropic_compatible',
-      'deepseek',
-      'minimax',
-    ];
+  'openai_compatible',
+  'anthropic_compatible',
+  'deepseek',
+  'minimax',
+  'kimi',
+];
 
 String typeDisplayName(String type) {
   switch (type) {
@@ -356,6 +392,8 @@ String typeDisplayName(String type) {
       return 'DeepSeek';
     case 'minimax':
       return 'MiniMax';
+    case 'kimi':
+      return 'Kimi';
     default:
       return type;
   }

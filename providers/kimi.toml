@@ -1,0 +1,172 @@
+# Kimi Code provider configuration
+# Filename serves as the provider name: "kimi"
+# OpenAI-compatible API: https://api.kimi.com/coding/v1
+#
+# Kimi Code is the subscription-bundled "thinking coding agent"
+# platform from Moonshot (https://www.kimi.com/code/). Crux
+# talks to it as a regular OpenAI-compatible endpoint with
+# Bearer auth; the KimiProvider class handles the two Kimi-
+# specific wire-format quirks (K3 model-ID remap, K2.7 binary
+# thinking — see providers/kimi_provider.dart's class doc).
+#
+# The custom `type = "kimi"` value is registered in
+# `llm_provider.dart`'s resolveProvider() — it dispatches to a
+# Kimi-specific LlmProvider that:
+#   - extends OpenAICompatibleProvider (OpenAI Chat Completions
+#     wire shape, Bearer auth, stream parsing inherited);
+#   - mixes in CodingPlanProvider so the toolbar can display
+#     live quota from `${endpoint_url}/usages`;
+#   - remaps the two K3 Crux-side IDs (k3-1m, k3-256k) to the
+#     single upstream `k3` model;
+#   - drops the `reasoning_effort` field on K2.7 models
+#     (`kimi-for-coding` and `kimi-for-coding-highspeed`)
+#     because K2.7 is documented as a binary Thinking:ON/OFF
+#     knob — see https://www.kimi.com/code/docs/kimi-code/models.
+#
+# Models
+# ------
+# K3 (1M context) and K3 (256K context) both map to the same
+# upstream `k3` model. The split is purely a UX signal: Kimi
+# grants 1M context to Allegretto+ plans and 256K to Moderato,
+# so users on a lower plan can pick the 256K variant to avoid
+# the server-side context cap. The actual context window Kimi
+# grants is determined by the user's plan tier, not the
+# request — there is no `context_size` field on the wire.
+#
+# K2.7 Code comes in two variants: `kimi-for-coding` (standard)
+# and `kimi-for-coding-highspeed` (6x speed, 3x cost). Both
+# share the same 256K context window and the same binary
+# thinking toggle. Allegretto+ is required for the highspeed
+# variant.
+#
+# Reasoning effort
+# ----------------
+# Per the Kimi docs, K3 currently only honors `max` (low and
+# high are "coming later") and unknown values 400. We
+# `disabled` every preset except `max` and `off` so the picker
+# only ever sends values the server accepts.
+#
+# K2.7 has no reasoning-effort knob at all — it's a binary
+# on/off "Thinking" toggle. We expose `off` (raw) and rename
+# `max` → `on` so the user sees `[off, on]` and the picker
+# cycles between the two states. The KimiProvider drops
+# `reasoning_effort` from the wire body for these models
+# regardless, so the internal value `max` only matters for the
+# picker UI; the server only sees `thinking.type: enabled`.
+#
+# Temperature / top_p
+# -------------------
+# Kimi Code models (K3 and the K2.7 Code family) are documented
+# as having `temperature` **fixed at 1.0** — the API rejects
+# any other value with
+# `400 invalid temperature: only 1 is allowed for this model`.
+# Crux's default sampling is `temperature = 0.0` (deterministic
+# coding) and the `/temperature` slash command lets users pick
+# anything in `[0.0, 1.0]`. Both are silently ignored on the
+# wire for Kimi — the KimiProvider's `buildRequestBody` forces
+# `temperature = 1.0` paired with `top_p = 0.95` (Kimi's
+# recommended default) regardless of the TOML value or the
+# runtime override. The `temperature` lines below are kept
+# (as `0`) for documentation but have no effect on the wire.
+#
+# Stream lerping
+# --------------
+# All four Kimi Code models stream many small text chunks
+# (single tokens / token-pairs), which makes the in-progress
+# output render in a visibly stuttery burst. `stream_lerp =
+# true` opts the chat executor into a 60Hz timer that drains
+# the pending text/reasoning buffer at a steady rate — same
+# UX knob MiniMax and LongCat use for the same reason. Each
+# model entry below sets the flag.
+type = "kimi"
+endpoint_url = "https://api.kimi.com/coding/v1"
+
+# === K3 — flagship model ===
+# Exposed twice so users can match the variant to their
+# subscription tier's context grant. Both map to the same
+# upstream `k3` model ID at request time.
+#
+# Only `max` (and `off` to disable thinking) is shown in the
+# reasoning-effort picker — K3's other levels are documented
+# as "coming later", and unknown values return HTTP 400.
+[[models]]
+id = "k3-1m"
+name = "Kimi K3 (1M context)"
+context_size = 1048576
+image_support = true
+reasoning_effort = "max"
+thinking = true
+temperature = 0
+stream_lerp = true
+
+# Hide every preset except `off` and `max`. `off` keeps the
+# "disable thinking" option visible (the docs explicitly allow
+# `none → thinking.type disabled`); the other levels are
+# hidden because Kimi currently 400s on them.
+[models.reasoning_labels]
+low = "disabled"
+normal = "disabled"
+high = "disabled"
+
+[[models]]
+id = "k3-256k"
+name = "Kimi K3 (256K context)"
+context_size = 262144
+image_support = true
+reasoning_effort = "max"
+thinking = true
+temperature = 0
+stream_lerp = true
+
+# Same preset filter as k3-1m: only `off` and `max` are shown.
+[models.reasoning_labels]
+low = "disabled"
+normal = "disabled"
+high = "disabled"
+
+# === K2.7 Code — binary on/off thinking ===
+# Two wire-distinct models with the same UX shape. Both have
+# a 256K context window. Per the Kimi docs, K2.7 requires
+# Thinking:ON to actually invoke the K2.7 model — sending
+# `thinking.type: disabled` routes the request to the older
+# K2.6 model — but the toggle is still exposed so users can
+# see and pick their state.
+#
+# We rename the internal `max` → display `on` so the picker
+# reads `[off, on]` (binary) instead of `[off, max]`. The
+# KimiProvider drops the `reasoning_effort` field on the
+# wire, so the server only sees `thinking.type: enabled` (or
+# `disabled`) regardless of which label the user picks.
+[[models]]
+id = "kimi-for-coding"
+name = "Kimi K2.7 Code"
+context_size = 262144
+image_support = true
+max_tokens = 32768
+reasoning_effort = "max"
+thinking = true
+temperature = 0
+stream_lerp = true
+
+[models.reasoning_labels]
+low = "disabled"
+normal = "disabled"
+high = "disabled"
+max = "on"
+
+[[models]]
+id = "kimi-for-coding-highspeed"
+name = "Kimi K2.7 Code Highspeed"
+context_size = 262144
+image_support = true
+max_tokens = 32768
+reasoning_effort = "max"
+thinking = true
+temperature = 0
+stream_lerp = true
+
+[models.reasoning_labels]
+low = "disabled"
+normal = "disabled"
+high = "disabled"
+max = "on"

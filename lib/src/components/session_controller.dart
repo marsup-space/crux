@@ -187,8 +187,7 @@ class SessionController {
   /// Add a pending image attachment for [sessionId]. The image will be
   /// attached to the next user message and then cleared.
   void addPendingImage(int sessionId, ImageAttachment image) {
-    final list = pendingImages
-        .putIfAbsent(sessionId, () => <ImageAttachment>[])
+    final list = pendingImages.putIfAbsent(sessionId, () => <ImageAttachment>[])
       ..add(image);
     cubit.setPendingImages(sessionId, List<ImageAttachment>.unmodifiable(list));
   }
@@ -358,7 +357,10 @@ class SessionController {
   /// (which may differ from [target] for the active-session
   /// downgrade path), so the caller can use it for logging or
   /// to drive a follow-up action without re-deriving the rule.
-  Future<SessionStatus> setSessionStatus(int sessionId, SessionStatus target) async {
+  Future<SessionStatus> setSessionStatus(
+    int sessionId,
+    SessionStatus target,
+  ) async {
     final session = findSession(sessionId);
     if (session == null) return target;
 
@@ -393,19 +395,105 @@ class SessionController {
         contextTargetTokens: initial,
         contextDisplayTokens: initial.toDouble(),
         thinkingMode: session?.thinkingMode ?? 'enabled',
-        reasoningEffort: session?.reasoningEffort,
+        // Resolve the reasoning effort: a session created
+        // before the user switched to the current model may
+        // have a stored effort that the new model doesn't
+        // support (e.g. `normal` from a MiniMax session, then
+        // the user picks Kimi K3 which only allows [off, max]
+        // — without the fallback, the chip would render the
+        // stored value while the picker offered only the
+        // filtered subset, and the API would 400 on the
+        // unknown effort value). When the session's value
+        // isn't in the model's preset list, fall back to the
+        // model's TOML default so the chip, the picker, and
+        // the wire all agree.
+        reasoningEffort: _resolveReasoningEffort(
+          session?.model,
+          session?.reasoningEffort,
+        ),
         temperatureOverride: session?.temperatureOverride,
       );
       // Seed MetricsCubit with the same base context target that the
       // runtime carries, so the cubit has an entry to subscribe to
       // before any caller actually mutates the runtime. The mirror
       // keeps both sources in lockstep at session creation.
-      metricsCubit.updateContext(
-        sessionId: sessionId,
-        targetTokens: initial,
-      );
+      metricsCubit.updateContext(sessionId: sessionId, targetTokens: initial);
       return rt;
     });
+  }
+
+  /// Validate the session's stored [reasoningEffort] against the
+  /// active model's preset list, falling back to the model's
+  /// TOML default when the stored value is no longer supported.
+  ///
+  /// Without this, switching to a model that filters its preset
+  /// list (Kimi K3 / K2.7 Code hide everything but `[off, max]`)
+  /// would leave the session's stored effort (`normal`, the
+  /// historical default) untouched — the picker would offer
+  /// only `[off, max]` but the chip would render the
+  /// unsupported `normal`, and the wire request would carry
+  /// the unsupported value to the API (which 400s for Kimi).
+  ///
+  /// Resolution order:
+  /// 1. If the stored value is in the model's preset list, use
+  ///    it as-is — the user explicitly picked it on a
+  ///    previous model, the current model happens to
+  ///    support it too.
+  /// 2. If the stored value isn't in the preset list, try the
+  ///    model's TOML `reasoning_effort` (if it's in the
+  ///    preset list — e.g. Kimi K3's TOML says `max`, which
+  ///    is in the [off, max] list).
+  /// 3. If even the model's TOML default isn't in the preset
+  ///    list, fall back to the first enabled preset. This
+  ///    covers providers where the TOML default is filtered
+  ///    out by `reasoning_labels` (defensive — shouldn't
+  ///    happen in practice but keeps the runtime on a
+  ///    value the API actually accepts).
+  /// 4. If the model has no presets at all (provider
+  ///    declares `reasoning_effort = "none"`), keep the
+  ///    stored value as-is — it's just not used on the wire.
+  String? _resolveReasoningEffort(String? modelKey, String? stored) {
+    if (modelKey == null || modelKey.isEmpty) return stored;
+    final slashIdx = modelKey.indexOf('/');
+    if (slashIdx <= 0) return stored;
+    final providerName = modelKey.substring(0, slashIdx);
+    final modelId = modelKey.substring(slashIdx + 1);
+    final llm = _providerService.llmProviderByName(providerName);
+    final provider = _providerService.providerByName(providerName);
+    if (llm == null || provider == null) return stored;
+    final modelConfig = provider.modelById(modelId);
+    final presets = llm.reasoningPresetsFor(
+      modelId,
+      providerLabels: provider.reasoningLabels,
+      modelLabels: modelConfig?.reasoningLabels ?? const {},
+    );
+    if (presets.isEmpty) return stored;
+
+    // Case 1: stored value is supported — keep it.
+    if (stored != null && presets.any((p) => p.internalValue == stored)) {
+      return stored;
+    }
+
+    // Case 2: stored value isn't supported. Try the model's
+    // TOML default. `ModelConfig.reasoningEffort` is a
+    // typed `ReasoningEffort?` enum (low/medium/high/max);
+    // its `.name` is the lowercase string the picker uses.
+    final modelDefault = modelConfig?.reasoningEffort;
+    if (modelDefault != null &&
+        presets.any((p) => p.internalValue == modelDefault.name)) {
+      return modelDefault.name;
+    }
+
+    // Case 3: even the TOML default isn't in the list (rare —
+    // TOML + labels drift). Fall back to the first enabled
+    // preset. We skip `off` if any non-`off` preset is
+    // available, so the runtime defaults to "thinking on"
+    // when the model has any positive option.
+    final firstOnPreset = presets.firstWhere(
+      (p) => p.internalValue != 'off',
+      orElse: () => presets.first,
+    );
+    return firstOnPreset.internalValue;
   }
 
   /// Mirror the runtime's lifecycle flags (isResponding, btwMode,
@@ -437,11 +525,8 @@ class SessionController {
     }
     final phase = rt.isResponding
         ? ChatTurnPhase.responding
-        : (rt.interrupted
-              ? ChatTurnPhase.interrupted
-              : ChatTurnPhase.idle);
-    final kind =
-        (rt.isResponding && rt.btwMode) ? TurnKind.btw : null;
+        : (rt.interrupted ? ChatTurnPhase.interrupted : ChatTurnPhase.idle);
+    final kind = (rt.isResponding && rt.btwMode) ? TurnKind.btw : null;
     chatTurnCubit.replaceSessionState(
       sessionId,
       ChatTurnSessionState(
@@ -657,15 +742,13 @@ class SessionController {
   /// 1000 by [loadMessagesChunked] — sessions with more than 1000
   /// messages report only the count that will actually land in
   /// `messageCache`.
-  int? loadingMessageTotal(int sessionId) =>
-      _loadingTotalCounts[sessionId];
+  int? loadingMessageTotal(int sessionId) => _loadingTotalCounts[sessionId];
 
   /// Number of messages already loaded into the cache for [sessionId]
   /// during the current chunked load. Used by the chat history's
   /// loading line to render `… (NN%)` once at least one chunk has
   /// arrived.
-  int? loadingMessageLoaded(int sessionId) =>
-      _loadingLoadedCounts[sessionId];
+  int? loadingMessageLoaded(int sessionId) => _loadingLoadedCounts[sessionId];
 
   Future<String?> switchSession(int id) async {
     final error = beginSwitchSession(id);
@@ -850,8 +933,7 @@ class SessionController {
     // skip the first-chunk fetch and resume from the oldest id in
     // the cache — avoids a wasted ~200ms re-fetching the same rows.
     final preloaded = messageCache[sessionId];
-    final resumedFromBoot =
-        preloaded != null && preloaded.isNotEmpty;
+    final resumedFromBoot = preloaded != null && preloaded.isNotEmpty;
 
     // Kick off COUNT(*) and the first chunk (or a no-op if we're
     // resuming from the boot pre-load) concurrently. Both return
@@ -863,10 +945,7 @@ class SessionController {
     // path.
     final firstChunkFuture = resumedFromBoot
         ? Future<List<Message>>.value(const <Message>[])
-        : _messageStore.getMessages(
-            sessionId,
-            limit: _kFirstChunkSize,
-          );
+        : _messageStore.getMessages(sessionId, limit: _kFirstChunkSize);
     final totalFuture = _messageStore.countBySession(sessionId);
 
     final firstChunk = await firstChunkFuture;
@@ -916,10 +995,9 @@ class SessionController {
     int? beforeId = accumulated.first.id;
     var loaded = accumulated.length;
     while (loaded < total && loaded < _kMessageCap) {
-      final remaining =
-          loaded + _kLaterChunkSize <= _kMessageCap
-              ? _kLaterChunkSize
-              : _kMessageCap - loaded;
+      final remaining = loaded + _kLaterChunkSize <= _kMessageCap
+          ? _kLaterChunkSize
+          : _kMessageCap - loaded;
       final chunk = await _messageStore.getMessages(
         sessionId,
         limit: remaining,
