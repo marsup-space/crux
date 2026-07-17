@@ -164,6 +164,11 @@ jobs:
 
       - name: Download embedding model (potion-code-16M)
         if: env.SHOULD_BUILD == 'true' && steps.cache-semble-model.outputs.cache-hit != 'true'
+        env:
+          # huggingface_hub prints a Unicode ✓ on completion; without
+          # UTF-8 mode Python on Windows runners crashes with a
+          # 'charmap' codec encode error at the very end of the download.
+          PYTHONUTF8: '1'
         run: |
           python -m pip install --quiet --upgrade huggingface_hub
           # Newer huggingface_hub exposes `hf`; older releases only
