@@ -160,7 +160,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/huggingface
-          key: ${{ runner.os }}-hf-minishlab-potion-code-16M-v1
+          # v1 was poisoned by a Windows run that crashed mid-download
+          # (charmap error) but still saved its partial cache — a hit
+          # then skipped the download while refs/main pointed at an
+          # incomplete snapshot. v2 forces a clean re-fetch everywhere.
+          key: ${{ runner.os }}-hf-minishlab-potion-code-16M-v2
 
       - name: Download embedding model (potion-code-16M)
         if: env.SHOULD_BUILD == 'true' && steps.cache-semble-model.outputs.cache-hit != 'true'
@@ -188,7 +192,15 @@ jobs:
             echo "::error::potion-code-16M download did not create $ref"
             exit 1
           fi
-          echo "potion-code-16M snapshot: $(cat "$ref")"
+          snap="$(cat "$ref")"
+          snapdir="$HOME/.cache/huggingface/hub/models--minishlab--potion-code-16M/snapshots/$snap"
+          for f in model.safetensors tokenizer.json; do
+            if [ ! -f "$snapdir/$f" ]; then
+              echo "::error::potion-code-16M snapshot incomplete: missing $snapdir/$f"
+              exit 1
+            fi
+          done
+          echo "potion-code-16M snapshot: $snap"
         shell: bash
 
       # Same `dart run` exit-code caveat as the grammars step above:
