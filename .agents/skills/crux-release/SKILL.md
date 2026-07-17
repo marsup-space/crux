@@ -36,7 +36,19 @@ Run phases in order. Do not skip gates.
 git status                     # tree must be clean; commit or stash in-flight work first
 git log origin/master..HEAD    # local/remote in sync
 dart run tool/third_party.dart fetch
+
+# Submodule gitlinks MUST exist on their remotes — CI checkout does a
+# recursive fetch and dies with "upload-pack: not our ref" otherwise.
+# (v0.14.x releases all failed on exactly this.)
+for sm in nocterm textmate_highlight dart-jieba semble-dart; do
+  link=$(git ls-tree HEAD $sm | awk '{print $3}')
+  git -C $sm ls-remote --exit-code origin "$link" >/dev/null 2>&1 \
+    || git -C $sm ls-remote origin | grep -q "$link" \
+    || echo "PUSH MISSING: $sm $link"
+done
 ```
+
+Fix a missing gitlink by fast-forward pushing the submodule's own branch (e.g. `git -C <sm> push origin main`); never point the gitlink at a different commit just to satisfy CI.
 
 Decide the version: patch = fixes only, minor = new features, per semver.
 
@@ -87,6 +99,8 @@ git push origin master && git push origin vX.Y.Z
 gh run list --workflow=release.yml --limit 1   # then: gh run watch
 ```
 
+**Rehearse before tagging when the workflow changed**: a tag-triggered run uses the workflow YAML *from the tag commit* — fixing `release.yml` on master does nothing for an already-pushed tag. If `release.yml` was touched since the last release, first dry-run it via Actions → Release → Run workflow (no `publish_tag`) from master. If a tag-triggered run still fails on workflow bugs minutes after tagging and the Release is incomplete, fix master, then move the tag: `git tag -fa vX.Y.Z -m "…" && git push -f origin vX.Y.Z`. Never move a tag once the release is old enough to have consumers.
+
 ### Phase 7 — Post-release verification
 
 ```bash
@@ -102,3 +116,19 @@ Then smoke-test the real installer in a clean environment (`curl … install.sh 
 - Release bundles must contain the jieba dictionary; runtime dict resolution is executable-relative (see `lib/src/utils/bundled_directory.dart`), never CWD-relative.
 - `install.sh` must tolerate both zip layouts: `crux-<target>/crux` (legacy) and `crux-<target>/bin/crux` (current `dart build cli` output). If either side changes, re-verify against a real published zip.
 - 5 matrix jobs publish to the same Release concurrently with `overwrite_files: true`; asset names are distinct per target, so this is safe, but a failed CHANGELOG extraction only warns — check the body in Phase 7.
+- The repo is **private**: unauthenticated `install.sh` gets 404 from GitHub even for existing releases. Smoke-test the installer with valid GitHub auth in the environment, or accept API-level asset verification (`gh release view`) as the Phase 7 evidence until the repo goes public.
+
+## Troubleshooting playbook (learned cutting v0.15.0)
+
+| Symptom in the release run | Root cause | Fix |
+|---|---|---|
+| All jobs die at `Check out repository`: `upload-pack: not our ref <sha>`, `Fetched in submodule path '<sm>', but it did not contain <sha>` | Submodule gitlink commit never pushed to the submodule's remote | FF-push the submodule branch (`git -C <sm> push origin main`); re-run. This is why v0.14.x has tags but no Releases — Phase 0 now checks it. |
+| Windows job dies in the model download: `'charmap' codec can't encode character '\u2713'` | huggingface_hub prints a Unicode ✓; default Windows codepage can't encode it | `PYTHONUTF8: '1'` env on the download step (already in `release.yml`; keep it). |
+| Windows job dies in build: `libcrux_grammars: dylib not found` | `build_native` needs MSVC `cl.exe`; windows-latest can't build it | By design: `build_release.dart` warns and ships Windows without semantic_search (other targets still hard-fail). Do not "fix" the warning back into an error; the real fix is a Windows-friendly dylib build. |
+| Build dies copying `…/snapshots/<hash>/model.safetensors` with ENOENT while bash `[ -f ]` sees the same file | HF cache snapshot entries are symlink-like on Windows; Dart's `File.copy` chokes where bash succeeds | The `Stage embedding model` step copies with `cp -L` into `build/semblemodel` and exports `CRUX_SEMBLE_MODEL_DIR` (runs on cache hits too); `build_release.dart` prefers it. Keep this path. |
+| Model download skipped though cache looks partial (prior run crashed mid-download but saved cache) | actions/cache saves even on failure → poisoned cache hit | Bump the cache-key suffix (`…-v2`, `v3`…) and re-run; the download step verifies snapshot *files*, not just `refs/main`. |
+
+Also learned outside CI:
+
+- **Do not mix a repo-wide `dart format` into a release.** Local SDK (3.12) reformats ~240 files written under 3.11; always revert format-only churn before committing release work (`git checkout -- <files>`), and run repo-wide reformat as its own commit, its own decision.
+- **Full-suite flakes are real but nondeterministic** (lsp channel, ticker, session timing tests fail ~0.2% under parallel load). Gate verdict: re-run each failing test file solo — solo-green + varying failure sets across runs = pre-existing flakes, not a release blocker; a failure that repeats on the same test = stop and fix.
