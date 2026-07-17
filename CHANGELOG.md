@@ -8,6 +8,202 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-17
+
+3efb13f
+
+### Features
+
+- **Kimi Code provider** (`bd5a448`) — add `kimi` as a built-in provider
+  (`providers/kimi.toml`) backed by Moonshot's Kimi Code API
+  at `https://api.kimi.com/coding/v1`. Uses a custom
+  `type = "kimi"` (registered in `llm_provider.dart`'s
+  `resolveProvider()`) backed by a new
+  `KimiProvider extends OpenAICompatibleProvider with
+  CodingPlanProvider`. Ships with four models:
+
+  - `Kimi K3 (1M context)` / `Kimi K3 (256K context)` —
+    both map to the upstream `k3` model ID. The split is
+    a UX signal so users can match the variant to their
+    Kimi Code plan's granted context window
+    (Allegretto+ = 1M, Moderato = 256K); the actual
+    server-side cap is set by the plan tier, not the
+    request.
+  - `Kimi K2.7 Code` / `Kimi K2.7 Code Highspeed` —
+    `kimi-for-coding` and `kimi-for-coding-highspeed`
+    (6x speed / 3x cost).
+
+  Two Kimi-specific wire-format quirks are handled by
+  `KimiProvider.buildRequestBody` (full rationale in
+  `lib/src/services/providers/kimi_provider.dart`'s
+  class doc):
+
+  - **K3 model-ID remap.** `k3-1m` and `k3-256k` are
+    translated to the single upstream `k3` model ID at
+    request time. Reasoning-effort presets are
+    `reasoning_labels`-filtered to `off` + `max` only —
+    K3 currently only honors `max` and 400s on unknown
+    values.
+  - **K2.7 binary thinking.** K2.7 is documented as a
+    binary Thinking:ON/OFF knob. The `reasoning_effort`
+    field the generic OpenAI-compatible builder would
+    emit is stripped before the body hits the wire, so
+    the request body matches what the kimi-cli kosong
+    SDK sends. The picker surfaces `[off, on]` (max is
+    renamed to `on` via `reasoning_labels`) for a clean
+    binary UX.
+  - **Temperature is pinned to 1.0** for every Kimi Code
+    model (K3 and the K2.7 Code family). The Kimi API
+    rejects any other value with
+    `400 invalid temperature: only 1 is allowed for this model`,
+    so the provider forces `temperature = 1.0` and pairs
+    it with `top_p = 0.95` (Kimi's recommended default)
+    on the wire regardless of the TOML model config or
+    the `/temperature` runtime override. The
+    `temperature` field on each `[[models]]` entry in
+    `kimi.toml` is documented as ignored; the value
+    shown in the toolbar reflects Crux's view of the
+    config, not what's actually sent to Kimi. The
+    toolbar renders a non-interactive `T:1 (fixed)` chip
+    for Kimi sessions so the user sees the pinned value
+    and a hover hint explaining `/temperature` has no
+    effect. Driven by a new `LlmProvider.forcedTemperature`
+    getter (default `null`) which KimiProvider overrides.
+  - **Stream lerping on every Kimi model.** Kimi streams
+    very chatty chunks (single tokens / token-pairs) which
+    would otherwise render in a visibly stuttery burst.
+    Each `[[models]]` entry sets `stream_lerp = true` so
+    the chat executor's 60Hz drain timer smooths the
+    output, same UX knob MiniMax and LongCat use for the
+    same reason.
+
+  Live quota readout: the toolbar's existing
+  `CodingPlanUsageDisplay` (built for MiniMax's 5h/1w
+  format) now lights up for Kimi via
+  `KimiProvider.getCodingPlanUsage`. It polls
+  `{endpoint_url}/usages` (Bearer auth) on the same
+  30s-active / 180s-idle cadence as MiniMax, parses
+  Kimi's flexible `{usage, limits[]}` shape, and maps
+  the 5h row to the interval cell + the 1w summary to
+  the weekly cell. The Kimi API commonly returns a 5h
+  row in `limits[]` plus a top-level `usage` block
+  (which the API and the kimi-cli `/usage` command
+  both call the "Weekly limit" summary), so the parser
+  routes the weekly cell to the `usage` block when
+  `limits[]` only contains the 5h row — duplicating the
+  5h row to both cells was an early regression. When
+  `limits[]` has multiple distinct windows (5h + 1w +
+  1m, etc.), those rows take precedence and the
+  `usage` block is used only for the model name
+  (display label) + the hover hint. 401 / 404 / non-2xx
+  get the same error surface the kimi-cli `/usage`
+  command uses, so the messages read identically
+  across the two tools. The base `CodingPlanProvider`
+  mixin's `startCodingPlanPolling` gained an optional
+  `baseUrl` parameter (pass-through — the mixin doesn't
+  cache it; subclasses save it on their own instance)
+  so the polling coordinator can thread the per-
+  provider `endpoint_url` TOML field through.
+
+  `LlmVendor.kimi` added to `llm_error.dart` so Kimi
+  errors get the "Kimi" display label in user-facing
+  toast text.
+
+- **Working `/help` and discoverable `/undo`**
+  (`c06bca7`) — `/help` now prints a help sheet into the
+  chat history, generated from the live command registry
+  so it can never drift from reality again (command list,
+  shortcuts, provider quick-start). `/undo` (alias
+  `/撤销`) was implemented but never registered — it is
+  now in the registry, the completion overlay, and the
+  README. `/clear` and `/history`, which were registered
+  and documented but never implemented, were removed from
+  the registry and docs instead of failing with "not yet
+  implemented" at runtime.
+
+### Fixes
+
+- **Reasoning-effort chip agrees with the picker when the
+  session's stored value is filtered out by the model**
+  (`session_controller.dart`) — `Session.reasoningEffort`
+  and `SessionRuntimeState.reasoningEffort` defaulted to
+  the hardcoded string `'normal'`, so a session created
+  before the user switched to a model that filters
+  `normal` out of its preset list (Kimi K3 / K2.7 Code
+  expose only `[off, max]`) would render the chip as
+  "normal" while the picker offered only the filtered
+  subset, and the wire request would carry the
+  unsupported value to the API (Kimi 400s on anything
+  other than `max`). The runtime state init now
+  reconciles the stored value against the active
+  model's preset list via a new
+  `_resolveReasoningEffort` helper: case 1 (stored
+  value is supported) passes through; case 2 (stored
+  value isn't supported) falls back to the model's
+  TOML `reasoning_effort`; case 3 (TOML default also
+  filtered out) falls back to the first enabled preset;
+  case 4 (model has no presets) keeps the stored
+  value as-is. The cycle picker in
+  `chat_panel._cycleThinkingLevel` now also documents
+  the `idx = -1` fallback for the same edge case (a
+  runtime value the model's filtered list no longer
+  contains). Backed by 5 new cases in
+  `test/session_controller_resolve_effort_test.dart`
+  (case 1 + Kimi K3 case 2 + Kimi K2.7 case 2 + Kimi
+  case 1 + `reasoning_effort = "none"` case 4).
+
+- **Ctrl+C matches the docs: cancel first, quit second**
+  (`c06bca7`) — pressing Ctrl+C while a response streams
+  now cancels the response (like ESC×2) instead of
+  quitting Crux; a quick double-press still exits. The
+  README previously documented the opposite of the real
+  behavior, so users following the docs quit the app and
+  lost context. The input hint, `/quit` toast, and README
+  shortcut list were all rewritten to the real keymap
+  (Tab, Ctrl+V image paste, Ctrl+D/Ctrl+R in the session
+  panel, `@` files, `$` skills).
+
+- **Same-turn LSP diagnostics reach the model**
+  (`c06bca7`) — write/edit collected diagnostics were
+  only attached at persistence time, so the model only
+  "saw" the compile errors it introduced after a session
+  reload. Error-level diagnostics now ride the same-turn
+  tool result as a compact budgeted block, closing the
+  advertised edit-feedback loop. Missing-API-key errors
+  also name the actual provider and the next step
+  instead of `No API key for provider ""`.
+
+- **Storage integrity: foreign keys on, deletes atomic**
+  (`c06bca7`) — SQLite foreign keys were never enabled,
+  silently disabling every declared `ON DELETE CASCADE`;
+  session deletion now runs in a transaction and also
+  removes orphaned `file_last_writer` rows, and the
+  orphan tool-row repair skips corrupt-JSON rows instead
+  of treating them as terminators.
+
+- **First-run onboarding and README truthfulness**
+  (`c06bca7`) — the empty state now guides new users to
+  `/provider` and `/`, a startup warning fires when no
+  API key is configured, the README command table lists
+  every registered command (`/view`, `/temperature`,
+  `/web-provider`, `/undo`) plus `/tldr` detail levels
+  and `CRUX_API_KEY`, and the hard-coded version number
+  was replaced by a pointer to this changelog.
+
+- **Release pipeline can no longer ship broken bundles**
+  (`3efb13f`) — install.sh accepted only the
+  pre-`dart build cli` zip layout, so every published
+  release since the build-system switch failed to
+  install; it now probes both layouts (plus `crux.exe`).
+  Release bundles include the jieba dictionary (CJK word
+  jumps crashed outside the source tree), the release
+  workflow downloads the potion-code-16M embedding model
+  before building and fails the build when the model or
+  executable is missing instead of silently shipping
+  degraded bundles, and the long-red `run_metrics_test`
+  no longer asserts vendored ANSI bytes, so the full
+  test suite can gate releases.
+
 ## [0.14.1] - 2026-07-16
 
 e976f6a
