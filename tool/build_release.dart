@@ -212,6 +212,19 @@ Future<void> _ensureLibcruxGrammars({
 
   final source = File(sourcePath);
   if (!await source.exists()) {
+    // Windows CI can't compile the dylib (build_native needs MSVC's
+    // cl.exe; see the grammars step comment in release.yml), so the
+    // windows release ships without semantic_search by design. Every
+    // other target has no such excuse — a missing dylib there means a
+    // broken pipeline and must fail the build.
+    if (target.startsWith('windows')) {
+      stderr.writeln(
+        '⚠ libcrux_grammars: no dylib at $sourcePath — bundling Windows '
+        'release WITHOUT semantic_search (known limitation, see '
+        'release.yml).',
+      );
+      return;
+    }
     stderr.writeln(
       '✖ libcrux_grammars: dylib not found at $sourcePath\n'
       '  Build one with:\n'
