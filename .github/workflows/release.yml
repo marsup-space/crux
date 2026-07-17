@@ -203,6 +203,22 @@ jobs:
           echo "potion-code-16M snapshot: $snap"
         shell: bash
 
+      # Stage the model into a plain directory of REAL files (cp -L
+      # dereferences the HF cache's symlinks) and hand it to the build
+      # via CRUX_SEMBLE_MODEL_DIR. Runs even on cache hits, and avoids
+      # Windows snapshot-symlink semantics tripping Dart's File.copy.
+      - name: Stage embedding model for bundling
+        if: env.SHOULD_BUILD == 'true'
+        run: |
+          ref="$HOME/.cache/huggingface/hub/models--minishlab--potion-code-16M/refs/main"
+          snap="$(cat "$ref")"
+          snapdir="$HOME/.cache/huggingface/hub/models--minishlab--potion-code-16M/snapshots/$snap"
+          mkdir -p build/semblemodel
+          cp -L "$snapdir/model.safetensors" "$snapdir/tokenizer.json" build/semblemodel/
+          echo "CRUX_SEMBLE_MODEL_DIR=$PWD/build/semblemodel" >> "$GITHUB_ENV"
+          ls -la build/semblemodel
+        shell: bash
+
       # Same `dart run` exit-code caveat as the grammars step above:
       # `build_release.dart` calls exit(1) when the bundle is broken,
       # but the step would still report success — verify the bundle

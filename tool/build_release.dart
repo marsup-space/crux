@@ -253,46 +253,56 @@ Future<void> _ensureLibcruxGrammars({
 /// The lookup mirrors [SembleClient._huggingFaceSnapshotPath] so
 /// the same cache that `dart run` uses is the one that gets bundled.
 Future<void> _ensureSembleModel({required String root}) async {
-  final home = Platform.environment['HOME'];
-  if (home == null || home.isEmpty) {
-    stderr.writeln('  ⚠ semblemodel: no HOME — skipping model bundle');
-    return;
-  }
-  final refPath = p.join(
-    home,
-    '.cache',
-    'huggingface',
-    'hub',
-    'models--minishlab--potion-code-16M',
-    'refs',
-    'main',
-  );
-  final ref = File(refPath);
-  if (!await ref.exists()) {
-    stderr.writeln(
-      '  ⚠ semblemodel: HF snapshot ref not found at $refPath\n'
-      '  Download the model first:\n'
-      '    pip install huggingface_hub\n'
-      '    huggingface-cli download minishlab/potion-code-16M',
+  // CI stages the model into a plain directory (real files, symlinks
+  // dereferenced) and points this env var at it — Windows runners make
+  // HuggingFace snapshot entries symlinks whose semantics trip up
+  // File.copy even though bash can read them.
+  final staged = Platform.environment['CRUX_SEMBLE_MODEL_DIR'];
+  String? snapshotDir;
+  if (staged != null && staged.isNotEmpty) {
+    snapshotDir = staged;
+  } else {
+    final home = Platform.environment['HOME'];
+    if (home == null || home.isEmpty) {
+      stderr.writeln('  ⚠ semblemodel: no HOME — skipping model bundle');
+      return;
+    }
+    final refPath = p.join(
+      home,
+      '.cache',
+      'huggingface',
+      'hub',
+      'models--minishlab--potion-code-16M',
+      'refs',
+      'main',
     );
-    return;
-  }
-  final snapshot = (await ref.readAsString()).trim();
-  if (snapshot.isEmpty) {
-    stderr.writeln(
-      '  ⚠ semblemodel: refs/main is empty — skipping model bundle',
+    final ref = File(refPath);
+    if (!await ref.exists()) {
+      stderr.writeln(
+        '  ⚠ semblemodel: HF snapshot ref not found at $refPath\n'
+        '  Download the model first:\n'
+        '    pip install huggingface_hub\n'
+        '    huggingface-cli download minishlab/potion-code-16M',
+      );
+      return;
+    }
+    final snapshot = (await ref.readAsString()).trim();
+    if (snapshot.isEmpty) {
+      stderr.writeln(
+        '  ⚠ semblemodel: refs/main is empty — skipping model bundle',
+      );
+      return;
+    }
+    snapshotDir = p.join(
+      home,
+      '.cache',
+      'huggingface',
+      'hub',
+      'models--minishlab--potion-code-16M',
+      'snapshots',
+      snapshot,
     );
-    return;
   }
-  final snapshotDir = p.join(
-    home,
-    '.cache',
-    'huggingface',
-    'hub',
-    'models--minishlab--potion-code-16M',
-    'snapshots',
-    snapshot,
-  );
 
   final destDir = Directory(p.join(root, 'third_party', 'semblemodel'));
   await destDir.create(recursive: true);
