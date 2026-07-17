@@ -109,6 +109,22 @@ gh release view vX.Y.Z --repo marsup-space/crux          # all platform zips pre
 
 Then smoke-test the real installer in a clean environment (`curl … install.sh | bash -s -- --version vX.Y.Z`) and open a fresh empty `## [Unreleased]` section at the top of CHANGELOG.
 
+### Phase 8 — Update the local install
+
+The GitHub release does not touch the developer machine — `~/.crux/bin/crux` keeps running the previous version until explicitly updated. Sync the Phase 4 bundle (same bits CI shipped) instead of reinstalling:
+
+```bash
+BUNDLE=build/releases/crux-<os>-<arch>    # the bundle verified in Phase 4
+DEST=~/.crux/bin
+install -m 0755 "$BUNDLE/bin/crux" "$DEST/crux"
+for d in providers themes third_party; do
+  rm -rf "$DEST/$d" && cp -R "$BUNDLE/$d" "$DEST/"
+done
+hash -r && crux --version                  # must print vX.Y.Z
+```
+
+(`./release.sh X.Y.Z --skip-bump` does bump+build+install in one shot, but rebuilds from scratch — prefer the sync above right after a release.)
+
 ## Known pipeline gotchas
 
 - `dart run` does not propagate exit codes in GitHub Actions bash steps — any `dart run` step in `release.yml` must verify success explicitly (the grammars step shows the pattern).
