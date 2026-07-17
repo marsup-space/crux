@@ -147,9 +147,70 @@ jobs:
           echo "libcrux_grammars: built $dylib"
         shell: bash
 
+      # CI runners start with an empty HuggingFace cache, and
+      # `build_release.dart` only warns when the embedding model is
+      # missing — without this step the published bundle silently
+      # ships without the semantic-search model. Download
+      # `minishlab/potion-code-16M` before building (all 5 matrix
+      # targets need it). Cached by model name across runs; bump the
+      # key suffix to force a re-fetch.
+      - name: Cache embedding model
+        if: env.SHOULD_BUILD == 'true'
+        id: cache-semble-model
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-minishlab-potion-code-16M-v1
+
+      - name: Download embedding model (potion-code-16M)
+        if: env.SHOULD_BUILD == 'true' && steps.cache-semble-model.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install --quiet --upgrade huggingface_hub
+          # Newer huggingface_hub exposes `hf`; older releases only
+          # ship `huggingface-cli`. Both write to the same default
+          # cache layout ($HOME/.cache/huggingface/hub) that
+          # `build_release.dart` reads.
+          if command -v hf >/dev/null 2>&1; then
+            hf download minishlab/potion-code-16M
+          else
+            huggingface-cli download minishlab/potion-code-16M
+          fi
+          # `build_release.dart` treats a missing snapshot ref as a
+          # warning — fail loudly here instead so a broken download
+          # can never reach the Publish step.
+          ref="$HOME/.cache/huggingface/hub/models--minishlab--potion-code-16M/refs/main"
+          if [ ! -s "$ref" ]; then
+            echo "::error::potion-code-16M download did not create $ref"
+            exit 1
+          fi
+          echo "potion-code-16M snapshot: $(cat "$ref")"
+        shell: bash
+
+      # Same `dart run` exit-code caveat as the grammars step above:
+      # `build_release.dart` calls exit(1) when the bundle is broken,
+      # but the step would still report success — verify the bundle
+      # contents explicitly instead of trusting the green check.
       - name: Build release bundle
         if: env.SHOULD_BUILD == 'true'
-        run: dart run tool/build_release.dart --target "$TARGET"
+        run: |
+          dart run tool/build_release.dart --target "$TARGET"
+          bundle="build/releases/crux-${TARGET}"
+          exe="$bundle/bin/crux"
+          if [ "$TARGET" = "windows-x64" ]; then exe="$bundle/bin/crux.exe"; fi
+          if [ ! -f "$exe" ]; then
+            echo "::error::release build produced no executable at $exe"
+            ls -la "$bundle" 2>/dev/null || echo "  (bundle directory does not exist)"
+            exit 1
+          fi
+          # The bundle must ship the semantic-search model — the build
+          # only warns when it's absent (see the download step above).
+          for f in model.safetensors tokenizer.json; do
+            if [ ! -f "$bundle/third_party/semblemodel/$f" ]; then
+              echo "::error::bundle is missing third_party/semblemodel/$f"
+              exit 1
+            fi
+          done
+          echo "release bundle: $exe + third_party/semblemodel OK"
         shell: bash
 
       - name: Pack release bundle

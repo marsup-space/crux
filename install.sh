@@ -161,14 +161,30 @@ else
         || fail "download failed: $url"
     unzip -q -o "${tmp}/${asset}" -d "$tmp"
 
-    # The zip extracts to crux-<target>/{crux,providers,themes,third_party}
+    # The zip extracts to crux-<target>/{providers,themes,third_party,...}
+    # plus the binary, whose location depends on the layout: legacy zips
+    # ship crux-<target>/crux, current `dart build cli` zips ship
+    # crux-<target>/bin/crux. Windows artifacts are crux.exe. Try the
+    # top level first, then bin/.
     bundle_dir=$(find "$tmp" -maxdepth 1 -type d -name "${APP}-*" | head -1)
     [ -n "$bundle_dir" ] || fail "unexpected zip layout — no ${APP}-* top-level dir"
 
-    binary="${bundle_dir}/${APP}"
-    [ -x "$binary" ] || fail "extracted binary is missing or not executable"
+    binary=""
+    for candidate in \
+        "${bundle_dir}/${APP}" \
+        "${bundle_dir}/${APP}.exe" \
+        "${bundle_dir}/bin/${APP}" \
+        "${bundle_dir}/bin/${APP}.exe"; do
+        if [ -x "$candidate" ]; then
+            binary="$candidate"
+            break
+        fi
+    done
+    [ -n "$binary" ] || fail "extracted binary is missing or not executable"
 
-    install -m 0755 "$binary" "${INSTALL_DIR}/${APP}"
+    # Preserve the source name (crux vs crux.exe) so the installed file
+    # stays invocable from cmd/PowerShell on Windows.
+    install -m 0755 "$binary" "${INSTALL_DIR}/$(basename "$binary")"
 
     # Copy bundled assets as siblings of the binary.
     for asset_dir in providers themes third_party; do

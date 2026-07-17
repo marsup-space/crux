@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:dart_jieba/dart_jieba.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:path/path.dart' as p;
 
 bool _isCJK(int codeUnit) {
   return (codeUnit >= 0x4E00 && codeUnit <= 0x9FFF) ||
@@ -54,8 +57,65 @@ JiebaSegmenter? _jieba;
 
 JiebaSegmenter _getJieba() {
   if (_jieba != null) return _jieba!;
-  _jieba = JiebaSegmenter()..initializeSync();
+  _jieba = JiebaSegmenter()..initializeSync(dictPath: _resolveJiebaDictPath());
   return _jieba!;
+}
+
+/// Resolves the jieba dictionary (`dict.dgz`) without depending on the
+/// working directory: `bin/crux.dart` repoints `Directory.current` at the
+/// opened project before the first boundary lookup, so dart-jieba's
+/// CWD-relative auto-detection crashes any run outside the source tree.
+/// Candidate order mirrors `resolveBundledDirectory` in
+/// `bundled_directory.dart` — executable-relative first (release bundles
+/// ship the dictionary at `third_party/jieba/dict.dgz`, see
+/// `tool/build_release.dart`), then script-relative (source checkouts
+/// read it from the `dart-jieba` path dependency), with the working
+/// directory only as a last resort.
+String _resolveJiebaDictPath() {
+  final candidates = <String>[];
+
+  void addCandidate(String base, List<String> segments) {
+    final path = p.normalize(p.absolute(p.joinAll([base, ...segments])));
+    if (!candidates.contains(path)) candidates.add(path);
+  }
+
+  const bundled = ['third_party', 'jieba', 'dict.dgz'];
+  const sourceTree = ['dart-jieba', 'assets', 'dict.dgz'];
+
+  try {
+    final executableDir = p.dirname(Platform.resolvedExecutable);
+    // Release layout: <bundle>/bin/crux → <bundle>/third_party/jieba/.
+    addCandidate(executableDir, bundled);
+    addCandidate(executableDir, ['..', ...bundled]);
+  } catch (_) {}
+
+  try {
+    final script = Platform.script;
+    if (script.scheme == 'file') {
+      final scriptDir = p.dirname(script.toFilePath());
+      addCandidate(scriptDir, bundled);
+      // `dart run bin/crux.dart` from any directory: bin/ → repo root.
+      addCandidate(scriptDir, ['..', ...bundled]);
+      addCandidate(scriptDir, sourceTree);
+      addCandidate(scriptDir, ['..', ...sourceTree]);
+    }
+  } catch (_) {}
+
+  final launchDirectory = Directory.current.path;
+  addCandidate(launchDirectory, bundled);
+  addCandidate(launchDirectory, sourceTree);
+
+  for (final candidate in candidates) {
+    if (File(candidate).existsSync()) return candidate;
+  }
+  throw StateError(
+    'jieba dictionary (dict.dgz) not found — CJK word navigation is '
+    'unavailable.\nSearched:\n'
+    '${candidates.map((candidate) => '  - $candidate').join('\n')}\n'
+    'Release bundles must ship the dictionary at '
+    'third_party/jieba/dict.dgz next to the executable; source checkouts '
+    'read it from dart-jieba/assets/dict.dgz.',
+  );
 }
 
 int _previousWordBoundary(String text, int offset) {

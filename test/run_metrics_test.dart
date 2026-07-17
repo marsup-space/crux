@@ -85,7 +85,10 @@ void main() {
         cacheHit: 780,
         cacheMiss: 220,
       );
-      expect(RunMetrics.instance.getSnapshot().cacheHitPct, closeTo(78.0, 0.01));
+      expect(
+        RunMetrics.instance.getSnapshot().cacheHitPct,
+        closeTo(78.0, 0.01),
+      );
     });
 
     test('cacheHitPct is 100 when every input token was a cache hit', () {
@@ -405,14 +408,9 @@ void main() {
         snapshot: sample(),
         theme: theme,
       );
-      final plain = RunMetrics.instance.formatSummary(
-        snapshot: sample(),
-      );
+      final plain = RunMetrics.instance.formatSummary(snapshot: sample());
       // Strip CSI SGR sequences: ESC [ … m
-      final stripped = styled.replaceAll(
-        RegExp(r'\x1B\[[0-9;]*m'),
-        '',
-      );
+      final stripped = styled.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '');
       expect(stripped, equals(plain));
     });
 
@@ -435,10 +433,7 @@ void main() {
         useAscii: true,
       );
       // Both should have the same number of visible rows.
-      expect(
-        styled.split('\n').length,
-        equals(plain.split('\n').length),
-      );
+      expect(styled.split('\n').length, equals(plain.split('\n').length));
     });
 
     test('falls back to plain when no theme is stashed', () {
@@ -456,9 +451,7 @@ void main() {
       final styled = RunMetrics.instance.formatStyledSummary(
         snapshot: sample(),
       );
-      final plain = RunMetrics.instance.formatSummary(
-        snapshot: sample(),
-      );
+      final plain = RunMetrics.instance.formatSummary(snapshot: sample());
       // The plain formatter defaults to Unicode box
       // drawing on macOS/Linux; for the comparison to be
       // meaningful we force the styled variant to use
@@ -484,13 +477,39 @@ void main() {
         theme: theme,
       );
       // The Dracula primary is purple (#BD93F9 = R:189,
-      // G:147, B:249). nocterm's TextStyle.toAnsi()
-      // emits RGB as 24-bit truecolor (`38;2;R;G;B`),
-      // so the SGR foreground sequence around the title
-      // must carry those exact components — not the
-      // 8-bit indexed variant (`38;5;141`) that an older
-      // nocterm revision emitted.
-      expect(summary, contains('38;2;189;147;249'));
+      // G:147, B:249). We deliberately do NOT assert a
+      // concrete byte sequence here: nocterm's
+      // `Color.toAnsi()` emits 24-bit truecolor
+      // (`38;2;R;G;B`) only when the environment reports
+      // truecolor support, and intentionally degrades to
+      // the xterm 256-color palette (`38;5;<idx>`)
+      // otherwise — test runners/CI typically hit the
+      // degradation path. Assert the semantic contract
+      // instead: the output must colour the title with the
+      // framework's own ANSI encoding of `theme.primary`.
+      //
+      // Sanity: the theme's primary must be a real colour
+      // (not the terminal default), so the assertions
+      // below are meaningful.
+      expect(theme.primary.toAnsi(), contains('38;'));
+      // The styled summary must apply the primary colour
+      // exactly as nocterm's public `Color.toAnsi()`
+      // contract encodes it, whatever colour depth the
+      // current environment negotiates.
+      expect(summary, contains(theme.primary.toAnsi()));
+      // Whatever the negotiated depth, the title text must
+      // sit behind a well-formed SGR foreground colour
+      // sequence (truecolor `38;2;r;g;b` or indexed
+      // `38;5;n`).
+      expect(
+        summary,
+        contains(
+          RegExp(
+            r'\x1B\[38;(2;\d{1,3};\d{1,3};\d{1,3}|5;\d{1,3})m'
+            r'[\s\S]*Crux Run Summary',
+          ),
+        ),
+      );
     });
   });
 }

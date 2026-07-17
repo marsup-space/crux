@@ -18,7 +18,8 @@ cannot drift from what `pub` reports. The `v` prefix is
 added at the print site in `bin/crux.dart` — the generated
 constant stays a plain semver string.
 
-With --tag, it also creates the matching git tag, for example v0.7.1.
+With --tag, it also creates the matching annotated git tag, for example
+v0.7.1 (`git tag -a v0.7.1 -m "Release v0.7.1"`).
 Push the commit and tag to trigger GitHub release packaging:
   git push origin master
   git push origin v0.7.1
@@ -76,8 +77,10 @@ void main(List<String> args) {
   stdout.writeln('Prepared Crux $tag.');
 
   if (createTag) {
-    _run('git', ['tag', tag], root);
-    stdout.writeln('Created git tag $tag.');
+    // Convention: annotated tags only — lightweight tags break the
+    // release-notes tooling expectations (see .agents/skills/crux-release).
+    _run('git', ['tag', '-a', tag, '-m', 'Release $tag'], root);
+    stdout.writeln('Created annotated git tag $tag.');
   }
 
   stdout.writeln('');
@@ -86,7 +89,7 @@ void main(List<String> args) {
   stdout.writeln('  git add pubspec.yaml lib/src/version.dart README.md');
   stdout.writeln('  git commit -m "Release $tag"');
   if (!createTag) {
-    stdout.writeln('  git tag $tag');
+    stdout.writeln('  git tag -a $tag -m "Release $tag"');
   }
   stdout.writeln('  git push origin master');
   stdout.writeln('  git push origin $tag');

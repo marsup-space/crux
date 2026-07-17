@@ -65,7 +65,7 @@ Future<void> main(List<String> args) async {
   // `semble-dart/tool/build_native.dart` — submodule ships a prebuilt
   // copy at `<submodule>/third_party/bin/<target>/libcrux_grammars.<ext>`,
   // so a fresh clone only needs the submodule init, not a full rebuild.
-    await _ensureLibcruxGrammars(root: root, target: target);
+  await _ensureLibcruxGrammars(root: root, target: target);
   await _ensureSembleModel(root: root);
 
   final bundle = Directory(p.join(root, 'build', 'releases', 'crux-$target'));
@@ -131,6 +131,11 @@ Future<void> main(List<String> args) async {
       await source.copy(p.join(bundle.path, 'third_party', manifestName));
     }
   }
+
+  // Ship the dart-jieba dictionary: cjk_word_boundary resolves it
+  // executable-relative at third_party/jieba/dict.dgz, so the bundled
+  // binary stays self-contained when run outside the source tree.
+  await _copyJiebaDict(root: root, bundle: bundle);
 
   stdout.writeln('Release bundle: ${bundle.path}');
 }
@@ -261,7 +266,9 @@ Future<void> _ensureSembleModel({required String root}) async {
   }
   final snapshot = (await ref.readAsString()).trim();
   if (snapshot.isEmpty) {
-    stderr.writeln('  ⚠ semblemodel: refs/main is empty — skipping model bundle');
+    stderr.writeln(
+      '  ⚠ semblemodel: refs/main is empty — skipping model bundle',
+    );
     return;
   }
   final snapshotDir = p.join(
@@ -280,9 +287,7 @@ Future<void> _ensureSembleModel({required String root}) async {
   for (final name in ['model.safetensors', 'tokenizer.json']) {
     final source = File(p.join(snapshotDir, name));
     if (!await source.exists()) {
-      stderr.writeln(
-        '  ✖ semblemodel: missing $name in $snapshotDir',
-      );
+      stderr.writeln('  ✖ semblemodel: missing $name in $snapshotDir');
       exit(1);
     }
     final dest = File(p.join(destDir.path, name));
@@ -290,6 +295,32 @@ Future<void> _ensureSembleModel({required String root}) async {
     await source.copy(dest.path);
   }
   stdout.writeln('  ✔ semblemodel: $snapshotDir/* → $destDir');
+}
+
+/// Copy the jieba dictionary out of the `dart-jieba` submodule into the
+/// bundle at `third_party/jieba/dict.dgz`. `cjk_word_boundary.dart`
+/// resolves the dictionary relative to the executable (never the CWD),
+/// so a release run outside the source tree finds it there. Hard-fail
+/// when the submodule checkout lacks the dictionary — a bundle without
+/// it crashes on the first CJK word-boundary lookup.
+Future<void> _copyJiebaDict({
+  required String root,
+  required Directory bundle,
+}) async {
+  final source = File(p.join(root, 'dart-jieba', 'assets', 'dict.dgz'));
+  if (!await source.exists()) {
+    stderr.writeln(
+      '✖ jieba dict: dictionary not found at ${source.path}\n'
+      '  Initialize the submodule: git submodule update --init dart-jieba',
+    );
+    exit(1);
+  }
+  final destDir = Directory(p.join(bundle.path, 'third_party', 'jieba'));
+  await destDir.create(recursive: true);
+  final dest = File(p.join(destDir.path, 'dict.dgz'));
+  if (await dest.exists()) await dest.delete();
+  await source.copy(dest.path);
+  stdout.writeln('  ✔ jieba dict: ${source.path} → ${dest.path}');
 }
 
 void _usage() {

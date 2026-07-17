@@ -20,6 +20,9 @@ Runs automatically on:
 - Pushes to `main`
 - Pushes to `master`
 
+It can also be started manually from the **Actions** tab (select **CI**, then
+**Run workflow**); it takes no inputs.
+
 What it does:
 
 - Checks out the repository and submodules
@@ -37,11 +40,11 @@ Current policy:
 - Formatting drift is reported but does not fail CI.
 - The smoke-test suite must pass.
 
-Why not full `dart test` yet:
+Why not full `dart test` in CI:
 
-The current full suite has a known failure in
-`test/run_metrics_test.dart` around themed summary ANSI color output. Once that
-is fixed, the CI can be tightened to run the full suite.
+The full test suite runs as a local release gate before every release (see
+the release runbook in `.agents/skills/crux-release/SKILL.md`). CI runs a
+stable smoke-test list that will be expanded over time.
 
 ### Release
 
@@ -50,17 +53,18 @@ File: `.github/workflows/release.yml`
 Runs automatically when you push a version tag:
 
 ```bash
-dart run tool/prepare_release.dart 0.7.1
-git add pubspec.yaml bin/crux.dart README.md
-git commit -m "Release v0.7.1"
-git tag v0.7.1
+dart run tool/prepare_release.dart 0.15.0
+git add pubspec.yaml lib/src/version.dart README.md
+git commit -m "chore(release): v0.15.0 — <summary>"
+git tag -a v0.15.0 -m "Release v0.15.0 — <summary>"
 git push origin master
-git push origin v0.7.1
+git push origin v0.15.0
 ```
 
-The final `git push origin v0.7.1` triggers the release workflow. You can also
-pass `--tag` to `tool/prepare_release.dart` if you want the script to create the
-tag after updating the version files.
+The final `git push origin v0.15.0` triggers the release workflow. Use an
+annotated tag (`git tag -a`); do not pass `--tag` to
+`tool/prepare_release.dart` — it creates a lightweight tag. The full release
+runbook lives in `.agents/skills/crux-release/SKILL.md`.
 
 Tag builds package these targets and publish the archives to the GitHub Release
 for that tag:
@@ -85,10 +89,20 @@ What it does:
 
 - Checks out the repository and submodules
 - Installs Dart
-- Restores pub and third-party tool caches
-- Runs `dart pub get`
+- Restores pub, third-party tool, and embedding-model caches
+- Runs `dart pub get` (root and the `semble-dart` submodule)
+- Precompiles `libcrux_grammars` from source for every target except
+  `windows-x64` (only macOS arm64 ships a prebuilt dylib in the submodule;
+  Windows bundles currently ship without it, so `semantic_search` /
+  `find_similar_code` are unavailable there)
+- Downloads the `minishlab/potion-code-16M` embedding model into the
+  HuggingFace cache so the bundle ships the semantic-search model — CI
+  runners start with an empty cache, and the build would otherwise only warn
+  and publish a bundle without it
 - Runs `dart run tool/build_release.dart --target <target>`, which uses
-  `dart build cli` on the matching platform runner
+  `dart build cli` on the matching platform runner, then verifies the bundle
+  explicitly (executable and model files) because `dart run` does not
+  propagate the script's exit code in GitHub Actions steps
 - Packs the release directory into `crux-<target>.zip`
 - Uploads the archive as a workflow artifact
 - Publishes the archive to GitHub Releases when the workflow was triggered by a
@@ -127,7 +141,7 @@ When the repository is ready, upgrade CI in this order:
 
 1. Fix analyzer warnings and make `dart analyze` strict again.
 2. Format the codebase and make formatting fail CI.
-3. Fix the full-suite failure and replace the smoke-test list with `dart test`.
+3. Expand the smoke-test list toward the full `dart test` suite.
 4. Add per-platform smoke tests after release packaging.
 5. Add release checksums once the artifact set stabilizes.
 6. Add `windows-arm64` once GitHub makes private-repo Windows ARM runners
