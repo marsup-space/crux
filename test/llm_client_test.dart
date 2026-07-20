@@ -173,6 +173,47 @@ void main() {
       expect(server.lastPath, '/v1/chat/completions');
     });
 
+    test('does NOT append /v1 when endpoint already ends in /v4 (Zhipu)',
+        () async {
+      // Regression: the Zhipu Coding Plan base URL is
+      // `https://open.bigmodel.cn/api/coding/paas/v4`. The
+      // original `_endsWithVersionSegment` only recognized `/v1`
+      // (the OpenAI / DeepSeek / Kimi / LongCat convention), so
+      // it prepended a second `/v1` and the request hit
+      // `/v4/v1/chat/completions` — the upstream returned 404
+      // `Resource not found`. The fix recognizes any `/v\d+`
+      // version segment. The captured path must be exactly
+      // `/v4/chat/completions` with no doubled `/v1` between
+      // the version and `chat/completions`.
+      final server = _CapturingServer(200, '{}');
+      final base = await server.start();
+      addTearDown(server.stop);
+
+      final client = LlmClient();
+      addTearDown(client.dispose);
+
+      final config = _provider(
+        type: 'zhipu',
+        endpointUrl: '$base/v4',
+      );
+
+      await for (final _ in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'glm-5.2',
+        messages: const [],
+      )) {}
+
+      expect(
+        server.lastPath,
+        '/v4/chat/completions',
+        reason: 'A /v4 endpoint must not get a second /v1 prepended — '
+            'the upstream at /v4/v1/chat/completions returns 404. '
+            'See the Zhipu provider notes in providers/zhipu.toml.',
+      );
+    });
+
     test('appends /messages to an Anthropic-compatible endpoint', () async {
       // The Anthropic path was always correct (it used `replace(path:)`
       // not `uri.resolve`), but lock it down so it doesn't regress.

@@ -4,6 +4,7 @@ import 'providers/deepseek_provider.dart';
 import 'providers/kimi_provider.dart';
 import 'providers/minimax_provider.dart';
 import 'providers/openai_compatible_provider.dart';
+import 'providers/zhipu_provider.dart';
 
 /// A reasoning preset exposed to the user in the UI and `/think` command.
 ///
@@ -365,6 +366,12 @@ ResolvedProvider resolveProvider(String type) {
         wire: WireFamily.openaiCompatible,
         authStyle: AuthStyle.bearer,
       );
+    case 'zhipu':
+      return ResolvedProvider(
+        provider: ZhipuProvider(),
+        wire: WireFamily.openaiCompatible,
+        authStyle: AuthStyle.bearer,
+      );
     default:
       throw ArgumentError(
         'Unknown provider type "$type". Known types: '
@@ -380,6 +387,7 @@ List<String> knownProviderTypes() => [
   'deepseek',
   'minimax',
   'kimi',
+  'zhipu',
 ];
 
 String typeDisplayName(String type) {
@@ -394,6 +402,8 @@ String typeDisplayName(String type) {
       return 'MiniMax';
     case 'kimi':
       return 'Kimi';
+    case 'zhipu':
+      return 'Zhipu';
     default:
       return type;
   }

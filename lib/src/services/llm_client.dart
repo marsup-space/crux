@@ -782,13 +782,20 @@ class LlmClient {
     return uri.replace(path: path);
   }
 
-  /// `true` if [url] ends in `/v1` or `/v1/`. Used by
+  /// `true` if [url] ends in a version segment (`/v1`, `/v2`, ...,
+  /// `/v4`, etc., with or without a trailing slash). Used by
   /// [_buildUri] to decide whether the OpenAI-compatible endpoint
-  /// already declares its version segment (in which case we don't
-  /// want to add another `/v1`, or we'd get `.../v1/v1/chat/completions`).
+  /// already declares its API version — in which case we don't
+  /// want to add another `/v1`, or we'd get the doubled
+  /// `.../v4/v1/chat/completions` shape that the Zhipu
+  /// `open.bigmodel.cn/api/coding/paas/v4` endpoint returns
+  /// 404 on. The original implementation only matched `/v1`
+  /// (the OpenAI / DeepSeek / Kimi / LongCat convention) and
+  /// silently mis-routed any provider whose URL used a
+  /// different version digit.
   bool _endsWithVersionSegment(String url) {
     final stripped = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
-    return stripped.endsWith('/v1');
+    return RegExp(r'/v\d+$').hasMatch(stripped);
   }
 
   void _setAuthHeaders(

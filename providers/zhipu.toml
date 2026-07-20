@@ -1,0 +1,159 @@
+# Zhipu (GLM Coding Plan) provider configuration
+# Filename serves as the provider name: "zhipu"
+# OpenAI-compatible Coding Plan API:
+#   https://open.bigmodel.cn/api/coding/paas/v4
+# Anthropic-compatible Coding Plan API (not used by Crux yet):
+#   https://open.bigmodel.cn/api/anthropic
+#
+# The custom `type = "zhipu"` value is registered in
+# `llm_provider.dart`'s resolveProvider() — it dispatches to a
+# Zhipu-specific LlmProvider that:
+#   - extends OpenAICompatibleProvider (OpenAI Chat Completions
+#     wire shape, Bearer auth, stream parsing inherited);
+#   - mixes in CodingPlanProvider so the toolbar can display
+#     live quota from `<origin>/api/monitor/usage/quota/limit`;
+#   - renames `max_completion_tokens` → `max_tokens` on the
+#     wire, matching the only field name shown in the Zhipu
+#     cURL / Python / Java SDK examples (see
+#     providers/zhipu_provider.dart's class doc for the full
+#     rationale).
+#
+# Models
+# ------
+# Per https://docs.bigmodel.cn/cn/coding-plan/latest-model and
+# the model-overview pages, the GLM Coding Plan is open to
+# all tiers (Lite / Pro / Max) and currently supports five
+# flagship-tier text models:
+#
+#   * GLM-5.2      — 1M context, 128K out (newest flagship)
+#   * GLM-5.1      — 200K, 128K
+#   * GLM-5-Turbo  — 200K, 128K ("Lobster" long-task enhanced)
+#   * GLM-4.7      — 200K, 128K (workhorse)
+#   * GLM-4.5-Air  — 128K, 96K  (budget)
+#
+# Model IDs on the wire are lowercase + dot-separated
+# (`glm-5.2`, `glm-4.5-air`) — every authoritative wire-format
+# reference uses lowercase, even though the marketing names
+# are mixed case. Crux passes the TOML `id` field through
+# verbatim, so the `id` here is the canonical ID.
+#
+# All five models are text-only (no image input — the vision
+# models `GLM-5V-Turbo` / `GLM-4.6V` are a separate family not
+# part of the Coding Plan quota pool).
+#
+# Stream lerping
+# --------------
+# Like MiniMax, Kimi, and LongCat, Zhipu's GLM models stream
+# in fine-grained chunks and benefit from `stream_lerp = true`
+# (60Hz timer that drains the pending buffer at a steady
+# rate). The flag is set on every model entry.
+#
+# Temperature
+# -----------
+# The Zhipu cURL / SDK examples all use `temperature: 1.0`,
+# but the docs do not pin the value (unlike Kimi, which
+# hard-400s on anything other than 1.0). Crux's coding
+# default is `temperature = 0.0`; the `/temperature` slash
+# command clamps to `[0.0, 1.0]`. Both are honored by the
+# Zhipu API. The `temperature` field is set to `0` on every
+# model below for the deterministic-coding default.
+#
+# Reasoning effort
+# ----------------
+# The Zhipu cURL examples send `reasoning_effort: "max"`. The
+# upstream's `thinking.type: "enabled"` flips the model into
+# extended thinking mode; `reasoning_effort` controls depth.
+# The generic OpenAI-compatible builder already maps Crux's
+# `max` → wire `max`, so the picker cycles through the
+# standard five-level scale without an override.
+type = "zhipu"
+endpoint_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+
+# === GLM-5.2 — latest flagship, 1M context ===
+# Per the GLM-5.2 model page
+# (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2),
+# this is the only Coding Plan model with a true 1M context
+# window. Claude Code users append `[1m]` (e.g. `glm-5.2[1m]`)
+# to opt into 1M, but the underlying upstream ID is still
+# `glm-5.2`; on the OpenAI-compatible endpoint the API serves
+# 1M context automatically. Suffix handling is a Claude Code
+# configuration detail and is not relevant to Crux's wire.
+[[models]]
+id = "glm-5.2"
+name = "GLM-5.2"
+context_size = 1048576
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
+# === GLM-5.1 — previous flagship ===
+# 200K context, 128K output. Per the GLM-5.1 model page, the
+# "Coding Plan 团队版 已上线 GLM-5.2" banner on the older doc
+# shows 5.2 as the newer tier; 5.1 remains in the model list
+# because the "所有套餐均支持" overview still includes it.
+[[models]]
+id = "glm-5.1"
+name = "GLM-5.1"
+context_size = 204800
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
+# === GLM-5-Turbo — long-task enhanced ("lobster") ===
+# 200K context, 128K output. Documented as a "龙虾任务核心需求
+# 专项优化" model — optimized for long-running agentic
+# workflows. Same wire format as 5.1.
+[[models]]
+id = "glm-5-turbo"
+name = "GLM-5-Turbo"
+context_size = 204800
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
+# === GLM-4.7 — workhorse ===
+# 200K context, 128K output. The recommended "default" model
+# per the Coding Plan overview: "我们推荐您在复杂任务上切换至
+# GLM-5.1 处理，普通任务上继续使用 GLM-4.7，以避免套餐用量
+# 额度消耗过快" — i.e. Lite-tier users get more prompts out
+# of the 4.7 than the 5.x line because the higher-tier models
+# are billed at 2–3× the rate of 4.7.
+[[models]]
+id = "glm-4.7"
+name = "GLM-4.7"
+context_size = 204800
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
+# === GLM-4.5-Air — budget option ===
+# 128K context, 96K output. Half the context of the flagship
+# tier, with the lowest per-prompt cost on the plan. Useful
+# for subagent or batch work where 200K context isn't needed.
+[[models]]
+id = "glm-4.5-air"
+name = "GLM-4.5-Air"
+context_size = 131072
+image_support = false
+max_tokens = 98304
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true

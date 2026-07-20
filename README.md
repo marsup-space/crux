@@ -176,6 +176,7 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 | Local | `/provider local` | Llama 3 / Mistral |
 | LongCat | `/provider longcat` | 2.0 |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
+| Zhipu | `/provider zhipu` | GLM-5.2 / GLM-5.1 / GLM-5-Turbo / GLM-4.7 / GLM-4.5-Air |
 | 自定义 | `/provider custom` | 任意兼容 API |
 
 也可以用环境变量直接提供 API key（无需交互，适合 CI / 脚本场景）：
@@ -394,6 +395,7 @@ Connect LLM providers with the `/provider` command:
 | Local | `/provider local` | Llama 3 / Mistral |
 | LongCat | `/provider longcat` | 2.0 |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
+| Zhipu | `/provider zhipu` | GLM-5.2 / GLM-5.1 / GLM-5-Turbo / GLM-4.7 / GLM-4.5-Air |
 | Custom | `/provider custom` | Any compatible API |
 
 API keys can also be supplied via environment variables (no interaction needed; handy for CI / scripts):

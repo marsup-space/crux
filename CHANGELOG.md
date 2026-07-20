@@ -8,6 +8,87 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Zhipu (GLM Coding Plan) provider** — add `zhipu` as a
+  built-in provider (`providers/zhipu.toml`) backed by
+  Zhipu's GLM Coding Plan API at
+  `https://open.bigmodel.cn/api/coding/paas/v4`. The plan
+  is open to all tiers (Lite / Pro / Max) per
+  [docs.bigmodel.cn/cn/coding-plan/latest-model](https://docs.bigmodel.cn/cn/coding-plan/latest-model).
+  Uses a custom `type = "zhipu"` (registered in
+  `llm_provider.dart`'s `resolveProvider()`) backed by a
+  new `ZhipuProvider extends OpenAICompatibleProvider with
+  CodingPlanProvider`. Ships with five models:
+
+  - `GLM-5.2` (1M context) — newest flagship, the only
+    Coding Plan model with a true 1M context window.
+  - `GLM-5.1` (200K) — previous flagship.
+  - `GLM-5-Turbo` (200K) — "lobster" long-task enhanced.
+  - `GLM-4.7` (200K) — workhorse; the recommended default
+    for Lite-tier users because the higher-tier models are
+    billed at 2–3× the rate.
+  - `GLM-4.5-Air` (128K) — budget option for subagent or
+    batch work.
+
+  Two Zhipu-specific wire-format quirks are handled by
+  `ZhipuProvider.buildRequestBody` (full rationale in
+  `lib/src/services/providers/zhipu_provider.dart`'s
+  class doc):
+
+  - **`max_tokens`, not `max_completion_tokens`.** The
+    Zhipu cURL / Python / Java SDK examples only show
+    the legacy `max_tokens` field. The generic
+    `OpenAICompatibleProvider` body uses
+    `max_completion_tokens`; we rename it before the
+    request hits the wire so a future Zhipu tightening
+    of the spec can't 400 on us.
+  - **Lowercase + dot-separated model IDs.** Every
+    authoritative wire-format reference uses lowercase
+    (`glm-5.2`, `glm-4.5-air`) even though the marketing
+    names are mixed case. The TOML `id` field is the
+    source of truth for the canonical ID.
+
+  The `CodingPlanProvider` mixin polls
+  `<origin>/api/monitor/usage/quota/limit` so the toolbar
+  can display the user's live 5-hour and weekly quota
+  alongside the model metrics. The endpoint URL is
+  derived from the chat `endpoint_url` (origin extracted,
+  path replaced with the well-known quota path) so a
+  self-hosted proxy or regional mirror automatically
+  works without code changes. The response parser lives
+  in `lib/src/services/zhipu_usage_parser.dart` and
+  inverts the `percentage` field (which is *used*, not
+  *remaining*) into the toolbar's remaining-quota read;
+  the row `unit` field (3 = 5h, 6 = weekly, 5 = monthly
+  MCP) maps the flat `data.limits[]` array onto the
+  toolbar's two cells.   The Zhipu quota endpoint uses a
+  raw `Authorization: <key>` header (no `Bearer `
+  prefix) and an `Accept-Language: en-US,en` header so
+  the server returns the English `level` field
+  spellings the parser expects.
+
+### Fixes
+
+- **OpenAI-compatible URL builder recognizes any `/v\d+` version segment, not just `/v1`**
+  (`llm_client.dart`) — `LlmClient._buildUri` used to detect
+  "the endpoint already declares its API version" by
+  checking for a trailing `/v1`. Zhipu's
+  `https://open.bigmodel.cn/api/coding/paas/v4` URL ends in
+  `/v4`, so the check missed it and Crux prepended a second
+  `/v1`, producing the request path
+  `/v4/v1/chat/completions` — Zhipu returned 404
+  `Resource not found`. The check now matches
+  `/v\d+$` (one or more version digits, with optional
+  trailing slash), so any provider whose base URL ends in
+  `/v2` / `/v3` / `/v4` / etc. is now routed correctly.
+  Existing `/v1` and no-version-segment paths keep their
+  previous behavior — the regression is locked down by a
+  new test in `llm_client_test.dart` ("does NOT append
+  /v1 when endpoint already ends in /v4 (Zhipu)") that
+  asserts the captured path is exactly
+  `/v4/chat/completions`.
+
 ## [0.15.1] - 2026-07-20
 
 fe5933d
