@@ -7,6 +7,7 @@ import '../utils/proxy_aware_http.dart';
 import '../models/message.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
+import 'url_safety.dart';
 
 /// Fetch a URL and return its content.
 ///
@@ -247,11 +248,25 @@ class WebFetchTool extends ToolDef {
   /// The legacy raw-HTML fetch path. Kept for users who haven't
   /// configured any provider — `webfetch` is still useful, just
   /// noisier.
+  ///
+  /// SSRF guardrails (see url_safety.dart): the requested URL is
+  /// validated before the first byte is sent, and redirects are
+  /// followed manually (max 5 hops) with each hop re-validated —
+  /// otherwise an open redirect on a public host could bounce the
+  /// request into the cloud-metadata endpoint or another blocked
+  /// target.
   Future<ToolResult> _executeRawFetch({
     required String effectiveUrl,
     required String format,
     required int timeoutSec,
   }) async {
+    final preflightBlock = await UrlSafety.check(Uri.parse(effectiveUrl));
+    if (preflightBlock != null) {
+      return ToolResult.error(
+        'Blocked unsafe URL $effectiveUrl (SSRF protection): '
+        '$preflightBlock',
+      );
+    }
     return withProxyRetry<ToolResult>(
       enabled: isSystemProxyFallbackGloballyEnabled(),
       attempt: (proxy) async {
@@ -262,8 +277,37 @@ class WebFetchTool extends ToolDef {
           client.findProxy = proxy.findProxyFor;
         }
         try {
-          final request = await client.getUrl(Uri.parse(effectiveUrl));
-          final response = await request.close();
+          var currentUri = Uri.parse(effectiveUrl);
+          HttpClientResponse? response;
+          for (var hops = 0;; hops++) {
+            final request = await client.getUrl(currentUri);
+            // Never auto-follow: each redirect target must pass
+            // the SSRF check before we touch it.
+            request.followRedirects = false;
+            final hop = await request.close();
+            final location =
+                hop.isRedirect ? hop.headers.value('location') : null;
+            if (location == null) {
+              response = hop;
+              break;
+            }
+            // Discard the redirect body before moving on.
+            await hop.drain<void>();
+            if (hops >= 5) {
+              return ToolResult.error(
+                'Too many redirects (>5) fetching $effectiveUrl',
+              );
+            }
+            final nextUri = currentUri.resolve(location);
+            final hopBlock = await UrlSafety.check(nextUri);
+            if (hopBlock != null) {
+              return ToolResult.error(
+                'Blocked redirect to unsafe URL $nextUri '
+                '(SSRF protection): $hopBlock',
+              );
+            }
+            currentUri = nextUri;
+          }
 
           if (response.statusCode != 200) {
             return ToolResult.error(

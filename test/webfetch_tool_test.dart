@@ -307,5 +307,26 @@ void main() {
       },
       timeout: const Timeout(Duration(seconds: 15)),
     );
+
+    test('blocks cloud-metadata endpoint before any network I/O', () async {
+      final tool = WebFetchTool(registry(null));
+      final result = await tool.execute(
+        {'url': 'http://169.254.169.254/latest/meta-data', 'format': 'raw'},
+        ctx(),
+      );
+      expect(result.title, 'Error');
+      expect(result.output, contains('SSRF protection'));
+      expect(result.output, contains('169.254.0.0/16'));
+    });
+
+    test('blocks metadata endpoint on the https path too', () async {
+      final tool = WebFetchTool(registry(null));
+      final result = await tool.execute(
+        {'url': 'https://169.254.169.254/'},
+        ctx(),
+      );
+      expect(result.title, 'Error');
+      expect(result.output, contains('SSRF protection'));
+    });
   });
 }
