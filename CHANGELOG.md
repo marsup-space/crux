@@ -8,6 +8,39 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-07-20
+
+fe5933d
+
+### Fixes
+
+- **Markdown / `ask://` / `ses://` spans preserve nested
+  parent styles after token substitution**
+  (`fe5933d`) — `applyMarkdownLinkStyles`,
+  `applyQuickReplyTokens`, and `applySessionLinkStyles`
+  each flatten the markdown visitor's nested span tree
+  into a flat list and then rebuild the styled spans.
+  The flatten walked children but only read each leaf's
+  own `style`, so any ancestor's color / weight /
+  background (a paragraph color wrapping a bold run
+  wrapping italic, for example) was dropped. Whenever
+  an `ask://` / `ses://` / markdown-link token was
+  present inside a markdown paragraph, the rendered
+  line lost its color and weight and looked like plain
+  prose. The fix threads an `inherited` parameter
+  through each flatten call, accumulating the parent's
+  style onto the child's `style` via the existing
+  `_mergeStyles` helper in each file. Merge direction
+  is base = inherited, overlay = leafStyle — so the
+  leaf wins on conflicts, but a plain leaf still
+  carries the full ancestor chain. Pinned by a new
+  regression in `quick_reply_parser_test.dart`
+  ("preserves nested parent styles after substitution")
+  that builds a paragraph-color + bold + italic tree
+  around an `ask://X{x}` token and asserts every
+  emitted span (sibling, bold run, and the reply
+  label) inherits the full effective style.
+
 ## [0.15.0] - 2026-07-17
 
 3efb13f
