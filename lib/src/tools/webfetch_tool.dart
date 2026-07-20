@@ -137,8 +137,13 @@ class WebFetchTool extends ToolDef {
     // fetches that the LLM is currently doing one at a time
     // anyway. If callers want batching, the orchestrator can
     // add a `urls[]` parameter in the future.
+    // Cloud providers (TinyFish) fetch from *their* network — they
+    // can never reach loopback / private / intranet targets. Route
+    // those straight to the local raw fetch (which applies the SSRF
+    // guard) instead of letting them fail upstream.
     final provider = registry.activeFetchProvider;
-    if (provider != null) {
+    if (provider != null &&
+        !await UrlSafety.isLocalTarget(Uri.parse(effectiveUrl))) {
       try {
         final resp = await provider.fetch(
           [effectiveUrl],

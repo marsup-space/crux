@@ -118,4 +118,69 @@ void main() {
       );
     });
   });
+
+  group('UrlSafety.isLocalAddress (pure)', () {
+    bool local(String ip) => UrlSafety.isLocalAddress(InternetAddress(ip));
+
+    test('loopback, private, link-local, CGNAT, ULA are local', () {
+      expect(local('127.0.0.1'), isTrue);
+      expect(local('127.0.1.1'), isTrue);
+      expect(local('10.0.0.5'), isTrue);
+      expect(local('172.16.0.1'), isTrue);
+      expect(local('172.31.255.255'), isTrue);
+      expect(local('192.168.1.1'), isTrue);
+      expect(local('169.254.169.254'), isTrue);
+      expect(local('100.64.0.1'), isTrue);
+      expect(local('0.0.0.0'), isTrue);
+      expect(local('::1'), isTrue);
+      expect(local('::'), isTrue);
+      expect(local('fe80::1'), isTrue);
+      expect(local('fd00::1'), isTrue);
+      expect(local('::ffff:10.0.0.1'), isTrue);
+    });
+
+    test('public addresses are not local', () {
+      expect(local('8.8.8.8'), isFalse);
+      expect(local('172.15.0.1'), isFalse); // just outside 172.16/12
+      expect(local('172.32.0.1'), isFalse);
+      expect(local('100.128.0.0'), isFalse); // just outside CGNAT /10
+      expect(local('2606:4700:4700::1111'), isFalse);
+    });
+  });
+
+  group('UrlSafety.isLocalTarget (Uri-level)', () {
+    test('literal loopback / private IPs are local', () async {
+      expect(
+        await UrlSafety.isLocalTarget(Uri.parse('http://127.0.0.1:8080/')),
+        isTrue,
+      );
+      expect(
+        await UrlSafety.isLocalTarget(Uri.parse('https://192.168.0.10/')),
+        isTrue,
+      );
+    });
+
+    test('literal public IPs are not local', () async {
+      expect(
+        await UrlSafety.isLocalTarget(Uri.parse('https://1.1.1.1/')),
+        isFalse,
+      );
+    });
+
+    test('"localhost" is local', () async {
+      expect(
+        await UrlSafety.isLocalTarget(Uri.parse('http://localhost:3000/')),
+        isTrue,
+      );
+    });
+
+    test('unresolvable hostname is treated as remote', () async {
+      expect(
+        await UrlSafety.isLocalTarget(
+          Uri.parse('https://nonexistent.invalid.example/'),
+        ),
+        isFalse,
+      );
+    });
+  });
 }

@@ -65,6 +65,68 @@ class UrlSafety {
     return null;
   }
 
+  /// Whether [uri] can only be reached from this machine / the
+  /// local network — loopback, RFC1918 private ranges, IPv6 ULA,
+  /// link-local, CGNAT, or unspecified. A cloud web provider
+  /// (TinyFish) fetches from *its* network and could never reach
+  /// these, so callers should route such URLs to the local raw
+  /// fetch instead. Blocked addresses ([blockedAddressReason])
+  /// are a subset of local targets, so the raw path still refuses
+  /// them after routing.
+  static Future<bool> isLocalTarget(Uri uri) async {
+    final host = uri.host;
+    if (host.isEmpty) return false;
+    final literal = InternetAddress.tryParse(host);
+    if (literal != null) {
+      return isLocalAddress(literal);
+    }
+    final List<InternetAddress> addresses;
+    try {
+      addresses = await InternetAddress.lookup(host);
+    } catch (_) {
+      // Unresolvable — treat as remote and let the provider try.
+      return false;
+    }
+    // Every answer must be local; a mixed public/private answer
+    // set means the name is reachable remotely.
+    return addresses.isNotEmpty && addresses.every(isLocalAddress);
+  }
+
+  /// Pure, network-free predicate behind [isLocalTarget].
+  static bool isLocalAddress(InternetAddress addr) {
+    final bytes = addr.rawAddress;
+    if (addr.type == InternetAddressType.IPv6) {
+      // IPv4-mapped IPv6 — judge the embedded IPv4 address.
+      if (bytes.length == 16 &&
+          bytes[10] == 0xff &&
+          bytes[11] == 0xff &&
+          bytes.sublist(0, 10).every((b) => b == 0)) {
+        return _isLocalV4(bytes[12], bytes[13]);
+      }
+      if (bytes.every((b) => b == 0)) return true; // ::
+      if (bytes.sublist(0, 15).every((b) => b == 0) && bytes[15] == 1) {
+        return true; // ::1
+      }
+      if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) {
+        return true; // fe80::/10 link-local
+      }
+      if ((bytes[0] & 0xfe) == 0xfc) return true; // fc00::/7 ULA
+      return false;
+    }
+    return _isLocalV4(bytes[0], bytes[1]);
+  }
+
+  static bool _isLocalV4(int a, int b) {
+    if (a == 127) return true; // loopback
+    if (a == 10) return true; // private 10/8
+    if (a == 172 && (b & 0xf0) == 0x10) return true; // 172.16/12
+    if (a == 192 && b == 168) return true; // 192.168/16
+    if (a == 169 && b == 254) return true; // link-local
+    if (a == 100 && (b & 0xc0) == 0x40) return true; // CGNAT /10
+    if (a == 0) return true; // unspecified
+    return false;
+  }
+
   /// Pure, network-free check against an already-parsed address.
   /// Returns a reason string when blocked, `null` when allowed.
   static String? blockedAddressReason(InternetAddress addr) {

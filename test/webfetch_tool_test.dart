@@ -329,4 +329,42 @@ void main() {
       expect(result.output, contains('SSRF protection'));
     });
   });
+
+  group('WebFetchTool — intranet routing', () {
+    // A cloud provider can never reach loopback/private targets,
+    // so such URLs must bypass the provider and go to the local
+    // raw fetch (SSRF-guarded) even when a provider is configured.
+    test('loopback URL bypasses the configured provider', () async {
+      final provider = _ScriptedFetchProvider(id: 'tinyfish');
+      final tool = WebFetchTool(registry(provider));
+      final result = await tool.execute(
+        {'url': 'http://127.0.0.1:1/never-listens'},
+        ctx(),
+      );
+      expect(provider.calls, isEmpty);
+      // Local raw fetch was attempted and failed fast on the
+      // closed port — a network error, not a provider result.
+      expect(result.title, 'Error');
+      expect(result.output, contains('Failed to fetch URL'));
+    });
+
+    test('private-range URL bypasses the configured provider', () async {
+      final provider = _ScriptedFetchProvider(id: 'tinyfish');
+      final tool = WebFetchTool(registry(provider));
+      // unroutable test-net-ish private address on a closed port;
+      // we only assert the provider was NOT consulted.
+      await tool.execute(
+        {'url': 'http://192.168.0.1:1/never-listens', 'timeout': 2},
+        ctx(),
+      );
+      expect(provider.calls, isEmpty);
+    });
+
+    test('public URL still goes to the provider', () async {
+      final provider = _ScriptedFetchProvider(id: 'tinyfish');
+      final tool = WebFetchTool(registry(provider));
+      await tool.execute({'url': 'https://example.com/'}, ctx());
+      expect(provider.calls, hasLength(1));
+    });
+  });
 }
