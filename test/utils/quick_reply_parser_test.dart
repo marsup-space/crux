@@ -919,6 +919,71 @@ void main() {
       expect(label!.style!.backgroundColor, button.backgroundColor);
     });
 
+    test('preserves nested parent styles after substitution', () {
+      // Regression: applyQuickReplyTokens used to flatten the span tree
+      // by reading only each leaf's own `style`, dropping every
+      // ancestor's color / weight / background. Markdown wrapping (a
+      // paragraph color wrapping bold wrapping italic) then rendered as
+      // plain text whenever an `ask://` token was present. The fix
+      // accumulates parent styles down the tree during flatten, so a
+      // leaf deep in the nest still carries the full effective style.
+      const paragraph = TextStyle(color: Color(0xFFCCCCCC));
+      const bold = TextStyle(fontWeight: FontWeight.bold);
+      const italic = TextStyle(fontStyle: FontStyle.italic);
+
+      // Tree shape mirrors what the markdown visitor emits for
+      // `pre **bold *it ask://X{x}*** post`:
+      //   paragraph ──┬── "pre "
+      //               └── bold ── "bold " + italic ── "it ask://X{x}"
+      //               └── " post"
+      final spans = <InlineSpan>[
+        const TextSpan(
+          style: paragraph,
+          children: [
+            TextSpan(text: 'pre '),
+            TextSpan(
+              style: bold,
+              children: [
+                TextSpan(text: 'bold '),
+                TextSpan(
+                  style: italic,
+                  children: [TextSpan(text: 'it ask://X{x}')],
+                ),
+              ],
+            ),
+            TextSpan(text: ' post'),
+          ],
+        ),
+      ];
+
+      final replies = parseQuickReplies(spans);
+      expect(replies, hasLength(1));
+
+      final styled = applyQuickReplyTokens(spans, replies);
+      expect(_plainText(styled), 'pre bold it X post');
+      // The plain sibling must keep the paragraph color even though
+      // its own span had no style.
+      final preSpan = findSpan(styled, 'pre ');
+      expect(preSpan, isNotNull);
+      expect(preSpan!.style!.color, paragraph.color);
+
+      // Bold text keeps both paragraph color AND bold weight.
+      final boldSpan = findSpan(styled, 'bold ');
+      expect(boldSpan, isNotNull);
+      expect(boldSpan!.style!.color, paragraph.color);
+      expect(boldSpan.style!.fontWeight, FontWeight.bold);
+
+      // The reply's label is emitted in place of the source range
+      // that sat inside italic-under-bold-under-paragraph. In
+      // label-only mode it must inherit the full accumulated style
+      // (color + bold + italic), NOT revert to plain text.
+      final labelSpan = findSpan(styled, 'X');
+      expect(labelSpan, isNotNull);
+      expect(labelSpan!.style!.color, paragraph.color);
+      expect(labelSpan.style!.fontWeight, FontWeight.bold);
+      expect(labelSpan.style!.fontStyle, FontStyle.italic);
+    });
+
     group('rendered offsets for hit-testing', () {
       test('records renderedStart and renderedLength on each reply', () {
         // Source: `try ask://Continue{yes} now`

@@ -70,22 +70,34 @@ List<InlineSpan> applyMarkdownLinkStyles(
   // This mirrors the private `_flattenSpans` helper used by the
   // highlight overlay — reimplemented here so markdown_links.dart
   // stays a self-contained unit that's easy to test on its own.
+  //
+  // Parent styles are ACCUMULATED onto each leaf: the tree uses
+  // nesting to express inheritance (paragraphStyle wrapping bold,
+  // wrapping italic, …) and the leaf's own style only carries the
+  // delta. Without accumulation the rebuild below would produce a
+  // flat list that has lost every ancestor's color / weight /
+  // background — markdown renders as plain prose. Merge direction
+  // matters: the leaf must win, so merge(base: accumulated, overlay:
+  // leafStyle), NOT the other way around.
   final flat = <_FlatSpan>[];
-  void flatten(InlineSpan span) {
-    if (span is TextSpan) {
-      if (span.text != null && span.text!.isNotEmpty) {
-        flat.add((span.text!, span.style));
-      }
-      if (span.children != null) {
-        for (final child in span.children!) {
-          flatten(child);
-        }
+  void flatten(InlineSpan span, TextStyle? inherited) {
+    if (span is! TextSpan) return;
+    final style = span.style;
+    final accumulated = inherited == null
+        ? style
+        : (style == null ? inherited : _mergeStyles(inherited, style));
+    if (span.text != null && span.text!.isNotEmpty) {
+      flat.add((span.text!, accumulated));
+    }
+    if (span.children != null) {
+      for (final child in span.children!) {
+        flatten(child, accumulated);
       }
     }
   }
 
   for (final s in spans) {
-    flatten(s);
+    flatten(s, null);
   }
 
   // Single forward sweep over the flat list, splitting each span
