@@ -8,7 +8,25 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-20
+
+e8340cb
+
 ### Features
+
+- **Local-target routing for webfetch** (`d2b8824`) —
+  `UrlSafety.isLocalTarget()` detects machine-local targets
+  (literal IPs in loopback / RFC1918 / CGNAT ranges, plus
+  hostnames whose DNS answers are all local). When the
+  tool is invoked on such a URL, `execute()` now routes
+  it straight to the local raw fetch — which still applies
+  the SSRF guard — instead of pushing it to the configured
+  cloud provider (TinyFish), which can never reach those
+  addresses from its network and just used to fail
+  upstream. Net effect: `192.168.x` intranet wikis and
+  `localhost` dev servers now work end-to-end via the
+  agent. `url_safety_test.dart` adds 65 lines,
+  `webfetch_tool_test.dart` adds 38.
 
 - **Zhipu (GLM Coding Plan) provider** — add `zhipu` as a
   built-in provider (`providers/zhipu.toml`) backed by
@@ -69,6 +87,27 @@ below the version header. Each version has at most two categories:
   spellings the parser expects.
 
 ### Fixes
+
+- **Block link-local / metadata targets in webfetch raw
+  fetch (SSRF)** (`ba14e78`) — the raw `webfetch` path
+  could be pointed at internal addresses; the most
+  damaging target on a developer machine or cloud VM is
+  `169.254.169.254`, which hands out instance credentials
+  on AWS / GCP / Azure. A new `UrlSafety` guard rejects
+  `169.254.0.0/16` (link-local), `100.64.0.0/10` (CGNAT),
+  `0.0.0.0/8`, `fe80::/10`, `::`, IPv4-mapped IPv6
+  equivalents, and any non-http(s) scheme. Private ranges
+  (`10/8`, `172.16/12`, `192.168/16`) and loopback stay
+  allowed — intranet wikis and dev servers are legitimate
+  agent targets. Hostnames are resolved and every DNS
+  answer is checked (DNS-rebinding mitigation). Redirects
+  are no longer auto-followed: each hop (max 5) is
+  re-validated so an open redirect on a public host cannot
+  proxy into a blocked target. The provider path (TinyFish)
+  is unchanged — it fetches from the provider cloud, not
+  this machine, so it's not a local-SSRF vector.
+  `url_safety_test.dart` adds 121 lines,
+  `webfetch_tool_test.dart` adds 21.
 
 - **OpenAI-compatible URL builder recognizes any `/v\d+` version segment, not just `/v1`**
   (`llm_client.dart`) — `LlmClient._buildUri` used to detect
