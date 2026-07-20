@@ -248,14 +248,34 @@ class _CodingPlanUsageDisplayState
   @override
   void didUpdateComponent(CodingPlanUsageDisplay oldComponent) {
     super.didUpdateComponent(oldComponent);
-    // If the parent swapped our stream (e.g. user switched
-    // from a coding-plan provider to a non-coding-plan one
-    // and back), rebind the subscription. The new stream
-    // will deliver its first event soon; the old
-    // subscription is cancelled to avoid leaks.
+    // If the parent swapped our stream, this is a context
+    // switch — most commonly the user switched session or
+    // active provider. The new stream belongs to a *different*
+    // provider/poll lifecycle, so the current `_usage` and any
+    // running lerp animation are no longer meaningful: lerping
+    // from the previous provider's quota (e.g. 5h 98%) into the
+    // new provider's quota (e.g. 5h 73%) would flash red/green
+    // and spend 3s ticking across values that have nothing to
+    // do with each other. The animation exists to make quota
+    // consumption visible within one provider — not to cross-
+    // fade between providers.
+    //
+    // So on stream change we: cancel the animation, reset
+    // `_usage` to the new provider's initial snapshot (its
+    // last known value), and paint the settled frame. The new
+    // stream's next event will be compared against *that*
+    // snapshot, which is the correct baseline for this
+    // provider.
     if (oldComponent.stream != component.stream) {
       _subscription?.cancel();
       _subscription = component.stream.listen(_onUsage);
+      _animationTicker?.cancel();
+      _animationTicker = null;
+      _countdownTicker?.cancel();
+      _countdownTicker = null;
+      _refreshing = false;
+      _usage = component.initialUsage;
+      _pushCurrentFrame();
     }
   }
 

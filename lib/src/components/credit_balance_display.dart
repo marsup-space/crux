@@ -148,9 +148,24 @@ class _CreditBalanceDisplayState
   @override
   void didUpdateComponent(CreditBalanceDisplay oldComponent) {
     super.didUpdateComponent(oldComponent);
+    // Stream identity changed → the active provider/session
+    // switched. The running lerp animation (if any) was tied
+    // to the *previous* provider's balance; letting it run
+    // would cross-fade from one provider's credits into
+    // another's with a red/green flash, which is not a
+    // meaningful animation. Cancel the animation, reset
+    // `_balance` to the new provider's initial snapshot, and
+    // paint the settled frame. See the matching comment in
+    // CodingPlanUsageDisplay.didUpdateComponent for the full
+    // rationale.
     if (oldComponent.stream != component.stream) {
       _subscription?.cancel();
       _subscription = component.stream.listen(_onBalance);
+      _animationTicker?.cancel();
+      _animationTicker = null;
+      _refreshing = false;
+      _balance = component.initialBalance;
+      _pushCurrentFrame();
     }
   }
 

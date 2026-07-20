@@ -1331,6 +1331,385 @@ void main() {
     });
   });
 
+  // ─── Stream-switch (provider / session switch) ───────────────
+  // When the chat panel switches the active provider (or, via a
+  // different code path, the active session), the toolbar
+  // rebuilds `CodingPlanUsageDisplay` with a brand new
+  // `stream` and a new `initialUsage`. The widget's old
+  // `_usage` and any running lerp animation belong to the
+  // *previous* provider; letting the animation run would
+  // cross-fade from one provider's quota into another's
+  // with a red/green flash — meaningless.
+  //
+  // The contract we assert here:
+  //   * On stream identity change, the widget snaps to the
+  //     new provider's `initialUsage` value immediately —
+  //     no lerp tick, no red/green flash.
+  //   * The previous provider's in-flight animation is
+  //     cancelled.
+  //   * After the switch, normal deltas within the *new*
+  //     provider's stream still animate normally.
+  group('CodingPlanUsageDisplay on stream switch', () {
+    setUp(() {
+      TickerRegistry.instance.resetForTest();
+    });
+
+    tearDown(() {
+      TickerRegistry.instance.resetForTest();
+    });
+
+    /// Read row 0 (the widget's only row) as text, trimming
+    /// the two-cell "  " prefix the render object paints.
+    String readRow0(NoctermTester tester, {int width = 30}) {
+      final buf = StringBuffer();
+      for (var x = 0; x < width; x++) {
+        final ch = tester.terminalState.getCellAt(x, 0)?.char;
+        if (ch == null) break;
+        buf.write(ch);
+      }
+      return buf.toString().trimLeft();
+    }
+
+    /// Foreground colour of the first non-space cell on row 0
+    /// that is part of the interval readout (skips the
+    /// `"  5h "` prefix to land on the percentage digits).
+    /// Used to assert the cell is NOT painted in the flash
+    /// colour (red/green) after a stream switch.
+    Color? intervalCellColor(NoctermTester tester) {
+      // "  5h " is 5 cells wide (2 prefix + "5h"). The
+      // percentage digits start at x=5 and run a few cells.
+      // Scan x=5..15 and pick the first cell that has a
+      // non-null foreground colour.
+      for (var x = 5; x < 16; x++) {
+        final cell = tester.terminalState.getCellAt(x, 0);
+        if (cell == null) continue;
+        if (cell.char == ' ') continue;
+        return cell.style.color;
+      }
+      return null;
+    }
+
+    test('snaps to the new provider value without lerp or flash', () async {
+      await testNocterm(
+        'coding-plan display snaps on stream switch',
+        (tester) async {
+          // --- Provider A: sets up a running animation ----
+          final controllerA =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerA.close);
+
+          // Provider B's stream + initial value. We construct
+          // them up front so the rebuild closure can capture
+          // them by reference.
+          final controllerB =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerB.close);
+
+          // Mutable "current stream + initial" that the
+          // _RebuildOnDemand closure reads. Initially we're
+          // on provider A.
+          var activeStream = controllerA.stream;
+          var activeInitial = CodingPlanUsage(
+            providerName: 'a',
+            modelName: 'general',
+            intervalRemainingPct: 98,
+            weeklyRemainingPct: 73,
+            fetchedAt: DateTime.now(),
+          );
+          late void Function() switchToProviderB;
+
+          await tester.pumpComponent(
+            _RebuildOnDemand(
+              builder: (context, setState) {
+                switchToProviderB = () {
+                  setState(() {
+                    activeStream = controllerB.stream;
+                    activeInitial = CodingPlanUsage(
+                      providerName: 'b',
+                      modelName: 'general',
+                      // Wildly different values so a lerp from
+                      // A would be obvious if it leaked.
+                      intervalRemainingPct: 50,
+                      weeklyRemainingPct: 40,
+                      fetchedAt: DateTime.now(),
+                    );
+                  });
+                };
+                return CodingPlanUsageDisplay(
+                  stream: activeStream,
+                  initialUsage: activeInitial,
+                );
+              },
+            ),
+          );
+
+          // Provider A polls a decrement — kicks off the
+          // 3-second lerp animation with a red flash.
+          controllerA.add(CodingPlanUsage(
+            providerName: 'a',
+            modelName: 'general',
+            intervalRemainingPct: 95,
+            weeklyRemainingPct: 70,
+            fetchedAt: DateTime.now(),
+          ));
+          await tester.pump();
+
+          // Sanity: we're mid-animation, so the cell shows
+          // a lerp value somewhere between 98 and 95 (not
+          // the settled integer). The flash colour is red
+          // (decrement).
+          final midAnimText = readRow0(tester);
+          expect(midAnimText, contains('5h 9'));
+          // The animation start flash is red — pick it up
+          // so we know the colour-assertion path below is
+          // actually checking something meaningful.
+          final flashColor = intervalCellColor(tester);
+          expect(flashColor, isNotNull,
+              reason: 'mid-animation cell must have a colour');
+
+          // --- Switch to provider B ----
+          switchToProviderB();
+          await tester.pump();
+
+          // The displayed value must be B's initial value
+          // (50.0% / 40.0%) — NOT a lerp from A's 95%/70%
+          // and NOT still showing A's mid-animation frame.
+          final switchedText = readRow0(tester);
+          expect(
+            switchedText,
+            contains('5h 50.0%'),
+            reason: 'stream switch must snap to the new value, not lerp',
+          );
+          expect(
+            switchedText,
+            contains('1w 40.0%'),
+            reason: 'weekly cell also snaps to the new value',
+          );
+
+          // And the cell colour is NOT a flash colour. We
+          // can't read the theme from the test directly,
+          // but we CAN assert the colour is different from
+          // the red flash we observed mid animation — a
+          // successful reset always repaints in the
+          // settled ratio colour.
+          final settledColor = intervalCellColor(tester);
+          expect(
+            settledColor,
+            isNot(equals(flashColor)),
+            reason: 'stream switch must clear the flash colour — the '
+                'cell should be in its settled ratio colour, not the '
+                'red/green animation flash',
+          );
+
+          // --- The animation has stopped: pumping time
+          //     must NOT move the displayed value ----
+          await tester.pump(const Duration(seconds: 1));
+          expect(
+            readRow0(tester),
+            contains('5h 50.0%'),
+            reason: 'the previous animation must be cancelled — no '
+                'further lerping',
+          );
+        },
+        size: const Size(30, 1),
+      );
+    });
+
+    test('after switch, normal deltas on the new stream still animate',
+        () async {
+      // The fix cancels the old provider's animation on
+      // switch, but it must NOT break the animation for
+      // the new provider. After switching, a delta on B's
+      // stream should still flash and lerp normally.
+      await testNocterm(
+        'coding-plan display animates new-provider deltas after switch',
+        (tester) async {
+          final controllerA =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerA.close);
+          final controllerB =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerB.close);
+
+          var activeStream = controllerA.stream;
+          var activeInitial = CodingPlanUsage(
+            providerName: 'a',
+            modelName: 'general',
+            intervalRemainingPct: 90,
+            weeklyRemainingPct: 90,
+            fetchedAt: DateTime.now(),
+          );
+          late void Function() switchToProviderB;
+
+          await tester.pumpComponent(
+            _RebuildOnDemand(
+              builder: (context, setState) {
+                switchToProviderB = () {
+                  setState(() {
+                    activeStream = controllerB.stream;
+                    activeInitial = CodingPlanUsage(
+                      providerName: 'b',
+                      modelName: 'general',
+                      intervalRemainingPct: 80,
+                      weeklyRemainingPct: 80,
+                      fetchedAt: DateTime.now(),
+                    );
+                  });
+                };
+                return CodingPlanUsageDisplay(
+                  stream: activeStream,
+                  initialUsage: activeInitial,
+                );
+              },
+            ),
+          );
+
+          // Switch to B. The cell snaps to 80/80 with no
+          // animation (asserted in the previous test).
+          switchToProviderB();
+          await tester.pump();
+          expect(readRow0(tester), contains('5h 80.0%'));
+
+          // Now B polls a decrement. The widget should
+          // flash and lerp — this is a real within-provider
+          // delta and the animation is the right behaviour.
+          controllerB.add(CodingPlanUsage(
+            providerName: 'b',
+            modelName: 'general',
+            intervalRemainingPct: 77,
+            weeklyRemainingPct: 77,
+            fetchedAt: DateTime.now(),
+          ));
+          // Two pumps: the first lets the broadcast listener
+          // fire and the second lets the resulting setState
+          // dirty + the animation ticker's first tick land.
+          await tester.pump();
+          // Advance wall clock so the lerp has visibly moved.
+          // The animation runs over 3 seconds, so 300ms in is
+          // ~10% of the way (80 → 77 is a 3-unit delta, so
+          // the displayed value should be around 79.7%, which
+          // still contains '5h 7' as a prefix).
+          await tester.pump(const Duration(milliseconds: 300));
+
+          // The cell is now animating from 80 → 77. The
+          // displayed value is somewhere between them (lerp
+          // in flight). We don't assert an exact value, but
+          // the integer part must have dropped below 80 —
+          // i.e. the cell is no longer showing the settled
+          // 80.0% it had immediately after the switch.
+          final midText = readRow0(tester);
+          expect(
+            midText,
+            isNot(contains('5h 80.0%')),
+            reason: 'B-stream decrement must start a lerp away from '
+                'the post-switch 80.0% baseline',
+          );
+          expect(
+            midText,
+            contains('5h 7'),
+            reason: 'mid-animation value should read "5h 79.x%" or '
+                'similar — a 5h-cell value starting with 7',
+          );
+          // Definitely not yet at the final 77.0% — if it
+          // were, the animation didn't run.
+          expect(
+            midText,
+            isNot(contains('5h 77.0%')),
+            reason: 'mid-animation value must still be on the way '
+                'down from 80 (not yet at the settled 77%)',
+          );
+        },
+        size: const Size(30, 1),
+      );
+    });
+
+    test('switch with no initialUsage shows placeholder, then animates later',
+        () async {
+      // New provider hasn't polled yet → `initialUsage` is
+      // null on the rebuild. The cell should show `—` (no
+      // lerp from the old value, no flash). When B's stream
+      // eventually emits, the normal animation path takes
+      // over (and since there's no `prev`, the first event
+      // just paints — no animation on the very first event
+      // of a fresh provider, matching the existing
+      // behaviour on first mount).
+      await testNocterm(
+        'coding-plan display with null initial shows placeholder after switch',
+        (tester) async {
+          final controllerA =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerA.close);
+          final controllerB =
+              StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerB.close);
+
+          var activeStream = controllerA.stream;
+          CodingPlanUsage? activeInitial = CodingPlanUsage(
+            providerName: 'a',
+            modelName: 'general',
+            intervalRemainingPct: 88,
+            weeklyRemainingPct: 88,
+            fetchedAt: DateTime.now(),
+          );
+          late void Function() switchToProviderB;
+
+          await tester.pumpComponent(
+            _RebuildOnDemand(
+              builder: (context, setState) {
+                switchToProviderB = () {
+                  setState(() {
+                    activeStream = controllerB.stream;
+                    activeInitial = null; // B hasn't polled yet
+                  });
+                };
+                return CodingPlanUsageDisplay(
+                  stream: activeStream,
+                  initialUsage: activeInitial,
+                );
+              },
+            ),
+          );
+
+          // Sanity: A's value is visible before the switch.
+          expect(readRow0(tester), contains('5h 88.0%'));
+
+          switchToProviderB();
+          await tester.pump();
+
+          // Placeholder — NOT a lerp toward `—`.
+          expect(readRow0(tester), contains('5h —'));
+
+          // B's stream emits its first snapshot. Since
+          // `_usage` was reset to null, there's no `prev`
+          // to lerp from — the value just paints, no flash.
+          controllerB.add(CodingPlanUsage(
+            providerName: 'b',
+            modelName: 'general',
+            intervalRemainingPct: 60,
+            weeklyRemainingPct: 60,
+            fetchedAt: DateTime.now(),
+          ));
+          // Broadcast streams dispatch synchronously, but the
+          // `_onUsage` callback calls setState, which schedules
+          // a rebuild for the next frame. One pump advances the
+          // frame; a second lets any tail-end setState from
+          // hover-countdown re-sync (defensive — matches the
+          // cadence the production chat panel drives the widget
+          // at).
+          await tester.pump();
+          await tester.pump();
+          expect(
+            readRow0(tester),
+            contains('5h 60.0%'),
+            reason: 'first event on B paints the value; no prior '
+                'value to lerp from',
+          );
+        },
+        size: const Size(30, 1),
+      );
+    });
+  });
+
   // ─── Mixin lifecycle (using a fake provider) ───────────────
   group('CodingPlanProvider mixin', () {
     test('isCodingPlan is true on a mixin provider', () {
@@ -1485,6 +1864,28 @@ void main() {
 }
 
 // ─── Test doubles ───────────────────────────────────────────
+
+/// Stateful component whose `build` calls back into a closure
+/// the test owns. Used to rebuild the *same* widget subtree
+/// with new properties (e.g. swap the `stream` handed to
+/// [CodingPlanUsageDisplay]) without unmounting it — the
+/// underlying State is preserved, so `didUpdateComponent`
+/// fires. Mirrors the helper of the same name in
+/// `test/hint_test.dart`.
+class _RebuildOnDemand extends StatefulComponent {
+  const _RebuildOnDemand({required this.builder});
+
+  final Component Function(BuildContext, StateSetter) builder;
+
+  @override
+  State<_RebuildOnDemand> createState() => _RebuildOnDemandState();
+}
+
+class _RebuildOnDemandState extends State<_RebuildOnDemand> {
+  @override
+  Component build(BuildContext context) =>
+      component.builder(context, setState);
+}
 
 /// Minimal provider that does NOT include the
 /// [CodingPlanProvider] mixin. Used to verify the base-class
