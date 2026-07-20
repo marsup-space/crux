@@ -14,8 +14,6 @@ on:
         options:
           - all
           - linux-x64
-          - linux-arm64
-          - macos-x64
           - macos-arm64
           - windows-x64
       publish_tag:
@@ -41,10 +39,6 @@ jobs:
         include:
           - target: linux-x64
             os: ubuntu-latest
-          - target: linux-arm64
-            os: ubuntu-24.04-arm
-          - target: macos-x64
-            os: macos-15-intel
           - target: macos-arm64
             os: macos-latest
           - target: windows-x64
@@ -257,6 +251,12 @@ jobs:
           name: crux-${{ env.TARGET }}
           path: build/releases/crux-${{ env.TARGET }}.zip
           if-no-files-found: error
+          # The zip is already attached to the GitHub Release below
+          # (softprops/action-gh-release), so the CI artifact is a pure
+          # transient — the default 90-day retention is far too long.
+          # 5 days gives a retry window if the release publish fails,
+          # while keeping Actions storage from filling up.
+          retention-days: 5
 
       - name: Extract release notes from CHANGELOG
         if: env.SHOULD_BUILD == 'true' && env.RELEASE_TAG != ''
