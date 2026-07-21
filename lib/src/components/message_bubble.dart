@@ -15,6 +15,7 @@ import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
+import '../utils/strip_skill_bodies.dart';
 import '../lsp/language.dart';
 import '../utils/tool_meta.dart';
 import 'parallel_praise_bubble.dart';
@@ -145,7 +146,7 @@ class MessageBubble extends StatelessComponent {
   /// user actually typed.
   Component _buildUserMessageContent(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final content = _stripSkillBodies(message.content);
+    final content = stripSkillBodies(message.content);
 
     // Prefix for images.
     final imagePrefix = message.images.isNotEmpty ? '📎 ${message.images.length} • ' : '';
@@ -273,18 +274,6 @@ class MessageBubble extends StatelessComponent {
         cc == 0x2E ||
         cc == 0x2F ||
         cc == 0x20;
-  }
-
-  /// Strips appended `Skill: <name>\n<body>` blocks from the
-  /// content. These are added for the LLM at send time but should
-  /// not appear in the chat log. The pattern is: a blank line
-  /// followed by `Skill: <name>\n` and then the body text, all the
-  /// way to the end of the message (bodies are always appended at
-  /// the end, after the user's prose).
-  static String _stripSkillBodies(String content) {
-    final idx = content.indexOf('\n\nSkill: ');
-    if (idx == -1) return content;
-    return content.substring(0, idx);
   }
 
   Component _buildInner(BuildContext context) {

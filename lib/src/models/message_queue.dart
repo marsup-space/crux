@@ -27,8 +27,8 @@ class QueuedMessage {
 /// messages are enqueued here instead of being sent immediately. The
 /// queue is drained at the next safe insertion point (after a tool
 /// round completes, or after the final response). Multiple queued
-/// messages are merged into a single user turn with a system prefix
-/// that says the user has made additional comments.
+/// messages are merged into a single user turn joined by blank
+/// lines.
 class MessageQueue {
   final int sessionId;
   final List<QueuedMessage> _messages = [];
@@ -64,24 +64,17 @@ class MessageQueue {
   int get length => _messages.length;
 
   /// Drain the queue: merge all queued messages into a single user
-  /// turn string. The format is:
-  ///
-  ///   [System: The user has made the following additional comment(s):
-  ///     - message1
-  ///     - message2
-  ///   ]
-  ///
-  /// If there is only one message, the bullet is omitted.
-  /// After draining, the queue is cleared.
+  /// turn string. Multiple messages are joined with a blank line
+  /// between them; a single message is returned verbatim. No
+  /// synthetic prefix is added — the merged text is persisted as a
+  /// user message and shown in the chat log, so it should read as
+  /// exactly what the user typed. After draining, the queue is
+  /// cleared.
   String drain() {
     if (_messages.isEmpty) return '';
     final contents = _messages.map((m) => m.content).toList();
     _messages.clear();
-    if (contents.length == 1) {
-      return 'The user has made the following additional comment: ${contents.first}';
-    }
-    final bullets = contents.map((c) => '  - $c').join('\n');
-    return 'The user has made the following additional comments:\n$bullets';
+    return contents.join('\n\n');
   }
 
   /// Clear the entire queue without draining.

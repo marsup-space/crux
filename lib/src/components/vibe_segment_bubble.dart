@@ -5,6 +5,7 @@ import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
+import '../utils/strip_skill_bodies.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
@@ -206,7 +207,13 @@ class VibeSegmentBubble extends StatelessComponent {
                   ),
                 ),
                 Expanded(
-                  child: Text(segment.userMessage.content.trim()),
+                  // Strip the `Skill: <name>\n<body>` blocks appended
+                  // for the LLM — the chat log shows only what the
+                  // user actually typed (mirrors the verbose
+                  // `MessageBubble`).
+                  child: Text(
+                    stripSkillBodies(segment.userMessage.content).trim(),
+                  ),
                 ),
               ],
             ),

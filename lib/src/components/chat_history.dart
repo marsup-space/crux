@@ -9,6 +9,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/message.dart';
+import '../models/message_queue.dart';
 import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
@@ -38,6 +39,7 @@ import 'vibe_streaming_bubble.dart';
 import 'vibe_turn_divider.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
+import '../utils/strip_skill_bodies.dart';
 
 /// Lazy item-builder: produces the widget for items[index] only when
 /// the ListView actually lays out that index. Lets us defer the
@@ -241,6 +243,15 @@ class _ChatHistoryState extends State<ChatHistory> {
       (cubit) => sessionId == null
           ? const <BtwTurn>[]
           : cubit.state.turnsFor(sessionId),
+    );
+    // Subscribe to the queued-message snapshot so enqueuing a message
+    // mid-stream rebuilds the history immediately — without this the
+    // QueuedMessagesBubble only appears when some other rebuild
+    // (e.g. a streaming delta) happens to fire.
+    final queuedMessages = context.select<SessionCubit, List<QueuedMessage>>(
+      (cubit) => sessionId == null
+          ? const <QueuedMessage>[]
+          : cubit.state.queuedMessagesFor(sessionId),
     );
 
     final lastRoundStart = isStreaming
@@ -495,7 +506,11 @@ class _ChatHistoryState extends State<ChatHistory> {
             }
           }
           userItemIndices.add(items.length);
-          final text = seg.userMessage.content.replaceAll('\n', ' ').trim();
+          // Strip appended skill bodies so the jump-bar label shows
+          // only what the user typed (mirrors the bubble renderers).
+          final text = stripSkillBodies(seg.userMessage.content)
+              .replaceAll('\n', ' ')
+              .trim();
           userItemLabels.add(text);
         }
         final isLatestClosedAi = identical(seg, latestClosedAiSegment);
@@ -760,12 +775,11 @@ class _ChatHistoryState extends State<ChatHistory> {
 
     // Queued messages bubble.
     if (sessionId != null && isStreaming) {
-      final queue = component.sessionController.messageQueueFor(sessionId);
-      if (queue.isNotEmpty) {
+      if (queuedMessages.isNotEmpty) {
         items.add((ctx) => const SizedBox(height: 1));
         items.add((ctx) {
           return QueuedMessagesBubble(
-            messages: queue.messages,
+            messages: queuedMessages,
             onDiscard: (queueId) {
               component.sessionController.discardQueuedMessage(
                 sessionId,
