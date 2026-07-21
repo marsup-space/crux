@@ -247,6 +247,7 @@ jobs:
       - name: Upload release artifact
         if: env.SHOULD_BUILD == 'true'
         uses: actions/upload-artifact@v5
+        continue-on-error: true
         with:
           name: crux-${{ env.TARGET }}
           path: build/releases/crux-${{ env.TARGET }}.zip
@@ -256,6 +257,13 @@ jobs:
           # transient — the default 90-day retention is far too long.
           # 5 days gives a retry window if the release publish fails,
           # while keeping Actions storage from filling up.
+          #
+          # `continue-on-error: true` so a GitHub Actions storage-quota
+          # hit (free-tier caps the repo at 2 GB and the usage tracker
+          # only recalculates every 6-12 h) doesn't block the actual
+          # GitHub Release publish below. The CI artifact is purely
+          # transient — the durable asset is the GitHub Release zip
+          # uploaded by softprops/action-gh-release in the next step.
           retention-days: 5
 
       - name: Extract release notes from CHANGELOG
