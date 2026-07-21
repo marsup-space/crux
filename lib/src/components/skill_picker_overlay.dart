@@ -53,8 +53,6 @@ class SkillPickerOverlay extends StatelessComponent {
 
     final rows = <Component>[];
 
-    rows.add(Divider(color: theme.outline, height: 1));
-
     // Header
     rows.add(
       Container(
@@ -116,10 +114,17 @@ class SkillPickerOverlay extends StatelessComponent {
       }
     }
 
-    rows.add(Divider(color: theme.outline, height: 1));
-
     return Container(
-      decoration: BoxDecoration(color: theme.wizardOverlayBg),
+      decoration: BoxDecoration(
+        color: theme.wizardOverlayBg,
+        // Contained floating panel — rounded border, same idiom as
+        // the wizard overlay / toast.
+        border: BoxBorder.all(
+          color: theme.outline,
+          style: BoxBorderStyle.rounded,
+        ),
+        borderRadius: BorderRadius.circular(1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,

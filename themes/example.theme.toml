@@ -1,5 +1,12 @@
 # Copy this file to a new filename in ~/.config/crux/themes and customize it.
-# Theme files must provide every token and use #RRGGBB colors.
+#
+# Only `name` and `brightness` are required. Every color token is
+# optional: missing tokens fall back to the built-in Dracula values
+# (a startup warning lists each defaulted token). Colors accept
+# #RRGGBB and the #RGB shorthand (e.g. #abc → #aabbcc).
+#
+# The tokens below show the full set for reference — delete any you
+# don't want to customize.
 name = "Example Theme"
 brightness = "dark"
 
@@ -26,6 +33,16 @@ border_active = "#8AB4F8"
 border_subtle = "#3C4043"
 selection = "#8AB4F8"
 selected_text = "#202124"
+# Optional: color for the assistant response prefix (default: warning).
+assistant = "#81C995"
+# Optional: diff roles (defaults: success/error, with backgrounds
+# derived by blending them 15% into `background`).
+diff_added = "#81C995"
+diff_removed = "#F28B82"
+diff_added_bg = "#2F3A35"
+diff_removed_bg = "#403132"
+# Optional: chip background (default: surface_variant).
+# chip_background = "#35363A"
 
 [markdown]
 text = "#E8EAED"
@@ -38,6 +55,14 @@ strong = "#FCAD70"
 rule = "#5F6368"
 list = "#8AB4F8"
 code_block = "#E8EAED"
+# Optional per-level heading overrides (defaults: h1/h2 = heading,
+# h3/h4 = heading lerped 25% toward text, h5/h6 = lerped 50%).
+# h1 = "#C58AF9"
+# h2 = "#C58AF9"
+# h3 = "#B9A3DB"
+# h4 = "#B9A3DB"
+# h5 = "#ADA2C8"
+# h6 = "#ADA2C8"
 
 [syntax]
 default = "#E8EAED"

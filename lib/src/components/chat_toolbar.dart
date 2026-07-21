@@ -25,6 +25,7 @@ import 'session_cubit.dart';
 import 'streaming_controller.dart';
 import 'ui/button.dart';
 import 'ui/glossy_model_button.dart';
+import 'ui/layout_metrics.dart';
 
 /// Toolbar icons — safe BMP symbols that render as 1 cell, monochrome, in
 /// every Unicode-capable terminal. Previously these were Nerd Font PUA
@@ -335,7 +336,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
       return Hinted(
         hint: hint,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Text(
             label,
             style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
@@ -392,7 +396,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
         hoverColor: CruxTheme.of(context).buttonTextHover,
         bgColor: CruxTheme.of(context).buttonBackground,
         hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
-        padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        padding: EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+          vertical: 0,
+        ),
       ),
     );
   }
@@ -442,7 +449,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
             hoverColor: CruxTheme.of(context).buttonTextHover,
             bgColor: CruxTheme.of(context).buttonBackground,
             hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
-            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            padding: EdgeInsets.symmetric(
+              horizontal: kContentHorizontalPadding,
+              vertical: 0,
+            ),
           );
 
     // Pre-compute the temperature chip label and width budget
@@ -474,9 +484,9 @@ class _ChatToolbarState extends State<ChatToolbar> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const btnPad = 2;
-        const spacer = 2;
-        const smallSpacer = 1;
+        const btnPad = kToolbarButtonPadding;
+        const spacer = kToolbarChipGap;
+        const smallSpacer = kToolbarTightGap;
 
         final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
         final imageW =
@@ -529,7 +539,8 @@ class _ChatToolbarState extends State<ChatToolbar> {
             '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
         final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
 
-        var remaining = constraints.maxWidth.toInt() - 2 - modelW - imageW;
+        var remaining =
+            constraints.maxWidth.toInt() - kToolbarRowInset - modelW - imageW;
 
         final showTemp = tempLabel != null && (remaining - tempW) >= 0;
         if (showTemp) remaining -= tempW;
@@ -573,7 +584,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
             : null;
 
         return Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Row(
             children: [
               // The model picker button. Hinted with the current
@@ -617,7 +631,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     hoverColor: CruxTheme.of(context).buttonTextHover,
                     bgColor: CruxTheme.of(context).buttonBackground,
                     hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
-                    padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: kContentHorizontalPadding,
+                      vertical: 0,
+                    ),
                   ),
                 ),
               if (showContext) ...[

@@ -1,4 +1,4 @@
-name = "Rose Pine"
+name = "Rosé Pine Dawn"
 brightness = "light"
 
 [colors]
@@ -24,6 +24,11 @@ border_active = "#31748F"
 border_subtle = "#F4EDE8"
 selection = "#31748F"
 selected_text = "#FAF4ED"
+assistant = "#56949F"
+diff_added = "#286983"
+diff_removed = "#B4637A"
+diff_added_bg = "#E1E3E0"
+diff_removed_bg = "#F2E3DF"
 
 [markdown]
 text = "#575279"

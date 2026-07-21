@@ -13,6 +13,7 @@ import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'ui/layout_metrics.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
@@ -149,15 +150,19 @@ class MessageBubble extends StatelessComponent {
     final content = stripSkillBodies(message.content);
 
     // Prefix for images.
-    final imagePrefix = message.images.isNotEmpty ? '📎 ${message.images.length} • ' : '';
+    final imagePrefix = message.images.isNotEmpty
+        ? '📎 ${message.images.length} • '
+        : '';
 
     // Build styled spans.
     final spans = <TextSpan>[];
     if (imagePrefix.isNotEmpty) {
-      spans.add(TextSpan(
-        text: imagePrefix,
-        style: TextStyle(color: theme.foreground),
-      ));
+      spans.add(
+        TextSpan(
+          text: imagePrefix,
+          style: TextStyle(color: theme.foreground),
+        ),
+      );
     }
 
     if (content.isNotEmpty) {
@@ -194,7 +199,9 @@ class MessageBubble extends StatelessComponent {
             j++;
           }
           spans.add(TextSpan(text: r'$', style: invisibleTrigger));
-          spans.add(TextSpan(text: content.substring(i + 1, j), style: chipStyle));
+          spans.add(
+            TextSpan(text: content.substring(i + 1, j), style: chipStyle),
+          );
           i = j;
           continue;
         }
@@ -209,7 +216,9 @@ class MessageBubble extends StatelessComponent {
             j++;
           }
           spans.add(TextSpan(text: '@', style: invisibleTrigger));
-          spans.add(TextSpan(text: content.substring(i + 1, j), style: chipStyle));
+          spans.add(
+            TextSpan(text: content.substring(i + 1, j), style: chipStyle),
+          );
           i = j;
           continue;
         }
@@ -229,7 +238,8 @@ class MessageBubble extends StatelessComponent {
               _isPathChar(content[j + 1])) {
             break;
           }
-          if (content[j] == '[' && imagePattern.hasMatch(content.substring(j))) {
+          if (content[j] == '[' &&
+              imagePattern.hasMatch(content.substring(j))) {
             break;
           }
           j++;
@@ -247,10 +257,7 @@ class MessageBubble extends StatelessComponent {
       );
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
-      softWrap: true,
-    );
+    return RichText(text: TextSpan(children: spans), softWrap: true);
   }
 
   static bool _isIdentifierChar(String c) {
@@ -358,10 +365,10 @@ class MessageBubble extends StatelessComponent {
       final severity = streak >= 3
           ? ShellGuardSeverity.reject
           : streak == 2
-              ? ShellGuardSeverity.firm
-              : streak == 1
-                  ? ShellGuardSeverity.mild
-                  : ShellGuardSeverity.none;
+          ? ShellGuardSeverity.firm
+          : streak == 1
+          ? ShellGuardSeverity.mild
+          : ShellGuardSeverity.none;
       return ShellGuardBubble(
         label: message.content,
         severity: severity,
@@ -388,7 +395,10 @@ class MessageBubble extends StatelessComponent {
       children: [
         if (hasReasoning && reasoningCollapsed)
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            padding: EdgeInsets.symmetric(
+              horizontal: kContentHorizontalPadding,
+              vertical: 0,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -412,7 +422,10 @@ class MessageBubble extends StatelessComponent {
           Tint(
             color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+              padding: EdgeInsets.symmetric(
+                horizontal: kContentHorizontalPadding,
+                vertical: 0,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -436,11 +449,15 @@ class MessageBubble extends StatelessComponent {
             ),
           ),
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
+                // The 7-column prefix rail — see [kMessageRailWidth].
                 isUser ? ' You: ' : ' Crux: ',
                 style: TextStyle(
                   color: isUser
@@ -486,16 +503,16 @@ class MessageBubble extends StatelessComponent {
     // [CompactedSessionHeader]) so the user sees it immediately on
     // arrival instead of having to scroll past the summary to find it.
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+        vertical: 0,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: TextStyle(
-              color: labelColor,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: labelColor, fontWeight: FontWeight.bold),
           ),
           Expanded(
             child: HighlightedMarkdownText(
@@ -540,7 +557,10 @@ class MessageBubble extends StatelessComponent {
     if (hasReasoning && reasoningCollapsed) {
       children.add(
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -566,7 +586,10 @@ class MessageBubble extends StatelessComponent {
         Tint(
           color: CruxTheme.of(context).thinkingExpandedText.withOpacity(0.5),
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            padding: EdgeInsets.symmetric(
+              horizontal: kContentHorizontalPadding,
+              vertical: 0,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -595,7 +618,10 @@ class MessageBubble extends StatelessComponent {
     if (hasContent) {
       children.add(
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -625,7 +651,10 @@ class MessageBubble extends StatelessComponent {
     if (calls.isNotEmpty) {
       children.add(
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: calls.map((tc) {
@@ -931,8 +960,9 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     // shape up front and emit a label that names the bad tool so
     // the collapsed row explains what happened.
     if (content.startsWith('[UNKNOWN TOOL]')) {
-      final requested =
-          RegExp(r'no tool named "([^"]+)"').firstMatch(content)?.group(1);
+      final requested = RegExp(
+        r'no tool named "([^"]+)"',
+      ).firstMatch(content)?.group(1);
       final tokenMatch = RegExp(
         r'Aborted after ~(\d+) generated tool-argument tokens\.',
       ).firstMatch(content);

@@ -8,6 +8,56 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Theme system rework with terminal light/dark
+  auto-detection** — the theme loader, controller, and
+  registry now expose a richer surface that powers both
+  manual theme selection (`/theme`) and a startup-time
+  automatic default based on the terminal's background
+  brightness. New `lib/src/theme/terminal_brightness.dart`
+  inspects `COLORFGBG` (set by konsole / rxvt / some
+  VTE setups as `fg;bg`), `TERM_BACKGROUND` (a few
+  terminals), and falls back to a per-process random
+  choice between the bundled dark and light themes
+  (`dracula` / `github`) when no env hint is available.
+  The detection is intentionally heuristic and
+  non-blocking — no OSC 10/11 escape-sequence
+  round-trips, which can stall boot on terminals that
+  don't answer. Each bundled theme (catppuccin, cobalt2,
+  dracula, flexoki, github, onedarkpro, rosepine,
+  synthwave84) gains the surface the new system reads.
+
+- **New rosepine-main theme** (`themes/rosepine-main.toml`)
+  — the existing `rosepine` theme is dark; this adds
+  the official Rosé Pine *Main* variant as a separate
+  theme the picker can select independently.
+
+- **New shared `Spinner` component**
+  (`lib/src/components/ui/spinner.dart`) — braille
+  frames (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) on terminals that support
+  rich glyphs, ASCII (`- \ | /`) fallback otherwise.
+  Centralized `spinnerFrames()` accessor picks the
+  appropriate frame list at build time, and the
+  TickerRegistry-aware base stops the animation when
+  the host is destroyed. `test/spinner_test.dart`
+  covers frame cycling, terminal-symbol fallback, and
+  registry teardown.
+
+- **New shared `LayoutMetrics` module**
+  (`lib/src/components/ui/layout_metrics.dart`) —
+  centralizes the responsive thresholds and inset
+  sizes used by the main chat surfaces (chat panel,
+  message bubbles, input, toolbar, tool detail pane,
+  fullpane) so related surfaces stay visually
+  consistent and each number carries its rationale in
+  one place. Includes `kSidebarShowThreshold = 100`
+  columns (the right-hand info sidebar appears at or
+  above this width), `kSidebarWidthMin = 28` /
+  `kSidebarWidthMax = 40`, and fullpane sizing
+  constants. Switching any number now is a deliberate
+  visual change, not a refactor.
+
 ## [0.17.0] - 2026-07-21
 
 d89ef1d

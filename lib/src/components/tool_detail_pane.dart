@@ -8,10 +8,12 @@ import '../theme/crux_theme.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/tool_meta.dart';
+import '../utils/terminal_symbols.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'tool_detail_utils.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'ui/layout_metrics.dart';
 
 /// Data needed to render a tool detail fullpane.
 class ToolDetailData {
@@ -138,7 +140,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       child: MouseRegion(
         opaque: false,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kTabHeaderHorizontalPadding,
+            vertical: 0,
+          ),
           decoration: active
               ? BoxDecoration(
                   color: theme.surfaceVariant,
@@ -281,9 +286,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       children.add(dimText('  (empty)', theme));
     } else {
       children.add(
-        Expanded(
-          child: _scrollableCodeBlock(lsp.visible, language, theme),
-        ),
+        Expanded(child: _scrollableCodeBlock(lsp.visible, language, theme)),
       );
     }
 
@@ -316,30 +319,42 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       children.add(_banner('⟳ Replace all occurrences', theme.info, theme));
     }
 
-    // Old → New diff-style view
-    children.add(_sectionHeading('Old', theme, color: theme.error));
-    if (oldStr.isEmpty) {
-      children.add(dimText('  (empty)', theme));
+    // Unified ±diff view. When the call carries old/new strings we
+    // render a single line-level diff (removed lines `- ` in
+    // `diffRemoved`, added lines `+ ` in `diffAdded`, long unchanged
+    // runs collapsed to a gap marker). The legacy stacked Old/New
+    // sections remain as a fallback for calls that don't carry the
+    // edit inputs (e.g. malformed or legacy persisted rows).
+    final hasEditInputs =
+        tc.input.containsKey('oldString') || tc.input.containsKey('newString');
+    if (hasEditInputs) {
+      children.add(_sectionHeading('Changes', theme));
+      children.add(_buildDiffBlock(oldStr, newStr, theme));
     } else {
-      children.add(
-        Container(
-          padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(oldStr, language, theme),
-        ),
-      );
-    }
+      children.add(_sectionHeading('Old', theme, color: theme.error));
+      if (oldStr.isEmpty) {
+        children.add(dimText('  (empty)', theme));
+      } else {
+        children.add(
+          Container(
+            padding: const EdgeInsets.only(left: 1),
+            child: _inlineCodeBlock(oldStr, language, theme),
+          ),
+        );
+      }
 
-    children.add(Divider(color: theme.dividerDim, height: 1));
-    children.add(_sectionHeading('New', theme, color: theme.success));
-    if (newStr.isEmpty) {
-      children.add(dimText('  (empty)', theme));
-    } else {
-      children.add(
-        Container(
-          padding: const EdgeInsets.only(left: 1),
-          child: _inlineCodeBlock(newStr, language, theme),
-        ),
-      );
+      children.add(Divider(color: theme.dividerDim, height: 1));
+      children.add(_sectionHeading('New', theme, color: theme.success));
+      if (newStr.isEmpty) {
+        children.add(dimText('  (empty)', theme));
+      } else {
+        children.add(
+          Container(
+            padding: const EdgeInsets.only(left: 1),
+            child: _inlineCodeBlock(newStr, language, theme),
+          ),
+        );
+      }
     }
 
     // LSP errors section (if any diagnostics were attached to the
@@ -365,7 +380,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       child: SingleChildScrollView(
         controller: _prettyScrollController,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: children,
@@ -389,7 +407,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     // Header: command + intent
     children.add(
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+          vertical: 0,
+        ),
         child: Row(
           children: [
             Text(
@@ -519,7 +540,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     }
     children.add(
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+          vertical: 0,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -589,7 +613,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     }
     children.add(
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+          vertical: 0,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -632,7 +659,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     // Header
     children.add(
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+          vertical: 0,
+        ),
         child: Row(
           children: [
             Text(
@@ -665,7 +695,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (metaHint != null) {
       children.add(
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: metaHint,
         ),
       );
@@ -685,7 +718,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
             child: SingleChildScrollView(
               controller: _prettyScrollController,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kContentHorizontalPadding,
+                  vertical: 0,
+                ),
                 child: HighlightedMarkdownText(output),
               ),
             ),
@@ -714,10 +750,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       case 'system-proxy':
         return Row(
           children: [
-            Text(
-              '  ·  ',
-              style: TextStyle(color: theme.onSurfaceDim),
-            ),
+            Text('  ·  ', style: TextStyle(color: theme.onSurfaceDim)),
             Text(
               'via system proxy ',
               style: TextStyle(
@@ -850,15 +883,20 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         // `[UNKNOWN TOOL] … no tool named "X" is registered …`
         // — surface the bad name in the banner so the user
         // understands the abort without scanning the body.
-        final requested =
-            RegExp(r'no tool named "([^"]+)"').firstMatch(output)?.group(1);
+        final requested = RegExp(
+          r'no tool named "([^"]+)"',
+        ).firstMatch(output)?.group(1);
         final bannerText = requested != null
             ? "Aborted mid-stream: unknown tool '$requested'"
             : 'Aborted mid-stream: unknown tool';
         children.add(_banner(bannerText, theme.warning, theme));
       } else if (isGuardAborted) {
         children.add(
-          _banner('Aborted mid-stream by Crux (early abort)', theme.warning, theme),
+          _banner(
+            'Aborted mid-stream by Crux (early abort)',
+            theme.warning,
+            theme,
+          ),
         );
       } else if (isGuard) {
         children.add(
@@ -903,7 +941,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _sectionLabel(String label, CruxThemeData theme) {
     return Container(
       decoration: BoxDecoration(color: theme.surfaceVariant),
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+        vertical: 0,
+      ),
       child: Text(
         label,
         style: TextStyle(color: theme.foreground, fontWeight: FontWeight.bold),
@@ -945,6 +986,77 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     );
   }
 
+  // ── Unified diff rendering (edit tool) ─────────────────────────────
+
+  /// Render the unified line diff between the edit tool's old and new
+  /// strings. Diff math lives in [computeLineDiff] (tool_detail_utils)
+  /// so it stays unit-testable without pumping the UI.
+  Component _buildDiffBlock(String oldStr, String newStr, CruxThemeData theme) {
+    final lines = computeLineDiff(oldStr, newStr);
+    if (lines.isEmpty) {
+      return dimText('  (no changes)', theme);
+    }
+    final gapGlyph = terminalSymbol('⋮', '|');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final line in lines)
+          switch (line.kind) {
+            DiffLineKind.removed => _diffRow(
+              '- ',
+              line.text,
+              theme.diffRemoved,
+              theme.diffRemovedBackground,
+            ),
+            DiffLineKind.added => _diffRow(
+              '+ ',
+              line.text,
+              theme.diffAdded,
+              theme.diffAddedBackground,
+            ),
+            DiffLineKind.context => _diffRow(
+              '  ',
+              line.text,
+              theme.onSurfaceDim,
+              null,
+            ),
+            DiffLineKind.gap => Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kContentHorizontalPadding,
+              ),
+              child: Text(
+                '  $gapGlyph ${line.elidedCount} unchanged lines',
+                style: TextStyle(
+                  color: theme.onSurfaceDim,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          },
+      ],
+    );
+  }
+
+  /// One full-width diff row. The colored rows paint their background
+  /// across the whole pane width (SizedBox + Container) while the
+  /// glyphs themselves carry the same background via the text style,
+  /// so wrapped lines stay inside the tinted band.
+  Component _diffRow(String prefix, String text, Color fg, Color? bg) {
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        decoration: bg != null ? BoxDecoration(color: bg) : null,
+        padding: const EdgeInsets.symmetric(
+          horizontal: kContentHorizontalPadding,
+        ),
+        child: Text(
+          '$prefix$text',
+          style: TextStyle(color: fg, backgroundColor: bg),
+        ),
+      ),
+    );
+  }
+
   // ── Arg rendering (used by Raw tab and Generic pretty) ──────────────
 
   Component _buildArgBlock(String key, dynamic value, CruxThemeData theme) {
@@ -980,7 +1092,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kContentHorizontalPadding,
+            vertical: 0,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1021,7 +1136,11 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
     final children = <Component>[];
     children.add(
-      _sectionHeading('LSP · ${errors.length} $word', theme, color: theme.error),
+      _sectionHeading(
+        'LSP · ${errors.length} $word',
+        theme,
+        color: theme.error,
+      ),
     );
     if (filePath.isNotEmpty) {
       children.add(dimText('  in $filePath', theme));
@@ -1075,7 +1194,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     bool valueItalic = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+        vertical: 0,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1103,7 +1225,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
   Component _sectionHeading(String text, CruxThemeData theme, {Color? color}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+        vertical: 0,
+      ),
       child: Text(
         text,
         style: TextStyle(
@@ -1116,7 +1241,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
   Component _banner(String text, Color color, CruxThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+        vertical: 0,
+      ),
       child: Text(
         text,
         style: TextStyle(color: color, fontWeight: FontWeight.bold),
@@ -1124,8 +1252,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     );
   }
 
-  Component dimText(String text, CruxThemeData theme) =>
-      dimText(text, theme);
+  Component dimText(String text, CruxThemeData theme) => dimText(text, theme);
 
   String _languageForArgKey(String key) {
     switch (key) {
@@ -1217,5 +1344,4 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         .trim();
     return trimmed.isEmpty ? 'Auto-read' : 'Auto-read: $trimmed';
   }
-
 }

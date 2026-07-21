@@ -67,10 +67,19 @@ class ThemeLoader {
 
     for (final file in files) {
       final id = p.basenameWithoutExtension(file.path);
+      final warnings = <String>[];
       try {
-        final theme = await loadFile(file, id: id);
+        final theme = await loadFile(file, id: id, warnings: warnings);
         if (overrideExisting || !themes.containsKey(id)) {
           themes[id] = theme;
+        }
+        // Non-fatal diagnostics (per-token Dracula fallbacks) ride the
+        // same channel as hard load failures; the startup code in
+        // bin/crux.dart already reports these entries as
+        // "theme warning" lines and in-app toasts.
+        if (warnings.isNotEmpty) {
+          errors[file.path] =
+              'fallback defaults applied: ${warnings.join('; ')}';
         }
       } catch (error) {
         errors[file.path] = error.toString();
@@ -89,12 +98,32 @@ class ThemeLoader {
     }
   }
 
-  static Future<CruxThemeData> loadFile(File file, {String? id}) async {
+  static Future<CruxThemeData> loadFile(
+    File file, {
+    String? id,
+    List<String>? warnings,
+  }) async {
     final content = await file.readAsString();
-    return parse(content, id: id ?? p.basenameWithoutExtension(file.path));
+    return parse(
+      content,
+      id: id ?? p.basenameWithoutExtension(file.path),
+      warnings: warnings,
+    );
   }
 
-  static CruxThemeData parse(String source, {required String id}) {
+  /// Parses a theme TOML document.
+  ///
+  /// `name` and `brightness` are required. Every color token is
+  /// optional: a missing token falls back to the built-in Dracula
+  /// value and is reported through [warnings] (when provided).
+  /// Malformed values (non-string, bad color format, bad table
+  /// shapes) still reject the whole file with a [FormatException].
+  /// Colors accept `#RRGGBB` and the `#RGB` shorthand.
+  static CruxThemeData parse(
+    String source, {
+    required String id,
+    List<String>? warnings,
+  }) {
     final map = TomlDocument.parse(source).toMap();
     final name = _string(map, 'name');
     final brightnessValue = _string(map, 'brightness');
@@ -105,81 +134,231 @@ class ThemeLoader {
         'Theme "$id": brightness must be "dark" or "light"',
       ),
     };
-    final colors = _section(map, 'colors');
-    final markdown = _section(map, 'markdown');
-    final syntax = _section(map, 'syntax');
+    const fallback = CruxThemeData.draculaFallback;
+    final colors = _section(map, 'colors', id: id, warnings: warnings);
+    final markdown = _section(map, 'markdown', id: id, warnings: warnings);
+    final syntax = _section(map, 'syntax', id: id, warnings: warnings);
 
-    Color color(Map<String, dynamic> section, String key) {
-      final value = _string(section, key);
-      if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) {
-        throw FormatException('Theme "$id": "$key" must be a #RRGGBB color');
+    // Required-role token: falls back per-token to the Dracula
+    // default when absent (with a warning). A missing section was
+    // already reported once by [_section], so per-token warnings are
+    // skipped in that case to avoid noise.
+    Color color(
+      Map<String, dynamic>? section,
+      String sectionName,
+      String key,
+      Color fallbackColor,
+    ) {
+      final raw = section?[key];
+      if (raw == null) {
+        if (section != null) {
+          warnings?.add(
+            'missing [$sectionName] "$key"; using Dracula default',
+          );
+        }
+        return fallbackColor;
       }
-      return Color(int.parse(value.substring(1), radix: 16));
+      return _parseColor(raw, id: id, key: key);
     }
+
+    // Truly optional token: absent means "derive at runtime"
+    // (see CruxThemeData getters); no warning is recorded.
+    Color? optionalColor(Map<String, dynamic>? section, String key) {
+      final raw = section?[key];
+      if (raw == null) return null;
+      return _parseColor(raw, id: id, key: key);
+    }
+
+    final surfaceVariant = color(
+      colors,
+      'colors',
+      'surface_variant',
+      fallback.surfaceVariant,
+    );
 
     return CruxThemeData(
       id: id,
       name: name,
       brightness: brightness,
-      background: color(colors, 'background'),
-      surface: color(colors, 'surface'),
-      surfaceVariant: color(colors, 'surface_variant'),
-      primary: color(colors, 'primary'),
-      onPrimary: color(colors, 'on_primary'),
-      secondary: color(colors, 'secondary'),
-      onSecondary: color(colors, 'on_secondary'),
-      accent: color(colors, 'accent'),
-      error: color(colors, 'error'),
-      onError: color(colors, 'on_error'),
-      warning: color(colors, 'warning'),
-      onWarning: color(colors, 'on_warning'),
-      success: color(colors, 'success'),
-      onSuccess: color(colors, 'on_success'),
-      info: color(colors, 'info'),
-      text: color(colors, 'text'),
-      textMuted: color(colors, 'text_muted'),
-      border: color(colors, 'border'),
-      borderActive: color(colors, 'border_active'),
-      borderSubtle: color(colors, 'border_subtle'),
-      selection: color(colors, 'selection'),
-      selectedText: color(colors, 'selected_text'),
-      markdownText: color(markdown, 'text'),
-      markdownHeading: color(markdown, 'heading'),
-      markdownLink: color(markdown, 'link'),
-      markdownCode: color(markdown, 'code'),
-      markdownBlockQuote: color(markdown, 'block_quote'),
-      markdownEmphasis: color(markdown, 'emphasis'),
-      markdownStrong: color(markdown, 'strong'),
-      markdownRule: color(markdown, 'rule'),
-      markdownList: color(markdown, 'list'),
-      markdownCodeBlock: color(markdown, 'code_block'),
-      syntaxDefault: color(syntax, 'default'),
-      syntaxComment: color(syntax, 'comment'),
-      syntaxKeyword: color(syntax, 'keyword'),
-      syntaxStorage: color(syntax, 'storage'),
-      syntaxFunction: color(syntax, 'function'),
-      syntaxType: color(syntax, 'type'),
-      syntaxString: color(syntax, 'string'),
-      syntaxConstant: color(syntax, 'constant'),
-      syntaxNumber: color(syntax, 'number'),
-      syntaxVariable: color(syntax, 'variable'),
-      syntaxTag: color(syntax, 'tag'),
-      syntaxAttribute: color(syntax, 'attribute'),
-      syntaxOperator: color(syntax, 'operator'),
-      syntaxPunctuation: color(syntax, 'punctuation'),
-      syntaxMeta: color(syntax, 'meta'),
+      background: color(colors, 'colors', 'background', fallback.background),
+      surface: color(colors, 'colors', 'surface', fallback.surface),
+      surfaceVariant: surfaceVariant,
+      primary: color(colors, 'colors', 'primary', fallback.primary),
+      onPrimary: color(colors, 'colors', 'on_primary', fallback.onPrimary),
+      secondary: color(colors, 'colors', 'secondary', fallback.secondary),
+      onSecondary: color(
+        colors,
+        'colors',
+        'on_secondary',
+        fallback.onSecondary,
+      ),
+      accent: color(colors, 'colors', 'accent', fallback.accent),
+      error: color(colors, 'colors', 'error', fallback.error),
+      onError: color(colors, 'colors', 'on_error', fallback.onError),
+      warning: color(colors, 'colors', 'warning', fallback.warning),
+      onWarning: color(colors, 'colors', 'on_warning', fallback.onWarning),
+      success: color(colors, 'colors', 'success', fallback.success),
+      onSuccess: color(colors, 'colors', 'on_success', fallback.onSuccess),
+      info: color(colors, 'colors', 'info', fallback.info),
+      text: color(colors, 'colors', 'text', fallback.text),
+      textMuted: color(colors, 'colors', 'text_muted', fallback.textMuted),
+      border: color(colors, 'colors', 'border', fallback.border),
+      borderActive: color(
+        colors,
+        'colors',
+        'border_active',
+        fallback.borderActive,
+      ),
+      borderSubtle: color(
+        colors,
+        'colors',
+        'border_subtle',
+        fallback.borderSubtle,
+      ),
+      selection: color(colors, 'colors', 'selection', fallback.selection),
+      selectedText: color(
+        colors,
+        'colors',
+        'selected_text',
+        fallback.selectedText,
+      ),
+      markdownText: color(markdown, 'markdown', 'text', fallback.markdownText),
+      markdownHeading: color(
+        markdown,
+        'markdown',
+        'heading',
+        fallback.markdownHeading,
+      ),
+      markdownLink: color(markdown, 'markdown', 'link', fallback.markdownLink),
+      markdownCode: color(markdown, 'markdown', 'code', fallback.markdownCode),
+      markdownBlockQuote: color(
+        markdown,
+        'markdown',
+        'block_quote',
+        fallback.markdownBlockQuote,
+      ),
+      markdownEmphasis: color(
+        markdown,
+        'markdown',
+        'emphasis',
+        fallback.markdownEmphasis,
+      ),
+      markdownStrong: color(
+        markdown,
+        'markdown',
+        'strong',
+        fallback.markdownStrong,
+      ),
+      markdownRule: color(markdown, 'markdown', 'rule', fallback.markdownRule),
+      markdownList: color(markdown, 'markdown', 'list', fallback.markdownList),
+      markdownCodeBlock: color(
+        markdown,
+        'markdown',
+        'code_block',
+        fallback.markdownCodeBlock,
+      ),
+      syntaxDefault: color(syntax, 'syntax', 'default', fallback.syntaxDefault),
+      syntaxComment: color(syntax, 'syntax', 'comment', fallback.syntaxComment),
+      syntaxKeyword: color(syntax, 'syntax', 'keyword', fallback.syntaxKeyword),
+      syntaxStorage: color(syntax, 'syntax', 'storage', fallback.syntaxStorage),
+      syntaxFunction: color(
+        syntax,
+        'syntax',
+        'function',
+        fallback.syntaxFunction,
+      ),
+      syntaxType: color(syntax, 'syntax', 'type', fallback.syntaxType),
+      syntaxString: color(syntax, 'syntax', 'string', fallback.syntaxString),
+      syntaxConstant: color(
+        syntax,
+        'syntax',
+        'constant',
+        fallback.syntaxConstant,
+      ),
+      syntaxNumber: color(syntax, 'syntax', 'number', fallback.syntaxNumber),
+      syntaxVariable: color(
+        syntax,
+        'syntax',
+        'variable',
+        fallback.syntaxVariable,
+      ),
+      syntaxTag: color(syntax, 'syntax', 'tag', fallback.syntaxTag),
+      syntaxAttribute: color(
+        syntax,
+        'syntax',
+        'attribute',
+        fallback.syntaxAttribute,
+      ),
+      syntaxOperator: color(
+        syntax,
+        'syntax',
+        'operator',
+        fallback.syntaxOperator,
+      ),
+      syntaxPunctuation: color(
+        syntax,
+        'syntax',
+        'punctuation',
+        fallback.syntaxPunctuation,
+      ),
+      syntaxMeta: color(syntax, 'syntax', 'meta', fallback.syntaxMeta),
       // Chip background is optional in user theme TOML — we
       // fall back to `surface_variant` when not provided.
-      chipBackground: colors.containsKey('chip_background')
-          ? color(colors, 'chip_background')
-          : color(colors, 'surface_variant'),
+      chipBackground: optionalColor(colors, 'chip_background') ?? surfaceVariant,
+      // Optional tokens with runtime-derived defaults (no warnings).
+      assistantColor: optionalColor(colors, 'assistant'),
+      diffAddedColor: optionalColor(colors, 'diff_added'),
+      diffRemovedColor: optionalColor(colors, 'diff_removed'),
+      diffAddedBackgroundColor: optionalColor(colors, 'diff_added_bg'),
+      diffRemovedBackgroundColor: optionalColor(colors, 'diff_removed_bg'),
+      markdownH1: optionalColor(markdown, 'h1'),
+      markdownH2: optionalColor(markdown, 'h2'),
+      markdownH3: optionalColor(markdown, 'h3'),
+      markdownH4: optionalColor(markdown, 'h4'),
+      markdownH5: optionalColor(markdown, 'h5'),
+      markdownH6: optionalColor(markdown, 'h6'),
     );
   }
 
-  static Map<String, dynamic> _section(Map<String, dynamic> map, String key) {
+  /// Parses a `#RRGGBB` or `#RGB` color literal.
+  static Color _parseColor(
+    Object raw, {
+    required String id,
+    required String key,
+  }) {
+    final value = raw is String ? raw : '';
+    final match = RegExp(
+      r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$',
+    ).firstMatch(value);
+    if (match == null) {
+      throw FormatException(
+        'Theme "$id": "$key" must be a #RRGGBB or #RGB color',
+      );
+    }
+    var hex = match.group(1)!;
+    if (hex.length == 3) {
+      // Expand shorthand: #abc → #aabbcc.
+      hex = hex.split('').map((digit) => '$digit$digit').join();
+    }
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  /// Returns the table at [key], or null (with a warning) when the
+  /// section is absent — per-token Dracula fallbacks then apply.
+  /// A present-but-non-table value remains a hard error.
+  static Map<String, dynamic>? _section(
+    Map<String, dynamic> map,
+    String key, {
+    required String id,
+    List<String>? warnings,
+  }) {
     final value = map[key];
+    if (value == null) {
+      warnings?.add('missing [$key] section; using Dracula defaults');
+      return null;
+    }
     if (value is! Map) {
-      throw FormatException('Missing [$key] section');
+      throw FormatException('Theme "$id": [$key] must be a table');
     }
     return Map<String, dynamic>.from(value);
   }

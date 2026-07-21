@@ -69,7 +69,7 @@ void main() {
 
         final button = tester.terminalState.findText('button').single;
         final buttonCell = tester.terminalState.getCellAt(button.x, button.y)!;
-        expect(buttonCell.style.color, theme.buttonTextDisabled);
+        expect(buttonCell.style.color, theme.buttonText);
         expect(buttonCell.style.backgroundColor, theme.buttonBackground);
 
         final error = tester.terminalState.findText('error').single;
@@ -104,10 +104,14 @@ void main() {
     });
   }
 
-  test('highlight foreground is selected by background luminance', () async {
+  test('highlight foreground is derived from the theme palette', () async {
     final dark = await loadTheme('dracula');
     final light = await loadTheme('github');
-    expect(dark.onColor(const Color(0xFFFFFF)), const Color(0x111111));
-    expect(light.onColor(const Color(0x111111)), const Color(0xFFFFFF));
+    // Light chip → the theme's dark background color contrasts best;
+    // dark chip → the theme's light text color wins.
+    expect(dark.onColor(const Color(0xFFFFFF)), dark.background);
+    expect(dark.onColor(const Color(0x000000)), dark.text);
+    expect(light.onColor(const Color(0x111111)), light.background);
+    expect(light.onColor(const Color(0xFFFFFF)), light.text);
   });
 }

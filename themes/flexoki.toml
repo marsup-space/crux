@@ -24,6 +24,11 @@ border_active = "#878580"
 border_subtle = "#CECDC3"
 selection = "#205EA6"
 selected_text = "#FFFCF0"
+assistant = "#66800B"
+diff_added = "#66800B"
+diff_removed = "#AF3029"
+diff_added_bg = "#EDEDD5"
+diff_removed_bg = "#F5E4D8"
 
 [markdown]
 text = "#100F0F"

@@ -1,17 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
 import 'button.dart';
-
-/// Width threshold (columns) below which the fullpane becomes truly
-/// full-screen. Matches the side-panel hide threshold so the UX is
-/// consistent: when the terminal is too narrow for a side panel it's
-/// also too narrow for margin insets.
-const kFullpaneNarrowThreshold = 100;
-
-/// Height threshold (rows) below which the fullpane becomes truly
-/// full-screen. 24 rows is the classic minimum terminal size; below
-/// that there's no room for margins around the pane.
-const kFullpaneShortThreshold = 24;
+import 'layout_metrics.dart';
 
 /// A shortcut hint displayed in the fullpane footer.
 class FullpaneShortcut {
@@ -75,11 +65,12 @@ class _FullpaneState extends State<Fullpane> {
         final isShort = h < kFullpaneShortThreshold;
         final isFullScreen = isNarrow || isShort;
 
-        // Margins: 3 rows top/bottom, 6 cols left/right — but only
-        // when the terminal is large enough to afford them.
-        final topInset = isFullScreen ? 0.0 : 3.0;
-        final bottomInset = isFullScreen ? 0.0 : 3.0;
-        final horizontalInset = isFullScreen ? 0.0 : 6.0;
+        // Margins: [kFullpaneMarginRows] top/bottom,
+        // [kFullpaneMarginCols] left/right — but only when the
+        // terminal is large enough to afford them.
+        final topInset = isFullScreen ? 0.0 : kFullpaneMarginRows;
+        final bottomInset = isFullScreen ? 0.0 : kFullpaneMarginRows;
+        final horizontalInset = isFullScreen ? 0.0 : kFullpaneMarginCols;
 
         return Stack(
           children: [

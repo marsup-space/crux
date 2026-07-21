@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
@@ -93,6 +95,147 @@ Component scrollableCodeBlock(
       ),
     ),
   );
+}
+
+// ── Unified line diff ────────────────────────────────────────────────
+
+/// The role of one rendered row in a unified line diff.
+enum DiffLineKind {
+  /// A line present in both old and new (unchanged context).
+  context,
+
+  /// A line present only in the old string (deleted).
+  removed,
+
+  /// A line present only in the new string (inserted).
+  added,
+
+  /// A gap marker standing in for a collapsed run of unchanged
+  /// lines; [DiffLine.elidedCount] carries the hidden line count.
+  gap,
+}
+
+/// One row of a unified line diff produced by [computeLineDiff].
+class DiffLine {
+  const DiffLine(this.kind, this.text, {this.elidedCount = 0});
+
+  final DiffLineKind kind;
+
+  /// The line content for [DiffLineKind.context], [DiffLineKind.removed],
+  /// and [DiffLineKind.added]. Empty for [DiffLineKind.gap].
+  final String text;
+
+  /// Number of unchanged lines a [DiffLineKind.gap] row stands in for.
+  final int elidedCount;
+}
+
+/// Compute a unified, line-level diff between [oldText] and [newText]
+/// using a longest-common-subsequence over lines (no external deps).
+///
+/// Lines common to both sides come out as [DiffLineKind.context],
+/// deletions as [DiffLineKind.removed], insertions as
+/// [DiffLineKind.added]. Any unchanged run longer than
+/// `2 * contextLines + 1` collapses into a single [DiffLineKind.gap]
+/// marker that keeps [contextLines] lines of context on each side —
+/// this is what lets a 200-line identical middle render as
+/// `⋮ 196 unchanged lines` instead of a wall of context.
+List<DiffLine> computeLineDiff(
+  String oldText,
+  String newText, {
+  int contextLines = 2,
+}) {
+  final oldLines = _splitDiffLines(oldText);
+  final newLines = _splitDiffLines(newText);
+  final m = oldLines.length;
+  final n = newLines.length;
+
+  // LCS length table: dp[i][j] = length of the longest common
+  // subsequence of oldLines[i..] and newLines[j..].
+  final dp = List.generate(m + 1, (_) => List.filled(n + 1, 0));
+  for (var i = m - 1; i >= 0; i--) {
+    for (var j = n - 1; j >= 0; j--) {
+      dp[i][j] = oldLines[i] == newLines[j]
+          ? dp[i + 1][j + 1] + 1
+          : math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  // Backtrack the table into an op stream. Ties prefer a removal so
+  // the deleted block prints above the inserted block (matching how
+  // `git diff` orders a replaced hunk).
+  final raw = <DiffLine>[];
+  var i = 0;
+  var j = 0;
+  while (i < m && j < n) {
+    if (oldLines[i] == newLines[j]) {
+      raw.add(DiffLine(DiffLineKind.context, oldLines[i]));
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      raw.add(DiffLine(DiffLineKind.removed, oldLines[i]));
+      i++;
+    } else {
+      raw.add(DiffLine(DiffLineKind.added, newLines[j]));
+      j++;
+    }
+  }
+  while (i < m) {
+    raw.add(DiffLine(DiffLineKind.removed, oldLines[i]));
+    i++;
+  }
+  while (j < n) {
+    raw.add(DiffLine(DiffLineKind.added, newLines[j]));
+    j++;
+  }
+
+  // Collapse long unchanged runs into gap markers.
+  final result = <DiffLine>[];
+  var k = 0;
+  while (k < raw.length) {
+    if (raw[k].kind != DiffLineKind.context) {
+      result.add(raw[k]);
+      k++;
+      continue;
+    }
+    var runEnd = k;
+    while (runEnd < raw.length && raw[runEnd].kind == DiffLineKind.context) {
+      runEnd++;
+    }
+    final runLength = runEnd - k;
+    if (runLength > 2 * contextLines + 1) {
+      for (var c = 0; c < contextLines; c++) {
+        result.add(raw[k + c]);
+      }
+      result.add(
+        DiffLine(
+          DiffLineKind.gap,
+          '',
+          elidedCount: runLength - 2 * contextLines,
+        ),
+      );
+      for (var c = runLength - contextLines; c < runLength; c++) {
+        result.add(raw[k + c]);
+      }
+    } else {
+      for (var c = 0; c < runLength; c++) {
+        result.add(raw[k + c]);
+      }
+    }
+    k = runEnd;
+  }
+  return result;
+}
+
+/// Split [text] into lines for diffing. A single trailing newline
+/// (the conventional end-of-file marker) does not produce a phantom
+/// empty line; an empty string diffs as zero lines.
+List<String> _splitDiffLines(String text) {
+  if (text.isEmpty) return const [];
+  final lines = text.split('\n');
+  if (lines.length > 1 && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  return lines;
 }
 
 /// Detect the syntax-highlighting language for a file path.

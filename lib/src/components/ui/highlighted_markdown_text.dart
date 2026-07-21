@@ -688,15 +688,15 @@ bool _shouldHighlightMarkdownSelection(String text) {
   if (text == '│' || text == '│ ' || text == ' │') {
     return false;
   }
-  if (RegExp(r'^[┌└─┐┘ ]+$').hasMatch(text) &&
-      (text.contains('┌') || text.contains('└') || text.contains('─'))) {
+  if (RegExp(r'^[╭╰─╮╯ ]+$').hasMatch(text) &&
+      (text.contains('╭') || text.contains('╰') || text.contains('─'))) {
     return false;
   }
   return true;
 }
 
 String _stripCodeBlockSelectionChrome(String text) {
-  if (!text.contains('│') && !text.contains('┌') && !text.contains('└')) {
+  if (!text.contains('│') && !text.contains('╭') && !text.contains('╰')) {
     return text;
   }
 
@@ -729,10 +729,10 @@ String _stripCodeBlockSelectionChrome(String text) {
 }
 
 bool _isCodeBlockTopBorder(String line) =>
-    line.startsWith('┌') && line.contains('─');
+    line.startsWith('╭') && line.contains('─');
 
 bool _isCodeBlockBottomBorder(String line) =>
-    line.startsWith('└') && line.contains('─');
+    line.startsWith('╰') && line.contains('─');
 
 bool _looksLikePartialCodeBlockRow(String line) {
   if (!line.startsWith('│ ')) return false;
@@ -1377,10 +1377,12 @@ class _HighlightMarkdownVisitor {
     final codeLineWidth = math.max(0, width - 4);
     final langLabel = language ?? '';
     final headerContent = langLabel.isNotEmpty ? ' $langLabel ' : '';
-    final headerPrefix = '┌─$headerContent';
+    // Rounded corners (╭ ╮ ╰ ╯) match the vibe boxes, toasts, and
+    // fullpanes — the whole UI uses `BoxBorderStyle.rounded` now.
+    final headerPrefix = '╭─$headerContent';
     final headerPadding = width - headerPrefix.length - 1;
-    final headerLine = '$headerPrefix${'─' * math.max(0, headerPadding)}┐';
-    final footerLine = '└${'─' * math.max(0, width - 2)}┘';
+    final headerLine = '$headerPrefix${'─' * math.max(0, headerPadding)}╮';
+    final footerLine = '╰${'─' * math.max(0, width - 2)}╯';
 
     // Strip a single trailing newline (markdown code blocks always end in `\n`)
     // so we don't render an extra empty line after the gutter.

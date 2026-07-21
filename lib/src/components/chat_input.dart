@@ -20,6 +20,7 @@ import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 import 'ui/button.dart';
+import 'ui/layout_metrics.dart';
 
 /// The chat input box at the bottom of the chat panel.
 ///
@@ -572,7 +573,7 @@ class ChatInputState extends State<ChatInput> {
         : 'Type a message...';
 
     return Container(
-      padding: EdgeInsets.all(1),
+      padding: EdgeInsets.all(kInputPadding),
       child: Row(
         children: [
           Text(

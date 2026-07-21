@@ -442,12 +442,12 @@ class _WizardOverlayState extends State<WizardOverlay> {
     return Container(
       decoration: BoxDecoration(
         color: CruxTheme.of(context).wizardOverlayBg,
-        border: BoxBorder(
-          top: BorderSide(color: CruxTheme.of(context).outline),
-          right: BorderSide(color: CruxTheme.of(context).outline),
-          bottom: BorderSide(color: CruxTheme.of(context).outline),
-          left: BorderSide(color: CruxTheme.of(context).outline),
+        // Rounded border, same idiom as fullpane.dart / vibe_box.dart.
+        border: BoxBorder.all(
+          color: CruxTheme.of(context).outline,
+          style: BoxBorderStyle.rounded,
         ),
+        borderRadius: BorderRadius.circular(1),
       ),
       padding: const EdgeInsets.all(1),
       child: Column(

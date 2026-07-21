@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import 'crux_theme.dart';
+import 'terminal_brightness.dart';
 import 'theme_config_store.dart';
 import 'theme_registry.dart';
 
@@ -31,6 +32,14 @@ class ThemeController extends ChangeNotifier {
   static Future<ThemeController> create({
     required ThemeRegistry registry,
     required ThemeConfigStore configStore,
+    // Default theme applied only when the user has NOT configured one
+    // (no `ui.theme` key in config.toml). The caller computes this from
+    // terminal background brightness (see terminal_brightness.dart);
+    // it is a runtime default and is never written back to config, so
+    // it adapts when the user switches terminal profiles. An explicit
+    // configured theme always wins. Defaults to the historical
+    // [kDefaultDarkThemeId] when omitted or inconclusive.
+    String defaultThemeId = kDefaultDarkThemeId,
   }) async {
     String? configured;
     String? warning;
@@ -46,7 +55,7 @@ class ThemeController extends ChangeNotifier {
     return ThemeController._(
       registry: registry,
       configStore: configStore,
-      activeTheme: registry[configured ?? 'dracula'] ?? registry.dracula,
+      activeTheme: registry[configured ?? defaultThemeId] ?? registry.dracula,
       startupWarning: warning,
     );
   }

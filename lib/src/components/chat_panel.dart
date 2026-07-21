@@ -56,6 +56,7 @@ import 'tool_detail_pane.dart';
 import 'ui/toast.dart';
 import 'ui/button.dart';
 import 'ui/fullpane.dart';
+import 'ui/layout_metrics.dart';
 
 /// Number of messages to load synchronously at boot.
 const int _kBootFirstChunkSize = 50;
@@ -239,9 +240,9 @@ class _ChatPanelState extends State<ChatPanel> {
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
 
-  static const int _infoPanelShowThreshold = 100;
-  static const double _infoPanelWidthMin = 28;
-  static const double _infoPanelWidthMax = 40;
+  // Sidebar show threshold and width growth — see
+  // [kSidebarShowThreshold] / [kSidebarWidthMin] / [kSidebarWidthMax]
+  // in ui/layout_metrics.dart.
 
   int get _contextMaxTokens {
     if (!_providerServiceReady) return 131072;
@@ -1136,8 +1137,7 @@ class _ChatPanelState extends State<ChatPanel> {
         ],
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final showInfoPanel =
-                constraints.maxWidth >= _infoPanelShowThreshold;
+            final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
 
             final sessionId = _sessionController.currentSessionId;
             final rt = sessionId != null
@@ -1176,15 +1176,16 @@ class _ChatPanelState extends State<ChatPanel> {
                       // hover/focus theming via CruxTheme. Label shows
                       // the current mode; click flips it.
                       //
-                      // The `right: 2` (instead of `right: 0`) leaves
-                      // the scrollbar's thumb + marker column free at
-                      // the panel's right edge — without it, the
-                      // button visually overlaps the scrollbar and
-                      // blocks its hit testing in the top corner.
+                      // The [kScrollbarClearance] offset (instead of
+                      // `right: 0`) leaves the scrollbar's thumb +
+                      // marker column free at the panel's right edge —
+                      // without it, the button visually overlaps the
+                      // scrollbar and blocks its hit testing in the top
+                      // corner.
                       if (rt != null)
                         Positioned(
                           top: 0,
-                          right: 2,
+                          right: kScrollbarClearance,
                           child: Button(
                             label: rt.chatDisplayMode == ChatDisplayMode.vibe
                                 ? 'vibe'
@@ -1277,10 +1278,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
             if (showInfoPanel) {
               final panelWidth =
-                  (_infoPanelWidthMin +
-                          0.3 *
-                              (constraints.maxWidth - _infoPanelShowThreshold))
-                      .clamp(_infoPanelWidthMin, _infoPanelWidthMax);
+                  (kSidebarWidthMin +
+                          0.3 * (constraints.maxWidth - kSidebarShowThreshold))
+                      .clamp(kSidebarWidthMin, kSidebarWidthMax);
 
               final body = Row(
                 children: [

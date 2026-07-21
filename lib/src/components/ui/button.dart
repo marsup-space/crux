@@ -77,7 +77,7 @@ class _ButtonState extends State<Button> {
         ? btn.hoverColor ?? theme.buttonTextHover
         : btn.focused
         ? btn.focusColor ?? theme.buttonTextFocused
-        : btn.color ?? theme.buttonTextDisabled;
+        : btn.color ?? theme.buttonText;
     final activeBgColor = _hovered
         ? btn.hoverBgColor ?? theme.buttonBackgroundHover
         : btn.focused

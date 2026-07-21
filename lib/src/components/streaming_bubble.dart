@@ -8,6 +8,7 @@ import '../utils/frame_profiler.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'ui/spinner.dart';
 import '../utils/reasoning_block_splitter.dart';
 
 /// Live streaming bubble shown at the bottom of the chat log
@@ -481,18 +482,32 @@ class _StreamingBubbleState extends State<StreamingBubble> {
             ),
             Expanded(
               child: _content.isEmpty && waitingSeconds != null
-                  ? Text(
-                      '(waiting for ${_formatSeconds(waitingSeconds)})',
-                      style: TextStyle(
-                        color: CruxTheme.of(context).onSurfaceDim,
-                      ),
+                  ? Row(
+                      children: [
+                        Spinner(
+                          color: CruxTheme.of(context).onSurfaceDim,
+                        ),
+                        Text(
+                          ' (waiting for ${_formatSeconds(waitingSeconds)})',
+                          style: TextStyle(
+                            color: CruxTheme.of(context).onSurfaceDim,
+                          ),
+                        ),
+                      ],
                     )
                   : _content.isEmpty && executingSeconds != null
-                  ? Text(
-                      '(executing tools for ${_formatSeconds(executingSeconds)})',
-                      style: TextStyle(
-                        color: CruxTheme.of(context).onSurfaceDim,
-                      ),
+                  ? Row(
+                      children: [
+                        Spinner(
+                          color: CruxTheme.of(context).onSurfaceDim,
+                        ),
+                        Text(
+                          ' (executing tools for ${_formatSeconds(executingSeconds)})',
+                          style: TextStyle(
+                            color: CruxTheme.of(context).onSurfaceDim,
+                          ),
+                        ),
+                      ],
                     )
                   : _content.isEmpty
                   ? Text(
@@ -640,9 +655,10 @@ class _StreamingBubbleState extends State<StreamingBubble> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        Spinner(color: CruxTheme.of(context).onSurfaceDim),
         Expanded(
           child: Text(
-            '${preview}executing for ${_formatSeconds(elapsedSeconds)}',
+            ' ${preview}executing for ${_formatSeconds(elapsedSeconds)}',
             style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
           ),
         ),

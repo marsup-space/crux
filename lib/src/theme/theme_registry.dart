@@ -8,12 +8,18 @@ const curatedThemeIds = <String>[
   'cobalt2',
   'flexoki',
   'rosepine',
+  'rosepine-main',
   'github',
 ];
 
 class ThemeRegistry {
   final Map<String, CruxThemeData> _themes;
   final List<String> _orderedIds;
+
+  /// Diagnostics keyed by theme file path. Contains both hard load
+  /// failures (the file was rejected) and non-fatal warnings (the
+  /// file loaded with per-token Dracula fallbacks). Startup surfaces
+  /// every entry as a "theme warning", matching both cases.
   final Map<String, String> loadErrors;
 
   ThemeRegistry({

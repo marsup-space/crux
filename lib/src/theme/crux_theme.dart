@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:nocterm/nocterm.dart';
 
 import '../components/ui/markdown_isolate.dart' show MarkdownThemeFields;
@@ -81,6 +83,30 @@ class CruxThemeData implements MarkdownThemeFields {
   final Color syntaxPunctuation;
   final Color syntaxMeta;
 
+  /// Optional dedicated color for the assistant response prefix.
+  /// When null, [assistant] falls back to [warning] so older
+  /// theme files keep their previous appearance.
+  final Color? assistantColor;
+
+  /// Optional diff-role colors. When null, the [diffAdded],
+  /// [diffRemoved], [diffAddedBackground], and
+  /// [diffRemovedBackground] getters derive them from
+  /// [success]/[error] and [background].
+  final Color? diffAddedColor;
+  final Color? diffRemovedColor;
+  final Color? diffAddedBackgroundColor;
+  final Color? diffRemovedBackgroundColor;
+
+  /// Optional per-level markdown heading overrides. When null,
+  /// [mdH1]–[mdH6] derive a hierarchy from [markdownHeading]
+  /// and [markdownText].
+  final Color? markdownH1;
+  final Color? markdownH2;
+  final Color? markdownH3;
+  final Color? markdownH4;
+  final Color? markdownH5;
+  final Color? markdownH6;
+
   const CruxThemeData({
     required this.id,
     required this.name,
@@ -133,15 +159,52 @@ class CruxThemeData implements MarkdownThemeFields {
     required this.syntaxPunctuation,
     required this.syntaxMeta,
     required this.chipBackground,
+    this.assistantColor,
+    this.diffAddedColor,
+    this.diffRemovedColor,
+    this.diffAddedBackgroundColor,
+    this.diffRemovedBackgroundColor,
+    this.markdownH1,
+    this.markdownH2,
+    this.markdownH3,
+    this.markdownH4,
+    this.markdownH5,
+    this.markdownH6,
   });
 
   Color mix(Color target, double amount) =>
       Color.lerp(background, target, amount)!;
 
+  /// Picks a readable foreground for [color] from the theme's own
+  /// palette: whichever of [text] or [background] yields the higher
+  /// WCAG contrast ratio against [color].
   Color onColor(Color color) {
-    final luminance =
-        (0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue) / 255;
-    return luminance > 0.55 ? const Color(0x111111) : const Color(0xFFFFFF);
+    final onText = _contrastRatio(color, text);
+    final onBackground = _contrastRatio(color, background);
+    return onText >= onBackground ? text : background;
+  }
+
+  /// WCAG 2.x contrast ratio between two colors, in the range 1–21.
+  static double _contrastRatio(Color a, Color b) {
+    final la = _relativeLuminance(a);
+    final lb = _relativeLuminance(b);
+    final lighter = math.max(la, lb);
+    final darker = math.min(la, lb);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  /// WCAG relative luminance (linearized sRGB), in the range 0–1.
+  static double _relativeLuminance(Color color) {
+    double channel(int value) {
+      final c = value / 255;
+      return c <= 0.03928
+          ? c / 12.92
+          : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+    }
+
+    return 0.2126 * channel(color.red) +
+        0.7152 * channel(color.green) +
+        0.0722 * channel(color.blue);
   }
 
   TuiThemeData toTuiThemeData() => TuiThemeData(
@@ -206,7 +269,12 @@ class CruxThemeData implements MarkdownThemeFields {
 
   Color get aiPrefix => secondary;
   Color get userPrefix => accent;
-  Color get responsePrefix => warning;
+
+  /// Color for the assistant response prefix. Uses the theme's
+  /// dedicated `assistant` token when present, otherwise [warning]
+  /// for backward compatibility with older theme files.
+  Color get assistant => assistantColor ?? warning;
+  Color get responsePrefix => assistant;
   Color get thinkPrefix => secondary;
   Color get toolPrefix => textMuted;
   Color get thinkingPrefix => textMuted;
@@ -247,6 +315,15 @@ class CruxThemeData implements MarkdownThemeFields {
   Color get codeBlockGutter => border;
   Color get codeBlockBorder => border;
 
+  // Diff roles. Default to the success/error hues, with background
+  // tints derived by blending them 15% into the body background.
+  Color get diffAdded => diffAddedColor ?? success;
+  Color get diffRemoved => diffRemovedColor ?? error;
+  Color get diffAddedBackground =>
+      diffAddedBackgroundColor ?? Color.lerp(background, success, 0.15)!;
+  Color get diffRemovedBackground =>
+      diffRemovedBackgroundColor ?? Color.lerp(background, error, 0.15)!;
+
   @override
   Color get highlightKeyword => syntaxKeyword;
   @override
@@ -275,18 +352,25 @@ class CruxThemeData implements MarkdownThemeFields {
   @override
   Color get highlightDefault => syntaxDefault;
 
+  // Heading hierarchy: H1/H2 use the full heading color, H3/H4 blend
+  // 25% toward body text, H5/H6 blend 50%. Themes may override any
+  // level with the optional [markdown] h1..h6 tokens.
   @override
-  Color get mdH1 => markdownHeading;
+  Color get mdH1 => markdownH1 ?? markdownHeading;
   @override
-  Color get mdH2 => markdownHeading;
+  Color get mdH2 => markdownH2 ?? markdownHeading;
   @override
-  Color get mdH3 => markdownHeading;
+  Color get mdH3 =>
+      markdownH3 ?? Color.lerp(markdownHeading, markdownText, 0.25)!;
   @override
-  Color get mdH4 => markdownHeading;
+  Color get mdH4 =>
+      markdownH4 ?? Color.lerp(markdownHeading, markdownText, 0.25)!;
   @override
-  Color get mdH5 => markdownHeading;
+  Color get mdH5 =>
+      markdownH5 ?? Color.lerp(markdownHeading, markdownText, 0.5)!;
   @override
-  Color get mdH6 => markdownHeading;
+  Color get mdH6 =>
+      markdownH6 ?? Color.lerp(markdownHeading, markdownText, 0.5)!;
   @override
   Color get mdBold => markdownStrong;
   @override

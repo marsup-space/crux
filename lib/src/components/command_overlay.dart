@@ -29,8 +29,6 @@ class CommandOverlay extends StatelessComponent {
 
     final rows = <Component>[];
 
-    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
-
     // Header row
     rows.add(
       Container(
@@ -69,10 +67,17 @@ class CommandOverlay extends StatelessComponent {
       );
     }
 
-    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
-
     return Container(
-      decoration: BoxDecoration(color: CruxTheme.of(context).wizardOverlayBg),
+      decoration: BoxDecoration(
+        color: CruxTheme.of(context).wizardOverlayBg,
+        // Contained floating panel — rounded border, same idiom as
+        // the wizard overlay / toast.
+        border: BoxBorder.all(
+          color: CruxTheme.of(context).outline,
+          style: BoxBorderStyle.rounded,
+        ),
+        borderRadius: BorderRadius.circular(1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,

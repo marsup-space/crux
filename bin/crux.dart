@@ -357,6 +357,10 @@ Future<_LoadingResults> _doLoading(
   final themeController = await ThemeController.create(
     registry: themeRegistry,
     configStore: ThemeConfigStore(themeConfigFile),
+    // Runtime default only — used solely when the user has no
+    // `ui.theme` key in config.toml; never persisted, so it follows
+    // the terminal's light/dark profile from launch to launch.
+    defaultThemeId: defaultThemeIdForEnvironment(Platform.environment),
   );
   await HighlightService.initialize();
   await gitStatusFuture;

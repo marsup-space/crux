@@ -152,11 +152,11 @@ void main() {
         final paddedInterior = tester.terminalState.getCellAt(20, 1)!;
         final bottomRight = tester.terminalState.getCellAt(31, 2)!;
 
-        expect(topLeft.char, '┌');
-        expect(topRight.char, '┐');
+        expect(topLeft.char, '╭');
+        expect(topRight.char, '╮');
         expect(codeLeft.char, '│');
         expect(codeRight.char, '│');
-        expect(bottomRight.char, '┘');
+        expect(bottomRight.char, '╯');
 
         for (final cell in [
           topLeft,
@@ -209,10 +209,10 @@ void main() {
         expect(completed, contains('final x = 1;'));
         expect(completed, contains('print(x);'));
         expect(completed, isNot(contains('│')));
-        expect(completed, isNot(contains('┌')));
-        expect(completed, isNot(contains('└')));
-        expect(completed, isNot(contains('┐')));
-        expect(completed, isNot(contains('┘')));
+        expect(completed, isNot(contains('╭')));
+        expect(completed, isNot(contains('╰')));
+        expect(completed, isNot(contains('╮')));
+        expect(completed, isNot(contains('╯')));
 
         final topBorder = tester.terminalState.getCellAt(0, 0)!;
         final leftBorder = tester.terminalState.getCellAt(0, 1)!;

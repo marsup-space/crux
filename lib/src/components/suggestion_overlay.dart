@@ -69,11 +69,17 @@ class SuggestionOverlay extends StatelessComponent {
       );
     }
 
-    rows.insert(0, Divider(color: CruxTheme.of(context).outline, height: 1));
-    rows.add(Divider(color: CruxTheme.of(context).outline, height: 1));
-
     return Container(
-      decoration: BoxDecoration(color: CruxTheme.of(context).wizardOverlayBg),
+      decoration: BoxDecoration(
+        color: CruxTheme.of(context).wizardOverlayBg,
+        // Contained floating panel — rounded border, same idiom as
+        // the wizard overlay / toast.
+        border: BoxBorder.all(
+          color: CruxTheme.of(context).outline,
+          style: BoxBorderStyle.rounded,
+        ),
+        borderRadius: BorderRadius.circular(1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,

@@ -657,6 +657,15 @@ class _ChatHistoryState extends State<ChatHistory> {
           );
         });
 
+        // Turn separator: a single subtle divider between the end of
+        // a completed Crux turn and the next user message. The 'ai'
+        // branch covers normal completions (with or without a TLDR
+        // block — the TLDR keeps its own flanking dividers); the
+        // 'stream_error' branch covers turns that errored out. Tool
+        // rows, system hints, and the mid-turn state never satisfy
+        // `nextIsUser`, so no divider noise appears inside a turn.
+        final nextIsUser =
+            i + 1 < messages.length && messages[i + 1].role == 'user';
         if (msg.role == 'ai' && msg.id > 0 && rt != null) {
           final hasTldr = msg.tldr.isNotEmpty;
           if (hasTldr || isGeneratingTldr) {
@@ -691,15 +700,15 @@ class _ChatHistoryState extends State<ChatHistory> {
             items.add(
               (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
             );
-          } else {
-            final nextIsUser =
-                i + 1 < messages.length && messages[i + 1].role == 'user';
-            if (nextIsUser) {
-              items.add(
-                (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
-              );
-            }
+          } else if (nextIsUser) {
+            items.add(
+              (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+            );
           }
+        } else if (msg.role == 'stream_error' && nextIsUser) {
+          items.add(
+            (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
+          );
         }
       }
     } // end if (!isVibeMode)
