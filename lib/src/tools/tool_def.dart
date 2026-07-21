@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
+import 'shell_risk.dart';
 
 class AbortSignal {
   final int? sessionId;
@@ -38,6 +39,26 @@ class ToolContext {
   /// resets the counter to 0 when a proper-tool call succeeds.
   final SessionRuntimeState? sessionRuntime;
 
+  /// Optional layer-2 evaluator for the shell high-risk guardrail
+  /// (see `lib/src/tools/shell_risk.dart`). Injected by
+  /// `chat_turn_executor.dart` when it builds the context for a real
+  /// turn; wired to `AuxiliaryService.assessShellCommand`.
+  ///
+  /// Optional for the same reason as [sessionRuntime]: non-shell
+  /// tools don't care, and tests / internal callers that synthesise
+  /// their own ToolContext can omit it. The shell base
+  /// (`lib/src/tools/shell_base.dart`) invokes this only for
+  /// `suspicious` commands without `confirmed: true`; when it is
+  /// null the guardrail fails open (runs the command with a warning
+  /// appended) rather than blocking work it cannot get a second
+  /// opinion on.
+  final Future<ShellRiskVerdict> Function(
+    String command, {
+    required String intent,
+    required bool isWindows,
+    required AbortSignal abort,
+  })? shellRiskEvaluator;
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
@@ -45,6 +66,7 @@ class ToolContext {
     this.callId,
     required this.workingDirectory,
     this.sessionRuntime,
+    this.shellRiskEvaluator,
   });
 }
 

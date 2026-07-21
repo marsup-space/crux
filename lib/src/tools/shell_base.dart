@@ -5,6 +5,7 @@ import 'dart:io';
 import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'shell_guard.dart';
+import 'shell_risk.dart';
 import 'tool_def.dart';
 
 const _maxLines = 2000;
@@ -357,6 +358,140 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       );
     }
 
+    // ── Shell high-risk guardrail (layers 1+2) ────────────────────
+    // Runs AFTER the shell-tool fallback guard above and BEFORE the
+    // subprocess. Layer 1 is the pure heuristic pre-screen
+    // (`assessShellRiskHeuristic`); layer 2 is the auxiliary model,
+    // reached via `ctx.shellRiskEvaluator`. See shell_risk.dart for
+    // the tier contract. Two local accumulators carry state into the
+    // success path below:
+    //
+    //   * [shellRiskNote] — a warning line appended to the output
+    //     tail when a suspicious command is allowed through
+    //     (confirmed bypass / fail-open), same append pattern as the
+    //     mild/firm shell-guard reminders.
+    //   * [shellRiskMeta] — metadata merged into the successful
+    //     ToolResult. Rejections return early with title 'Error',
+    //     which carries sibling-abort semantics — desired here: the
+    //     model should reflect on a blocked dangerous command before
+    //     issuing more tool calls. Deliberately does NOT set
+    //     metadata['guardTriggered'], so the chat-log
+    //     no-op/compaction branches stay out of this path.
+    //
+    // Env override: CRUX_DISABLE_SHELL_RISK_GUARD=1 (or 'true') skips
+    // the whole block. Read from the RUNTIME environment — unlike
+    // `_shellGuardDisabled`'s compile-time String.fromEnvironment,
+    // operators expect a plain shell env var to work.
+    final confirmed = args['confirmed'] == true;
+    String? shellRiskNote;
+    Map<String, dynamic>? shellRiskMeta;
+    if (!_shellRiskGuardDisabled()) {
+      final risk = assessShellRiskHeuristic(
+        command,
+        isWindows: Platform.isWindows,
+      );
+      switch (risk.tier) {
+        case ShellRiskTier.safe:
+          // Zero-overhead fast path: no evaluator call, no metadata.
+          break;
+        case ShellRiskTier.catastrophic:
+          // Hard block with no appeal — `confirmed: true` and the aux
+          // model are both irrelevant by design (see the tier-policy
+          // notes in shell_risk.dart).
+          return ToolResult(
+            title: 'Error',
+            output: _renderShellRiskCatastrophicRejection(
+              command,
+              risk.reason ?? 'matched a catastrophic pattern',
+            ),
+            metadata: {
+              'shellRisk': 'blocked-catastrophic',
+              'shellRiskReason': risk.reason,
+            },
+          );
+        case ShellRiskTier.suspicious:
+          final heuristicReason = risk.reason ?? 'flagged as suspicious';
+          if (confirmed) {
+            // The user approved THIS exact command out-of-band; the
+            // schema description for `confirmed` says so. Run it,
+            // but leave a trace in the output.
+            shellRiskNote = '\n[shell-risk: confirmed bypass] This command '
+                'was flagged as suspicious ($heuristicReason) and executed '
+                'only because `confirmed: true` was passed after explicit '
+                'user approval.';
+            shellRiskMeta = {'shellRisk': 'confirmed-bypass'};
+          } else {
+            final evaluator = ctx.shellRiskEvaluator;
+            if (evaluator == null) {
+              // No aux model wired (tests, or a setup without an
+              // auxiliary model configured at the executor level) —
+              // fail open rather than block work we cannot review.
+              shellRiskNote = '\n[shell-risk: fail-open] WARNING — this '
+                  'command was flagged as suspicious ($heuristicReason), '
+                  'but no auxiliary-model reviewer is configured. It was '
+                  'executed without a second opinion.';
+              shellRiskMeta = {'shellRisk': 'fail-open'};
+            } else {
+              ShellRiskVerdict verdict;
+              try {
+                verdict = await evaluator(
+                  command,
+                  intent: intent,
+                  isWindows: Platform.isWindows,
+                  abort: ctx.abort,
+                );
+              } catch (_) {
+                // A throwing evaluator is indistinguishable from
+                // "assessment unavailable" — same fail-open policy as
+                // the aux service's own timeout/error paths.
+                verdict = const ShellRiskVerdict(
+                  ShellRiskVerdictKind.unavailable,
+                );
+              }
+              switch (verdict.kind) {
+                case ShellRiskVerdictKind.safe:
+                  // Clean bill — no output noise, just the metadata.
+                  shellRiskMeta = {'shellRisk': 'evaluated-safe'};
+                case ShellRiskVerdictKind.unsafe:
+                case ShellRiskVerdictKind.uncertain:
+                  return ToolResult(
+                    title: 'Error',
+                    output: _renderShellRiskEscalatedRejection(
+                      command: command,
+                      heuristicReason: heuristicReason,
+                      verdict: verdict,
+                    ),
+                    metadata: {
+                      'shellRisk':
+                          verdict.kind == ShellRiskVerdictKind.unsafe
+                              ? 'blocked-unsafe'
+                              : 'blocked-uncertain',
+                      'shellRiskReason': verdict.reason,
+                    },
+                  );
+                case ShellRiskVerdictKind.unavailable:
+                  shellRiskNote = '\n[shell-risk: fail-open] WARNING — this '
+                      'command was flagged as suspicious ($heuristicReason), '
+                      'and the auxiliary-model risk review was unavailable '
+                      '(not configured, timed out, or errored). It was '
+                      'executed without a second opinion.';
+                  shellRiskMeta = {'shellRisk': 'fail-open'};
+              }
+            }
+          }
+      }
+    }
+
+    // Final abort gate, after all guards and the (possibly slow)
+    // aux-model evaluation: an interrupt that arrived anywhere above
+    // must stop the command here. `_run`'s own abort watcher polls on
+    // a 50ms tick, which a millisecond-scale command would beat, so
+    // without this check an aborted-but-fail-open evaluation could
+    // still execute.
+    if (ctx.abort.isAborted) {
+      return ToolResult.error('Aborted before execution');
+    }
+
     try {
       final result = await _run(
         command,
@@ -423,6 +558,15 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         };
       }
 
+      // High-risk guardrail pass-throughs: append the bypass /
+      // fail-open warning and merge the guardrail metadata.
+      if (shellRiskNote != null) {
+        finalOutput = finalOutput + shellRiskNote;
+      }
+      if (shellRiskMeta != null) {
+        extraMetadata = {...?extraMetadata, ...shellRiskMeta};
+      }
+
       return ToolResult(
         title: 'Ran: $command (intent: \'$intent\')',
         output: finalOutput,
@@ -434,7 +578,14 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         },
       );
     } catch (e) {
-      return ToolResult.error('Failed to execute command: $e');
+      // Keep the guardrail audit trail (confirmed-bypass / fail-open
+      // warning + metadata) even when the subprocess itself failed —
+      // losing it would hide that a flagged command was attempted.
+      return ToolResult(
+        title: 'Error',
+        output: 'Failed to execute command: $e${shellRiskNote ?? ''}',
+        metadata: {...?shellRiskMeta},
+      );
     }
   }
 
@@ -445,6 +596,22 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     try {
       const env = String.fromEnvironment('CRUX_DISABLE_SHELL_GUARD');
       if (env.isEmpty) return false;
+      final lower = env.toLowerCase();
+      return lower == '1' || lower == 'true' || lower == 'yes';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Check the env for the high-risk-guardrail opt-out. Reads the
+  /// RUNTIME environment (`Platform.environment`) — a plain shell
+  /// env var must work here, unlike the compile-time
+  /// `String.fromEnvironment` the fallback guard above uses. The
+  /// accepted values match `_shellGuardDisabled`: 1 / true / yes.
+  static bool _shellRiskGuardDisabled() {
+    try {
+      final env = Platform.environment['CRUX_DISABLE_SHELL_RISK_GUARD'];
+      if (env == null || env.isEmpty) return false;
       final lower = env.toLowerCase();
       return lower == '1' || lower == 'true' || lower == 'yes';
     } catch (_) {
@@ -498,7 +665,72 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             'Also sets shell code page: for cmd, maps to chcp; '
             'for powershell, sets [Console]::OutputEncoding.',
       },
+      'confirmed': {
+        'type': 'boolean',
+        'description':
+            'Set true only after the user has explicitly approved this '
+            'exact command (e.g. via ask://). Skips the auxiliary-model '
+            'risk evaluation for suspicious commands. Catastrophic '
+            'commands are always blocked regardless.',
+      },
     },
     'required': ['command', 'intent'],
   };
+}
+
+/// Rejection body for the catastrophic tier of the shell high-risk
+/// guardrail: no appeal, no `confirmed` bypass, no aux-model review.
+/// Tells the model to stop and hand the decision back to the user.
+String _renderShellRiskCatastrophicRejection(
+  String command,
+  String reason,
+) {
+  return 'This shell command was BLOCKED by the high-risk command '
+      'guardrail.\n'
+      '\n'
+      '• verdict: CATASTROPHIC (heuristic pattern match — no model '
+      'review applies)\n'
+      '• reason: $reason\n'
+      '• command: ${command.trim()}\n'
+      '\n'
+      'This block is not negotiable: the command matches a pattern of '
+      'irreversible, system-wide damage (wiping the filesystem, '
+      'formatting disks, raw device writes, fork bombs, shutting down '
+      'the machine). It will not be executed by this tool under any '
+      'circumstances — the `confirmed` parameter does not apply here.\n'
+      '\n'
+      'Do NOT retry this command, and do not attempt variations of it. '
+      'Tell the user exactly what was blocked and why, and let them '
+      'know that if they truly want to run it, they must execute it '
+      'manually in their own terminal.';
+}
+
+/// Rejection body for a suspicious command the auxiliary model
+/// judged UNSAFE or UNCERTAIN. Teaches the model the appeal path:
+/// explain the risk, get explicit user approval, re-send the SAME
+/// command with `confirmed: true`.
+String _renderShellRiskEscalatedRejection({
+  required String command,
+  required String heuristicReason,
+  required ShellRiskVerdict verdict,
+}) {
+  final verdictLabel =
+      verdict.kind == ShellRiskVerdictKind.unsafe ? 'UNSAFE' : 'UNCERTAIN';
+  final verdictReason =
+      (verdict.reason == null || verdict.reason!.isEmpty)
+          ? 'no reason given'
+          : verdict.reason!;
+  return 'This shell command was BLOCKED by the high-risk command '
+      'guardrail.\n'
+      '\n'
+      '• heuristic verdict: SUSPICIOUS — $heuristicReason\n'
+      '• auxiliary model verdict: $verdictLabel — $verdictReason\n'
+      '• command: ${command.trim()}\n'
+      '\n'
+      'Next step: explain the risk to the user in plain language. If '
+      'the user explicitly approves THIS EXACT command (for example '
+      'via an ask:// confirmation button), re-send the same command '
+      'with `confirmed: true` to skip the auxiliary-model review. Do '
+      'not silently retry, and do not rephrase the command to evade '
+      'the guardrail.';
 }

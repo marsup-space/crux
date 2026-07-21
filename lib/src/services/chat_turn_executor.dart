@@ -14,6 +14,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
 import '../tools/shell_guard.dart';
+import '../tools/shell_risk.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/partial_json_field_extractor.dart';
@@ -1138,6 +1139,28 @@ class ChatTurnExecutor {
                   callId: call.callId,
                   workingDirectory: session.projectPath,
                   sessionRuntime: runtime,
+                  shellRiskEvaluator: (
+                    command, {
+                    required intent,
+                    required isWindows,
+                    required abort,
+                  }) async {
+                    // `null` from the assessment means the user
+                    // aborted mid-evaluation. It maps to `unavailable`
+                    // here only because the ToolContext evaluator
+                    // contract has no abort verdict — the actual stop
+                    // is shell_base's post-evaluation abort gate,
+                    // which re-checks ctx.abort before executing.
+                    final verdict = await _assessShellRiskWithAbort(
+                      command: command,
+                      intent: intent,
+                      abort: abort,
+                    );
+                    return verdict ??
+                        const ShellRiskVerdict(
+                          ShellRiskVerdictKind.unavailable,
+                        );
+                  },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {
@@ -1695,6 +1718,46 @@ class ChatTurnExecutor {
 
   static bool _shouldAbortParallelToolSiblings(ToolResult result) {
     return result.title == 'Error' || result.metadata['guardTriggered'] == true;
+  }
+
+  /// Layer-2 shell risk evaluation, wired to the auxiliary service
+  /// and injected into every tool-call [ToolContext] as
+  /// `shellRiskEvaluator`.
+  ///
+  /// Abort handling uses a poll-race: [AbortSignal] is synchronous
+  /// (no listener API), so a short periodic timer watches it and
+  /// resolves to `null` if the user interrupts while the aux model
+  /// is still thinking. `null` is the interrupt signal — kept
+  /// distinct from [ShellRiskVerdictKind.unavailable] so "the user
+  /// aborted" is never confused with "the assessment failed" (the
+  /// latter is shell_base's fail-open case). The injection point
+  /// maps `null` back to `unavailable` only to satisfy the
+  /// [ToolContext.shellRiskEvaluator] contract; the command is
+  /// actually stopped by shell_base's abort gate, which re-checks
+  /// `ctx.abort` after the evaluator returns and before `_run`.
+  /// The abandoned assessment finishes in the background — harmless,
+  /// it holds no per-call resources beyond the HTTP stream it
+  /// already owns, and its result is simply discarded.
+  Future<ShellRiskVerdict?> _assessShellRiskWithAbort({
+    required String command,
+    required String intent,
+    required AbortSignal abort,
+  }) async {
+    final assessment = auxiliaryService.assessShellCommand(
+      command: command,
+      intent: intent,
+    );
+    final abortCompleter = Completer<ShellRiskVerdict?>();
+    final abortTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (abort.isAborted && !abortCompleter.isCompleted) {
+        abortCompleter.complete(null);
+      }
+    });
+    try {
+      return await Future.any([assessment, abortCompleter.future]);
+    } finally {
+      abortTimer.cancel();
+    }
   }
 
   static List<ToolCall> _completeToolCallsBeforeIndex(

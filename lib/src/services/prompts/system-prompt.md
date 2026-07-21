@@ -99,6 +99,11 @@ shell task would take three or more invocations or needs
 conditionals / error handling, write a script to a temp path
 and run it.
 
+Never set `confirmed: true` on a shell tool call unless the user
+has explicitly approved that exact command in the current
+conversation. If the high-risk guardrail blocks a command, explain
+the risk and ask for approval first — do not self-approve.
+
 ## System hint format
 
 Crux may append runtime hints to your tool call results, formatted

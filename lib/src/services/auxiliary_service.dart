@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import '../models/provider_config.dart';
 import '../storage/message_store.dart';
+import '../tools/shell_risk.dart';
 import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
 import 'llm_error.dart';
@@ -51,12 +54,18 @@ class AuxiliaryService {
   /// user question + assistant response as a Q→A pair) pass
   /// the full list and we skip the default builder. In that
   /// mode [systemPrompt] is unused.
+  ///
+  /// [cancelToken] lets the caller abort the underlying HTTP stream
+  /// (e.g. on a caller-side timeout). Cancellation surfaces here as
+  /// a stream error or truncated body, which this method reports as
+  /// `null` — callers cannot distinguish "cancelled" from "failed".
   Future<String?> _streamAuxiliaryCall({
     required String systemPrompt,
     String? userMessage,
     List<Map<String, dynamic>>? messages,
     required String logTag,
     int? maxLength,
+    LlmStreamCancelToken? cancelToken,
   }) async {
     final aux = _resolve();
     if (aux == null) return null;
@@ -77,6 +86,7 @@ class AuxiliaryService {
         messages: effectiveMessages,
         thinkingMode: 'disabled',
         reasoningEffort: null,
+        cancelToken: cancelToken,
       );
 
       final buffer = StringBuffer();
@@ -172,6 +182,72 @@ class AuxiliaryService {
     return tldr;
   }
 
+  /// Assess the risk of a shell command the agent is about to run
+  /// (layer 2 of the shell high-risk guardrail — see
+  /// `shell_risk.dart` for the shared contract and
+  /// [shellRiskSystemPrompt] for the model's instructions).
+  ///
+  /// Verdict mapping:
+  ///
+  ///   * No auxiliary model configured →
+  ///     [ShellRiskVerdictKind.unavailable]. The caller (shell_base)
+  ///     deliberately fails OPEN on `unavailable` — the command runs
+  ///     with a warning appended — because an unconfigured or
+  ///     unreachable reviewer must not silently block work it cannot
+  ///     judge. The fail-closed side of the policy applies to the
+  ///     model's own output instead: a reply that doesn't follow the
+  ///     SAFE / UNSAFE / UNCERTAIN contract parses as `uncertain`
+  ///     and is rejected.
+  ///   * Timeout / transport error / empty response → `unavailable`.
+  ///     The default 10s [timeout] is far below the 120s LLM
+  ///     watchdog: this check sits on the pre-execution path, so a
+  ///     slow auxiliary model must not stall the shell tool.
+  ///   * Model output that doesn't follow the SAFE / UNSAFE /
+  ///     UNCERTAIN contract → `uncertain` (fail-closed).
+  Future<ShellRiskVerdict> assessShellCommand({
+    required String command,
+    required String intent,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (_resolve() == null) {
+      return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
+    }
+
+    // The working directory is intentionally not included — this
+    // method's callers don't always have one, and the system prompt
+    // teaches the model to judge scope from the command itself.
+    final userMessage = 'Command: $command\nIntent: $intent';
+
+    // Enforce the timeout by cancelling the underlying HTTP stream,
+    // not just abandoning the future — the LlmClient is long-lived
+    // and shared, so a leaked stream would hold a connection open.
+    final cancelToken = LlmStreamCancelToken();
+    final timer = Timer(timeout, () {
+      unawaited(cancelToken.cancelActiveStream(
+        reason: 'shell-risk assessment timed out after $timeout',
+      ));
+    });
+
+    String? raw;
+    try {
+      raw = await _streamAuxiliaryCall(
+        systemPrompt: shellRiskSystemPrompt,
+        userMessage: userMessage,
+        logTag: 'shell-risk',
+        cancelToken: cancelToken,
+      );
+    } finally {
+      timer.cancel();
+    }
+
+    // Timeout, transport error, and empty responses all surface as
+    // null from _streamAuxiliaryCall — the assessment is unavailable.
+    if (raw == null) {
+      return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
+    }
+    return _parseShellRiskVerdict(raw);
+  }
+
   void dispose() {
     _client.dispose();
   }
@@ -187,3 +263,59 @@ class _AuxModel {
     required this.modelId,
   });
 }
+
+/// Parse the auxiliary model's raw reply for [assessShellCommand]
+/// into a verdict. Kept pure and private so the parsing rules are
+/// unit-testable without any network access (tests go through
+/// [parseShellRiskVerdictForTesting]).
+///
+/// Contract (see [shellRiskSystemPrompt]): the first line is the
+/// verdict token SAFE / UNSAFE / UNCERTAIN; anything after it —
+/// on the same line after a separator, or on subsequent lines —
+/// is an optional one-sentence reason.
+///
+/// Tolerates case (`safe`, `Unsafe`) and trailing punctuation
+/// (`SAFE.`, `unsafe:`). Anything that doesn't start with a
+/// recognizable verdict token — empty input, prose, a different
+/// token — maps to [ShellRiskVerdictKind.uncertain], the fail-
+/// closed default: a model that can't follow the contract is
+/// treated as "cannot confirm safe", never as "safe".
+ShellRiskVerdict _parseShellRiskVerdict(String raw) {
+  const unparsable = ShellRiskVerdict(ShellRiskVerdictKind.uncertain);
+
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return unparsable;
+
+  final lines = trimmed.split(RegExp(r'\r\n|\r|\n'));
+  final firstLine = lines.first.trim();
+  final tokenMatch = RegExp(r'^[A-Za-z]+').firstMatch(firstLine);
+  if (tokenMatch == null) return unparsable;
+
+  final kind = switch (tokenMatch.group(0)!.toUpperCase()) {
+    'SAFE' => ShellRiskVerdictKind.safe,
+    'UNSAFE' => ShellRiskVerdictKind.unsafe,
+    'UNCERTAIN' => ShellRiskVerdictKind.uncertain,
+    // e.g. "SAFELY ..." — the token is longer than the keyword,
+    // so the line doesn't follow the contract.
+    _ => null,
+  };
+  if (kind == null) return unparsable;
+
+  // Reason: whatever trails the token on the first line (after
+  // stripping the separator) plus any subsequent lines.
+  final remainder = firstLine
+      .substring(tokenMatch.end)
+      .replaceAll(RegExp(r'^[\s:：;；,，.\-—]+'), '');
+  final reason = <String>[remainder, ...lines.skip(1)]
+      .join('\n')
+      .trim();
+  return ShellRiskVerdict(kind, reason.isEmpty ? null : reason);
+}
+
+/// Test-only access to [_parseShellRiskVerdict] (visible for
+/// testing — the meta package isn't a direct dependency of this
+/// package, so the marker is documentation rather than the
+/// annotation). Production code must call
+/// [AuxiliaryService.assessShellCommand] instead.
+ShellRiskVerdict parseShellRiskVerdictForTesting(String raw) =>
+    _parseShellRiskVerdict(raw);
