@@ -8,6 +8,10 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-21
+
+32b98ea
+
 ### Features
 
 - **Theme system rework with terminal light/dark
