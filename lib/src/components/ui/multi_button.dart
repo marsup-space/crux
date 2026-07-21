@@ -2,6 +2,9 @@
 // using nocterm's internal unicode-width helpers. Not re-exported publicly.
 // ignore_for_file: implementation_imports
 
+import 'dart:async';
+
+import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../../theme/crux_theme.dart';
@@ -35,16 +38,26 @@ class MultiButtonSegment {
 ///
 /// When the mouse is outside the button, the static [label] is shown.
 /// When the mouse enters, the button morphs into `seg0 | seg1 | …` and
-/// each half can be clicked independently. The segment currently under
-/// the cursor is highlighted; the others stay dim, giving the user a
-/// clear preview of which action a click will trigger.
+/// each segment can be clicked independently. The segment currently
+/// under the cursor is highlighted; the others stay dim, giving the
+/// user a clear preview of which action a click will trigger.
 ///
-/// **Width stability.** The button always reserves at least the
-/// horizontal space the un-hovered [label] needs. When hovered, the
-/// segment row may grow beyond that, but it will never shrink the
-/// button, so neighbouring layout (such as the right-aligned project
-/// path on the bottom bar) does not jitter as the mouse enters and
-/// leaves.
+/// **Width stability.** Hovering never changes the button's size. The
+/// button captures the width its non-hovered layout would occupy —
+/// the parent-provided width when one is available (e.g. the side
+/// panel's full width, so hover does not widen the surrounding
+/// `Column` and nudge siblings like the git-status rows above), or
+/// the idle label's intrinsic width when the parent leaves the width
+/// unconstrained — and pins both the idle and the hovered states to
+/// exactly that width.
+///
+/// **Even segment distribution.** On hover the fixed width is split
+/// evenly across the segments: each segment occupies an equal share
+/// of the button and its label is centred within that share, so the
+/// options read as a set of balanced half-buttons spread across the
+/// original footprint rather than a left-anchored cluster. A segment
+/// whose label no longer fits its share is character-truncated with
+/// a trailing `~` (mirroring the panel's session-title behaviour).
 ///
 /// **Per-segment visual state.** The segment under the cursor gets
 /// the [hoverColor] text colour, a bold weight and a contrasting
@@ -159,12 +172,54 @@ class _MultiButtonState extends State<MultiButton> {
   /// in a gap (separators). Managed by the per-segment [MouseRegion]s.
   int? _activeSegment;
 
-  /// Width of the idle label including its horizontal padding. Used
-  /// as a lower bound on the button width so the row never collapses
-  /// to a smaller width than the un-hovered label.
+  /// The width the button is pinned to, captured from the
+  /// non-hovered layout (see [build]). `null` until the first layout
+  /// pass completes, in which case the button falls back to the idle
+  /// label's intrinsic width.
+  double? _fixedWidth;
+
+  /// Guards the deferred re-layout that applies a freshly captured
+  /// [_fixedWidth]: the LayoutBuilder runs during layout, so the
+  /// markNeedsBuild has to happen after the pass completes (post-frame),
+  /// not synchronously — scheduling it synchronously would re-dirty the
+  /// tree every frame and pumpAndSettle would never settle.
+  bool _widthRecaptureScheduled = false;
+
+  /// Number of times [build] has run. Exposed to the test harness so
+  /// it can assert hover does not trigger an unbounded rebuild loop.
+  int get debugBuildCount => _buildCount;
+  int _buildCount = 0;
+
+  /// Intrinsic width of the idle label including its horizontal
+  /// padding. Used as the fallback width before the first layout
+  /// measurement arrives, and as the fixed width when the parent
+  /// leaves the button's width unconstrained.
   double get _labelWidth {
     final textWidth = UnicodeWidth.stringWidth(component.label);
     return textWidth + component.padding.left + component.padding.right;
+  }
+
+  /// Truncate [text] to fit within [maxWidth] display cells, adding
+  /// a trailing '~' when anything was dropped. Mirrors the panel's
+  /// session-title truncation so shortened segment labels read the
+  /// same as other truncated text in the UI.
+  static String _truncateToWidth(String text, double maxWidth) {
+    if (maxWidth <= 0) return '';
+    if (UnicodeWidth.stringWidth(text) <= maxWidth) return text;
+    // Reserve 1 col for the trailing '~'.
+    final budget = maxWidth - 1;
+    if (budget <= 0) return '~';
+    final chars = text.characters;
+    double width = 0;
+    final buf = StringBuffer();
+    for (final c in chars) {
+      final cw = UnicodeWidth.stringWidth(c);
+      if (width + cw > budget) break;
+      width += cw;
+      buf.write(c);
+    }
+    buf.write('~');
+    return buf.toString();
   }
 
   void _setHovered(bool hovered) {
@@ -184,6 +239,7 @@ class _MultiButtonState extends State<MultiButton> {
 
   @override
   Component build(BuildContext context) {
+    _buildCount++; // test-only: lets the harness assert we don't rebuild-loop
     final btn = component;
     final theme = CruxTheme.of(context);
     final color = btn.color ?? theme.buttonTextDisabled;
@@ -196,12 +252,17 @@ class _MultiButtonState extends State<MultiButton> {
     final hoverSegmentBgColor = btn.hoverSegmentBgColor ?? theme.surfaceVariant;
     final focusColor = btn.focusColor ?? theme.buttonTextFocused;
     final focusBgColor = btn.focusBgColor ?? theme.buttonBackgroundFocused;
-    final minWidth = _labelWidth;
 
-    // Decide which child to render, but always wrap it in a
-    // ConstrainedBox with a minWidth equal to the label width. That
-    // way the hovered row can grow if the segments are wider, but
-    // never shrinks below the idle label.
+    // The width both states are pinned to. Until the first layout
+    // measurement arrives (see the LayoutBuilder below) fall back to
+    // the idle label's intrinsic width so the button still renders at
+    // a sensible size on the very first frame.
+    final fixedWidth = _fixedWidth ?? _labelWidth;
+
+    // Decide which child to render. Both states are wrapped in a
+    // SizedBox of the SAME width so hovering never grows or shrinks
+    // the button and neighbouring layout does not jitter as the mouse
+    // enters and leaves.
     final Component visible;
     if (!_hovered) {
       // Idle state: render the single label. We pick the same color
@@ -215,6 +276,7 @@ class _MultiButtonState extends State<MultiButton> {
       ).merge(btn.style);
 
       visible = Container(
+        width: fixedWidth,
         decoration: BoxDecoration(color: bg),
         padding: btn.padding,
         child: Text(btn.label, style: style),
@@ -252,33 +314,53 @@ class _MultiButtonState extends State<MultiButton> {
         }
         // The active segment gets its own background "pill" so the
         // user can see which sub-button they are about to press.
-        // The pill stops at the segment edges, so neighbouring
-        // segments remain at the regular hover background.
+        // The pill covers the segment's whole equal share of the
+        // button, so the hover target reads as a proper half-button
+        // rather than a highlight hugging the label text.
         final segmentBg = (isActive && hasAction) ? hoverSegmentBgColor : null;
 
         children.add(
-          MouseRegion(
-            opaque: false,
-            onEnter: (_) => _setActiveSegment(i),
-            onExit: (_) => _setActiveSegment(null),
-            child: GestureDetector(
-              // Disabled segments have no callback, so swallow the tap
-              // by passing an empty handler — we still want the
-              // hit-test to land on the segment rather than the
-              // separator next to it.
-              onTap: hasAction ? segment.onPressed : () {},
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                decoration: segmentBg == null
-                    ? null
-                    : BoxDecoration(color: segmentBg),
-                padding: btn.padding,
-                child: Text(
-                  segment.label,
-                  style: TextStyle(
-                    color: fg,
-                    fontWeight: weight,
-                  ).merge(btn.style),
+          // Each segment is wrapped in an Expanded so the button's
+          // fixed width is distributed evenly across the options.
+          // The segment's own MouseRegion + GestureDetector span the
+          // full share, giving every option a generous, equal-sized
+          // click target.
+          Expanded(
+            child: MouseRegion(
+              opaque: false,
+              onEnter: (_) => _setActiveSegment(i),
+              onExit: (_) => _setActiveSegment(null),
+              child: GestureDetector(
+                // Disabled segments have no callback, so swallow the tap
+                // by passing an empty handler — we still want the
+                // hit-test to land on the segment rather than the
+                // separator next to it.
+                onTap: hasAction ? segment.onPressed : () {},
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  decoration: segmentBg == null
+                      ? null
+                      : BoxDecoration(color: segmentBg),
+                  padding: btn.padding,
+                  child: Text(
+                    // Truncate against the segment's equal share of
+                    // the button (separators take the rest) so a long
+                    // label can never push the row past the fixed
+                    // width. Expanded would cap the overflow anyway,
+                    // but truncating first keeps the text measurable
+                    // and shows the '~' affordance instead of silent
+                    // clipping.
+                    _truncateToWidth(
+                      segment.label,
+                      fixedWidth / btn.segments.length -
+                          (btn.padding.left + btn.padding.right),
+                    ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: fg,
+                      fontWeight: weight,
+                    ).merge(btn.style),
+                  ),
                 ),
               ),
             ),
@@ -286,44 +368,76 @@ class _MultiButtonState extends State<MultiButton> {
         );
       }
 
+      // The hover background covers exactly the same footprint as the
+      // idle state; the Row fills it and the Expanded segments divide
+      // that width evenly, so the options are spread across the whole
+      // button rather than clustered in the middle.
       visible = Container(
+        width: fixedWidth,
         decoration: BoxDecoration(color: hoverBgColor),
-        padding: btn.padding,
-        // Fill the Container's width and centre the segments so the
-        // button reads as a balanced pair of half-buttons, not a
-        // left-anchored cluster trailing empty space. The Container
-        // is itself forced to at least `minWidth` by the outer
-        // ConstrainedBox, so the row's effective width is bounded
-        // from below even when the segments are short.
-        child: Row(
-          mainAxisSize: MainAxisSize.max,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: children,
-        ),
+        child: Row(children: children),
       );
     }
 
-    // Constrain the visible child to be at least as wide as the
-    // idle label. When the hovered row is narrower than the label,
-    // the segments are centred within that minimum width (the
-    // hovered [Row] uses [MainAxisAlignment.center]); when they
-    // are wider, the row grows past the idle label and stays
-    // left-anchored to the same edge as the idle state, so the
-    // left edge of the button doesn't shift on hover.
-    final constrained = ConstrainedBox(
-      constraints: BoxConstraints(minWidth: minWidth),
-      child: visible,
+    // Capture the width the non-hovered layout would occupy and pin
+    // the button to it, so hovering can never resize the component:
+    //
+    //  * When the parent gives a finite max width (the common case —
+    //    e.g. the side panel's Column), the un-hovered button fills
+    //    it, so `constraints.maxWidth` IS the idle width. Without the
+    //    pin the hovered Row (mainAxisSize.max + Expanded children)
+    //    would adopt the same width and momentarily widen the Column's
+    //    intrinsic maxWidth, nudging siblings such as the git-status
+    //    rows above.
+    //  * When the parent leaves the width unbounded (e.g. a
+    //    start-aligned Column passing infinite maxWidth), the idle
+    //    label's intrinsic width is used instead.
+    //
+    // The captured value is applied one frame later via a deferred
+    // markNeedsBuild — the LayoutBuilder pattern used elsewhere in the
+    // panel (state must not be mutated during layout, so the rebuild
+    // is scheduled post-frame rather than synchronously).
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Only re-measure in the idle state. While hovered the child
+        // is pinned to [_fixedWidth], which can feed back into the
+        // constraints on the next layout pass, so sampling then would
+        // oscillate between the parent's width and the pinned width.
+        // The hover morph never changes the outer layout, so the idle
+        // measurement stays valid for the whole hover session.
+        if (_hovered) return _wrapWithMouseRegion(visible, fixedWidth);
+        final measured = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _labelWidth;
+        // Absorb only growth. The pinned child can transiently shrink
+        // the reported maxWidth (the LayoutBuilder forwards the
+        // child's constraint negotiation back up), so a smaller
+        // reading is not a real shrink of the available space — it's
+        // the pin itself. Genuine growth (a longer label, a wider
+        // panel) still re-seeds the width.
+        if (measured > fixedWidth && !_widthRecaptureScheduled) {
+          _widthRecaptureScheduled = true;
+          scheduleMicrotask(() {
+            _widthRecaptureScheduled = false;
+            if (!mounted || _hovered || _fixedWidth == measured) return;
+            setState(() => _fixedWidth = measured);
+          });
+        }
+        return _wrapWithMouseRegion(visible, fixedWidth);
+      },
     );
+  }
 
+  Component _wrapWithMouseRegion(Component child, double fixedWidth) {
     // Outer MouseRegion: tracks whether the cursor is *anywhere*
-    // inside the button. Per-segment regions update _activeSegment
-    // independently; this one is the source of truth for the
-    // hovered/idle morph.
+    // inside the button. Per-segment regions update
+    // _activeSegment independently; this one is the source of
+    // truth for the hovered/idle morph.
     return MouseRegion(
       opaque: false,
       onEnter: (_) => _setHovered(true),
       onExit: (_) => _setHovered(false),
-      child: constrained,
+      child: SizedBox(width: fixedWidth, child: child),
     );
   }
 }
