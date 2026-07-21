@@ -8,6 +8,107 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-21
+
+d89ef1d
+
+### Features
+
+- **Shell high-risk command guardrail with auxiliary-model
+  review** (`020e4aa` + `91ab6f6`) — three-layer defense
+  before any `bash` / `cmd` / `powershell` command executes:
+  (1) **heuristic pre-screen** (pure function, zero cost) —
+  obviously-safe commands run immediately; catastrophic
+  patterns (`rm -rf /` or `~`, `dd` / `mkfs` on devices,
+  fork bombs, `shutdown`, Windows disk-root deletion) are
+  hard-blocked with no override; suspicious patterns
+  (`sudo`, `curl | sh`, `rm -rf` absolute paths,
+  `git push --force`, writes to system paths, `kill -1`,
+  `pkill`, …) escalate to layer 2; variable / indirect
+  `rm` targets (`$HOME`, `~user`, backticks) are treated
+  as suspicious so the model always sees them. (2)
+  **auxiliary-model evaluation** — reuses the existing
+  `auxiliaryModel` config and `AuxiliaryService`; the
+  cheap model judges `SAFE / UNSAFE / UNCERTAIN` with a
+  strict one-word output contract. `SAFE` runs; `UNSAFE /
+  UNCERTAIN` are rejected with guidance to explain the
+  risk and re-issue with `confirmed: true` after explicit
+  user approval (`ask://`). ~10 s timeout wired to a
+  stream-cancel token. (3) **escape hatch** —
+  `confirmed: true` skips layer 2 (never layer 1
+  catastrophic blocks); the system prompt forbids
+  self-approving. Fail policy: aux unconfigured /
+  timeout / error → fail-open with a warning appended to
+  the output (audit metadata `shellRisk` recorded either
+  way). `CRUX_DISABLE_SHELL_RISK_GUARD` env var (runtime,
+  unlike the existing shell-guard's compile-time flag)
+  disables the whole guardrail. An abort check
+  immediately before `Process.start` closes the race
+  where an abort during evaluation still ran the
+  command. `91ab6f6` follow-up shrunk the
+  auxiliary-model prompt from ~350 input tokens (with
+  four few-shot examples) to ~90 tokens — the same four
+  judgement axes folded into three sentences — so the
+  auxiliary-model cost drops measurably on every
+  bash / cmd / powershell invocation.
+
+### Fixes
+
+- **Snap quota widgets on provider / session switch
+  instead of lerping** (`1f12219`) — when the chat panel
+  swapped the active provider (or session), the toolbar
+  rebuilt `CodingPlanUsageDisplay` /
+  `CreditBalanceDisplay` with a fresh stream from the
+  new provider's polling lifecycle. `didUpdateComponent`
+  rebinds the subscription but left the old provider's
+  `_usage` / `_balance` and any in-flight lerp
+  animation in place, so the next stream event animated
+  from the previous provider's quota into the new
+  provider's quota — a meaningless red / green flash
+  that took ~3 s to settle. On stream identity change
+  the displays now cancel the animation / countdown
+  tickers, clear the refresh state, reset the internal
+  snapshot to the new provider's initial value, and
+  push the settled frame immediately. Within-provider
+  quota deltas still animate normally; only
+  cross-provider transitions stop lerping.
+  `coding_plan_usage_test.dart` adds 401 lines pinning
+  the new behavior plus regressions for the
+  timer-cancel, the still-animating, and the
+  null-initial-placeholder paths.
+
+- **Pin width on hover and distribute segments evenly
+  in `MultiButton`** (`43b7367`) — hovering a
+  `MultiButton` no longer resizes the component, and
+  the options now spread evenly across the original
+  footprint instead of clustering in the middle.
+  Captures the non-hovered layout width via
+  `LayoutBuilder` and pins both idle and hovered
+  states to it, so the surrounding `Column` (e.g. the
+  side panel's git-status rows) never jitters as the
+  mouse moves in and out. Each segment is wrapped in
+  an `Expanded` inside the fixed-width `Row` so the
+  segments spread out evenly with no growth past the
+  container. `multi_button_test.dart` adds 163 lines
+  covering hover-no-resize, distribute-loop, even
+  distribution, no growth past the container, and
+  segment tap routing.
+
+- **Hide skill bodies in vibe history + show queued
+  messages immediately** (`d89ef1d`) — vibe mode
+  rendered the persisted user message verbatim, so a
+  `$skill` chip's expanded body (appended for the LLM
+  only) leaked into the chat log. Extracts the verbose
+  bubble's strip logic into a shared `stripSkillBodies()`
+  util (new `lib/src/utils/strip_skill_bodies.dart`)
+  and applies it in `VibeSegmentBubble` and the
+  jump-bar labels too. Separately, `QueuedMessagesBubble`
+  read the controller's mutable queue without
+  subscribing to `SessionCubit`, so an enqueued message
+  only appeared when some other rebuild happened to
+  fire. The fix subscribes to the `messageQueues`
+  snapshot like `messages` / `btwTurns` already do.
+
 ## [0.16.0] - 2026-07-20
 
 e8340cb
