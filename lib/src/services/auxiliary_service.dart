@@ -269,10 +269,11 @@ class _AuxModel {
 /// unit-testable without any network access (tests go through
 /// [parseShellRiskVerdictForTesting]).
 ///
-/// Contract (see [shellRiskSystemPrompt]): the first line is the
-/// verdict token SAFE / UNSAFE / UNCERTAIN; anything after it —
-/// on the same line after a separator, or on subsequent lines —
-/// is an optional one-sentence reason.
+/// Contract (see [shellRiskSystemPrompt]): the model is asked for
+/// a single verdict word — SAFE / UNSAFE / UNCERTAIN. Anything
+/// beyond it — a same-line separator or trailing lines — is
+/// tolerated and treated as an optional reason, so a chatty model
+/// degrades gracefully instead of breaking the parse.
 ///
 /// Tolerates case (`safe`, `Unsafe`) and trailing punctuation
 /// (`SAFE.`, `unsafe:`). Anything that doesn't start with a
