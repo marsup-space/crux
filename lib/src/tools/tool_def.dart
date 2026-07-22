@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
+import 'shell_monitor.dart';
 import 'shell_risk.dart';
 
 class AbortSignal {
@@ -59,6 +60,19 @@ class ToolContext {
     required AbortSignal abort,
   })? shellRiskEvaluator;
 
+  /// Optional evaluator for the shell progress monitor (see
+  /// `lib/src/tools/shell_monitor.dart`). Injected by
+  /// `chat_turn_executor.dart` when an auxiliary model is
+  /// configured; wired to `AuxiliaryService.assessShellProgress`.
+  ///
+  /// When this is non-null, the shell tools (bash / cmd /
+  /// powershell) do NOT enforce the static `timeout` parameter —
+  /// the monitor watches the running process and kills it only on a
+  /// confident STUCK verdict. When null (no auxiliary model
+  /// configured, or a test that synthesises its own [ToolContext]),
+  /// the shell tools fall back to classic timeout behaviour.
+  final ShellMonitorEvaluator? shellMonitorEvaluator;
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
@@ -67,6 +81,7 @@ class ToolContext {
     required this.workingDirectory,
     this.sessionRuntime,
     this.shellRiskEvaluator,
+    this.shellMonitorEvaluator,
   });
 }
 

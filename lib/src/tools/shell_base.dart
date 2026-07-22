@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../services/auxiliary_prompts.dart';
 import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'shell_guard.dart';
+import 'shell_monitor.dart';
 import 'shell_risk.dart';
 import 'tool_def.dart';
 
@@ -138,11 +140,31 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
   /// [ShellProcessRegistry] so that an interrupt can kill it and all
   /// its children (including background processes) even if the abort
   /// signal hasn't been polled yet.
+  ///
+  /// Two supervision regimes, chosen by whether [monitor] is null:
+  ///
+  ///   * null (no auxiliary model configured): classic timeout. The
+  ///     process races [timeout]; on expiry the process group is
+  ///     killed and the result reports the timeout.
+  ///   * non-null (auxiliary model configured): the static [timeout]
+  ///     is NOT armed. Instead the monitor loop snapshots the process
+  ///     at model-scheduled intervals and asks the auxiliary model
+  ///     whether it is still making progress, in one continuing
+  ///     conversation. A STUCK verdict kills the process group. If
+  ///     the monitor itself fails (aux timeout / transport error),
+  ///     [timeout] is armed from that moment as a fallback so a dead
+  ///     reviewer degrades to classic behaviour instead of running
+  ///     forever. See `lib/src/tools/shell_monitor.dart` for the
+  ///     contract and the fail-open rationale.
   Future<ProcessResult> _run(
     String command,
     Duration timeout, {
     String encoding = 'utf8',
     AbortSignal? abort,
+    ShellMonitorEvaluator? monitor,
+    String intent = '',
+    String platform = '',
+    String shellExecutable = '',
   }) async {
     final invocation = _prepareInvocation(
       resolveInvocation(command, encoding: encoding),
@@ -192,41 +214,166 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         });
       }
 
-      // Collect stdout and stderr.
+      // Collect stdout and stderr, tracking byte counts for the
+      // monitor's liveness signal.
       final stdoutBuf = StringBuffer();
       final stderrBuf = StringBuffer();
+      var totalOutputBytes = 0;
       final stdoutFuture = process.stdout
           .transform(utf8.decoder)
-          .forEach(stdoutBuf.write);
+          .forEach((chunk) {
+            totalOutputBytes += chunk.length;
+            stdoutBuf.write(chunk);
+          });
       final stderrFuture = process.stderr
           .transform(utf8.decoder)
-          .forEach(stderrBuf.write);
+          .forEach((chunk) {
+            totalOutputBytes += chunk.length;
+            stderrBuf.write(chunk);
+          });
 
       // Wait for the process to finish, with timeout and abort.
       final exitCodeFuture = process.exitCode;
 
+      // ── Progress monitor (aux-model regime) ───────────────────
+      // When [monitor] is set, run the monitor loop alongside the
+      // process. It completes [monitorKillCompleter] only when the
+      // model returns a STUCK verdict (fail-open: PROGRESS /
+      // UNCERTAIN / unavailable all keep the process running). The
+      // loop owns the continuing conversation so the model sees its
+      // own prior verdicts and the static prefix stays byte-identical
+      // for KV cache reuse.
+      Completer<String>? monitorKillCompleter;
+      Timer? monitorFallbackTimer;
+      if (monitor != null) {
+        monitorKillCompleter = Completer<String>();
+        final monitorMessages = <Map<String, dynamic>>[
+          {'role': 'system', 'content': shellMonitorSystemPrompt},
+        ];
+        final startTime = DateTime.now();
+        var checkNumber = 0;
+        DateTime? previousCheckTime;
+        var previousTotalBytes = 0;
+
+        Future<void> monitorLoop() async {
+          var nextDelay = const Duration(seconds: kMonitorFirstCheckSeconds);
+          while (true) {
+            await Future<void>.delayed(nextDelay);
+            if (monitorKillCompleter!.isCompleted) return;
+            if (abort?.isAborted ?? false) return;
+
+            checkNumber++;
+            final now = DateTime.now();
+            final elapsed = now.difference(startTime);
+            final sincePrevious = previousCheckTime == null
+                ? null
+                : now.difference(previousCheckTime!);
+            final newBytes = totalOutputBytes - previousTotalBytes;
+            // ~1KB output tail: the actual evidence for the verdict.
+            final stdoutSoFar = stdoutBuf.toString();
+            final tail = stdoutSoFar.length <= 1024
+                ? stdoutSoFar
+                : stdoutSoFar.substring(stdoutSoFar.length - 1024);
+
+            monitorMessages.add({
+              'role': 'user',
+              'content': buildShellMonitorUserMessage(
+                snapshot: ShellMonitorSnapshot(
+                  checkNumber: checkNumber,
+                  elapsed: elapsed,
+                  sincePreviousCheck: sincePrevious,
+                  newOutputBytes: newBytes,
+                  totalOutputBytes: totalOutputBytes,
+                  outputTail: tail,
+                ),
+                command: checkNumber == 1 ? command : null,
+                intent: checkNumber == 1 ? intent : null,
+                platform: checkNumber == 1 ? platform : null,
+                shell: checkNumber == 1 ? shellExecutable : null,
+              ),
+            });
+
+            ShellMonitorVerdict verdict;
+            try {
+              verdict = await monitor(
+                monitorMessages,
+                abort: abort ?? AbortSignal(),
+              );
+              // A responsive monitor disarms the failure fallback.
+              monitorFallbackTimer?.cancel();
+              monitorFallbackTimer = null;
+            } catch (_) {
+              // A throwing evaluator is indistinguishable from
+              // "monitor unavailable" — fail open (keep running) and
+              // arm the static-timeout fallback so a permanently-dead
+              // reviewer degrades to classic behaviour.
+              verdict = const ShellMonitorVerdict(
+                ShellMonitorVerdictKind.uncertain,
+              );
+              monitorFallbackTimer ??= Timer(timeout, () {
+                if (!monitorKillCompleter!.isCompleted) {
+                  monitorKillCompleter.complete(
+                    'progress monitor unavailable; fell back to timeout '
+                    'after ${timeout.inMilliseconds}ms',
+                  );
+                }
+              });
+            }
+
+            // Record the assistant turn so the model sees its own
+            // verdict next round (rate-of-progress reasoning).
+            monitorMessages.add({
+              'role': 'assistant',
+              'content': _renderMonitorAssistantTurn(verdict),
+            });
+
+            previousCheckTime = now;
+            previousTotalBytes = totalOutputBytes;
+
+            if (verdict.kind == ShellMonitorVerdictKind.stuck) {
+              if (!monitorKillCompleter!.isCompleted) {
+                monitorKillCompleter.complete(
+                  verdict.reason ?? 'monitor judged the process stuck',
+                );
+              }
+              return;
+            }
+            nextDelay = Duration(seconds: verdict.intervalSeconds);
+          }
+        }
+
+        unawaited(monitorLoop());
+      }
+
       int exitCode;
+      String? monitorKillReason;
       try {
-        // Race: process completion vs timeout vs abort.
+        // Race: process completion vs timeout vs abort vs monitor.
         final results = await Future.any<List<dynamic>>([
           exitCodeFuture.then((code) => [code]),
-          Future.delayed(timeout, () => [-1]),
+          if (monitor == null) Future.delayed(timeout, () => [-1]),
           if (abortCompleter != null) abortCompleter.future.then((_) => [-2]),
+          if (monitorKillCompleter != null)
+            monitorKillCompleter.future.then((reason) => [-3, reason]),
         ]);
 
         exitCode = results[0] as int;
 
         if (exitCode == -1) {
-          // Timeout — kill the process group.
+          // Timeout (classic regime) — kill the process group.
+          ShellProcessRegistry._killProcessGroup(process);
+        } else if (exitCode == -3) {
+          // Monitor judged the process STUCK — kill the process group.
+          monitorKillReason = results[1] as String;
           ShellProcessRegistry._killProcessGroup(process);
         }
 
         // For abort, the abort watcher already killed the process.
 
-        // Wait for stdout/stderr to drain. For timeout/abort, the
-        // process is dead so the streams will close quickly. Use a
+        // Wait for stdout/stderr to drain. For timeout/abort/monitor,
+        // the process is dead so the streams will close quickly. Use a
         // short timeout so we don't hang on misbehaving processes.
-        if (exitCode == -1 || exitCode == -2) {
+        if (exitCode == -1 || exitCode == -2 || exitCode == -3) {
           try {
             exitCode = await process.exitCode.timeout(
               const Duration(seconds: 2),
@@ -254,6 +401,16 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
           );
         }
 
+        if (results[0] == -3) {
+          return ProcessResult(
+            process.pid,
+            exitCode,
+            stdoutBuf.toString(),
+            '[killed by progress monitor: $monitorKillReason]'
+            '${stderrBuf.toString().isNotEmpty ? '\n${stderrBuf.toString()}' : ''}',
+          );
+        }
+
         if (results[0] == -2) {
           return ProcessResult(
             process.pid,
@@ -264,6 +421,13 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         }
       } finally {
         abortCheckTimer?.cancel();
+        monitorFallbackTimer?.cancel();
+        // Unblock the monitor loop if it is still sleeping so it can
+        // observe completion and return without firing a late verdict.
+        if (monitorKillCompleter != null &&
+            !monitorKillCompleter.isCompleted) {
+          monitorKillCompleter.complete('');
+        }
       }
 
       return ProcessResult(
@@ -493,11 +657,22 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     }
 
     try {
+      // When an auxiliary model is configured, hand the run to the
+      // progress monitor: the static timeout is NOT armed, the
+      // monitor watches the process and kills only on a STUCK
+      // verdict. When it is null, _run falls back to classic timeout
+      // behaviour. Platform / shell are passed for the monitor's
+      // static metadata block (first turn only).
+      final invocation = resolveInvocation(command, encoding: encoding);
       final result = await _run(
         command,
         Duration(milliseconds: timeoutMs),
         encoding: encoding,
         abort: ctx.abort,
+        monitor: ctx.shellMonitorEvaluator,
+        intent: intent,
+        platform: Platform.operatingSystem,
+        shellExecutable: invocation.executable,
       );
 
       final combined = StringBuffer();
@@ -589,6 +764,25 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     }
   }
 
+  /// Render the compact assistant turn appended to the monitor
+  /// conversation after each check. Kept terse on purpose: the
+  /// assistant turns are the model's own prior verdicts, and a
+  /// compact form keeps the continuing conversation small while
+  /// still giving the model the rate-of-progress history it needs
+  /// (the per-turn `since_previous_check` in the next user snapshot
+  /// supplies the actual elapsed ground truth, so the interval the
+  /// model asked for doesn't need to be recoverable from this text).
+  static String _renderMonitorAssistantTurn(ShellMonitorVerdict verdict) {
+    final word = switch (verdict.kind) {
+      ShellMonitorVerdictKind.progress => 'PROGRESS',
+      ShellMonitorVerdictKind.stuck => 'STUCK',
+      ShellMonitorVerdictKind.uncertain => 'UNCERTAIN',
+    };
+    final base = '$word ${verdict.intervalSeconds}';
+    final reason = verdict.reason;
+    return (reason == null || reason.isEmpty) ? base : '$base — $reason';
+  }
+
   /// Check the env for the shell-guard opt-out. Exposed as a
   /// separate method (rather than inlined) so tests can stub it
   /// without monkey-patching global state.
@@ -656,7 +850,13 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       },
       'timeout': {
         'type': 'integer',
-        'description': 'Timeout in milliseconds (default 120000)',
+        'description':
+            'Timeout in milliseconds (default 120000). When an '
+            'auxiliary model is configured, this is a FALLBACK only: '
+            'it is not enforced while the auxiliary progress monitor '
+            'is responsive, and is armed only if the monitor itself '
+            'becomes unavailable. Without an auxiliary model it is a '
+            'hard timeout.',
       },
       'encoding': {
         'type': 'string',

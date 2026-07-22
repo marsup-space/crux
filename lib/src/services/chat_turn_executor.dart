@@ -1161,6 +1161,18 @@ class ChatTurnExecutor {
                           ShellRiskVerdictKind.unavailable,
                         );
                   },
+                  // Progress-monitor evaluator: when an auxiliary
+                  // model is configured this makes the shell tools
+                  // drop the static timeout and instead watch the
+                  // running process, killing it only on a STUCK
+                  // verdict. The monitor loop in shell_base builds
+                  // the full continuing conversation and passes it
+                  // here; the service is transport-only.
+                  shellMonitorEvaluator: (messages, {required abort}) {
+                    return auxiliaryService.assessShellProgress(
+                      messages: messages,
+                    );
+                  },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {

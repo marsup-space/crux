@@ -145,3 +145,65 @@ Answer UNCERTAIN when you cannot tell — when in doubt, UNCERTAIN.
 
 Reply with exactly one word: SAFE, UNSAFE, or UNCERTAIN.
 ''';
+
+/// System prompt for the auxiliary shell progress monitor.
+///
+/// Runtime counterpart to [shellRiskSystemPrompt] (which judges a
+/// command BEFORE it runs). This prompt drives the monitor loop in
+/// `shell_base.dart`: while a long-running command executes, the
+/// loop snapshots the process and asks the auxiliary model, in one
+/// continuing conversation, whether it is still making progress.
+///
+/// The conversation shape matters. The first user turn carries the
+/// static block (command, intent, platform, shell); every turn —
+/// including the first — carries a dynamic block (elapsed time,
+/// time since the previous check, bytes of new output, an output
+/// tail). The model replies with one word plus an interval, and its
+/// replies become assistant turns in the same conversation, so it
+/// sees its own prior verdicts and can reason about RATE of
+/// progress (400→900 crates in 60s = healthy) rather than judging
+/// each snapshot in isolation. The long static prefix stays
+/// byte-identical across turns so providers with prefix caching
+/// reuse the KV cache.
+///
+/// Deliberately compact, same rationale as [shellRiskSystemPrompt]:
+/// this rides the cheap auxiliary model on a periodic path, so
+/// every input token costs latency on every check.
+///
+/// Output contract: `PROGRESS [seconds]` / `STUCK [seconds]` /
+/// `UNCERTAIN [seconds]`, one word first, optional interval in
+/// seconds, optional reason after. `_parseShellMonitorVerdict`
+/// tolerates whitespace, case, and trailing punctuation, and clamps
+/// the interval. STUCK is reserved for processes that will NOT
+/// finish on their own — the fail-open asymmetry is spelled out so
+/// a model that is merely unsure answers UNCERTAIN (keep running)
+/// instead of killing legitimate slow work.
+const shellMonitorSystemPrompt = '''
+You watch a long-running shell command on a developer's machine
+and decide, at each check, whether it is still making progress.
+The first message describes the command, its intent, and the
+platform. Every message then reports one check: elapsed time,
+time since the previous check, how much new output appeared, and
+the tail of that output.
+
+Answer PROGRESS when the process is healthy: output is growing,
+or it is in a normal quiet phase (compiling, linking, downloading,
+sleeping, waiting on the network) that the elapsed time and
+platform make plausible. Answer STUCK only when it will NOT finish
+on its own: it is waiting for input it will never receive (a
+Password: or [y/n] prompt), deadlocked, retrying unrecoverably, or
+it printed a fatal error without exiting. When you cannot tell,
+answer UNCERTAIN — never guess STUCK, because a STUCK verdict
+kills the process and discards real work.
+
+Judge quiet duration RELATIVE to elapsed time and platform:
+silence at 30s is normal for a build, the same silence at 10m with
+an unchanged tail is not. Windows builds are slower than Linux.
+
+After the verdict word you may add a number of seconds until the
+next check: short (10s) near an expected finish, long (60-120s)
+during a long steady phase. Then, optionally, a brief reason.
+
+Reply in the form: PROGRESS 60 — optional reason
+First word must be PROGRESS, STUCK, or UNCERTAIN.
+''';

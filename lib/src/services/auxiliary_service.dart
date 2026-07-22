@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../models/provider_config.dart';
 import '../storage/message_store.dart';
+import '../tools/shell_monitor.dart';
 import '../tools/shell_risk.dart';
 import 'auxiliary_prompts.dart';
 import 'llm_client.dart';
@@ -248,6 +249,78 @@ class AuxiliaryService {
     return _parseShellRiskVerdict(raw);
   }
 
+  /// Ask the auxiliary model to judge one monitor check for a
+  /// running shell process (the runtime counterpart to
+  /// [assessShellCommand], which judges a command before it runs).
+  ///
+  /// [messages] is the FULL continuing conversation: the system
+  /// prompt plus the static first user turn (command / intent /
+  /// platform) plus the running history of prior snapshot turns and
+  /// assistant verdicts, ending in the new snapshot turn. The
+  /// monitor loop in `shell_base.dart` owns this list across checks
+  /// and appends to it, so the model sees its own prior verdicts
+  /// and can reason about rate of progress — and the long static
+  /// prefix stays byte-identical, which providers with prefix
+  /// caching reuse as KV cache. This method is transport-only: it
+  /// streams the reply and parses the verdict, holding no
+  /// per-process state.
+  ///
+  /// Verdict mapping:
+  ///
+  ///   * No auxiliary model configured / timeout / transport error /
+  ///     empty response → [ShellMonitorVerdictKind.uncertain]. The
+  ///     monitor is fail-OPEN: an unavailable reviewer must not kill
+  ///     a running process (a false kill discards real work), so
+  ///     every failure path degrades to "keep running". The monitor
+  ///     loop additionally treats a null/uncertain streak as the
+  ///     signal to arm the static-timeout fallback.
+  ///   * Output that doesn't follow the PROGRESS / STUCK /
+  ///     UNCERTAIN contract → `uncertain` (fail-open), mirroring how
+  ///     `_parseShellRiskVerdict` maps unparseable output to its own
+  ///     safe default.
+  ///
+  /// The default 10s [timeout] keeps a slow auxiliary model from
+  /// stalling the monitor loop; it cancels the underlying HTTP
+  /// stream rather than just abandoning the future because the
+  /// [LlmClient] is long-lived and shared.
+  Future<ShellMonitorVerdict> assessShellProgress({
+    required List<Map<String, dynamic>> messages,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (_resolve() == null) {
+      return const ShellMonitorVerdict(ShellMonitorVerdictKind.uncertain);
+    }
+
+    final cancelToken = LlmStreamCancelToken();
+    final timer = Timer(timeout, () {
+      unawaited(cancelToken.cancelActiveStream(
+        reason: 'shell-monitor check timed out after $timeout',
+      ));
+    });
+
+    String? raw;
+    try {
+      raw = await _streamAuxiliaryCall(
+        // systemPrompt is unused when `messages` is provided
+        // verbatim — the monitor loop already placed the monitor
+        // system prompt at the head of the conversation.
+        systemPrompt: '',
+        messages: messages,
+        logTag: 'shell-monitor',
+        cancelToken: cancelToken,
+      );
+    } finally {
+      timer.cancel();
+    }
+
+    // Timeout, transport error, and empty responses all surface as
+    // null — fail open to `uncertain` (keep running).
+    if (raw == null) {
+      return const ShellMonitorVerdict(ShellMonitorVerdictKind.uncertain);
+    }
+    return _parseShellMonitorVerdict(raw);
+  }
+
   void dispose() {
     _client.dispose();
   }
@@ -320,3 +393,78 @@ ShellRiskVerdict _parseShellRiskVerdict(String raw) {
 /// [AuxiliaryService.assessShellCommand] instead.
 ShellRiskVerdict parseShellRiskVerdictForTesting(String raw) =>
     _parseShellRiskVerdict(raw);
+
+/// Parse the auxiliary model's raw reply for [assessShellProgress]
+/// into a verdict. Same tolerant style as [_parseShellRiskVerdict]:
+/// the contract (see [shellMonitorSystemPrompt]) is a verdict word
+/// first — PROGRESS / STUCK / UNCERTAIN — optionally followed by a
+/// number of seconds until the next check and a free-text reason.
+///
+/// Tolerates case (`progress`, `Stuck`) and trailing punctuation
+/// (`PROGRESS.`, `stuck:`). The interval is extracted from anywhere
+/// on the first line, clamped to
+/// [kMonitorMinIntervalSeconds]–[kMonitorMaxIntervalSeconds], and
+/// defaults to [kMonitorDefaultIntervalSeconds] when absent or
+/// unparseable — a model that omits it just gets the standard 30s
+/// cadence. Anything whose first token isn't a recognizable verdict
+/// maps to [ShellMonitorVerdictKind.uncertain], the fail-open
+/// default: a model that can't follow the contract is treated as
+/// "cannot confirm", never as "stuck" — fail-open at runtime means
+/// keep running, never kill on a parse failure.
+ShellMonitorVerdict _parseShellMonitorVerdict(String raw) {
+  const unparsable = ShellMonitorVerdict(ShellMonitorVerdictKind.uncertain);
+
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return unparsable;
+
+  final lines = trimmed.split(RegExp(r'\r\n|\r|\n'));
+  final firstLine = lines.first.trim();
+  final tokenMatch = RegExp(r'^[A-Za-z]+').firstMatch(firstLine);
+  if (tokenMatch == null) return unparsable;
+
+  final kind = switch (tokenMatch.group(0)!.toUpperCase()) {
+    'PROGRESS' => ShellMonitorVerdictKind.progress,
+    'STUCK' => ShellMonitorVerdictKind.stuck,
+    'UNCERTAIN' => ShellMonitorVerdictKind.uncertain,
+    _ => null,
+  };
+  if (kind == null) return unparsable;
+
+  // Interval: the first integer on the first line, clamped to the
+  // agreed bounds. Searched after the verdict token so a number in
+  // the reason text (e.g. "900 crates") isn't mistaken for it — but
+  // only the FIRST integer, so "PROGRESS 60 — 900 crates" still
+  // parses as 60s.
+  int intervalSeconds = kMonitorDefaultIntervalSeconds;
+  final afterToken = firstLine.substring(tokenMatch.end);
+  final intMatch = RegExp(r'\d+').firstMatch(afterToken);
+  if (intMatch != null) {
+    final parsed = int.tryParse(intMatch.group(0)!);
+    if (parsed != null) {
+      intervalSeconds = parsed.clamp(
+        kMonitorMinIntervalSeconds,
+        kMonitorMaxIntervalSeconds,
+      );
+    }
+  }
+
+  // Reason: whatever trails the token (and the interval) on the
+  // first line, plus any subsequent lines. Reuses the risk verdict's
+  // separator-stripping so "PROGRESS 60 — on track" yields "on
+  // track". The interval digits are removed from the reason text.
+  final remainder = afterToken
+      .replaceFirst(RegExp(r'\d+'), '')
+      .replaceAll(RegExp(r'^[\s:：;；,，.\-—]+'), '');
+  final reason = <String>[remainder, ...lines.skip(1)].join('\n').trim();
+
+  return ShellMonitorVerdict(
+    kind,
+    intervalSeconds: intervalSeconds,
+    reason: reason.isEmpty ? null : reason,
+  );
+}
+
+/// Test-only access to [_parseShellMonitorVerdict], same pattern as
+/// [parseShellRiskVerdictForTesting].
+ShellMonitorVerdict parseShellMonitorVerdictForTesting(String raw) =>
+    _parseShellMonitorVerdict(raw);
