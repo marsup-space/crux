@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../services/web_provider_registry.dart';
 import '../storage/session_store.dart';
+import 'ask_tool.dart';
 import 'bash_tool.dart';
 import 'cmd_tool.dart';
 import 'edit_tool.dart';
@@ -71,6 +72,7 @@ class ToolRegistry {
     required SessionStore sessionStore,
     required WebProviderRegistry webProviderRegistry,
     dynamic lsp,
+    PendingAskCubit? pendingAskCubit,
   }) {
     // Tool registration order = order the LLM sees in the API tools list.
     // Tier 1 first so the model's first scan of the list lands on the
@@ -94,6 +96,13 @@ class ToolRegistry {
       register(BashTool());
     }
     register(SessionTool(store: sessionStore));
+    // `ask` is registered only when a [PendingAskCubit] is supplied —
+    // i.e. in the real TUI. Tests and standalone tools that build a
+    // registry without UI plumbing get no `ask` tool, so the model
+    // falls back to `ask://` inline tokens (which need no UI at all).
+    if (pendingAskCubit != null) {
+      register(AskTool(pendingAskCubit: pendingAskCubit));
+    }
   }
 
   /// Re-register the web tools to match the current provider

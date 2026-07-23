@@ -180,6 +180,20 @@ Short yes / no via shorthand:
 - `ask://` is reserved and **cannot appear inside a label or answer**. The parser drops malformed tokens silently rather than rendering them as buttons.
 - Don't use `ask://` for free-form questions — if the user needs to type something, just write a regular sentence ending in `?`. The user types a reply in the input box.
 
+## Structured questions (`ask` tool)
+
+`ask://` quick-reply tokens are for **single-choice**, **instant-send** cases — yes/no, A/B/C, continue/cancel: one click, one answer, done. They cannot do multi-select or multiple questions at once. For those cases, call the **`ask` tool**.
+
+Use the `ask` tool when you need:
+
+- **Multi-select** — pick one or more options from a group (e.g. "which of these modules should I refactor?").
+- **Multiple questions in one round** — several groups whose answers must arrive together (e.g. "which modules?" AND "which runtime?").
+- **Optional free-text context** — the user can add a note alongside their picks.
+
+Do NOT use `ask://` for these. Do NOT use the `ask` tool for simple yes/no — `ask://` is cheaper (no tool round-trip, no form). When in doubt, reach for `ask://` first and only escalate to the `ask` tool when you genuinely need multi-select or groups.
+
+The user can always **dismiss** the form and answer free-form in the chat instead. If you get back `(dismissed)` as the tool result, the user chose to type rather than use the form — read their next user message and continue from there.
+
 ## Tool tiers
 
 Tools are organized in tiers by how specialized they are.

@@ -26,10 +26,12 @@ import '../theme/theme_controller.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
+import '../tools/ask_tool.dart';
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
+import 'ask_form.dart';
 import 'btw_cubit.dart';
 import 'chat_history.dart';
 import 'chat_turn_cubit.dart';
@@ -225,6 +227,11 @@ class _ChatPanelState extends State<ChatPanel> {
   late final PollingCoordinator _polling;
   late final QuitHandler _quitHandler;
 
+  /// Holds the in-flight `ask` tool call. When non-null, the chat
+  /// input box region is replaced by [AskForm]. See [AskTool] and
+  /// `lib/src/tools/ask_tool.dart`.
+  late final PendingAskCubit _pendingAskCubit = PendingAskCubit();
+
   final Map<int, _CachedCompactEstimate> _compactEstimates = {};
   int? _estimateJobSessionId;
 
@@ -311,6 +318,7 @@ class _ChatPanelState extends State<ChatPanel> {
       sessionStore: _store,
       webProviderRegistry: _webProviderRegistry,
       lsp: _lspManager,
+      pendingAskCubit: _pendingAskCubit,
     );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
@@ -356,6 +364,7 @@ class _ChatPanelState extends State<ChatPanel> {
       refresh: _refresh,
       gitStatusService: _gitStatusService,
       tracker: _tracker,
+      pendingAskCubit: _pendingAskCubit,
     );
     _polling = PollingCoordinator(
       providerService: _providerService,
@@ -1229,48 +1238,112 @@ class _ChatPanelState extends State<ChatPanel> {
                   debugMode: CommandRegistry.instance.debugEnabled,
                 ),
                 Divider(color: CruxTheme.of(context).divider, height: 1),
-                ChatInput(
-                  key: _chatInputKey,
-                  textController: textController,
-                  overlayController: _overlayController,
-                  sessionController: _sessionController,
-                  streamingController: _streamingController,
-                  turnOrchestrator: _turnOrchestrator,
-                  providerService: _providerService,
-                  providerServiceReady: _providerServiceReady,
-                  webProviderRegistry: _webProviderRegistry,
-                  themeController: component.themeController,
-                  scrollController: scrollController,
-                  refresh: _refresh,
-                  projectPath: Directory.current.path,
-                  recentProjectsStore: _recentProjectsStore,
-                  onSendTurn: (text) {
+                // The input region is swappable: when the agent has an
+                // in-flight `ask` tool call for the current session, the
+                // form replaces the chat input box until the user
+                // submits or dismisses. See [AskTool], [AskForm].
+                BlocBuilder<PendingAskCubit, PendingAskState>(
+                  bloc: _pendingAskCubit,
+                  builder: (context, pendingState) {
                     final sid = _sessionController.currentSessionId;
-                    final images = sid != null
-                        ? _sessionController.drainPendingImages(sid)
-                        : <ImageAttachment>[];
-                    _turnOrchestrator.sendMessage(
-                      text: text,
-                      textController: textController,
-                      images: images,
-                    );
-                    scrollController.scrollToBottom();
-                  },
-                  onExecuteCommand: _executeCommand,
-                  onSwitchSession: _switchSession,
-                  onInitSessions: _initSessions,
-                  onCreateNewSession: _createNewSession,
-                  onQuitRequest: _quitHandler.quitAndPrintSummary,
-                  onAttachClipboardImage: (image) {
-                    final sid = _sessionController.currentSessionId;
-                    if (sid != null) {
-                      _sessionController.addPendingImage(sid, image);
-                      final index = _sessionController
-                          .pendingImagesFor(sid)
-                          .length;
-                      _chatInputKey.currentState?.insertImageMarker(index);
-                      _refresh();
+                    final pending = pendingState.pending;
+                    final showAskForm = pending != null &&
+                        sid != null &&
+                        pending.sessionId == sid;
+                    if (!showAskForm) {
+                      return ChatInput(
+                        key: _chatInputKey,
+                        textController: textController,
+                        overlayController: _overlayController,
+                        sessionController: _sessionController,
+                        streamingController: _streamingController,
+                        turnOrchestrator: _turnOrchestrator,
+                        providerService: _providerService,
+                        providerServiceReady: _providerServiceReady,
+                        webProviderRegistry: _webProviderRegistry,
+                        themeController: component.themeController,
+                        scrollController: scrollController,
+                        refresh: _refresh,
+                        projectPath: Directory.current.path,
+                        recentProjectsStore: _recentProjectsStore,
+                        onSendTurn: (text) {
+                          final sid = _sessionController.currentSessionId;
+                          final images = sid != null
+                              ? _sessionController.drainPendingImages(sid)
+                              : <ImageAttachment>[];
+                          _turnOrchestrator.sendMessage(
+                            text: text,
+                            textController: textController,
+                            images: images,
+                          );
+                          scrollController.scrollToBottom();
+                        },
+                        onExecuteCommand: _executeCommand,
+                        onSwitchSession: _switchSession,
+                        onInitSessions: _initSessions,
+                        onCreateNewSession: _createNewSession,
+                        onQuitRequest: _quitHandler.quitAndPrintSummary,
+                        onAttachClipboardImage: (image) {
+                          final sid = _sessionController.currentSessionId;
+                          if (sid != null) {
+                            _sessionController.addPendingImage(sid, image);
+                            final index = _sessionController
+                                .pendingImagesFor(sid)
+                                .length;
+                            _chatInputKey.currentState?.insertImageMarker(index);
+                            _refresh();
+                          }
+                        },
+                      );
                     }
+                    return AskForm(
+                      key: ValueKey('ask-form-${pending.callId}'),
+                      pending: pending,
+                      onSubmit: (prose) {
+                        // Surface the user's selection as a visible
+                        // user-role message bubble in the chat log.
+                        // The `ask` tool result is a `role: tool`
+                        // message (transparent to the user), so
+                        // without this the submitted answer would
+                        // vanish from view. We append to the in-
+                        // memory cache + cubit (same path
+                        // sendMessage uses at chat_turn_orchestrator
+                        // ~line 340) so the bubble renders
+                        // immediately; the message-store write is
+                        // handled by the chat-service turn flow.
+                        final sid = _sessionController.currentSessionId;
+                        if (sid != null) {
+                          _sessionController.putCachedMessages(sid, [
+                            ...?_sessionController.messageCache[sid],
+                            Message(
+                              id: -1,
+                              sessionId: sid,
+                              role: 'user',
+                              content: prose,
+                            ),
+                          ]);
+                        }
+                        _pendingAskCubit.complete(prose);
+                      },
+                      onDismiss: () {
+                        // Same idea: make the dismiss visible so the
+                        // user has feedback that they abandoned the
+                        // form rather than submitted it.
+                        final sid = _sessionController.currentSessionId;
+                        if (sid != null) {
+                          _sessionController.putCachedMessages(sid, [
+                            ...?_sessionController.messageCache[sid],
+                            Message(
+                              id: -1,
+                              sessionId: sid,
+                              role: 'user',
+                              content: '(dismissed ask form)',
+                            ),
+                          ]);
+                        }
+                        _pendingAskCubit.dismiss();
+                      },
+                    );
                   },
                 ),
               ],

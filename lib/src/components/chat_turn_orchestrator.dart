@@ -14,6 +14,7 @@ import '../services/provider_service.dart';
 import '../services/skills/skill_discovery.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
+import '../tools/ask_tool.dart';
 import '../tools/file_read_tracker.dart';
 import '../tools/registry.dart';
 import '../tools/shell_base.dart';
@@ -45,6 +46,13 @@ class ChatTurnOrchestrator {
   final BtwTurnHandler _btwHandler;
   final TldrHandler _tldrHandler;
 
+  /// When non-null, an in-flight `ask` tool call holds a completer that
+  /// blocks the turn. Interrupting the turn must resolve that completer
+  /// (with the dismiss sentinel) or [AskTool.execute] hangs forever —
+  /// the turn executor is parked on `await executeTool(...)` and can't
+  /// reach its own cancel checks.
+  final PendingAskCubit? _pendingAskCubit;
+
   final Map<int, bool> _btwCancelFlags = {};
   final Set<int> _interruptedSessions = {};
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
@@ -62,6 +70,7 @@ class ChatTurnOrchestrator {
     required void Function() refresh,
     required GitStatusService gitStatusService,
     required FileReadTracker tracker,
+    PendingAskCubit? pendingAskCubit,
   })  : _store = store,
         _messageStore = store.messageStore,
         _chatService = chatService,
@@ -73,6 +82,7 @@ class ChatTurnOrchestrator {
         _showToast = showToast,
         _refresh = refresh,
         _gitStatusService = gitStatusService,
+        _pendingAskCubit = pendingAskCubit,
         _btwHandler = BtwTurnHandler(
           sessionController: sessionController,
           streamingController: streamingController,
@@ -718,6 +728,12 @@ class ChatTurnOrchestrator {
         signal.abort();
       }
     }
+
+    // Drop any in-flight `ask` form. The turn executor is blocked on
+    // its completer; without this, the turn hangs forever instead of
+    // unwinding. The cubit resolves the completer with the dismiss
+    // sentinel so executor's `await executeTool(...)` returns.
+    _pendingAskCubit?.clearFor(sessionId);
 
     final partialContent = _sessionController.streamingCubit.state
         .streamingContentFor(sessionId);
