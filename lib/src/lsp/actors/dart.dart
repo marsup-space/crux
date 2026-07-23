@@ -5,11 +5,10 @@
 // root as the nearest `pubspec.yaml`. Phase 2.1 may add monorepo
 // (melos) support.
 
-import 'dart:io';
-
 import '../actor.dart';
 import '../find_up.dart';
 import '../protocol.dart';
+import '../spawn_util.dart';
 
 /// Actor for the Dart analysis server.
 ///
@@ -28,7 +27,7 @@ class DartServerActor extends LspServerActor {
 
   @override
   Future<LspServerSpec?> resolveSpec(String root, String file) async {
-    final dart = _whichDart();
+    final dart = whichBinary('dart');
     if (dart == null) return null;
 
     final projectRoot = await findUpOrStop(
@@ -43,20 +42,5 @@ class DartServerActor extends LspServerActor {
       env: const {},
       initialization: const {},
     );
-  }
-
-  /// Locate the `dart` executable. In production we shell out to
-  /// `which dart`. Tests inject a path or override this method.
-  String? _whichDart() {
-    final env = Platform.environment;
-    final pathVar = env['PATH'] ?? '';
-    final separator = Platform.isWindows ? ';' : ':';
-    final ext = Platform.isWindows ? '.exe' : '';
-    for (final dir in pathVar.split(separator)) {
-      if (dir.isEmpty) continue;
-      final candidate = '$dir${Platform.pathSeparator}dart$ext';
-      if (File(candidate).existsSync()) return candidate;
-    }
-    return null;
   }
 }

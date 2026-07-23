@@ -27,6 +27,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'language.dart';
 import 'peer.dart' as peer_lib;
 import 'protocol.dart';
 
@@ -410,33 +411,7 @@ abstract class LspServerActor {
     };
   }
 
-  String _languageIdFor(String ext) {
-    // Small inline map; full version lives in language.dart.
-    const map = {
-      '.dart': 'dart',
-      '.ts': 'typescript',
-      '.tsx': 'typescriptreact',
-      '.js': 'javascript',
-      '.jsx': 'javascriptreact',
-      '.mjs': 'javascript',
-      '.cjs': 'javascript',
-      '.mts': 'typescript',
-      '.cts': 'typescript',
-      '.py': 'python',
-      '.pyi': 'python',
-      '.rs': 'rust',
-      '.go': 'go',
-      '.rb': 'ruby',
-      '.rake': 'ruby',
-      '.lua': 'lua',
-      '.sh': 'shellscript',
-      '.bash': 'shellscript',
-      '.zsh': 'shellscript',
-      '.yaml': 'yaml',
-      '.yml': 'yaml',
-    };
-    return map[ext] ?? 'plaintext';
-  }
+  String _languageIdFor(String ext) => languageIdForExtension(ext);
 
   // ---------------------------------------------------------------------------
   // Test hooks.

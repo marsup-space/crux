@@ -17,10 +17,15 @@ const Map<String, String> kLspLanguageIds = {
   '.edn': 'clojure',
   '.coffee': 'coffeescript',
   '.c': 'c',
+  '.h': 'c',
   '.cpp': 'cpp',
   '.cxx': 'cpp',
   '.cc': 'cpp',
   '.c++': 'cpp',
+  '.hpp': 'cpp',
+  '.hh': 'cpp',
+  '.hxx': 'cpp',
+  '.h++': 'cpp',
   '.cs': 'csharp',
   '.csx': 'csharp',
   '.css': 'css',
@@ -78,6 +83,7 @@ const Map<String, String> kLspLanguageIds = {
   '.pug': 'jade',
   '.jade': 'jade',
   '.py': 'python',
+  '.pyi': 'python',
   '.r': 'r',
   '.cshtml': 'razor',
   '.razor': 'razor',
@@ -126,6 +132,7 @@ const Map<String, String> kLspLanguageIds = {
   '.nix': 'nix',
   '.typ': 'typst',
   '.typc': 'typst',
+  '.prisma': 'prisma',
 };
 
 /// Look up the LSP languageId for a file extension. Returns

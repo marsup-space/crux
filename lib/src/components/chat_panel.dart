@@ -5,7 +5,7 @@ import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../commands/cmd_help.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
-import '../lsp/actors/dart.dart';
+import '../lsp/actors/registry.dart';
 import '../lsp/manager.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
@@ -306,7 +306,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _tracker = tracker;
     _lspManager = LspManager(
       workingDirectory: Directory.current.path,
-      actorFactories: const {'dart': DartServerActor.new},
+      actorFactories: defaultLspActorFactories(),
     );
     _webProviderRegistry = WebProviderRegistry()
       ..register(TinyFishWebProvider());
