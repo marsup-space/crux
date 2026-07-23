@@ -8,6 +8,75 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-21
+
+e06c62d
+
+### Features
+
+- **`ask` tool for structured multi-part questions
+  (ASK 2.0)** (`9a6873a`) — the LLM can now call a
+  dedicated `ask` tool to gather structured multi-part
+  answers from the user, beyond the existing single-
+  choice `ask://` buttons that render in chat replies.
+  `AskTool.execute(...)` blocks on a
+  `Completer<ToolResult>` until the user submits or
+  dismisses an interactive form that swaps in for the
+  chat input box while the round is pending. Same
+  `Future<ToolResult>` contract as `bash` / `webfetch`
+  / etc — just a different source of the future's
+  completion (the user instead of the network). The
+  existing inline `ask://` buttons stay the cheapest
+  path for yes / no / A / B / C single-choice replies.
+  New `lib/src/components/ask_form.dart` (536 lines)
+  owns the form widget; new `lib/src/tools/ask_tool.dart`
+  (420 lines) is the tool implementation; the tool
+  registers via `registry.dart`; the chat panel
+  (`chat_panel.dart`, +153 lines) wires the round-
+  pending UI swap, and `chat_turn_orchestrator.dart`
+  surfaces the round state. System prompt gains an
+  `ask` tool description so the model knows when to
+  reach for it. `test/components/ask_form_test.dart`
+  adds 494 lines covering rendering, submit / dismiss,
+  multi-part payloads, and the round-pending swap.
+
+- **Aux-model progress monitor replaces static
+  shell-command timeout** (`e06c62d`) — when an
+  aux model is configured, `bash` / `cmd` /
+  `powershell` no longer enforce the static
+  `~10 s` timeout. A monitor loop snapshots the
+  running process at model-scheduled intervals and
+  asks the aux model — in one *continuing*
+  conversation — whether the command is still making
+  progress. Only a confident `STUCK` verdict kills
+  the process group; long-but-progressing commands
+  (multi-GB `tar`, deep `find`, large `cargo` / `go`
+  builds, …) now run to completion instead of being
+  killed mid-stream. Without an aux model configured,
+  the classic static-timeout behavior is unchanged
+  (no regression for users who don't set
+  `auxiliaryModel`). New
+  `lib/src/tools/shell_monitor.dart` (225 lines)
+  owns the snapshot loop and aux-model conversation;
+  `shell_base.dart` (+220 lines) drops the static
+  `timeout` enforcement when a monitor is active;
+  `auxiliary_service.dart` (+148 lines) gains the
+  continuing-conversation API; `auxiliary_prompts.dart`
+  (+62 lines) gains the STUCK-judgement prompt.
+  `test/auxiliary_shell_monitor_test.dart` adds 112
+  lines covering STUCK-kills-early, preserved classic
+  timeout (no aux model), the conversation shape
+  passed across snapshots, and short-commands-never-
+  fire (under the monitor interval, the monitor never
+  sees a running process and never asks). The
+  integration test `shell_monitor_integration_test.dart`
+  adds 166 lines using a fake evaluator that drives
+  the STUCK and PROGRESS verdicts through the real
+  `chat_turn_executor`. The shell-risk guardrail
+  (v0.17.0's `020e4aa`) is layered above this and
+  still fires before the command starts; the monitor
+  only kicks in once the command is running.
+
 ## [0.18.0] - 2026-07-21
 
 32b98ea
