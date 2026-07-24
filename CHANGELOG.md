@@ -8,6 +8,58 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-21
+
+2d9fd4c
+
+### Features
+
+- **LSP multi-language support with opencode-style
+  auto-install** (`2d9fd4c`) — the in-process Dart LSP
+  stack gains a per-language actor registry, automatic
+  download-and-install of language servers that aren't
+  on `PATH`, and a clean fallback to a generic JSON-RPC
+  client for languages without a first-class actor.
+  New `lib/src/lsp/actors/csharp.dart`,
+  `java.dart`, `python.dart`, `rust.dart`,
+  `typescript.dart`, plus a `generic.dart` that handles
+  any language server speaking the LSP wire protocol.
+  New `lib/src/lsp/actors/registry.dart` (405 lines)
+  picks the right actor per file extension / language
+  hint, falling back to `generic` for unknown ones.
+  New `lib/src/lsp/actors/installers.dart` (359 lines)
+  plus `lib/src/lsp/installer.dart` (431 lines) own
+  the opencode-style auto-install flow: detect missing
+  server binary → resolve a download URL from a small
+  per-language registry → fetch the platform-appropriate
+  archive (zip / tarball / npm-style) → extract into
+  `~/.crux/lsp/<lang>/<version>/` → symlink or shim
+  the `command` so the actor can spawn it. All file
+  writes go through the existing
+  `BundledDirectory` helpers so the install survives
+  Crux upgrades. `lib/src/lsp/actor.dart` shrinks by
+  29 lines as the per-language code moves into the
+  dedicated actors; `dart.dart` loses 20 lines as the
+  same generalisation kicks in. `lib/src/lsp/spawn_util.dart`
+  gains 30 lines wrapping the process-group spawn
+  pattern that previously lived in `actor.dart`.
+  `lib/src/lsp/language.dart` (+7 lines) carries the
+  new language enum additions. The chat panel gains a
+  small `+4` line wire-up so the new registry is the
+  authority for "which server runs for this file".
+  `test/lsp/installer_test.dart` (+138 lines) covers
+  the download / extract / shim happy paths plus the
+  failure modes (network down, archive corrupted,
+  permission denied on `~/.crux/lsp/`).
+  `test/lsp/registry_test.dart` (+153 lines) covers
+  per-extension actor resolution and the generic
+  fallback. Net effect: edit / write / same-turn
+  diagnostics now reach the model for **csharp, java,
+  python, rust, typescript, and any other LSP-speaking
+  language** without a manual `npm install -g` /
+  `pip install` step — the same auto-install pattern
+  opencode uses.
+
 ## [0.19.0] - 2026-07-21
 
 e06c62d

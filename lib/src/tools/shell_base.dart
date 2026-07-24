@@ -331,7 +331,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             previousTotalBytes = totalOutputBytes;
 
             if (verdict.kind == ShellMonitorVerdictKind.stuck) {
-              if (!monitorKillCompleter!.isCompleted) {
+              if (!monitorKillCompleter.isCompleted) {
                 monitorKillCompleter.complete(
                   verdict.reason ?? 'monitor judged the process stuck',
                 );
