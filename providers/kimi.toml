@@ -41,10 +41,13 @@
 #
 # Reasoning effort
 # ----------------
-# Per the Kimi docs, K3 currently only honors `max` (low and
-# high are "coming later") and unknown values 400. We
-# `disabled` every preset except `max` and `off` so the picker
-# only ever sends values the server accepts.
+# Per the Kimi docs, K3 accepts `reasoning_effort` of `low`,
+# `high`, and `max` (default `max`); unknown values 400. Crux's
+# five-level internal scale is mapped onto K3's three levels:
+# `normal` is renamed to `high` on the wire (K3 has no middle
+# tier between low and high), and `off` disables thinking
+# (`thinking.type: disabled`). The picker shows
+# [off, low, high, max].
 #
 # K2.7 has no reasoning-effort knob at all — it's a binary
 # on/off "Thinking" toggle. We expose `off` (raw) and rename
@@ -86,9 +89,11 @@ endpoint_url = "https://api.kimi.com/coding/v1"
 # subscription tier's context grant. Both map to the same
 # upstream `k3` model ID at request time.
 #
-# Only `max` (and `off` to disable thinking) is shown in the
-# reasoning-effort picker — K3's other levels are documented
-# as "coming later", and unknown values return HTTP 400.
+# K3 accepts `low` / `high` / `max` on the wire. Crux's
+# internal five-level scale has no direct K3 equivalent for
+# `normal` (K3's middle tier is `high`), so `normal` is
+# renamed to `high` — the picker shows [off, low, high, max]
+# and `high` is what the server sees.
 [[models]]
 id = "k3-1m"
 name = "Kimi K3 (1M context)"
@@ -99,14 +104,11 @@ thinking = true
 temperature = 0
 stream_lerp = true
 
-# Hide every preset except `off` and `max`. `off` keeps the
-# "disable thinking" option visible (the docs explicitly allow
-# `none → thinking.type disabled`); the other levels are
-# hidden because Kimi currently 400s on them.
+# Map Crux's internal `normal` → wire `high`. K3 has no
+# middle tier between `low` and `high`, so `normal` collapses
+# onto `high`. The other four levels pass through unchanged.
 [models.reasoning_labels]
-low = "disabled"
-normal = "disabled"
-high = "disabled"
+normal = "high"
 
 [[models]]
 id = "k3-256k"
@@ -118,11 +120,10 @@ thinking = true
 temperature = 0
 stream_lerp = true
 
-# Same preset filter as k3-1m: only `off` and `max` are shown.
+# Same mapping as k3-1m: `normal` → wire `high`, all other
+# levels pass through. The picker shows [off, low, high, max].
 [models.reasoning_labels]
-low = "disabled"
-normal = "disabled"
-high = "disabled"
+normal = "high"
 
 # === K2.7 Code — binary on/off thinking ===
 # Two wire-distinct models with the same UX shape. Both have

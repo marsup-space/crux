@@ -51,11 +51,14 @@ import 'openai_compatible_provider.dart';
 ///    provider config so users aren't surprised by the
 ///    /temperature command having no effect.
 ///
-/// K3 (the flagship) *does* accept `reasoning_effort`, and the
-/// Kimi docs specify a server-side mapping
-/// (currently only `max` is honored; `low`/`high` are "coming
-/// later"). The OpenAI-compatible builder already maps Crux's
-/// `max` → wire `max`, so K3 passes through unchanged.
+/// K3 (the flagship) accepts `reasoning_effort` of `low`,
+/// `high`, and `max` (default `max`; unknown values 400).
+/// Crux's five-level internal scale is mapped onto K3's
+/// three levels by [mapEffort]: `normal` collapses onto
+/// `high` (K3 has no middle tier), and `low` passes through
+/// unchanged — the OpenAI-compatible base class maps
+/// everything to `high`, which would silently discard the
+/// user-visible `low` preset.
 ///
 /// ## Usage polling
 ///
@@ -104,6 +107,20 @@ class KimiProvider extends OpenAICompatibleProvider with CodingPlanProvider {
   /// quality regression, not an error).
   static const double _kimiTemperature = 1.0;
   static const double _kimiTopP = 0.95;
+
+  /// Map Crux's internal effort values onto K3's wire values.
+  ///
+  /// K3 accepts `low` / `high` / `max`; the base
+  /// [OpenAICompatibleProvider.mapEffort] maps everything except
+  /// `max` to `high`, which would silently discard the
+  /// user-visible `low` preset. Here `low` passes through
+  /// unchanged, and `normal` (which has no K3 equivalent —
+  /// K3's middle tier is `high`) collapses onto `high`.
+  @override
+  String mapEffort(String? effort) {
+    if (effort == 'low') return 'low';
+    return super.mapEffort(effort);
+  }
 
   @override
   Map<String, dynamic> buildRequestBody(

@@ -335,21 +335,32 @@ void main() {
     });
 
     test(
-      'K3: passes reasoning_effort through unchanged (server maps to max)',
+      'K3: passes low/high/max reasoning_effort through unchanged',
       () {
-        // The Kimi docs document a server-side effort mapping
-        // (low/high/medium → high, max/ultra → max, unknown →
-        // 400). Crux only ever sends `max` for K3 (other presets
-        // are hidden via reasoning_labels), so the OpenAI-
-        // compatible `mapEffort('max') = 'max'` passthrough is
-        // exactly what K3 wants.
-        final body = provider.buildRequestBody(
-          'k3-1m',
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'max',
-        );
-        expect(body['reasoning_effort'], 'max');
+        // K3 now accepts `low` / `high` / `max` on the wire
+        // (default `max`; unknown values 400). The KimiProvider
+        // overrides `mapEffort` so `low` passes through — the
+        // OpenAI-compatible base would otherwise map it to
+        // `high`. `normal` has no K3 equivalent and collapses
+        // onto `high` (the TOML renames it for display).
+        for (final (internal, wire) in const [
+          ('low', 'low'),
+          ('normal', 'high'),
+          ('high', 'high'),
+          ('max', 'max'),
+        ]) {
+          final body = provider.buildRequestBody(
+            'k3-1m',
+            userMsg,
+            thinkingMode: 'enabled',
+            reasoningEffort: internal,
+          );
+          expect(
+            body['reasoning_effort'],
+            wire,
+            reason: 'internal "$internal" should map to wire "$wire"',
+          );
+        }
       },
     );
 

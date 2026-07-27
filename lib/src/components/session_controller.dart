@@ -427,7 +427,7 @@ class SessionController {
   /// TOML default when the stored value is no longer supported.
   ///
   /// Without this, switching to a model that filters its preset
-  /// list (Kimi K3 / K2.7 Code hide everything but `[off, max]`)
+  /// list (Kimi K2.7 Code hides everything but `[off, max]`)
   /// would leave the session's stored effort (`normal`, the
   /// historical default) untouched — the picker would offer
   /// only `[off, max]` but the chip would render the

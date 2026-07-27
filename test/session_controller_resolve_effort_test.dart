@@ -31,10 +31,11 @@ void main() {
   late SessionController controller;
 
   /// Set up a `kimi` provider matching the production TOML —
-  /// K3 exposes only `[off, max]` (low/normal/high are
-  /// hidden), K2.7 exposes `[off, on]` (max renamed to
-  /// "on" + low/normal/high hidden). The `reasoning_effort`
-  /// defaults are `max` for K3 and `max` for K2.7.
+  /// K3 exposes the full `[off, low, high, max]` scale
+  /// (`normal` is renamed to `high` on the wire because K3
+  /// has no middle tier), K2.7 exposes `[off, on]` (max
+  /// renamed to "on" + low/normal/high hidden). The
+  /// `reasoning_effort` defaults are `max` for both.
   Future<void> installKimiProvider() async {
     await File('${tempDir.path}/kimi.toml').writeAsString('''
 type = "kimi"
@@ -48,9 +49,7 @@ reasoning_effort = "max"
 thinking = true
 
 [models.reasoning_labels]
-low = "disabled"
-normal = "disabled"
-high = "disabled"
+normal = "high"
 
 [[models]]
 id = "kimi-for-coding"
@@ -173,29 +172,24 @@ reasoning_effort = "high"
     },
   );
 
-  test('Kimi K3: stored "normal" falls back to model TOML "max" (case 2 — '
-      'the bug the user reported)', () async {
+  test('Kimi K3: stored "normal" passes through unchanged (case 1 — '
+      'K3 now exposes the full scale)', () async {
     await installKimiProvider();
-    // Session was created on a different model (or pre-Kimi)
-    // with the historical default "normal". After the user
-    // switches to Kimi K3, the runtime should NOT leave
-    // "normal" in place — the picker only shows [off, max],
-    // so the chip and the wire must agree on "max".
+    // K3 now accepts low / high / max on the wire, so the
+    // full five-level Crux scale is in the preset list. A
+    // stored "normal" is in the list and passes through as
+    // case 1 — no fallback needed.
     final id = await createAndLoad('kimi/k3-1m');
-    // Manually overwrite the stored value to "normal" (the
-    // historical default before this fix). The runtime init
-    // should reconcile it.
     final session = controller.findSession(id)!;
     session.reasoningEffort = 'normal';
     await store.update(id, reasoningEffort: 'normal');
     final rt = controller.runtime(id);
     expect(
       rt.reasoningEffort,
-      'max',
+      'normal',
       reason:
-          'K3 only allows [off, max] — runtime must fall '
-          'back to the TOML default "max" rather than '
-          'leaving the unsupported "normal" in place',
+          'K3 now accepts the full five-level scale — "normal" '
+          'is in the preset list and passes through unchanged',
     );
   });
 
