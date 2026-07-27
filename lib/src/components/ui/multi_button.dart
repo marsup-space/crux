@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../../theme/crux_theme.dart';
 
@@ -42,14 +43,17 @@ class MultiButtonSegment {
 /// under the cursor is highlighted; the others stay dim, giving the
 /// user a clear preview of which action a click will trigger.
 ///
-/// **Width stability.** Hovering never changes the button's size. The
+/// **Size stability.** Hovering never changes the button's size. The
 /// button captures the width its non-hovered layout would occupy —
 /// the parent-provided width when one is available (e.g. the side
 /// panel's full width, so hover does not widen the surrounding
 /// `Column` and nudge siblings like the git-status rows above), or
 /// the idle label's intrinsic width when the parent leaves the width
 /// unconstrained — and pins both the idle and the hovered states to
-/// exactly that width.
+/// exactly that width. The height is also pinned: when the idle label
+/// soft-wraps to multiple rows, the hovered state preserves that
+/// multi-row footprint and centres the segment row vertically inside
+/// it, so the button never collapses to a single line on hover.
 ///
 /// **Even segment distribution.** On hover the fixed width is split
 /// evenly across the segments: each segment occupies an equal share
@@ -197,6 +201,25 @@ class _MultiButtonState extends State<MultiButton> {
   double get _labelWidth {
     final textWidth = UnicodeWidth.stringWidth(component.label);
     return textWidth + component.padding.left + component.padding.right;
+  }
+
+  /// Compute the height (in rows) the idle state occupies for a given
+  /// [width]. The idle label is rendered with [Text] which soft-wraps
+  /// when the content exceeds the available width, so the resulting
+  /// height can be more than one row. The hovered state uses this to
+  /// keep the same footprint instead of collapsing to a single row.
+  double _idleHeightForWidth(double width) {
+    final contentWidth =
+        (width - component.padding.left - component.padding.right)
+            .clamp(1, double.infinity)
+            .toInt();
+    final layout = TextLayoutEngine.layout(
+      component.label,
+      TextLayoutConfig(softWrap: true, maxWidth: contentWidth),
+    );
+    return layout.actualHeight +
+        component.padding.top +
+        component.padding.bottom;
   }
 
   /// Truncate [text] to fit within [maxWidth] display cells, adding
@@ -369,13 +392,17 @@ class _MultiButtonState extends State<MultiButton> {
       }
 
       // The hover background covers exactly the same footprint as the
-      // idle state; the Row fills it and the Expanded segments divide
-      // that width evenly, so the options are spread across the whole
-      // button rather than clustered in the middle.
+      // idle state — same width AND same height. The idle label may
+      // have soft-wrapped to multiple rows; without pinning the height
+      // the single-row [Row] would collapse the button to one line.
+      // The [Row] is centred vertically within the preserved height so
+      // the segments read as a middle band rather than jumping to the
+      // top of a taller box.
       visible = Container(
         width: fixedWidth,
+        height: _idleHeightForWidth(fixedWidth),
         decoration: BoxDecoration(color: hoverBgColor),
-        child: Row(children: children),
+        child: Center(child: Row(children: children)),
       );
     }
 
@@ -433,11 +460,20 @@ class _MultiButtonState extends State<MultiButton> {
     // inside the button. Per-segment regions update
     // _activeSegment independently; this one is the source of
     // truth for the hovered/idle morph.
+    //
+    // The height is pinned to the idle label's (possibly multi-row)
+    // footprint so the hovered state — a single-row [Row] inside a
+    // [Center] — still occupies the same vertical space and the hover
+    // background covers the full area.
     return MouseRegion(
       opaque: false,
       onEnter: (_) => _setHovered(true),
       onExit: (_) => _setHovered(false),
-      child: SizedBox(width: fixedWidth, child: child),
+      child: SizedBox(
+        width: fixedWidth,
+        height: _idleHeightForWidth(fixedWidth),
+        child: child,
+      ),
     );
   }
 }

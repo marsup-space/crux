@@ -159,5 +159,35 @@ void main() {
         expect(opened, isFalse);
       });
     });
+
+    test('hover preserves multi-row height when label wraps', () async {
+      await testNocterm('multi-row height', (tester) async {
+        // A 20-cell-wide button with a 38-cell label wraps to 2 rows.
+        await pumpButton(
+          tester,
+          width: 20,
+          label: 'averylongprojectnamethatwraps',
+          segments: [
+            MultiButtonSegment(label: 'open', onPressed: () {}),
+            MultiButtonSegment(label: 'switch', onPressed: () {}),
+          ],
+        );
+
+        final before = tester.renderToString();
+        final idleLines = before.split('\n');
+        // The idle label wraps to at least 2 rows.
+        expect(idleLines.length, greaterThanOrEqualTo(2));
+
+        await tester.hover(5, 0);
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+
+        final after = tester.renderToString();
+        final hoverLines = after.split('\n');
+        // Hover must keep the same number of rows — not collapse to 1.
+        expect(hoverLines.length, idleLines.length);
+      });
+    });
   });
 }
