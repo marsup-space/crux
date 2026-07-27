@@ -473,10 +473,19 @@ class ContextBarState extends State<ContextBar>
   /// until the user moves the mouse, defeating the whole point
   /// of the live loaded-skills list while a tool call is in
   /// flight.
+  ///
+  /// Also detect a `contextMaxTokens` change (e.g. `/model` just
+  /// switched to a model with a different context window) and
+  /// re-push the bar state so the label and fill ratio update
+  /// immediately — otherwise the render object keeps showing the
+  /// old model's max until the next hover or timer tick.
   @override
   void didUpdateComponent(covariant ContextBar oldComponent) {
     super.didUpdateComponent(oldComponent);
     refreshHintFromLastEvent();
+    if (oldComponent.contextMaxTokens != component.contextMaxTokens) {
+      _pushToRenderObject();
+    }
   }
 
   void _tick(Duration elapsed) {

@@ -11,6 +11,7 @@ Future<void> executeModel(List<String> parts, CommandContext ctx) async {
         await ctx.store.update(ctx.currentSessionId!, model: modelKey);
         ctx.currentSession.model = modelKey;
       }
+      ctx.refresh();
       ctx.showToast('Model switched to $modelKey', mode: ToastMode.status);
       ctx.providerService.setLastUsedModel(modelKey);
     }
