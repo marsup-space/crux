@@ -8,6 +8,43 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-27
+
+6f5489e
+
+### Features
+
+- **Aux-model button moves to the side panel, with live
+  task labels** (`5d63e05`) — on wide terminals the
+  auxiliary-model button leaves the toolbar for a
+  full-width slot in the ExtraInfoPanel (narrow
+  terminals keep it in the toolbar). A new app-wide
+  `AuxiliaryTaskTracker` registry feeds live labels of
+  running auxiliary tasks into the UI.
+- **Kimi K3 exposes low/high reasoning efforts** (`91bf9a7`)
+  — K3 now accepts `reasoning_effort` of low/high/max
+  (previously max-only), with Crux's five-level internal
+  scale mapped onto K3's three levels.
+
+### Fixes
+
+- **Ask-form options stack vertically** (`6f5489e`) —
+  long option labels used to be clipped off screen when
+  cells sat side-by-side in one row; each option now
+  gets its own full-width soft-wrapping row, and
+  arrowLeft/arrowRight step through options with
+  group-boundary clamping.
+- **Multi-button keeps multi-row height on hover**
+  (`a1da7a5`) — the hovered state collapsed
+  soft-wrapped labels to a single row; the button now
+  pins its footprint to the idle label's measured
+  height and centres the segment row vertically.
+- **Context bar refreshes immediately on model switch**
+  (`75afd84`) — `/model` switched the session model
+  but never rebuilt the chat panel, leaving the cached
+  context-size label stale until the next hover or
+  timer tick.
+
 ## [0.20.0] - 2026-07-21
 
 2d9fd4c
