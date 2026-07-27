@@ -1236,6 +1236,11 @@ class _ChatPanelState extends State<ChatPanel> {
                       ? null
                       : _compactEstimates[sessionId]?.estimate,
                   debugMode: CommandRegistry.instance.debugEnabled,
+                  // When the side panel is visible the auxiliary
+                  // button lives there (above the git status /
+                  // project widgets); only render it in the toolbar
+                  // on narrow terminals.
+                  auxButtonInSidePanel: showInfoPanel,
                 ),
                 Divider(color: CruxTheme.of(context).divider, height: 1),
                 // The input region is swappable: when the agent has an
@@ -1379,6 +1384,8 @@ class _ChatPanelState extends State<ChatPanel> {
                       },
                       onOpenProject: _openProjectInExplorer,
                       onSwitchProject: _switchProject,
+                      sessionController: _sessionController,
+                      onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                     ),
                   ),
                 ],

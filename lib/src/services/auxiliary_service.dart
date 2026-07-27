@@ -5,6 +5,7 @@ import '../storage/message_store.dart';
 import '../tools/shell_monitor.dart';
 import '../tools/shell_risk.dart';
 import 'auxiliary_prompts.dart';
+import 'auxiliary_task_tracker.dart';
 import 'llm_client.dart';
 import 'llm_error.dart';
 import 'provider_service.dart';
@@ -122,6 +123,18 @@ class AuxiliaryService {
     int sessionId, {
     String? userContent,
   }) async {
+    final lease = AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.title);
+    try {
+      return await _generateTitle(sessionId, userContent: userContent);
+    } finally {
+      lease.end();
+    }
+  }
+
+  Future<String?> _generateTitle(
+    int sessionId, {
+    String? userContent,
+  }) async {
     // Use the provided userContent directly when available (e.g. when
     // generating the title early, before the message has been persisted).
     // Otherwise fall back to reading from the store.
@@ -152,6 +165,23 @@ class AuxiliaryService {
   }
 
   Future<String?> generateTldr(
+    String responseContent, {
+    String? userQuestion,
+    TldrDetail detail = TldrDetail.defaultLevel,
+  }) async {
+    final lease = AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.tldr);
+    try {
+      return await _generateTldr(
+        responseContent,
+        userQuestion: userQuestion,
+        detail: detail,
+      );
+    } finally {
+      lease.end();
+    }
+  }
+
+  Future<String?> _generateTldr(
     String responseContent, {
     String? userQuestion,
     TldrDetail detail = TldrDetail.defaultLevel,
@@ -206,6 +236,24 @@ class AuxiliaryService {
   ///   * Model output that doesn't follow the SAFE / UNSAFE /
   ///     UNCERTAIN contract → `uncertain` (fail-closed).
   Future<ShellRiskVerdict> assessShellCommand({
+    required String command,
+    required String intent,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final lease =
+        AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.shellRisk);
+    try {
+      return await _assessShellCommand(
+        command: command,
+        intent: intent,
+        timeout: timeout,
+      );
+    } finally {
+      lease.end();
+    }
+  }
+
+  Future<ShellRiskVerdict> _assessShellCommand({
     required String command,
     required String intent,
     Duration timeout = const Duration(seconds: 10),
@@ -284,6 +332,19 @@ class AuxiliaryService {
   /// stream rather than just abandoning the future because the
   /// [LlmClient] is long-lived and shared.
   Future<ShellMonitorVerdict> assessShellProgress({
+    required List<Map<String, dynamic>> messages,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final lease =
+        AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.shellMonitor);
+    try {
+      return await _assessShellProgress(messages: messages, timeout: timeout);
+    } finally {
+      lease.end();
+    }
+  }
+
+  Future<ShellMonitorVerdict> _assessShellProgress({
     required List<Map<String, dynamic>> messages,
     Duration timeout = const Duration(seconds: 10),
   }) async {

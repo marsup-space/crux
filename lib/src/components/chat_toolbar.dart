@@ -5,7 +5,6 @@
 
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
-import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
@@ -21,8 +20,8 @@ import 'credit_balance_display.dart';
 import 'context_bar.dart';
 import 'metrics_display.dart';
 import 'session_controller.dart';
-import 'session_cubit.dart';
 import 'streaming_controller.dart';
+import 'ui/auxiliary_model_button.dart';
 import 'ui/button.dart';
 import 'ui/glossy_model_button.dart';
 import 'ui/layout_metrics.dart';
@@ -34,11 +33,13 @@ import 'ui/layout_metrics.dart';
 /// because `UnicodeWidth.stringWidth()` returns 0 for PUA.
 const _kIconReasoning = '\u{2736}'; // ✶ — six-pointed star
 const _kIconImage = '\u{25A3}'; // ▣ — square with inner shape (image badge)
-const _kIconAuxiliary = '\u{203A}'; // › — right chevron
 
 /// The toolbar above the input box showing model name, thinking mode,
 /// context bar, metrics (tok/s, TTFT), coding-plan usage, credit
-/// balance, and auxiliary model button.
+/// balance, and — when the right-hand info panel is hidden (narrow
+/// terminal) — the auxiliary model button. When the side panel IS
+/// visible the auxiliary button moves there instead (just above the
+/// git status / project widgets), keeping the toolbar lean.
 ///
 /// The coding-plan usage display is opt-in: it's only rendered when
 /// [codingPlanProvider] is non-null. The chat panel passes the
@@ -111,6 +112,14 @@ class ChatToolbar extends StatefulComponent {
   /// [CommandRegistry.debugEnabled] by the chat panel.
   final bool debugMode;
 
+  /// Whether the auxiliary-model button is rendered inside the
+  /// right-hand [ExtraInfoPanel] instead of this toolbar. The chat
+  /// panel sets this to true whenever the side panel is visible
+  /// (wide terminals), so the button lives just above the panel's
+  /// git status / project widgets; on narrow terminals it stays
+  /// here in the toolbar.
+  final bool auxButtonInSidePanel;
+
   const ChatToolbar({
     super.key,
     required this.sessionController,
@@ -130,6 +139,7 @@ class ChatToolbar extends StatefulComponent {
     this.onCreditBalanceTap,
     this.onTemperaturePressed,
     this.debugMode = false,
+    this.auxButtonInSidePanel = false,
   });
 
   @override
@@ -239,37 +249,6 @@ class _ChatToolbarState extends State<ChatToolbar> {
     );
   }
 
-  Component _buildAuxiliaryModelButton(BuildContext context) {
-    final sessionId = _sessionController.currentSessionId;
-    final rt = sessionId != null ? _sessionController.runtime(sessionId) : null;
-    final isAuxBusy =
-        _sessionController.isGeneratingTitle || (rt?.isGeneratingTldr ?? false);
-    // Subscribe to the auxiliary-model short-name through a
-    // BlocSelector<SessionCubit, String> so this button only
-    // rebuilds when that one field changes. Re-renders triggered
-    // by anything else in the cubit state (session list, message
-    // cache, pending images, …) are dropped at the selector
-    // boundary, so the auxiliary section does not pay the cost of
-    // a full chat-panel refresh just to keep its label up to date.
-    //
-    // The auxiliary model is only used for side tasks (session-title
-    // generation, TLDR summaries) — never for the in-flight chat
-    // response — so it's safe to swap while the main model is busy.
-    // [AuxiliaryService._streamAuxiliaryCall] resolves the
-    // provider/key/model id once at the start of each call, so a
-    // mid-flight change takes effect on the *next* auxiliary call
-    // without disturbing the one currently in flight. The main-model
-    // button (above) is the one that needs to stay disabled while
-    // the session is running.
-    return BlocSelector<SessionCubit, SessionCubitState, String>(
-      selector: (state) => state.auxiliaryModelShortName,
-      builder: (context, auxShortName) => GlossyModelButton(
-        label: '$_kIconAuxiliary $auxShortName',
-        isAnimating: isAuxBusy,
-        onPressed: component.onAuxiliaryPressed,
-      ),
-    );
-  }
 
   /// Whether the active provider opted into the coding-plan
   /// mixin (and thus has a stream to subscribe to). The
@@ -535,9 +514,17 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // "  ¥110.00 (¥100.00)" — 22 characters.
         final showCreditBalance = _hasCreditBalanceProvider();
         final creditBalanceW = showCreditBalance ? 22 + spacer : 0;
-        final auxLabel =
-            '$_kIconAuxiliary ${_sessionController.auxiliaryModelShortName}';
-        final auxW = UnicodeWidth.stringWidth(auxLabel) + btnPad;
+        // Width budget for the auxiliary button is only needed
+        // when it's actually rendered in this toolbar (narrow
+        // terminals). When the side panel hosts the button the
+        // toolbar skips the reservation entirely.
+        final auxW = component.auxButtonInSidePanel
+            ? 0
+            : UnicodeWidth.stringWidth(
+                    '$kIconAuxiliary '
+                    '${_sessionController.auxiliaryModelShortName}',
+                  ) +
+                  btnPad;
 
         var remaining =
             constraints.maxWidth.toInt() - kToolbarRowInset - modelW - imageW;
@@ -566,7 +553,8 @@ class _ChatToolbarState extends State<ChatToolbar> {
             showCreditBalance && (remaining - creditBalanceW) >= 0;
         if (showCreditBalanceUsage) remaining -= creditBalanceW;
 
-        final showAux = (remaining - auxW) >= 0;
+        final showAux =
+            !component.auxButtonInSidePanel && (remaining - auxW) >= 0;
 
         // At this point, if showThinking is true, rt is guaranteed
         // non-null. Promote it to avoid null-check noise below.
@@ -712,7 +700,10 @@ class _ChatToolbarState extends State<ChatToolbar> {
                       : 'Auxiliary model: '
                             '${_sessionController.auxiliaryModelShortName}\n'
                             '(used for /tldr summaries and title generation)',
-                  child: _buildAuxiliaryModelButton(context),
+                  child: AuxiliaryModelButton(
+                    sessionController: _sessionController,
+                    onPressed: component.onAuxiliaryPressed,
+                  ),
                 ),
             ],
           ),

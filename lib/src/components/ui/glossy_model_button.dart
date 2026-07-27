@@ -8,10 +8,20 @@ class GlossyModelButton extends StatefulComponent {
   final bool isAnimating;
   final VoidCallback? onPressed;
 
+  /// Minimum rendered width in terminal columns. When the label
+  /// (plus its 2 padding cells) is narrower, the button is padded
+  /// with trailing background cells so short labels stay the same
+  /// width as long ones — used by the side panel's auxiliary-model
+  /// button, whose label shrinks from `AUX: model-name` to
+  /// `titling…` while busy but must keep occupying the full panel
+  /// width. Null (default) = size to label, the historic behavior.
+  final int? minWidth;
+
   const GlossyModelButton({
     required this.label,
     required this.isAnimating,
     this.onPressed,
+    this.minWidth,
   });
 
   @override
@@ -129,6 +139,13 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
       final bgColor = _hovered ? theme.buttonBackgroundHover : baseBg;
       final fg = _hovered ? theme.buttonTextHover : baseFg;
 
+      // minWidth padding: trailing cells in the same background so
+      // the padded area is visually part of the button (and, thanks
+      // to the opaque GestureDetector, part of its hit region).
+      final padCells = btn.minWidth == null
+          ? 0
+          : max(0, btn.minWidth! - btn.label.length - 2);
+
       return MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -139,12 +156,17 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
           child: Container(
             color: bgColor,
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Text(
-              btn.label,
-              style: TextStyle(
-                color: fg,
-                fontWeight: _hovered ? FontWeight.bold : null,
-              ),
+            child: Row(
+              children: [
+                Text(
+                  btn.label,
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: _hovered ? FontWeight.bold : null,
+                  ),
+                ),
+                if (padCells > 0) Text(' ' * padCells),
+              ],
             ),
           ),
         ),
@@ -160,8 +182,14 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     final labelLength = btn.label.length;
     final cells = <Component>[];
 
-    // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1, right pad = labelLength
-    for (int sweepPos = -1; sweepPos <= labelLength; sweepPos++) {
+    // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1,
+    // then right padding. minWidth extends the right padding so the
+    // gradient covers the full requested width — trailing cells are
+    // background-only, exactly like the two natural padding cells.
+    final rightPadEnd = btn.minWidth == null
+        ? labelLength
+        : max(labelLength, btn.minWidth! - 1);
+    for (int sweepPos = -1; sweepPos <= rightPadEnd; sweepPos++) {
       final distance = (sweepPos - _phase).abs();
       double sweepEase;
       if (distance < _bandWidth) {

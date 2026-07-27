@@ -14,6 +14,8 @@ import '../utils/frame_profiler.dart';
 import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
 import 'git_status_widget.dart';
+import 'session_controller.dart';
+import 'ui/auxiliary_model_button.dart';
 import 'ui/fps_counter.dart';
 import 'ui/multi_button.dart';
 
@@ -68,6 +70,16 @@ class ExtraInfoPanel extends StatefulComponent {
   /// instance here would orphan the timer (and leak it on dispose).
   final GitStatusService gitStatusService;
 
+  /// Session controller backing the [AuxiliaryModelButton] rendered
+  /// just above the git status / project widgets. Optional so tests
+  /// that don't exercise the button can omit it; when null the
+  /// button is not rendered.
+  final SessionController? sessionController;
+
+  /// Called when the user clicks the auxiliary-model button. The
+  /// chat panel wires this to `stashAndSetCommand('/auxiliary ')`.
+  final VoidCallback? onAuxiliaryPressed;
+
   const ExtraInfoPanel({
     required this.sessions,
     required this.currentSessionId,
@@ -77,6 +89,8 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
+    this.sessionController,
+    this.onAuxiliaryPressed,
   });
 
   @override
@@ -501,6 +515,29 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     },
                   ),
                 ),
+                // Auxiliary-model button, hosted by the side panel
+                // on wide terminals (on narrow terminals the chat
+                // toolbar renders it instead). Sits directly above
+                // the divider that isolates the bottom block;
+                // click dumps `/auxiliary ` into the chat input.
+                // The SizedBox stretches it to the full panel width
+                // (GlossyModelButton sizes to its label otherwise).
+                if (component.sessionController != null)
+                  SizedBox(
+                    width: constraints.maxWidth,
+                    child: Hinted(
+                      hint:
+                          'Auxiliary model\n'
+                          '(used for /tldr summaries and title '
+                          'generation — click to change)',
+                      child: AuxiliaryModelButton(
+                        sessionController: component.sessionController!,
+                        onPressed: component.onAuxiliaryPressed,
+                        showAuxLabel: true,
+                        maxWidth: constraints.maxWidth.toInt(),
+                      ),
+                    ),
+                  ),
                 // Horizontal separator that visually isolates the
                 // bottom block (git status + project widget) from
                 // the scrolling session list. Without it the two
