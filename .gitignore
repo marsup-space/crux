@@ -42,6 +42,10 @@ CLAUDE.md
 # the picker; not part of the shipped app).
 .crux/
 
+# Semble semantic-search index cache (written by the search isolate
+# into <root>/.cache/semble; not source).
+.cache/
+
 # Semble model files fetched locally by the semantic search engine
 # (binary model, not source — see third_party/manifest.json).
 /third_party/semblemodel/
