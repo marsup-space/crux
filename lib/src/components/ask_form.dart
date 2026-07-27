@@ -5,8 +5,10 @@ import '../tools/ask_tool.dart';
 import 'ui/button.dart';
 
 /// Interactive form that replaces the chat input box when the agent
-/// has called the `ask` tool. Renders one row of controls per group
-/// (checkboxes for multi-select, radios for single-select), a
+/// has called the `ask` tool. Renders one section per group with its
+/// options stacked vertically (checkboxes for multi-select, radios
+/// for single-select) so long option labels soft-wrap onto
+/// continuation lines instead of overflowing the row, plus a
 /// free-text note field, and Submit / Dismiss actions.
 ///
 /// Focus architecture mirrors the wizard overlay's pattern: a single
@@ -14,7 +16,10 @@ import 'ui/button.dart';
 /// wrapped in a [Focusable] whose `focused` flag derives from that
 /// enum. Only one region has focus at a time. Tab cycles forward
 /// (options → note → submit → dismiss → options), Shift+Tab reverses.
-/// Arrow Up/Down move within the option grid. Enter submits from
+/// Arrow Up/Down move within the option list; Arrow Left/Right step
+/// between options with group boundaries clamped (Left past the first
+/// option of a group stays put instead of jumping into the previous
+/// group). Enter submits from
 /// anywhere except when an option is focused (Enter toggles that
 /// option). Esc dismisses from anywhere.
 ///
@@ -111,6 +116,21 @@ class _AskFormState extends State<AskForm> {
     setState(() {});
   }
 
+  /// Arrow Left/Right step one option at a time, but clamp at group
+  /// boundaries — the options are rendered one per line grouped by
+  /// section, so jumping sideways into a different group feels wrong.
+  void _moveOptionHorizontal(int delta) {
+    if (_flatOptions.isEmpty) return;
+    final next = _focusedOptionIndex + delta;
+    if (next < 0 || next >= _flatOptions.length) return;
+    if (_flatOptions[next].group.name !=
+        _flatOptions[_focusedOptionIndex].group.name) {
+      return;
+    }
+    _focusedOptionIndex = next;
+    setState(() {});
+  }
+
   void _cycleRegion(bool forward) {
     final order = const [
       _AskFocusRegion.options,
@@ -164,6 +184,14 @@ class _AskFormState extends State<AskForm> {
     }
     if (key == LogicalKey.arrowDown) {
       _moveOption(1);
+      return true;
+    }
+    if (key == LogicalKey.arrowLeft) {
+      _moveOptionHorizontal(-1);
+      return true;
+    }
+    if (key == LogicalKey.arrowRight) {
+      _moveOptionHorizontal(1);
       return true;
     }
     if (key == LogicalKey.escape) {
@@ -268,22 +296,16 @@ class _AskFormState extends State<AskForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final group in spec.groups)
-              Padding(
-                padding: const EdgeInsets.only(top: 0, bottom: 0),
-                child: Row(
-                  children: [
-                    Text(
-                      ' ${group.name}${group.multi ? ' (multi)' : ''}: ',
-                      style: TextStyle(
-                        color: theme.mdH2,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    ..._buildOptionCells(group, theme),
-                  ],
+            for (final group in spec.groups) ...[
+              Text(
+                ' ${group.name}${group.multi ? ' (multi)' : ''}:',
+                style: TextStyle(
+                  color: theme.mdH2,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              ..._buildOptionRows(group, theme),
+            ],
           ],
         ),
       ),
@@ -369,14 +391,17 @@ class _AskFormState extends State<AskForm> {
     );
   }
 
-  List<Component> _buildOptionCells(AskGroup group, CruxThemeData theme) {
-    final cells = <Component>[];
-    final options = group.options;
-    for (var i = 0; i < options.length; i++) {
-      final option = options[i];
+  /// One full-width row per option. The option text gets the
+  /// remaining width via [Expanded] so nocterm's paragraph layout
+  /// soft-wraps long labels onto continuation lines instead of
+  /// letting the row overflow horizontally. Continuation lines are
+  /// padded to line up under the label start (after the marker).
+  List<Component> _buildOptionRows(AskGroup group, CruxThemeData theme) {
+    final rows = <Component>[];
+    for (final option in group.options) {
       final flatIdx = _flatOptionFlatIndex(group, option);
-      final isFocused =
-          _focusRegion == _AskFocusRegion.options && flatIdx == _focusedOptionIndex;
+      final isFocused = _focusRegion == _AskFocusRegion.options &&
+          flatIdx == _focusedOptionIndex;
       final isPicked = _isPicked(group, option);
       final marker = group.multi
           ? (isPicked ? '☑' : '☐')
@@ -389,7 +414,7 @@ class _AskFormState extends State<AskForm> {
           ? theme.buttonTextFocused
           : (isPicked ? theme.buttonTextHover : theme.buttonText);
 
-      cells.add(
+      rows.add(
         GestureDetector(
           onTap: () {
             _focusedOptionIndex = flatIdx;
@@ -412,20 +437,23 @@ class _AskFormState extends State<AskForm> {
               decoration: BoxDecoration(color: cellColor),
               padding: const EdgeInsets.symmetric(horizontal: 1),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(marker, style: TextStyle(color: textColor)),
-                  Text(' ${option.label}', style: TextStyle(color: textColor)),
+                  Text('$marker ', style: TextStyle(color: textColor)),
+                  Expanded(
+                    child: Text(
+                      option.label,
+                      style: TextStyle(color: textColor),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
         ),
       );
-      if (i < options.length - 1) {
-        cells.add(const SizedBox(width: 1));
-      }
     }
-    return cells;
+    return rows;
   }
 
   int _flatOptionFlatIndex(AskGroup group, AskOption option) {

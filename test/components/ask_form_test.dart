@@ -490,5 +490,83 @@ void main() {
             reason: 'just toggling, no submit happened');
       }, size: const Size(80, 24));
     });
+
+    test('layout: long option labels wrap instead of overflowing', () async {
+      await testNocterm('ask form long labels wrap', (tester) async {
+        const longLabel =
+            'Refactor the websocket reconnect logic with exponential '
+            'backoff and jitter';
+        await pumpAskForm(
+          tester,
+          pending: PendingAsk(
+            sessionId: 1,
+            callId: 'long-call',
+            spec: AskSpec(
+              prompt: 'Pick a task',
+              groups: [
+                AskGroup(
+                  name: 'tasks',
+                  multi: true,
+                  options: [
+                    AskOption(label: longLabel),
+                    AskOption(label: 'short'),
+                  ],
+                ),
+              ],
+            ),
+            completer: Completer<ToolResult>(),
+          ),
+          onSubmit: (_) {},
+          onDismiss: () {},
+          width: 40,
+        );
+
+        final ts = tester.terminalState;
+        // Both fragments of the wrapped label must be visible; with the
+        // old horizontal Row layout the tail ('jitter') would be clipped
+        // off the 40-column screen.
+        expect(ts, containsText('Refactor the websocket reconnect'));
+        expect(ts, containsText('jitter'));
+        expect(ts, containsText('short'));
+      }, size: const Size(40, 24));
+    });
+
+    test('keyboard: arrow right is clamped at the group boundary', () async {
+      await testNocterm('ask form arrow right clamp', (tester) async {
+        String? submittedProse;
+        await pumpAskForm(
+          tester,
+          pending: makePending(),
+          onSubmit: (p) => submittedProse = p,
+          onDismiss: () {},
+        );
+
+        // Focus starts on flat index 0 = 'web' in the multi group
+        // 'modules' (web / api / cli). Arrow right twice walks within
+        // the group; the third press would cross into the 'runtime'
+        // group and must be clamped — focus stays on 'cli'.
+        await tester.sendKey(LogicalKey.arrowRight);
+        await tester.sendKey(LogicalKey.arrowRight);
+        await tester.sendKey(LogicalKey.arrowRight);
+        await tester.pump();
+
+        // Space toggles the focused option. If focus were still on
+        // 'cli' (clamped), modules gets exactly one pick; if the press
+        // had leaked into 'runtime', the single-select default would
+        // have switched from 'node' to 'bun'.
+        await tester.sendKey(LogicalKey.space);
+        await tester.pump();
+
+        // Submit from the note region: Tab there, then Enter.
+        await tester.sendTab();
+        await tester.pump();
+        await tester.sendEnter();
+        await tester.pump();
+
+        expect(submittedProse, isNotNull);
+        expect(submittedProse, contains('[modules] cli'));
+        expect(submittedProse, contains('[runtime] node'));
+      }, size: const Size(80, 24));
+    });
   });
 }
