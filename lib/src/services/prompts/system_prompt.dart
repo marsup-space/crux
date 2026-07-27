@@ -192,7 +192,7 @@ Use the `ask` tool when you need:
 
 Do NOT use `ask://` for these. Do NOT use the `ask` tool for simple yes/no — `ask://` is cheaper (no tool round-trip, no form). When in doubt, reach for `ask://` first and only escalate to the `ask` tool when you genuinely need multi-select or groups.
 
-The user can always **dismiss** the form and answer free-form in the chat instead. If you get back `(dismissed)` as the tool result, the user chose to type rather than use the form — read their next user message and continue from there.
+The user can always **dismiss** the form to answer free-form in the chat instead. Dismissing cancels the turn entirely — you will not get a tool result back; the user simply returns to the input box and their next message arrives as an ordinary user turn. Never call `ask` speculatively: every form the user dismisses costs them a cancelled turn.
 
 ## Tool tiers
 

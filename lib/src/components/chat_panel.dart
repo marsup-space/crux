@@ -1331,22 +1331,22 @@ class _ChatPanelState extends State<ChatPanel> {
                         _pendingAskCubit.complete(prose);
                       },
                       onDismiss: () {
-                        // Same idea: make the dismiss visible so the
-                        // user has feedback that they abandoned the
-                        // form rather than submitted it.
+                        // Dismiss = "I'd rather type free-form". Cancel
+                        // the whole turn silently: the agent must NOT
+                        // receive a tool result and immediately reply
+                        // again — the UI should just return to the
+                        // normal input box and wait for the user's next
+                        // message. The form unmounts as a side effect
+                        // of the cancel (clearFor emits the empty
+                        // state), and no chat bubble is appended —
+                        // from the user's perspective they simply chose
+                        // not to answer.
                         final sid = _sessionController.currentSessionId;
                         if (sid != null) {
-                          _sessionController.putCachedMessages(sid, [
-                            ...?_sessionController.messageCache[sid],
-                            Message(
-                              id: -1,
-                              sessionId: sid,
-                              role: 'user',
-                              content: '(dismissed ask form)',
-                            ),
-                          ]);
+                          _turnOrchestrator.cancelAskTurn(sid);
+                        } else {
+                          _pendingAskCubit.dismiss();
                         }
-                        _pendingAskCubit.dismiss();
                       },
                     );
                   },

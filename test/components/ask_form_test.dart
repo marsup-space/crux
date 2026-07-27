@@ -438,6 +438,69 @@ void main() {
       }, size: const Size(80, 24));
     });
 
+    test('mouse: tap on the note field moves focus to it', () async {
+      await testNocterm('ask form tap note focuses', (tester) async {
+        String? submittedProse;
+        await pumpAskForm(
+          tester,
+          pending: makePending(),
+          onSubmit: (p) => submittedProse = p,
+          onDismiss: () => fail('dismiss should not fire'),
+        );
+
+        // Tap directly on the placeholder text of the note field.
+        final positions =
+            tester.terminalState.findText('(optional) add extra context');
+        expect(positions.length, greaterThan(0));
+        final pos = positions.first;
+        await tester.tap(pos.x, pos.y);
+        await tester.pump();
+
+        // Focus must have moved to the note region: typed characters
+        // land in the note buffer, and Enter submits the form (the
+        // note region's Enter behavior) instead of toggling an option.
+        await tester.enterText('via mouse');
+        await tester.pump();
+        await tester.sendEnter();
+        await tester.pump();
+
+        expect(submittedProse, isNotNull);
+        expect(submittedProse, contains('[note] via mouse'));
+      }, size: const Size(80, 24));
+    });
+
+    test('mouse: tap on the Notes label / border also focuses the field',
+        () async {
+      await testNocterm('ask form tap note border focuses', (tester) async {
+        String? submittedProse;
+        await pumpAskForm(
+          tester,
+          pending: makePending(),
+          onSubmit: (p) => submittedProse = p,
+          onDismiss: () => fail('dismiss should not fire'),
+        );
+
+        // Tap on the note field's border — an area outside the render
+        // text field's own mouse region, covered by the outer
+        // GestureDetector. The border sits one column left of the
+        // placeholder text.
+        final positions =
+            tester.terminalState.findText('(optional) add extra context');
+        expect(positions.length, greaterThan(0));
+        final pos = positions.first;
+        await tester.tap(pos.x - 1, pos.y);
+        await tester.pump();
+
+        await tester.enterText('border tap');
+        await tester.pump();
+        await tester.sendEnter();
+        await tester.pump();
+
+        expect(submittedProse, isNotNull);
+        expect(submittedProse, contains('[note] border tap'));
+      }, size: const Size(80, 24));
+    });
+
     test('mouse: tap on Dismiss fires onDismiss', () async {
       await testNocterm('ask form tap dismiss', (tester) async {
         var dismissed = false;

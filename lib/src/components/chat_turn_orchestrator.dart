@@ -707,6 +707,65 @@ class ChatTurnOrchestrator {
     await _btwHandler.sendBtwTurn(prompt);
   }
 
+  /// Cancel the turn that is currently parked on an in-flight `ask`
+  /// form, without any of the interrupt fanfare (no toast, no
+  /// "[Response interrupted by user]" marker, no `interrupted` session
+  /// status). Used when the user dismisses the form: they want to go
+  /// back to the plain input box and type a free-form message, so the
+  /// turn must unwind WITHOUT delivering a tool result to the model —
+  /// otherwise the agent would immediately generate another reply off
+  /// the `(dismissed)` sentinel instead of waiting for the user.
+  ///
+  /// Mechanics: same abort path as [interruptResponse]. The pending
+  /// ask's completer resolves via [PendingAskCubit.clearFor] (with the
+  /// dismiss sentinel, but nothing reads it — the executor hits its
+  /// post-tool-execution cancel check at chat_turn_executor.dart and
+  /// returns before persisting anything or calling onComplete/onError).
+  void cancelAskTurn(int sessionId) {
+    final rt = _sessionController.runtime(sessionId);
+    if (!rt.isResponding) return;
+
+    _chatService.cancelStream(sessionId);
+
+    ShellProcessRegistry.instance.killAll(sessionId);
+    final signals = _activeAbortSignals.remove(sessionId);
+    if (signals != null) {
+      for (final signal in signals) {
+        signal.abort();
+      }
+    }
+
+    // Resolve the ask completer so the executor's `await executeTool`
+    // unblocks and reaches the cancel check. This also emits the empty
+    // PendingAskState, so the input region swaps back from the AskForm
+    // to the normal ChatInput.
+    _pendingAskCubit?.clearFor(sessionId);
+
+    // Silence every turn callback for the remainder of this turn —
+    // the executor's own cancel path never calls onComplete/onError,
+    // but a provider stream event could still race in before the
+    // unwind lands.
+    _interruptedSessions.add(sessionId);
+
+    _streamingController.clearStreamingFor(sessionId);
+    _streamingController.stopMetricsTimer(sessionId);
+    _streamingController.stopContextAnimation();
+
+    rt.isResponding = false;
+    rt.roundStreaming = false;
+    rt.roundStartTime = null;
+    rt.roundFirstTokenTime = null;
+    rt.pauseStreamingTimer();
+    _sessionController.mirrorTurnFlags(sessionId);
+
+    // Next user message must not get the "your response was
+    // interrupted" preamble — from the user's perspective nothing was
+    // interrupted; they simply chose not to answer the form.
+    rt.interrupted = false;
+
+    _refresh();
+  }
+
   void interruptResponse({required TextEditingController textController}) {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;

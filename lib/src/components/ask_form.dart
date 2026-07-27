@@ -327,10 +327,28 @@ class _AskFormState extends State<AskForm> {
               style: TextStyle(color: theme.hintText),
             ),
             Expanded(
-              child: _NoteRegion(
-                active: _focusRegion == _AskFocusRegion.note,
-                controller: _noteController,
-                onKeyEvent: _handleNoteKey,
+              // Tapping anywhere on the field — including its border
+              // and padding, which sit outside the render text field's
+              // own mouse region — moves the region focus to the note.
+              // Clicks that land on the text content itself are caught
+              // by the TextField and reported via onFocusChange.
+              child: GestureDetector(
+                onTap: () {
+                  if (_focusRegion != _AskFocusRegion.note) {
+                    setState(() => _focusRegion = _AskFocusRegion.note);
+                  }
+                },
+                behavior: HitTestBehavior.translucent,
+                child: _NoteRegion(
+                  active: _focusRegion == _AskFocusRegion.note,
+                  controller: _noteController,
+                  onKeyEvent: _handleNoteKey,
+                  onFocusRequest: () {
+                    if (_focusRegion != _AskFocusRegion.note) {
+                      setState(() => _focusRegion = _AskFocusRegion.note);
+                    }
+                  },
+                ),
               ),
             ),
           ],
@@ -485,10 +503,20 @@ class _NoteRegion extends StatefulComponent {
   final TextEditingController controller;
   final bool Function(KeyboardEvent) onKeyEvent;
 
+  /// Fires when the user clicks directly on the text content and the
+  /// field isn't the active region yet (TextField's own mouse handling
+  /// reports it through `onFocusChange(true)`). The parent moves its
+  /// region enum to `note` so the field's internal Focusable becomes
+  /// the keyboard route target. Taps on the border/padding never reach
+  /// the render text field — those are caught by the outer
+  /// GestureDetector in [_AskFormState.build].
+  final VoidCallback onFocusRequest;
+
   const _NoteRegion({
     required this.active,
     required this.controller,
     required this.onKeyEvent,
+    required this.onFocusRequest,
   });
 
   @override
@@ -517,6 +545,12 @@ class _NoteRegionState extends State<_NoteRegion> {
         focusedBorder: BoxBorder.all(color: borderColor),
       ),
       onKeyEvent: component.onKeyEvent,
+      // A mouse click on the text content lands here when the field
+      // isn't the focused region yet — forward it so the parent can
+      // move its region enum to `note`.
+      onFocusChange: (focused) {
+        if (focused) component.onFocusRequest();
+      },
     );
   }
 }
