@@ -13,7 +13,8 @@ import 'tables.dart';
 part 'database.g.dart';
 
 @DriftDatabase(
-  tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter],
+  tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter,
+      ShellMonitorLogs],
 )
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());
@@ -104,8 +105,17 @@ class CruxDatabase extends _$CruxDatabase {
   ///         the writer is a different session, so the guard's
   ///         response can name the writer and its intent. See
   ///         `docs/design-tools.md` and `file_read_tracker.dart`.
+  ///   v28 – added `shell_monitor_logs` table, one row per shell
+  ///         monitor event (run-start, per-check verdict, evaluator
+  ///         error, timeout fallback, run-finish). The monitor loop
+  ///         emits events via `ShellMonitorLogSink`; the sink in
+  ///         `shell_monitor_log_store.dart` batches them per run and
+  ///         flushes on run end, so a burst of checks is a single
+  ///         DB write. `/d-monitor` reads this to verify the aux
+  ///         monitor is judging correctly. No FK from `run_id` back
+  ///         to anything — runs have no row of their own.
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -143,6 +153,12 @@ class CruxDatabase extends _$CruxDatabase {
       await m.database.customStatement(
         'CREATE INDEX idx_sessions_project_archived '
         'ON sessions(project_path, archived_at)',
+      );
+      // Index for /d-monitor's "recent runs for this session" query.
+      // Same shape as the upgrade branch in onUpgrade below.
+      await m.database.customStatement(
+        'CREATE INDEX idx_shell_monitor_logs_session_run '
+        'ON shell_monitor_logs(session_id, run_id, id)',
       );
     },
     onUpgrade: (Migrator m, int from, int to) async {
@@ -371,6 +387,22 @@ CREATE TABLE offloaded_content (
         // upgrade from v26 or earlier where the table didn't exist.
         // Plain createTable is enough.
         await m.createTable(fileLastWriter);
+      }
+      if (from < 28) {
+        // Add `shell_monitor_logs` (one row per monitor event; see
+        // the v28 schema-history note above). Fresh installs create
+        // it in onCreate; this branch only runs on upgrades from
+        // v27 or earlier where the table didn't exist yet.
+        await m.createTable(shellMonitorLogs);
+        // Index on (session_id, run_id, id) so `/d-monitor` can list
+        // the most recent runs for the current session (or across
+        // sessions) without scanning the whole table. The leading
+        // session_id serves the per-session filter; run_id groups
+        // one run's events; id orders events inside a run.
+        await m.database.customStatement(
+          'CREATE INDEX idx_shell_monitor_logs_session_run '
+          'ON shell_monitor_logs(session_id, run_id, id)',
+        );
       }
     },
   );

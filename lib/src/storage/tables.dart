@@ -144,3 +144,68 @@ class Parts extends Table {
   TextColumn get data => text().withDefault(const Constant('{}'))();
   IntColumn get createdAt => integer()();
 }
+
+/// One row per shell-monitor event (see `shell_monitor.dart` and the
+/// monitor loop in `shell_base.dart`). When an auxiliary model is
+/// configured, every long-running shell command spawns a monitor run;
+/// this table is the run's audit trail — which checks fired, what the
+/// model saw (output tail), what it decided (verdict + interval +
+/// reason), and how the run ended (killed by monitor / finished on
+/// its own / fell back to static timeout). Read by `/d-monitor` to
+/// verify the aux monitor is judging correctly.
+///
+/// Rows are written in one batch when the run finishes (the sink in
+/// `shell_monitor_log_store.dart` accumulates events in memory and
+/// flushes on `finish`), so a burst of checks never interleaves with
+/// other writes. A run's events share `runId`, a per-process
+/// monotonically increasing id — NOT globally unique across Crux
+/// restarts, so queries order by `id` (the rowid) within a run and
+/// filter by `sessionId` / `createdAt` across runs.
+class ShellMonitorLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get sessionId =>
+      integer().references(Sessions, #id, onDelete: KeyAction.cascade)();
+
+  /// Groups all events of one monitor run (one shell command).
+  /// Monotonic per Crux process; combined with [sessionId] and
+  /// [createdAt] it identifies a run uniquely enough for the debug
+  /// viewer. Not a foreign key — runs have no row of their own.
+  IntColumn get runId => integer()();
+
+  TextColumn get command => text().withDefault(const Constant(''))();
+  TextColumn get intent => text().withDefault(const Constant(''))();
+
+  /// 1-based check ordinal. `0` is the run-start event (emitted when
+  /// the monitor arms, before any check has fired); `FINISH` is
+  /// recorded as the final event with the next ordinal.
+  IntColumn get checkNumber => integer()();
+
+  /// Wall-clock seconds from process spawn to this event.
+  IntColumn get elapsedSeconds => integer().withDefault(const Constant(0))();
+
+  /// Bytes of stdout+stderr produced since the previous check. Null
+  /// on run-start / run-finish (no snapshot was taken).
+  IntColumn get newOutputBytes => integer().nullable()();
+
+  /// Total bytes of stdout+stderr so far. Null on run-start/finish.
+  IntColumn get totalOutputBytes => integer().nullable()();
+
+  /// Verdict word (`PROGRESS` / `STUCK` / `UNCERTAIN`), or one of the
+  /// loop-generated pseudo-verdicts `EVAL_ERROR` (evaluator threw),
+  /// `FALLBACK` (monitor unavailable → static timeout armed),
+  /// `FINISH` (run ended). Null only on the run-start event.
+  TextColumn get verdict => text().nullable()();
+
+  /// Model-chosen next-check interval in seconds. Null when absent.
+  IntColumn get intervalSeconds => integer().nullable()();
+
+  /// Free-text detail: model reason on verdicts, exception text on
+  /// `EVAL_ERROR`, fallback note on `FALLBACK`, exit code on `FINISH`.
+  TextColumn get reason => text().nullable()();
+
+  /// Output tail shown to the model (capped at
+  /// [kMonitorLogTailMaxChars]). Null on run-start/finish.
+  TextColumn get outputTail => text().nullable()();
+
+  IntColumn get createdAt => integer()();
+}

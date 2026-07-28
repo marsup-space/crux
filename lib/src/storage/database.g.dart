@@ -3428,6 +3428,855 @@ class FileLastWriterCompanion extends UpdateCompanion<FileLastWriterData> {
   }
 }
 
+class $ShellMonitorLogsTable extends ShellMonitorLogs
+    with TableInfo<$ShellMonitorLogsTable, ShellMonitorLog> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ShellMonitorLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<int> sessionId = GeneratedColumn<int>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES sessions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _runIdMeta = const VerificationMeta('runId');
+  @override
+  late final GeneratedColumn<int> runId = GeneratedColumn<int>(
+    'run_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _commandMeta = const VerificationMeta(
+    'command',
+  );
+  @override
+  late final GeneratedColumn<String> command = GeneratedColumn<String>(
+    'command',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _intentMeta = const VerificationMeta('intent');
+  @override
+  late final GeneratedColumn<String> intent = GeneratedColumn<String>(
+    'intent',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _checkNumberMeta = const VerificationMeta(
+    'checkNumber',
+  );
+  @override
+  late final GeneratedColumn<int> checkNumber = GeneratedColumn<int>(
+    'check_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _elapsedSecondsMeta = const VerificationMeta(
+    'elapsedSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> elapsedSeconds = GeneratedColumn<int>(
+    'elapsed_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _newOutputBytesMeta = const VerificationMeta(
+    'newOutputBytes',
+  );
+  @override
+  late final GeneratedColumn<int> newOutputBytes = GeneratedColumn<int>(
+    'new_output_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _totalOutputBytesMeta = const VerificationMeta(
+    'totalOutputBytes',
+  );
+  @override
+  late final GeneratedColumn<int> totalOutputBytes = GeneratedColumn<int>(
+    'total_output_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _verdictMeta = const VerificationMeta(
+    'verdict',
+  );
+  @override
+  late final GeneratedColumn<String> verdict = GeneratedColumn<String>(
+    'verdict',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _intervalSecondsMeta = const VerificationMeta(
+    'intervalSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> intervalSeconds = GeneratedColumn<int>(
+    'interval_seconds',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _outputTailMeta = const VerificationMeta(
+    'outputTail',
+  );
+  @override
+  late final GeneratedColumn<String> outputTail = GeneratedColumn<String>(
+    'output_tail',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    sessionId,
+    runId,
+    command,
+    intent,
+    checkNumber,
+    elapsedSeconds,
+    newOutputBytes,
+    totalOutputBytes,
+    verdict,
+    intervalSeconds,
+    reason,
+    outputTail,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'shell_monitor_logs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ShellMonitorLog> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('run_id')) {
+      context.handle(
+        _runIdMeta,
+        runId.isAcceptableOrUnknown(data['run_id']!, _runIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_runIdMeta);
+    }
+    if (data.containsKey('command')) {
+      context.handle(
+        _commandMeta,
+        command.isAcceptableOrUnknown(data['command']!, _commandMeta),
+      );
+    }
+    if (data.containsKey('intent')) {
+      context.handle(
+        _intentMeta,
+        intent.isAcceptableOrUnknown(data['intent']!, _intentMeta),
+      );
+    }
+    if (data.containsKey('check_number')) {
+      context.handle(
+        _checkNumberMeta,
+        checkNumber.isAcceptableOrUnknown(
+          data['check_number']!,
+          _checkNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_checkNumberMeta);
+    }
+    if (data.containsKey('elapsed_seconds')) {
+      context.handle(
+        _elapsedSecondsMeta,
+        elapsedSeconds.isAcceptableOrUnknown(
+          data['elapsed_seconds']!,
+          _elapsedSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('new_output_bytes')) {
+      context.handle(
+        _newOutputBytesMeta,
+        newOutputBytes.isAcceptableOrUnknown(
+          data['new_output_bytes']!,
+          _newOutputBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('total_output_bytes')) {
+      context.handle(
+        _totalOutputBytesMeta,
+        totalOutputBytes.isAcceptableOrUnknown(
+          data['total_output_bytes']!,
+          _totalOutputBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('verdict')) {
+      context.handle(
+        _verdictMeta,
+        verdict.isAcceptableOrUnknown(data['verdict']!, _verdictMeta),
+      );
+    }
+    if (data.containsKey('interval_seconds')) {
+      context.handle(
+        _intervalSecondsMeta,
+        intervalSeconds.isAcceptableOrUnknown(
+          data['interval_seconds']!,
+          _intervalSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('output_tail')) {
+      context.handle(
+        _outputTailMeta,
+        outputTail.isAcceptableOrUnknown(data['output_tail']!, _outputTailMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ShellMonitorLog map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ShellMonitorLog(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}session_id'],
+      )!,
+      runId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}run_id'],
+      )!,
+      command: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}command'],
+      )!,
+      intent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}intent'],
+      )!,
+      checkNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}check_number'],
+      )!,
+      elapsedSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}elapsed_seconds'],
+      )!,
+      newOutputBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}new_output_bytes'],
+      ),
+      totalOutputBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_output_bytes'],
+      ),
+      verdict: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}verdict'],
+      ),
+      intervalSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}interval_seconds'],
+      ),
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      ),
+      outputTail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}output_tail'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ShellMonitorLogsTable createAlias(String alias) {
+    return $ShellMonitorLogsTable(attachedDatabase, alias);
+  }
+}
+
+class ShellMonitorLog extends DataClass implements Insertable<ShellMonitorLog> {
+  final int id;
+  final int sessionId;
+
+  /// Groups all events of one monitor run (one shell command).
+  /// Monotonic per Crux process; combined with [sessionId] and
+  /// [createdAt] it identifies a run uniquely enough for the debug
+  /// viewer. Not a foreign key — runs have no row of their own.
+  final int runId;
+  final String command;
+  final String intent;
+
+  /// 1-based check ordinal. `0` is the run-start event (emitted when
+  /// the monitor arms, before any check has fired); `FINISH` is
+  /// recorded as the final event with the next ordinal.
+  final int checkNumber;
+
+  /// Wall-clock seconds from process spawn to this event.
+  final int elapsedSeconds;
+
+  /// Bytes of stdout+stderr produced since the previous check. Null
+  /// on run-start / run-finish (no snapshot was taken).
+  final int? newOutputBytes;
+
+  /// Total bytes of stdout+stderr so far. Null on run-start/finish.
+  final int? totalOutputBytes;
+
+  /// Verdict word (`PROGRESS` / `STUCK` / `UNCERTAIN`), or one of the
+  /// loop-generated pseudo-verdicts `EVAL_ERROR` (evaluator threw),
+  /// `FALLBACK` (monitor unavailable → static timeout armed),
+  /// `FINISH` (run ended). Null only on the run-start event.
+  final String? verdict;
+
+  /// Model-chosen next-check interval in seconds. Null when absent.
+  final int? intervalSeconds;
+
+  /// Free-text detail: model reason on verdicts, exception text on
+  /// `EVAL_ERROR`, fallback note on `FALLBACK`, exit code on `FINISH`.
+  final String? reason;
+
+  /// Output tail shown to the model (capped at
+  /// [kMonitorLogTailMaxChars]). Null on run-start/finish.
+  final String? outputTail;
+  final int createdAt;
+  const ShellMonitorLog({
+    required this.id,
+    required this.sessionId,
+    required this.runId,
+    required this.command,
+    required this.intent,
+    required this.checkNumber,
+    required this.elapsedSeconds,
+    this.newOutputBytes,
+    this.totalOutputBytes,
+    this.verdict,
+    this.intervalSeconds,
+    this.reason,
+    this.outputTail,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['session_id'] = Variable<int>(sessionId);
+    map['run_id'] = Variable<int>(runId);
+    map['command'] = Variable<String>(command);
+    map['intent'] = Variable<String>(intent);
+    map['check_number'] = Variable<int>(checkNumber);
+    map['elapsed_seconds'] = Variable<int>(elapsedSeconds);
+    if (!nullToAbsent || newOutputBytes != null) {
+      map['new_output_bytes'] = Variable<int>(newOutputBytes);
+    }
+    if (!nullToAbsent || totalOutputBytes != null) {
+      map['total_output_bytes'] = Variable<int>(totalOutputBytes);
+    }
+    if (!nullToAbsent || verdict != null) {
+      map['verdict'] = Variable<String>(verdict);
+    }
+    if (!nullToAbsent || intervalSeconds != null) {
+      map['interval_seconds'] = Variable<int>(intervalSeconds);
+    }
+    if (!nullToAbsent || reason != null) {
+      map['reason'] = Variable<String>(reason);
+    }
+    if (!nullToAbsent || outputTail != null) {
+      map['output_tail'] = Variable<String>(outputTail);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  ShellMonitorLogsCompanion toCompanion(bool nullToAbsent) {
+    return ShellMonitorLogsCompanion(
+      id: Value(id),
+      sessionId: Value(sessionId),
+      runId: Value(runId),
+      command: Value(command),
+      intent: Value(intent),
+      checkNumber: Value(checkNumber),
+      elapsedSeconds: Value(elapsedSeconds),
+      newOutputBytes: newOutputBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(newOutputBytes),
+      totalOutputBytes: totalOutputBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(totalOutputBytes),
+      verdict: verdict == null && nullToAbsent
+          ? const Value.absent()
+          : Value(verdict),
+      intervalSeconds: intervalSeconds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(intervalSeconds),
+      reason: reason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reason),
+      outputTail: outputTail == null && nullToAbsent
+          ? const Value.absent()
+          : Value(outputTail),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory ShellMonitorLog.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ShellMonitorLog(
+      id: serializer.fromJson<int>(json['id']),
+      sessionId: serializer.fromJson<int>(json['sessionId']),
+      runId: serializer.fromJson<int>(json['runId']),
+      command: serializer.fromJson<String>(json['command']),
+      intent: serializer.fromJson<String>(json['intent']),
+      checkNumber: serializer.fromJson<int>(json['checkNumber']),
+      elapsedSeconds: serializer.fromJson<int>(json['elapsedSeconds']),
+      newOutputBytes: serializer.fromJson<int?>(json['newOutputBytes']),
+      totalOutputBytes: serializer.fromJson<int?>(json['totalOutputBytes']),
+      verdict: serializer.fromJson<String?>(json['verdict']),
+      intervalSeconds: serializer.fromJson<int?>(json['intervalSeconds']),
+      reason: serializer.fromJson<String?>(json['reason']),
+      outputTail: serializer.fromJson<String?>(json['outputTail']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'sessionId': serializer.toJson<int>(sessionId),
+      'runId': serializer.toJson<int>(runId),
+      'command': serializer.toJson<String>(command),
+      'intent': serializer.toJson<String>(intent),
+      'checkNumber': serializer.toJson<int>(checkNumber),
+      'elapsedSeconds': serializer.toJson<int>(elapsedSeconds),
+      'newOutputBytes': serializer.toJson<int?>(newOutputBytes),
+      'totalOutputBytes': serializer.toJson<int?>(totalOutputBytes),
+      'verdict': serializer.toJson<String?>(verdict),
+      'intervalSeconds': serializer.toJson<int?>(intervalSeconds),
+      'reason': serializer.toJson<String?>(reason),
+      'outputTail': serializer.toJson<String?>(outputTail),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  ShellMonitorLog copyWith({
+    int? id,
+    int? sessionId,
+    int? runId,
+    String? command,
+    String? intent,
+    int? checkNumber,
+    int? elapsedSeconds,
+    Value<int?> newOutputBytes = const Value.absent(),
+    Value<int?> totalOutputBytes = const Value.absent(),
+    Value<String?> verdict = const Value.absent(),
+    Value<int?> intervalSeconds = const Value.absent(),
+    Value<String?> reason = const Value.absent(),
+    Value<String?> outputTail = const Value.absent(),
+    int? createdAt,
+  }) => ShellMonitorLog(
+    id: id ?? this.id,
+    sessionId: sessionId ?? this.sessionId,
+    runId: runId ?? this.runId,
+    command: command ?? this.command,
+    intent: intent ?? this.intent,
+    checkNumber: checkNumber ?? this.checkNumber,
+    elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
+    newOutputBytes: newOutputBytes.present
+        ? newOutputBytes.value
+        : this.newOutputBytes,
+    totalOutputBytes: totalOutputBytes.present
+        ? totalOutputBytes.value
+        : this.totalOutputBytes,
+    verdict: verdict.present ? verdict.value : this.verdict,
+    intervalSeconds: intervalSeconds.present
+        ? intervalSeconds.value
+        : this.intervalSeconds,
+    reason: reason.present ? reason.value : this.reason,
+    outputTail: outputTail.present ? outputTail.value : this.outputTail,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  ShellMonitorLog copyWithCompanion(ShellMonitorLogsCompanion data) {
+    return ShellMonitorLog(
+      id: data.id.present ? data.id.value : this.id,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      runId: data.runId.present ? data.runId.value : this.runId,
+      command: data.command.present ? data.command.value : this.command,
+      intent: data.intent.present ? data.intent.value : this.intent,
+      checkNumber: data.checkNumber.present
+          ? data.checkNumber.value
+          : this.checkNumber,
+      elapsedSeconds: data.elapsedSeconds.present
+          ? data.elapsedSeconds.value
+          : this.elapsedSeconds,
+      newOutputBytes: data.newOutputBytes.present
+          ? data.newOutputBytes.value
+          : this.newOutputBytes,
+      totalOutputBytes: data.totalOutputBytes.present
+          ? data.totalOutputBytes.value
+          : this.totalOutputBytes,
+      verdict: data.verdict.present ? data.verdict.value : this.verdict,
+      intervalSeconds: data.intervalSeconds.present
+          ? data.intervalSeconds.value
+          : this.intervalSeconds,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      outputTail: data.outputTail.present
+          ? data.outputTail.value
+          : this.outputTail,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ShellMonitorLog(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('runId: $runId, ')
+          ..write('command: $command, ')
+          ..write('intent: $intent, ')
+          ..write('checkNumber: $checkNumber, ')
+          ..write('elapsedSeconds: $elapsedSeconds, ')
+          ..write('newOutputBytes: $newOutputBytes, ')
+          ..write('totalOutputBytes: $totalOutputBytes, ')
+          ..write('verdict: $verdict, ')
+          ..write('intervalSeconds: $intervalSeconds, ')
+          ..write('reason: $reason, ')
+          ..write('outputTail: $outputTail, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    sessionId,
+    runId,
+    command,
+    intent,
+    checkNumber,
+    elapsedSeconds,
+    newOutputBytes,
+    totalOutputBytes,
+    verdict,
+    intervalSeconds,
+    reason,
+    outputTail,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ShellMonitorLog &&
+          other.id == this.id &&
+          other.sessionId == this.sessionId &&
+          other.runId == this.runId &&
+          other.command == this.command &&
+          other.intent == this.intent &&
+          other.checkNumber == this.checkNumber &&
+          other.elapsedSeconds == this.elapsedSeconds &&
+          other.newOutputBytes == this.newOutputBytes &&
+          other.totalOutputBytes == this.totalOutputBytes &&
+          other.verdict == this.verdict &&
+          other.intervalSeconds == this.intervalSeconds &&
+          other.reason == this.reason &&
+          other.outputTail == this.outputTail &&
+          other.createdAt == this.createdAt);
+}
+
+class ShellMonitorLogsCompanion extends UpdateCompanion<ShellMonitorLog> {
+  final Value<int> id;
+  final Value<int> sessionId;
+  final Value<int> runId;
+  final Value<String> command;
+  final Value<String> intent;
+  final Value<int> checkNumber;
+  final Value<int> elapsedSeconds;
+  final Value<int?> newOutputBytes;
+  final Value<int?> totalOutputBytes;
+  final Value<String?> verdict;
+  final Value<int?> intervalSeconds;
+  final Value<String?> reason;
+  final Value<String?> outputTail;
+  final Value<int> createdAt;
+  const ShellMonitorLogsCompanion({
+    this.id = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.runId = const Value.absent(),
+    this.command = const Value.absent(),
+    this.intent = const Value.absent(),
+    this.checkNumber = const Value.absent(),
+    this.elapsedSeconds = const Value.absent(),
+    this.newOutputBytes = const Value.absent(),
+    this.totalOutputBytes = const Value.absent(),
+    this.verdict = const Value.absent(),
+    this.intervalSeconds = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.outputTail = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  ShellMonitorLogsCompanion.insert({
+    this.id = const Value.absent(),
+    required int sessionId,
+    required int runId,
+    this.command = const Value.absent(),
+    this.intent = const Value.absent(),
+    required int checkNumber,
+    this.elapsedSeconds = const Value.absent(),
+    this.newOutputBytes = const Value.absent(),
+    this.totalOutputBytes = const Value.absent(),
+    this.verdict = const Value.absent(),
+    this.intervalSeconds = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.outputTail = const Value.absent(),
+    required int createdAt,
+  }) : sessionId = Value(sessionId),
+       runId = Value(runId),
+       checkNumber = Value(checkNumber),
+       createdAt = Value(createdAt);
+  static Insertable<ShellMonitorLog> custom({
+    Expression<int>? id,
+    Expression<int>? sessionId,
+    Expression<int>? runId,
+    Expression<String>? command,
+    Expression<String>? intent,
+    Expression<int>? checkNumber,
+    Expression<int>? elapsedSeconds,
+    Expression<int>? newOutputBytes,
+    Expression<int>? totalOutputBytes,
+    Expression<String>? verdict,
+    Expression<int>? intervalSeconds,
+    Expression<String>? reason,
+    Expression<String>? outputTail,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sessionId != null) 'session_id': sessionId,
+      if (runId != null) 'run_id': runId,
+      if (command != null) 'command': command,
+      if (intent != null) 'intent': intent,
+      if (checkNumber != null) 'check_number': checkNumber,
+      if (elapsedSeconds != null) 'elapsed_seconds': elapsedSeconds,
+      if (newOutputBytes != null) 'new_output_bytes': newOutputBytes,
+      if (totalOutputBytes != null) 'total_output_bytes': totalOutputBytes,
+      if (verdict != null) 'verdict': verdict,
+      if (intervalSeconds != null) 'interval_seconds': intervalSeconds,
+      if (reason != null) 'reason': reason,
+      if (outputTail != null) 'output_tail': outputTail,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  ShellMonitorLogsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? sessionId,
+    Value<int>? runId,
+    Value<String>? command,
+    Value<String>? intent,
+    Value<int>? checkNumber,
+    Value<int>? elapsedSeconds,
+    Value<int?>? newOutputBytes,
+    Value<int?>? totalOutputBytes,
+    Value<String?>? verdict,
+    Value<int?>? intervalSeconds,
+    Value<String?>? reason,
+    Value<String?>? outputTail,
+    Value<int>? createdAt,
+  }) {
+    return ShellMonitorLogsCompanion(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      runId: runId ?? this.runId,
+      command: command ?? this.command,
+      intent: intent ?? this.intent,
+      checkNumber: checkNumber ?? this.checkNumber,
+      elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
+      newOutputBytes: newOutputBytes ?? this.newOutputBytes,
+      totalOutputBytes: totalOutputBytes ?? this.totalOutputBytes,
+      verdict: verdict ?? this.verdict,
+      intervalSeconds: intervalSeconds ?? this.intervalSeconds,
+      reason: reason ?? this.reason,
+      outputTail: outputTail ?? this.outputTail,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<int>(sessionId.value);
+    }
+    if (runId.present) {
+      map['run_id'] = Variable<int>(runId.value);
+    }
+    if (command.present) {
+      map['command'] = Variable<String>(command.value);
+    }
+    if (intent.present) {
+      map['intent'] = Variable<String>(intent.value);
+    }
+    if (checkNumber.present) {
+      map['check_number'] = Variable<int>(checkNumber.value);
+    }
+    if (elapsedSeconds.present) {
+      map['elapsed_seconds'] = Variable<int>(elapsedSeconds.value);
+    }
+    if (newOutputBytes.present) {
+      map['new_output_bytes'] = Variable<int>(newOutputBytes.value);
+    }
+    if (totalOutputBytes.present) {
+      map['total_output_bytes'] = Variable<int>(totalOutputBytes.value);
+    }
+    if (verdict.present) {
+      map['verdict'] = Variable<String>(verdict.value);
+    }
+    if (intervalSeconds.present) {
+      map['interval_seconds'] = Variable<int>(intervalSeconds.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (outputTail.present) {
+      map['output_tail'] = Variable<String>(outputTail.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ShellMonitorLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('runId: $runId, ')
+          ..write('command: $command, ')
+          ..write('intent: $intent, ')
+          ..write('checkNumber: $checkNumber, ')
+          ..write('elapsedSeconds: $elapsedSeconds, ')
+          ..write('newOutputBytes: $newOutputBytes, ')
+          ..write('totalOutputBytes: $totalOutputBytes, ')
+          ..write('verdict: $verdict, ')
+          ..write('intervalSeconds: $intervalSeconds, ')
+          ..write('reason: $reason, ')
+          ..write('outputTail: $outputTail, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
@@ -3436,6 +4285,9 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   late final $PartsTable parts = $PartsTable(this);
   late final $FileReadStateTable fileReadState = $FileReadStateTable(this);
   late final $FileLastWriterTable fileLastWriter = $FileLastWriterTable(this);
+  late final $ShellMonitorLogsTable shellMonitorLogs = $ShellMonitorLogsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3446,6 +4298,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     parts,
     fileReadState,
     fileLastWriter,
+    shellMonitorLogs,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3483,6 +4336,13 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('file_last_writer', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'sessions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('shell_monitor_logs', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -3616,6 +4476,30 @@ final class $$SessionsTableReferences
     ).filter((f) => f.writerSessionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_fileLastWriterRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$ShellMonitorLogsTable, List<ShellMonitorLog>>
+  _shellMonitorLogsRefsTable(_$CruxDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.shellMonitorLogs,
+        aliasName: $_aliasNameGenerator(
+          db.sessions.id,
+          db.shellMonitorLogs.sessionId,
+        ),
+      );
+
+  $$ShellMonitorLogsTableProcessedTableManager get shellMonitorLogsRefs {
+    final manager = $$ShellMonitorLogsTableTableManager(
+      $_db,
+      $_db.shellMonitorLogs,
+    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _shellMonitorLogsRefsTable($_db),
+    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3838,6 +4722,31 @@ class $$SessionsTableFilterComposer
           }) => $$FileLastWriterTableFilterComposer(
             $db: $db,
             $table: $db.fileLastWriter,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> shellMonitorLogsRefs(
+    Expression<bool> Function($$ShellMonitorLogsTableFilterComposer f) f,
+  ) {
+    final $$ShellMonitorLogsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.shellMonitorLogs,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ShellMonitorLogsTableFilterComposer(
+            $db: $db,
+            $table: $db.shellMonitorLogs,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4170,6 +5079,31 @@ class $$SessionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> shellMonitorLogsRefs<T extends Object>(
+    Expression<T> Function($$ShellMonitorLogsTableAnnotationComposer a) f,
+  ) {
+    final $$ShellMonitorLogsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.shellMonitorLogs,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ShellMonitorLogsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.shellMonitorLogs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$SessionsTableTableManager
@@ -4190,6 +5124,7 @@ class $$SessionsTableTableManager
             bool partsRefs,
             bool fileReadStateRefs,
             bool fileLastWriterRefs,
+            bool shellMonitorLogsRefs,
           })
         > {
   $$SessionsTableTableManager(_$CruxDatabase db, $SessionsTable table)
@@ -4317,6 +5252,7 @@ class $$SessionsTableTableManager
                 partsRefs = false,
                 fileReadStateRefs = false,
                 fileLastWriterRefs = false,
+                shellMonitorLogsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -4325,6 +5261,7 @@ class $$SessionsTableTableManager
                     if (partsRefs) db.parts,
                     if (fileReadStateRefs) db.fileReadState,
                     if (fileLastWriterRefs) db.fileLastWriter,
+                    if (shellMonitorLogsRefs) db.shellMonitorLogs,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -4413,6 +5350,27 @@ class $$SessionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (shellMonitorLogsRefs)
+                        await $_getPrefetchedData<
+                          Session,
+                          $SessionsTable,
+                          ShellMonitorLog
+                        >(
+                          currentTable: table,
+                          referencedTable: $$SessionsTableReferences
+                              ._shellMonitorLogsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$SessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).shellMonitorLogsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -4438,6 +5396,7 @@ typedef $$SessionsTableProcessedTableManager =
         bool partsRefs,
         bool fileReadStateRefs,
         bool fileLastWriterRefs,
+        bool shellMonitorLogsRefs,
       })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -6163,6 +7122,515 @@ typedef $$FileLastWriterTableProcessedTableManager =
       FileLastWriterData,
       PrefetchHooks Function({bool writerSessionId})
     >;
+typedef $$ShellMonitorLogsTableCreateCompanionBuilder =
+    ShellMonitorLogsCompanion Function({
+      Value<int> id,
+      required int sessionId,
+      required int runId,
+      Value<String> command,
+      Value<String> intent,
+      required int checkNumber,
+      Value<int> elapsedSeconds,
+      Value<int?> newOutputBytes,
+      Value<int?> totalOutputBytes,
+      Value<String?> verdict,
+      Value<int?> intervalSeconds,
+      Value<String?> reason,
+      Value<String?> outputTail,
+      required int createdAt,
+    });
+typedef $$ShellMonitorLogsTableUpdateCompanionBuilder =
+    ShellMonitorLogsCompanion Function({
+      Value<int> id,
+      Value<int> sessionId,
+      Value<int> runId,
+      Value<String> command,
+      Value<String> intent,
+      Value<int> checkNumber,
+      Value<int> elapsedSeconds,
+      Value<int?> newOutputBytes,
+      Value<int?> totalOutputBytes,
+      Value<String?> verdict,
+      Value<int?> intervalSeconds,
+      Value<String?> reason,
+      Value<String?> outputTail,
+      Value<int> createdAt,
+    });
+
+final class $$ShellMonitorLogsTableReferences
+    extends
+        BaseReferences<
+          _$CruxDatabase,
+          $ShellMonitorLogsTable,
+          ShellMonitorLog
+        > {
+  $$ShellMonitorLogsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $SessionsTable _sessionIdTable(_$CruxDatabase db) =>
+      db.sessions.createAlias(
+        $_aliasNameGenerator(db.shellMonitorLogs.sessionId, db.sessions.id),
+      );
+
+  $$SessionsTableProcessedTableManager get sessionId {
+    final $_column = $_itemColumn<int>('session_id')!;
+
+    final manager = $$SessionsTableTableManager(
+      $_db,
+      $_db.sessions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ShellMonitorLogsTableFilterComposer
+    extends Composer<_$CruxDatabase, $ShellMonitorLogsTable> {
+  $$ShellMonitorLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get runId => $composableBuilder(
+    column: $table.runId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get command => $composableBuilder(
+    column: $table.command,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get checkNumber => $composableBuilder(
+    column: $table.checkNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get newOutputBytes => $composableBuilder(
+    column: $table.newOutputBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalOutputBytes => $composableBuilder(
+    column: $table.totalOutputBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get verdict => $composableBuilder(
+    column: $table.verdict,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get intervalSeconds => $composableBuilder(
+    column: $table.intervalSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get outputTail => $composableBuilder(
+    column: $table.outputTail,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$SessionsTableFilterComposer get sessionId {
+    final $$SessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ShellMonitorLogsTableOrderingComposer
+    extends Composer<_$CruxDatabase, $ShellMonitorLogsTable> {
+  $$ShellMonitorLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get runId => $composableBuilder(
+    column: $table.runId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get command => $composableBuilder(
+    column: $table.command,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get intent => $composableBuilder(
+    column: $table.intent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get checkNumber => $composableBuilder(
+    column: $table.checkNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get newOutputBytes => $composableBuilder(
+    column: $table.newOutputBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalOutputBytes => $composableBuilder(
+    column: $table.totalOutputBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get verdict => $composableBuilder(
+    column: $table.verdict,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get intervalSeconds => $composableBuilder(
+    column: $table.intervalSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get outputTail => $composableBuilder(
+    column: $table.outputTail,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$SessionsTableOrderingComposer get sessionId {
+    final $$SessionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ShellMonitorLogsTableAnnotationComposer
+    extends Composer<_$CruxDatabase, $ShellMonitorLogsTable> {
+  $$ShellMonitorLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get runId =>
+      $composableBuilder(column: $table.runId, builder: (column) => column);
+
+  GeneratedColumn<String> get command =>
+      $composableBuilder(column: $table.command, builder: (column) => column);
+
+  GeneratedColumn<String> get intent =>
+      $composableBuilder(column: $table.intent, builder: (column) => column);
+
+  GeneratedColumn<int> get checkNumber => $composableBuilder(
+    column: $table.checkNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get newOutputBytes => $composableBuilder(
+    column: $table.newOutputBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalOutputBytes => $composableBuilder(
+    column: $table.totalOutputBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get verdict =>
+      $composableBuilder(column: $table.verdict, builder: (column) => column);
+
+  GeneratedColumn<int> get intervalSeconds => $composableBuilder(
+    column: $table.intervalSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<String> get outputTail => $composableBuilder(
+    column: $table.outputTail,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$SessionsTableAnnotationComposer get sessionId {
+    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.sessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.sessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ShellMonitorLogsTableTableManager
+    extends
+        RootTableManager<
+          _$CruxDatabase,
+          $ShellMonitorLogsTable,
+          ShellMonitorLog,
+          $$ShellMonitorLogsTableFilterComposer,
+          $$ShellMonitorLogsTableOrderingComposer,
+          $$ShellMonitorLogsTableAnnotationComposer,
+          $$ShellMonitorLogsTableCreateCompanionBuilder,
+          $$ShellMonitorLogsTableUpdateCompanionBuilder,
+          (ShellMonitorLog, $$ShellMonitorLogsTableReferences),
+          ShellMonitorLog,
+          PrefetchHooks Function({bool sessionId})
+        > {
+  $$ShellMonitorLogsTableTableManager(
+    _$CruxDatabase db,
+    $ShellMonitorLogsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ShellMonitorLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ShellMonitorLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ShellMonitorLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> sessionId = const Value.absent(),
+                Value<int> runId = const Value.absent(),
+                Value<String> command = const Value.absent(),
+                Value<String> intent = const Value.absent(),
+                Value<int> checkNumber = const Value.absent(),
+                Value<int> elapsedSeconds = const Value.absent(),
+                Value<int?> newOutputBytes = const Value.absent(),
+                Value<int?> totalOutputBytes = const Value.absent(),
+                Value<String?> verdict = const Value.absent(),
+                Value<int?> intervalSeconds = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<String?> outputTail = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+              }) => ShellMonitorLogsCompanion(
+                id: id,
+                sessionId: sessionId,
+                runId: runId,
+                command: command,
+                intent: intent,
+                checkNumber: checkNumber,
+                elapsedSeconds: elapsedSeconds,
+                newOutputBytes: newOutputBytes,
+                totalOutputBytes: totalOutputBytes,
+                verdict: verdict,
+                intervalSeconds: intervalSeconds,
+                reason: reason,
+                outputTail: outputTail,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int sessionId,
+                required int runId,
+                Value<String> command = const Value.absent(),
+                Value<String> intent = const Value.absent(),
+                required int checkNumber,
+                Value<int> elapsedSeconds = const Value.absent(),
+                Value<int?> newOutputBytes = const Value.absent(),
+                Value<int?> totalOutputBytes = const Value.absent(),
+                Value<String?> verdict = const Value.absent(),
+                Value<int?> intervalSeconds = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<String?> outputTail = const Value.absent(),
+                required int createdAt,
+              }) => ShellMonitorLogsCompanion.insert(
+                id: id,
+                sessionId: sessionId,
+                runId: runId,
+                command: command,
+                intent: intent,
+                checkNumber: checkNumber,
+                elapsedSeconds: elapsedSeconds,
+                newOutputBytes: newOutputBytes,
+                totalOutputBytes: totalOutputBytes,
+                verdict: verdict,
+                intervalSeconds: intervalSeconds,
+                reason: reason,
+                outputTail: outputTail,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ShellMonitorLogsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({sessionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (sessionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db),
+                                referencedColumn:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ShellMonitorLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$CruxDatabase,
+      $ShellMonitorLogsTable,
+      ShellMonitorLog,
+      $$ShellMonitorLogsTableFilterComposer,
+      $$ShellMonitorLogsTableOrderingComposer,
+      $$ShellMonitorLogsTableAnnotationComposer,
+      $$ShellMonitorLogsTableCreateCompanionBuilder,
+      $$ShellMonitorLogsTableUpdateCompanionBuilder,
+      (ShellMonitorLog, $$ShellMonitorLogsTableReferences),
+      ShellMonitorLog,
+      PrefetchHooks Function({bool sessionId})
+    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -6177,4 +7645,6 @@ class $CruxDatabaseManager {
       $$FileReadStateTableTableManager(_db, _db.fileReadState);
   $$FileLastWriterTableTableManager get fileLastWriter =>
       $$FileLastWriterTableTableManager(_db, _db.fileLastWriter);
+  $$ShellMonitorLogsTableTableManager get shellMonitorLogs =>
+      $$ShellMonitorLogsTableTableManager(_db, _db.shellMonitorLogs);
 }
