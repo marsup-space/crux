@@ -155,6 +155,50 @@ class _StubWriteTool extends ToolDef {
       contribution;
 }
 
+/// Stub `skill` tool. `extractPruneSummary` returns the fixed
+/// [SummaryContribution] (category `skill-bodies`), mirroring the
+/// real [SkillTool]. Registered under the name `skill` so the
+/// chat log's inline grouping renders the `skill {name}` line.
+class _StubSkillTool extends ToolDef {
+  final SummaryContribution contribution;
+
+  _StubSkillTool(this.contribution);
+
+  @override
+  String get name => 'skill';
+
+  @override
+  String get description => 'stub';
+
+  @override
+  Map<String, dynamic> get parametersSchema => const {};
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  String renderPruneInline({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+  }) {
+    final skillName = call.input['name']?.toString() ?? '';
+    if (isError) return 'skill {$skillName} → $pairedResult';
+    return 'skill {$skillName}';
+  }
+
+  @override
+  SummaryContribution? extractPruneSummary({
+    required ToolCallData call,
+    required String pairedResult,
+    required bool isError,
+    required String workingDirectory,
+  }) =>
+      contribution;
+}
+
 void main() {
   // Empty registry: the cases under test don't involve tool calls, so
   // the per-tool lookup path is never reached. Mirrors how
@@ -605,6 +649,110 @@ void main() {
       // The value (content body) renders exactly once.
       expect('final content'.allMatches(summarySection).length, equals(1),
           reason: 'summary section dedupes same path');
+    });
+  });
+
+  group('buildChatLog — loaded skills summary', () {
+    test('appends "loaded skills:" section when a skill tool contributes', () {
+      // The skill tool's `extractPruneSummary` routes the loaded
+      // body into the `skill-bodies` category; the collector
+      // renders it under `loaded skills:` so a post-compact
+      // session keeps the procedure without re-invoking the tool.
+      final registryWithStub = ToolRegistry();
+      registryWithStub.register(_StubSkillTool(
+        SummaryContribution(
+          category: 'skill-bodies',
+          key: 'pr-review',
+          value: '<skill_content name="pr-review">\nProcedure body\n</skill_content>',
+        ),
+      ));
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'load the review skill'),
+          _toolCall(id: 2, toolName: 'skill', input: {'name': 'pr-review'}),
+          _toolResult(id: 3, content: '<skill_content name="pr-review">…'),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registryWithStub,
+      );
+
+      expect(result.markdown, contains('loaded skills:'));
+      expect(result.markdown, contains('pr-review'));
+      expect(result.markdown, contains('Procedure body'));
+      // No file sections when only a skill contributed.
+      expect(result.markdown, isNot(contains('read files:')));
+    });
+
+    test('loaded skills section renders BEFORE read files', () {
+      // Skill bodies are instructions the resumed agent must
+      // follow while reading the file snapshots — they go first.
+      final registryWithStub = ToolRegistry();
+      registryWithStub.register(_StubSkillTool(
+        SummaryContribution(
+          category: 'skill-bodies',
+          key: 'pr-review',
+          value: 'Procedure body',
+        ),
+      ));
+      registryWithStub.register(_StubReadTool(
+        SummaryContribution.readFile(
+          path: 'lib/foo.dart',
+          content: 'class Foo {}',
+        ),
+      ));
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1),
+          _toolCall(id: 2, toolName: 'skill', input: {'name': 'pr-review'}),
+          _toolResult(id: 3, content: 'ok'),
+          _toolCall(id: 4, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolResult(id: 5, content: 'class Foo {}'),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registryWithStub,
+      );
+
+      final skillsIdx = result.markdown.indexOf('loaded skills:');
+      final readsIdx = result.markdown.indexOf('read files:');
+      expect(skillsIdx, greaterThanOrEqualTo(0));
+      expect(readsIdx, greaterThanOrEqualTo(0));
+      expect(skillsIdx, lessThan(readsIdx),
+          reason: 'loaded skills section renders before read files');
+    });
+
+    test('dedupes the same skill loaded multiple times', () {
+      // Loading the same skill twice (e.g. once via `$` chip,
+      // once via the `skill` tool) contributes two entries with
+      // the same (category, key). The collector's last-write-wins
+      // dedup collapses them to one — the body must NOT be
+      // doubled in the summary.
+      final registryWithStub = ToolRegistry();
+      registryWithStub.register(_StubSkillTool(
+        SummaryContribution(
+          category: 'skill-bodies',
+          key: 'pr-review',
+          value: 'Procedure body',
+        ),
+      ));
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1),
+          _toolCall(id: 2, toolName: 'skill', input: {'name': 'pr-review'}),
+          _toolResult(id: 3, content: 'ok'),
+          _user(id: 4),
+          _toolCall(id: 5, toolName: 'skill', input: {'name': 'pr-review'}),
+          _toolResult(id: 6, content: 'ok'),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registryWithStub,
+      );
+
+      final summarySection = result.markdown.split('loaded skills:').last;
+      expect('Procedure body'.allMatches(summarySection).length, equals(1),
+          reason: 'summary section dedupes same skill name');
     });
   });
 
