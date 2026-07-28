@@ -61,9 +61,18 @@ class SkillChipExpansion {
 /// as literal `$<name>` text (the user might be typing a skill
 /// the picker didn't show, or referring to a skill that was
 /// removed after the input was composed).
+///
+/// [alreadyLoaded] is the set of skill names already loaded into
+/// this session's context — `SessionRuntimeState.loadedSkillNames`,
+/// fed by earlier `$` chips and by the `skill` tool. A chip whose
+/// skill is in that set is still stripped (`$name` → `name`, so
+/// the LLM sees the reference in the prose) but its body is NOT
+/// appended again — the model already has the content, and
+/// re-sending it would double-pay the tokens on every turn.
 SkillChipExpansion expandSkillChips({
   required String input,
   required List<SkillInfo> available,
+  Set<String> alreadyLoaded = const {},
 }) {
   if (input.isEmpty) {
     return const SkillChipExpansion(
@@ -134,15 +143,27 @@ SkillChipExpansion expandSkillChips({
     );
   }
 
-  // Append the skill bodies at the end, one block per chip.
-  out.write('\n\n');
-  for (var i = 0; i < includedInfos.length; i++) {
-    if (i > 0) out.write('\n\n');
-    final s = includedInfos[i];
-    out.write('Skill: ${s.name}\n');
-    out.write(s.content.trim());
+  // Split the resolved chips into fresh (body gets appended)
+  // and already-loaded (reference only). Both lists stay in chip
+  // order so the appended block matches the prose order.
+  final freshInfos = <SkillInfo>[];
+  for (final s in includedInfos) {
+    if (!alreadyLoaded.contains(s.name)) freshInfos.add(s);
   }
-  out.write('\n');
+
+  if (freshInfos.isNotEmpty) {
+    // Append the fresh skill bodies at the end, one block per
+    // chip. Already-loaded skills contribute only their inline
+    // name in the prose above.
+    out.write('\n\n');
+    for (var i = 0; i < freshInfos.length; i++) {
+      if (i > 0) out.write('\n\n');
+      final s = freshInfos[i];
+      out.write('Skill: ${s.name}\n');
+      out.write(s.content.trim());
+    }
+    out.write('\n');
+  }
 
   return SkillChipExpansion(
     userMessage: out.toString(),

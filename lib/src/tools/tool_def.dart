@@ -73,6 +73,14 @@ class ToolContext {
   /// the shell tools fall back to classic timeout behaviour.
   final ShellMonitorEvaluator? shellMonitorEvaluator;
 
+  /// Optional sink for monitor events (one row per check, persisted
+  /// to `shell_monitor_logs`). Injected alongside
+  /// [shellMonitorEvaluator] by the chat executor; a null sink
+  /// disables logging entirely (the monitor loop's default, so tests
+  /// and non-persisted setups need no changes). The shell base emits
+  /// events only when both this AND [shellMonitorEvaluator] are
+  /// non-null — logging without a live monitor would be empty.
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
@@ -195,7 +203,12 @@ String truncateForInline(
 /// (category, key) using last-write-wins, and renders them at the
 /// end of the log.
 ///
-/// Two categories survive into the summary section:
+/// Three categories survive into the summary section:
+///   * `'skill-bodies'` — skill content the agent loaded via the
+///     `skill` tool. Sourced from the tool_result (the
+///     `<skill_content>` block the model saw). Dedup by skill
+///     name, rendered first under `loaded skills:` because the
+///     resumed agent needs the procedure before anything else.
 ///   * `'read-files'` — content the agent READ at the time of
 ///     the call. Sourced from the read tool's `tool_result` (the
 ///     numbered file body the model actually saw), not from a
@@ -217,15 +230,15 @@ String truncateForInline(
 /// inline result. Dumping the result again at the bottom would
 /// double-count tokens without adding information; if the model
 /// needs the result post-compact, it can re-call the tool. The
-/// `read` and `write` cases are exceptions because the file
-/// CONTENT is the durable artifact — the path/intent alone
-/// wouldn't let the agent continue working with the file.
+/// `skill`, `read` and `write` cases are exceptions because the
+/// CONTENT is the durable artifact — the name / path / intent
+/// alone wouldn't let the agent continue working with it.
 class SummaryContribution {
-  /// One of `'read-files'`, `'write-files'`.
+  /// One of `'skill-bodies'`, `'read-files'`, `'write-files'`.
   final String category;
 
   /// Stable identity for dedup (last-write-wins within a category).
-  /// The file path.
+  /// The skill name or file path.
   final String key;
 
   /// Full body to render — file content.

@@ -172,4 +172,51 @@ void main() {
       expect(result.userMessage, contains('Skill: pr-review\nProcedure body.'));
     });
   });
+
+  group('expandSkillChips — alreadyLoaded', () {
+    test('loaded skill: name stays in prose, body is NOT appended', () {
+      final prReview = _skill('pr-review', body: 'Procedure:\n1. Read diff');
+      final result = expandSkillChips(
+        input: r'please review $pr-review again',
+        available: [prReview],
+        alreadyLoaded: {'pr-review'},
+      );
+      // Name is still stripped of `$` and kept inline.
+      expect(result.userMessage, 'please review pr-review again');
+      expect(result.userMessage, isNot(contains('Skill: pr-review')));
+      expect(result.userMessage, isNot(contains('Procedure:')));
+      // The chip still counts as included (loadedSkillNames
+      // bookkeeping, chat log display).
+      expect(result.includedSkills, ['pr-review']);
+    });
+
+    test('mix of fresh and loaded: only the fresh body is appended', () {
+      final prReview = _skill('pr-review', body: 'PR body');
+      final secAudit = _skill('security-audit', body: 'SEC body');
+      final result = expandSkillChips(
+        input: r'check $pr-review and $security-audit',
+        available: [prReview, secAudit],
+        alreadyLoaded: {'pr-review'},
+      );
+      expect(result.userMessage,
+          startsWith('check pr-review and security-audit'));
+      // Fresh skill body appended.
+      expect(result.userMessage, contains('Skill: security-audit\nSEC body'));
+      // Loaded skill body skipped.
+      expect(result.userMessage, isNot(contains('Skill: pr-review')));
+      expect(result.userMessage, isNot(contains('PR body')));
+      expect(result.includedSkills, ['pr-review', 'security-audit']);
+    });
+
+    test('all chips already loaded: no Skill: block at all', () {
+      final prReview = _skill('pr-review', body: 'PR body');
+      final result = expandSkillChips(
+        input: r'$pr-review',
+        available: [prReview],
+        alreadyLoaded: {'pr-review'},
+      );
+      expect(result.userMessage, 'pr-review');
+      expect(result.userMessage, isNot(contains('Skill:')));
+    });
+  });
 }

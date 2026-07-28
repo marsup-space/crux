@@ -181,6 +181,7 @@ class ChatTurnOrchestrator {
       final expansion = expandSkillChips(
         input: text,
         available: discoverSkills(cwd: cwd),
+        alreadyLoaded: rt.loadedSkillNames,
       );
       llmText = expansion.userMessage;
       // Mirror the resolved chip names onto the runtime so the
