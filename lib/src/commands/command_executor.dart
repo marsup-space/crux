@@ -8,6 +8,7 @@ import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/web_provider_registry.dart';
 import '../storage/session_store.dart';
+import '../storage/shell_monitor_log_store.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
@@ -70,6 +71,11 @@ class CommandContext {
   final VoidCallback? showFullpane;
   final RecentProjectsStore? recentProjectsStore;
 
+  /// Store for `shell_monitor_logs` (one row per aux-monitor event).
+  /// Null in tests and legacy harnesses; `/d-monitor` reports
+  /// "unavailable" when null instead of failing.
+  final ShellMonitorLogStore? shellMonitorLogStore;
+
   /// Appends a local, UI-only info message to the *visible* chat
   /// history. The wired implementation persists the sheet under the
   /// `info` role (never sent to the LLM — see cmd_help.dart) and
@@ -111,6 +117,7 @@ class CommandContext {
     this.showFullpane,
     this.recentProjectsStore,
     this.appendLocalMessage,
+    this.shellMonitorLogStore,
   });
 }
 
@@ -182,6 +189,8 @@ class CommandExecutor {
         await _debug.executeDebugContext(ctx);
       case '/d-runtime':
         await _debug.executeDebugRuntime(ctx);
+      case '/d-monitor':
+        await _debug.executeDebugMonitor(parts, ctx);
       case '/d-providers':
         await _debug.executeDebugProviders(ctx);
       case '/d-tools':

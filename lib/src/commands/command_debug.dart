@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
+import '../storage/shell_monitor_log_store.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/terminal_symbols.dart';
 import '../utils/user_data_directory.dart';
@@ -384,4 +385,102 @@ class CommandDebug {
 
   static String _truncate(String s, int n) =>
       s.length <= n ? s : '${s.substring(0, n)}…';
+
+  /// `/d-monitor [n]` — show the last [n] aux shell-monitor runs
+  /// (default 5, max 20), newest first. Each run is one monitored
+  /// shell command: the run-start event, every per-check verdict the
+  /// aux model returned (with its self-chosen next-check interval and
+  /// reason), any EVAL_ERROR / FALLBACK the loop recorded, and the
+  /// FINISH event with the exit code. Reads `shell_monitor_logs` via
+  /// the store wired into [CommandContext.shellMonitorLogStore].
+  Future<void> executeDebugMonitor(
+    List<String> parts,
+    CommandContext ctx,
+  ) async {
+    final store = ctx.shellMonitorLogStore;
+    if (store == null) {
+      ctx.showToast(
+        'Monitor log unavailable (no database on this context)',
+        mode: ToastMode.error,
+      );
+      return;
+    }
+    var limit = 5;
+    if (parts.length > 1) {
+      final parsed = int.tryParse(parts[1]);
+      if (parsed == null || parsed <= 0) {
+        ctx.showToast(
+          'Usage: /d-monitor [n] — n is a positive run count',
+          mode: ToastMode.error,
+        );
+        return;
+      }
+      limit = parsed.clamp(1, 20);
+    }
+
+    final runs = await store.recentRuns(
+      sessionId: ctx.currentSessionId,
+      limit: limit,
+    );
+    if (runs.isEmpty) {
+      ctx.showToast(
+        'No shell-monitor runs logged yet. The monitor only fires on '
+        'commands that outlive the first check '
+        '(${20}s) with an auxiliary model configured.',
+      );
+      return;
+    }
+
+    final buf = StringBuffer();
+    buf.writeln('Shell monitor — last ${runs.length} run(s):');
+    for (final run in runs) {
+      _renderMonitorRun(buf, run);
+    }
+    ctx.showToast(buf.toString().trimRight());
+  }
+
+  static void _renderMonitorRun(
+    StringBuffer buf,
+    List<ShellMonitorLogEntry> run,
+  ) {
+    if (run.isEmpty) return;
+    final first = run.first;
+    buf.writeln(
+      '  run ${first.runId}  ses ${first.sessionId}  '
+      '${_fmtTime(first.createdAt)}',
+    );
+    buf.writeln('    cmd:    ${_truncate(first.command, 120)}');
+    if (first.intent.isNotEmpty) {
+      buf.writeln('    intent: ${_truncate(first.intent, 120)}');
+    }
+    for (final e in run) {
+      // Skip the run-start marker (checkNumber 0, no verdict) — the
+      // header already covers it. Keep every event that carries a
+      // verdict, including EVAL_ERROR / FALLBACK / FINISH.
+      if (e.checkNumber == 0 && e.verdict == null) continue;
+      buf.writeln('    ${_renderMonitorEvent(e)}');
+    }
+  }
+
+  static String _renderMonitorEvent(ShellMonitorLogEntry e) {
+    final t = '+${e.elapsedSeconds}s';
+    final verdict = e.verdict ?? '—';
+    final interval =
+        e.intervalSeconds != null ? ' next=${e.intervalSeconds}s' : '';
+    final bytes = e.newOutputBytes != null
+        ? ' +${e.newOutputBytes}B (tot ${e.totalOutputBytes ?? 0}B)'
+        : '';
+    final reason = (e.reason != null && e.reason!.isNotEmpty)
+        ? ' — ${_truncate(e.reason!, 80)}'
+        : '';
+    final check = e.checkNumber > 0 ? '#${e.checkNumber} ' : '';
+    return '$t $check$verdict$interval$bytes$reason';
+  }
+
+  static String _fmtTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
 }

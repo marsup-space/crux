@@ -13,6 +13,7 @@ import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
+import '../storage/shell_monitor_log_sink.dart';
 import '../tools/shell_guard.dart';
 import '../tools/shell_risk.dart';
 import '../tools/tool_def.dart';
@@ -93,6 +94,15 @@ class ChatTurnExecutor {
   final ToolExecutor toolExecutor;
   final AuxiliaryService auxiliaryService;
   final SessionLeaseManager leaseManager;
+
+  /// Per-process run-id counter for `shell_monitor_logs.run_id`.
+  /// Static so every [ChatTurnExecutor] instance shares one sequence
+  /// (there are two executors — one per [ChatService] and one the
+  /// executor constructs internally — and a run id must not collide
+  /// across them within a session). Reset on process restart; the
+  /// column is only unique within a session+timestamp, which is all
+  /// `/d-monitor` needs.
+  static int _nextMonitorRunId = 0;
 
   ChatTurnExecutor(
     this.store,
@@ -1173,6 +1183,20 @@ class ChatTurnExecutor {
                       messages: messages,
                     );
                   },
+                  // Monitor log sink: one buffered run per shell
+                  // call, flushed to `shell_monitor_logs` when the
+                  // run finishes. `command` / `intent` come from the
+                  // tool call's own input (the same strings the
+                  // monitor passes to the aux model on its first
+                  // turn). A new run id is minted per call so
+                  // `/d-monitor` groups this run's events together.
+                  shellMonitorLogSink: ShellMonitorLogSinkImpl(
+                    store: store.shellMonitorLogStore,
+                    sessionId: sessionId,
+                    runId: ++_nextMonitorRunId,
+                    command: (call.input['command'] as String?) ?? '',
+                    intent: (call.input['intent'] as String?) ?? '',
+                  ),
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {

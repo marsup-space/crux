@@ -80,6 +80,7 @@ class ToolContext {
   /// and non-persisted setups need no changes). The shell base emits
   /// events only when both this AND [shellMonitorEvaluator] are
   /// non-null — logging without a live monitor would be empty.
+  final ShellMonitorLogSink? shellMonitorLogSink;
 
   ToolContext({
     required this.sessionId,
@@ -90,6 +91,7 @@ class ToolContext {
     this.sessionRuntime,
     this.shellRiskEvaluator,
     this.shellMonitorEvaluator,
+    this.shellMonitorLogSink,
   });
 }
 

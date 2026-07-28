@@ -156,12 +156,19 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
   ///     reviewer degrades to classic behaviour instead of running
   ///     forever. See `lib/src/tools/shell_monitor.dart` for the
   ///     contract and the fail-open rationale.
+  ///
+  /// When [monitorLogSink] is also non-null, the loop emits one
+  /// [ShellMonitorEvent] per check (plus run-start and run-finish) so
+  /// the run's verdict history lands in `shell_monitor_logs` for
+  /// `/d-monitor`. The sink is fail-open: logging never kills the
+  /// process.
   Future<ProcessResult> _run(
     String command,
     Duration timeout, {
     String encoding = 'utf8',
     AbortSignal? abort,
     ShellMonitorEvaluator? monitor,
+    ShellMonitorLogSink? monitorLogSink,
     String intent = '',
     String platform = '',
     String shellExecutable = '',
@@ -255,6 +262,22 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         DateTime? previousCheckTime;
         var previousTotalBytes = 0;
 
+        int elapsedSecs() => DateTime.now().difference(startTime).inSeconds;
+        String cappedTail(String buf) {
+          if (buf.isEmpty) return '';
+          return buf.length <= kMonitorLogTailMaxChars
+              ? buf
+              : buf.substring(buf.length - kMonitorLogTailMaxChars);
+        }
+
+        // Run-start event: lets /d-monitor show "this command was
+        // monitored from T+0" even when the run never reaches the
+        // first check (short commands finish before
+        // kMonitorFirstCheckSeconds and skip the loop entirely).
+        monitorLogSink?.log(
+          ShellMonitorEvent(checkNumber: 0, elapsedSeconds: 0),
+        );
+
         Future<void> monitorLoop() async {
           var nextDelay = const Duration(seconds: kMonitorFirstCheckSeconds);
           while (true) {
@@ -302,7 +325,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               // A responsive monitor disarms the failure fallback.
               monitorFallbackTimer?.cancel();
               monitorFallbackTimer = null;
-            } catch (_) {
+            } catch (e) {
               // A throwing evaluator is indistinguishable from
               // "monitor unavailable" — fail open (keep running) and
               // arm the static-timeout fallback so a permanently-dead
@@ -310,14 +333,42 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               verdict = const ShellMonitorVerdict(
                 ShellMonitorVerdictKind.uncertain,
               );
+              monitorLogSink?.log(
+                ShellMonitorEvent(
+                  checkNumber: checkNumber,
+                  elapsedSeconds: elapsedSecs(),
+                  newOutputBytes: newBytes,
+                  totalOutputBytes: totalOutputBytes,
+                  verdict: 'EVAL_ERROR',
+                  reason: '$e',
+                  outputTail: cappedTail(stdoutBuf.toString()),
+                ),
+              );
               monitorFallbackTimer ??= Timer(timeout, () {
                 if (!monitorKillCompleter!.isCompleted) {
+                  monitorLogSink?.log(
+                    ShellMonitorEvent(
+                      checkNumber: checkNumber,
+                      elapsedSeconds: elapsedSecs(),
+                      verdict: 'FALLBACK',
+                      reason: 'progress monitor unavailable; fell back '
+                          'to timeout after ${timeout.inMilliseconds}ms',
+                    ),
+                  );
                   monitorKillCompleter.complete(
                     'progress monitor unavailable; fell back to timeout '
                     'after ${timeout.inMilliseconds}ms',
                   );
                 }
               });
+              // The synthetic UNCERTAIN verdict above is NOT logged as
+              // a check verdict — EVAL_ERROR already recorded what
+              // happened, and logging both would double-count the
+              // check in /d-monitor's timeline.
+              previousCheckTime = now;
+              previousTotalBytes = totalOutputBytes;
+              nextDelay = Duration(seconds: verdict.intervalSeconds);
+              continue;
             }
 
             // Record the assistant turn so the model sees its own
@@ -326,6 +377,23 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               'role': 'assistant',
               'content': _renderMonitorAssistantTurn(verdict),
             });
+
+            monitorLogSink?.log(
+              ShellMonitorEvent(
+                checkNumber: checkNumber,
+                elapsedSeconds: elapsedSecs(),
+                newOutputBytes: newBytes,
+                totalOutputBytes: totalOutputBytes,
+                verdict: switch (verdict.kind) {
+                  ShellMonitorVerdictKind.progress => 'PROGRESS',
+                  ShellMonitorVerdictKind.stuck => 'STUCK',
+                  ShellMonitorVerdictKind.uncertain => 'UNCERTAIN',
+                },
+                intervalSeconds: verdict.intervalSeconds,
+                reason: verdict.reason,
+                outputTail: cappedTail(stdoutBuf.toString()),
+              ),
+            );
 
             previousCheckTime = now;
             previousTotalBytes = totalOutputBytes;
@@ -346,6 +414,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
 
       int exitCode;
+      int? finishExitCode; // mirrors exitCode for the FINISH event; null = killed pre-exit
       String? monitorKillReason;
       try {
         // Race: process completion vs timeout vs abort vs monitor.
@@ -382,6 +451,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             exitCode = -1;
           }
         }
+        finishExitCode = exitCode;
         // Always wait for output streams to finish, with a timeout.
         try {
           await Future.wait([
@@ -427,6 +497,24 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         if (monitorKillCompleter != null &&
             !monitorKillCompleter.isCompleted) {
           monitorKillCompleter.complete('');
+        }
+        // Run-finish event + flush. Awaited so the batch actually
+        // lands before the tool returns; the sink swallows its own
+        // DB errors (fail-open), so this can't turn a logging hiccup
+        // into a tool failure.
+        if (monitorLogSink != null) {
+          final code = finishExitCode;
+          monitorLogSink.log(
+            ShellMonitorEvent(
+              checkNumber: -1,
+              elapsedSeconds: 0,
+              verdict: 'FINISH',
+              reason: code == null
+                  ? 'killed (no exit code)'
+                  : 'exit $code',
+            ),
+          );
+          await monitorLogSink.finish(exitCode: code);
         }
       }
 
@@ -670,6 +758,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         encoding: encoding,
         abort: ctx.abort,
         monitor: ctx.shellMonitorEvaluator,
+        monitorLogSink: ctx.shellMonitorLogSink,
         intent: intent,
         platform: Platform.operatingSystem,
         shellExecutable: invocation.executable,

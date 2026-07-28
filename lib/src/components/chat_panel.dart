@@ -763,6 +763,7 @@ class _ChatPanelState extends State<ChatPanel> {
       quitApp: _quitHandler.quitAndPrintSummary,
       showFullpane: _openFullpane,
       recentProjectsStore: _recentProjectsStore,
+      shellMonitorLogStore: _chatService.shellMonitorLogStore,
       appendLocalMessage: (markdown) async {
         final sessionId = _sessionController.currentSessionId;
         if (sessionId == null) return;

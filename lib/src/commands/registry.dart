@@ -428,6 +428,17 @@ const List<SlashCommand> _debugCommands = [
     name: '/d-runtime',
     description: '[debug] Dump runtime state (TTFT, tok/s, etc.)',
   ),
+  // Inspect the aux shell-monitor's recent verdict history. Reads
+  // `shell_monitor_logs` (one row per check) and prints the last few
+  // monitored runs — command, per-check verdict/interval/reason, and
+  // how the run ended — so you can verify the monitor is judging
+  // progress correctly without tailing a log file. `[n]` caps how
+  // many runs to show (default 5, max 20).
+  SlashCommand(
+    name: '/d-monitor',
+    description: '[debug] Show recent aux shell-monitor runs',
+    params: ['n?'],
+  ),
   SlashCommand(
     name: '/d-providers',
     description: '[debug] List all loaded providers and models',

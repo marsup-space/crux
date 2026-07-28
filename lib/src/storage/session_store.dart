@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
 import 'message_store.dart';
+import 'shell_monitor_log_store.dart';
 
 const _unset = Object();
 
@@ -29,6 +30,21 @@ class SessionStore implements SessionStoreAccessor {
   final db.CruxDatabase _db;
   final String instanceId;
   final Duration runningLeaseTimeout;
+
+  /// The underlying database. Exposed so sibling stores that share
+  /// this database's lifetime (e.g. [shellMonitorLogStore]) can be
+  /// constructed without threading the raw [db.CruxDatabase] through
+  /// every call site.
+  db.CruxDatabase get database => _db;
+
+  ShellMonitorLogStore? _shellMonitorLogStore;
+
+  /// Lazily-created store for `shell_monitor_logs`. Lazy so tests
+  /// that never touch the monitor don't pay for the accessor, and so
+  /// the store shares this [SessionStore]'s database connection (and
+  /// therefore its WAL / busy-timeout pragmas).
+  ShellMonitorLogStore get shellMonitorLogStore =>
+      _shellMonitorLogStore ??= ShellMonitorLogStore(_db);
 
   /// Message store — set after construction to avoid a circular
   /// dependency. [MessageStore.sessionStore] points back here.

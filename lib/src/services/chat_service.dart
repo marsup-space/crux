@@ -7,6 +7,7 @@ import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
+import '../storage/shell_monitor_log_store.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import 'auxiliary_prompts.dart';
@@ -71,6 +72,13 @@ class ChatService {
       );
 
   // ── Session lease ─────────────────────────────────────────────────
+
+  /// Store for `shell_monitor_logs` (one row per aux-monitor event).
+  /// Exposed so `/d-monitor` can read recent runs without going
+  /// through the turn executor. Shared with the monitor log sink the
+  /// executor wires into shell tools.
+  ShellMonitorLogStore get shellMonitorLogStore =>
+      _store.shellMonitorLogStore;
 
   /// True when [sessionId] is actively streaming.
   bool isStreaming(int sessionId) =>

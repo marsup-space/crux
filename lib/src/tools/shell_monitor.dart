@@ -96,6 +96,94 @@ const int kMonitorDefaultIntervalSeconds = 30;
 /// only pays for itself on genuinely long-running work.
 const int kMonitorFirstCheckSeconds = 20;
 
+/// Hard cap on the persisted output tail. The snapshot itself sends
+/// ~1KB of tail to the model; the log keeps a slightly larger 2KB
+/// window so a post-mortem can see a bit more context (e.g. the
+/// start of a `Password:` prompt that straddles the 1KB boundary)
+/// without letting a chatty process grow the DB row unboundedly.
+const int kMonitorLogTailMaxChars = 2048;
+
+/// One monitor event, emitted by the monitor loop and consumed by
+/// the [ShellMonitorLogSink] wired into the shell tools. Pure data —
+/// the sink owns persistence and batching.
+class ShellMonitorEvent {
+  /// 1-based check ordinal. `0` is the run-start event (emitted when
+  /// the monitor arms, before any check has fired).
+  final int checkNumber;
+
+  /// Wall-clock seconds since the process was spawned.
+  final int elapsedSeconds;
+
+  /// Bytes of stdout+stderr produced since the previous check. Null
+  /// on the run-start event.
+  final int? newOutputBytes;
+
+  /// Total bytes of stdout+stderr so far. Null on the run-start event.
+  final int? totalOutputBytes;
+
+  /// The verdict word as the model emitted it (`PROGRESS` / `STUCK` /
+  /// `UNCERTAIN`). Null on events that have no verdict: run-start,
+  /// evaluator-threw (logged as `EVAL_ERROR`), monitor-unavailable
+  /// timeout fallback (logged as `FALLBACK`), and run-finish (logged
+  /// as `FINISH`).
+  final String? verdict;
+
+  /// Model-chosen next-check interval in seconds. Null when the
+  /// event carries no interval.
+  final int? intervalSeconds;
+
+  /// Free-text detail: the model's reason on verdicts, the exception
+  /// text on `EVAL_ERROR`, the fallback note on `FALLBACK`, the exit
+  /// code on `FINISH`.
+  final String? reason;
+
+  /// Output tail captured at this event (already capped to
+  /// [kMonitorLogTailMaxChars]). Null on run-start and run-finish.
+  final String? outputTail;
+
+  const ShellMonitorEvent({
+    required this.checkNumber,
+    required this.elapsedSeconds,
+    this.newOutputBytes,
+    this.totalOutputBytes,
+    this.verdict,
+    this.intervalSeconds,
+    this.reason,
+    this.outputTail,
+  });
+}
+
+/// Receives monitor events for one shell run. Wired from the chat
+/// executor down to the monitor loop via `ToolContext` / `ShellBase`.
+/// Null in tests and in setups without persistence — a null sink
+/// disables logging entirely (no-op, zero overhead).
+///
+/// The monitor loop calls [log] after every event; implementations
+/// must NOT throw (the loop is fail-open — a logging failure must
+/// never kill the monitored process). The loop also guarantees
+/// [log] is only ever called from the monitor's own async context,
+/// so implementations that append to an in-memory list and flush on
+/// [finish] need no locking.
+abstract class ShellMonitorLogSink {
+  /// The command being monitored (first event payload), so the sink
+  /// can stamp it on every persisted row without the loop repeating
+  /// it per event.
+  String get command;
+
+  /// The intent string the LLM passed to the shell tool.
+  String get intent;
+
+  /// Record one event. Implementations may batch; [finish] is the
+  /// flush point.
+  void log(ShellMonitorEvent event);
+
+  /// The run is over (process exited, killed, or the monitor loop
+  /// was torn down). Flush any batched events. [exitCode] is the
+  /// process exit code, or null if the process was killed before an
+  /// exit code could be read.
+  Future<void> finish({int? exitCode});
+}
+
 /// A point-in-time snapshot of the running process, taken by the
 /// monitor loop just before asking the auxiliary model. Pure data;
 /// the loop fills it, [buildShellMonitorUserMessage] renders it.
