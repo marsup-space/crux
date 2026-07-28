@@ -9,6 +9,8 @@ import '../theme/crux_theme.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/token_estimate.dart';
+import '../utils/tool_meta.dart';
+import 'lsp_state_glyph.dart';
 import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'vibe_box.dart';
@@ -264,10 +266,17 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     // calls. Map insertion order preserves the original first-seen ordering.
     final allToolNames = <String, int>{};
     final completedToolTokens = <String, int>{};
+    // Per-name worst LSP outcome from the persisted tail's completed
+    // calls (errors > failed > clean > none). In-flight streaming /
+    // executing calls have no result yet, so they contribute no state
+    // — the glyph appears once a call completes and its `lsp` meta
+    // persists, matching the persisted VibeSegmentBubble behavior.
+    final toolLspState = <String, LspState>{};
     for (final entry
         in component.baseSegment?.tools?.entries ?? const <ToolBoxEntry>[]) {
       allToolNames[entry.name] = entry.callCount;
       completedToolTokens[entry.name] = entry.totalTokens;
+      toolLspState[entry.name] = entry.lspState;
     }
     for (final tc in _streamingToolCalls) {
       allToolNames[tc.name] = (allToolNames[tc.name] ?? 0) + 1;
@@ -276,16 +285,25 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       allToolNames[tc.name] = (allToolNames[tc.name] ?? 0) + 1;
     }
     if (allToolNames.isNotEmpty) {
-      final rows = allToolNames.entries.map((e) {
+      // Render as rich-text spans so the LSP outcome glyph (`⎇`) can be
+      // color-coded while the label keeps the box body color — same as
+      // the persisted tools box in vibe_segment_bubble.dart.
+      final rowSpans = allToolNames.entries.map((e) {
         final completedTokens = completedToolTokens[e.key];
-        return completedTokens == null
+        final label = completedTokens == null
             ? '${e.key} x${e.value}'
             : '${e.key} x${e.value}: ${formatTokens(completedTokens)}';
+        final glyph = lspStateGlyphSpan(
+          toolLspState[e.key] ?? LspState.none,
+          theme,
+        );
+        if (glyph == null) return TextSpan(text: label);
+        return TextSpan(children: [TextSpan(text: label), glyph]);
       }).toList();
       boxes.add(
         VibeBox(
           title: 'tools',
-          bodyRows: rows,
+          bodyRowSpans: rowSpans,
           active:
               _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
           mutedColor: theme.toolPrefix,
