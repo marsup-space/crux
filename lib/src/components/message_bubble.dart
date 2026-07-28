@@ -22,6 +22,7 @@ import '../utils/tool_meta.dart';
 import 'parallel_praise_bubble.dart';
 import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
+import 'lsp_state_glyph.dart';
 import 'shell_guard_bubble.dart';
 import 'tool_guard_bubble.dart';
 import 'error_bubble.dart';
@@ -872,6 +873,18 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
         style: TextStyle(color: theme.toolPrefix, fontWeight: FontWeight.bold),
       ),
     );
+    // Color-coded LSP outcome glyph (`⎇`) for write/edit calls. The
+    // state is parsed from the persisted `messages.meta` blob, so it
+    // reflects what actually happened on this call — green = server
+    // ran clean, red = diagnostics returned, yellow = a matched
+    // server failed to answer. No span when the call isn't LSP-backed
+    // (LspState.none), so non-LSP tools and unmatched file types
+    // render exactly as before.
+    final lspGlyph = lspStateGlyphSpan(
+      parseLspState(component.pairedResult?.meta),
+      theme,
+    );
+    if (lspGlyph != null) prefixSpans.add(lspGlyph);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

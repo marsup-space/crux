@@ -7,6 +7,7 @@ import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'lsp_state_glyph.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
 
@@ -136,13 +137,20 @@ class VibeSegmentBubble extends StatelessComponent {
 
     if (segment.tools != null) {
       final tools = segment.tools!;
-      final rows = tools.entries.map((e) {
-        return '${e.name} x${e.callCount}: ${formatTokens(e.totalTokens)}';
+      // Build each row as spans so the LSP outcome glyph (`⎇`) can be
+      // color-coded (green/red/yellow) while the rest of the row keeps
+      // the box's default text color. Entries with LspState.none get no
+      // glyph and render as a plain single-span row.
+      final rowSpans = tools.entries.map((e) {
+        final label = '${e.name} x${e.callCount}: ${formatTokens(e.totalTokens)}';
+        final glyph = lspStateGlyphSpan(e.lspState, theme);
+        if (glyph == null) return TextSpan(text: label);
+        return TextSpan(children: [TextSpan(text: label), glyph]);
       }).toList();
       boxes.add(
         VibeBox(
           title: 'tools',
-          bodyRows: rows,
+          bodyRowSpans: rowSpans,
           mutedColor: theme.toolPrefix,
           activeColor: theme.accent,
         ),

@@ -87,6 +87,14 @@ class _FakeLspManager extends LspManager {
 
   final List<LspDiagnostic> _diagnostics;
 
+  // The tool layer now probes matchServerIdFor before awaiting
+  // diagnostics to distinguish "server matched but failed" from "no
+  // server for this file type". The real manager returns null here
+  // (empty actorFactories), which would short-circuit the fake to
+  // LspStatus.none and never call touchFileAndWait — so claim a match.
+  @override
+  String? matchServerIdFor(String filePath) => 'fake';
+
   @override
   Future<List<LspDiagnostic>> touchFileAndWait(
     String filePath, {

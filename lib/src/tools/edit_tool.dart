@@ -370,7 +370,10 @@ class EditTool extends ToolDef with IntentionalTool {
       return ToolResult(
         title: 'Edit file: $resolved',
         output: lspResult.output,
-        metadata: {'lsp': lspResult.diagnostics},
+        metadata: {
+          'lsp': lspResult.diagnostics,
+          'lspStatus': lspResult.status.name,
+        },
       );
     }
 
@@ -448,7 +451,10 @@ class EditTool extends ToolDef with IntentionalTool {
     return ToolResult(
       title: 'Edit file: $resolved',
       output: lspResult.output,
-      metadata: {'lsp': lspResult.diagnostics},
+      metadata: {
+        'lsp': lspResult.diagnostics,
+        'lspStatus': lspResult.status.name,
+      },
     );
   }
 

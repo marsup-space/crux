@@ -111,6 +111,15 @@ class LspManager {
     return null;
   }
 
+  /// Public wrapper around [_matchServerId]: returns the id of the
+  /// server that handles [filePath]'s extension or basename, or null
+  /// when no registered server matches. Used by the tool layer to
+  /// distinguish "a server matched but failed to answer"
+  /// ([LspStatus.failed]) from "no server handles this file type"
+  /// ([LspStatus.none]) — the former earns a warning color in the UI,
+  /// the latter renders no LSP glyph at all.
+  String? matchServerIdFor(String filePath) => _matchServerId(filePath);
+
   /// Ensure the actor for [serverId] is alive. Returns the slot.
   Future<_Slot> _ensureSlot(String serverId) async {
     if (_shutdown) {

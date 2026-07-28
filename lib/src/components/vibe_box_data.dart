@@ -4,6 +4,7 @@ import '../models/message.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
 import '../utils/token_estimate.dart';
+import '../utils/tool_meta.dart';
 
 /// Aggregated think-box data for one vibe segment.
 ///
@@ -27,17 +28,34 @@ class ThinkBoxData {
 /// Per-tool entry in the tools box. [name] is the tool's short name,
 /// [callCount] is how many times it was called in this segment,
 /// [totalTokens] is the sum of each call's token estimate.
+///
+/// [lspState] is the **worst** per-call LSP outcome seen across this
+/// entry's calls in the segment (errors > failed > clean > none), so
+/// an aggregated `write x3` row turns red if *any* of the three edits
+/// left diagnostics. [LspState.none] renders no glyph.
 class ToolBoxEntry {
   final String name;
   final int callCount;
   final int totalTokens;
+  final LspState lspState;
 
   const ToolBoxEntry({
     required this.name,
     required this.callCount,
     required this.totalTokens,
+    this.lspState = LspState.none,
   });
 }
+
+/// Rank an [LspState] for worst-state-wins aggregation: a higher
+/// number is the more severe outcome. Used to fold many per-call
+/// states into one row's displayed state.
+int lspStateSeverity(LspState s) => switch (s) {
+  LspState.errors => 3,
+  LspState.failed => 2,
+  LspState.clean => 1,
+  LspState.none => 0,
+};
 
 /// Aggregated tools-box data for one vibe segment.
 ///
@@ -263,10 +281,20 @@ List<VibeSegment> walkSegments(
             toolOrder.add(tc.name);
           }
           final prev = toolEntries[tc.name];
+          // Worst-state-wins across this entry's calls: a red row
+          // flags that at least one write/edit in the segment left
+          // diagnostics, even if the others were clean.
+          final callState = parseLspState(resultMsg?.meta);
+          final mergedState =
+              lspStateSeverity(callState) >
+                  lspStateSeverity(prev?.lspState ?? LspState.none)
+              ? callState
+              : (prev?.lspState ?? LspState.none);
           toolEntries[tc.name] = ToolBoxEntry(
             name: tc.name,
             callCount: (prev?.callCount ?? 0) + 1,
             totalTokens: (prev?.totalTokens ?? 0) + callTokens,
+            lspState: mergedState,
           );
           toolTotalTokens += callTokens;
 

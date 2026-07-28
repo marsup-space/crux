@@ -1668,24 +1668,37 @@ class ChatTurnExecutor {
     String callId,
     ToolResult result,
   ) {
-    String? meta;
+    // Accumulate well-known UI-meta fields into one JSON object so
+    // `routing` and the per-call `lsp` state compose instead of
+    // overwriting each other. Emitted once at the end; empty string
+    // when nothing applies (the column's default).
+    final metaFields = <String>[];
     final routing = result.metadata['routing'];
     if (routing is String && routing.isNotEmpty) {
-      meta = '{"routing":${_jsonString(routing)}}';
+      metaFields.add('"routing":${_jsonString(routing)}');
     }
+    // Per-call LSP outcome for the color-coded tool-bubble glyph.
+    // `lspStatus` is the `LspStatus.name` written by write/edit;
+    // "none" (or absent) renders no glyph, so we omit it from the
+    // blob to keep the column at its default for non-LSP calls.
+    final lspStatus = result.metadata['lspStatus'];
+    if (lspStatus is String && lspStatus.isNotEmpty && lspStatus != 'none') {
+      metaFields.add('"lsp":${_jsonString(lspStatus)}');
+    }
+    final meta = metaFields.isEmpty ? '' : '{${metaFields.join(',')}}';
 
     final lsp = result.metadata['lsp'];
     if (lsp is! List || lsp.isEmpty) {
-      return (callId: callId, output: result.output, meta: meta ?? '');
+      return (callId: callId, output: result.output, meta: meta);
     }
     final payload = buildLspPayload(lsp.cast());
     if (payload.isEmpty) {
-      return (callId: callId, output: result.output, meta: meta ?? '');
+      return (callId: callId, output: result.output, meta: meta);
     }
     return (
       callId: callId,
       output: '${result.output}$payload',
-      meta: meta ?? '',
+      meta: meta,
     );
   }
 

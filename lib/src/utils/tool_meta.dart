@@ -68,6 +68,51 @@ String? routingBubbleHint(ToolRouting? routing) {
   }
 }
 
+/// Per-call LSP outcome persisted in `messages.meta` as
+/// `"lsp":"<state>"`. Mirrors `LspStatus` in
+/// `lib/src/tools/lsp_diagnostics.dart` but lives here (not imported
+/// from the tool layer) so the chat-history bubble and vibe tools box
+/// can parse the state without a dependency on the tool internals.
+/// The string values are identical to `LspStatus.name` so the tool
+/// layer and the UI agree on the wire format.
+enum LspState {
+  /// Server matched, ran, zero diagnostics → green glyph.
+  clean,
+
+  /// Server matched, ran, ≥1 diagnostic → red glyph.
+  errors,
+
+  /// Server matched but start/initialize/wait failed → yellow glyph.
+  failed,
+
+  /// No server for this file type (or LSP disabled) → no glyph.
+  none,
+}
+
+/// Parse the LSP state out of [meta] (the JSON blob stored in
+/// `messages.meta`). Returns [LspState.none] when there is no `lsp`
+/// field or the value is unrecognised — both mean "render no glyph".
+LspState parseLspState(String? meta) {
+  if (meta == null || meta.isEmpty) return LspState.none;
+  final value = _extractJsonStringField(meta, 'lsp');
+  switch (value) {
+    case 'clean':
+      return LspState.clean;
+    case 'errors':
+      return LspState.errors;
+    case 'failed':
+      return LspState.failed;
+    default:
+      return LspState.none;
+  }
+}
+
+/// Serialize an [LspState] to its wire value, or null when the state
+/// carries no UI affordance ([LspState.none]) and should be omitted
+/// from the persisted blob.
+String? lspStateToWire(LspState state) =>
+    state == LspState.none ? null : state.name;
+
 /// Tiny JSON-string-field extractor. Avoids depending on
 /// `dart:convert` for a single well-known key shape. Returns
 /// `null` if the field is absent or the JSON is malformed.

@@ -338,7 +338,10 @@ class WriteTool extends ToolDef with IntentionalTool {
     return ToolResult(
       title: 'Write file: $resolved',
       output: lspResult.output,
-      metadata: {'lsp': lspResult.diagnostics},
+      metadata: {
+        'lsp': lspResult.diagnostics,
+        'lspStatus': lspResult.status.name,
+      },
     );
   }
 
