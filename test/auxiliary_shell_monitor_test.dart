@@ -59,7 +59,7 @@ void main() {
       expect(parseShellMonitorVerdictForTesting('PROGRESS 60').intervalSeconds,
           60);
       expect(
-          parseShellMonitorVerdictForTesting('STUCK 10').intervalSeconds, 10);
+          parseShellMonitorVerdictForTesting('STUCK 20').intervalSeconds, 20);
     });
 
     test('parses interval even with a reason after it', () {

@@ -77,12 +77,12 @@ class ShellMonitorVerdict {
 
 /// Hard bounds for the model-chosen next-check interval. The model
 /// is asked to price the interval from evidence (a linking step
-/// deserves 10s, a 1500-crate compile deserves 60–120s), but it can
+/// deserves 15s, a 1500-crate compile deserves 60–120s), but it can
 /// be wrong in both directions: too small burns tokens on a cheap
 /// model every few seconds, too large defeats the purpose of
 /// monitoring. Clamped here, centrally, so the parser and the loop
 /// agree.
-const int kMonitorMinIntervalSeconds = 5;
+const int kMonitorMinIntervalSeconds = 15;
 const int kMonitorMaxIntervalSeconds = 600;
 
 /// Fallback when the model omits the interval or emits an

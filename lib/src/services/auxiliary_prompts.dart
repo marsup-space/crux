@@ -201,7 +201,7 @@ silence at 30s is normal for a build, the same silence at 10m with
 an unchanged tail is not. Windows builds are slower than Linux.
 
 After the verdict word you may add a number of seconds until the
-next check: short (10s) near an expected finish, long (60-120s)
+next check: short (15s) near an expected finish, long (60-120s)
 during a long steady phase. Then, optionally, a brief reason.
 
 Reply in the form: PROGRESS 60 — optional reason
