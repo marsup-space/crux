@@ -155,9 +155,11 @@ class CruxDatabase extends _$CruxDatabase {
         'ON sessions(project_path, archived_at)',
       );
       // Index for /d-monitor's "recent runs for this session" query.
-      // Same shape as the upgrade branch in onUpgrade below.
+      // IF NOT EXISTS so it stays a no-op on databases where the
+      // index already exists (e.g. a partially-migrated DB — see
+      // the onUpgrade branch below).
       await m.database.customStatement(
-        'CREATE INDEX idx_shell_monitor_logs_session_run '
+        'CREATE INDEX IF NOT EXISTS idx_shell_monitor_logs_session_run '
         'ON shell_monitor_logs(session_id, run_id, id)',
       );
     },
@@ -390,17 +392,33 @@ CREATE TABLE offloaded_content (
       }
       if (from < 28) {
         // Add `shell_monitor_logs` (one row per monitor event; see
-        // the v28 schema-history note above). Fresh installs create
-        // it in onCreate; this branch only runs on upgrades from
-        // v27 or earlier where the table didn't exist yet.
-        await m.createTable(shellMonitorLogs);
+        // the v28 schema-history note above). Idempotent: both
+        // statements use IF NOT EXISTS because this exact DB can
+        // reach the branch with the table+index already present —
+        // an earlier dev build created them via onCreate without
+        // bumping user_version to 28 (the classic "fresh install
+        // during development" trap), so the next run takes the
+        // upgrade path and a plain CREATE INDEX aborts the whole
+        // migration with "index already exists", bricking startup.
+        await m.database.customStatement('''
+CREATE TABLE IF NOT EXISTS shell_monitor_logs (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  run_id INTEGER NOT NULL,
+  tool_call_id TEXT,
+  command TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT,
+  created_at INTEGER NOT NULL
+)
+''');
         // Index on (session_id, run_id, id) so `/d-monitor` can list
         // the most recent runs for the current session (or across
         // sessions) without scanning the whole table. The leading
         // session_id serves the per-session filter; run_id groups
         // one run's events; id orders events inside a run.
         await m.database.customStatement(
-          'CREATE INDEX idx_shell_monitor_logs_session_run '
+          'CREATE INDEX IF NOT EXISTS idx_shell_monitor_logs_session_run '
           'ON shell_monitor_logs(session_id, run_id, id)',
         );
       }
