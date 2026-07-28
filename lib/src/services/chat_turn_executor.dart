@@ -1702,11 +1702,15 @@ class ChatTurnExecutor {
       metaFields.add('"routing":${_jsonString(routing)}');
     }
     // Per-call LSP outcome for the color-coded tool-bubble glyph.
-    // `lspStatus` is the `LspStatus.name` written by write/edit;
-    // "none" (or absent) renders no glyph, so we omit it from the
-    // blob to keep the column at its default for non-LSP calls.
+    // `lspStatus` is the `LspStatus.name` written by write/edit.
+    // "disabled" (LSP off for the session) renders no glyph, so we
+    // omit it from the blob; every other state — including "none"
+    // (gray, no server for this file type) — is persisted so the
+    // glyph renders on reload.
     final lspStatus = result.metadata['lspStatus'];
-    if (lspStatus is String && lspStatus.isNotEmpty && lspStatus != 'none') {
+    if (lspStatus is String &&
+        lspStatus.isNotEmpty &&
+        lspStatus != 'disabled') {
       metaFields.add('"lsp":${_jsonString(lspStatus)}');
     }
     final meta = metaFields.isEmpty ? '' : '{${metaFields.join(',')}}';

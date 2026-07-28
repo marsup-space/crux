@@ -45,6 +45,7 @@ void main() {
       expect(parseLspState('{"lsp":"clean"}'), LspState.clean);
       expect(parseLspState('{"lsp":"errors"}'), LspState.errors);
       expect(parseLspState('{"lsp":"failed"}'), LspState.failed);
+      expect(parseLspState('{"lsp":"none"}'), LspState.none);
     });
 
     test('returns none for unrecognised values', () {
@@ -60,11 +61,25 @@ void main() {
     });
   });
 
+  group('lspStateToWire', () {
+    test('persists every visible state including none (gray)', () {
+      expect(lspStateToWire(LspState.clean), 'clean');
+      expect(lspStateToWire(LspState.errors), 'errors');
+      expect(lspStateToWire(LspState.failed), 'failed');
+      expect(lspStateToWire(LspState.none), 'none');
+    });
+
+    test('omits disabled (no glyph) from the persisted blob', () {
+      expect(lspStateToWire(LspState.disabled), isNull);
+    });
+  });
+
   group('lspStateSeverity (worst-state-wins ranking)', () {
-    test('orders errors > failed > clean > none', () {
+    test('orders errors > failed > clean > none > disabled', () {
       expect(lspStateSeverity(LspState.errors), greaterThan(lspStateSeverity(LspState.failed)));
       expect(lspStateSeverity(LspState.failed), greaterThan(lspStateSeverity(LspState.clean)));
       expect(lspStateSeverity(LspState.clean), greaterThan(lspStateSeverity(LspState.none)));
+      expect(lspStateSeverity(LspState.none), greaterThan(lspStateSeverity(LspState.disabled)));
     });
   });
 
@@ -137,7 +152,9 @@ void main() {
       expect(segments.single.tools!.entries.single.lspState, LspState.failed);
     });
 
-    test('no lsp meta → entry stays none (no glyph)', () {
+    test('write with no persisted lsp field → disabled (no glyph)', () {
+      // A guard-aborted / pre-feature write has empty meta — no `lsp`
+      // field — so it must NOT show a gray "not applicable" glyph.
       final segments = walkSegments(
         _wrap([
           _toolCallMsg('c1', 'write'),
@@ -146,7 +163,35 @@ void main() {
         {'c1': _toolResultMsg('c1', '')},
         ToolRegistry(),
       );
+      expect(segments.single.tools!.entries.single.lspState, LspState.disabled);
+    });
+
+    test('write with persisted none → gray not-applicable glyph', () {
+      // A write that executed and consulted the LSP but the file type
+      // had no server persists "lsp":"none" → visible gray glyph.
+      final segments = walkSegments(
+        _wrap([
+          _toolCallMsg('c1', 'write'),
+          _toolResultMsg('c1', '{"lsp":"none"}'),
+        ]),
+        {'c1': _toolResultMsg('c1', '{"lsp":"none"}')},
+        ToolRegistry(),
+      );
       expect(segments.single.tools!.entries.single.lspState, LspState.none);
+    });
+
+    test('non-LSP tool (read) is always disabled even with lsp meta', () {
+      // read never consults a server for diagnostics — even a stray
+      // lsp field must not light a glyph on it.
+      final segments = walkSegments(
+        _wrap([
+          _toolCallMsg('c1', 'read'),
+          _toolResultMsg('c1', '{"lsp":"clean"}'),
+        ]),
+        {'c1': _toolResultMsg('c1', '{"lsp":"clean"}')},
+        ToolRegistry(),
+      );
+      expect(segments.single.tools!.entries.single.lspState, LspState.disabled);
     });
   });
 }

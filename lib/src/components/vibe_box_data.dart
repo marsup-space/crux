@@ -32,7 +32,9 @@ class ThinkBoxData {
 /// [lspState] is the **worst** per-call LSP outcome seen across this
 /// entry's calls in the segment (errors > failed > clean > none), so
 /// an aggregated `write x3` row turns red if *any* of the three edits
-/// left diagnostics. [LspState.none] renders no glyph.
+/// left diagnostics. Only write/edit carry a real state; every other
+/// tool is [LspState.disabled] (no glyph). [LspState.none] is the gray
+/// "no server for this file type" case, shown but muted.
 class ToolBoxEntry {
   final String name;
   final int callCount;
@@ -43,18 +45,23 @@ class ToolBoxEntry {
     required this.name,
     required this.callCount,
     required this.totalTokens,
-    this.lspState = LspState.none,
+    this.lspState = LspState.disabled,
   });
 }
 
 /// Rank an [LspState] for worst-state-wins aggregation: a higher
 /// number is the more severe outcome. Used to fold many per-call
-/// states into one row's displayed state.
+/// states into one row's displayed state. [LspState.disabled] ranks
+/// below [LspState.none] so "LSP happened to be off" never outranks a
+/// real outcome for a tool that did report one — though in practice
+/// disabled is never persisted, so it only appears when a tool reports
+/// nothing for an entire segment.
 int lspStateSeverity(LspState s) => switch (s) {
-  LspState.errors => 3,
-  LspState.failed => 2,
-  LspState.clean => 1,
-  LspState.none => 0,
+  LspState.errors => 4,
+  LspState.failed => 3,
+  LspState.clean => 2,
+  LspState.none => 1,
+  LspState.disabled => 0,
 };
 
 /// Aggregated tools-box data for one vibe segment.
@@ -281,15 +288,23 @@ List<VibeSegment> walkSegments(
             toolOrder.add(tc.name);
           }
           final prev = toolEntries[tc.name];
-          // Worst-state-wins across this entry's calls: a red row
-          // flags that at least one write/edit in the segment left
-          // diagnostics, even if the others were clean.
-          final callState = parseLspState(resultMsg?.meta);
+          // Only write/edit consult a language server, and only when
+          // the result actually persisted an `lsp` field. Both gates
+          // must hold for a real state: a non-LSP tool (read/bash/grep)
+          // or a guard-aborted edit (no lspStatus persisted) is
+          // LspState.disabled — no glyph. Worst-state-wins across the
+          // entry's calls: a red row flags that at least one write/edit
+          // in the segment left diagnostics, even if others were clean.
+          final isLspTool = tc.name == 'write' || tc.name == 'edit';
+          final meta = resultMsg?.meta;
+          final callState = (isLspTool && hasLspState(meta))
+              ? parseLspState(meta)
+              : LspState.disabled;
           final mergedState =
               lspStateSeverity(callState) >
-                  lspStateSeverity(prev?.lspState ?? LspState.none)
+                  lspStateSeverity(prev?.lspState ?? LspState.disabled)
               ? callState
-              : (prev?.lspState ?? LspState.none);
+              : (prev?.lspState ?? LspState.disabled);
           toolEntries[tc.name] = ToolBoxEntry(
             name: tc.name,
             callCount: (prev?.callCount ?? 0) + 1,

@@ -85,13 +85,42 @@ enum LspState {
   /// Server matched but start/initialize/wait failed → yellow glyph.
   failed,
 
-  /// No server for this file type (or LSP disabled) → no glyph.
+  /// No server handles this file type (e.g. a `.txt` write) → neutral
+  /// gray glyph. Visible so the user always gets a per-call answer,
+  /// but muted because "not applicable" is normal, not a problem.
   none,
+
+  /// LSP is disabled for the session (no manager wired in) → no
+  /// glyph at all. Distinct from [none]: a write to a code file with
+  /// LSP turned off shouldn't imply a server was merely unmatched.
+  /// Never persisted — absent `lsp` field parses to this when the
+  /// tool is known to be LSP-capable but reported nothing.
+  disabled,
+}
+
+/// True when [meta] carries a persisted `lsp` field — i.e. a write/edit
+/// actually executed and consulted the language server (regardless of
+/// outcome). False for empty meta and for results that never reached the
+/// LSP (e.g. a guard-aborted edit, which persists no `lspStatus`).
+///
+/// The renderers gate the glyph on this rather than on
+/// [parseLspState] alone: empty meta parses to [LspState.none], which
+/// would otherwise stamp a gray "not applicable" glyph on a tool that
+/// never ran the LSP at all. Only a persisted `lsp` field earns a glyph.
+bool hasLspState(String? meta) {
+  if (meta == null || meta.isEmpty) return false;
+  return _extractJsonStringField(meta, 'lsp') != null;
 }
 
 /// Parse the LSP state out of [meta] (the JSON blob stored in
 /// `messages.meta`). Returns [LspState.none] when there is no `lsp`
-/// field or the value is unrecognised — both mean "render no glyph".
+/// field or the value is unrecognised. Note: [LspState.disabled] is
+/// never written to the blob (the tool omits it), so it is only ever
+/// produced in-memory by the tool layer, never parsed back here.
+///
+/// Callers that want "render a glyph only when the LSP was actually
+/// consulted" should check [hasLspState] first — an absent field parses
+/// to [LspState.none], which is a *visible* gray state, not "no glyph".
 LspState parseLspState(String? meta) {
   if (meta == null || meta.isEmpty) return LspState.none;
   final value = _extractJsonStringField(meta, 'lsp');
@@ -102,16 +131,20 @@ LspState parseLspState(String? meta) {
       return LspState.errors;
     case 'failed':
       return LspState.failed;
+    case 'none':
+      return LspState.none;
     default:
       return LspState.none;
   }
 }
 
 /// Serialize an [LspState] to its wire value, or null when the state
-/// carries no UI affordance ([LspState.none]) and should be omitted
-/// from the persisted blob.
+/// carries no UI affordance and should be omitted from the persisted
+/// blob. Only [LspState.disabled] is omitted — every other state
+/// (including the gray "not applicable" [LspState.none]) is persisted
+/// so the glyph renders.
 String? lspStateToWire(LspState state) =>
-    state == LspState.none ? null : state.name;
+    state == LspState.disabled ? null : state.name;
 
 /// Tiny JSON-string-field extractor. Avoids depending on
 /// `dart:convert` for a single well-known key shape. Returns

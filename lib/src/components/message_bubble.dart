@@ -873,18 +873,23 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
         style: TextStyle(color: theme.toolPrefix, fontWeight: FontWeight.bold),
       ),
     );
-    // Color-coded LSP outcome glyph (`⎇`) for write/edit calls. The
-    // state is parsed from the persisted `messages.meta` blob, so it
-    // reflects what actually happened on this call — green = server
-    // ran clean, red = diagnostics returned, yellow = a matched
-    // server failed to answer. No span when the call isn't LSP-backed
-    // (LspState.none), so non-LSP tools and unmatched file types
-    // render exactly as before.
-    final lspGlyph = lspStateGlyphSpan(
-      parseLspState(component.pairedResult?.meta),
-      theme,
-    );
-    if (lspGlyph != null) prefixSpans.add(lspGlyph);
+    // Color-coded LSP outcome glyph (`⎇`) for write/edit calls only —
+    // the two tools that actually collect diagnostics. Two gates:
+    //   1. tool name is write/edit (read/bash/grep never consult a server);
+    //   2. the result's meta actually carries a persisted `lsp` field
+    //      (hasLspState), so a guard-aborted edit — which never reached
+    //      the LSP and persists no lspStatus — shows no glyph rather
+    //      than a misleading gray "not applicable".
+    // States: green = server ran clean, red = diagnostics returned,
+    // yellow = a matched server failed to answer, gray = executed but
+    // no server for this file type.
+    if (tc.name == 'write' || tc.name == 'edit') {
+      final meta = component.pairedResult?.meta;
+      if (hasLspState(meta)) {
+        final lspGlyph = lspStateGlyphSpan(parseLspState(meta), theme);
+        if (lspGlyph != null) prefixSpans.add(lspGlyph);
+      }
+    }
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

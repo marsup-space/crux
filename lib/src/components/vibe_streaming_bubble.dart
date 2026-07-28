@@ -293,10 +293,17 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
         final label = completedTokens == null
             ? '${e.key} x${e.value}'
             : '${e.key} x${e.value}: ${formatTokens(completedTokens)}';
-        final glyph = lspStateGlyphSpan(
-          toolLspState[e.key] ?? LspState.none,
-          theme,
-        );
+        // Name-aware fallback: only write/edit consult a language
+        // server, so any other tool is disabled (no glyph) even when
+        // it has no persisted entry yet. An in-flight write/edit with
+        // no completed result falls back to gray (none) — a "pending /
+        // not-applicable-yet" state that resolves once the call's `lsp`
+        // meta persists.
+        final isLspTool = e.key == 'write' || e.key == 'edit';
+        final state =
+            toolLspState[e.key] ??
+            (isLspTool ? LspState.none : LspState.disabled);
+        final glyph = lspStateGlyphSpan(state, theme);
         if (glyph == null) return TextSpan(text: label);
         return TextSpan(children: [TextSpan(text: label), glyph]);
       }).toList();

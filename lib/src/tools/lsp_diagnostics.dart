@@ -35,10 +35,18 @@ enum LspStatus {
   /// LSP-backed.
   failed,
 
-  /// No language server handles this file type (or LSP is disabled
-  /// for the session). No glyph rendered — the tool is not LSP-backed
-  /// for this call, so there's nothing to report.
+  /// No language server handles this file type (e.g. a `.txt` write).
+  /// Rendered as a neutral gray glyph — visible so the user always
+  /// gets a per-call answer, but muted because "not applicable" is
+  /// normal, not a problem.
   none,
+
+  /// LSP is disabled for the session (no manager was wired into the
+  /// tool). No glyph rendered — distinct from [none] so that a code-
+  /// file write with LSP turned off doesn't imply a server was merely
+  /// unmatched. Never persisted to `messages.meta` (the field is
+  /// omitted), so it never appears in the UI on reload.
+  disabled,
 }
 
 /// Collect LSP diagnostics for [filePath]. Returns the (possibly-
@@ -70,7 +78,9 @@ collectLspDiagnostics({
   const empty = <LspDiagnostic>[];
   final mgr = lsp;
   if (mgr == null) {
-    return (output: baseOutput, diagnostics: empty, status: LspStatus.none);
+    // No manager wired in → LSP is off for the session. This is the
+    // only state that renders no glyph (and is never persisted).
+    return (output: baseOutput, diagnostics: empty, status: LspStatus.disabled);
   }
   // A server only counts as "failed" when one actually matched this
   // file's extension/bare-filename. Without this probe an unmatched
