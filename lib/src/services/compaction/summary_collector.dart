@@ -1,8 +1,16 @@
 // Bottom-of-log summary section builder.
 //
 // Accumulates [SummaryContribution]s, deduplicates by (category, key)
-// using last-write-wins, and renders two optional sections:
+// using last-write-wins, and renders three optional sections:
 //
+//   * `loaded skills:` — skill bodies the agent loaded via the
+//                        `skill` tool. Sourced from the tool_result
+//                        (the `<skill_content>` block the model saw).
+//                        Dedup by skill name: re-loading the same
+//                        skill collapses to one entry. Rendered
+//                        FIRST, before the file sections, because
+//                        skill bodies are instructions the resumed
+//                        agent must follow while reading the rest.
 //   * `read files:`   — file content the agent READ, one entry per
 //                       path. Sourced from the read tool's tool_result
 //                       (what the model actually saw), not from a
@@ -50,10 +58,14 @@ class SummaryCollector {
   String render() {
     if (_entries.isEmpty) return '';
 
+    final skills = <SummaryContribution>[];
     final reads = <SummaryContribution>[];
     final writes = <SummaryContribution>[];
     for (final c in _entries.values) {
       switch (c.category) {
+        case 'skill-bodies':
+          skills.add(c);
+          break;
         case 'read-files':
           reads.add(c);
           break;
@@ -68,20 +80,25 @@ class SummaryCollector {
       }
     }
 
-    if (reads.isEmpty && writes.isEmpty) return '';
+    if (skills.isEmpty && reads.isEmpty && writes.isEmpty) return '';
 
     final buf = StringBuffer();
+    _renderSection(buf, header: 'loaded skills:', entries: skills);
     _renderSection(buf, header: 'read files:', entries: reads);
     _renderSection(buf, header: 'write files:', entries: writes);
     return buf.toString().trimRight();
   }
 
-  /// Render one section (read or write) under a fixed [header].
-  /// Same cap-and-omit logic as before: try each entry in full,
-  /// truncate the one that overflows, omit the rest. The two
-  /// sections share the global [kInlineSummarySectionMaxChars]
-  /// budget because they together form the "files the agent
-  /// knows" bulk of the post-compact context.
+  /// Render one section under a fixed [header]. Same cap-and-omit
+  /// logic for every category: try each entry in full, truncate the
+  /// one that overflows, omit the rest. The sections share the
+  /// global [kInlineSummarySectionMaxChars] budget because they
+  /// together form the "content the agent knows" bulk of the
+  /// post-compact context.
+  ///
+  /// The trailing marker wording is file-centric ("re-read") but
+  /// applies to skill bodies too — a truncated skill can be
+  /// re-loaded with the `skill` tool, which is the same gesture.
   void _renderSection(
     StringBuffer buf, {
     required String header,
