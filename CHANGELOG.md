@@ -8,6 +8,69 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-29
+
+905e1da
+
+### Features
+
+- **Skills: skip already-loaded body on `$` chip, persist bodies
+  in compaction** (`282d71f`) — when the `$`-chip parser hits a
+  skill already present in this session's loaded-skills registry
+  it skips re-emitting the skill body (the chip alone is enough
+  to invoke it). Newly-loaded skill bodies now persist into the
+  chat-log compaction summary, so they survive context rollup.
+- **Compaction: render "loaded skills:" section in chat log
+  summary** (`d83a5bf`) — the compaction chat-log summary now
+  lists the session's loaded skills in a dedicated section
+  alongside the existing tools/agents/notes rollups, so the
+  rolled-up context keeps the skill set across windows.
+- **LSP: gray glyph when no server is configured for a file
+  type** (`b289873`) — files whose extension has no registered
+  LSP actor now paint the LSP glyph in the neutral gray used
+  for `lsp:disabled`, instead of the success-green that
+  implied a working server.
+- **LSP: color-coded outcome glyph on write/edit tool calls**
+  (`c77924a`) — write and edit tool calls now render the LSP
+  glyph in success/failure color depending on the post-edit
+  server response, so users see at a glance whether the
+  language server accepted the change.
+- **ToolContext exposes ShellMonitorLogSink** (`06c3c52`) —
+  the monitor pipeline's batched event sink is now reachable
+  through `ToolContext`, so tool implementations can record
+  their own mid-run events into the same `/d-monitor` history.
+- **Shell-monitor persists runs to shell_monitor_logs via
+  batched sink** (`5e1145d`) — completed monitor runs
+  (verdicts, intermediate events, timing) are now written
+  into a new drift-backed `shell_monitor_logs` table and
+  surfaced through `/d-monitor`. Combined with the exposed
+  sink, the entire monitor history is now queryable post-run.
+- **Storage: add shell_monitor_logs table (schema v28)**
+  (`806840b`) — schema bumps to v28 with a new
+  `shell_monitor_logs` table keyed by `runId`; the migration
+  is idempotent (see fix below) and survives repeated opens.
+
+### Fixes
+
+- **Storage: shell_monitor_logs v28 migration is idempotent**
+  (`905e1da`) — re-opening a database at v27 now upgrades
+  to v28 reliably across repeated launches; the previous
+  migration could double-apply when the helper ran more
+  than once per startup.
+- **LSP: show outcome glyph in the live vibe tools box**
+  (`b5b94e0`) — the post-edit outcome glyph now appears in
+  the live tools box while a tool call is still rendering,
+  not only in the final settled vibe box.
+- **Shell-monitor: raise minimum next-check interval from
+  5s to 15s** (`374283c`) — the monitor's poll cadence now
+  bottoms out at 15s instead of 5s, so long-running idle
+  commands stop pummeling the database with empty runs.
+- **Ask-form: dismiss cancels the turn; note field is
+  mouse-focusable** (`bd29483`) — pressing `esc` on an
+  unanswered ask-form now cancels the form (matching the
+  chip-style dismiss). The note field accepts mouse focus
+  for click-to-edit.
+
 ## [0.21.0] - 2026-07-27
 
 6f5489e
