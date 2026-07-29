@@ -21,6 +21,7 @@ export 'src/components/streaming_bubble.dart';
 export 'src/components/ui/highlighted_markdown_text.dart';
 export 'src/components/ui/highlight_service.dart';
 export 'src/components/ui/layout_metrics.dart';
+export 'src/components/version_badge.dart';
 export 'src/theme/crux_theme.dart';
 export 'src/theme/terminal_brightness.dart';
 export 'src/theme/theme_config_store.dart';

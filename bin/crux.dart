@@ -623,17 +623,22 @@ class _CruxAppState extends State<_CruxApp> {
       // 500 ms delay.
       child: CruxTheme(
         data: theme,
-        child: HintOverlay(
-          tooltipBackgroundColor: theme.overlayBackground,
-          tooltipBorderColor: theme.overlayBorder,
-          child: ChatPanel(
-            userProvidersDir: component.userProvidersDir,
-            builtInProvidersDir: component.builtInProvidersDir,
-            themeController: component.themeController,
-            bootState: component.bootState,
-            gitStatusService: component.gitStatusService,
-            recentProjectsStore: component.recentProjectsStore,
-            startupWarnings: component.startupWarnings,
+        // VersionBadge paints the faint top-right version label as a
+        // Stack sibling of everything below it, so neither the hint
+        // overlay nor the chat panel layout shifts by a single cell.
+        child: VersionBadge(
+          child: HintOverlay(
+            tooltipBackgroundColor: theme.overlayBackground,
+            tooltipBorderColor: theme.overlayBorder,
+            child: ChatPanel(
+              userProvidersDir: component.userProvidersDir,
+              builtInProvidersDir: component.builtInProvidersDir,
+              themeController: component.themeController,
+              bootState: component.bootState,
+              gitStatusService: component.gitStatusService,
+              recentProjectsStore: component.recentProjectsStore,
+              startupWarnings: component.startupWarnings,
+            ),
           ),
         ),
       ),
