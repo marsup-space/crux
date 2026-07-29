@@ -10,6 +10,7 @@
 
 import 'dart:async';
 
+import 'package:crux/src/components/ask_answer_bubble.dart';
 import 'package:crux/src/components/ask_form.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/tools/ask_tool.dart';
@@ -270,7 +271,7 @@ void main() {
     Future<void> pumpAskForm(
       NoctermTester tester, {
       required PendingAsk pending,
-      required void Function(String) onSubmit,
+      required void Function(String, AskAnswerView) onSubmit,
       required VoidCallback onDismiss,
       int width = 80,
       int height = 24,
@@ -296,7 +297,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) => fail('submit should not fire'),
+          onSubmit: (_, _) => fail('submit should not fire'),
           onDismiss: () => fail('dismiss should not fire'),
         );
 
@@ -325,7 +326,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) {},
+          onSubmit: (_, _) {},
           onDismiss: () {},
         );
 
@@ -353,7 +354,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (p) => submittedProse = p,
+          onSubmit: (p, _) => submittedProse = p,
           onDismiss: () => fail('dismiss should not fire'),
         );
 
@@ -381,7 +382,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) => fail('submit should not fire on Esc'),
+          onSubmit: (_, _) => fail('submit should not fire on Esc'),
           onDismiss: () => dismissed = true,
         );
 
@@ -396,7 +397,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (p) => submittedProse = p,
+          onSubmit: (p, _) => submittedProse = p,
           onDismiss: () => fail('dismiss should not fire'),
         );
 
@@ -422,7 +423,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) {},
+          onSubmit: (_, _) {},
           onDismiss: () {},
         );
 
@@ -444,7 +445,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (p) => submittedProse = p,
+          onSubmit: (p, _) => submittedProse = p,
           onDismiss: () => fail('dismiss should not fire'),
         );
 
@@ -476,7 +477,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (p) => submittedProse = p,
+          onSubmit: (p, _) => submittedProse = p,
           onDismiss: () => fail('dismiss should not fire'),
         );
 
@@ -507,7 +508,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) => fail('submit should not fire'),
+          onSubmit: (_, _) => fail('submit should not fire'),
           onDismiss: () => dismissed = true,
         );
 
@@ -527,7 +528,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (_) => submitted = true,
+          onSubmit: (_, _) => submitted = true,
           onDismiss: () {},
         );
 
@@ -579,7 +580,7 @@ void main() {
             ),
             completer: Completer<ToolResult>(),
           ),
-          onSubmit: (_) {},
+          onSubmit: (_, _) {},
           onDismiss: () {},
           width: 40,
         );
@@ -600,7 +601,7 @@ void main() {
         await pumpAskForm(
           tester,
           pending: makePending(),
-          onSubmit: (p) => submittedProse = p,
+          onSubmit: (p, _) => submittedProse = p,
           onDismiss: () {},
         );
 
@@ -629,6 +630,136 @@ void main() {
         expect(submittedProse, isNotNull);
         expect(submittedProse, contains('[modules] cli'));
         expect(submittedProse, contains('[runtime] node'));
+      }, size: const Size(80, 24));
+    });
+
+    test('submit produces an AskAnswerView with labels (not values)', () async {
+      await testNocterm('ask form submit view', (tester) async {
+        AskAnswerView? view;
+        await pumpAskForm(
+          tester,
+          pending: PendingAsk(
+            sessionId: 1,
+            callId: 'view-call',
+            spec: AskSpec(
+              prompt: 'Pick and choose',
+              groups: [
+                AskGroup(
+                  name: 'modules',
+                  multi: true,
+                  options: [
+                    AskOption(label: 'Web UI', value: 'web'),
+                    AskOption(label: 'API', value: 'api'),
+                  ],
+                ),
+                AskGroup(
+                  name: 'runtime',
+                  options: [
+                    AskOption(label: 'Node LTS', value: 'node'),
+                    AskOption(label: 'Bun', value: 'bun'),
+                  ],
+                ),
+              ],
+            ),
+            completer: Completer<ToolResult>(),
+          ),
+          onSubmit: (_, v) => view = v,
+          onDismiss: () => fail('dismiss should not fire'),
+        );
+
+        // Pick 'Web UI' in the multi group (space on focused index 0),
+        // then Tab to the note field, type a note, Enter to submit.
+        await tester.sendKey(LogicalKey.space);
+        await tester.pump();
+        await tester.sendTab();
+        await tester.pump();
+        await tester.enterText('prefer bun');
+        await tester.pump();
+        await tester.sendEnter();
+        await tester.pump();
+
+        expect(view, isNotNull);
+        expect(view!.prompt, equals('Pick and choose'));
+        expect(view!.note, equals('prefer bun'));
+        expect(view!.selections, hasLength(2));
+
+        final modules = view!.selections.first;
+        expect(modules.group, equals('modules'));
+        expect(modules.multi, isTrue);
+        expect(modules.labels, equals(['Web UI']));
+
+        final runtime = view!.selections.last;
+        expect(runtime.group, equals('runtime'));
+        expect(runtime.multi, isFalse);
+        // Single-select default is the first option — its LABEL, not
+        // its wire value.
+        expect(runtime.labels, equals(['Node LTS']));
+      }, size: const Size(80, 24));
+    });
+  });
+
+  group('AskAnswerBubble TUI', () {
+    Future<void> pumpBubble(NoctermTester tester, AskAnswerView view) async {
+      await tester.pumpComponent(
+        CruxTheme(
+          data: CruxThemeData.draculaFallback,
+          child: Container(
+            width: 80,
+            height: 24,
+            child: AskAnswerBubble(answer: view),
+          ),
+        ),
+      );
+    }
+
+    test('renders prompt, picked options with markers, and the note', () async {
+      await testNocterm('ask answer bubble renders', (tester) async {
+        await pumpBubble(
+          tester,
+          const AskAnswerView(
+            prompt: 'Pick modules to refactor',
+            note: 'prefer bun',
+            selections: [
+              AskAnswerSelection(
+                group: 'modules',
+                multi: true,
+                labels: ['web', 'cli'],
+              ),
+              AskAnswerSelection(group: 'runtime', labels: ['node']),
+            ],
+          ),
+        );
+
+        final ts = tester.terminalState;
+        expect(ts, containsText('Ask'));
+        expect(ts, containsText('Pick modules to refactor'));
+        expect(ts, containsText('modules:'));
+        expect(ts, containsText('web'));
+        expect(ts, containsText('cli'));
+        expect(ts, containsText('runtime:'));
+        expect(ts, containsText('node'));
+        expect(ts, containsText('☑')); // multi marker
+        expect(ts, containsText('◉')); // single marker
+        expect(ts, containsText('prefer bun'));
+      }, size: const Size(80, 24));
+    });
+
+    test('renders (none) for a group submitted with no selection', () async {
+      await testNocterm('ask answer bubble none', (tester) async {
+        await pumpBubble(
+          tester,
+          const AskAnswerView(
+            prompt: '',
+            note: '',
+            selections: [
+              AskAnswerSelection(group: 'modules', multi: true, labels: []),
+            ],
+          ),
+        );
+
+        final ts = tester.terminalState;
+        expect(ts, containsText('modules:'));
+        expect(ts, containsText('(none)'));
       }, size: const Size(80, 24));
     });
   });

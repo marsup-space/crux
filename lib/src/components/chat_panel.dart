@@ -1305,7 +1305,7 @@ class _ChatPanelState extends State<ChatPanel> {
                     return AskForm(
                       key: ValueKey('ask-form-${pending.callId}'),
                       pending: pending,
-                      onSubmit: (prose) {
+                      onSubmit: (prose, view) {
                         // Surface the user's selection as a visible
                         // user-role message bubble in the chat log.
                         // The `ask` tool result is a `role: tool`
@@ -1319,15 +1319,30 @@ class _ChatPanelState extends State<ChatPanel> {
                         // handled by the chat-service turn flow.
                         final sid = _sessionController.currentSessionId;
                         if (sid != null) {
+                          final answerMsg = Message(
+                            id: -1,
+                            sessionId: sid,
+                            role: 'user',
+                            content: prose,
+                          );
                           _sessionController.putCachedMessages(sid, [
                             ...?_sessionController.messageCache[sid],
-                            Message(
-                              id: -1,
-                              sessionId: sid,
-                              role: 'user',
-                              content: prose,
-                            ),
+                            answerMsg,
                           ]);
+                          // Register the display summary keyed by the
+                          // message's identity so chat_history can
+                          // swap the raw prose bubble for an
+                          // [AskAnswerBubble] in both vibe and verbose
+                          // mode. Keyed on the Message object (not its
+                          // id): id is -1 until the store write lands
+                          // and the orchestrator reloads the cache, at
+                          // which point the whole key set is migrated
+                          // to the fresh rows by identity (see
+                          // [SessionController.putCachedMessages]).
+                          _sessionController.registerAskAnswerView(
+                            answerMsg,
+                            view,
+                          );
                         }
                         _pendingAskCubit.complete(prose);
                       },

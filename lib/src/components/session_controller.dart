@@ -9,6 +9,7 @@ import '../services/chat_service.dart';
 import '../services/provider_service.dart';
 import '../storage/message_store.dart';
 import '../storage/session_store.dart';
+import 'ask_answer_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
 import 'metrics_cubit.dart';
@@ -119,6 +120,34 @@ class SessionController {
   /// after the final response). Multiple queued messages are merged
   /// into a single user turn with a system prefix.
   final Map<int, MessageQueue> _messageQueues = {};
+
+  /// Display summaries for submitted `ask` form answers, keyed by the
+  /// identity of the user [Message] row the chat panel appended for
+  /// the answer. chat_history checks this map when rendering a user
+  /// message; a hit swaps the raw serialized-prose bubble for an
+  /// [AskAnswerBubble] recap (both vibe and verbose modes).
+  ///
+  /// Keyed by identity rather than message id because the in-memory
+  /// row has `id: -1` until the store write lands — the turn
+  /// orchestrator's end-of-turn reload replaces the cache with fresh
+  /// rows, and [putCachedMessages] migrates these entries onto the
+  /// fresh instances by matching content/role/position. In-memory
+  /// only: after an app restart there is no view (the store row is
+  /// the raw prose), so the message falls back to a plain bubble.
+  final Map<Message, AskAnswerView> _askAnswerViews = {};
+
+  /// Register the display summary for the user message that carries
+  /// an `ask` form answer. Called by the chat panel at submit time,
+  /// right after the in-memory row is appended to the cache.
+  void registerAskAnswerView(Message message, AskAnswerView view) {
+    _askAnswerViews[message] = view;
+  }
+
+  /// The registered [AskAnswerView] for [message], or null when the
+  /// row is an ordinary user message (or the view was dropped on
+  /// restart / session switch).
+  AskAnswerView? askAnswerViewFor(Message message) =>
+      _askAnswerViews[message];
 
   /// Route-through access to the per-session input text stash. Stores
   /// [text] under [sessionId], or removes the entry when [text] is
@@ -693,9 +722,56 @@ class SessionController {
   /// so any BlocBuilder on [SessionCubit] sees the new snapshot. Both
   /// paths go through here so the cache and cubit can never disagree.
   void putCachedMessages(int sessionId, List<Message> messages) {
+    _migrateAskAnswerViews(sessionId, messages);
     final cached = List<Message>.unmodifiable(messages);
     messageCache[sessionId] = cached;
     cubit.putMessages(sessionId, cached);
+  }
+
+  /// Re-key [_askAnswerViews] entries from the previous cache rows
+  /// onto the new list's instances. The ask-answer user row is
+  /// appended in-memory with `id: -1`; once the chat service persists
+  /// the turn and the orchestrator reloads the cache from the store,
+  /// the same answer arrives as a fresh [Message] with a real id.
+  /// Matching is by exact serialized content + role, scoped to
+  /// [sessionId]'s previous cache list — two answers within one turn
+  /// are impossible (the turn executor blocks on the form), and even
+  /// a false positive on identical text from an older turn is
+  /// harmless: the worst case is a raw prose message rendering as a
+  /// recap bubble. Entries whose old row is no longer matched are
+  /// dropped — e.g. after compaction the pre-compaction rows vanish
+  /// and their views should go with them.
+  void _migrateAskAnswerViews(int sessionId, List<Message> next) {
+    if (_askAnswerViews.isEmpty) return;
+    final prev = messageCache[sessionId];
+    if (prev == null) return;
+    final moves = <Message, AskAnswerView>{};
+    final stale = <Message>[];
+    for (final oldMsg in prev) {
+      final view = _askAnswerViews[oldMsg];
+      if (view == null) continue;
+      Message? match;
+      for (final newMsg in next) {
+        if (identical(newMsg, oldMsg)) {
+          match = oldMsg; // same instance — no move needed
+          break;
+        }
+        if (newMsg.role == 'user' && newMsg.content == oldMsg.content) {
+          match = newMsg;
+          break;
+        }
+      }
+      if (match == null) {
+        stale.add(oldMsg);
+      } else if (!identical(match, oldMsg)) {
+        moves[match] = view;
+        stale.add(oldMsg);
+      }
+    }
+    for (final oldMsg in stale) {
+      _askAnswerViews.remove(oldMsg);
+    }
+    _askAnswerViews.addAll(moves);
   }
 
   /// Sync the cubit's snapshot from the controller's current

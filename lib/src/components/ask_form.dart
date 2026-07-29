@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
 import '../tools/ask_tool.dart';
+import 'ask_answer_bubble.dart';
 import 'ui/button.dart';
 
 /// Interactive form that replaces the chat input box when the agent
@@ -25,13 +26,17 @@ import 'ui/button.dart';
 ///
 /// On submit:
 ///   - Selections are serialized via [serializeAskAnswer].
-///   - `onSubmit(prose)` fires; the caller drives the cubit's `complete`.
+///   - A display summary ([AskAnswerView]) is built from the same
+///     selections so the chat log can render the answer as an
+///     [AskAnswerBubble] instead of the raw wire prose.
+///   - `onSubmit(prose, view)` fires; the caller drives the cubit's
+///     `complete` and registers the view on the session controller.
 ///
 /// On dismiss:
 ///   - `onDismiss()` fires; the caller drives the cubit's `dismiss`.
 class AskForm extends StatefulComponent {
   final PendingAsk pending;
-  final void Function(String prose) onSubmit;
+  final void Function(String prose, AskAnswerView view) onSubmit;
   final VoidCallback onDismiss;
 
   const AskForm({
@@ -152,7 +157,30 @@ class _AskFormState extends State<AskForm> {
       _selections,
       _noteController.text,
     );
-    component.onSubmit(prose);
+    component.onSubmit(prose, _buildAnswerView());
+  }
+
+  /// Build the display-friendly recap of the current selections, for
+  /// the [AskAnswerBubble] the chat log shows after submit. Labels are
+  /// what the user saw on screen (not the wire `value`s), and the note
+  /// is trimmed here so the bubble never renders a blank note row.
+  AskAnswerView _buildAnswerView() {
+    final spec = component.pending.spec;
+    return AskAnswerView(
+      prompt: spec.prompt,
+      note: _noteController.text.trim(),
+      selections: [
+        for (final group in spec.groups)
+          AskAnswerSelection(
+            group: group.name,
+            multi: group.multi,
+            labels: [
+              for (final o in _selections[group.name] ?? const <AskOption>[])
+                o.label,
+            ],
+          ),
+      ],
+    );
   }
 
   bool _handleOptionKey(KeyboardEvent event) {

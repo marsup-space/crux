@@ -20,6 +20,7 @@ import '../utils/url_launcher.dart';
 import '../tools/registry.dart';
 import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
+import 'ask_answer_bubble.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
@@ -514,7 +515,20 @@ class _ChatHistoryState extends State<ChatHistory> {
           userItemLabels.add(text);
         }
         final isLatestClosedAi = identical(seg, latestClosedAiSegment);
-        if (isLiveOpenSegment) {
+        // Ask-form answer: the segment's anchored user message carries
+        // a registered [AskAnswerView] — render the recap bubble
+        // instead of the raw serialized-prose user line. Only the
+        // segment that shows the user line swaps; sibling segments of
+        // the same turn keep their boxes/prose below it.
+        final askView = component.sessionController.askAnswerViewFor(
+          seg.userMessage,
+        );
+        if (askView != null && seg.showUserMessage) {
+          items.add((ctx) => AskAnswerBubble(answer: askView));
+          if (!isLiveOpenSegment) {
+            items.add((ctx) => const SizedBox(height: 1));
+          }
+        } else if (isLiveOpenSegment) {
           // Preserve the user line / scrollbar anchor, but do not render the
           // pending segment's boxes a second time. VibeStreamingBubble merges
           // these base boxes with the current round immediately below.
@@ -629,7 +643,17 @@ class _ChatHistoryState extends State<ChatHistory> {
         // literal `ask://label{answer}` or `ask://label` text.
         final isLatestAi = i == latestAiIndex;
         final enableQuickReplies = isLatestAi && !isStreaming;
+        // Ask-form answer: swap the user message's normal bubble for
+        // the [AskAnswerBubble] recap (the raw prose stays in the
+        // store for the LLM; this is the user-facing view). Mirrors
+        // the vibe-mode swap above.
+        final askView = msg.role == 'user'
+            ? component.sessionController.askAnswerViewFor(msg)
+            : null;
         items.add((ctx) {
+          if (askView != null) {
+            return AskAnswerBubble(answer: askView);
+          }
           return MessageBubble(
             message: msg,
             reasoningCollapsed: collapsed,
