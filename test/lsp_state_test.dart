@@ -1,7 +1,6 @@
 import 'package:crux/src/components/vibe_box_data.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/tools/registry.dart';
-import 'package:crux/src/tools/tool_def.dart';
 import 'package:crux/src/utils/tool_meta.dart';
 import 'package:test/test.dart';
 

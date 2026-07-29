@@ -8,7 +8,6 @@
 // events logged through the sink land in the DB and come back in
 // run-grouped, chronological order.
 
-import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 

@@ -3,7 +3,6 @@ import 'package:crux/src/components/vibe_box.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/utils/tool_meta.dart';
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
-import 'package:nocterm/nocterm.dart' as nocterm show isNotEmpty;
 import 'package:test/test.dart';
 
 void main() {
