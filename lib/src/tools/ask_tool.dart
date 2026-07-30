@@ -215,9 +215,7 @@ class AskTool extends ToolDef {
       'yes/no or A/B/C single-choice confirmations, prefer the inline '
       '`ask://label{answer}` quick-reply tokens instead — they are '
       'far cheaper (no tool round-trip, no form). The user can also '
-      'type a free-text note alongside their picks. Dismissing the '
-      'form cancels the turn entirely (no tool result comes back) — '
-      'the user wants to type in the chat box instead.';
+      'type a free-text note alongside their picks.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
