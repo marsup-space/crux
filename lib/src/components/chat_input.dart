@@ -565,7 +565,7 @@ class ChatInputState extends State<ChatInput> {
               ? 'Press Ctrl+C again to quit...'
               : _keyHandler.escInterruptHint
               ? 'Press ESC again to interrupt...'
-              : 'Enter message to queue, Ctrl+C or ESC×2 to interrupt, Ctrl+C×2 to quit'
+              : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
         ? 'Response was interrupted. Type a new message...'
         : hasImages

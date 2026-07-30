@@ -4,18 +4,15 @@ import 'package:nocterm/nocterm.dart';
 /// A test component that implements the Ctrl+C semantics, matching the
 /// same logic used in ChatInput:
 ///
-/// 1. While the *current* session is streaming, the first Ctrl+C cancels
-///    the response (same effect as ESC×2) and arms the quit guard — a
-///    quick second Ctrl+C still quits.
-/// 2. Outside streaming, the double-press-to-quit guard fires whenever
-///    *any* session — current or background — is running, which mirrors
-///    `SessionController.hasAnyRunningSession` in production.
-/// 3. When nothing is running, Ctrl+C quits immediately.
+/// 1. Ctrl+C never cancels a streaming response — interrupting is
+///    ESC×2's job. While any session is running (including the
+///    currently streaming one), the first Ctrl+C arms the quit guard
+///    with a warning toast, and a quick second Ctrl+C quits.
+/// 2. When nothing is running, Ctrl+C quits immediately.
 ///
-/// `runningSessionIds` is the set of session ids that are currently
-/// running (i.e. `SessionStatus.running`). The earlier version of this
-/// demo only took a single `isStreaming: bool`, which didn't catch the
-/// bug where the chat-input guard was scoped to `currentSessionId` only.
+/// `runningSessionIds` mirrors `SessionController.hasAnyRunningSession`
+/// in production: the guard fires whenever ANY session — current or
+/// background — is running.
 class _CtrlCGuardDemo extends StatefulComponent {
   final Set<int> runningSessionIds;
   final int? currentSessionId;
@@ -43,14 +40,9 @@ class _CtrlCGuardDemoState extends State<_CtrlCGuardDemo> {
         !event.isShiftPressed &&
         !event.isAltPressed &&
         !event.isMetaPressed) {
-      final currentId = component.currentSessionId;
-      // Streaming = the *current* session is responding.
-      final isStreaming =
-          currentId != null && component.runningSessionIds.contains(currentId);
       final now = DateTime.now();
 
-      // Quick double-press (within 3s, hint armed) always quits,
-      // whether or not a response is streaming.
+      // Quick double-press (within 3s, hint armed) quits.
       if (_lastCtrlCPressTime != null &&
           now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
           _ctrlCQuitHint) {
@@ -61,19 +53,8 @@ class _CtrlCGuardDemoState extends State<_CtrlCGuardDemo> {
         return false;
       }
 
-      if (isStreaming) {
-        // First press during streaming: cancel the response and arm
-        // the quit guard so a fast second press still exits.
-        _lastCtrlCPressTime = now;
-        _ctrlCQuitHint = true;
-        _status = 'interrupted';
-        component.onToast('Response interrupted. Press Ctrl+C again to quit.');
-        setState(() {});
-        return true; // consume
-      }
-
-      // Not streaming — mirror `SessionController.hasAnyRunningSession`:
-      // the guard fires when ANY session is running.
+      // Any session running — arm the double-press quit guard. A
+      // streaming response keeps streaming; Ctrl+C never cancels it.
       if (component.runningSessionIds.isNotEmpty) {
         _lastCtrlCPressTime = now;
         _ctrlCQuitHint = true;
@@ -125,7 +106,7 @@ class _CtrlCGuardDemoState extends State<_CtrlCGuardDemo> {
 }
 
 void main() {
-  group('Ctrl+C cancel-streaming / double-press-to-quit semantics', () {
+  group('Ctrl+C quit-only / double-press-to-quit semantics', () {
     test(
       'Ctrl+C when no session is running passes through (returns false)',
       () async {
@@ -155,8 +136,8 @@ void main() {
       },
     );
 
-    test('First Ctrl+C while current session is streaming interrupts the '
-        'response and arms the quit guard (consumes event)', () async {
+    test('First Ctrl+C while current session is streaming arms the quit '
+        'guard without interrupting (consumes event)', () async {
       String? toastMessage;
       await testNocterm('ctrl_c_first_press_current', (tester) async {
         await tester.pumpComponent(
@@ -175,13 +156,15 @@ void main() {
           ),
         );
 
-        // Status should be 'interrupted' (stream cancelled, event
-        // consumed, quit guard armed for a quick second press).
-        expect(tester.terminalState, containsText('interrupted'));
+        // Status should be 'warned' — the stream is NOT cancelled
+        // ('Streaming: true' still), the quit guard is armed, and the
+        // toast points at the second press to quit.
+        expect(tester.terminalState, containsText('warned'));
+        expect(tester.terminalState, containsText('Streaming: true'));
         expect(tester.terminalState, containsText('QuitHint: true'));
         expect(
           toastMessage,
-          equals('Response interrupted. Press Ctrl+C again to quit.'),
+          equals('A session is running. Press Ctrl+C again to quit.'),
         );
       });
     });
@@ -191,7 +174,7 @@ void main() {
       // This is the regression test for the bug the user reported: a
       // background session is the one running, the user is currently
       // sitting on a different (idle) session, and Ctrl+C used to exit
-      // the app immediately. The new guard must catch this and require
+      // the app immediately. The guard must catch this and require
       // a second press.
       String? toastMessage;
       await testNocterm('ctrl_c_background_session', (tester) async {
@@ -238,7 +221,7 @@ void main() {
             ),
           );
 
-          // Send first Ctrl+C — interrupts the stream, arms the guard
+          // Send first Ctrl+C — arms the guard, stream keeps running
           await tester.sendKeyEvent(
             KeyboardEvent(
               logicalKey: LogicalKey.keyC,
@@ -246,7 +229,7 @@ void main() {
             ),
           );
 
-          expect(tester.terminalState, containsText('interrupted'));
+          expect(tester.terminalState, containsText('warned'));
 
           // Send second Ctrl+C quickly (within 3s)
           await tester.sendKeyEvent(
@@ -303,11 +286,11 @@ void main() {
           ),
         );
 
-        // Should interrupt again (fresh first press), not quit
-        expect(tester.terminalState, containsText('interrupted'));
+        // Should warn again (fresh first press), not quit
+        expect(tester.terminalState, containsText('warned'));
         expect(
           toastMessage,
-          equals('Response interrupted. Press Ctrl+C again to quit.'),
+          equals('A session is running. Press Ctrl+C again to quit.'),
         );
       });
     });

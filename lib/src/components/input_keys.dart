@@ -89,28 +89,22 @@ class InputKeyHandler {
   }
 
   bool handleKeyEvent(KeyboardEvent event) {
-    // --- Ctrl+C: cancel streaming / double-press quit ---
+    // --- Ctrl+C: quit only ---
     //
-    // Semantics match mainstream CLIs:
-    // 1. While a response is streaming, Ctrl+C cancels the current
-    //    response (same effect as ESC×2) and arms the quit guard.
-    // 2. A quick second Ctrl+C (within 3s, while the hint is armed)
-    //    quits — this works both during and outside streaming.
-    // 3. Outside streaming the existing double-press exit guard is
-    //    unchanged: guarded when any session is running, immediate
-    //    quit when nothing is running.
+    // 1. Interrupting a streaming response is ESC×2's job — Ctrl+C
+    //    never cancels a response.
+    // 2. When any session is running (including a streaming one), the
+    //    first Ctrl+C arms the quit guard with a toast; a quick second
+    //    Ctrl+C (within 3s) quits.
+    // 3. When nothing is running, Ctrl+C quits immediately.
     if (event.logicalKey == LogicalKey.keyC &&
         event.isControlPressed &&
         !event.isShiftPressed &&
         !event.isAltPressed &&
         !event.isMetaPressed) {
-      final sessionId = sessionController.currentSessionId;
-      final isStreaming =
-          sessionId != null &&
-          sessionController.runtime(sessionId).isResponding;
       final now = DateTime.now();
 
-      // Quick double-press always quits, regardless of streaming state.
+      // Quick double-press (within 3s, hint armed) quits.
       if (_lastCtrlCPressTime != null &&
           now.difference(_lastCtrlCPressTime!).inMilliseconds < 3000 &&
           _ctrlCQuitHint) {
@@ -120,27 +114,8 @@ class InputKeyHandler {
         return true;
       }
 
-      if (isStreaming) {
-        // First press during streaming: interrupt the response and arm
-        // the quit guard so a fast second press still exits.
-        _lastCtrlCPressTime = now;
-        _ctrlCQuitHint = true;
-        turnOrchestrator.interruptResponse(textController: textController);
-        turnOrchestrator.showToast(
-          'Response interrupted. Press Ctrl+C again to quit.',
-          mode: ToastMode.info,
-        );
-        Future.delayed(const Duration(seconds: 3), () {
-          if (_ctrlCQuitHint) {
-            _ctrlCQuitHint = false;
-            onStateChanged();
-          }
-        });
-        onStateChanged();
-        return true;
-      }
-
-      // Not streaming: keep the existing double-press exit guard.
+      // Any session running — arm the double-press quit guard. The
+      // response keeps streaming; interrupting is ESC×2's job.
       if (sessionController.hasAnyRunningSession) {
         _lastCtrlCPressTime = now;
         _ctrlCQuitHint = true;

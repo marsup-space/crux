@@ -394,9 +394,9 @@ const List<SlashCommand> _baseCommands = [
   ),
   // Exit Crux cleanly. When the agent is streaming, the
   // command is rejected with a toast that points at the
-  // keyboard affordances under the current Ctrl+C semantics:
-  // Ctrl+C cancels the in-flight response, and pressing
-  // Ctrl+C twice in quick succession exits the app.
+  // keyboard affordances: ESC×2 interrupts the in-flight
+  // response, and pressing Ctrl+C twice in quick
+  // succession exits the app.
   // Otherwise it calls `shutdownApp()` from
   // nocterm, which tears down the alt-screen, then
   // `runApp()` returns to `bin/crux.dart` and the per-run

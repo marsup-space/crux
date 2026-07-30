@@ -46,8 +46,8 @@ String buildHelpText() {
     ..writeln(r'- `$` — invoke a skill · 调用技能')
     ..writeln('- `ESC` ×2 — interrupt the current response · 中断当前回复')
     ..writeln(
-      '- `Ctrl+C` — while streaming: cancel the response; double-press: '
-      'exit Crux · 流式输出时取消回复；快速双击退出',
+      '- `Ctrl+C` — exit Crux; double-press when a session is running '
+      '· 退出 Crux；有会话运行时需快速双击',
     )
     ..writeln()
     ..writeln(
