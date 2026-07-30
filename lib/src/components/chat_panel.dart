@@ -1311,14 +1311,21 @@ class _ChatPanelState extends State<ChatPanel> {
                         // The `ask` tool result is a `role: tool`
                         // message (transparent to the user), so
                         // without this the submitted answer would
-                        // vanish from view. We append to the in-
-                        // memory cache + cubit (same path
-                        // sendMessage uses at chat_turn_orchestrator
-                        // ~line 340) so the bubble renders
-                        // immediately; the message-store write is
-                        // handled by the chat-service turn flow.
+                        // vanish from view.
                         final sid = _sessionController.currentSessionId;
                         if (sid != null) {
+                          // Persist FIRST, mirroring how a typed user
+                          // message is stored (chat_service.sendMessage
+                          // writes the row before the LLM call). The
+                          // old in-memory-only append was wiped by the
+                          // orchestrator's store reload at the next
+                          // round boundary (onToolRound → loadMessages),
+                          // which is why the bubble disappeared the
+                          // moment the turn continued. A bare `user`
+                          // row mid-round is valid on both wire
+                          // families: the Anthropic pairing sanitizer
+                          // only prunes orphan tool plumbing, never
+                          // plain text.
                           final answerMsg = Message(
                             id: -1,
                             sessionId: sid,
@@ -1329,6 +1336,13 @@ class _ChatPanelState extends State<ChatPanel> {
                             ...?_sessionController.messageCache[sid],
                             answerMsg,
                           ]);
+                          unawaited(
+                            _store.messageStore.addMessage(
+                              sid,
+                              role: 'user',
+                              content: prose,
+                            ),
+                          );
                           // Register the display summary keyed by the
                           // message's identity so chat_history can
                           // swap the raw prose bubble for an
