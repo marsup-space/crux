@@ -58,10 +58,7 @@ Component dimText(String text, CruxThemeData theme) {
     padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
     child: Text(
       text,
-      style: TextStyle(
-        color: theme.onSurfaceDim,
-        fontStyle: FontStyle.italic,
-      ),
+      style: TextStyle(color: theme.onSurfaceDim, fontStyle: FontStyle.italic),
     ),
   );
 }

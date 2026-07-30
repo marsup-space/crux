@@ -78,19 +78,13 @@ void main() {
       final toolResults = msgs.where((m) => m.role == 'tool').toList();
       expect(toolResults, hasLength(2));
       // Match by toolCallId so order in the table doesn't matter.
-      final byCallId = {
-        for (final m in toolResults) m.toolCallId: m.meta,
-      };
+      final byCallId = {for (final m in toolResults) m.toolCallId: m.meta};
       expect(
         byCallId['a'],
         '{"routing":"system-proxy"}',
         reason: 'webfetch (proxy path) carries the routing hint',
       );
-      expect(
-        byCallId['b'],
-        '',
-        reason: 'read tool carries no UI metadata',
-      );
+      expect(byCallId['b'], '', reason: 'read tool carries no UI metadata');
     });
 
     test('copyWith propagates meta', () {

@@ -157,8 +157,7 @@ Body of the skill — irrelevant; the e2e test only checks that the
       await tester.pump(const Duration(milliseconds: 600));
     }
 
-    test(
-        'submitting a dollar-prefixed chip adds the name to the '
+    test('submitting a dollar-prefixed chip adds the name to the '
         'runtime and the bar hover hint reflects it', () async {
       await testNocterm('e2e chip submit', (tester) async {
         // 1. Mount the bar in an idle session — the hint should
@@ -220,10 +219,7 @@ Body of the skill — irrelevant; the e2e test only checks that the
           contains('Context window usage.'),
           reason: 'usage block must remain after merging skills',
         );
-        expect(
-          hint,
-          contains('Click to compact the session history.'),
-        );
+        expect(hint, contains('Click to compact the session history.'));
         expect(
           hint,
           contains('Loaded skills : e2e-skill'),
@@ -231,15 +227,11 @@ Body of the skill — irrelevant; the e2e test only checks that the
               'submitted chip name must surface in the skills '
               'section of the merged hint',
         );
-        expect(
-          hint,
-          isNot(contains('Loaded skills : none')),
-        );
+        expect(hint, isNot(contains('Loaded skills : none')));
       }, size: const Size(80, 20));
     });
 
-    test(
-        'mixing a chip-loaded skill with a tool-loaded skill '
+    test('mixing a chip-loaded skill with a tool-loaded skill '
         'produces a combined hint list', () async {
       await testNocterm('e2e both paths', (tester) async {
         // Mount a session and load one skill via the chip path.

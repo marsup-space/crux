@@ -24,10 +24,16 @@ void main() {
       expect(tool.description, contains('find_similar_code'));
       // Implementation details shouldn't leak into the agent-facing
       // description.
-      expect(tool.description, isNot(contains('semble')),
-          reason: 'agent-facing description should not mention semble');
-      expect(tool.description, isNot(contains('CLI')),
-          reason: 'agent-facing description should not mention CLI');
+      expect(
+        tool.description,
+        isNot(contains('semble')),
+        reason: 'agent-facing description should not mention semble',
+      );
+      expect(
+        tool.description,
+        isNot(contains('CLI')),
+        reason: 'agent-facing description should not mention CLI',
+      );
     });
 
     test('requires both file and line', () async {
@@ -41,10 +47,7 @@ void main() {
     });
 
     test('rejects line < 1', () async {
-      final result = await tool.execute(
-        {'file': 'foo.dart', 'line': 0},
-        ctx,
-      );
+      final result = await tool.execute({'file': 'foo.dart', 'line': 0}, ctx);
       expect(result.title, equals('Error'));
       expect(result.output, contains('line must be >= 1'));
     });
@@ -52,8 +55,7 @@ void main() {
     test(
       'finds chunks similar to a known location in a repo',
       () async {
-        final repo =
-            '/Users/developer/Projects/crux/.research/semble';
+        final repo = '/Users/developer/Projects/crux/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;
@@ -61,17 +63,17 @@ void main() {
         // Anchor on the start of `_run_find_related` — a function
         // whose name spells out its purpose and that the engine
         // should be able to find semantically similar calls for.
-        final result = await tool.execute(
-          {
-            'file': 'src/semble/cli.py',
-            'line': 124,
-            'path': repo,
-            'k': 3,
-          },
-          ctx,
+        final result = await tool.execute({
+          'file': 'src/semble/cli.py',
+          'line': 124,
+          'path': repo,
+          'k': 3,
+        }, ctx);
+        expect(
+          result.metadata['totalMatches'],
+          greaterThan(0),
+          reason: 'find_similar_code should find at least one match',
         );
-        expect(result.metadata['totalMatches'], greaterThan(0),
-            reason: 'find_similar_code should find at least one match');
       },
       timeout: const Timeout(Duration(minutes: 5)),
     );
@@ -79,25 +81,27 @@ void main() {
     test(
       'returns clean error when anchor line is out of range',
       () async {
-        final repo =
-            '/Users/developer/Projects/crux/.research/semble';
+        final repo = '/Users/developer/Projects/crux/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;
         }
-        final result = await tool.execute(
-          {
-            'file': 'src/semble/cli.py',
-            'line': 99999,
-            'path': repo,
-            'k': 3,
-          },
-          ctx,
+        final result = await tool.execute({
+          'file': 'src/semble/cli.py',
+          'line': 99999,
+          'path': repo,
+          'k': 3,
+        }, ctx);
+        expect(
+          result.title,
+          equals('Error'),
+          reason: 'out-of-range anchor should produce a clean error',
         );
-        expect(result.title, equals('Error'),
-            reason: 'out-of-range anchor should produce a clean error');
-        expect(result.output, contains('no chunk found'),
-            reason: 'should explain the anchor mismatch to the agent');
+        expect(
+          result.output,
+          contains('no chunk found'),
+          reason: 'should explain the anchor mismatch to the agent',
+        );
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );

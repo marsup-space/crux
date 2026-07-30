@@ -378,9 +378,7 @@ class SessionRuntimeState implements SessionRuntimeSink {
   @override
   void finishModelRound({DateTime? now, bool accumulateGeneration = false}) {
     final end = now ?? DateTime.now();
-    if (accumulateGeneration &&
-        roundStreaming &&
-        roundFirstTokenTime != null) {
+    if (accumulateGeneration && roundStreaming && roundFirstTokenTime != null) {
       cumulativeGenMs +=
           end.difference(roundFirstTokenTime!).inMicroseconds / 1000.0;
     }

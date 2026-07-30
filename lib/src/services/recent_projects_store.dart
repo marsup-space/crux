@@ -236,10 +236,9 @@ class RecentProjectsStore extends ChangeNotifier {
     if (normalized.isEmpty) return;
     final now = DateTime.now();
 
-    final next = <RecentProject>[RecentProject(
-      path: normalized,
-      lastOpenedAt: now,
-    )];
+    final next = <RecentProject>[
+      RecentProject(path: normalized, lastOpenedAt: now),
+    ];
     for (final existing in _entries) {
       if (p.equals(existing.path, normalized)) continue;
       next.add(existing);
@@ -272,7 +271,9 @@ class RecentProjectsStore extends ChangeNotifier {
       buf.writeln();
       buf.writeln('[[entries]]');
       buf.writeln('path = ${_tomlEscapeString(entry.path)}');
-      buf.writeln('lastOpenedMs = ${entry.lastOpenedAt.millisecondsSinceEpoch}');
+      buf.writeln(
+        'lastOpenedMs = ${entry.lastOpenedAt.millisecondsSinceEpoch}',
+      );
     }
     buf.writeln();
     await File(filePath).writeAsString(buf.toString(), flush: true);

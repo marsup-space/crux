@@ -359,10 +359,9 @@ class MetricsCubit extends Cubit<MetricsCubitState> {
 class MetricsRuntimeSink implements SessionRuntimeSink {
   MetricsRuntimeSink({
     required this.sessionId,
-    required MetricsCubit cubit,
-    required SessionRuntimeState runtime,
-  }) : _cubit = cubit,
-       _runtime = runtime;
+    required this._cubit,
+    required this._runtime,
+  });
 
   @override
   final int sessionId;

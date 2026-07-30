@@ -102,26 +102,34 @@ Future<int> main() async {
       content: relPath,
       parallelCount: diagnostics.length,
     );
-    print('Persisted message: role=${message.role} '
-        'content=${message.content} parallelCount=${message.parallelCount}');
+    print(
+      'Persisted message: role=${message.role} '
+      'content=${message.content} parallelCount=${message.parallelCount}',
+    );
 
     // Round-trip: load it back from the store and verify shape.
     final loaded = await store.messageStore.getMessages(sessionId);
     final lspRow = loaded.firstWhere((m) => m.role == 'lsp_diagnostics');
     if (lspRow.content != relPath) {
-      print('FAIL: round-trip content mismatch: '
-          '${lspRow.content} vs $relPath');
+      print(
+        'FAIL: round-trip content mismatch: '
+        '${lspRow.content} vs $relPath',
+      );
       exitCode = 1;
       return exitCode;
     }
     if (lspRow.parallelCount != diagnostics.length) {
-      print('FAIL: round-trip count mismatch: '
-          '${lspRow.parallelCount} vs ${diagnostics.length}');
+      print(
+        'FAIL: round-trip count mismatch: '
+        '${lspRow.parallelCount} vs ${diagnostics.length}',
+      );
       exitCode = 1;
       return exitCode;
     }
-    print('Round-trip OK: stored and retrieved '
-        '${lspRow.parallelCount} errors for ${lspRow.content}');
+    print(
+      'Round-trip OK: stored and retrieved '
+      '${lspRow.parallelCount} errors for ${lspRow.content}',
+    );
 
     // Confirm the bubble class renders the expected body.
     const bubble = LspDiagnosticsBubble(

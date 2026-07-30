@@ -73,10 +73,7 @@ class SkillPickerOverlay extends StatelessComponent {
             ),
             if (query.isNotEmpty) ...[
               const SizedBox(width: 2),
-              Text(
-                '— $query',
-                style: TextStyle(color: theme.wizardTextDim),
-              ),
+              Text('— $query', style: TextStyle(color: theme.wizardTextDim)),
             ],
           ],
         ),
@@ -132,13 +129,19 @@ class SkillPickerOverlay extends StatelessComponent {
     );
   }
 
-  Component _buildSkillRow(SkillInfo skill, bool isSelected, CruxThemeData theme) {
+  Component _buildSkillRow(
+    SkillInfo skill,
+    bool isSelected,
+    CruxThemeData theme,
+  ) {
     final name = skill.name;
     // Truncate long descriptions so the row stays one line tall.
     final desc = skill.description.length > 60
         ? '${skill.description.substring(0, 57)}...'
         : skill.description;
-    final fg = isSelected ? theme.wizardTextSelected : theme.wizardTextUnselected;
+    final fg = isSelected
+        ? theme.wizardTextSelected
+        : theme.wizardTextUnselected;
     final chipFg = isSelected ? fg : theme.onColor(theme.chipBackground);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1),
@@ -154,10 +157,7 @@ class SkillPickerOverlay extends StatelessComponent {
           ),
           const SizedBox(width: 2),
           if (desc.isNotEmpty)
-            Text(
-              '— $desc',
-              style: TextStyle(color: theme.wizardTextDim),
-            ),
+            Text('— $desc', style: TextStyle(color: theme.wizardTextDim)),
         ],
       ),
     );

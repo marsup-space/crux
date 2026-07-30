@@ -112,23 +112,37 @@ void main() {
       projectPath: tempDir.path,
     );
 
-    expect(bootState.messageCache[existing.id], hasLength(50),
-        reason: 'boot should pre-load only the first chunk (50), '
-            'not the full session — the rest fills in via the '
-            'background chunked loader kicked off by ChatPanel');
-    expect(bootState.messageCache[existing.id]!.first.content,
-        'message #70',
-        reason: 'first chunk is the latest 50 messages — the tail '
-            'of the persisted list');
-    expect(bootState.messageCache[existing.id]!.last.content,
-        'message #119',
-        reason: 'first chunk ends with the most recently persisted '
-            'message, so the user sees the bottom of their latest '
-            'conversation immediately on first paint');
-    expect(bootState.messagesTotal, 120,
-        reason: 'messagesTotal must reflect the FULL session count '
-            'so ChatPanel can compute "70 more messages to load" '
-            'and kick off the chunked loader to fill them in');
+    expect(
+      bootState.messageCache[existing.id],
+      hasLength(50),
+      reason:
+          'boot should pre-load only the first chunk (50), '
+          'not the full session — the rest fills in via the '
+          'background chunked loader kicked off by ChatPanel',
+    );
+    expect(
+      bootState.messageCache[existing.id]!.first.content,
+      'message #70',
+      reason:
+          'first chunk is the latest 50 messages — the tail '
+          'of the persisted list',
+    );
+    expect(
+      bootState.messageCache[existing.id]!.last.content,
+      'message #119',
+      reason:
+          'first chunk ends with the most recently persisted '
+          'message, so the user sees the bottom of their latest '
+          'conversation immediately on first paint',
+    );
+    expect(
+      bootState.messagesTotal,
+      120,
+      reason:
+          'messagesTotal must reflect the FULL session count '
+          'so ChatPanel can compute "70 more messages to load" '
+          'and kick off the chunked loader to fill them in',
+    );
   });
 
   test('mounts ChatPanel with preloaded boot state', () async {

@@ -238,13 +238,15 @@ class MarkdownIsolate {
       parsedIndex: parsedIndex,
     );
 
-    _sendPort!.send(_MarkdownParseRequestMessage(
-      id: id,
-      text: text,
-      parsedIndex: parsedIndex,
-      maxWidth: maxWidth,
-      theme: theme,
-    ));
+    _sendPort!.send(
+      _MarkdownParseRequestMessage(
+        id: id,
+        text: text,
+        parsedIndex: parsedIndex,
+        maxWidth: maxWidth,
+        theme: theme,
+      ),
+    );
 
     return completer.future;
   }
@@ -379,7 +381,7 @@ class MarkdownSpanData {
 /// [CruxThemeData], consumed on the worker side to build a
 /// [WorkerTheme] for the parser.
 class MarkdownParseTheme {
-  const   MarkdownParseTheme({
+  const MarkdownParseTheme({
     required this.markdownTextArgb,
     required this.thinkingExpandedTextArgb,
     required this.mdH1Argb,
@@ -488,11 +490,13 @@ void _workerEntryPoint(SendPort mainPort) {
       // side will fall back to plain text rendering.
       spans = const [];
     }
-    mainPort.send(_MarkdownParseResponseMessage(
-      id: message.id,
-      text: message.text,
-      spans: spans,
-    ));
+    mainPort.send(
+      _MarkdownParseResponseMessage(
+        id: message.id,
+        text: message.text,
+        spans: spans,
+      ),
+    );
   });
 }
 
@@ -539,16 +543,15 @@ void _flattenOne(
   final mergedStyle = span.style == null
       ? inheritedStyle
       : inheritedStyle == null
-          ? span.style
-          : TextStyle(
-              color: span.style!.color ?? inheritedStyle.color,
-              backgroundColor:
-                  span.style!.backgroundColor ?? inheritedStyle.backgroundColor,
-              fontWeight: span.style!.fontWeight ?? inheritedStyle.fontWeight,
-              fontStyle: span.style!.fontStyle ?? inheritedStyle.fontStyle,
-              decoration:
-                  span.style!.decoration ?? inheritedStyle.decoration,
-            );
+      ? span.style
+      : TextStyle(
+          color: span.style!.color ?? inheritedStyle.color,
+          backgroundColor:
+              span.style!.backgroundColor ?? inheritedStyle.backgroundColor,
+          fontWeight: span.style!.fontWeight ?? inheritedStyle.fontWeight,
+          fontStyle: span.style!.fontStyle ?? inheritedStyle.fontStyle,
+          decoration: span.style!.decoration ?? inheritedStyle.decoration,
+        );
 
   final text = span.text;
   if (text != null && text.isNotEmpty) {
@@ -761,7 +764,8 @@ TextDecoration? _decorationFromMask(int mask) {
 /// Build a [MarkdownParseTheme] (the cross-isolate snapshot)
 /// from a [CruxThemeData]. Cheap: just packs colors.
 MarkdownParseTheme buildMarkdownParseTheme(MarkdownThemeFields theme) {
-  int argb(Color c) => ((c.alpha & 0xFF) << 24) |
+  int argb(Color c) =>
+      ((c.alpha & 0xFF) << 24) |
       ((c.red & 0xFF) << 16) |
       ((c.green & 0xFF) << 8) |
       (c.blue & 0xFF);

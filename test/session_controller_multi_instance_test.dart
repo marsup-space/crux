@@ -37,8 +37,12 @@ void main() {
   });
 
   SessionController buildController(SessionStore store) {
-    final toolRegistry =
-        ToolRegistry()..registerDefaults(FileReadTracker(), sessionStore: store, webProviderRegistry: WebProviderRegistry());
+    final toolRegistry = ToolRegistry()
+      ..registerDefaults(
+        FileReadTracker(),
+        sessionStore: store,
+        webProviderRegistry: WebProviderRegistry(),
+      );
     return SessionController(
       store: store,
       providerService: providerService,

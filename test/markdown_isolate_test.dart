@@ -103,22 +103,23 @@ void main() {
   final parseTheme = buildMarkdownParseTheme(theme);
 
   group('MarkdownIsolate', () {
-    test('parse request returns a non-empty span list for plain text',
-        () async {
-      final isolate = MarkdownIsolate.instance;
-      await isolate.ensureSpawned();
-      final response = await isolate.parse(
-        text: 'hello world',
-        parsedIndex: 0,
-        theme: parseTheme,
-      );
-      expect(response.spans.isNotEmpty, isTrue);
-      // The exact text survives the round trip; styling is
-      // reconstructed by the caller, not asserted here.
-      final joined =
-          response.spans.map((s) => s.text).join();
-      expect(joined, contains('hello'));
-    });
+    test(
+      'parse request returns a non-empty span list for plain text',
+      () async {
+        final isolate = MarkdownIsolate.instance;
+        await isolate.ensureSpawned();
+        final response = await isolate.parse(
+          text: 'hello world',
+          parsedIndex: 0,
+          theme: parseTheme,
+        );
+        expect(response.spans.isNotEmpty, isTrue);
+        // The exact text survives the round trip; styling is
+        // reconstructed by the caller, not asserted here.
+        final joined = response.spans.map((s) => s.text).join();
+        expect(joined, contains('hello'));
+      },
+    );
 
     test('parse with same text returns same id and content', () async {
       final isolate = MarkdownIsolate.instance;
@@ -158,39 +159,36 @@ void main() {
       expect(joined, equals('plain bold plain'));
     });
 
-    test(
-      'multi-session coalescing: stale responses from an unmounted '
-      'widget are discarded by id',
-      () async {
-        final isolate = MarkdownIsolate.instance;
-        await isolate.ensureSpawned();
-        // Submit two parses back-to-back. The first will
-        // be superseded — when it eventually returns the
-        // second is the only one a (hypothetical) widget
-        // would apply. The protocol drops nothing
-        // automatically; the widget side is responsible
-        // for that via _lastSubmittedId. Here we just
-        // confirm both completions land and the latest
-        // text is what was sent last.
-        final older = isolate.parse(
-          text: 'one',
-          parsedIndex: 0,
-          theme: parseTheme,
-        );
-        final newer = isolate.parse(
-          text: 'two',
-          parsedIndex: 0,
-          theme: parseTheme,
-        );
-        final r1 = await older;
-        final r2 = await newer;
-        expect(r1.text, equals('one'));
-        expect(r2.text, equals('two'));
-        // Different request ids — the widget would
-        // discard the older one.
-        expect(r1.id, isNot(equals(r2.id)));
-      },
-    );
+    test('multi-session coalescing: stale responses from an unmounted '
+        'widget are discarded by id', () async {
+      final isolate = MarkdownIsolate.instance;
+      await isolate.ensureSpawned();
+      // Submit two parses back-to-back. The first will
+      // be superseded — when it eventually returns the
+      // second is the only one a (hypothetical) widget
+      // would apply. The protocol drops nothing
+      // automatically; the widget side is responsible
+      // for that via _lastSubmittedId. Here we just
+      // confirm both completions land and the latest
+      // text is what was sent last.
+      final older = isolate.parse(
+        text: 'one',
+        parsedIndex: 0,
+        theme: parseTheme,
+      );
+      final newer = isolate.parse(
+        text: 'two',
+        parsedIndex: 0,
+        theme: parseTheme,
+      );
+      final r1 = await older;
+      final r2 = await newer;
+      expect(r1.text, equals('one'));
+      expect(r2.text, equals('two'));
+      // Different request ids — the widget would
+      // discard the older one.
+      expect(r1.id, isNot(equals(r2.id)));
+    });
 
     test('buildMarkdownParseTheme preserves colors as packed ARGB', () {
       final theme2 = buildMarkdownParseTheme(const _StubTheme());

@@ -325,12 +325,10 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     required super.thickness,
     required super.trackColor,
     required super.thumbColor,
-    List<ScrollbarMarker> markers = const [],
-    int? hoveredMarkerIndex,
-    bool isScrollbarHovered = false,
-  }) : _markers = markers,
-       _hoveredMarkerIndex = hoveredMarkerIndex,
-       _isScrollbarHovered = isScrollbarHovered;
+    this._markers = const [],
+    this._hoveredMarkerIndex,
+    this._isScrollbarHovered = false,
+  });
 
   @override
   double get minimumThumbHeight => 2.0;

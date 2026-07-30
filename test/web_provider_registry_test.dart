@@ -70,9 +70,7 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('crux_web_prov_');
     fakeEnv = {};
-    newRegistry = () => WebProviderRegistry(
-          userDataDirOverride: tempDir.path,
-        );
+    newRegistry = () => WebProviderRegistry(userDataDirOverride: tempDir.path);
   });
 
   tearDown(() async {
@@ -90,13 +88,11 @@ void main() {
       expect(registry.activeFetchProvider, isNull);
     });
 
-    test('setApiKey makes the provider active and isConfigured true',
-        () async {
+    test('setApiKey makes the provider active and isConfigured true', () async {
       final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'test',
-          supports: {ToolCapability.search},
-        ));
+        ..register(
+          _CountingProvider(id: 'test', supports: {ToolCapability.search}),
+        );
       await registry.initialize();
       expect(registry.isAnySearchProviderConfigured, isFalse);
 
@@ -108,10 +104,9 @@ void main() {
 
     test('setApiKey fires the changes stream', () async {
       final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'test',
-          supports: {ToolCapability.search},
-        ));
+        ..register(
+          _CountingProvider(id: 'test', supports: {ToolCapability.search}),
+        );
       await registry.initialize();
 
       final events = <int>[];
@@ -142,10 +137,9 @@ void main() {
         await authFile.writeAsString('TEST_API_KEY = "sk-persisted"\n');
 
         final registry = newRegistry()
-          ..register(_CountingProvider(
-            id: 'test',
-            supports: {ToolCapability.search},
-          ));
+          ..register(
+            _CountingProvider(id: 'test', supports: {ToolCapability.search}),
+          );
 
         // Listen BEFORE initialize() — broadcast streams don't
         // replay, so a listener set up after the event would
@@ -160,19 +154,25 @@ void main() {
         await sub.cancel();
 
         expect(registry.getApiKey('test'), 'sk-persisted');
-        expect(events, isNotEmpty,
-            reason: 'changes stream must fire so listeners '
-                're-register web tools');
+        expect(
+          events,
+          isNotEmpty,
+          reason:
+              'changes stream must fire so listeners '
+              're-register web tools',
+        );
         expect(registry.isAnySearchProviderConfigured, isTrue);
       },
     );
 
     test('removeApiKey clears the key and deactivates', () async {
       final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'test',
-          supports: {ToolCapability.search, ToolCapability.fetch},
-        ));
+        ..register(
+          _CountingProvider(
+            id: 'test',
+            supports: {ToolCapability.search, ToolCapability.fetch},
+          ),
+        );
       await registry.initialize();
 
       await registry.setApiKey('test', 'sk-abc');
@@ -185,13 +185,11 @@ void main() {
       expect(registry.isAnyFetchProviderConfigured, isFalse);
     });
 
-    test('persists key to auth.toml under the provider field name',
-        () async {
+    test('persists key to auth.toml under the provider field name', () async {
       final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'test',
-          supports: {ToolCapability.search},
-        ));
+        ..register(
+          _CountingProvider(id: 'test', supports: {ToolCapability.search}),
+        );
       await registry.initialize();
 
       await registry.setApiKey('test', 'sk-persisted');
@@ -210,10 +208,9 @@ void main() {
       // A fresh registry should re-load the persisted value on
       // initialize().
       final registry2 = newRegistry()
-        ..register(_CountingProvider(
-          id: 'test',
-          supports: {ToolCapability.search},
-        ));
+        ..register(
+          _CountingProvider(id: 'test', supports: {ToolCapability.search}),
+        );
       await registry2.initialize();
       expect(registry2.getApiKey('test'), 'sk-persisted');
     });
@@ -238,39 +235,40 @@ void main() {
       );
     });
 
-    test('activeSearchProvider picks first configured search provider',
-        () async {
-      final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'first',
-          supports: {ToolCapability.search},
-        ))
-        ..register(_CountingProvider(
-          id: 'second',
-          supports: {ToolCapability.search},
-        ));
-      await registry.initialize();
-      // Configure both — active should be the first registered
-      // one ("first").
-      await registry.setApiKey('first', 'a');
-      await registry.setApiKey('second', 'b');
-      expect(registry.activeSearchProvider?.id, 'first');
+    test(
+      'activeSearchProvider picks first configured search provider',
+      () async {
+        final registry = newRegistry()
+          ..register(
+            _CountingProvider(id: 'first', supports: {ToolCapability.search}),
+          )
+          ..register(
+            _CountingProvider(id: 'second', supports: {ToolCapability.search}),
+          );
+        await registry.initialize();
+        // Configure both — active should be the first registered
+        // one ("first").
+        await registry.setApiKey('first', 'a');
+        await registry.setApiKey('second', 'b');
+        expect(registry.activeSearchProvider?.id, 'first');
 
-      // Remove the first → active should fall back to second.
-      await registry.removeApiKey('first');
-      expect(registry.activeSearchProvider?.id, 'second');
-    });
+        // Remove the first → active should fall back to second.
+        await registry.removeApiKey('first');
+        expect(registry.activeSearchProvider?.id, 'second');
+      },
+    );
 
     test('activeFetchProvider ignores search-only providers', () async {
       final registry = newRegistry()
-        ..register(_CountingProvider(
-          id: 'search-only',
-          supports: {ToolCapability.search},
-        ))
-        ..register(_CountingProvider(
-          id: 'fetch-only',
-          supports: {ToolCapability.fetch},
-        ));
+        ..register(
+          _CountingProvider(
+            id: 'search-only',
+            supports: {ToolCapability.search},
+          ),
+        )
+        ..register(
+          _CountingProvider(id: 'fetch-only', supports: {ToolCapability.fetch}),
+        );
       await registry.initialize();
       await registry.setApiKey('search-only', 'a');
       await registry.setApiKey('fetch-only', 'b');

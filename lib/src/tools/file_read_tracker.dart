@@ -28,7 +28,11 @@ class FileReadTracker {
   /// Called after a successful read. Records path + mtime.
   /// Persistence failure is non-fatal — the in-memory cache update
   /// is sufficient for the current session.
-  final Future<void> Function(int sessionId, String normalizedPath, int mtimeMs)?
+  final Future<void> Function(
+    int sessionId,
+    String normalizedPath,
+    int mtimeMs,
+  )?
   onRecordRead;
 
   /// Called after a successful edit/write. Records path + mtime
@@ -64,11 +68,11 @@ class FileReadTracker {
   onLookupAttribution;
 
   FileReadTracker({
-    int? sessionId,
+    this._sessionId,
     this.onRecordRead,
     this.onRecordWrite,
     this.onLookupAttribution,
-  }) : _sessionId = sessionId;
+  });
 
   /// Look up the writer attribution for [normalizedPath]. Used by
   /// both the drift branch of [checkWriteGuard] and by the `read`
@@ -126,7 +130,9 @@ class FileReadTracker {
     if (onRecordRead != null) {
       try {
         await onRecordRead!(sid, normalized, mtimeMs);
-      } catch (_) {/* see recordRead */}
+      } catch (_) {
+        /* see recordRead */
+      }
     }
     if (onRecordWrite != null) {
       try {

@@ -24,13 +24,19 @@ void main() {
 
       // Sanity: clean state
       ro.update(fillRatio: 0.5, label: '500 / 1000k');
-      expect(ro.needsPaint, isFalse,
-          reason: 'update with identical data must be a no-op');
+      expect(
+        ro.needsPaint,
+        isFalse,
+        reason: 'update with identical data must be a no-op',
+      );
 
       // Different data → markNeedsPaint
       ro.update(fillRatio: 0.6, label: '600 / 1000k');
-      expect(ro.needsPaint, isTrue,
-          reason: 'changed data must trigger repaint');
+      expect(
+        ro.needsPaint,
+        isTrue,
+        reason: 'changed data must trigger repaint',
+      );
     });
 
     test('update() never triggers markNeedsLayout', () {
@@ -56,9 +62,13 @@ void main() {
       ro.update(fillRatio: 1.0, label: '1000 / 1000k');
       ro.update(fillRatio: 0.5, label: 'Compact');
 
-      expect(ro.needsLayout, isFalse,
-          reason: 'data updates must NEVER trigger relayout — '
-              'size is fixed');
+      expect(
+        ro.needsLayout,
+        isFalse,
+        reason:
+            'data updates must NEVER trigger relayout — '
+            'size is fixed',
+      );
     });
 
     test('size is fixed at width × 1', () {

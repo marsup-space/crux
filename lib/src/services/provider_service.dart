@@ -112,15 +112,13 @@ class ProviderService {
   /// on load we read from this if `auth.toml` doesn't exist yet.
   late final String authJsonPath;
 
-  ProviderService({
-    required this.userProvidersDir,
-    this.builtInProvidersDir,
-  }) : _loader = ProviderConfigLoader.multi(
-           providersDirs: [
-             Directory(userProvidersDir),
-             if (builtInProvidersDir != null) Directory(builtInProvidersDir),
-           ],
-         ) {
+  ProviderService({required this.userProvidersDir, this.builtInProvidersDir})
+    : _loader = ProviderConfigLoader.multi(
+        providersDirs: [
+          Directory(userProvidersDir),
+          if (builtInProvidersDir != null) Directory(builtInProvidersDir),
+        ],
+      ) {
     authTomlPath = p.join(resolveUserDataDirectory(), 'auth.toml');
     authJsonPath = p.join(resolveUserDataDirectory(), 'auth.json');
   }
@@ -218,55 +216,56 @@ class ProviderService {
     final baseUri = Uri.parse(provider.endpointUrl);
     final modelsUri = baseUri.resolve('models');
 
-    final List<DiscoveredModel>? result = await withProxyRetry<
-      List<DiscoveredModel>?>(
-      enabled: isSystemProxyFallbackGloballyEnabled(),
-      attempt: (proxy) async {
-        final client = HttpClient();
-        if (proxy != null) client.findProxy = proxy.findProxyFor;
-        try {
-          final request = await client.getUrl(modelsUri);
+    final List<DiscoveredModel>? result =
+        await withProxyRetry<List<DiscoveredModel>?>(
+          enabled: isSystemProxyFallbackGloballyEnabled(),
+          attempt: (proxy) async {
+            final client = HttpClient();
+            if (proxy != null) client.findProxy = proxy.findProxyFor;
+            try {
+              final request = await client.getUrl(modelsUri);
 
-          // Header format varies by auth style:
-          //   Bearer:             Authorization: Bearer <key>
-          //   Anthropic API key:  x-api-key: <key>
-          if (apiKey != null && apiKey.isNotEmpty) {
-            final authStyle = resolveProvider(provider.type).authStyle;
-            if (authStyle == AuthStyle.bearer) {
-              request.headers.set('Authorization', 'Bearer $apiKey');
-            } else if (authStyle == AuthStyle.anthropicApiKey) {
-              request.headers.set('x-api-key', apiKey);
+              // Header format varies by auth style:
+              //   Bearer:             Authorization: Bearer <key>
+              //   Anthropic API key:  x-api-key: <key>
+              if (apiKey != null && apiKey.isNotEmpty) {
+                final authStyle = resolveProvider(provider.type).authStyle;
+                if (authStyle == AuthStyle.bearer) {
+                  request.headers.set('Authorization', 'Bearer $apiKey');
+                } else if (authStyle == AuthStyle.anthropicApiKey) {
+                  request.headers.set('x-api-key', apiKey);
+                }
+              }
+
+              final response = await request.close();
+              if (response.statusCode != 200) return const [];
+
+              final responseBody = await response
+                  .transform(utf8.decoder)
+                  .join();
+              final json = jsonDecode(responseBody) as Map<String, dynamic>;
+              final data = json['data'] as List<dynamic>?;
+
+              if (data == null) return const [];
+
+              return data.map((item) {
+                final obj = item as Map<String, dynamic>;
+                return DiscoveredModel(
+                  id: obj['id'] as String? ?? '',
+                  name: obj['name'] as String? ?? obj['id'] as String?,
+                );
+              }).toList();
+            } finally {
+              client.close(force: true);
             }
-          }
-
-          final response = await request.close();
-          if (response.statusCode != 200) return const [];
-
-          final responseBody =
-              await response.transform(utf8.decoder).join();
-          final json = jsonDecode(responseBody) as Map<String, dynamic>;
-          final data = json['data'] as List<dynamic>?;
-
-          if (data == null) return const [];
-
-          return data.map((item) {
-            final obj = item as Map<String, dynamic>;
-            return DiscoveredModel(
-              id: obj['id'] as String? ?? '',
-              name: obj['name'] as String? ?? obj['id'] as String?,
-            );
-          }).toList();
-        } finally {
-          client.close(force: true);
-        }
-      },
-    ).catchError((Object _) {
-      // Network errors, parse failures, etc. — fall back gracefully.
-      // The proxy retry path is also caught here (no usable proxy, or
-      // proxy itself failed): we just report "no models discovered" so
-      // the UI doesn't show a hard error on a discovery call.
-      return const <DiscoveredModel>[];
-    });
+          },
+        ).catchError((Object _) {
+          // Network errors, parse failures, etc. — fall back gracefully.
+          // The proxy retry path is also caught here (no usable proxy, or
+          // proxy itself failed): we just report "no models discovered" so
+          // the UI doesn't show a hard error on a discovery call.
+          return const <DiscoveredModel>[];
+        });
 
     return result ?? const <DiscoveredModel>[];
   }
@@ -500,7 +499,9 @@ class ProviderService {
     if (_envKeys.isNotEmpty) {
       buf.writeln('[apiKeys]');
       for (final entry in _envKeys.entries) {
-        buf.writeln('${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}');
+        buf.writeln(
+          '${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}',
+        );
       }
     }
 
@@ -532,5 +533,4 @@ class ProviderService {
     if (RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(s)) return s;
     return _tomlEscapeString(s);
   }
-
 }

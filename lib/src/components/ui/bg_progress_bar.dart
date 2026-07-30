@@ -69,8 +69,9 @@ class BgProgressBar extends StatelessComponent {
     final rawFill = clamped * width;
     final filledCount = rawFill.floor();
     final partial = rawFill - filledCount; // 0..1
-    final boundaryIdx =
-        (partial > 0.0 && filledCount < width) ? filledCount : -1;
+    final boundaryIdx = (partial > 0.0 && filledCount < width)
+        ? filledCount
+        : -1;
 
     final labelText = label ?? '';
     final labelLen = labelText.length;

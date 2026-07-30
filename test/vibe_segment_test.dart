@@ -601,8 +601,7 @@ void main() {
 /// `WriteTool`) carry the real `modSummary` implementation.
 class _StubModTool extends ToolDef {
   final Map<String, ModSummary> _summaries;
-  _StubModTool({required Map<String, ModSummary> summaries})
-    : _summaries = summaries;
+  _StubModTool({required this._summaries});
 
   @override
   String get name => 'stub_mod_tool';

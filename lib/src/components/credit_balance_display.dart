@@ -70,12 +70,10 @@ class CreditBalanceDisplay extends StatefulComponent {
   });
 
   @override
-  State<CreditBalanceDisplay> createState() =>
-      _CreditBalanceDisplayState();
+  State<CreditBalanceDisplay> createState() => _CreditBalanceDisplayState();
 }
 
-class _CreditBalanceDisplayState
-    extends State<CreditBalanceDisplay> {
+class _CreditBalanceDisplayState extends State<CreditBalanceDisplay> {
   /// The latest snapshot received.
   CreditBalance? _balance;
 
@@ -95,8 +93,7 @@ class _CreditBalanceDisplayState
 
   /// How long the dramatic lerp takes. Same 3s as the
   /// coding-plan display.
-  static const Duration _animationDuration =
-      Duration(milliseconds: 3000);
+  static const Duration _animationDuration = Duration(milliseconds: 3000);
 
   /// Per-frame tick. Driven by the nocterm frame scheduler
   /// (16ms ≈ 60fps).
@@ -135,8 +132,7 @@ class _CreditBalanceDisplayState
 
   /// Duration of the refresh-flash spinner. Short so it
   /// feels responsive.
-  static const Duration _refreshFlashDuration =
-      Duration(milliseconds: 600);
+  static const Duration _refreshFlashDuration = Duration(milliseconds: 600);
 
   @override
   void initState() {
@@ -230,8 +226,7 @@ class _CreditBalanceDisplayState
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final elapsed = now - _animationStartMs;
-    final t = (elapsed / _animationDuration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final t = (elapsed / _animationDuration.inMilliseconds).clamp(0.0, 1.0);
 
     if (t >= 1.0) {
       _animationTicker?.cancel();
@@ -284,7 +279,8 @@ class _CreditBalanceDisplayState
       final b = balance.primaryBalance;
       if (b != null) {
         ro.update(
-          text: '${b.symbol}${b.totalBalance} '
+          text:
+              '${b.symbol}${b.totalBalance} '
               '(${b.symbol}${b.toppedUpBalance})',
           fg: fg,
         );
@@ -327,8 +323,7 @@ class _CreditBalanceDisplayState
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final elapsed = now - _refreshStartMs;
-    final t = (elapsed / _refreshFlashDuration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final t = (elapsed / _refreshFlashDuration.inMilliseconds).clamp(0.0, 1.0);
     final theme = CruxTheme.of(context);
 
     if (t >= 1.0) {
@@ -410,8 +405,7 @@ class _CreditBalanceDisplayState
 
 /// Single-child render object component that gives
 /// [RenderCreditBalance] a slot in the widget tree.
-class _CreditBalanceBridge
-    extends SingleChildRenderObjectComponent {
+class _CreditBalanceBridge extends SingleChildRenderObjectComponent {
   final void Function(RenderCreditBalance) onRenderObject;
 
   const _CreditBalanceBridge({required this.onRenderObject});
@@ -438,16 +432,9 @@ class RenderCreditBalance extends RenderObject {
   /// rebuilding.
   BuildContext? context;
 
-  RenderCreditBalance({
-    required String text,
-    required Color fg,
-  })  : _text = text,
-        _fg = fg;
+  RenderCreditBalance({required this._text, required this._fg});
 
-  void update({
-    required String text,
-    required Color fg,
-  }) {
+  void update({required String text, required Color fg}) {
     var dirty = false;
     if (_text != text) {
       _text = text;

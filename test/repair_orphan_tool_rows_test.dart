@@ -57,8 +57,11 @@ void main() {
       expect(n, 0);
 
       final all = await messages.getMessages(sessionId);
-      expect(all, hasLength(2),
-          reason: 'no rows should be modified on a clean history');
+      expect(
+        all,
+        hasLength(2),
+        reason: 'no rows should be modified on a clean history',
+      );
     });
 
     test('returns 0 on a well-formed round', () async {
@@ -83,12 +86,15 @@ void main() {
       expect(n, 0);
 
       final all = await messages.getMessages(sessionId);
-      expect(all.map((m) => m.role).toList(),
-          ['user', 'tool_call', 'tool', 'tool']);
+      expect(all.map((m) => m.role).toList(), [
+        'user',
+        'tool_call',
+        'tool',
+        'tool',
+      ]);
     });
 
-    test('drops orphan tool_use entries from a tool_call row',
-        () async {
+    test('drops orphan tool_use entries from a tool_call row', () async {
       // Mid-round interrupt: tool_call announced {a, b, c} but
       // only tool(a) and tool(b) got persisted. tool(c) was lost
       // (kill -9, hot reload, etc.). The repair must prune 'c'
@@ -110,28 +116,24 @@ void main() {
       );
 
       final n = await messages.repairOrphanToolRows(sessionId);
-      expect(n, greaterThan(0),
-          reason: 'one or more rows must change');
+      expect(n, greaterThan(0), reason: 'one or more rows must change');
 
       // After repair: orphan 'c' is gone, well-formed pairs survive.
       final all = await messages.getMessages(sessionId);
       // tool_call row should still exist (a + b kept the row alive).
-      final toolCallRow =
-          all.firstWhere((m) => m.role == 'tool_call');
-      expect(toolCallRow.toolCalls.map((c) => c.callId).toList(),
-          ['a', 'b'],
-          reason: "orphan 'c' must be pruned from the tool_call row");
+      final toolCallRow = all.firstWhere((m) => m.role == 'tool_call');
+      expect(
+        toolCallRow.toolCalls.map((c) => c.callId).toList(),
+        ['a', 'b'],
+        reason: "orphan 'c' must be pruned from the tool_call row",
+      );
       // Both surviving tool rows stay.
       final toolRows = all.where((m) => m.role == 'tool').toList();
       expect(toolRows, hasLength(2));
-      expect(
-        toolRows.map((m) => m.toolCallId).toSet(),
-        {'a', 'b'},
-      );
+      expect(toolRows.map((m) => m.toolCallId).toSet(), {'a', 'b'});
     });
 
-    test('deletes a tool_call row whose every tool_use is orphan',
-        () async {
+    test('deletes a tool_call row whose every tool_use is orphan', () async {
       // Total mid-round interrupt: tool_call announced {a}, but
       // the round aborted before any tool result landed, then a
       // new user message came in. The assistant message with no
@@ -154,8 +156,7 @@ void main() {
       expect(all.map((m) => m.role).toList(), ['user', 'user']);
     });
 
-    test('deletes orphan tool rows (no preceding tool_call id)',
-        () async {
+    test('deletes orphan tool rows (no preceding tool_call id)', () async {
       // A tool row whose toolCallId references a tool_use that
       // never got persisted (or has already been pruned by an
       // earlier repair) — Anthropic rejects tool_results that
@@ -189,9 +190,7 @@ void main() {
           ToolCallData(callId: 'a', name: 'read', input: {}),
           ToolCallData(callId: 'b', name: 'grep', input: {}),
         ],
-        results: [
-          (callId: 'a', output: 'a-contents', meta: ''),
-        ],
+        results: [(callId: 'a', output: 'a-contents', meta: '')],
       );
       await messages.addMessage(sessionId, role: 'ai', content: 'half-thought');
 
@@ -199,17 +198,18 @@ void main() {
       expect(n, greaterThan(0));
 
       final all = await messages.getMessages(sessionId);
-      final toolCallRow =
-          all.firstWhere((m) => m.role == 'tool_call');
-      expect(toolCallRow.toolCalls.map((c) => c.callId).toList(), ['a'],
-          reason: "'b' is dropped — its tool_use is interrupted");
+      final toolCallRow = all.firstWhere((m) => m.role == 'tool_call');
+      expect(
+        toolCallRow.toolCalls.map((c) => c.callId).toList(),
+        ['a'],
+        reason: "'b' is dropped — its tool_use is interrupted",
+      );
       // The ai row survives unchanged.
       final aiRows = all.where((m) => m.role == 'ai').toList();
       expect(aiRows.map((m) => m.content).toList(), ['half-thought']);
     });
 
-    test('runs idempotently — well-formed history is a no-op',
-        () async {
+    test('runs idempotently — well-formed history is a no-op', () async {
       // Double-invocation shouldn't mutate anything the second
       // time; the repair must converge on a stable state.
       await messages.addMessage(sessionId, role: 'user', content: 'do it');
@@ -231,53 +231,52 @@ void main() {
       expect(second, 0);
     });
 
-    test('multi-round session: only orphans in the broken round are touched',
-        () async {
-      // A real session looks like:
-      //   user: do X
-      //   tool_call(announced a) → tool(a)
-      //   ai: result of X
-      //   user: do Y (new prompt)
-      //   tool_call(announced b, c) → tool(b) — interrupted
-      //   user: ok fine
-      // The first round is well-formed; only the second round
-      // has the orphan ('c'). The repair should leave the first
-      // round alone and prune 'c' from the second.
-      await messages.addMessage(sessionId, role: 'user', content: 'do X');
-      await messages.addToolRound(
-        sessionId,
-        toolCalls: [ToolCallData(callId: 'a', name: 'read', input: {})],
-        results: [(callId: 'a', output: 'X-result', meta: '')],
-      );
-      await messages.addMessage(sessionId, role: 'ai', content: 'X done');
-      await messages.addMessage(sessionId, role: 'user', content: 'do Y');
-      await messages.addToolRound(
-        sessionId,
-        toolCalls: [
-          ToolCallData(callId: 'b', name: 'grep', input: {'q': 'b'}),
-          ToolCallData(callId: 'c', name: 'grep', input: {'q': 'c'}),
-        ],
-        results: [
-          (callId: 'b', output: 'b-match', meta: ''),
-          // 'c' missing — interrupted.
-        ],
-      );
-      await messages.addMessage(sessionId, role: 'user', content: 'ok fine');
+    test(
+      'multi-round session: only orphans in the broken round are touched',
+      () async {
+        // A real session looks like:
+        //   user: do X
+        //   tool_call(announced a) → tool(a)
+        //   ai: result of X
+        //   user: do Y (new prompt)
+        //   tool_call(announced b, c) → tool(b) — interrupted
+        //   user: ok fine
+        // The first round is well-formed; only the second round
+        // has the orphan ('c'). The repair should leave the first
+        // round alone and prune 'c' from the second.
+        await messages.addMessage(sessionId, role: 'user', content: 'do X');
+        await messages.addToolRound(
+          sessionId,
+          toolCalls: [ToolCallData(callId: 'a', name: 'read', input: {})],
+          results: [(callId: 'a', output: 'X-result', meta: '')],
+        );
+        await messages.addMessage(sessionId, role: 'ai', content: 'X done');
+        await messages.addMessage(sessionId, role: 'user', content: 'do Y');
+        await messages.addToolRound(
+          sessionId,
+          toolCalls: [
+            ToolCallData(callId: 'b', name: 'grep', input: {'q': 'b'}),
+            ToolCallData(callId: 'c', name: 'grep', input: {'q': 'c'}),
+          ],
+          results: [
+            (callId: 'b', output: 'b-match', meta: ''),
+            // 'c' missing — interrupted.
+          ],
+        );
+        await messages.addMessage(sessionId, role: 'user', content: 'ok fine');
 
-      final n = await messages.repairOrphanToolRows(sessionId);
-      expect(n, greaterThan(0));
+        final n = await messages.repairOrphanToolRows(sessionId);
+        expect(n, greaterThan(0));
 
-      final all = await messages.getMessages(sessionId);
-      final toolCallRows =
-          all.where((m) => m.role == 'tool_call').toList();
-      expect(toolCallRows, hasLength(2));
-      // First round (well-formed): toolCall(a) still intact.
-      expect(toolCallRows[0].toolCalls.map((c) => c.callId).toList(),
-          ['a']);
-      // Second round (repaired): only 'b' remains.
-      expect(toolCallRows[1].toolCalls.map((c) => c.callId).toList(),
-          ['b']);
-    });
+        final all = await messages.getMessages(sessionId);
+        final toolCallRows = all.where((m) => m.role == 'tool_call').toList();
+        expect(toolCallRows, hasLength(2));
+        // First round (well-formed): toolCall(a) still intact.
+        expect(toolCallRows[0].toolCalls.map((c) => c.callId).toList(), ['a']);
+        // Second round (repaired): only 'b' remains.
+        expect(toolCallRows[1].toolCalls.map((c) => c.callId).toList(), ['b']);
+      },
+    );
 
     test('end-of-input terminates still-pending flow', () async {
       // The DB ends with a tool_call whose tool_use never got a

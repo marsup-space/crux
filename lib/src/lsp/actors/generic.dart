@@ -82,8 +82,8 @@ class WhichServerActor extends LspServerActor {
   Future<LspServerSpec?> resolveSpec(String root, String file) async {
     List<String>? command;
     for (final candidate in commandCandidates) {
-      final bin = whichBinary(candidate.first) ??
-          _installedBinary(candidate.first);
+      final bin =
+          whichBinary(candidate.first) ?? _installedBinary(candidate.first);
       if (bin != null) {
         command = [bin, ...candidate.skip(1)];
         break;
@@ -111,11 +111,7 @@ class WhichServerActor extends LspServerActor {
     if (rootMarkers.isEmpty) {
       projectRoot = root;
     } else {
-      final found = await findUp(
-        markers: rootMarkers,
-        start: file,
-        stop: root,
-      );
+      final found = await findUp(markers: rootMarkers, start: file, stop: root);
       // Fallback to the session root when no marker is found —
       // matches OpenCode's NearestRoot fallback to the instance
       // directory.

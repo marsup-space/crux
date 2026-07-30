@@ -65,40 +65,36 @@ class ChatTurnOrchestrator {
     required ProviderService providerService,
     required SessionController sessionController,
     required StreamingController streamingController,
-    required ToolRegistry toolRegistry,
+    required this._toolRegistry,
     required ShowToastCallback showToast,
     required void Function() refresh,
-    required GitStatusService gitStatusService,
-    required FileReadTracker tracker,
-    PendingAskCubit? pendingAskCubit,
-  })  : _store = store,
-        _messageStore = store.messageStore,
-        _chatService = chatService,
-        _providerService = providerService,
-        _sessionController = sessionController,
-        _tracker = tracker,
-        _streamingController = streamingController,
-        _toolRegistry = toolRegistry,
-        _showToast = showToast,
-        _refresh = refresh,
-        _gitStatusService = gitStatusService,
-        _pendingAskCubit = pendingAskCubit,
-        _btwHandler = BtwTurnHandler(
-          sessionController: sessionController,
-          streamingController: streamingController,
-          providerService: providerService,
-          messageStore: store.messageStore,
-          showToast: showToast,
-          refresh: refresh,
-        ),
-        _tldrHandler = TldrHandler(
-          sessionController: sessionController,
-          providerService: providerService,
-          chatService: chatService,
-          messageStore: store.messageStore,
-          showToast: showToast,
-          refresh: refresh,
-        );
+    required this._gitStatusService,
+    required this._tracker,
+    this._pendingAskCubit,
+  }) : _store = store,
+       _messageStore = store.messageStore,
+       _chatService = chatService,
+       _providerService = providerService,
+       _sessionController = sessionController,
+       _streamingController = streamingController,
+       _showToast = showToast,
+       _refresh = refresh,
+       _btwHandler = BtwTurnHandler(
+         sessionController: sessionController,
+         streamingController: streamingController,
+         providerService: providerService,
+         messageStore: store.messageStore,
+         showToast: showToast,
+         refresh: refresh,
+       ),
+       _tldrHandler = TldrHandler(
+         sessionController: sessionController,
+         providerService: providerService,
+         chatService: chatService,
+         messageStore: store.messageStore,
+         showToast: showToast,
+         refresh: refresh,
+       );
 
   void showToast(String message, {ToastMode mode = ToastMode.info}) {
     _showToast(message, mode: mode);
@@ -240,7 +236,11 @@ class ChatTurnOrchestrator {
                 );
                 await _sessionController.loadMessages(sessionId);
                 _refresh();
-                await sendTurn(text: text, images: images, allowAutoCompact: false);
+                await sendTurn(
+                  text: text,
+                  images: images,
+                  allowAutoCompact: false,
+                );
                 return;
               }
               rt.turnsSinceLastCompact = 0;
@@ -273,7 +273,10 @@ class ChatTurnOrchestrator {
 
       final session = _sessionController.findSession(sessionId);
       if (session != null && session.status != SessionStatus.running) {
-        final updated = await _store.update(sessionId, status: SessionStatus.running);
+        final updated = await _store.update(
+          sessionId,
+          status: SessionStatus.running,
+        );
         session.status = updated.status;
         session.runningOwnerId = updated.runningOwnerId;
         session.runningHeartbeatAt = updated.runningHeartbeatAt;
@@ -283,7 +286,9 @@ class ChatTurnOrchestrator {
       final toolDefsTokens = estimateToolDefsTokens(_toolRegistry.toApiTools());
       final userTokens = text == null ? 0 : estimateTokens(text);
       final turnBase =
-          _sessionController.computeBaseContext(sessionId) + userTokens + toolDefsTokens;
+          _sessionController.computeBaseContext(sessionId) +
+          userTokens +
+          toolDefsTokens;
       rt.turnBaseTokens = turnBase;
       rt.accumulatedToolTokens = 0;
       rt.contextTargetTokens = turnBase;
@@ -385,8 +390,9 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _sessionController.streamingCubit.state
-                          .streamingContentFor(sessionId) +
+                  _sessionController.streamingCubit.state.streamingContentFor(
+                        sessionId,
+                      ) +
                       _sessionController.streamingCubit.state
                           .streamingReasoningFor(sessionId),
                 ) +
@@ -402,15 +408,17 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _sessionController.streamingCubit.state
-                          .streamingContentFor(sessionId) +
+                  _sessionController.streamingCubit.state.streamingContentFor(
+                        sessionId,
+                      ) +
                       _sessionController.streamingCubit.state
                           .streamingReasoningFor(sessionId),
                 ) +
                 _sessionController.streamingCubit.state
                     .streamingToolInputTokensFor(sessionId);
             rt.accumulatedToolTokens += streamingTokens + toolResultTokens;
-            rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
+            rt.contextTargetTokens =
+                rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
             if (_streamingGuardAbortedSessions.remove(sessionId)) {
               final transition = Completer<void>();
@@ -448,15 +456,17 @@ class ChatTurnOrchestrator {
             if (_interruptedSessions.contains(sessionId)) return;
             final streamingTokens =
                 estimateTokens(
-                  _sessionController.streamingCubit.state
-                          .streamingContentFor(sessionId) +
+                  _sessionController.streamingCubit.state.streamingContentFor(
+                        sessionId,
+                      ) +
                       _sessionController.streamingCubit.state
                           .streamingReasoningFor(sessionId),
                 ) +
                 _sessionController.streamingCubit.state
                     .streamingToolInputTokensFor(sessionId);
             rt.accumulatedToolTokens += streamingTokens;
-            rt.contextTargetTokens = rt.turnBaseTokens + rt.accumulatedToolTokens;
+            rt.contextTargetTokens =
+                rt.turnBaseTokens + rt.accumulatedToolTokens;
             rt.contextDisplayTokens = rt.contextTargetTokens.toDouble();
             final projectPath =
                 _sessionController.findSession(sessionId)?.projectPath ??
@@ -505,9 +515,14 @@ class ChatTurnOrchestrator {
               cacheMiss: response.promptCacheMissTokens,
             );
 
-            await _sessionController.reconcileInactiveRunningSessions(refresh: false);
+            await _sessionController.reconcileInactiveRunningSessions(
+              refresh: false,
+            );
 
-            await _sessionController.setSessionStatus(sessionId, SessionStatus.done);
+            await _sessionController.setSessionStatus(
+              sessionId,
+              SessionStatus.done,
+            );
 
             _refresh();
 
@@ -538,7 +553,9 @@ class ChatTurnOrchestrator {
             final msgs = await _messageStore.getMessages(sessionId);
             _sessionController.putCachedMessages(sessionId, msgs);
             if (response.promptTokens + response.completionTokens > 0) {
-              final finalTokens = _sessionController.computeBaseContext(sessionId);
+              final finalTokens = _sessionController.computeBaseContext(
+                sessionId,
+              );
               rt.contextTargetTokens = finalTokens;
               rt.contextDisplayTokens = finalTokens.toDouble();
               _streamingController.stopContextAnimation();
@@ -547,7 +564,8 @@ class ChatTurnOrchestrator {
             final miss = response.promptCacheMissTokens;
             final cacheTotal = hit + miss;
             if (cacheTotal > 0) {
-              rt.cacheHitPct = ((hit / cacheTotal) * 100000).roundToDouble() / 1000.0;
+              rt.cacheHitPct =
+                  ((hit / cacheTotal) * 100000).roundToDouble() / 1000.0;
             } else {
               rt.cacheHitPct = null;
             }
@@ -569,7 +587,12 @@ class ChatTurnOrchestrator {
             }
             final lastAiMsg = msgs.lastWhere(
               (m) => m.role == 'ai',
-              orElse: () => Message(id: -1, sessionId: sessionId, role: 'ai', content: ''),
+              orElse: () => Message(
+                id: -1,
+                sessionId: sessionId,
+                role: 'ai',
+                content: '',
+              ),
             );
             if (lastAiMsg.id > 0 && lastAiMsg.content.isNotEmpty) {
               String? lastUserContent;
@@ -588,7 +611,8 @@ class ChatTurnOrchestrator {
                 userQuestion: lastUserContent,
               );
             }
-            if (response.queuedMessage != null && response.queuedMessage!.isNotEmpty) {
+            if (response.queuedMessage != null &&
+                response.queuedMessage!.isNotEmpty) {
               await _messageStore.addMessage(
                 sessionId,
                 role: 'user',
@@ -606,28 +630,32 @@ class ChatTurnOrchestrator {
               return;
             }
             _streamingController.stopMetricsTimer(sessionId);
-            _sessionController.reconcileInactiveRunningSessions(refresh: false).then((changed) {
-              if (changed) _refresh();
-            });
-            _messageStore.addMessage(
-              sessionId,
-              role: 'stream_error',
-              content: error.toUserMessage(),
-              error: error.toJson(),
-              model: _sessionController.currentSession.model,
-            ).then((persisted) {
-              final cache = _sessionController.messageCache[sessionId];
-              if (cache != null) {
-                // Rebuild the list rather than mutating in place so the
-                // SessionCubit's BlocSelector (which compares by list
-                // identity) actually fires for the appended error row.
-                _sessionController.putCachedMessages(
+            _sessionController
+                .reconcileInactiveRunningSessions(refresh: false)
+                .then((changed) {
+                  if (changed) _refresh();
+                });
+            _messageStore
+                .addMessage(
                   sessionId,
-                  [...cache, persisted],
-                );
-              }
-              _refresh();
-            });
+                  role: 'stream_error',
+                  content: error.toUserMessage(),
+                  error: error.toJson(),
+                  model: _sessionController.currentSession.model,
+                )
+                .then((persisted) {
+                  final cache = _sessionController.messageCache[sessionId];
+                  if (cache != null) {
+                    // Rebuild the list rather than mutating in place so the
+                    // SessionCubit's BlocSelector (which compares by list
+                    // identity) actually fires for the appended error row.
+                    _sessionController.putCachedMessages(sessionId, [
+                      ...cache,
+                      persisted,
+                    ]);
+                  }
+                  _refresh();
+                });
             _showToast(error.toUserMessage(), mode: ToastMode.error);
           },
           onStatus: (status) {
@@ -636,19 +664,21 @@ class ChatTurnOrchestrator {
           },
         )
         .catchError((e) {
-      if (!_interruptedSessions.contains(sessionId)) {
-        _showToast('Unhandled error: $e', mode: ToastMode.error);
-      }
-      rt.isResponding = false;
-      _sessionController.mirrorTurnFlags(sessionId);
-      _streamingController.stopMetricsTimer(sessionId);
-      _streamingController.clearStreamingFor(sessionId);
-      _activeAbortSignals.remove(sessionId);
-      _sessionController.reconcileInactiveRunningSessions(refresh: false).then((changed) {
-        if (changed) _refresh();
-      });
-      _refresh();
-    });
+          if (!_interruptedSessions.contains(sessionId)) {
+            _showToast('Unhandled error: $e', mode: ToastMode.error);
+          }
+          rt.isResponding = false;
+          _sessionController.mirrorTurnFlags(sessionId);
+          _streamingController.stopMetricsTimer(sessionId);
+          _streamingController.clearStreamingFor(sessionId);
+          _activeAbortSignals.remove(sessionId);
+          _sessionController
+              .reconcileInactiveRunningSessions(refresh: false)
+              .then((changed) {
+                if (changed) _refresh();
+              });
+          _refresh();
+        });
   }
 
   Future<void> compactCurrentSession() async {
@@ -828,8 +858,14 @@ class ChatTurnOrchestrator {
         _sessionController.clearBtwTurnsFor(sessionId);
         if (turns.length > 1) {
           for (var i = 0; i < turns.length - 1; i++) {
-            _sessionController.appendPendingBtwTurn(sessionId, turns[i].userText);
-            _sessionController.updateLastBtwTurnAiText(sessionId, turns[i].aiText);
+            _sessionController.appendPendingBtwTurn(
+              sessionId,
+              turns[i].userText,
+            );
+            _sessionController.updateLastBtwTurnAiText(
+              sessionId,
+              turns[i].aiText,
+            );
           }
         }
       }
@@ -839,23 +875,31 @@ class ChatTurnOrchestrator {
             ? '$partialContent\n\n*[Response interrupted by user]*'
             : '*[Response interrupted by user]*';
 
-        _messageStore.addMessage(
-          sessionId,
-          role: 'ai',
-          content: interruptedContent,
-          reasoningContent: partialReasoning,
-        ).then((_) {
-          _sessionController.loadMessages(sessionId).then((_) => _refresh());
-        });
+        _messageStore
+            .addMessage(
+              sessionId,
+              role: 'ai',
+              content: interruptedContent,
+              reasoningContent: partialReasoning,
+            )
+            .then((_) {
+              _sessionController
+                  .loadMessages(sessionId)
+                  .then((_) => _refresh());
+            });
       }
 
       final queue = _sessionController.messageQueueFor(sessionId);
       if (queue.isNotEmpty) {
         final queuedTexts = queue.messages.map((m) => m.content).join('\n');
         final currentInput = textController.text;
-        final newInput = currentInput.isEmpty ? queuedTexts : '$queuedTexts\n$currentInput';
+        final newInput = currentInput.isEmpty
+            ? queuedTexts
+            : '$queuedTexts\n$currentInput';
         textController.text = newInput;
-        textController.selection = TextSelection.collapsed(offset: newInput.length);
+        textController.selection = TextSelection.collapsed(
+          offset: newInput.length,
+        );
         _sessionController.clearMessageQueue(sessionId);
       }
 
@@ -904,7 +948,15 @@ class ChatTurnOrchestrator {
   }
 
   String _toolExecutionPreview(ToolCallData call, String projectPath) {
-    const priorityKeys = ['filePath', 'path', 'command', 'query', 'url', 'directory', 'pattern'];
+    const priorityKeys = [
+      'filePath',
+      'path',
+      'command',
+      'query',
+      'url',
+      'directory',
+      'pattern',
+    ];
     for (final key in priorityKeys) {
       final value = call.input[key];
       if (value == null) continue;

@@ -24,8 +24,7 @@ const String kExampleFilePrefix = 'example.';
 /// e.g. `example.provider.toml`.
 bool isExampleProviderFile(String filename) {
   final base = p.basename(filename);
-  return base.endsWith('.toml') &&
-      base.startsWith(kExampleFilePrefix);
+  return base.endsWith('.toml') && base.startsWith(kExampleFilePrefix);
 }
 
 /// What the seeder did with a particular example file.
@@ -107,12 +106,13 @@ Future<List<SeedResult>> seedExampleProviders({
     await userDir.create(recursive: true);
   }
 
-  final builtInFiles = builtInDir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.toml'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final builtInFiles =
+      builtInDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.toml'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
 
   final results = <SeedResult>[];
   for (final builtInFile in builtInFiles) {

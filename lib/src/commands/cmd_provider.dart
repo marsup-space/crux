@@ -1,6 +1,7 @@
 import '../components/ui/toast.dart';
 import '../utils/terminal_symbols.dart';
 import 'command_executor.dart';
+
 Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
   final name = parts.length > 1 ? parts[1].trim() : '';
   final arg = parts.length > 2 ? parts[2].trim() : '';

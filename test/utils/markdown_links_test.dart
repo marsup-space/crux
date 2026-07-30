@@ -5,9 +5,7 @@ import 'package:test/test.dart';
 void main() {
   group('applyMarkdownLinkStyles — overlay', () {
     test('returns the original spans when there are no links', () {
-      final spans = [
-        const TextSpan(text: 'plain text'),
-      ];
+      final spans = [const TextSpan(text: 'plain text')];
       final styled = applyMarkdownLinkStyles(
         spans,
         const [],
@@ -21,9 +19,7 @@ void main() {
 
     test('overlays link style on a single link region', () {
       // "Visit Google" — Google is at offset 6 with length 6.
-      final spans = [
-        const TextSpan(text: 'Visit Google'),
-      ];
+      final spans = [const TextSpan(text: 'Visit Google')];
       const link = MarkdownLink(
         label: 'Google',
         url: 'https://google.com',
@@ -44,20 +40,20 @@ void main() {
       expect(flatText, 'Visit Google');
 
       // The "Google" span carries the link style.
-      final linkSpan =
-          styled.firstWhere((s) => (s as TextSpan).text == 'Google');
+      final linkSpan = styled.firstWhere(
+        (s) => (s as TextSpan).text == 'Google',
+      );
       expect((linkSpan as TextSpan).style?.color, Colors.blue);
 
       // The "Visit " span carries the original (null) style.
-      final beforeSpan =
-          styled.firstWhere((s) => (s as TextSpan).text == 'Visit ');
+      final beforeSpan = styled.firstWhere(
+        (s) => (s as TextSpan).text == 'Visit ',
+      );
       expect((beforeSpan as TextSpan).style, isNull);
     });
 
     test('hovered link uses hoverStyle instead of linkStyle', () {
-      final spans = [
-        const TextSpan(text: 'Visit Google'),
-      ];
+      final spans = [const TextSpan(text: 'Visit Google')];
       const link = MarkdownLink(
         label: 'Google',
         url: 'https://google.com',
@@ -78,8 +74,9 @@ void main() {
         link,
       );
 
-      final linkSpan =
-          styled.firstWhere((s) => (s as TextSpan).text == 'Google');
+      final linkSpan = styled.firstWhere(
+        (s) => (s as TextSpan).text == 'Google',
+      );
       final s = linkSpan as TextSpan;
       expect(s.style?.color, Colors.white);
       expect(s.style?.backgroundColor, Colors.blue);
@@ -87,9 +84,7 @@ void main() {
     });
 
     test('null hoverStyle falls back to linkStyle for hovered link', () {
-      final spans = [
-        const TextSpan(text: 'Visit Google'),
-      ];
+      final spans = [const TextSpan(text: 'Visit Google')];
       const link = MarkdownLink(
         label: 'Google',
         url: 'https://google.com',
@@ -105,8 +100,9 @@ void main() {
         link,
       );
 
-      final linkSpan =
-          styled.firstWhere((s) => (s as TextSpan).text == 'Google');
+      final linkSpan = styled.firstWhere(
+        (s) => (s as TextSpan).text == 'Google',
+      );
       expect((linkSpan as TextSpan).style?.color, Colors.blue);
     });
 
@@ -115,9 +111,7 @@ void main() {
       //   R(0) e(1) a(2) d(3) ' '(4) d(5) o(6) c(7) s(8)
       //   ' '(9) a(10) n(11) d(12) ' '(13) b(14) l(15) o(16) g(17)
       // docs at offset 5..9 (length 4), blog at offset 14..18 (length 4).
-      final spans = [
-        const TextSpan(text: 'Read docs and blog'),
-      ];
+      final spans = [const TextSpan(text: 'Read docs and blog')];
       const docs = MarkdownLink(
         label: 'docs',
         url: 'https://docs.example.com',
@@ -149,8 +143,9 @@ void main() {
 
       // The " and " between them stays plain (offset 9..14 in the
       // input, since docs ends at 9 and blog starts at 14).
-      final betweenSpan =
-          styled.firstWhere((s) => (s as TextSpan).text == ' and ');
+      final betweenSpan = styled.firstWhere(
+        (s) => (s as TextSpan).text == ' and ',
+      );
       expect((betweenSpan as TextSpan).style, isNull);
     });
 

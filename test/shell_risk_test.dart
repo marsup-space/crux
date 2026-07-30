@@ -123,8 +123,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
         expect(v.reason, isNotNull, reason: 'reason required: "$cmd"');
       }
     });
@@ -140,8 +143,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
@@ -161,8 +167,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
@@ -176,18 +185,23 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
-    test('an early suspicious segment cannot mask a later catastrophic one',
-        () {
-      // Pass-1 scans ALL segments for catastrophic before any
-      // suspicious verdict is returned.
-      final v = _posix('sudo ls && rm -rf /');
-      expect(v.tier, ShellRiskTier.catastrophic);
-    });
+    test(
+      'an early suspicious segment cannot mask a later catastrophic one',
+      () {
+        // Pass-1 scans ALL segments for catastrophic before any
+        // suspicious verdict is returned.
+        final v = _posix('sudo ls && rm -rf /');
+        expect(v.tier, ShellRiskTier.catastrophic);
+      },
+    );
   });
 
   group('POSIX — suspicious', () {
@@ -201,8 +215,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -214,25 +231,33 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
-    test('rm -rf on non-root absolute paths is suspicious, not catastrophic',
-        () {
-      const commands = <String>[
-        'rm -rf /tmp/x',
-        'rm -rf /var/cache/foo',
-        'rm -rf ~/projects/old',
-        'sudo rm -rf /tmp/x',
-      ];
-      for (final cmd in commands) {
-        final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
-      }
-    });
+    test(
+      'rm -rf on non-root absolute paths is suspicious, not catastrophic',
+      () {
+        const commands = <String>[
+          'rm -rf /tmp/x',
+          'rm -rf /var/cache/foo',
+          'rm -rf ~/projects/old',
+          'sudo rm -rf /tmp/x',
+        ];
+        for (final cmd in commands) {
+          final v = _posix(cmd);
+          expect(
+            v.tier,
+            ShellRiskTier.suspicious,
+            reason: 'should be suspicious: "$cmd"',
+          );
+        }
+      },
+    );
 
     test('rm -rf on indirect targets (variables, substitutions, ~user) '
         'is suspicious', () {
@@ -248,8 +273,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -272,8 +300,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -297,8 +328,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -310,8 +344,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _posix(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -363,15 +400,14 @@ void main() {
 
   group('Windows — catastrophic', () {
     test('formatting a drive is hard-blocked', () {
-      const commands = <String>[
-        'format C:',
-        'format D: /q /y',
-        'FORMAT E:',
-      ];
+      const commands = <String>['format C:', 'format D: /q /y', 'FORMAT E:'];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
@@ -387,8 +423,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
@@ -400,8 +439,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.catastrophic,
-            reason: 'should be catastrophic: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.catastrophic,
+          reason: 'should be catastrophic: "$cmd"',
+        );
       }
     });
 
@@ -421,8 +463,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -433,8 +478,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -445,8 +493,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -457,8 +508,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -471,8 +525,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
 
@@ -483,8 +540,11 @@ void main() {
       ];
       for (final cmd in commands) {
         final v = _win(cmd);
-        expect(v.tier, ShellRiskTier.suspicious,
-            reason: 'should be suspicious: "$cmd"');
+        expect(
+          v.tier,
+          ShellRiskTier.suspicious,
+          reason: 'should be suspicious: "$cmd"',
+        );
       }
     });
   });

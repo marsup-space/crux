@@ -75,10 +75,7 @@ class _EchoActor extends LspServerActor {
       LspCmdShutdownRoot() => '/shutdown-root',
       _ => '/unknown',
     };
-    _capturedEmit?.call(LspEventStarted(
-      root: root,
-      serverId: id,
-    ));
+    _capturedEmit?.call(LspEventStarted(root: root, serverId: id));
   }
 }
 
@@ -123,14 +120,17 @@ Future<T> _firstMatching<T>(
 ) {
   final completer = Completer<T>();
   late StreamSubscription<LspEvent> sub;
-  sub = stream.listen((event) {
-    if (predicate(event) && !completer.isCompleted) {
-      completer.complete(event as T);
-      unawaited(sub.cancel());
-    }
-  }, onError: (Object e, StackTrace st) {
-    if (!completer.isCompleted) completer.completeError(e, st);
-  });
+  sub = stream.listen(
+    (event) {
+      if (predicate(event) && !completer.isCompleted) {
+        completer.complete(event as T);
+        unawaited(sub.cancel());
+      }
+    },
+    onError: (Object e, StackTrace st) {
+      if (!completer.isCompleted) completer.completeError(e, st);
+    },
+  );
   return completer.future;
 }
 
@@ -140,34 +140,33 @@ Future<T> _firstMatching<T>(
 
 void main() {
   group('InProcessChannel', () {
-    test('routes LspCmdStart through the actor and emits the event back',
-        () async {
-      final actor = _EchoActor();
-      final channel = InProcessChannel(actor);
+    test(
+      'routes LspCmdStart through the actor and emits the event back',
+      () async {
+        final actor = _EchoActor();
+        final channel = InProcessChannel(actor);
 
-      final events = <LspEvent>[];
-      final sub = channel.events.listen(events.add);
+        final events = <LspEvent>[];
+        final sub = channel.events.listen(events.add);
 
-      channel.send(const LspCmdStart(root: '/test', file: '/test/x.echo'));
+        channel.send(const LspCmdStart(root: '/test', file: '/test/x.echo'));
 
-      // Yield so the actor's handle() microtask completes.
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        // Yield so the actor's handle() microtask completes.
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(actor.receivedCommands, ['LspCmdStart']);
-      expect(events.whereType<LspEventStarted>(), hasLength(1));
-      expect(events.whereType<LspEventStarted>().first.root, '/test');
+        expect(actor.receivedCommands, ['LspCmdStart']);
+        expect(events.whereType<LspEventStarted>(), hasLength(1));
+        expect(events.whereType<LspEventStarted>().first.root, '/test');
 
-      await sub.cancel();
-      await channel.shutdown();
-    });
+        await sub.cancel();
+        await channel.shutdown();
+      },
+    );
 
     test('events stream closes after shutdown', () async {
       final channel = InProcessChannel(_EchoActor());
       final completer = Completer<void>();
-      channel.events.listen(
-        (_) {},
-        onDone: completer.complete,
-      );
+      channel.events.listen((_) {}, onDone: completer.complete);
       await channel.shutdown();
       await completer.future.timeout(const Duration(seconds: 1));
     });
@@ -194,8 +193,9 @@ void main() {
 
   group('IsolateChannel', () {
     test('spawn handshake completes within timeout', () async {
-      final channel = await IsolateChannel.spawn(_EchoActor.new)
-          .timeout(const Duration(seconds: 5));
+      final channel = await IsolateChannel.spawn(
+        _EchoActor.new,
+      ).timeout(const Duration(seconds: 5));
       expect(channel, isNotNull);
       await channel.shutdown();
     });
@@ -223,10 +223,7 @@ void main() {
     test('shutdown closes the events stream', () async {
       final channel = await IsolateChannel.spawn(_EchoActor.new);
       final completer = Completer<void>();
-      channel.events.listen(
-        (_) {},
-        onDone: completer.complete,
-      );
+      channel.events.listen((_) {}, onDone: completer.complete);
       await channel.shutdown();
       await completer.future.timeout(const Duration(seconds: 5));
     });
@@ -265,8 +262,7 @@ void main() {
       await ch2.shutdown();
     });
 
-    test('actor handler that throws does not bring down the channel',
-        () async {
+    test('actor handler that throws does not bring down the channel', () async {
       final channel = await IsolateChannel.spawn(_ThrowingActor.new);
       // The actor throws but stays alive. The channel must not
       // surface an error on its events stream from this.
@@ -285,16 +281,18 @@ void main() {
   // =======================================================================
 
   group('LspManager with useIsolates', () {
-    test('accepts the flag at construction time and shuts down cleanly',
-        () async {
-      final manager = await LspManager.create(
-        workingDirectory: '/tmp',
-        actorFactories: {'echo': _EchoActor.new},
-        useIsolates: true,
-      );
-      // Constructing doesn't spawn — only matching requests do.
-      // Just verify shutdown is clean with no slots active.
-      await manager.shutdown();
-    });
+    test(
+      'accepts the flag at construction time and shuts down cleanly',
+      () async {
+        final manager = await LspManager.create(
+          workingDirectory: '/tmp',
+          actorFactories: {'echo': _EchoActor.new},
+          useIsolates: true,
+        );
+        // Constructing doesn't spawn — only matching requests do.
+        // Just verify shutdown is clean with no slots active.
+        await manager.shutdown();
+      },
+    );
   });
 }

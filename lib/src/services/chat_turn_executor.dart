@@ -1149,28 +1149,29 @@ class ChatTurnExecutor {
                   callId: call.callId,
                   workingDirectory: session.projectPath,
                   sessionRuntime: runtime,
-                  shellRiskEvaluator: (
-                    command, {
-                    required intent,
-                    required isWindows,
-                    required abort,
-                  }) async {
-                    // `null` from the assessment means the user
-                    // aborted mid-evaluation. It maps to `unavailable`
-                    // here only because the ToolContext evaluator
-                    // contract has no abort verdict — the actual stop
-                    // is shell_base's post-evaluation abort gate,
-                    // which re-checks ctx.abort before executing.
-                    final verdict = await _assessShellRiskWithAbort(
-                      command: command,
-                      intent: intent,
-                      abort: abort,
-                    );
-                    return verdict ??
-                        const ShellRiskVerdict(
-                          ShellRiskVerdictKind.unavailable,
+                  shellRiskEvaluator:
+                      (
+                        command, {
+                        required intent,
+                        required isWindows,
+                        required abort,
+                      }) async {
+                        // `null` from the assessment means the user
+                        // aborted mid-evaluation. It maps to `unavailable`
+                        // here only because the ToolContext evaluator
+                        // contract has no abort verdict — the actual stop
+                        // is shell_base's post-evaluation abort gate,
+                        // which re-checks ctx.abort before executing.
+                        final verdict = await _assessShellRiskWithAbort(
+                          command: command,
+                          intent: intent,
+                          abort: abort,
                         );
-                  },
+                        return verdict ??
+                            const ShellRiskVerdict(
+                              ShellRiskVerdictKind.unavailable,
+                            );
+                      },
                   // Progress-monitor evaluator: when an auxiliary
                   // model is configured this makes the shell tools
                   // drop the static timeout and instead watch the
@@ -1723,11 +1724,7 @@ class ChatTurnExecutor {
     if (payload.isEmpty) {
       return (callId: callId, output: result.output, meta: meta);
     }
-    return (
-      callId: callId,
-      output: '${result.output}$payload',
-      meta: meta,
-    );
+    return (callId: callId, output: '${result.output}$payload', meta: meta);
   }
 
   static String _jsonString(String s) {

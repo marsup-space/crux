@@ -144,7 +144,9 @@ void main() {
           segments: [
             MultiButtonSegment(label: 'open', onPressed: () => opened = true),
             MultiButtonSegment(
-                label: 'switch', onPressed: () => switched = true),
+              label: 'switch',
+              onPressed: () => switched = true,
+            ),
           ],
         );
 

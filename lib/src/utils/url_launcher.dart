@@ -45,11 +45,10 @@ UrlLaunchResult openUrl(String url) {
     if (helper == null) {
       return UrlLaunchResult.failed;
     }
-    Process.start(
-      helper.executable,
-      [...helper.args, url],
-      mode: ProcessStartMode.detached,
-    );
+    Process.start(helper.executable, [
+      ...helper.args,
+      url,
+    ], mode: ProcessStartMode.detached);
     return UrlLaunchResult.launched;
   } catch (_) {
     return UrlLaunchResult.failed;
@@ -91,11 +90,10 @@ OpenDirectoryResult openDirectory(String path) {
     if (helper == null) {
       return OpenDirectoryResult.failed;
     }
-    Process.start(
-      helper.executable,
-      [...helper.args, dir.absolute.path],
-      mode: ProcessStartMode.detached,
-    );
+    Process.start(helper.executable, [
+      ...helper.args,
+      dir.absolute.path,
+    ], mode: ProcessStartMode.detached);
     return OpenDirectoryResult.launched;
   } catch (_) {
     return OpenDirectoryResult.failed;

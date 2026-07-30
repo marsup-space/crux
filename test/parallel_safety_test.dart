@@ -51,8 +51,13 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('crux_par_');
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     tracker = FileReadTracker();
-      registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());   executor = ToolExecutor(registry);
+    registry = ToolRegistry()
+      ..registerDefaults(
+        tracker,
+        sessionStore: SessionStore(db),
+        webProviderRegistry: WebProviderRegistry(),
+      );
+    executor = ToolExecutor(registry);
   });
 
   tearDown(() async {

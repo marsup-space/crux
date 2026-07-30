@@ -123,8 +123,7 @@ void main() {
       expect(notifications, equals(2));
     });
 
-    test(
-        'subscribers see the freshly-added entry when the '
+    test('subscribers see the freshly-added entry when the '
         'notification fires (live autocomplete regression)', () async {
       // Regression test: in the original implementation
       // `bin/crux.dart` and `ChatPanel.initState` each created
@@ -285,9 +284,7 @@ void main() {
       store.addListener(() => notifications++);
 
       final now = DateTime.now();
-      final entries = [
-        RecentProject(path: '/x/a', lastOpenedAt: now),
-      ];
+      final entries = [RecentProject(path: '/x/a', lastOpenedAt: now)];
       store.seed(entries);
       expect(notifications, equals(1));
 

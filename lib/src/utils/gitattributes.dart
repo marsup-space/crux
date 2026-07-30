@@ -61,12 +61,9 @@ class GitAttributesEol {
 
   const GitAttributesEol._(this.value, this.isBinary);
 
-  static const GitAttributesEol crlfResult =
-      GitAttributesEol._('crlf', false);
-  static const GitAttributesEol lfResult =
-      GitAttributesEol._('lf', false);
-  static const GitAttributesEol binaryResult =
-      GitAttributesEol._(null, true);
+  static const GitAttributesEol crlfResult = GitAttributesEol._('crlf', false);
+  static const GitAttributesEol lfResult = GitAttributesEol._('lf', false);
+  static const GitAttributesEol binaryResult = GitAttributesEol._(null, true);
 
   /// `true` when no line-ending normalization should happen.
   bool get isPassthrough => isBinary;

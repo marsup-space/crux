@@ -112,12 +112,10 @@ class CodingPlanUsageDisplay extends StatefulComponent {
   });
 
   @override
-  State<CodingPlanUsageDisplay> createState() =>
-      _CodingPlanUsageDisplayState();
+  State<CodingPlanUsageDisplay> createState() => _CodingPlanUsageDisplayState();
 }
 
-class _CodingPlanUsageDisplayState
-    extends State<CodingPlanUsageDisplay> {
+class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
   /// The latest snapshot received. Used to detect deltas
   /// (which direction did the value move?) and as the
   /// settled target after the animation finishes.
@@ -144,8 +142,7 @@ class _CodingPlanUsageDisplayState
   /// How long the dramatic lerp takes. Three seconds is
   /// long enough to read the tick-down frame-by-frame but
   /// short enough to not feel sluggish on the next poll.
-  static const Duration _animationDuration =
-      Duration(milliseconds: 3000);
+  static const Duration _animationDuration = Duration(milliseconds: 3000);
 
   /// Per-frame tick. Driven by the nocterm frame scheduler
   /// (16ms ≈ 60fps), so the lerp is smooth without
@@ -194,8 +191,7 @@ class _CodingPlanUsageDisplayState
 
   /// Duration of the refresh-flash spinner. Short so it
   /// feels responsive.
-  static const Duration _refreshFlashDuration =
-      Duration(milliseconds: 600);
+  static const Duration _refreshFlashDuration = Duration(milliseconds: 600);
 
   // ─── Hover-countdown ticker state ──────────────────────────
 
@@ -207,8 +203,7 @@ class _CodingPlanUsageDisplayState
   /// paint — the render object's dirty check absorbs
   /// no-op frames where the formatted string didn't
   /// change (e.g. within the same second).
-  static const Duration _countdownTickInterval =
-      Duration(milliseconds: 250);
+  static const Duration _countdownTickInterval = Duration(milliseconds: 250);
 
   /// Ticker for the hover countdown. Started by
   /// [_syncCountdownTicker] when the user hovers and at
@@ -358,12 +353,8 @@ class _CodingPlanUsageDisplayState
     _toInterval = to.intervalRemainingPct.toDouble();
     _fromWeekly = from.weeklyRemainingPct.toDouble();
     _toWeekly = to.weeklyRemainingPct.toDouble();
-    _flashInterval = _toInterval < _fromInterval
-        ? theme.error
-        : theme.success;
-    _flashWeekly = _toWeekly < _fromWeekly
-        ? theme.error
-        : theme.success;
+    _flashInterval = _toInterval < _fromInterval ? theme.error : theme.success;
+    _flashWeekly = _toWeekly < _fromWeekly ? theme.error : theme.success;
     // Precompute the target (post-flash) color for
     // each cell. This is the ratio-based steady-state
     // color of the new value — [_ratio] gives the
@@ -372,13 +363,11 @@ class _CodingPlanUsageDisplayState
     // / scarce).
     _targetIntervalColor = _ratioColor(
       theme,
-      _ratio(to.intervalRemainingPct, to.intervalRemains,
-          _kIntervalWindow),
+      _ratio(to.intervalRemainingPct, to.intervalRemains, _kIntervalWindow),
     );
     _targetWeeklyColor = _ratioColor(
       theme,
-      _ratio(to.weeklyRemainingPct, to.weeklyRemains,
-          _kWeeklyWindow),
+      _ratio(to.weeklyRemainingPct, to.weeklyRemains, _kWeeklyWindow),
     );
     // Start ticker (idempotent — if a previous animation
     // is still running, its next tick will pick up the
@@ -412,8 +401,7 @@ class _CodingPlanUsageDisplayState
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final elapsed = now - _animationStartMs;
-    final t = (elapsed / _animationDuration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final t = (elapsed / _animationDuration.inMilliseconds).clamp(0.0, 1.0);
 
     if (t >= 1.0) {
       _animationTicker?.cancel();
@@ -445,11 +433,7 @@ class _CodingPlanUsageDisplayState
       _targetIntervalColor,
       colorT,
     )!;
-    final weeklyColor = Color.lerp(
-      _flashWeekly,
-      _targetWeeklyColor,
-      colorT,
-    )!;
+    final weeklyColor = Color.lerp(_flashWeekly, _targetWeeklyColor, colorT)!;
 
     ro.update(
       intervalText: '5h ${intervalValue.toStringAsFixed(1)}%',
@@ -511,11 +495,11 @@ class _CodingPlanUsageDisplayState
     // visual noise.
     final intervalInner = _hovered
         ? (usage.formatIntervalRemains() ??
-            '${usage.intervalRemainingPct.toStringAsFixed(1)}%')
+              '${usage.intervalRemainingPct.toStringAsFixed(1)}%')
         : '${usage.intervalRemainingPct.toStringAsFixed(1)}%';
     final weeklyInner = _hovered
         ? (usage.formatWeeklyRemains() ??
-            '${usage.weeklyRemainingPct.toStringAsFixed(1)}%')
+              '${usage.weeklyRemainingPct.toStringAsFixed(1)}%')
         : '${usage.weeklyRemainingPct.toStringAsFixed(1)}%';
 
     // The "normal" colour after a flash settles comes
@@ -533,11 +517,7 @@ class _CodingPlanUsageDisplayState
     );
     final weeklyColor = _ratioColor(
       theme,
-      _ratio(
-        usage.weeklyRemainingPct,
-        usage.weeklyRemains,
-        _kWeeklyWindow,
-      ),
+      _ratio(usage.weeklyRemainingPct, usage.weeklyRemains, _kWeeklyWindow),
     );
 
     ro.update(
@@ -588,8 +568,7 @@ class _CodingPlanUsageDisplayState
     if (ro == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final elapsed = now - _refreshStartMs;
-    final t = (elapsed / _refreshFlashDuration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final t = (elapsed / _refreshFlashDuration.inMilliseconds).clamp(0.0, 1.0);
     final theme = CruxTheme.of(context);
 
     if (t >= 1.0) {
@@ -648,8 +627,7 @@ class _CodingPlanUsageDisplayState
   /// long-duration countdowns.
   void _syncCountdownTicker() {
     final usage = _usage;
-    final shouldTick = _hovered && usage != null &&
-        _hasCountdownData(usage);
+    final shouldTick = _hovered && usage != null && _hasCountdownData(usage);
     if (shouldTick) {
       // Re-anchor every time: even if the ticker is
       // already running, a fresh anchor captures the
@@ -677,8 +655,7 @@ class _CodingPlanUsageDisplayState
   /// hover countdown ticker can actively decrement the
   /// remaining time.
   bool _hasCountdownData(CodingPlanUsage usage) {
-    return usage.intervalRemains != null ||
-        usage.weeklyRemains != null;
+    return usage.intervalRemains != null || usage.weeklyRemains != null;
   }
 
   /// Effective time-until-reset for the 5h window, i.e.
@@ -765,10 +742,10 @@ class _CodingPlanUsageDisplayState
     // spinner + the provider's `refreshNow` call. The
     // new snapshot the stream delivers will restart
     // (or leave stopped) the ticker via [_onUsage].
-    final intervalHitZero = _anchorIntervalRemains != null &&
-        intervalRemains!.inMilliseconds <= 0;
-    final weeklyHitZero = _anchorWeeklyRemains != null &&
-        weeklyRemains!.inMilliseconds <= 0;
+    final intervalHitZero =
+        _anchorIntervalRemains != null && intervalRemains!.inMilliseconds <= 0;
+    final weeklyHitZero =
+        _anchorWeeklyRemains != null && weeklyRemains!.inMilliseconds <= 0;
     if (intervalHitZero || weeklyHitZero) {
       _countdownTicker?.cancel();
       _countdownTicker = null;
@@ -803,11 +780,11 @@ class _CodingPlanUsageDisplayState
     final intervalInner = intervalRemains != null
         ? formatCodingPlanRemains(intervalRemains)
         : (usage.formatIntervalRemains() ??
-            '${usage.intervalRemainingPct.toStringAsFixed(1)}%');
+              '${usage.intervalRemainingPct.toStringAsFixed(1)}%');
     final weeklyInner = weeklyRemains != null
         ? formatCodingPlanRemains(weeklyRemains)
         : (usage.formatWeeklyRemains() ??
-            '${usage.weeklyRemainingPct.toStringAsFixed(1)}%');
+              '${usage.weeklyRemainingPct.toStringAsFixed(1)}%');
 
     // Same ratio-based colour as the settled frame
     // (afluent / middleground / scarce) but computed
@@ -912,9 +889,8 @@ class _CodingPlanUsageDisplayState
     // trend toward scarce — "you have more time than
     // expected" is exactly the situation the user
     // meant by that zone.
-    final timeRemainingPct = (timeRemainingMs /
-            totalWindow.inMilliseconds *
-            100);
+    final timeRemainingPct =
+        (timeRemainingMs / totalWindow.inMilliseconds * 100);
     if (timeRemainingPct <= 0) {
       // Defensive: totalWindow is zero or some other
       // pathological state. Fall back to the worst
@@ -957,8 +933,7 @@ class _CodingPlanUsageDisplayState
     return theme.warning;
   }
 
-  double _lerp(double from, double to, double t) =>
-      from + (to - from) * t;
+  double _lerp(double from, double to, double t) => from + (to - from) * t;
 
   @override
   Component build(BuildContext context) {
@@ -1019,8 +994,7 @@ class _CodingPlanUsageDisplayState
 /// intentionally has no `updateRenderObject` — there's
 /// nothing for the framework's reconcile path to push
 /// that the state doesn't already handle.
-class _CodingPlanUsageBridge
-    extends SingleChildRenderObjectComponent {
+class _CodingPlanUsageBridge extends SingleChildRenderObjectComponent {
   final void Function(RenderCodingPlanUsage) onRenderObject;
 
   const _CodingPlanUsageBridge({required this.onRenderObject});
@@ -1060,16 +1034,12 @@ class RenderCodingPlanUsage extends RenderObject {
   BuildContext? context;
 
   RenderCodingPlanUsage({
-    required String intervalText,
-    required String weeklyText,
-    required Color intervalFg,
-    required Color weeklyFg,
-    bool hovered = false,
-  })  : _intervalText = intervalText,
-        _weeklyText = weeklyText,
-        _intervalFg = intervalFg,
-        _weeklyFg = weeklyFg,
-        _hovered = hovered;
+    required this._intervalText,
+    required this._weeklyText,
+    required this._intervalFg,
+    required this._weeklyFg,
+    this._hovered = false,
+  });
 
   void update({
     required String intervalText,

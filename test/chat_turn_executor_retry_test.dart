@@ -105,10 +105,7 @@ class FakeLlmClient extends LlmClient {
 
 /// Path to the bundled provider `local.toml` so the test [ProviderService]
 /// can discover our test provider configuration without writing it to disk.
-final String _bundledProvidersDir = p.join(
-  Directory.current.path,
-  'providers',
-);
+final String _bundledProvidersDir = p.join(Directory.current.path, 'providers');
 
 Future<SessionStore> _freshStore() async {
   final db = CruxDatabase.forTesting(NativeDatabase.memory());
@@ -183,18 +180,20 @@ Future<void> _runTurn(
   _lastComplete = null;
   _lastError = null;
   _statusMessages.clear();
-  await body(SendCallbacks(
-    runtime: runtime ?? _newRuntime(session.id),
-    onComplete: (resp) {
-      _lastComplete = resp;
-    },
-    onError: (err) {
-      _lastError = err;
-    },
-    onStatus: (msg) {
-      _statusMessages.add(msg);
-    },
-  ));
+  await body(
+    SendCallbacks(
+      runtime: runtime ?? _newRuntime(session.id),
+      onComplete: (resp) {
+        _lastComplete = resp;
+      },
+      onError: (err) {
+        _lastError = err;
+      },
+      onStatus: (msg) {
+        _statusMessages.add(msg);
+      },
+    ),
+  );
 }
 
 class SendCallbacks {
@@ -249,121 +248,125 @@ void main() {
       ChatTurnExecutor.debugBackoffOverride = null;
     });
 
-    test(
-      'retriable serverError on first attempt is retried, '
-      'second attempt succeeds',
-      () async {
-        // ── Arrange ────────────────────────────────────────────────
-        //
-        // First streamChat call → a single chunk carrying a retriable
-        // serverError. Second call (after the backoff) → a normal
-        // text + stop sequence that should produce onComplete.
-        final fakeLlm = FakeLlmClient([
-          [
-            LlmChunk(
-              error: LlmError(
-                kind: LlmErrorKind.serverError,
-                vendor: LlmVendor.openai,
-                message: 'upstream 500',
-                providerName: _providerName,
-              ),
-            ),
-          ],
-          _successStream('all good now'),
-        ]);
-        final executor = _buildExecutor(
-          store: store,
-          providerService: providerService,
-          llmClient: fakeLlm,
-        );
-        final session = await _createSession(store);
-
-        // ── Act ────────────────────────────────────────────────────
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        // ── Assert ─────────────────────────────────────────────────
-        expect(fakeLlm.calls, 2,
-            reason: 'must make exactly one retry after the first error');
-        expect(_lastError, isNull,
-            reason: 'a successful retry must not surface onError');
-        expect(_lastComplete, isNotNull,
-            reason: 'a successful retry must surface onComplete');
-        expect(fakeLlm.allText.toString(), 'all good now');
-        // The retry path emits "Retrying (1/5) after server error…" status.
-        expect(
-          _statusMessages,
-          contains(
-            allOf(
-              contains('Retrying (1/5)'),
-              contains('server error'),
+    test('retriable serverError on first attempt is retried, '
+        'second attempt succeeds', () async {
+      // ── Arrange ────────────────────────────────────────────────
+      //
+      // First streamChat call → a single chunk carrying a retriable
+      // serverError. Second call (after the backoff) → a normal
+      // text + stop sequence that should produce onComplete.
+      final fakeLlm = FakeLlmClient([
+        [
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.serverError,
+              vendor: LlmVendor.openai,
+              message: 'upstream 500',
+              providerName: _providerName,
             ),
           ),
-          reason: 'retry status must surface the underlying error label',
-        );
-      },
-    );
+        ],
+        _successStream('all good now'),
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
 
-    test(
-      'non-retriable auth error surfaces immediately, no retries',
-      () async {
-        // First (and only) attempt: an auth error. The executor should
-        // hard-fail and surface onError; no retry should be attempted.
-        final fakeLlm = FakeLlmClient([
-          [
-            LlmChunk(
-              error: LlmError(
-                kind: LlmErrorKind.auth,
-                vendor: LlmVendor.openai,
-                message: '401 missing API key',
-                providerName: _providerName,
-              ),
+      // ── Act ────────────────────────────────────────────────────
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      // ── Assert ─────────────────────────────────────────────────
+      expect(
+        fakeLlm.calls,
+        2,
+        reason: 'must make exactly one retry after the first error',
+      );
+      expect(
+        _lastError,
+        isNull,
+        reason: 'a successful retry must not surface onError',
+      );
+      expect(
+        _lastComplete,
+        isNotNull,
+        reason: 'a successful retry must surface onComplete',
+      );
+      expect(fakeLlm.allText.toString(), 'all good now');
+      // The retry path emits "Retrying (1/5) after server error…" status.
+      expect(
+        _statusMessages,
+        contains(allOf(contains('Retrying (1/5)'), contains('server error'))),
+        reason: 'retry status must surface the underlying error label',
+      );
+    });
+
+    test('non-retriable auth error surfaces immediately, no retries', () async {
+      // First (and only) attempt: an auth error. The executor should
+      // hard-fail and surface onError; no retry should be attempted.
+      final fakeLlm = FakeLlmClient([
+        [
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.auth,
+              vendor: LlmVendor.openai,
+              message: '401 missing API key',
+              providerName: _providerName,
             ),
-          ],
-        ]);
-        final executor = _buildExecutor(
-          store: store,
-          providerService: providerService,
-          llmClient: fakeLlm,
+          ),
+        ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-        final session = await _createSession(store);
+      });
 
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        expect(fakeLlm.calls, 1,
-            reason: 'auth errors must NOT trigger any retry');
-        expect(_lastComplete, isNull);
-        expect(_lastError, isNotNull);
-        expect(_lastError!.kind, LlmErrorKind.auth);
-        expect(_statusMessages, isEmpty,
-            reason: 'no retry status should have been emitted');
-      },
-    );
+      expect(
+        fakeLlm.calls,
+        1,
+        reason: 'auth errors must NOT trigger any retry',
+      );
+      expect(_lastComplete, isNull);
+      expect(_lastError, isNotNull);
+      expect(_lastError!.kind, LlmErrorKind.auth);
+      expect(
+        _statusMessages,
+        isEmpty,
+        reason: 'no retry status should have been emitted',
+      );
+    });
 
     test(
       'retriable socket exception thrown out of the stream also retries',
@@ -397,9 +400,13 @@ void main() {
           );
         });
 
-        expect(fakeLlm.calls, 2,
-            reason: 'thrown SocketException must trigger a retry, same as '
-                'a mid-stream chunk.error');
+        expect(
+          fakeLlm.calls,
+          2,
+          reason:
+              'thrown SocketException must trigger a retry, same as '
+              'a mid-stream chunk.error',
+        );
         expect(_lastError, isNull);
         expect(_lastComplete, isNotNull);
         // Status should mention the underlying cause.
@@ -411,82 +418,89 @@ void main() {
       },
     );
 
-    test(
-      'retriable errors are retried until the budget exhausts; '
-      'final error surfaces',
-      () async {
-        // All `kMaxLlmRetries + 1` attempts fail with a retriable
-        // serverError. After exhausting the budget, onError must fire
-        // with the final error and the executor must NOT call onComplete.
-        final fakeLlm = FakeLlmClient([
-          for (var i = 0; i <= kMaxLlmRetries; i++)
-            [
-              LlmChunk(
-                error: LlmError(
-                  kind: LlmErrorKind.serverError,
-                  vendor: LlmVendor.openai,
-                  message: 'upstream 500 attempt $i',
-                  providerName: _providerName,
-                ),
+    test('retriable errors are retried until the budget exhausts; '
+        'final error surfaces', () async {
+      // All `kMaxLlmRetries + 1` attempts fail with a retriable
+      // serverError. After exhausting the budget, onError must fire
+      // with the final error and the executor must NOT call onComplete.
+      final fakeLlm = FakeLlmClient([
+        for (var i = 0; i <= kMaxLlmRetries; i++)
+          [
+            LlmChunk(
+              error: LlmError(
+                kind: LlmErrorKind.serverError,
+                vendor: LlmVendor.openai,
+                message: 'upstream 500 attempt $i',
+                providerName: _providerName,
               ),
-            ],
-        ]);
-        final executor = _buildExecutor(
-          store: store,
-          providerService: providerService,
-          llmClient: fakeLlm,
+            ),
+          ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-        final session = await _createSession(store);
+      });
 
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        expect(fakeLlm.calls, kMaxLlmRetries + 1,
-            reason: 'must attempt exactly the initial + kMaxLlmRetries '
-                'retries (6 total) before giving up');
-        expect(_lastComplete, isNull,
-            reason: 'no complete must fire when retries exhaust');
-        expect(_lastError, isNotNull,
-            reason: 'a final LlmError must be surfaced after retries '
-                'exhaust; this is the bubble that carries the '
-                '▶ retry (/continue) button');
-        expect(_lastError!.kind, LlmErrorKind.serverError);
-        // The retry statuses fire before each retry (5 in total:
-        // attempts 1..5).
+      expect(
+        fakeLlm.calls,
+        kMaxLlmRetries + 1,
+        reason:
+            'must attempt exactly the initial + kMaxLlmRetries '
+            'retries (6 total) before giving up',
+      );
+      expect(
+        _lastComplete,
+        isNull,
+        reason: 'no complete must fire when retries exhaust',
+      );
+      expect(
+        _lastError,
+        isNotNull,
+        reason:
+            'a final LlmError must be surfaced after retries '
+            'exhaust; this is the bubble that carries the '
+            '▶ retry (/continue) button',
+      );
+      expect(_lastError!.kind, LlmErrorKind.serverError);
+      // The retry statuses fire before each retry (5 in total:
+      // attempts 1..5).
+      expect(
+        _statusMessages.length,
+        kMaxLlmRetries,
+        reason: 'one "Retrying N/5" status per retry attempt',
+      );
+      for (var i = 0; i < kMaxLlmRetries; i++) {
         expect(
-          _statusMessages.length,
-          kMaxLlmRetries,
-          reason: 'one "Retrying N/5" status per retry attempt',
+          _statusMessages[i],
+          contains('Retrying (${i + 1}/$kMaxLlmRetries)'),
+          reason:
+              'status #${i + 1} should report the right attempt '
+              'number',
         );
-        for (var i = 0; i < kMaxLlmRetries; i++) {
-          expect(
-            _statusMessages[i],
-            contains('Retrying (${i + 1}/$kMaxLlmRetries)'),
-            reason: 'status #${i + 1} should report the right attempt '
-                'number',
-          );
-        }
-      },
-    );
+      }
+    });
 
     test(
       'successful first attempt is not retried, no retry status emitted',
       () async {
-        final fakeLlm = FakeLlmClient([
-          _successStream('hello'),
-        ]);
+        final fakeLlm = FakeLlmClient([_successStream('hello')]);
         final executor = _buildExecutor(
           store: store,
           providerService: providerService,
@@ -509,70 +523,77 @@ void main() {
           );
         });
 
-        expect(fakeLlm.calls, 1,
-            reason: 'a clean first attempt must not trigger any retries');
+        expect(
+          fakeLlm.calls,
+          1,
+          reason: 'a clean first attempt must not trigger any retries',
+        );
         expect(_lastComplete, isNotNull);
         expect(_lastError, isNull);
-        expect(_statusMessages, isEmpty,
-            reason: 'successful path emits no retry status');
+        expect(
+          _statusMessages,
+          isEmpty,
+          reason: 'successful path emits no retry status',
+        );
       },
     );
 
-    test(
-      'retry that fails on attempt $kMaxLlmRetries (last)'
-      ' still loops to attempt ${kMaxLlmRetries + 1} '
-      '(not aborted as a no-retry case)',
-      () async {
-        // Boundary: the `attempt < kMaxLlmRetries` guard inside the inner
-        // block ensures we get one MORE retry after attempt 4 (i.e.
-        // attempt 5). Make attempts 0..4 fail, attempt 5 succeed, and
-        // confirm we did reach the 6th attempt.
-        final responses = <Object>[];
-        for (var i = 0; i < kMaxLlmRetries; i++) {
-          responses.add([
-            LlmChunk(
-              error: LlmError(
-                kind: LlmErrorKind.overloaded,
-                vendor: LlmVendor.openai,
-                message: '529 overloaded',
-                providerName: _providerName,
-              ),
+    test('retry that fails on attempt $kMaxLlmRetries (last)'
+        ' still loops to attempt ${kMaxLlmRetries + 1} '
+        '(not aborted as a no-retry case)', () async {
+      // Boundary: the `attempt < kMaxLlmRetries` guard inside the inner
+      // block ensures we get one MORE retry after attempt 4 (i.e.
+      // attempt 5). Make attempts 0..4 fail, attempt 5 succeed, and
+      // confirm we did reach the 6th attempt.
+      final responses = <Object>[];
+      for (var i = 0; i < kMaxLlmRetries; i++) {
+        responses.add([
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.overloaded,
+              vendor: LlmVendor.openai,
+              message: '529 overloaded',
+              providerName: _providerName,
             ),
-          ]);
-        }
-        responses.add(_successStream('finally'));
+          ),
+        ]);
+      }
+      responses.add(_successStream('finally'));
 
-        final fakeLlm = FakeLlmClient(responses);
-        final executor = _buildExecutor(
-          store: store,
-          providerService: providerService,
-          llmClient: fakeLlm,
+      final fakeLlm = FakeLlmClient(responses);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-        final session = await _createSession(store);
+      });
 
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        expect(fakeLlm.calls, kMaxLlmRetries + 1,
-            reason: 'must attempt the full budget even when the last '
-                'in-budget attempt fails');
-        expect(_lastError, isNull);
-        expect(_lastComplete, isNotNull);
-        expect(fakeLlm.allText.toString(), 'finally');
-      },
-    );
+      expect(
+        fakeLlm.calls,
+        kMaxLlmRetries + 1,
+        reason:
+            'must attempt the full budget even when the last '
+            'in-budget attempt fails',
+      );
+      expect(_lastError, isNull);
+      expect(_lastComplete, isNotNull);
+      expect(fakeLlm.allText.toString(), 'finally');
+    });
   });
 
   // ─── Orphan tool history auto-repair + retry ────────────────
@@ -605,218 +626,226 @@ void main() {
       ChatTurnExecutor.debugBackoffOverride = null;
     });
 
-    test(
-      'first 2013 triggers repairOrphanToolRows, retry succeeds',
-      () async {
-        // Anthropic-compatible provider (the default test provider
-        // is openai-compatible, so we use a transient one via
-        // local.toml). For this test, reuse the retry-test provider
-        // but override `supportsOrphanToolRepair` semantics by
-        // patching the resolved provider. The cleanest path is to
-        // provision an anthropic_compatible provider for this
-        // group.
-        final anthropicDir = await _makeAnthropicProvidersDir();
-        final anthropicService = _StubProviderService(
-          userProvidersDir: anthropicDir,
-        );
-        await anthropicService.initialize();
-        final anthropicStore = await _freshStore();
+    test('first 2013 triggers repairOrphanToolRows, retry succeeds', () async {
+      // Anthropic-compatible provider (the default test provider
+      // is openai-compatible, so we use a transient one via
+      // local.toml). For this test, reuse the retry-test provider
+      // but override `supportsOrphanToolRepair` semantics by
+      // patching the resolved provider. The cleanest path is to
+      // provision an anthropic_compatible provider for this
+      // group.
+      final anthropicDir = await _makeAnthropicProvidersDir();
+      final anthropicService = _StubProviderService(
+        userProvidersDir: anthropicDir,
+      );
+      await anthropicService.initialize();
+      final anthropicStore = await _freshStore();
 
-        // First attempt: a MiniMax 2013 / anthropic
-        // invalid_request_error with the orphan-tool message
-        // shape. The per-request sanitizer can't catch this (the
-        // DB is the source of truth and still has orphans), so
-        // the chunk surfaces an LlmError.
-        // Second attempt: success.
-        final fakeLlm = FakeLlmClient([
-          [
-            LlmChunk(
-              error: const LlmError(
-                kind: LlmErrorKind.invalidRequest,
-                vendor: LlmVendor.minimax,
-                vendorCode: '2013',
-                message:
-                    "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
-                    'not found',
-                providerName: 'anthropic',
-              ),
-            ),
-          ],
-          _successStream('after repair'),
-        ]);
-        final executor = _buildExecutor(
-          store: anthropicStore,
-          providerService: anthropicService,
-          llmClient: fakeLlm,
-        );
-        final session = await _createSession(anthropicStore);
-
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        // Two streamChat calls: one for the failed attempt and one
-        // for the repaired retry.
-        expect(fakeLlm.calls, 2,
-            reason: 'first 2013 must trigger a repair + retry');
-        // Successful retry surfaces onComplete, not onError.
-        expect(_lastError, isNull,
-            reason: 'a successful retry must not surface onError');
-        expect(_lastComplete, isNotNull,
-            reason: 'a successful retry must surface onComplete');
-        expect(fakeLlm.allText.toString(), 'after repair');
-        // The status toast must announce the repair.
-        expect(
-          _statusMessages,
-          contains(
-            allOf(
-              contains('orphan tool rows'),
-              contains('repairing'),
+      // First attempt: a MiniMax 2013 / anthropic
+      // invalid_request_error with the orphan-tool message
+      // shape. The per-request sanitizer can't catch this (the
+      // DB is the source of truth and still has orphans), so
+      // the chunk surfaces an LlmError.
+      // Second attempt: success.
+      final fakeLlm = FakeLlmClient([
+        [
+          LlmChunk(
+            error: const LlmError(
+              kind: LlmErrorKind.invalidRequest,
+              vendor: LlmVendor.minimax,
+              vendorCode: '2013',
+              message:
+                  "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
+                  'not found',
+              providerName: 'anthropic',
             ),
           ),
-          reason: 'the repair branch must surface a status toast',
+        ],
+        _successStream('after repair'),
+      ]);
+      final executor = _buildExecutor(
+        store: anthropicStore,
+        providerService: anthropicService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(anthropicStore);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-      },
-    );
+      });
 
-    test(
-      'second 2013 in the same round falls through to onError',
-      () async {
-        // The anti-loop guard: after the first repair fires, a
-        // second 2013 must NOT trigger another repair. Instead it
-        // surfaces as a normal non-retriable error so the user
-        // gets the standard ▶ retry button.
-        final anthropicDir = await _makeAnthropicProvidersDir();
-        final anthropicService = _StubProviderService(
-          userProvidersDir: anthropicDir,
+      // Two streamChat calls: one for the failed attempt and one
+      // for the repaired retry.
+      expect(
+        fakeLlm.calls,
+        2,
+        reason: 'first 2013 must trigger a repair + retry',
+      );
+      // Successful retry surfaces onComplete, not onError.
+      expect(
+        _lastError,
+        isNull,
+        reason: 'a successful retry must not surface onError',
+      );
+      expect(
+        _lastComplete,
+        isNotNull,
+        reason: 'a successful retry must surface onComplete',
+      );
+      expect(fakeLlm.allText.toString(), 'after repair');
+      // The status toast must announce the repair.
+      expect(
+        _statusMessages,
+        contains(allOf(contains('orphan tool rows'), contains('repairing'))),
+        reason: 'the repair branch must surface a status toast',
+      );
+    });
+
+    test('second 2013 in the same round falls through to onError', () async {
+      // The anti-loop guard: after the first repair fires, a
+      // second 2013 must NOT trigger another repair. Instead it
+      // surfaces as a normal non-retriable error so the user
+      // gets the standard ▶ retry button.
+      final anthropicDir = await _makeAnthropicProvidersDir();
+      final anthropicService = _StubProviderService(
+        userProvidersDir: anthropicDir,
+      );
+      await anthropicService.initialize();
+      final anthropicStore = await _freshStore();
+
+      final orphanErr = const LlmError(
+        kind: LlmErrorKind.invalidRequest,
+        vendor: LlmVendor.minimax,
+        vendorCode: '2013',
+        message:
+            'tool result\'s tool id(call_8dce37e6aed5418ebe0ed8ec) '
+            'not found',
+        providerName: 'anthropic',
+      );
+      final fakeLlm = FakeLlmClient([
+        [LlmChunk(error: orphanErr)],
+        [LlmChunk(error: orphanErr)],
+      ]);
+      final executor = _buildExecutor(
+        store: anthropicStore,
+        providerService: anthropicService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(anthropicStore);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-        await anthropicService.initialize();
-        final anthropicStore = await _freshStore();
+      });
 
-        final orphanErr = const LlmError(
-          kind: LlmErrorKind.invalidRequest,
-          vendor: LlmVendor.minimax,
-          vendorCode: '2013',
-          message:
-              'tool result\'s tool id(call_8dce37e6aed5418ebe0ed8ec) '
-              'not found',
-          providerName: 'anthropic',
-        );
-        final fakeLlm = FakeLlmClient([
-          [LlmChunk(error: orphanErr)],
-          [LlmChunk(error: orphanErr)],
-        ]);
-        final executor = _buildExecutor(
-          store: anthropicStore,
-          providerService: anthropicService,
-          llmClient: fakeLlm,
-        );
-        final session = await _createSession(anthropicStore);
+      // Two calls — the first triggers the repair and retries,
+      // the second is the second-2013 aftermath, which falls
+      // through to onError.
+      expect(fakeLlm.calls, 2);
+      expect(
+        _lastComplete,
+        isNull,
+        reason: 'a second 2013 must NOT trigger another retry',
+      );
+      expect(
+        _lastError,
+        isNotNull,
+        reason:
+            'a second 2013 must surface as a normal non-retriable '
+            'error so the user can /retry',
+      );
+      expect(_lastError!.kind, LlmErrorKind.invalidRequest);
+      // Exactly one repair toast — the second 2013 didn't fire
+      // another repair.
+      final repairToasts = _statusMessages
+          .where((m) => m.contains('orphan tool rows'))
+          .toList();
+      expect(
+        repairToasts,
+        hasLength(1),
+        reason:
+            'orphanToolRepairAttempted must fire the repair only '
+            'once per round',
+      );
+    });
 
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        // Two calls — the first triggers the repair and retries,
-        // the second is the second-2013 aftermath, which falls
-        // through to onError.
-        expect(fakeLlm.calls, 2);
-        expect(_lastComplete, isNull,
-            reason: 'a second 2013 must NOT trigger another retry');
-        expect(_lastError, isNotNull,
-            reason:
-                'a second 2013 must surface as a normal non-retriable '
-                'error so the user can /retry');
-        expect(_lastError!.kind, LlmErrorKind.invalidRequest);
-        // Exactly one repair toast — the second 2013 didn't fire
-        // another repair.
-        final repairToasts = _statusMessages
-            .where((m) => m.contains('orphan tool rows'))
-            .toList();
-        expect(repairToasts, hasLength(1),
-            reason:
-                'orphanToolRepairAttempted must fire the repair only '
-                'once per round');
-      },
-    );
-
-    test(
-      '2013 on a non-Anthropic provider falls through to onError',
-      () async {
-        // The capability flag is set on Anthropic-compatible
-        // providers only. OpenAI-compatible providers (the default
-        // in this test file) must NOT trigger the auto-repair —
-        // even when their (hypothetical) 2013-shaped message
-        // arrives.
-        final fakeLlm = FakeLlmClient([
-          [
-            LlmChunk(
-              error: const LlmError(
-                kind: LlmErrorKind.invalidRequest,
-                vendor: LlmVendor.openai,
-                message:
-                    "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
-                    'not found',
-                providerName: _providerName,
-              ),
+    test('2013 on a non-Anthropic provider falls through to onError', () async {
+      // The capability flag is set on Anthropic-compatible
+      // providers only. OpenAI-compatible providers (the default
+      // in this test file) must NOT trigger the auto-repair —
+      // even when their (hypothetical) 2013-shaped message
+      // arrives.
+      final fakeLlm = FakeLlmClient([
+        [
+          LlmChunk(
+            error: const LlmError(
+              kind: LlmErrorKind.invalidRequest,
+              vendor: LlmVendor.openai,
+              message:
+                  "tool result's tool id(call_8dce37e6aed5418ebe0ed8ec) "
+                  'not found',
+              providerName: _providerName,
             ),
-          ],
-        ]);
-        final executor = _buildExecutor(
-          store: store,
-          providerService: providerService,
-          llmClient: fakeLlm,
+          ),
+        ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
         );
-        final session = await _createSession(store);
+      });
 
-        await _runTurn(executor, session, (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hello',
-          );
-        });
-
-        expect(fakeLlm.calls, 1,
-            reason:
-                'openai-compatible providers must not auto-repair; the '
-                'error surfaces directly to onError');
-        expect(_lastError, isNotNull);
-        expect(_statusMessages.where((m) => m.contains('orphan tool rows')),
-            isEmpty,
-            reason:
-                'no repair toast on a non-Anthropic provider');
-      },
-    );
+      expect(
+        fakeLlm.calls,
+        1,
+        reason:
+            'openai-compatible providers must not auto-repair; the '
+            'error surfaces directly to onError',
+      );
+      expect(_lastError, isNotNull);
+      expect(
+        _statusMessages.where((m) => m.contains('orphan tool rows')),
+        isEmpty,
+        reason: 'no repair toast on a non-Anthropic provider',
+      );
+    });
 
     test(
       'non-tool invalidRequest on an Anthropic provider is not auto-repaired',
@@ -868,8 +897,10 @@ void main() {
 
         expect(fakeLlm.calls, 1);
         expect(_lastError, isNotNull);
-        expect(_statusMessages.where((m) => m.contains('orphan tool rows')),
-            isEmpty);
+        expect(
+          _statusMessages.where((m) => m.contains('orphan tool rows')),
+          isEmpty,
+        );
       },
     );
   });
@@ -878,10 +909,7 @@ void main() {
 /// Construct a single-shot success stream: one text chunk and a stop chunk.
 /// `finishReason: 'stop'` exits the agentic loop without tool calls.
 List<LlmChunk> _successStream(String text) {
-  return [
-    LlmChunk(textDelta: text),
-    LlmChunk(finishReason: 'stop'),
-  ];
+  return [LlmChunk(textDelta: text), LlmChunk(finishReason: 'stop')];
 }
 
 /// Write a minimal `local.toml` provider into a fresh temp dir and return

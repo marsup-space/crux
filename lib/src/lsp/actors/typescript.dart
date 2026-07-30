@@ -27,8 +27,16 @@ class TypescriptServerActor extends LspServerActor {
   String get id => 'typescript';
 
   @override
-  List<String> get extensions =>
-      const ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
+  List<String> get extensions => const [
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.mjs',
+    '.cjs',
+    '.mts',
+    '.cts',
+  ];
 
   static const _jsRootMarkers = [
     'package.json',
@@ -64,9 +72,13 @@ class TypescriptServerActor extends LspServerActor {
     // Prefer the project-local install (monorepo-aware walk-up).
     final localDir = await findUp(
       markers: [
-        p.join('node_modules', '.bin', Platform.isWindows
-            ? 'typescript-language-server.cmd'
-            : 'typescript-language-server'),
+        p.join(
+          'node_modules',
+          '.bin',
+          Platform.isWindows
+              ? 'typescript-language-server.cmd'
+              : 'typescript-language-server',
+        ),
       ],
       start: file,
       stop: root,
@@ -83,7 +95,8 @@ class TypescriptServerActor extends LspServerActor {
             : 'typescript-language-server',
       );
     } else {
-      final onPath = whichBinary('typescript-language-server') ??
+      final onPath =
+          whichBinary('typescript-language-server') ??
           npmInstalled('typescript-language-server');
       if (onPath == null) {
         // Auto-install like OpenCode's `Npm.which`.

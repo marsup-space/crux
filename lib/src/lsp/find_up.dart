@@ -44,7 +44,7 @@ Future<String?> findUp({
     }
     if (_isAtOrAbove(dir, stopNorm)) return null;
     final parent = p.dirname(dir);
-    if (parent == dir) return null;       // reached filesystem root
+    if (parent == dir) return null; // reached filesystem root
     dir = parent;
   }
 }

@@ -1,5 +1,6 @@
 import '../components/ui/toast.dart';
 import 'command_executor.dart';
+
 Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
   if (parts.length > 1 && parts[1].isNotEmpty) {
     final idStr = parts[1].replaceFirst('#', '');

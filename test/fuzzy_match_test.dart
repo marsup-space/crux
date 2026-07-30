@@ -265,11 +265,7 @@ void main() {
         ['retry', '重试'],
         ['help'],
       ];
-      final ranked = fuzzyRankMulti<List<String>>(
-        items,
-        (keys) => keys,
-        '继',
-      );
+      final ranked = fuzzyRankMulti<List<String>>(items, (keys) => keys, '继');
       // `继续` (alias of `continue`) starts with `继` →
       // exact / prefix tier; `重试` (alias of `retry`) does
       // not contain `继` as a subseq. So only `continue` is
@@ -287,11 +283,7 @@ void main() {
         ['compact', 'c-m-p'],
         ['banana'],
       ];
-      final ranked = fuzzyRankMulti<List<String>>(
-        items,
-        (keys) => keys,
-        'c',
-      );
+      final ranked = fuzzyRankMulti<List<String>>(items, (keys) => keys, 'c');
       expect(ranked, hasLength(1));
       expect(ranked.first.first, equals('compact'));
     });
@@ -301,11 +293,7 @@ void main() {
         ['a', 'b'],
         ['c'],
       ];
-      final ranked = fuzzyRankMulti<List<String>>(
-        items,
-        (keys) => keys,
-        '',
-      );
+      final ranked = fuzzyRankMulti<List<String>>(items, (keys) => keys, '');
       expect(ranked, equals(items));
     });
   });

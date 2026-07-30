@@ -107,9 +107,7 @@ class AskAnswerBubble extends StatelessComponent {
         ),
       );
       if (sel.labels.isEmpty) {
-        rows.add(
-          Text('   (none)', style: TextStyle(color: theme.hintText)),
-        );
+        rows.add(Text('   (none)', style: TextStyle(color: theme.hintText)));
       } else {
         final marker = sel.multi ? '☑' : '◉';
         for (final label in sel.labels) {
@@ -135,7 +133,10 @@ class AskAnswerBubble extends StatelessComponent {
           children: [
             Text(' note: ', style: TextStyle(color: theme.hintText)),
             Expanded(
-              child: Text(answer.note, style: TextStyle(color: theme.textMuted)),
+              child: Text(
+                answer.note,
+                style: TextStyle(color: theme.textMuted),
+              ),
             ),
           ],
         ),

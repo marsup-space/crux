@@ -40,8 +40,7 @@ class ToolExecutor {
   /// `chat_turn_executor.dart`) so the model can be told which
   /// tools *do* exist when it hallucinates a tool name (e.g.
   /// `ask`) that doesn't.
-  List<String> allToolNames() =>
-      [for (final tool in _registry.all) tool.name];
+  List<String> allToolNames() => [for (final tool in _registry.all) tool.name];
 
   Future<GuardResult?> checkWriteGuard({
     required String filePath,

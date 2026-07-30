@@ -53,7 +53,10 @@ class BashTool extends ShellBase {
       '❌ `sed -n \'100,120p\' foo.dart`                → `read` with range';
 
   @override
-  ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'}) {
+  ShellInvocation resolveInvocation(
+    String command, {
+    String encoding = 'utf8',
+  }) {
     final locale = _toLocale(encoding);
     final args = <String>[];
     if (locale != null) {
@@ -61,10 +64,7 @@ class BashTool extends ShellBase {
     } else {
       args.addAll(['-c', command]);
     }
-    return ShellInvocation(
-      executable: '/bin/bash',
-      args: args,
-    );
+    return ShellInvocation(executable: '/bin/bash', args: args);
   }
 
   String? _toLocale(String encoding) {

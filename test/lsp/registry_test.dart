@@ -47,8 +47,7 @@ void main() {
       expect(factories.keys.toSet(), expected);
     });
 
-    test('factory instances expose matching id and non-empty extensions',
-        () {
+    test('factory instances expose matching id and non-empty extensions', () {
       final factories = defaultLspActorFactories();
       for (final entry in factories.entries) {
         final actor = entry.value();
@@ -75,27 +74,29 @@ void main() {
       expect(spec, isNull);
     });
 
-    test('resolves spec using a PATH binary and falls back to session root',
-        () async {
-      // `dart` is guaranteed on PATH in this repo's test environment.
-      final dart = _which('dart');
-      if (dart == null) return; // skip if the SDK isn't on PATH
+    test(
+      'resolves spec using a PATH binary and falls back to session root',
+      () async {
+        // `dart` is guaranteed on PATH in this repo's test environment.
+        final dart = _which('dart');
+        if (dart == null) return; // skip if the SDK isn't on PATH
 
-      final actor = WhichServerActor(
-        id: 'fake-dart',
-        extensions: const ['.dart'],
-        rootMarkers: const ['no-such-marker-file-xyz'],
-        commandCandidates: const [
-          ['dart', 'language-server', '--lsp'],
-        ],
-      );
-      final root = Directory.current.path;
-      final spec = await actor.resolveSpec(root, p.join(root, 'x.dart'));
-      expect(spec, isNotNull);
-      expect(spec!.command.first, dart);
-      expect(spec.command, containsAll(['language-server', '--lsp']));
-      expect(spec.root, root);
-    });
+        final actor = WhichServerActor(
+          id: 'fake-dart',
+          extensions: const ['.dart'],
+          rootMarkers: const ['no-such-marker-file-xyz'],
+          commandCandidates: const [
+            ['dart', 'language-server', '--lsp'],
+          ],
+        );
+        final root = Directory.current.path;
+        final spec = await actor.resolveSpec(root, p.join(root, 'x.dart'));
+        expect(spec, isNotNull);
+        expect(spec!.command.first, dart);
+        expect(spec.command, containsAll(['language-server', '--lsp']));
+        expect(spec.root, root);
+      },
+    );
 
     test('resolves project root from marker files', () async {
       final dart = _which('dart');
@@ -134,8 +135,7 @@ void main() {
           ['dart', '--version'],
         ],
       );
-      final spec =
-          await actor.resolveSpec(Directory.current.path, 'a.x');
+      final spec = await actor.resolveSpec(Directory.current.path, 'a.x');
       expect(spec, isNotNull);
       expect(spec!.command, [dart, '--version']);
     });

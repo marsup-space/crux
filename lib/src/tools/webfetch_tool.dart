@@ -74,35 +74,32 @@ class WebFetchTool extends ToolDef {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'url': {'type': 'string', 'description': 'URL to fetch'},
-          'format': {
-            'type': 'string',
-            'enum': ['markdown', 'text', 'html', 'raw'],
-            'description':
-                'Output format. The web provider is asked for this '
-                    'format; the raw-fallback path applies it '
-                    'client-side. "raw" always bypasses the web '
-                    'provider and returns the unprocessed HTML '
-                    'response body. Default: markdown.',
-          },
-          'timeout': {
-            'type': 'integer',
-            'description':
-                'Timeout in seconds (max 120). Only applies to the '
-                    'raw-fallback path; provider requests have their '
-                    'own backend timeout.',
-          },
-        },
-        'required': ['url'],
-      };
+    'type': 'object',
+    'properties': {
+      'url': {'type': 'string', 'description': 'URL to fetch'},
+      'format': {
+        'type': 'string',
+        'enum': ['markdown', 'text', 'html', 'raw'],
+        'description':
+            'Output format. The web provider is asked for this '
+            'format; the raw-fallback path applies it '
+            'client-side. "raw" always bypasses the web '
+            'provider and returns the unprocessed HTML '
+            'response body. Default: markdown.',
+      },
+      'timeout': {
+        'type': 'integer',
+        'description':
+            'Timeout in seconds (max 120). Only applies to the '
+            'raw-fallback path; provider requests have their '
+            'own backend timeout.',
+      },
+    },
+    'required': ['url'],
+  };
 
   @override
-  Future<ToolResult> execute(
-    Map<String, dynamic> args,
-    ToolContext ctx,
-  ) async {
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final url = args['url'] as String?;
     final format = (args['format'] as String?) ?? 'markdown';
     final timeoutSec = ((args['timeout'] as int?) ?? 30).clamp(1, 120);
@@ -145,10 +142,7 @@ class WebFetchTool extends ToolDef {
     if (provider != null &&
         !await UrlSafety.isLocalTarget(Uri.parse(effectiveUrl))) {
       try {
-        final resp = await provider.fetch(
-          [effectiveUrl],
-          format: format,
-        );
+        final resp = await provider.fetch([effectiveUrl], format: format);
         if (resp.errors.isNotEmpty && resp.results.isEmpty) {
           final e = resp.errors.first;
           return ToolResult.error(
@@ -165,10 +159,7 @@ class WebFetchTool extends ToolDef {
         if (r.text == null) {
           final err = resp.errors.firstWhere(
             (e) => e.url == effectiveUrl,
-            orElse: () => const WebFetchError(
-              code: 'unknown',
-              url: '',
-            ),
+            orElse: () => const WebFetchError(code: 'unknown', url: ''),
           );
           return ToolResult.error(
             'Web provider could not fetch $effectiveUrl: '
@@ -284,14 +275,15 @@ class WebFetchTool extends ToolDef {
         try {
           var currentUri = Uri.parse(effectiveUrl);
           HttpClientResponse? response;
-          for (var hops = 0;; hops++) {
+          for (var hops = 0; ; hops++) {
             final request = await client.getUrl(currentUri);
             // Never auto-follow: each redirect target must pass
             // the SSRF check before we touch it.
             request.followRedirects = false;
             final hop = await request.close();
-            final location =
-                hop.isRedirect ? hop.headers.value('location') : null;
+            final location = hop.isRedirect
+                ? hop.headers.value('location')
+                : null;
             if (location == null) {
               response = hop;
               break;

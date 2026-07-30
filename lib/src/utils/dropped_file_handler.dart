@@ -8,12 +8,7 @@ import 'package:path/path.dart' as p;
 ///   • [file]          → insert path as a labeled reference
 ///   • [directory]     → insert just the directory path as a reference
 ///   • [missing]       → show an error toast, do not insert
-enum DroppedFileKind {
-  image,
-  file,
-  directory,
-  missing,
-}
+enum DroppedFileKind { image, file, directory, missing }
 
 /// One classified entry from a drop. Only the path is stored;
 /// file content is never inlined — the AI agent reads files on
@@ -112,21 +107,25 @@ List<DroppedFile> classifyDroppedPaths(
 
     final entityType = FileSystemEntity.typeSync(resolved);
     if (entityType == FileSystemEntityType.notFound) {
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.missing,
-        sizeBytes: 0,
-      ));
+      results.add(
+        DroppedFile(
+          originalPath: original,
+          absolutePath: resolved,
+          kind: DroppedFileKind.missing,
+          sizeBytes: 0,
+        ),
+      );
       continue;
     }
     if (entityType == FileSystemEntityType.directory) {
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.directory,
-        sizeBytes: 0,
-      ));
+      results.add(
+        DroppedFile(
+          originalPath: original,
+          absolutePath: resolved,
+          kind: DroppedFileKind.directory,
+          sizeBytes: 0,
+        ),
+      );
       continue;
     }
 
@@ -135,19 +134,23 @@ List<DroppedFile> classifyDroppedPaths(
     final size = _safeLength(resolved);
     final ext = p.extension(resolved).toLowerCase();
     if (_isImageExtension(ext)) {
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.image,
-        sizeBytes: size,
-      ));
+      results.add(
+        DroppedFile(
+          originalPath: original,
+          absolutePath: resolved,
+          kind: DroppedFileKind.image,
+          sizeBytes: size,
+        ),
+      );
     } else {
-      results.add(DroppedFile(
-        originalPath: original,
-        absolutePath: resolved,
-        kind: DroppedFileKind.file,
-        sizeBytes: size,
-      ));
+      results.add(
+        DroppedFile(
+          originalPath: original,
+          absolutePath: resolved,
+          kind: DroppedFileKind.file,
+          sizeBytes: size,
+        ),
+      );
     }
   }
   return results;
@@ -242,7 +245,8 @@ bool looksLikeFileDrop(List<DroppedFile> classified) {
   // (the every-token-resolves check below) already rejects e.g.
   // "see /tmp/a.md for context" because the surrounding words
   // don't resolve.
-  if (classified.length == 1 && !_looksLikePath(classified.first.originalPath)) {
+  if (classified.length == 1 &&
+      !_looksLikePath(classified.first.originalPath)) {
     return false;
   }
 
@@ -270,8 +274,16 @@ bool _looksLikePath(String s) {
 // ─── helpers ────────────────────────────────────────────────────────
 
 const _imageExtensions = <String>{
-  '.png', '.jpg', '.jpeg', '.gif', '.webp',
-  '.bmp', '.svg', '.tiff', '.tif', '.ico',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.svg',
+  '.tiff',
+  '.tif',
+  '.ico',
 };
 
 bool _isImageExtension(String ext) => _imageExtensions.contains(ext);

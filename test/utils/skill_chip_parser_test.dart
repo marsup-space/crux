@@ -43,13 +43,15 @@ void main() {
       expect(pos!.query, 'pr-review');
     });
 
-    test('dollar-pr_review is rejected — underscore is not a skill-name char',
-        () {
-      // Skill names match `[a-z0-9-]`. Underscore is a
-      // common-but-wrong habit; the parser rejects it.
-      final pos = findActiveSkillChip(r'$pr_review', 10);
-      expect(pos, isNull);
-    });
+    test(
+      'dollar-pr_review is rejected — underscore is not a skill-name char',
+      () {
+        // Skill names match `[a-z0-9-]`. Underscore is a
+        // common-but-wrong habit; the parser rejects it.
+        final pos = findActiveSkillChip(r'$pr_review', 10);
+        expect(pos, isNull);
+      },
+    );
 
     test('dollar-PrReview is rejected — uppercase is not allowed', () {
       final pos = findActiveSkillChip(r'$PrReview', 9);
@@ -95,10 +97,9 @@ void main() {
 
   group('findAllSkillChips — complete-chip detection', () {
     test('finds a single chip in plain prose', () {
-      final matches = findAllSkillChips(
-        r'please review $pr-review by EOD',
-        {'pr-review'},
-      );
+      final matches = findAllSkillChips(r'please review $pr-review by EOD', {
+        'pr-review',
+      });
       expect(matches, hasLength(1));
       expect(matches.first.skillName, 'pr-review');
       expect(matches.first.dollarOffset, 14);
@@ -116,10 +117,9 @@ void main() {
     });
 
     test('leaves a literal 50-dollar alone when no skill is named 50', () {
-      final matches = findAllSkillChips(
-        r'how much does it cost? $50',
-        {'pr-review'},
-      );
+      final matches = findAllSkillChips(r'how much does it cost? $50', {
+        'pr-review',
+      });
       expect(matches, isEmpty);
     });
 
@@ -129,10 +129,7 @@ void main() {
       // This stops the substitution from incorrectly expanding
       // a longer token that just happens to start with a
       // skill name.
-      final matches = findAllSkillChips(
-        r'$pr-reviewfoo',
-        {'pr-review'},
-      );
+      final matches = findAllSkillChips(r'$pr-reviewfoo', {'pr-review'});
       expect(matches, isEmpty);
     });
 
@@ -142,18 +139,12 @@ void main() {
       // narrower rule than the at-mention parser, which also
       // rejects email-style; the at-mention email case doesn't
       // apply to skills because skill names don't have dots.)
-      final matches = findAllSkillChips(
-        r'foo$pr-review',
-        {'pr-review'},
-      );
+      final matches = findAllSkillChips(r'foo$pr-review', {'pr-review'});
       expect(matches, isEmpty);
     });
 
     test('rejects a chip whose name is unknown', () {
-      final matches = findAllSkillChips(
-        r'$unknown-skill',
-        {'pr-review'},
-      );
+      final matches = findAllSkillChips(r'$unknown-skill', {'pr-review'});
       expect(matches, isEmpty);
     });
 
@@ -171,13 +162,21 @@ void main() {
   group('isSkillNameChar', () {
     test('letters, digits, and hyphen are skill-name chars', () {
       for (final c in ['a', 'z', '0', '9', '-']) {
-        expect(isSkillNameChar(c), isTrue, reason: 'expected `$c` to be a name char');
+        expect(
+          isSkillNameChar(c),
+          isTrue,
+          reason: 'expected `$c` to be a name char',
+        );
       }
     });
 
     test('uppercase, whitespace, punctuation are not', () {
       for (final c in ['A', 'Z', ' ', '\t', '_', '.', '/', '!', '?']) {
-        expect(isSkillNameChar(c), isFalse, reason: 'expected `$c` to not be a name char');
+        expect(
+          isSkillNameChar(c),
+          isFalse,
+          reason: 'expected `$c` to not be a name char',
+        );
       }
     });
 

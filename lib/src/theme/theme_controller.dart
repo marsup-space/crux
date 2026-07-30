@@ -25,9 +25,9 @@ class ThemeController extends ChangeNotifier {
   ThemeController._({
     required this.registry,
     required this.configStore,
-    required CruxThemeData activeTheme,
+    required this._activeTheme,
     this.startupWarning,
-  }) : _activeTheme = activeTheme;
+  });
 
   static Future<ThemeController> create({
     required ThemeRegistry registry,

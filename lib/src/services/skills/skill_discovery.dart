@@ -55,19 +55,18 @@ class SkillParseFailure extends SkillParseError {
 }
 
 class MissingFrontmatterBlock extends SkillParseError {
-  const MissingFrontmatterBlock()
-      : super('SKILL.md must start with `---`.');
+  const MissingFrontmatterBlock() : super('SKILL.md must start with `---`.');
 }
 
 class YamlParseError extends SkillParseError {
   const YamlParseError(this.cause)
-      : super('Frontmatter is not valid YAML: $cause');
+    : super('Frontmatter is not valid YAML: $cause');
   final String cause;
 }
 
 class FrontmatterNotObject extends SkillParseError {
   const FrontmatterNotObject()
-      : super('Frontmatter must be a YAML mapping (key: value pairs).');
+    : super('Frontmatter must be a YAML mapping (key: value pairs).');
 }
 
 class MissingName extends SkillParseError {
@@ -76,15 +75,19 @@ class MissingName extends SkillParseError {
 
 class InvalidName extends SkillParseError {
   const InvalidName(this.name)
-      : super('Field `name` must match `[a-z0-9][a-z0-9-]*` (lowercase '
-            'letters, digits, hyphens; no leading hyphen). Got: $name.');
+    : super(
+        'Field `name` must match `[a-z0-9][a-z0-9-]*` (lowercase '
+        'letters, digits, hyphens; no leading hyphen). Got: $name.',
+      );
   final String name;
 }
 
 class NameFolderMismatch extends SkillParseError {
   const NameFolderMismatch(this.frontmatterName, this.folderName)
-      : super('Frontmatter `name` ($frontmatterName) must match the '
-            'folder name ($folderName).');
+    : super(
+        'Frontmatter `name` ($frontmatterName) must match the '
+        'folder name ($folderName).',
+      );
   final String frontmatterName;
   final String folderName;
 }
@@ -99,8 +102,10 @@ class EmptyDescription extends SkillParseError {
 
 class DescriptionTooLong extends SkillParseError {
   const DescriptionTooLong(this.length)
-      : super('Field `description` must be ≤ 1024 characters '
-            '(got $length).');
+    : super(
+        'Field `description` must be ≤ 1024 characters '
+        '(got $length).',
+      );
   final int length;
 }
 
@@ -242,13 +247,15 @@ SkillParseResult parseSkillContent({
     return SkillParseResult.error(DescriptionTooLong(description.length));
   }
 
-  return SkillParseResult.ok(SkillInfo(
-    name: name,
-    description: description,
-    location: location,
-    baseDirectory: baseDirectory,
-    content: split.body,
-  ));
+  return SkillParseResult.ok(
+    SkillInfo(
+      name: name,
+      description: description,
+      location: location,
+      baseDirectory: baseDirectory,
+      content: split.body,
+    ),
+  );
 }
 
 /// Result of parsing one SKILL.md. Either [info] is non-null (parse
@@ -261,8 +268,7 @@ class SkillParseResult {
 
   const SkillParseResult._({this.info, this.error});
 
-  factory SkillParseResult.ok(SkillInfo info) =>
-      SkillParseResult._(info: info);
+  factory SkillParseResult.ok(SkillInfo info) => SkillParseResult._(info: info);
 
   factory SkillParseResult.error(SkillParseError error) =>
       SkillParseResult._(error: error);
@@ -316,7 +322,8 @@ String _homeDir() {
   // thing; for the global dirs here we use whatever `HOME` /
   // `USERPROFILE` says, since `.claude/` and `.agents/` are
   // XDG-style cross-platform.
-  return Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ??
+  return Platform.environment['HOME'] ??
+      Platform.environment['USERPROFILE'] ??
       Directory.systemTemp.path;
 }
 

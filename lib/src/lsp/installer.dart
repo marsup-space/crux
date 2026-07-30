@@ -28,7 +28,8 @@ import 'spawn_util.dart';
 /// True when LSP auto-download is disabled (OpenCode's
 /// `disableLspDownload` runtime flag, as an env var).
 bool get lspDownloadDisabled =>
-    _downloadDisabledOverride ?? Platform.environment['CRUX_DISABLE_LSP_DOWNLOAD'] == '1';
+    _downloadDisabledOverride ??
+    Platform.environment['CRUX_DISABLE_LSP_DOWNLOAD'] == '1';
 
 /// Test-only override for [lspDownloadDisabled].
 bool? _downloadDisabledOverride;
@@ -166,8 +167,8 @@ String? npmInstalled(String binaryName) {
 /// --prefix`, then return the shim for [binaryName] (defaults to the
 /// package name). Returns null if npm is unavailable or install fails.
 Future<String?> npmInstall(String packageSpec, [String? binaryName]) async {
-  final npm = whichBinary(Platform.isWindows ? 'npm.cmd' : 'npm') ??
-      whichBinary('npm');
+  final npm =
+      whichBinary(Platform.isWindows ? 'npm.cmd' : 'npm') ?? whichBinary('npm');
   if (npm == null) return null;
 
   final binDir = lspBinDir();
@@ -176,15 +177,18 @@ Future<String?> npmInstall(String packageSpec, [String? binaryName]) async {
   ProcessResult result;
   try {
     result = await Process.run(npm, [
-      'install', '-g', '--prefix', binDir, packageSpec,
+      'install',
+      '-g',
+      '--prefix',
+      binDir,
+      packageSpec,
     ]).timeout(const Duration(minutes: 3));
   } catch (_) {
     return null;
   }
   if (result.exitCode != 0) return null;
 
-  final name = binaryName ??
-      packageSpec.split('/').last.split('@').first;
+  final name = binaryName ?? packageSpec.split('/').last.split('@').first;
   return npmInstalled(name);
 }
 
@@ -207,8 +211,8 @@ class ArchiveAsset {
       (filename.endsWith('.zip')
           ? 'zip'
           : filename.endsWith('.tar.xz')
-              ? 'tar.xz'
-              : 'tar.gz');
+          ? 'tar.xz'
+          : 'tar.gz');
 }
 
 /// Download [asset] and extract it into [destDir]. Returns true on
@@ -236,8 +240,9 @@ Future<bool> _download(String url, String path) async {
   try {
     var uri = Uri.parse(url);
     for (var redirects = 0; redirects < 5; redirects++) {
-      final request =
-          await client.getUrl(uri).timeout(const Duration(seconds: 30));
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 30));
       request.headers.set('user-agent', 'crux-lsp');
       final response = await request.close();
       if (response.statusCode == 200) {
@@ -273,8 +278,13 @@ Future<bool> _extract(String archive, String format, String destDir) async {
   if (format == 'zip') {
     final unzip = whichBinary('unzip');
     if (unzip != null) {
-      final result =
-          await Process.run(unzip, ['-o', '-q', archive, '-d', destDir]);
+      final result = await Process.run(unzip, [
+        '-o',
+        '-q',
+        archive,
+        '-d',
+        destDir,
+      ]);
       return result.exitCode == 0;
     }
     return _extractZipDart(archive, destDir);
@@ -315,19 +325,19 @@ Future<bool> _extractZipDart(String archivePath, String destDir) async {
       final extraLength = data.getUint16(offset + 30, Endian.little);
       final commentLength = data.getUint16(offset + 32, Endian.little);
       final localHeaderOffset = data.getUint32(offset + 42, Endian.little);
-      final name = utf8.decode(bytes.sublist(
-          offset + 46, offset + 46 + nameLength));
+      final name = utf8.decode(
+        bytes.sublist(offset + 46, offset + 46 + nameLength),
+      );
 
       if (!name.endsWith('/')) {
         // Local file header: skip its name/extra to reach the data.
-        final lhNameLen =
-            data.getUint16(localHeaderOffset + 26, Endian.little);
-        final lhExtraLen =
-            data.getUint16(localHeaderOffset + 28, Endian.little);
-        final dataStart =
-            localHeaderOffset + 30 + lhNameLen + lhExtraLen;
-        final compressed =
-            bytes.sublist(dataStart, dataStart + compressedSize);
+        final lhNameLen = data.getUint16(localHeaderOffset + 26, Endian.little);
+        final lhExtraLen = data.getUint16(
+          localHeaderOffset + 28,
+          Endian.little,
+        );
+        final dataStart = localHeaderOffset + 30 + lhNameLen + lhExtraLen;
+        final compressed = bytes.sublist(dataStart, dataStart + compressedSize);
 
         final List<int> content;
         if (method == 0) {
@@ -358,8 +368,9 @@ Future<dynamic> fetchJson(String url) async {
   try {
     var uri = Uri.parse(url);
     for (var redirects = 0; redirects < 3; redirects++) {
-      final request =
-          await client.getUrl(uri).timeout(const Duration(seconds: 20));
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 20));
       request.headers.set('user-agent', 'crux-lsp');
       request.headers.set('accept', 'application/json');
       final response = await request.close();
@@ -428,4 +439,3 @@ Future<void> chmodExecutable(String path) async {
 
 /// Binary name with the platform extension.
 String exeName(String base) => Platform.isWindows ? '$base.exe' : base;
-

@@ -89,8 +89,7 @@ class DeepSeekProvider extends OpenAICompatibleProvider
 
   /// The DeepSeek balance endpoint.
   /// [API docs](https://api-docs.deepseek.com/api/get-user-balance)
-  static const String _balanceApiUrl =
-      'https://api.deepseek.com/user/balance';
+  static const String _balanceApiUrl = 'https://api.deepseek.com/user/balance';
 
   /// The API key passed to [startCreditBalancePolling]. The
   /// mixin owns the timer / stream / cache, but the
@@ -101,10 +100,7 @@ class DeepSeekProvider extends OpenAICompatibleProvider
   String? _currentCreditBalanceApiKey;
 
   @override
-  void startCreditBalancePolling({
-    required String apiKey,
-    Duration? interval,
-  }) {
+  void startCreditBalancePolling({required String apiKey, Duration? interval}) {
     _currentCreditBalanceApiKey = apiKey;
     super.startCreditBalancePolling(apiKey: apiKey, interval: interval);
   }
@@ -140,13 +136,14 @@ class DeepSeekProvider extends OpenAICompatibleProvider
           final request = await client
               .getUrl(Uri.parse(_balanceApiUrl))
               .timeout(const Duration(seconds: 10));
-          request.headers
-              .set(HttpHeaders.authorizationHeader, 'Bearer $key');
-          request.headers
-              .set(HttpHeaders.contentTypeHeader, 'application/json');
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
+          request.headers.set(
+            HttpHeaders.contentTypeHeader,
+            'application/json',
+          );
           final response = await request.close().timeout(
-                const Duration(seconds: 10),
-              );
+            const Duration(seconds: 10),
+          );
           if (response.statusCode != 200) {
             throw CreditBalanceError(
               CreditBalanceErrorKind.network,
@@ -252,12 +249,14 @@ class DeepSeekProvider extends OpenAICompatibleProvider
           'Malformed balance_infos entry',
         );
       }
-      infos.add(BalanceInfo(
-        currency: currency,
-        totalBalance: total,
-        grantedBalance: granted,
-        toppedUpBalance: toppedUp,
-      ));
+      infos.add(
+        BalanceInfo(
+          currency: currency,
+          totalBalance: total,
+          grantedBalance: granted,
+          toppedUpBalance: toppedUp,
+        ),
+      );
     }
 
     return CreditBalance(

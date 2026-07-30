@@ -40,10 +40,7 @@ import 'package:path/path.dart' as p;
 /// Unreadable files (permission errors, broken symlinks) are
 /// silently skipped with no warning — Crux does not fail the
 /// session over a misconfigured `AGENTS.md`.
-String? discoverProjectNotes({
-  required String cwd,
-  required String worktree,
-}) {
+String? discoverProjectNotes({required String cwd, required String worktree}) {
   if (!Directory(worktree).existsSync()) {
     // Worktree must exist; if not, the caller passed a bad path.
     // Treat the walk as a no-op rather than throwing — the system

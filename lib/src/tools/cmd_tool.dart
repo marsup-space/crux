@@ -25,7 +25,10 @@ class CmdTool extends ShellBase {
       'powershell for complex pipelines or .NET interop.';
 
   @override
-  ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'}) {
+  ShellInvocation resolveInvocation(
+    String command, {
+    String encoding = 'utf8',
+  }) {
     final codepage = _toChcp(encoding);
     final collapsed = command.replaceAll('\r\n', '\n').replaceAll('\n', ' ');
     final preamble = codepage != null ? '@chcp $codepage > nul\r\n' : '';

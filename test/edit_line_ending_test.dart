@@ -88,7 +88,11 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
+        ..registerDefaults(
+          tracker,
+          sessionStore: SessionStore(db),
+          webProviderRegistry: WebProviderRegistry(),
+        );
       executor = ToolExecutor(registry);
     });
 
@@ -104,67 +108,71 @@ void main() {
       workingDirectory: tempDir.path,
     );
 
-    test('LF file + LF oldString: matches via ExactMatcher, stays LF',
-        () async {
-      final filePath = '${tempDir.path}/lf.txt';
-      await File(filePath).writeAsString('alpha\nbeta\ngamma');
+    test(
+      'LF file + LF oldString: matches via ExactMatcher, stays LF',
+      () async {
+        final filePath = '${tempDir.path}/lf.txt';
+        await File(filePath).writeAsString('alpha\nbeta\ngamma');
 
-      final file = File(filePath);
-      final mtime = file.statSync().modified.millisecondsSinceEpoch;
-      await tracker.recordRead(filePath, mtime);
+        final file = File(filePath);
+        final mtime = file.statSync().modified.millisecondsSinceEpoch;
+        await tracker.recordRead(filePath, mtime);
 
-      final result = await executor.executeTool(
-        ToolCall(
-          callId: 'c1',
-          name: 'edit',
-          input: {
-            'filePath': filePath,
-            'oldString': 'beta',
-            'newString': 'BETA',
-            'intent': 'baseline LF',
-          },
-        ),
-        ctx(),
-      );
+        final result = await executor.executeTool(
+          ToolCall(
+            callId: 'c1',
+            name: 'edit',
+            input: {
+              'filePath': filePath,
+              'oldString': 'beta',
+              'newString': 'BETA',
+              'intent': 'baseline LF',
+            },
+          ),
+          ctx(),
+        );
 
-      expect(result.output, contains('Replaced'));
-      expect(await file.readAsString(), 'alpha\nBETA\ngamma');
-      expect(await file.readAsBytes(), isNot(contains(0x0D)));
-    });
+        expect(result.output, contains('Replaced'));
+        expect(await file.readAsString(), 'alpha\nBETA\ngamma');
+        expect(await file.readAsBytes(), isNot(contains(0x0D)));
+      },
+    );
 
-    test('CRLF file + CRLF oldString: matches via ExactMatcher, stays CRLF',
-        () async {
-      final filePath = '${tempDir.path}/crlf.txt';
-      await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
+    test(
+      'CRLF file + CRLF oldString: matches via ExactMatcher, stays CRLF',
+      () async {
+        final filePath = '${tempDir.path}/crlf.txt';
+        await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
 
-      final file = File(filePath);
-      final mtime = file.statSync().modified.millisecondsSinceEpoch;
-      await tracker.recordRead(filePath, mtime);
+        final file = File(filePath);
+        final mtime = file.statSync().modified.millisecondsSinceEpoch;
+        await tracker.recordRead(filePath, mtime);
 
-      final result = await executor.executeTool(
-        ToolCall(
-          callId: 'c2',
-          name: 'edit',
-          input: {
-            'filePath': filePath,
-            'oldString': 'beta',
-            'newString': 'BETA',
-            'intent': 'baseline CRLF',
-          },
-        ),
-        ctx(),
-      );
+        final result = await executor.executeTool(
+          ToolCall(
+            callId: 'c2',
+            name: 'edit',
+            input: {
+              'filePath': filePath,
+              'oldString': 'beta',
+              'newString': 'BETA',
+              'intent': 'baseline CRLF',
+            },
+          ),
+          ctx(),
+        );
 
-      expect(result.output, contains('Replaced'));
-      expect(await file.readAsString(), 'alpha\r\nBETA\r\ngamma');
-      final bytes = await file.readAsBytes();
-      for (var i = 0; i < bytes.length; i++) {
-        if (bytes[i] == 0x0A) {
-          expect(i, greaterThan(0), reason: 'bare LF at byte $i');
-          expect(bytes[i - 1], 0x0D, reason: 'LF not preceded by CR');
+        expect(result.output, contains('Replaced'));
+        expect(await file.readAsString(), 'alpha\r\nBETA\r\ngamma');
+        final bytes = await file.readAsBytes();
+        for (var i = 0; i < bytes.length; i++) {
+          if (bytes[i] == 0x0A) {
+            expect(i, greaterThan(0), reason: 'bare LF at byte $i');
+            expect(bytes[i - 1], 0x0D, reason: 'LF not preceded by CR');
+          }
         }
-      }
-    });
+      },
+    );
   });
 
   // -----------------------------------------------------------------
@@ -196,7 +204,11 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
+        ..registerDefaults(
+          tracker,
+          sessionStore: SessionStore(db),
+          webProviderRegistry: WebProviderRegistry(),
+        );
       executor = ToolExecutor(registry);
     });
 
@@ -212,8 +224,7 @@ void main() {
       workingDirectory: tempDir.path,
     );
 
-    Future<({ToolResult result, String content, List<int> bytes})>
-        runEdit({
+    Future<({ToolResult result, String content, List<int> bytes})> runEdit({
       required String filePath,
       required String oldString,
       required String newString,
@@ -243,238 +254,230 @@ void main() {
       );
     }
 
-    test(
-      'CRLF file + LF single-line oldString (no line ending in the '
-      'pattern): ExactMatcher handles it — the bug only fires when '
-      'the pattern itself contains a line ending that mismatches',
-      () async {
-        // Counterexample: when the oldString is a single token
-        // with no line endings in it (e.g. "beta"), ExactMatcher
-        // does a pure byte search and finds it cleanly. The
-        // file's CRLF doesn't matter because the matched region
-        // is in the middle of a line, between two \r\n. This is
-        // the "easy" sub-case of CRLF-vs-LF: a model that
-        // produces a bare-token oldString never hits the bug.
-        final filePath = '${tempDir.path}/crlf_lf_single.txt';
-        await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
+    test('CRLF file + LF single-line oldString (no line ending in the '
+        'pattern): ExactMatcher handles it — the bug only fires when '
+        'the pattern itself contains a line ending that mismatches', () async {
+      // Counterexample: when the oldString is a single token
+      // with no line endings in it (e.g. "beta"), ExactMatcher
+      // does a pure byte search and finds it cleanly. The
+      // file's CRLF doesn't matter because the matched region
+      // is in the middle of a line, between two \r\n. This is
+      // the "easy" sub-case of CRLF-vs-LF: a model that
+      // produces a bare-token oldString never hits the bug.
+      final filePath = '${tempDir.path}/crlf_lf_single.txt';
+      await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'beta', // single token, no line endings
-          newString: 'BETA',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'beta', // single token, no line endings
+        newString: 'BETA',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        // No bug here: the replacement is exactly the matched
-        // span ("beta"), and the surrounding \r\n is preserved.
-        expect(r.content, 'alpha\r\nBETA\r\ngamma');
+      expect(r.result.output, contains('Replaced'));
+      // No bug here: the replacement is exactly the matched
+      // span ("beta"), and the surrounding \r\n is preserved.
+      expect(r.content, 'alpha\r\nBETA\r\ngamma');
 
-        // Sanity: the on-disk bytes are still CRLF. The
-        // normalizeToLineEnding pass at the end of the edit
-        // preserves the file's convention.
-        for (var i = 0; i < r.bytes.length; i++) {
-          if (r.bytes[i] == 0x0A) {
-            expect(i, greaterThan(0));
-            expect(r.bytes[i - 1], 0x0D,
-                reason: 'LF at byte $i not preceded by CR: '
-                    '${r.bytes}');
-          }
+      // Sanity: the on-disk bytes are still CRLF. The
+      // normalizeToLineEnding pass at the end of the edit
+      // preserves the file's convention.
+      for (var i = 0; i < r.bytes.length; i++) {
+        if (r.bytes[i] == 0x0A) {
+          expect(i, greaterThan(0));
+          expect(
+            r.bytes[i - 1],
+            0x0D,
+            reason:
+                'LF at byte $i not preceded by CR: '
+                '${r.bytes}',
+          );
         }
-      },
-    );
+      }
+    });
 
-    test(
-      'CRLF file + LF oldString ending in \\n: edit tool normalizes '
-      'both sides, the match is byte-exact, no byte is eaten',
-      () async {
-        // The oldString "alpha\nbeta" has a line ending; the
-        // file uses CRLF. Without the fix, IndentationMatcher's
-        // matchLength was `pattern.length` = 10, which is short
-        // by 1 byte per line break in the pattern, and the
-        // 'a' of "beta" would be eaten. With the fix, the
-        // oldString is normalized to CRLF before matching, so
-        // ExactMatcher does a byte-exact match on the full
-        // 11-byte span.
-        final filePath = '${tempDir.path}/crlf_lf_with_newline.txt';
-        await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
+    test('CRLF file + LF oldString ending in \\n: edit tool normalizes '
+        'both sides, the match is byte-exact, no byte is eaten', () async {
+      // The oldString "alpha\nbeta" has a line ending; the
+      // file uses CRLF. Without the fix, IndentationMatcher's
+      // matchLength was `pattern.length` = 10, which is short
+      // by 1 byte per line break in the pattern, and the
+      // 'a' of "beta" would be eaten. With the fix, the
+      // oldString is normalized to CRLF before matching, so
+      // ExactMatcher does a byte-exact match on the full
+      // 11-byte span.
+      final filePath = '${tempDir.path}/crlf_lf_with_newline.txt';
+      await File(filePath).writeAsString('alpha\r\nbeta\r\ngamma');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'alpha\nbeta',
-          newString: 'ALPHA\nBETA',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'alpha\nbeta',
+        newString: 'ALPHA\nBETA',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        // The replacement covers exactly the matched span
-        // ("alpha\r\nbeta" → "ALPHA\r\nBETA"); the trailing
-        // "\r\ngamma" is preserved.
-        expect(r.content, 'ALPHA\r\nBETA\r\ngamma');
-        // All LFs in the result are preceded by CR (the file
-        // stays CRLF throughout).
-        for (var i = 0; i < r.bytes.length; i++) {
-          if (r.bytes[i] == 0x0A) {
-            expect(i, greaterThan(0));
-            expect(r.bytes[i - 1], 0x0D,
-                reason: 'LF at byte $i not preceded by CR: '
-                    '${r.bytes}');
-          }
+      expect(r.result.output, contains('Replaced'));
+      // The replacement covers exactly the matched span
+      // ("alpha\r\nbeta" → "ALPHA\r\nBETA"); the trailing
+      // "\r\ngamma" is preserved.
+      expect(r.content, 'ALPHA\r\nBETA\r\ngamma');
+      // All LFs in the result are preceded by CR (the file
+      // stays CRLF throughout).
+      for (var i = 0; i < r.bytes.length; i++) {
+        if (r.bytes[i] == 0x0A) {
+          expect(i, greaterThan(0));
+          expect(
+            r.bytes[i - 1],
+            0x0D,
+            reason:
+                'LF at byte $i not preceded by CR: '
+                '${r.bytes}',
+          );
         }
-      },
-    );
+      }
+    });
 
-    test(
-      'LF file + CRLF oldString (single token, no line ending in '
-      'pattern): ExactMatcher handles it after normalization',
-      () async {
-        // The oldString is a single line with NO line ending in
-        // it. ExactMatcher's byte search works because the file
-        // (already in LF) byte-matches a single line of
-        // content. This is the easy sub-case of mismatched
-        // line endings.
-        final filePath = '${tempDir.path}/lf_crlf_single.txt';
-        await File(filePath).writeAsString('alpha\nbeta\ngamma');
+    test('LF file + CRLF oldString (single token, no line ending in '
+        'pattern): ExactMatcher handles it after normalization', () async {
+      // The oldString is a single line with NO line ending in
+      // it. ExactMatcher's byte search works because the file
+      // (already in LF) byte-matches a single line of
+      // content. This is the easy sub-case of mismatched
+      // line endings.
+      final filePath = '${tempDir.path}/lf_crlf_single.txt';
+      await File(filePath).writeAsString('alpha\nbeta\ngamma');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'beta',
-          newString: 'BETA',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'beta',
+        newString: 'BETA',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        expect(r.content, 'alpha\nBETA\ngamma');
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
+      expect(r.result.output, contains('Replaced'));
+      expect(r.content, 'alpha\nBETA\ngamma');
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
 
-    test(
-      'LF file + CRLF single-line oldString (trailing \\r in '
-      'pattern): a known edge case the edit tool does not yet '
-      'handle — IndentationMatcher wins with a wrong-length span',
-      () async {
-        // KNOWN ISSUE. This test documents the residual case:
-        // when the oldString is a single token followed by a
-        // stray line-ending byte (a Mac-style \r on an
-        // otherwise-LF file), the IndentationMatcher's
-        // matchLength is `pattern.length`, which is one byte
-        // longer than the actual line content. The fix would
-        // either:
-        //   (a) strip trailing \r from the oldString when the
-        //       target line ending doesn't include \r, or
-        //   (b) make IndentationMatcher compute the content
-        //       span using the file's actual line ending.
-        //
-        // For now, this test pins the buggy behavior so a
-        // future fix can be validated by flipping the expected
-        // string. The .gitattributes fix doesn't apply here
-        // (no .gitattributes in this test).
-        final filePath = '${tempDir.path}/lf_crlf_stray.txt';
-        await File(filePath).writeAsString('alpha\nbeta\ngamma');
+    test('LF file + CRLF single-line oldString (trailing \\r in '
+        'pattern): a known edge case the edit tool does not yet '
+        'handle — IndentationMatcher wins with a wrong-length span', () async {
+      // KNOWN ISSUE. This test documents the residual case:
+      // when the oldString is a single token followed by a
+      // stray line-ending byte (a Mac-style \r on an
+      // otherwise-LF file), the IndentationMatcher's
+      // matchLength is `pattern.length`, which is one byte
+      // longer than the actual line content. The fix would
+      // either:
+      //   (a) strip trailing \r from the oldString when the
+      //       target line ending doesn't include \r, or
+      //   (b) make IndentationMatcher compute the content
+      //       span using the file's actual line ending.
+      //
+      // For now, this test pins the buggy behavior so a
+      // future fix can be validated by flipping the expected
+      // string. The .gitattributes fix doesn't apply here
+      // (no .gitattributes in this test).
+      final filePath = '${tempDir.path}/lf_crlf_stray.txt';
+      await File(filePath).writeAsString('alpha\nbeta\ngamma');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'beta\r',
-          newString: 'BETA',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'beta\r',
+        newString: 'BETA',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        // CURRENT (BUGGY) RESULT: the matched span was
-        // "beta\n" (5 chars, since the file's "beta\n" is the
-        // only 5-byte sequence starting with "beta"); the
-        // surrounding \n is consumed by the replacement.
-        expect(r.content, 'alpha\nBETAgamma',
-            reason: 'documents the residual edge case — '
-                'flip to "alpha\nBETA\ngamma" once the fix lands');
-      },
-    );
+      expect(r.result.output, contains('Replaced'));
+      // CURRENT (BUGGY) RESULT: the matched span was
+      // "beta\n" (5 chars, since the file's "beta\n" is the
+      // only 5-byte sequence starting with "beta"); the
+      // surrounding \n is consumed by the replacement.
+      expect(
+        r.content,
+        'alpha\nBETAgamma',
+        reason:
+            'documents the residual edge case — '
+            'flip to "alpha\nBETA\ngamma" once the fix lands',
+      );
+    });
 
-    test(
-      'CRLF file + LF multi-line oldString: edit is byte-exact',
-      () async {
-        final filePath = '${tempDir.path}/crlf_lf_multi.txt';
-        await File(filePath).writeAsString('first\r\nsecond\r\nthird');
+    test('CRLF file + LF multi-line oldString: edit is byte-exact', () async {
+      final filePath = '${tempDir.path}/crlf_lf_multi.txt';
+      await File(filePath).writeAsString('first\r\nsecond\r\nthird');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'first\nsecond',
-          newString: 'FIRST\nSECOND',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'first\nsecond',
+        newString: 'FIRST\nSECOND',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        expect(r.content, 'FIRST\r\nSECOND\r\nthird');
-        for (var i = 0; i < r.bytes.length; i++) {
-          if (r.bytes[i] == 0x0A) {
-            expect(i, greaterThan(0));
-            expect(r.bytes[i - 1], 0x0D);
-          }
+      expect(r.result.output, contains('Replaced'));
+      expect(r.content, 'FIRST\r\nSECOND\r\nthird');
+      for (var i = 0; i < r.bytes.length; i++) {
+        if (r.bytes[i] == 0x0A) {
+          expect(i, greaterThan(0));
+          expect(r.bytes[i - 1], 0x0D);
         }
-      },
-    );
+      }
+    });
 
-    test(
-      'LF file + CRLF multi-line oldString: mirrored',
-      () async {
-        final filePath = '${tempDir.path}/lf_crlf_multi.txt';
-        await File(filePath).writeAsString('first\nsecond\nthird');
+    test('LF file + CRLF multi-line oldString: mirrored', () async {
+      final filePath = '${tempDir.path}/lf_crlf_multi.txt';
+      await File(filePath).writeAsString('first\nsecond\nthird');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'first\r\nsecond',
-          newString: 'FIRST\r\nSECOND',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'first\r\nsecond',
+        newString: 'FIRST\r\nSECOND',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        expect(r.content, 'FIRST\nSECOND\nthird');
-        // The newString was CRLF, but the file is LF — the
-        // normalizeToLineEnding pass at the end of the edit
-        // converts it back to LF. So the file stays LF.
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
+      expect(r.result.output, contains('Replaced'));
+      expect(r.content, 'FIRST\nSECOND\nthird');
+      // The newString was CRLF, but the file is LF — the
+      // normalizeToLineEnding pass at the end of the edit
+      // converts it back to LF. So the file stays LF.
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
 
-    test(
-      'CRLF file + LF oldString that exactly spans two lines: '
-      'no surrounding byte is eaten',
-      () async {
-        final filePath = '${tempDir.path}/span.txt';
-        await File(filePath).writeAsString('a\r\nb\r\nc\r\nd\r\ne');
+    test('CRLF file + LF oldString that exactly spans two lines: '
+        'no surrounding byte is eaten', () async {
+      final filePath = '${tempDir.path}/span.txt';
+      await File(filePath).writeAsString('a\r\nb\r\nc\r\nd\r\ne');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'b\nc',
-          newString: 'B',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'b\nc',
+        newString: 'B',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        expect(r.content, 'a\r\nB\r\nd\r\ne');
-        // The file has 4 lines (a, B, d, e), joined by 3
-        // line endings. The match correctly preserved all
-        // three surrounding \r\n.
-        expect(r.content.split('\n').length, 4,
-            reason: '4 lines: a, B, d, e — got: ${r.content}');
-      },
-    );
+      expect(r.result.output, contains('Replaced'));
+      expect(r.content, 'a\r\nB\r\nd\r\ne');
+      // The file has 4 lines (a, B, d, e), joined by 3
+      // line endings. The match correctly preserved all
+      // three surrounding \r\n.
+      expect(
+        r.content.split('\n').length,
+        4,
+        reason: '4 lines: a, B, d, e — got: ${r.content}',
+      );
+    });
 
-    test(
-      'replaceAll with line-ending mismatch: every occurrence '
-      'is replaced, no byte is eaten',
-      () async {
-        final filePath = '${tempDir.path}/replaceall.txt';
-        await File(filePath).writeAsString(
-          'foo\r\nbar\r\nfoo\r\nbaz\r\nfoo',
-        );
+    test('replaceAll with line-ending mismatch: every occurrence '
+        'is replaced, no byte is eaten', () async {
+      final filePath = '${tempDir.path}/replaceall.txt';
+      await File(filePath).writeAsString('foo\r\nbar\r\nfoo\r\nbaz\r\nfoo');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'foo',
-          newString: 'FOO',
-          replaceAll: true,
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'foo',
+        newString: 'FOO',
+        replaceAll: true,
+      );
 
-        expect(r.result.output, contains('Replaced 3 occurrence'),
-            reason: 'got: ${r.result.output}');
-        expect(r.content, 'FOO\r\nbar\r\nFOO\r\nbaz\r\nFOO');
-      },
-    );
+      expect(
+        r.result.output,
+        contains('Replaced 3 occurrence'),
+        reason: 'got: ${r.result.output}',
+      );
+      expect(r.content, 'FOO\r\nbar\r\nFOO\r\nbaz\r\nFOO');
+    });
   });
 
   // -----------------------------------------------------------------
@@ -490,8 +493,7 @@ void main() {
     final indent = IndentationMatcher();
     final whitespace = WhitespaceMatcher();
 
-    test('ExactMatcher: strict byte match — no cross-ending match',
-        () {
+    test('ExactMatcher: strict byte match — no cross-ending match', () {
       expect(
         exact.findMatches('a\r\nb', 'a\nb', false),
         isNull,
@@ -503,140 +505,141 @@ void main() {
         reason: 'LF content vs CRLF pattern must not match',
       );
       // Matching endings DO match.
+      expect(exact.findMatches('a\r\nb', 'a\r\nb', false), isNotNull);
+      expect(exact.findMatches('a\nb', 'a\nb', false), isNotNull);
+    });
+
+    test('IndentationMatcher: matches across CRLF/LF, but matchLength '
+        'is short by one byte per line break in the pattern', () {
+      // Content is CRLF, pattern is LF. IndentationMatcher
+      // matches (because trimRight eats the \r), but the
+      // matchLength is `pattern.length` = 3, so the span
+      // covered is content[3..6] = "b\r\n" — missing "c".
+      final result = indent.findMatches('a\r\nb\r\nc\r\nd\r\ne', 'b\nc', false);
+      expect(result, isNotNull);
+      expect(result!.positions, [3]);
       expect(
-        exact.findMatches('a\r\nb', 'a\r\nb', false),
-        isNotNull,
+        result.matchLength,
+        isNull,
+        reason:
+            'IndentationMatcher does not set matchLength; '
+            'caller defaults to pattern.length',
       );
+      // Demonstrating the consequence: the edit tool
+      // computes the replacement span as
+      // position + pattern.length = 3 + 3 = 6.
+      // content.substring(3, 6) is "b\r\n", not "b\r\nc".
+      const pattern = 'b\nc';
+      final start = result.positions.first;
+      final end = start + pattern.length;
       expect(
-        exact.findMatches('a\nb', 'a\nb', false),
-        isNotNull,
+        'a\r\nb\r\nc\r\nd\r\ne'.substring(start, end),
+        'b\r\n',
+        reason:
+            'THIS is the bug: the matched-and-replaced span '
+            'is 1 byte short, so the next char ("c") gets eaten',
       );
     });
 
-    test(
-      'IndentationMatcher: matches across CRLF/LF, but matchLength '
-      'is short by one byte per line break in the pattern',
-      () {
-        // Content is CRLF, pattern is LF. IndentationMatcher
-        // matches (because trimRight eats the \r), but the
-        // matchLength is `pattern.length` = 3, so the span
-        // covered is content[3..6] = "b\r\n" — missing "c".
-        final result = indent.findMatches(
-          'a\r\nb\r\nc\r\nd\r\ne',
-          'b\nc',
-          false,
-        );
-        expect(result, isNotNull);
-        expect(result!.positions, [3]);
-        expect(result.matchLength, isNull,
-            reason: 'IndentationMatcher does not set matchLength; '
-                'caller defaults to pattern.length');
-        // Demonstrating the consequence: the edit tool
-        // computes the replacement span as
-        // position + pattern.length = 3 + 3 = 6.
-        // content.substring(3, 6) is "b\r\n", not "b\r\nc".
-        const pattern = 'b\nc';
-        final start = result.positions.first;
-        final end = start + pattern.length;
-        expect('a\r\nb\r\nc\r\nd\r\ne'.substring(start, end), 'b\r\n',
-            reason: 'THIS is the bug: the matched-and-replaced span '
-                'is 1 byte short, so the next char ("c") gets eaten');
-      },
-    );
+    test('WhitespaceMatcher: matches across CRLF/LF AND computes the '
+        'correct byte span — proving the underlying math is fine', () {
+      // Same input as the IndentationMatcher test above, but
+      // WhitespaceMatcher correctly reports a 4-char span.
+      final result = whitespace.findMatches(
+        'a\r\nb\r\nc\r\nd\r\ne',
+        'b\nc',
+        false,
+      );
+      expect(result, isNotNull);
+      expect(result!.positions, [3]);
+      expect(
+        result.matchLength,
+        4,
+        reason:
+            'WhitespaceMatcher must report the actual byte '
+            'span (4 chars: "b", \\r, \\n, "c")',
+      );
+      final start = result.positions.first;
+      final end = start + result.matchLength!;
+      expect(
+        'a\r\nb\r\nc\r\nd\r\ne'.substring(start, end),
+        'b\r\nc',
+        reason: 'WhitespaceMatcher replaces the right span',
+      );
+    });
 
-    test(
-      'WhitespaceMatcher: matches across CRLF/LF AND computes the '
-      'correct byte span — proving the underlying math is fine',
-      () {
-        // Same input as the IndentationMatcher test above, but
-        // WhitespaceMatcher correctly reports a 4-char span.
-        final result = whitespace.findMatches(
-          'a\r\nb\r\nc\r\nd\r\ne',
-          'b\nc',
-          false,
-        );
-        expect(result, isNotNull);
-        expect(result!.positions, [3]);
-        expect(result.matchLength, 4,
-            reason: 'WhitespaceMatcher must report the actual byte '
-                'span (4 chars: "b", \\r, \\n, "c")');
-        final start = result.positions.first;
-        final end = start + result.matchLength!;
-        expect('a\r\nb\r\nc\r\nd\r\ne'.substring(start, end), 'b\r\nc',
-            reason: 'WhitespaceMatcher replaces the right span');
-      },
-    );
+    test('WhitespaceMatcher: trailing-line-ending patterns are short by '
+        'one byte (the .trim() in _normalize eats the trailing CR/LF)', () {
+      // A second, more subtle bug: the WhitespaceMatcher's
+      // _normalize() calls .trim() on the pattern, which
+      // strips the trailing CRLF. The position map is then
+      // built from the un-trimmed content, but the match
+      // length is computed against the trimmed pattern. The
+      // result: a pattern ending in CRLF matches, but the
+      // matchLength doesn't include the trailing CRLF.
+      //
+      // This bug is different from IndentationMatcher's bug:
+      // - IndentationMatcher: missing 1 byte per line break
+      //   in the pattern (so "first\nsecond" misses 1 byte
+      //   for the \n).
+      // - WhitespaceMatcher: missing 1 byte total, and only
+      //   for the trailing line ending.
+      //
+      // In practice this rarely matters because the
+      // IndentationMatcher's bug wins in the fallback chain
+      // (it returns a non-null result first). But it's worth
+      // pinning down so a future fix to IndentationMatcher
+      // doesn't accidentally make WhitespaceMatcher's bug
+      // visible to integration tests.
+      final result = whitespace.findMatches(
+        'aaa\r\nbbb',
+        'aaa\r\n', // CRLF in the pattern
+        false,
+      );
+      expect(result, isNotNull);
+      // CURRENT (BUGGY) RESULT: matchLength = 3, so the
+      // matched-and-replaced span is "aaa" (3 bytes), not
+      // "aaa\r\n" (5 bytes). The trailing \r\n is left in
+      // the file untouched.
+      final start = result!.positions.first;
+      final end = start + result.matchLength!;
+      expect(
+        'aaa\r\nbbb'.substring(start, end),
+        'aaa',
+        reason:
+            'documents the WhitespaceMatcher trailing-'
+            'line-ending bug; should be "aaa\\r\\n" once fixed',
+      );
+    });
 
-    test(
-      'WhitespaceMatcher: trailing-line-ending patterns are short by '
-      'one byte (the .trim() in _normalize eats the trailing CR/LF)',
-      () {
-        // A second, more subtle bug: the WhitespaceMatcher's
-        // _normalize() calls .trim() on the pattern, which
-        // strips the trailing CRLF. The position map is then
-        // built from the un-trimmed content, but the match
-        // length is computed against the trimmed pattern. The
-        // result: a pattern ending in CRLF matches, but the
-        // matchLength doesn't include the trailing CRLF.
-        //
-        // This bug is different from IndentationMatcher's bug:
-        // - IndentationMatcher: missing 1 byte per line break
-        //   in the pattern (so "first\nsecond" misses 1 byte
-        //   for the \n).
-        // - WhitespaceMatcher: missing 1 byte total, and only
-        //   for the trailing line ending.
-        //
-        // In practice this rarely matters because the
-        // IndentationMatcher's bug wins in the fallback chain
-        // (it returns a non-null result first). But it's worth
-        // pinning down so a future fix to IndentationMatcher
-        // doesn't accidentally make WhitespaceMatcher's bug
-        // visible to integration tests.
-        final result = whitespace.findMatches(
-          'aaa\r\nbbb',
-          'aaa\r\n', // CRLF in the pattern
-          false,
-        );
-        expect(result, isNotNull);
-        // CURRENT (BUGGY) RESULT: matchLength = 3, so the
-        // matched-and-replaced span is "aaa" (3 bytes), not
-        // "aaa\r\n" (5 bytes). The trailing \r\n is left in
-        // the file untouched.
-        final start = result!.positions.first;
-        final end = start + result.matchLength!;
-        expect('aaa\r\nbbb'.substring(start, end), 'aaa',
-            reason: 'documents the WhitespaceMatcher trailing-'
-                'line-ending bug; should be "aaa\\r\\n" once fixed');
-      },
-    );
-
-    test(
-      'WhitespaceMatcher: non-trailing line endings in the pattern '
-      'are handled correctly (position map is right for them)',
-      () {
-        // Pin down the part of WhitespaceMatcher that DOES work:
-        // line endings in the middle of the pattern. The position
-        // map captures the \r position (e.g. map[5]=5 for
-        // "first\r\nsecond..."), so the matched span correctly
-        // includes the full "\r\n" bytes between non-trailing
-        // text. Only the trailing-line-ending case in the
-        // previous test is buggy.
-        final result = whitespace.findMatches(
-          'first\r\nsecond\r\nthird',
-          'first\nsecond', // \n in the middle
-          false,
-        );
-        expect(result, isNotNull);
-        expect(result!.positions, [0]);
-        expect(result.matchLength, 13,
-            reason: 'should report the actual byte span: '
-                '"first\\r\\nsecond" is 13 chars');
-        expect(
-          'first\r\nsecond\r\nthird'.substring(0, result.matchLength!),
-          'first\r\nsecond',
-        );
-      },
-    );
+    test('WhitespaceMatcher: non-trailing line endings in the pattern '
+        'are handled correctly (position map is right for them)', () {
+      // Pin down the part of WhitespaceMatcher that DOES work:
+      // line endings in the middle of the pattern. The position
+      // map captures the \r position (e.g. map[5]=5 for
+      // "first\r\nsecond..."), so the matched span correctly
+      // includes the full "\r\n" bytes between non-trailing
+      // text. Only the trailing-line-ending case in the
+      // previous test is buggy.
+      final result = whitespace.findMatches(
+        'first\r\nsecond\r\nthird',
+        'first\nsecond', // \n in the middle
+        false,
+      );
+      expect(result, isNotNull);
+      expect(result!.positions, [0]);
+      expect(
+        result.matchLength,
+        13,
+        reason:
+            'should report the actual byte span: '
+            '"first\\r\\nsecond" is 13 chars',
+      );
+      expect(
+        'first\r\nsecond\r\nthird'.substring(0, result.matchLength!),
+        'first\r\nsecond',
+      );
+    });
   });
 
   // -----------------------------------------------------------------
@@ -648,7 +651,9 @@ void main() {
     final registry = ToolRegistry()
       ..registerDefaults(
         FileReadTracker(),
-        sessionStore: SessionStore(CruxDatabase.forTesting(NativeDatabase.memory())),
+        sessionStore: SessionStore(
+          CruxDatabase.forTesting(NativeDatabase.memory()),
+        ),
         webProviderRegistry: WebProviderRegistry(),
       );
     expect(registry.lookup('edit'), isA<EditTool>());
@@ -691,7 +696,11 @@ void main() {
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       tracker = FileReadTracker();
       registry = ToolRegistry()
-        ..registerDefaults(tracker, sessionStore: SessionStore(db), webProviderRegistry: WebProviderRegistry());
+        ..registerDefaults(
+          tracker,
+          sessionStore: SessionStore(db),
+          webProviderRegistry: WebProviderRegistry(),
+        );
       executor = ToolExecutor(registry);
     });
 
@@ -714,8 +723,7 @@ void main() {
       await f.writeAsString(content);
     }
 
-    Future<({ToolResult result, String content, List<int> bytes})>
-        runEdit({
+    Future<({ToolResult result, String content, List<int> bytes})> runEdit({
       required String filePath,
       required String oldString,
       required String newString,
@@ -760,10 +768,14 @@ void main() {
           newString: 'FIRST\nSECOND',
         );
 
-        expect(r.result.output, contains('Replaced'),
-            reason: 'with the target line ending applied, the '
-                'oldString should match cleanly, got: '
-                '${r.result.output}');
+        expect(
+          r.result.output,
+          contains('Replaced'),
+          reason:
+              'with the target line ending applied, the '
+              'oldString should match cleanly, got: '
+              '${r.result.output}',
+        );
         // The file is now correctly CRLF (the target), and the
         // replacement took the right bytes (no eating).
         expect(r.content, 'FIRST\r\nSECOND\r\nthird');
@@ -776,170 +788,162 @@ void main() {
       },
     );
 
-    test(
-      'eol=lf in .gitattributes: CRLF file is normalized to LF '
-      'before matching; the CRLF oldString matches cleanly',
-      () async {
-        await writeGitAttributes('*.txt eol=lf\n');
-        final filePath = '${tempDir.path}/doc.txt';
-        await File(filePath).writeAsString('first\r\nsecond\r\nthird');
+    test('eol=lf in .gitattributes: CRLF file is normalized to LF '
+        'before matching; the CRLF oldString matches cleanly', () async {
+      await writeGitAttributes('*.txt eol=lf\n');
+      final filePath = '${tempDir.path}/doc.txt';
+      await File(filePath).writeAsString('first\r\nsecond\r\nthird');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'first\r\nsecond',
-          newString: 'FIRST\r\nSECOND',
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'first\r\nsecond',
+        newString: 'FIRST\r\nSECOND',
+      );
+
+      expect(r.result.output, contains('Replaced'));
+      // The file is now correctly LF.
+      expect(r.content, 'FIRST\nSECOND\nthird');
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
+
+    test('eol=crlf in .gitattributes: even the trailing-line-ending '
+        'case (the WhitespaceMatcher bug) is fixed, because the '
+        'oldString is normalized to CRLF too at the matcher level', () async {
+      await writeGitAttributes('*.txt eol=crlf\n');
+      final filePath = '${tempDir.path}/doc.txt';
+      await File(filePath).writeAsString('aaa\r\nbbb');
+
+      // The trailing \r\n in the oldString would have hit the
+      // WhitespaceMatcher's trailing-CR bug, but with the file
+      // pre-normalized to CRLF, ExactMatcher matches it
+      // byte-exactly.
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'aaa\r\n',
+        newString: 'AAA',
+      );
+
+      expect(r.result.output, contains('Replaced'));
+      expect(r.content, 'AAAbbb');
+    });
+
+    test('eol=lf in .gitattributes: file written as LF on disk, even '
+        'when the agent passes CRLF in newString', () async {
+      await writeGitAttributes('*.txt eol=lf\n');
+      final filePath = '${tempDir.path}/doc.txt';
+      await File(filePath).writeAsString('hello');
+
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'hello',
+        newString: 'HI\r\nWORLD',
+      );
+
+      expect(r.result.output, contains('Replaced'));
+      // The newString's internal CRLF is converted to LF on
+      // write, so the file stays LF throughout.
+      expect(r.content, 'HI\nWORLD');
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
+
+    test('text attribute (no eol=) is treated as eol=lf', () async {
+      // The plain `text` attribute is git's "this is text,
+      // normalize to LF" marker; we honor that.
+      await writeGitAttributes('*.txt text\n');
+      final filePath = '${tempDir.path}/doc.txt';
+      // Mis-saved as CRLF; should be LF per .gitattributes.
+      await File(filePath).writeAsString('hello\r\nworld');
+
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'hello\r\nworld',
+        newString: 'HELLO\nWORLD',
+      );
+
+      expect(r.result.output, contains('Replaced'));
+      // The file is written in LF (the text attribute's target).
+      expect(r.content, 'HELLO\nWORLD');
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
+
+    test('binary attribute: file is left alone, even when the agent '
+        'passes LF/CRLF in oldString', () async {
+      // The .gitattributes marks this file binary. The edit
+      // tool should NOT normalize the line endings — a binary
+      // file has no concept of line endings. (In practice, the
+      // edit tool's matchers are unlikely to find a match in
+      // a binary blob, but the important guarantee is that we
+      // don't corrupt it by silently rewriting line endings.)
+      await writeGitAttributes('*.bin binary\n');
+      final filePath = '${tempDir.path}/blob.bin';
+      // The "content" contains line endings that look like
+      // text, but the file is declared binary.
+      await File(
+        filePath,
+      ).writeAsBytes([0x68, 0x69, 0x0D, 0x0A, 0x68, 0x69, 0x69]); // "hi\r\nhii"
+
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'hi\r\nhii',
+        newString: 'replaced',
+      );
+
+      // The edit may or may not match (the bytes are the same
+      // either way); the important assertion is that the
+      // file's bytes are NOT silently rewritten.
+      if (r.result.output.contains('Replaced')) {
+        // If the edit took, the file should still be the
+        // exact bytes the user requested — no CRLF
+        // normalization.
+        expect(
+          r.bytes,
+          utf8.encode('replaced'),
+          reason:
+              'binary file should not be line-ending '
+              'normalized on write',
         );
-
-        expect(r.result.output, contains('Replaced'));
-        // The file is now correctly LF.
-        expect(r.content, 'FIRST\nSECOND\nthird');
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
-
-    test(
-      'eol=crlf in .gitattributes: even the trailing-line-ending '
-      'case (the WhitespaceMatcher bug) is fixed, because the '
-      'oldString is normalized to CRLF too at the matcher level',
-      () async {
-        await writeGitAttributes('*.txt eol=crlf\n');
-        final filePath = '${tempDir.path}/doc.txt';
-        await File(filePath).writeAsString('aaa\r\nbbb');
-
-        // The trailing \r\n in the oldString would have hit the
-        // WhitespaceMatcher's trailing-CR bug, but with the file
-        // pre-normalized to CRLF, ExactMatcher matches it
-        // byte-exactly.
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'aaa\r\n',
-          newString: 'AAA',
+      } else {
+        // If the edit didn't match, the file should be
+        // untouched.
+        expect(
+          r.bytes,
+          [0x68, 0x69, 0x0D, 0x0A, 0x68, 0x69, 0x69],
+          reason:
+              'binary file with no match should be '
+              'left untouched, got: ${r.bytes}',
         );
+      }
+    });
 
-        expect(r.result.output, contains('Replaced'));
-        expect(r.content, 'AAAbbb');
-      },
-    );
+    test('.gitattributes lookup walks upward: a .gitattributes in a '
+        'parent directory applies to nested files', () async {
+      // Project root with a .gitattributes; nested dir has the
+      // file we edit.
+      final nested = Directory(p.join(tempDir.path, 'src', 'lib'))
+        ..createSync(recursive: true);
+      await File(
+        p.join(tempDir.path, '.gitattributes'),
+      ).writeAsString('**/*.dart eol=crlf\n');
+      final filePath = p.join(nested.path, 'main.dart');
+      await File(filePath).writeAsString('void main() {}\n');
 
-    test(
-      'eol=lf in .gitattributes: file written as LF on disk, even '
-      'when the agent passes CRLF in newString',
-      () async {
-        await writeGitAttributes('*.txt eol=lf\n');
-        final filePath = '${tempDir.path}/doc.txt';
-        await File(filePath).writeAsString('hello');
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'void main() {}\n',
+        newString: 'void main() { print("hi"); }\n',
+      );
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'hello',
-          newString: 'HI\r\nWORLD',
-        );
-
-        expect(r.result.output, contains('Replaced'));
-        // The newString's internal CRLF is converted to LF on
-        // write, so the file stays LF throughout.
-        expect(r.content, 'HI\nWORLD');
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
-
-    test(
-      'text attribute (no eol=) is treated as eol=lf',
-      () async {
-        // The plain `text` attribute is git's "this is text,
-        // normalize to LF" marker; we honor that.
-        await writeGitAttributes('*.txt text\n');
-        final filePath = '${tempDir.path}/doc.txt';
-        // Mis-saved as CRLF; should be LF per .gitattributes.
-        await File(filePath).writeAsString('hello\r\nworld');
-
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'hello\r\nworld',
-          newString: 'HELLO\nWORLD',
-        );
-
-        expect(r.result.output, contains('Replaced'));
-        // The file is written in LF (the text attribute's target).
-        expect(r.content, 'HELLO\nWORLD');
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
-
-    test(
-      'binary attribute: file is left alone, even when the agent '
-      'passes LF/CRLF in oldString',
-      () async {
-        // The .gitattributes marks this file binary. The edit
-        // tool should NOT normalize the line endings — a binary
-        // file has no concept of line endings. (In practice, the
-        // edit tool's matchers are unlikely to find a match in
-        // a binary blob, but the important guarantee is that we
-        // don't corrupt it by silently rewriting line endings.)
-        await writeGitAttributes('*.bin binary\n');
-        final filePath = '${tempDir.path}/blob.bin';
-        // The "content" contains line endings that look like
-        // text, but the file is declared binary.
-        await File(filePath).writeAsBytes(
-            [0x68, 0x69, 0x0D, 0x0A, 0x68, 0x69, 0x69]); // "hi\r\nhii"
-
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'hi\r\nhii',
-          newString: 'replaced',
-        );
-
-        // The edit may or may not match (the bytes are the same
-        // either way); the important assertion is that the
-        // file's bytes are NOT silently rewritten.
-        if (r.result.output.contains('Replaced')) {
-          // If the edit took, the file should still be the
-          // exact bytes the user requested — no CRLF
-          // normalization.
-          expect(r.bytes, utf8.encode('replaced'),
-              reason: 'binary file should not be line-ending '
-                  'normalized on write');
-        } else {
-          // If the edit didn't match, the file should be
-          // untouched.
-          expect(r.bytes, [0x68, 0x69, 0x0D, 0x0A, 0x68, 0x69, 0x69],
-              reason: 'binary file with no match should be '
-                  'left untouched, got: ${r.bytes}');
+      expect(r.result.output, contains('Replaced'));
+      // The file is in CRLF after the edit (per the
+      // upward .gitattributes lookup).
+      expect(r.content, 'void main() { print("hi"); }\r\n');
+      for (var i = 0; i < r.bytes.length; i++) {
+        if (r.bytes[i] == 0x0A) {
+          expect(i, greaterThan(0));
+          expect(r.bytes[i - 1], 0x0D);
         }
-      },
-    );
-
-    test(
-      '.gitattributes lookup walks upward: a .gitattributes in a '
-      'parent directory applies to nested files',
-      () async {
-        // Project root with a .gitattributes; nested dir has the
-        // file we edit.
-        final nested = Directory(p.join(tempDir.path, 'src', 'lib'))
-          ..createSync(recursive: true);
-        await File(p.join(tempDir.path, '.gitattributes'))
-            .writeAsString('**/*.dart eol=crlf\n');
-        final filePath = p.join(nested.path, 'main.dart');
-        await File(filePath).writeAsString('void main() {}\n');
-
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'void main() {}\n',
-          newString: 'void main() { print("hi"); }\n',
-        );
-
-        expect(r.result.output, contains('Replaced'));
-        // The file is in CRLF after the edit (per the
-        // upward .gitattributes lookup).
-        expect(r.content, 'void main() { print("hi"); }\r\n');
-        for (var i = 0; i < r.bytes.length; i++) {
-          if (r.bytes[i] == 0x0A) {
-            expect(i, greaterThan(0));
-            expect(r.bytes[i - 1], 0x0D);
-          }
-        }
-      },
-    );
+      }
+    });
 
     test(
       'later matching rule wins (gitattributes "last match wins" '
@@ -969,25 +973,22 @@ void main() {
       },
     );
 
-    test(
-      'no .gitattributes: edit tool falls back to file\'s detected '
-      'line ending (the original behavior is preserved)',
-      () async {
-        // No .gitattributes in tempDir.
-        final filePath = '${tempDir.path}/plain.txt';
-        await File(filePath).writeAsString('hello\nworld');
+    test('no .gitattributes: edit tool falls back to file\'s detected '
+        'line ending (the original behavior is preserved)', () async {
+      // No .gitattributes in tempDir.
+      final filePath = '${tempDir.path}/plain.txt';
+      await File(filePath).writeAsString('hello\nworld');
 
-        final r = await runEdit(
-          filePath: filePath,
-          oldString: 'hello\nworld',
-          newString: 'HELLO\nWORLD',
-        );
+      final r = await runEdit(
+        filePath: filePath,
+        oldString: 'hello\nworld',
+        newString: 'HELLO\nWORLD',
+      );
 
-        expect(r.result.output, contains('Replaced'));
-        // LF in, LF out (no gitattributes to drive a change).
-        expect(r.content, 'HELLO\nWORLD');
-        expect(r.bytes, isNot(contains(0x0D)));
-      },
-    );
+      expect(r.result.output, contains('Replaced'));
+      // LF in, LF out (no gitattributes to drive a change).
+      expect(r.content, 'HELLO\nWORLD');
+      expect(r.bytes, isNot(contains(0x0D)));
+    });
   });
 }

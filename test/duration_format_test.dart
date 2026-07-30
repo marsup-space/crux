@@ -60,18 +60,12 @@ void main() {
     });
 
     test('whole-day or whole-hour gaps drop the smaller unit', () {
-      expect(
-        formatAgentTurnGap(Duration(days: 2)),
-        '2 days ago',
-      );
+      expect(formatAgentTurnGap(Duration(days: 2)), '2 days ago');
       expect(
         formatAgentTurnGap(Duration(days: 2, minutes: 30)),
         '2 days and 0 hours 30 minutes ago',
       );
-      expect(
-        formatAgentTurnGap(Duration(hours: 5)),
-        '5 hours ago',
-      );
+      expect(formatAgentTurnGap(Duration(hours: 5)), '5 hours ago');
     });
   });
 }

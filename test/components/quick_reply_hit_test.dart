@@ -94,8 +94,7 @@ void main() {
       }, size: const Size(60, 5));
     });
 
-    test('hover effect applies the hover style to the active label',
-        () async {
+    test('hover effect applies the hover style to the active label', () async {
       await testNocterm('ask hover', (tester) async {
         await tester.pumpComponent(
           CruxTheme(

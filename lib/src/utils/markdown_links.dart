@@ -39,12 +39,10 @@ class MarkdownLink {
     required this.length,
   });
 
-  bool containsIndex(int index) =>
-      index >= offset && index < offset + length;
+  bool containsIndex(int index) => index >= offset && index < offset + length;
 
   @override
-  String toString() =>
-      'MarkdownLink("$label" -> $url @$offset:$length)';
+  String toString() => 'MarkdownLink("$label" -> $url @$offset:$length)';
 }
 
 /// Apply link styling on top of an inline-span tree for each
@@ -131,15 +129,19 @@ List<InlineSpan> applyMarkdownLinkStyles(
       final linkEnd = l.offset + l.length;
 
       if (linkStart > cursor) {
-        result.add((text.substring(cursor - spanStart, linkStart - spanStart),
-            baseStyle));
+        result.add((
+          text.substring(cursor - spanStart, linkStart - spanStart),
+          baseStyle,
+        ));
       }
 
-      final isHovered = hoveredLink != null &&
+      final isHovered =
+          hoveredLink != null &&
           hoveredLink.offset == l.offset &&
           hoveredLink.length == l.length;
-      final overlay =
-          (isHovered && hoverStyle != null) ? hoverStyle : linkStyle;
+      final overlay = (isHovered && hoverStyle != null)
+          ? hoverStyle
+          : linkStyle;
       result.add((
         text.substring(
           (linkStart - spanStart).clamp(0, text.length),
@@ -155,9 +157,7 @@ List<InlineSpan> applyMarkdownLinkStyles(
     pos = spanEnd;
   }
 
-  return result
-      .map((e) => TextSpan(text: e.$1, style: e.$2))
-      .toList();
+  return result.map((e) => TextSpan(text: e.$1, style: e.$2)).toList();
 }
 
 TextStyle? _mergeStyles(TextStyle? base, TextStyle overlay) {

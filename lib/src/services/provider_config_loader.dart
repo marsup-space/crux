@@ -320,10 +320,7 @@ class ProviderConfigLoader {
     // absent. A non-empty value is rendered as a separate system
     // prompt layer for every model under this provider that
     // doesn't define its own override.
-    final systemPromptAddition = _optionalString(
-      map,
-      'system_prompt_addition',
-    );
+    final systemPromptAddition = _optionalString(map, 'system_prompt_addition');
 
     // --- Optional provider-level stream watchdog overrides ---
     // Both are positive integers in milliseconds. `null` (TOML
@@ -382,7 +379,7 @@ class ProviderConfigLoader {
 
     final maxTokens = _optionalInt(map, 'max_tokens');
 
-        final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
+    final streamLerp = _optionalBool(map, 'stream_lerp') ?? false;
 
     final temperature = _optionalDouble(map, 'temperature') ?? 0;
 
@@ -441,10 +438,7 @@ class ProviderConfigLoader {
     // non-empty value here overrides the provider-level value.
     // `null` falls through to the provider-level value; if both
     // are null, the system-prompt tuning layer is omitted.
-    final systemPromptAddition = _optionalString(
-      map,
-      'system_prompt_addition',
-    );
+    final systemPromptAddition = _optionalString(map, 'system_prompt_addition');
 
     return ModelConfig(
       id: id,

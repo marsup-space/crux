@@ -17,7 +17,7 @@ import 'tool_def.dart';
 class SessionTool extends ToolDef {
   final SessionStore _store;
 
-  SessionTool({required SessionStore store}) : _store = store;
+  SessionTool({required this._store});
 
   @override
   String get name => 'session';
@@ -62,11 +62,7 @@ class SessionTool extends ToolDef {
       args: args,
       resultOutput: result.output,
     );
-    return CollapsedSummary(
-      text: label,
-      argsTokens: total,
-      totalTokens: total,
-    );
+    return CollapsedSummary(text: label, argsTokens: total, totalTokens: total);
   }
 
   @override
@@ -159,7 +155,8 @@ class SessionTool extends ToolDef {
       },
       'caseInsensitive': {
         'type': 'boolean',
-        'description': 'For `search`: case-insensitive matching (default false).',
+        'description':
+            'For `search`: case-insensitive matching (default false).',
       },
       'headLimit': {
         'type': 'integer',
@@ -268,8 +265,8 @@ class SessionTool extends ToolDef {
     final filtered = includeCurrent
         ? all
         : all.where((s) => s.id != ctx.sessionId).toList();
-    final hiddenCurrent = !includeCurrent &&
-        all.any((s) => s.id == ctx.sessionId);
+    final hiddenCurrent =
+        !includeCurrent && all.any((s) => s.id == ctx.sessionId);
     final hasMore = filtered.length > limit;
     final shown = hasMore ? filtered.sublist(0, limit) : filtered;
 
@@ -280,8 +277,10 @@ class SessionTool extends ToolDef {
     if (shown.isEmpty) {
       buf.writeln('No other sessions found.');
       if (hiddenCurrent) {
-        buf.writeln('(the current session ${_sesRef(ctx.sessionId)} is hidden — '
-            'pass `includeCurrent: true` to see it)');
+        buf.writeln(
+          '(the current session ${_sesRef(ctx.sessionId)} is hidden — '
+          'pass `includeCurrent: true` to see it)',
+        );
       } else if (projectFilter != null) {
         buf.writeln('(project filter: $projectFilter)');
       }
@@ -313,12 +312,16 @@ class SessionTool extends ToolDef {
       );
     }
     if (hasMore) {
-      buf.writeln('... (more available — raise `limit` or use `offset` to paginate)');
+      buf.writeln(
+        '... (more available — raise `limit` or use `offset` to paginate)',
+      );
     }
     if (hiddenCurrent) {
       buf.writeln();
-      buf.writeln('(current session ${_sesRef(ctx.sessionId)} hidden — pass '
-          '`includeCurrent: true` to include it)');
+      buf.writeln(
+        '(current session ${_sesRef(ctx.sessionId)} hidden — pass '
+        '`includeCurrent: true` to include it)',
+      );
     }
 
     return ToolResult(
@@ -351,13 +354,21 @@ class SessionTool extends ToolDef {
     );
 
     final buf = StringBuffer();
-    buf.writeln('Session ${_sesRef(session.id)} — '
-        '"${session.title.isEmpty ? '(untitled)' : session.title}"');
-    buf.writeln('  model:        ${session.model.isEmpty ? '(unset)' : session.model}');
-    buf.writeln('  agent:        ${session.agent.isEmpty ? '(default)' : session.agent}');
+    buf.writeln(
+      'Session ${_sesRef(session.id)} — '
+      '"${session.title.isEmpty ? '(untitled)' : session.title}"',
+    );
+    buf.writeln(
+      '  model:        ${session.model.isEmpty ? '(unset)' : session.model}',
+    );
+    buf.writeln(
+      '  agent:        ${session.agent.isEmpty ? '(default)' : session.agent}',
+    );
     buf.writeln('  status:       ${session.status.name}');
-    buf.writeln('  project:      '
-        '${session.projectPath.isEmpty ? '(none)' : session.projectPath}');
+    buf.writeln(
+      '  project:      '
+      '${session.projectPath.isEmpty ? '(none)' : session.projectPath}',
+    );
     if (session.parentId != null) {
       buf.writeln('  parent:       ${_sesRef(session.parentId!)}');
     }
@@ -366,17 +377,23 @@ class SessionTool extends ToolDef {
     if (session.archivedAt != null) {
       buf.writeln('  archived:     ${_formatTimestamp(session.archivedAt!)}');
     }
-    buf.writeln('  tokens:       '
-        'in=${session.tokensIn} out=${session.tokensOut} '
-        'cached=${session.promptCacheHitTokens}');
+    buf.writeln(
+      '  tokens:       '
+      'in=${session.tokensIn} out=${session.tokensOut} '
+      'cached=${session.promptCacheHitTokens}',
+    );
     if (session.thinkingMode.isNotEmpty) {
-      buf.writeln('  thinking:     ${session.thinkingMode}'
-          '${session.reasoningEffort != null ? ' (${session.reasoningEffort})' : ''}');
+      buf.writeln(
+        '  thinking:     ${session.thinkingMode}'
+        '${session.reasoningEffort != null ? ' (${session.reasoningEffort})' : ''}',
+      );
     }
     if (session.ttftMs > 0 || session.tokPerSec > 0) {
-      buf.writeln('  perf:         '
-          'ttft=${session.ttftMs.toStringAsFixed(0)}ms '
-          'tok/s=${session.tokPerSec.toStringAsFixed(1)}');
+      buf.writeln(
+        '  perf:         '
+        'ttft=${session.ttftMs.toStringAsFixed(0)}ms '
+        'tok/s=${session.tokPerSec.toStringAsFixed(1)}',
+      );
     }
 
     buf.writeln();
@@ -384,7 +401,9 @@ class SessionTool extends ToolDef {
     if (total == 0) {
       buf.writeln('No messages.');
     } else {
-      final verb = total > showing ? 'showing last $showing of $total' : 'all $total';
+      final verb = total > showing
+          ? 'showing last $showing of $total'
+          : 'all $total';
       buf.writeln('Recent messages ($verb):');
       buf.writeln('-' * 78);
       for (final m in recent) {
@@ -392,9 +411,11 @@ class SessionTool extends ToolDef {
         _appendMessageBody(buf, m);
       }
       if (total > showing) {
-        buf.writeln('Showing the $showing most recent of $total messages. '
-            'Use action=`messages` with `beforeId=${recent.first.id}` '
-            'to read earlier messages.');
+        buf.writeln(
+          'Showing the $showing most recent of $total messages. '
+          'Use action=`messages` with `beforeId=${recent.first.id}` '
+          'to read earlier messages.',
+        );
       }
     }
 
@@ -434,11 +455,15 @@ class SessionTool extends ToolDef {
     final total = await _store.messageStore.countBySession(sessionId);
 
     final buf = StringBuffer();
-    buf.writeln('Session ${_sesRef(session.id)} — '
-        '"${session.title.isEmpty ? '(untitled)' : session.title}"');
-    buf.writeln('(${filtered.length} of $total messages'
-        '${role != null ? ', role=$role' : ''}'
-        '${beforeId != null ? ', id < $beforeId' : ''})');
+    buf.writeln(
+      'Session ${_sesRef(session.id)} — '
+      '"${session.title.isEmpty ? '(untitled)' : session.title}"',
+    );
+    buf.writeln(
+      '(${filtered.length} of $total messages'
+      '${role != null ? ', role=$role' : ''}'
+      '${beforeId != null ? ', id < $beforeId' : ''})',
+    );
     buf.writeln('-' * 78);
 
     if (filtered.isEmpty) {
@@ -460,7 +485,9 @@ class SessionTool extends ToolDef {
       if (moreAvailable) {
         final firstId = filtered.first.id;
         buf.writeln();
-        buf.writeln('(more messages exist — pass `beforeId=$firstId` to paginate)');
+        buf.writeln(
+          '(more messages exist — pass `beforeId=$firstId` to paginate)',
+        );
       }
     }
 
@@ -489,11 +516,7 @@ class SessionTool extends ToolDef {
   }) async {
     final RegExp regex;
     try {
-      regex = RegExp(
-        pattern,
-        caseSensitive: !caseInsensitive,
-        multiLine: true,
-      );
+      regex = RegExp(pattern, caseSensitive: !caseInsensitive, multiLine: true);
     } catch (e) {
       return ToolResult.error('Invalid regex: $e');
     }
@@ -508,7 +531,9 @@ class SessionTool extends ToolDef {
     if (singleSessionId != null) {
       final session = await _store.getById(singleSessionId);
       if (session == null) {
-        return ToolResult.error('No session with id ${_sesRef(singleSessionId)}');
+        return ToolResult.error(
+          'No session with id ${_sesRef(singleSessionId)}',
+        );
       }
       sessionsToScan = [session];
     } else {
@@ -524,11 +549,7 @@ class SessionTool extends ToolDef {
       return ToolResult(
         title: 'Search: $pattern',
         output: 'No sessions to search.',
-        metadata: {
-          'totalMatches': 0,
-          'sessionsScanned': 0,
-          'truncated': false,
-        },
+        metadata: {'totalMatches': 0, 'sessionsScanned': 0, 'truncated': false},
       );
     }
 
@@ -583,15 +604,19 @@ class SessionTool extends ToolDef {
     if (totalMatches == 0) {
       buf.writeln('No matches for pattern: $pattern');
     } else {
-      buf.writeln('Search "$pattern" — '
-          '$totalMatches match${totalMatches == 1 ? '' : 'es'} '
-          'across $sessionCount session${sessionCount == 1 ? '' : 's'}');
+      buf.writeln(
+        'Search "$pattern" — '
+        '$totalMatches match${totalMatches == 1 ? '' : 'es'} '
+        'across $sessionCount session${sessionCount == 1 ? '' : 's'}',
+      );
       buf.write(matches);
     }
     if (truncated) {
       buf.writeln();
-      buf.writeln('(truncated: showing first $headLimit matches — '
-          'raise `headLimit` or narrow `pattern` to see more)');
+      buf.writeln(
+        '(truncated: showing first $headLimit matches — '
+        'raise `headLimit` or narrow `pattern` to see more)',
+      );
     }
 
     return ToolResult(
@@ -646,7 +671,10 @@ class SessionTool extends ToolDef {
     const span = 60;
     final from = (start - span).clamp(0, s.length);
     final to = (end + span).clamp(0, s.length);
-    var excerpt = s.substring(from, to).replaceAll('\n', ' ').replaceAll('\r', '');
+    var excerpt = s
+        .substring(from, to)
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', '');
     if (from > 0) excerpt = '…$excerpt';
     if (to < s.length) excerpt = '$excerpt…';
     excerpt = excerpt.trim();
@@ -682,13 +710,19 @@ class SessionTool extends ToolDef {
       buf.writeln('  tool_calls:');
       for (final tc in m.toolCalls) {
         final argsPreview = _summarizeArgs(tc.input);
-        buf.writeln('    - ${tc.name} (id=${_truncate(tc.callId, 24)}): $argsPreview');
+        buf.writeln(
+          '    - ${tc.name} (id=${_truncate(tc.callId, 24)}): $argsPreview',
+        );
       }
     }
     buf.writeln();
   }
 
-  static void _appendIndentedBlock(StringBuffer buf, String content, int maxLineLen) {
+  static void _appendIndentedBlock(
+    StringBuffer buf,
+    String content,
+    int maxLineLen,
+  ) {
     for (final line in content.split('\n')) {
       final clipped = line.length > maxLineLen
           ? '${line.substring(0, maxLineLen - 1)}…'

@@ -295,8 +295,7 @@ void main() {
       });
     });
 
-    test('link renders label only — no URL when label provided',
-        () async {
+    test('link renders label only — no URL when label provided', () async {
       await testNocterm('link', (tester) async {
         await tester.pumpComponent(
           Container(
@@ -325,9 +324,7 @@ void main() {
           Container(
             width: 80,
             height: 10,
-            child: HighlightedMarkdownText(
-              'See [](https://example.com/page)',
-            ),
+            child: HighlightedMarkdownText('See [](https://example.com/page)'),
           ),
         );
         // No label provided, so the URL itself becomes the visible

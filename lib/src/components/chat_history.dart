@@ -509,9 +509,9 @@ class _ChatHistoryState extends State<ChatHistory> {
           userItemIndices.add(items.length);
           // Strip appended skill bodies so the jump-bar label shows
           // only what the user typed (mirrors the bubble renderers).
-          final text = stripSkillBodies(seg.userMessage.content)
-              .replaceAll('\n', ' ')
-              .trim();
+          final text = stripSkillBodies(
+            seg.userMessage.content,
+          ).replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
         final isLatestClosedAi = identical(seg, latestClosedAiSegment);

@@ -14,12 +14,12 @@ import 'package:crux/src/utils/tool_meta.dart';
 
 class _Ctx extends ToolContext {
   _Ctx()
-      : super(
-          sessionId: 0,
-          messageId: 0,
-          abort: AbortSignal(),
-          workingDirectory: Directory.systemTemp.path,
-        );
+    : super(
+        sessionId: 0,
+        messageId: 0,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
 }
 
 void main() async {
@@ -35,7 +35,9 @@ void main() async {
     final hint = routingBubbleHint(parseToolRouting(meta));
     final summary = 'https://x.com/: 120 lines, 27.5KB';
     print('  $label:');
-    print('    bubble body:  $_prefix$summary${hint == null ? '' : ',  · $hint'}');
+    print(
+      '    bubble body:  $_prefix$summary${hint == null ? '' : ',  · $hint'}',
+    );
     print('    bubble hint:  ${hint ?? "(none — direct call)"}');
     print('');
   }
@@ -48,7 +50,9 @@ void main() async {
     print('  $label:');
     print('    header:       URL: https://x.com/');
     if (label == 'system-proxy') {
-      print('    badge:        · via system proxy (direct connection failed; retried through the system proxy)');
+      print(
+        '    badge:        · via system proxy (direct connection failed; retried through the system proxy)',
+      );
       print('    badge color:  theme.warning (bold)');
     } else {
       print('    badge:        (none)');
@@ -62,10 +66,11 @@ void main() async {
   final tool = WebFetchTool(WebProviderRegistry());
   final ctx = _Ctx();
   final sw = Stopwatch()..start();
-  final result = await tool.execute(
-    {'url': 'https://x.com/', 'format': 'text', 'timeout': 15},
-    ctx,
-  );
+  final result = await tool.execute({
+    'url': 'https://x.com/',
+    'format': 'text',
+    'timeout': 15,
+  }, ctx);
   sw.stop();
 
   final routing = parseToolRouting(_buildMetaFromResult(result));
@@ -78,7 +83,9 @@ void main() async {
   print('  result.title:  ${result.title}');
   print('  result.body:   $bodyPreview');
   print('  parsed meta:   ${routing?.value ?? "(direct)"}');
-  print('  bubble shows:  $_prefix https://x.com/: X lines, YKB${hint == null ? '' : ',  · $hint'}');
+  print(
+    '  bubble shows:  $_prefix https://x.com/: X lines, YKB${hint == null ? '' : ',  · $hint'}',
+  );
   print('  detail shows:  [badge below URL]: ${hint ?? '(no badge)'}');
 
   exit(0);

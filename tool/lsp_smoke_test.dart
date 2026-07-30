@@ -12,7 +12,9 @@ Future<void> main() async {
   final tmp = await Directory.systemTemp.createTemp('lsp_smoke_');
   try {
     final pkgYaml = File(p.join(tmp.path, 'pubspec.yaml'))
-      ..writeAsStringSync('name: smoke\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n');
+      ..writeAsStringSync(
+        'name: smoke\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n',
+      );
     final broken = File(p.join(tmp.path, 'broken.dart'))
       ..writeAsStringSync(
         'int main() {\n'
@@ -32,10 +34,13 @@ Future<void> main() async {
     final sw = Stopwatch()..start();
     final diagnostics = await manager
         .touchFileAndWait(broken.path, timeout: const Duration(seconds: 15))
-        .timeout(const Duration(seconds: 20), onTimeout: () {
-      print('TIMEOUT after ${sw.elapsed}');
-      return const [];
-    });
+        .timeout(
+          const Duration(seconds: 20),
+          onTimeout: () {
+            print('TIMEOUT after ${sw.elapsed}');
+            return const [];
+          },
+        );
     sw.stop();
 
     print('Got ${diagnostics.length} diagnostics after ${sw.elapsed}:');

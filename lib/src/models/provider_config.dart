@@ -489,7 +489,8 @@ class ProviderConfig {
   int? effectiveMaxRoundsFor(ModelConfig model) {
     final fromModel = model.maxRounds;
     if (fromModel != null && fromModel > 0) return fromModel;
-    if (defaultMaxRounds != null && defaultMaxRounds! > 0) return defaultMaxRounds;
+    if (defaultMaxRounds != null && defaultMaxRounds! > 0)
+      return defaultMaxRounds;
     return null;
   }
 

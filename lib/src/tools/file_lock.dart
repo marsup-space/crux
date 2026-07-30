@@ -77,5 +77,4 @@ final Map<String, FileLock> _locks = {};
 /// to an absolute, normalized path before calling to avoid
 /// `foo/bar` and `/cwd/foo/bar` getting different locks for the
 /// same file.
-FileLock fileLock(String path) =>
-    _locks.putIfAbsent(path, FileLock.new);
+FileLock fileLock(String path) => _locks.putIfAbsent(path, FileLock.new);

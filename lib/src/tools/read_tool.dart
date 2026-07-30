@@ -20,9 +20,7 @@ class ReadTool extends ToolDef {
   final FileReadTracker? _tracker;
   final LspManager? _lsp;
 
-  ReadTool({FileReadTracker? tracker, LspManager? lsp})
-    : _tracker = tracker,
-      _lsp = lsp;
+  ReadTool({this._tracker, this._lsp});
   @override
   String get name => 'read';
 
@@ -337,15 +335,8 @@ class ReadTool extends ToolDef {
       return '';
     }
     if (entries.isEmpty) return '';
-    final ranked = fuzzyRank<(String, bool)>(
-      entries,
-      (e) => e.$1,
-      target,
-    );
-    return ranked
-        .take(5)
-        .map((e) => e.$2 ? '${e.$1}$sep' : e.$1)
-        .join('\n');
+    final ranked = fuzzyRank<(String, bool)>(entries, (e) => e.$1, target);
+    return ranked.take(5).map((e) => e.$2 ? '${e.$1}$sep' : e.$1).join('\n');
   }
 
   @override
@@ -403,7 +394,12 @@ class ReadTool extends ToolDef {
         if (content.isEmpty)
           dimText('  (empty)', theme)
         else
-          scrollableCodeBlock(content, language, theme, controller: scrollController),
+          scrollableCodeBlock(
+            content,
+            language,
+            theme,
+            controller: scrollController,
+          ),
       ],
     );
   }

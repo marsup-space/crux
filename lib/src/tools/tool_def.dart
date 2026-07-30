@@ -58,7 +58,8 @@ class ToolContext {
     required String intent,
     required bool isWindows,
     required AbortSignal abort,
-  })? shellRiskEvaluator;
+  })?
+  shellRiskEvaluator;
 
   /// Optional evaluator for the shell progress monitor (see
   /// `lib/src/tools/shell_monitor.dart`). Injected by
@@ -187,11 +188,7 @@ const int kInlineSummarySectionMaxChars = 32 * 1024;
 /// size and (optionally) how to see the rest. Returns the input
 /// unchanged when it fits — a no-op fast path so the chat log
 /// builder doesn't pay a per-call cost for typical-sized entries.
-String truncateForInline(
-  String content,
-  int maxChars, {
-  String? hint,
-}) {
+String truncateForInline(String content, int maxChars, {String? hint}) {
   if (content.length <= maxChars) return content;
   final truncated = content.substring(0, maxChars);
   final total = content.length;
@@ -262,22 +259,12 @@ class SummaryContribution {
   factory SummaryContribution.readFile({
     required String path,
     required String content,
-  }) =>
-      SummaryContribution(
-        category: 'read-files',
-        key: path,
-        value: content,
-      );
+  }) => SummaryContribution(category: 'read-files', key: path, value: content);
 
   factory SummaryContribution.writtenFile({
     required String path,
     required String content,
-  }) =>
-      SummaryContribution(
-        category: 'write-files',
-        key: path,
-        value: content,
-      );
+  }) => SummaryContribution(category: 'write-files', key: path, value: content);
 }
 
 abstract class ToolDef {
@@ -355,10 +342,7 @@ abstract class ToolDef {
   /// The [args] map is the fully-parsed input the LLM emitted
   /// (or whatever the tool received and stored in
   /// `ToolCallData.input`); [result] is the final [ToolResult].
-  ModSummary? modSummary(
-    Map<String, dynamic> args,
-    ToolResult result,
-  ) {
+  ModSummary? modSummary(Map<String, dynamic> args, ToolResult result) {
     return null;
   }
 
@@ -420,8 +404,7 @@ abstract class ToolDef {
     required String pairedResult,
     required bool isError,
     required String workingDirectory,
-  }) =>
-      null;
+  }) => null;
 
   /// Whether this call should be dropped from the chat log entirely
   /// because the tool did NOT actually do what the model asked for.
@@ -461,8 +444,7 @@ abstract class ToolDef {
   bool isNoOpForCompaction({
     required String pairedResult,
     required bool isError,
-  }) =>
-      false;
+  }) => false;
 }
 
 String _capitalize(String s) {

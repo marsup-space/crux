@@ -90,12 +90,7 @@ abstract class LspServerActor {
       case LspCmdStart():
         await _runStart(cmd.root, cmd.file);
       case LspCmdOpenDocument():
-        await _runOpenDocument(
-          cmd.root,
-          cmd.path,
-          cmd.content,
-          cmd.version,
-        );
+        await _runOpenDocument(cmd.root, cmd.path, cmd.content, cmd.version);
       case LspCmdCloseDocument():
         await _runCloseDocument(cmd.root, cmd.path);
       case LspCmdShutdownRoot():
@@ -110,26 +105,31 @@ abstract class LspServerActor {
   // ---------------------------------------------------------------------------
 
   Future<void> _runStart(String root, String file) async {
-    if (_servers.containsKey(root)) return;     // idempotent
+    if (_servers.containsKey(root)) return; // idempotent
     if (_shutdown) return;
 
     final LspServerSpec? spec;
     try {
       spec = await resolveSpec(root, file);
     } catch (e) {
-      _emit?.call(LspEventStartFailed(
-        root: root,
-        serverId: id,
-        reason: 'resolveSpec threw: $e',
-      ));
+      _emit?.call(
+        LspEventStartFailed(
+          root: root,
+          serverId: id,
+          reason: 'resolveSpec threw: $e',
+        ),
+      );
       return;
     }
     if (spec == null) {
-      _emit?.call(LspEventStartFailed(
-        root: root,
-        serverId: id,
-        reason: 'resolveSpec returned null (binary missing or unsupported file)',
-      ));
+      _emit?.call(
+        LspEventStartFailed(
+          root: root,
+          serverId: id,
+          reason:
+              'resolveSpec returned null (binary missing or unsupported file)',
+        ),
+      );
       return;
     }
 
@@ -137,11 +137,13 @@ abstract class LspServerActor {
     try {
       process = await _spawnProcess(spec);
     } catch (e) {
-      _emit?.call(LspEventStartFailed(
-        root: root,
-        serverId: id,
-        reason: 'Process.start failed: $e',
-      ));
+      _emit?.call(
+        LspEventStartFailed(
+          root: root,
+          serverId: id,
+          reason: 'Process.start failed: $e',
+        ),
+      );
       return;
     }
 
@@ -152,11 +154,9 @@ abstract class LspServerActor {
       output: process.stdin,
       tag: '$id:$root',
       onFatal: (e, st) {
-        _emit?.call(LspEventRpcFatal(
-          root: root,
-          serverId: id,
-          reason: e.toString(),
-        ));
+        _emit?.call(
+          LspEventRpcFatal(root: root, serverId: id, reason: e.toString()),
+        );
       },
     );
 
@@ -166,11 +166,13 @@ abstract class LspServerActor {
       registerHandlers(peer);
     } catch (e) {
       await _cleanupDeadServer(process, peer);
-      _emit?.call(LspEventStartFailed(
-        root: root,
-        serverId: id,
-        reason: 'initialize failed: $e',
-      ));
+      _emit?.call(
+        LspEventStartFailed(
+          root: root,
+          serverId: id,
+          reason: 'initialize failed: $e',
+        ),
+      );
       return;
     }
 
@@ -185,11 +187,9 @@ abstract class LspServerActor {
 
     process.exitCode.then((code) {
       _servers.remove(root);
-      _emit?.call(LspEventProcessExited(
-        root: root,
-        serverId: id,
-        exitCode: code,
-      ));
+      _emit?.call(
+        LspEventProcessExited(root: root, serverId: id, exitCode: code),
+      );
     });
   }
 
@@ -246,8 +246,7 @@ abstract class LspServerActor {
     final server = _servers.remove(root);
     if (server == null) return;
     try {
-      await server.peer.request('shutdown')
-          .timeout(const Duration(seconds: 2));
+      await server.peer.request('shutdown').timeout(const Duration(seconds: 2));
       server.peer.notify('exit');
     } catch (_) {
       // Server probably already dead; ignore.
@@ -280,7 +279,10 @@ abstract class LspServerActor {
     }
   }
 
-  Future<void> _cleanupDeadServer(Process process, peer_lib.RpcPeer peer) async {
+  Future<void> _cleanupDeadServer(
+    Process process,
+    peer_lib.RpcPeer peer,
+  ) async {
     try {
       peer.cancelAll(const peer_lib.ShuttingDown('cleanup'));
       process.kill(ProcessSignal.sigterm);
@@ -309,11 +311,7 @@ abstract class LspServerActor {
       // Find which root this document belongs to.
       final root = _findRootForPath(path);
       if (root == null) return;
-      _emit?.call(LspEventDiagnostics(
-        root: root,
-        serverId: id,
-        batch: batch,
-      ));
+      _emit?.call(LspEventDiagnostics(root: root, serverId: id, batch: batch));
     });
     peer.onRequest('workspace/configuration', (params) async {
       final items = (params['items'] as List? ?? []);
@@ -381,12 +379,10 @@ abstract class LspServerActor {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) {
-      _emit?.call(LspEventServerStderr(
-        root: root,
-        serverId: id,
-        line: line,
-      ));
-    }, onError: (_) {});
+          _emit?.call(
+            LspEventServerStderr(root: root, serverId: id, line: line),
+          );
+        }, onError: (_) {});
   }
 
   Map<String, dynamic> _buildInitializeParams(String root, LspServerSpec spec) {
@@ -429,7 +425,7 @@ class _ActiveServer {
   final Process process;
   final peer_lib.RpcPeer peer;
   final LspServerSpec spec;
-  final Map<String, int> documents;     // path → version
+  final Map<String, int> documents; // path → version
 
   _ActiveServer({
     required this.process,

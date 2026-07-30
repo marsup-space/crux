@@ -1,5 +1,6 @@
 import '../components/ui/toast.dart';
 import 'command_executor.dart';
+
 Future<void> executeContinue(CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
     ctx.showToast('No active session', mode: ToastMode.error);

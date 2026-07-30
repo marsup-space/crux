@@ -35,8 +35,7 @@ class CompactedSessionHeader extends StatefulComponent {
   });
 
   @override
-  State<CompactedSessionHeader> createState() =>
-      _CompactedSessionHeaderState();
+  State<CompactedSessionHeader> createState() => _CompactedSessionHeaderState();
 }
 
 class _CompactedSessionHeaderState extends State<CompactedSessionHeader> {
@@ -81,10 +80,7 @@ class _CompactedSessionHeaderState extends State<CompactedSessionHeader> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          Text(
-            'Compacted from ',
-            style: TextStyle(color: theme.onSurfaceDim),
-          ),
+          Text('Compacted from ', style: TextStyle(color: theme.onSurfaceDim)),
           if (canTap)
             MouseRegion(
               onEnter: (_) => setState(() => _hovered = true),
@@ -93,9 +89,8 @@ class _CompactedSessionHeaderState extends State<CompactedSessionHeader> {
               },
               opaque: false,
               child: GestureDetector(
-                onTap: () => component.onSessionLinkTap!(
-                  component.sourceSessionId,
-                ),
+                onTap: () =>
+                    component.onSessionLinkTap!(component.sourceSessionId),
                 behavior: HitTestBehavior.opaque,
                 child: Text(_displayText, style: linkStyle),
               ),

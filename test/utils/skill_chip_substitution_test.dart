@@ -31,8 +31,7 @@ void main() {
   });
 
   group('expandSkillChips — no available skills', () {
-    test('input is passed through verbatim when no skills are available',
-        () {
+    test('input is passed through verbatim when no skills are available', () {
       final result = expandSkillChips(
         input: r'please review $pr-review by EOD',
         available: const [],
@@ -96,7 +95,10 @@ void main() {
       );
 
       // Display text: `$` stripped, names kept.
-      expect(result.userMessage, startsWith('check pr-review and security-audit'));
+      expect(
+        result.userMessage,
+        startsWith('check pr-review and security-audit'),
+      );
 
       // Bodies appended in order, each with its own header.
       expect(result.userMessage, contains('Skill: pr-review\nPR body'));
@@ -110,19 +112,18 @@ void main() {
       expect(result.includedSkills, ['pr-review', 'security-audit']);
     });
 
-    test('chips in reverse input order come out in input order (not name order)',
-        () {
-      final a = _skill('a', body: 'A body');
-      final b = _skill('b', body: 'B body');
-      final result = expandSkillChips(
-        input: r'$b and $a',
-        available: [a, b],
-      );
-      expect(result.includedSkills, ['b', 'a']);
-      final aIdx = result.userMessage.indexOf('Skill: a');
-      final bIdx = result.userMessage.indexOf('Skill: b');
-      expect(bIdx, lessThan(aIdx));
-    });
+    test(
+      'chips in reverse input order come out in input order (not name order)',
+      () {
+        final a = _skill('a', body: 'A body');
+        final b = _skill('b', body: 'B body');
+        final result = expandSkillChips(input: r'$b and $a', available: [a, b]);
+        expect(result.includedSkills, ['b', 'a']);
+        final aIdx = result.userMessage.indexOf('Skill: a');
+        final bIdx = result.userMessage.indexOf('Skill: b');
+        expect(bIdx, lessThan(aIdx));
+      },
+    );
   });
 
   group('expandSkillChips — non-chip dollar tokens', () {
@@ -160,10 +161,7 @@ void main() {
 
   group('expandSkillChips — body trim', () {
     test('trims leading and trailing whitespace from the body', () {
-      final prReview = _skill(
-        'pr-review',
-        body: '\n\n  Procedure body.  \n\n',
-      );
+      final prReview = _skill('pr-review', body: '\n\n  Procedure body.  \n\n');
       final result = expandSkillChips(
         input: r'$pr-review',
         available: [prReview],
@@ -198,8 +196,10 @@ void main() {
         available: [prReview, secAudit],
         alreadyLoaded: {'pr-review'},
       );
-      expect(result.userMessage,
-          startsWith('check pr-review and security-audit'));
+      expect(
+        result.userMessage,
+        startsWith('check pr-review and security-audit'),
+      );
       // Fresh skill body appended.
       expect(result.userMessage, contains('Skill: security-audit\nSEC body'));
       // Loaded skill body skipped.

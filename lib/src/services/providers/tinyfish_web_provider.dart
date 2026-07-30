@@ -34,7 +34,7 @@ class TinyFishWebProvider extends WebServiceProvider {
   final Map<String, String> Function() _envLookup;
 
   TinyFishWebProvider({Map<String, String> Function()? envLookup})
-      : _envLookup = envLookup ?? (() => Platform.environment);
+    : _envLookup = envLookup ?? (() => Platform.environment);
 
   @override
   String get id => providerId;
@@ -110,9 +110,11 @@ class TinyFishWebProvider extends WebServiceProvider {
     if (ttl != null) body['ttl'] = ttl;
     if (perUrlTimeoutMs != null) body['per_url_timeout_ms'] = perUrlTimeoutMs;
 
-    final responseBody =
-        await _requestWithRetry('POST', Uri.parse(_fetchEndpoint),
-            jsonBody: body);
+    final responseBody = await _requestWithRetry(
+      'POST',
+      Uri.parse(_fetchEndpoint),
+      jsonBody: body,
+    );
     final json = jsonDecode(responseBody) as Map<String, dynamic>;
     return _parseFetchResponse(json);
   }
@@ -167,7 +169,8 @@ class TinyFishWebProvider extends WebServiceProvider {
 
               // 429 + transient 5xx -> retriable. Anything else
               // -> final.
-              final retriable = status == 429 ||
+              final retriable =
+                  status == 429 ||
                   status == 502 ||
                   status == 503 ||
                   status == 504;
@@ -197,9 +200,7 @@ class TinyFishWebProvider extends WebServiceProvider {
         // withProxyRetry already handles proxy fallback, so
         // an IOException at this point means the proxy
         // didn't help either. Treat as a final failure.
-        throw WebProviderException(
-          'Network error talking to TinyFish: $e',
-        );
+        throw WebProviderException('Network error talking to TinyFish: $e');
       } on TimeoutException catch (e) {
         throw WebProviderException('Timeout talking to TinyFish: $e');
       }
@@ -214,15 +215,16 @@ class TinyFishWebProvider extends WebServiceProvider {
 
   static WebSearchResponse _parseSearchResponse(Map<String, dynamic> j) {
     final results = (j['results'] as List<dynamic>? ?? [])
-        .map((e) => WebSearchResult(
-              position: ((e as Map<String, dynamic>)['position'] as num)
-                  .toInt(),
-              siteName: e['site_name'] as String? ?? '',
-              title: e['title'] as String? ?? '',
-              snippet: e['snippet'] as String? ?? '',
-              url: e['url'] as String? ?? '',
-              thumbnailUrl: e['thumbnail_url'] as String?,
-            ))
+        .map(
+          (e) => WebSearchResult(
+            position: ((e as Map<String, dynamic>)['position'] as num).toInt(),
+            siteName: e['site_name'] as String? ?? '',
+            title: e['title'] as String? ?? '',
+            snippet: e['snippet'] as String? ?? '',
+            url: e['url'] as String? ?? '',
+            thumbnailUrl: e['thumbnail_url'] as String?,
+          ),
+        )
         .toList();
     return WebSearchResponse(
       query: j['query'] as String? ?? '',
@@ -234,26 +236,29 @@ class TinyFishWebProvider extends WebServiceProvider {
 
   static WebFetchResponse _parseFetchResponse(Map<String, dynamic> j) {
     final results = (j['results'] as List<dynamic>? ?? [])
-        .map((e) => WebFetchResult(
-              url: (e as Map<String, dynamic>)['url'] as String? ?? '',
-              finalUrl: e['final_url'] as String?,
-              title: e['title'] as String?,
-              description: e['description'] as String?,
-              language: e['language'] as String?,
-              author: e['author'] as String?,
-              publishedDate: e['published_date'] as String?,
-              text: e['text'] as String?,
-              format: e['format'] as String?,
-              latencyMs: (e['latency_ms'] as num?)?.toInt(),
-            ))
+        .map(
+          (e) => WebFetchResult(
+            url: (e as Map<String, dynamic>)['url'] as String? ?? '',
+            finalUrl: e['final_url'] as String?,
+            title: e['title'] as String?,
+            description: e['description'] as String?,
+            language: e['language'] as String?,
+            author: e['author'] as String?,
+            publishedDate: e['published_date'] as String?,
+            text: e['text'] as String?,
+            format: e['format'] as String?,
+            latencyMs: (e['latency_ms'] as num?)?.toInt(),
+          ),
+        )
         .toList();
     final errors = (j['errors'] as List<dynamic>? ?? [])
-        .map((e) => WebFetchError(
-              code: (e as Map<String, dynamic>)['error'] as String? ??
-                  'unknown',
-              url: e['url'] as String? ?? '',
-              status: (e['status'] as num?)?.toInt(),
-            ))
+        .map(
+          (e) => WebFetchError(
+            code: (e as Map<String, dynamic>)['error'] as String? ?? 'unknown',
+            url: e['url'] as String? ?? '',
+            status: (e['status'] as num?)?.toInt(),
+          ),
+        )
         .toList();
     return WebFetchResponse(results: results, errors: errors);
   }

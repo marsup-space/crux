@@ -46,8 +46,7 @@ class _FakeProxyServer {
   late final int port;
 
   Future<void> start() async {
-    final server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
     port = server.port;
     server.listen((req) async {
@@ -91,75 +90,87 @@ void main() {
   tearDown(SystemProxyDetector.resetForTesting);
 
   test(
-      'falls back to the system proxy when the direct connection is broken',
-      () async {
-    // Direct target: a TCP listener that immediately resets the
-    // socket. Reliable across platforms (no TIME_WAIT race).
-    final broken = _ResettingServer();
-    await broken.start();
-    addTearDown(broken.stop);
+    'falls back to the system proxy when the direct connection is broken',
+    () async {
+      // Direct target: a TCP listener that immediately resets the
+      // socket. Reliable across platforms (no TIME_WAIT race).
+      final broken = _ResettingServer();
+      await broken.start();
+      addTearDown(broken.stop);
 
-    // Proxy target: a real HTTP server.
-    final proxy = _FakeProxyServer();
-    await proxy.start();
-    addTearDown(proxy.stop);
+      // Proxy target: a real HTTP server.
+      final proxy = _FakeProxyServer();
+      await proxy.start();
+      addTearDown(proxy.stop);
 
-    // The test URL is `http://...`, so the proxy needs to be
-    // registered as the http proxy (not just the https proxy) —
-    // SystemProxy.findProxyFor routes by URI scheme.
-    SystemProxyDetector.overrideForTesting(
-      SystemProxy(
-        httpUrl: 'http://127.0.0.1:${proxy.port}',
-        httpsUrl: 'http://127.0.0.1:${proxy.port}',
-      ),
-    );
+      // The test URL is `http://...`, so the proxy needs to be
+      // registered as the http proxy (not just the https proxy) —
+      // SystemProxy.findProxyFor routes by URI scheme.
+      SystemProxyDetector.overrideForTesting(
+        SystemProxy(
+          httpUrl: 'http://127.0.0.1:${proxy.port}',
+          httpsUrl: 'http://127.0.0.1:${proxy.port}',
+        ),
+      );
 
-    final client = LlmClient();
-    addTearDown(client.dispose);
+      final client = LlmClient();
+      addTearDown(client.dispose);
 
-    final config = _provider(
-      endpointUrl: 'http://127.0.0.1:${broken.port}/v1',
-    );
+      final config = _provider(
+        endpointUrl: 'http://127.0.0.1:${broken.port}/v1',
+      );
 
-    // Drain the stream so streamChat's try/catch completes.
-    var errorChunkSeen = false;
-    var finishReasonSeen = false;
-    await for (final chunk in client.streamChat(
-      endpointUrl: config.endpointUrl,
-      config: config,
-      apiKey: 'sk-fake',
-      modelId: 'm',
-      messages: const [
-        {'role': 'user', 'content': 'hi'},
-      ],
-    )) {
-      if (chunk.error != null) errorChunkSeen = true;
-      if (chunk.finishReason != null) finishReasonSeen = true;
-    }
+      // Drain the stream so streamChat's try/catch completes.
+      var errorChunkSeen = false;
+      var finishReasonSeen = false;
+      await for (final chunk in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      )) {
+        if (chunk.error != null) errorChunkSeen = true;
+        if (chunk.finishReason != null) finishReasonSeen = true;
+      }
 
-    // After the direct connection is reset, the LlmClient must
-    // retry once through the system proxy and the proxy server
-    // should see exactly one request.
-    expect(proxy.hits, 1,
-        reason: 'after the direct connection is broken, the LlmClient '
+      // After the direct connection is reset, the LlmClient must
+      // retry once through the system proxy and the proxy server
+      // should see exactly one request.
+      expect(
+        proxy.hits,
+        1,
+        reason:
+            'after the direct connection is broken, the LlmClient '
             'must retry once through the system proxy and the proxy '
-            'server should see exactly one request');
-    expect(proxy.lastMethod, 'POST');
-    expect(proxy.lastPath, '/v1/chat/completions');
-    // The proxy returned a clean OpenAI chunk, so the LlmClient
-    // must surface a finish-reason, not an error.
-    expect(errorChunkSeen, isFalse,
-        reason: 'the proxy served a valid response, so the LlmClient '
-            'must not surface an error chunk');
-    expect(finishReasonSeen, isTrue);
-    // Once we've switched to the proxy, the LlmClient remembers it.
-    expect(client.isUsingSystemProxy, isTrue,
-        reason: 'after the first proxy retry, the LlmClient should '
-            'remember the system proxy for future calls');
-  });
+            'server should see exactly one request',
+      );
+      expect(proxy.lastMethod, 'POST');
+      expect(proxy.lastPath, '/v1/chat/completions');
+      // The proxy returned a clean OpenAI chunk, so the LlmClient
+      // must surface a finish-reason, not an error.
+      expect(
+        errorChunkSeen,
+        isFalse,
+        reason:
+            'the proxy served a valid response, so the LlmClient '
+            'must not surface an error chunk',
+      );
+      expect(finishReasonSeen, isTrue);
+      // Once we've switched to the proxy, the LlmClient remembers it.
+      expect(
+        client.isUsingSystemProxy,
+        isTrue,
+        reason:
+            'after the first proxy retry, the LlmClient should '
+            'remember the system proxy for future calls',
+      );
+    },
+  );
 
-  test(
-      'does NOT fall back to the system proxy when the direct '
+  test('does NOT fall back to the system proxy when the direct '
       'connection succeeds', () async {
     // Direct attempt lands on the live proxy-shaped server. The
     // wouldBeProxy server is also live but is only used as the
@@ -182,9 +193,7 @@ void main() {
     final client = LlmClient();
     addTearDown(client.dispose);
 
-    final config = _provider(
-      endpointUrl: 'http://127.0.0.1:${direct.port}/v1',
-    );
+    final config = _provider(endpointUrl: 'http://127.0.0.1:${direct.port}/v1');
 
     await for (final _ in client.streamChat(
       endpointUrl: config.endpointUrl,
@@ -199,9 +208,15 @@ void main() {
     }
 
     expect(direct.hits, 1, reason: 'direct server must get the request');
-    expect(wouldBeProxy.hits, 0,
-        reason: 'proxy must NOT be consulted when direct connection works');
-    expect(client.isUsingSystemProxy, isFalse,
-        reason: 'direct connection succeeded, no proxy switch');
+    expect(
+      wouldBeProxy.hits,
+      0,
+      reason: 'proxy must NOT be consulted when direct connection works',
+    );
+    expect(
+      client.isUsingSystemProxy,
+      isFalse,
+      reason: 'direct connection succeeded, no proxy switch',
+    );
   });
 }

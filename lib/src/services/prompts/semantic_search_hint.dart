@@ -37,8 +37,7 @@ library;
 /// hint, single-tool-call hint, and shell-tool fallback marker
 /// styles — the LLM pattern-matches the intent from the tag
 /// alone, with no separate body inspection needed.
-const semanticSearchHintMarker =
-    '[Crux system note — prefer semantic_search]';
+const semanticSearchHintMarker = '[Crux system note — prefer semantic_search]';
 
 /// Render the semantic_search preference hint wrapped in the
 /// embedded marker, ready to be appended to a grep/glob tool's

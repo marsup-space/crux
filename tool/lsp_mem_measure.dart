@@ -13,11 +13,10 @@ Future<int> _rssKb(int pid) async {
 Future<void> main() async {
   final procs = <Process>[];
   for (var i = 0; i < 2; i++) {
-    final p = await Process.start(
-      '/opt/homebrew/bin/dart',
-      ['language-server', '--lsp'],
-      workingDirectory: '/tmp',
-    );
+    final p = await Process.start('/opt/homebrew/bin/dart', [
+      'language-server',
+      '--lsp',
+    ], workingDirectory: '/tmp');
     procs.add(p);
     // ignore: avoid_print
     print('Spawned dart language-server #${i + 1} pid=${p.pid}');
@@ -42,11 +41,13 @@ Future<void> main() async {
     final lastS = s.last;
     final avgS = s.reduce((a, b) => a + b) ~/ s.length;
     // ignore: avoid_print
-    print('Server #${i + 1}: '
-        'min=${(minS / 1024).toStringAsFixed(0)}MB '
-        'avg=${(avgS / 1024).toStringAsFixed(0)}MB '
-        'max=${(maxS / 1024).toStringAsFixed(0)}MB '
-        'last=${(lastS / 1024).toStringAsFixed(0)}MB');
+    print(
+      'Server #${i + 1}: '
+      'min=${(minS / 1024).toStringAsFixed(0)}MB '
+      'avg=${(avgS / 1024).toStringAsFixed(0)}MB '
+      'max=${(maxS / 1024).toStringAsFixed(0)}MB '
+      'last=${(lastS / 1024).toStringAsFixed(0)}MB',
+    );
   }
 
   // Sum to show what 2 instances cost together.
@@ -60,9 +61,11 @@ Future<void> main() async {
   // ignore: avoid_print
   print('\n=== 2 servers combined ===');
   // ignore: avoid_print
-  print('Total RSS: min=${(totalMin / 1024).toStringAsFixed(0)}MB '
-      'avg=${(totalAvg / 1024).toStringAsFixed(0)}MB '
-      'max=${(totalMax / 1024).toStringAsFixed(0)}MB');
+  print(
+    'Total RSS: min=${(totalMin / 1024).toStringAsFixed(0)}MB '
+    'avg=${(totalAvg / 1024).toStringAsFixed(0)}MB '
+    'max=${(totalMax / 1024).toStringAsFixed(0)}MB',
+  );
 
   for (final p in procs) {
     p.kill();

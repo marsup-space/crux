@@ -39,13 +39,7 @@ library;
 /// tool name and example mapping. [ShellGuardKind.none] is the
 /// sentinel for "not a violation" — never surfaced through the
 /// verdict; detector returns `null` instead.
-enum ShellGuardKind {
-  none,
-  read,
-  glob,
-  grep,
-  semanticSearch,
-}
+enum ShellGuardKind { none, read, glob, grep, semanticSearch }
 
 /// Severity tier for a detected violation. Maps directly to the
 /// existing single-call-hint escalation so the model's view of
@@ -129,9 +123,7 @@ ShellGuardVerdict? detectShellGuard(
 }) {
   if (command.trim().isEmpty) return null;
 
-  final kind = isWindows
-      ? _classifyWindows(command)
-      : _classifyPosix(command);
+  final kind = isWindows ? _classifyWindows(command) : _classifyPosix(command);
   if (kind == ShellGuardKind.none) return null;
 
   final severity = _severityForStreak(currentStreak);
@@ -175,15 +167,45 @@ ShellGuardSeverity _severityForStreak(int streak) {
 /// Verbs whose presence at the start of any segment signals
 /// "this is a file-inspection operation; should be `read`".
 const _posixReadVerbs = <String>{
-  'cat', 'head', 'tail', 'less', 'more', 'bat',
-  'sed', 'awk', 'cut', 'sort', 'uniq',
-  'wc', 'md5sum', 'shasum', 'sha1sum', 'sha256sum', 'sha512sum',
-  'file', 'stat',
-  'strings', 'hexdump', 'xxd', 'od', 'base32', 'base64',
-  'tac', 'rev', 'nl', 'paste', 'column', 'expand', 'unexpand',
-  'tr', 'fold', 'fmt',
-  'cmp', 'comm',
-  'diff', 'patch',
+  'cat',
+  'head',
+  'tail',
+  'less',
+  'more',
+  'bat',
+  'sed',
+  'awk',
+  'cut',
+  'sort',
+  'uniq',
+  'wc',
+  'md5sum',
+  'shasum',
+  'sha1sum',
+  'sha256sum',
+  'sha512sum',
+  'file',
+  'stat',
+  'strings',
+  'hexdump',
+  'xxd',
+  'od',
+  'base32',
+  'base64',
+  'tac',
+  'rev',
+  'nl',
+  'paste',
+  'column',
+  'expand',
+  'unexpand',
+  'tr',
+  'fold',
+  'fmt',
+  'cmp',
+  'comm',
+  'diff',
+  'patch',
 };
 
 /// Verbs whose presence at the start of any segment signals
@@ -193,7 +215,13 @@ const _posixListVerbs = <String>{'ls', 'tree', 'du', 'find'};
 /// Verbs whose presence at the start of any segment signals
 /// "this is a content search; should be `grep`".
 const _posixGrepVerbs = <String>{
-  'grep', 'egrep', 'fgrep', 'rg', 'ack', 'ag', 'ripgrep',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'ack',
+  'ag',
+  'ripgrep',
 };
 
 /// Classify a bash command. Finds the FIRST non-empty,
@@ -254,11 +282,18 @@ ShellGuardKind _classifyPosix(String command) {
 /// `find`, etc. are also absent — those are unambiguous file
 /// inspection violations regardless of script context.
 const _shellScriptVerbs = <String>{
-  'cd', 'pushd', 'popd',
-  'echo', 'printf',
-  'export', 'unset', 'set',
-  'source', '.',
-  'alias', 'unalias',
+  'cd',
+  'pushd',
+  'popd',
+  'echo',
+  'printf',
+  'export',
+  'unset',
+  'set',
+  'source',
+  '.',
+  'alias',
+  'unalias',
 };
 
 // =============================================================================
@@ -283,8 +318,13 @@ const _winReadVerbs = <String>{
 };
 
 const _winListVerbs = <String>{
-  'Get-ChildItem', 'gci', 'ls', 'dir', 'Get-Item',
-  'tree', 'Tree',
+  'Get-ChildItem',
+  'gci',
+  'ls',
+  'dir',
+  'Get-Item',
+  'tree',
+  'Tree',
 };
 
 const _winGrepVerbs = <String>{
@@ -340,11 +380,12 @@ ShellGuardKind _classifyFirstNonScriptSegment(
     // no violation, we're done — subsequent segments are
     // filters/serving-this-one, not standalone fallbacks.
     return _classifySegment(
-      trimmed,
-      readVerbs: readVerbs,
-      listVerbs: listVerbs,
-      grepVerbs: grepVerbs,
-    ) ?? ShellGuardKind.none;
+          trimmed,
+          readVerbs: readVerbs,
+          listVerbs: listVerbs,
+          grepVerbs: grepVerbs,
+        ) ??
+        ShellGuardKind.none;
   }
   return ShellGuardKind.none;
 }
@@ -534,17 +575,13 @@ List<String> _splitSegments(String command) {
       current.clear();
       continue;
     }
-    if (ch == '&' &&
-        i + 1 < command.length &&
-        command[i + 1] == '&') {
+    if (ch == '&' && i + 1 < command.length && command[i + 1] == '&') {
       result.add(current.toString());
       current.clear();
       i++;
       continue;
     }
-    if (ch == '|' &&
-        i + 1 < command.length &&
-        command[i + 1] == '|') {
+    if (ch == '|' && i + 1 < command.length && command[i + 1] == '|') {
       result.add(current.toString());
       current.clear();
       i++;

@@ -34,8 +34,7 @@ Component _buildUnrelated(_BuildCounter counter) {
 }
 
 void main() {
-  test('BlocSelector rebuilds only when the selected field changes',
-      () async {
+  test('BlocSelector rebuilds only when the selected field changes', () async {
     await testNocterm('selector scope', (tester) async {
       final cubit = SessionCubit();
       addTearDown(cubit.close);
@@ -91,10 +90,7 @@ void main() {
         greaterThan(initialSelectorBuilds),
         reason: 'selector MUST rebuild when auxiliaryModelShortName changes',
       );
-      expect(
-        tester.terminalState,
-        containsText('Aux: MiniMax'),
-      );
+      expect(tester.terminalState, containsText('Aux: MiniMax'));
 
       // Mutate the selected field to the SAME value. No rebuild.
       final beforeSameValue = selectorCounter.count;

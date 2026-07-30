@@ -30,10 +30,7 @@ class SingleCallReminderBubble extends SystemHintBubble {
   /// threshold, so ≥ 10 with the default).
   final int consecutiveCount;
 
-  const SingleCallReminderBubble({
-    super.key,
-    required this.consecutiveCount,
-  });
+  const SingleCallReminderBubble({super.key, required this.consecutiveCount});
 
   @override
   SystemHintKind get kind => SystemHintKind.warning;

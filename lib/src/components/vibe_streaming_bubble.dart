@@ -305,7 +305,12 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
             (isLspTool ? LspState.none : LspState.disabled);
         final glyph = lspStateGlyphSpan(state, theme);
         if (glyph == null) return TextSpan(text: label);
-        return TextSpan(children: [TextSpan(text: label), glyph]);
+        return TextSpan(
+          children: [
+            TextSpan(text: label),
+            glyph,
+          ],
+        );
       }).toList();
       boxes.add(
         VibeBox(

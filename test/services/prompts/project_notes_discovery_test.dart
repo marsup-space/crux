@@ -26,8 +26,9 @@ void main() {
     });
 
     test('finds AGENTS.md in cwd', () {
-      File(p.join(tempRoot.path, 'AGENTS.md'))
-          .writeAsStringSync('Use bun not npm.');
+      File(
+        p.join(tempRoot.path, 'AGENTS.md'),
+      ).writeAsStringSync('Use bun not npm.');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -41,8 +42,9 @@ void main() {
     });
 
     test('finds CLAUDE.md in cwd when AGENTS.md is absent', () {
-      File(p.join(tempRoot.path, 'CLAUDE.md'))
-          .writeAsStringSync('Prefer functional style.');
+      File(
+        p.join(tempRoot.path, 'CLAUDE.md'),
+      ).writeAsStringSync('Prefer functional style.');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -54,15 +56,14 @@ void main() {
       expect(result, contains('Prefer functional style.'));
     });
 
-    test('mtime tiebreaker: when both exist in the same dir, newer wins',
-        () {
+    test('mtime tiebreaker: when both exist in the same dir, newer wins', () {
       // Write AGENTS.md first, then CLAUDE.md a beat later. CLAUDE.md
       // should win because it has the newer mtime.
-      final agents =
-          File(p.join(tempRoot.path, 'AGENTS.md'))..writeAsStringSync('A');
+      final agents = File(p.join(tempRoot.path, 'AGENTS.md'))
+        ..writeAsStringSync('A');
       sleep(const Duration(milliseconds: 50));
-      final claude =
-          File(p.join(tempRoot.path, 'CLAUDE.md'))..writeAsStringSync('C');
+      final claude = File(p.join(tempRoot.path, 'CLAUDE.md'))
+        ..writeAsStringSync('C');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -75,15 +76,14 @@ void main() {
       expect(result, isNot(contains(agents.path)));
     });
 
-    test('mtime tiebreaker: when AGENTS.md is the newer, AGENTS.md wins',
-        () {
+    test('mtime tiebreaker: when AGENTS.md is the newer, AGENTS.md wins', () {
       // Write CLAUDE.md first, then AGENTS.md a beat later. AGENTS.md
       // should win.
-      final claude =
-          File(p.join(tempRoot.path, 'CLAUDE.md'))..writeAsStringSync('C');
+      final claude = File(p.join(tempRoot.path, 'CLAUDE.md'))
+        ..writeAsStringSync('C');
       sleep(const Duration(milliseconds: 50));
-      final agents =
-          File(p.join(tempRoot.path, 'AGENTS.md'))..writeAsStringSync('A');
+      final agents = File(p.join(tempRoot.path, 'AGENTS.md'))
+        ..writeAsStringSync('A');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -96,31 +96,28 @@ void main() {
       expect(result, isNot(contains(claude.path)));
     });
 
-    test('first match wins walking up: a deeper file beats a higher one',
-        () {
+    test('first match wins walking up: a deeper file beats a higher one', () {
       // Create a worktree-like structure: <root>/<sub>/AGENTS.md AND
       // <root>/AGENTS.md. cwd is <root>/<sub>. The deeper one should
       // win because the walker stops at the first match.
       final root = tempRoot.path;
       final sub = Directory(p.join(root, 'sub'))..createSync();
       File(p.join(root, 'AGENTS.md')).writeAsStringSync('root instructions');
-      File(p.join(sub.path, 'AGENTS.md'))
-          .writeAsStringSync('sub instructions');
+      File(p.join(sub.path, 'AGENTS.md')).writeAsStringSync('sub instructions');
 
-      final result = discoverProjectNotes(
-        cwd: sub.path,
-        worktree: root,
-      );
+      final result = discoverProjectNotes(cwd: sub.path, worktree: root);
 
       expect(result, contains('sub instructions'));
       expect(result, isNot(contains('root instructions')));
     });
 
     test('appends crux-addition.md when present in cwd', () {
-      File(p.join(tempRoot.path, 'AGENTS.md'))
-          .writeAsStringSync('AGENTS content');
-      File(p.join(tempRoot.path, 'crux-addition.md'))
-          .writeAsStringSync('Crux-specific addendum');
+      File(
+        p.join(tempRoot.path, 'AGENTS.md'),
+      ).writeAsStringSync('AGENTS content');
+      File(
+        p.join(tempRoot.path, 'crux-addition.md'),
+      ).writeAsStringSync('Crux-specific addendum');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -135,8 +132,9 @@ void main() {
     });
 
     test('returns only crux-addition.md when no AGENTS/CLAUDE exists', () {
-      File(p.join(tempRoot.path, 'crux-addition.md'))
-          .writeAsStringSync('Standalone addendum');
+      File(
+        p.join(tempRoot.path, 'crux-addition.md'),
+      ).writeAsStringSync('Standalone addendum');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -154,15 +152,12 @@ void main() {
       // cwd is <root>/<sub>. The closer one should win.
       final root = tempRoot.path;
       final sub = Directory(p.join(root, 'sub'))..createSync();
-      File(p.join(root, 'crux-addition.md'))
-          .writeAsStringSync('root addendum');
-      File(p.join(sub.path, 'crux-addition.md'))
-          .writeAsStringSync('sub addendum');
+      File(p.join(root, 'crux-addition.md')).writeAsStringSync('root addendum');
+      File(
+        p.join(sub.path, 'crux-addition.md'),
+      ).writeAsStringSync('sub addendum');
 
-      final result = discoverProjectNotes(
-        cwd: sub.path,
-        worktree: root,
-      );
+      final result = discoverProjectNotes(cwd: sub.path, worktree: root);
 
       expect(result, contains('sub addendum'));
       expect(result, isNot(contains('root addendum')));
@@ -185,8 +180,9 @@ void main() {
       // The walker should not include tempRoot in the search.
       final worktree = Directory(p.join(tempRoot.path, 'worktree'))
         ..createSync();
-      File(p.join(tempRoot.path, 'AGENTS.md'))
-          .writeAsStringSync('OUTSIDE WORKTREE');
+      File(
+        p.join(tempRoot.path, 'AGENTS.md'),
+      ).writeAsStringSync('OUTSIDE WORKTREE');
 
       final result = discoverProjectNotes(
         cwd: worktree.path,

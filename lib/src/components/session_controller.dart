@@ -146,8 +146,7 @@ class SessionController {
   /// The registered [AskAnswerView] for [message], or null when the
   /// row is an ordinary user message (or the view was dropped on
   /// restart / session switch).
-  AskAnswerView? askAnswerViewFor(Message message) =>
-      _askAnswerViews[message];
+  AskAnswerView? askAnswerViewFor(Message message) => _askAnswerViews[message];
 
   /// Route-through access to the per-session input text stash. Stores
   /// [text] under [sessionId], or removes the entry when [text] is
@@ -322,14 +321,11 @@ class SessionController {
 
   SessionController({
     required SessionStore store,
-    required ProviderService providerService,
-    required ChatService chatService,
-    required void Function() refresh,
+    required this._providerService,
+    required this._chatService,
+    required this._refresh,
   }) : _store = store,
-       _messageStore = store.messageStore,
-       _providerService = providerService,
-       _chatService = chatService,
-       _refresh = refresh;
+       _messageStore = store.messageStore;
 
   Session get currentSession {
     if (currentSessionId == null) {

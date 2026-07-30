@@ -19,8 +19,7 @@ class SessionLeaseManager {
 
   /// True when [cancelStream] has been called for [sessionId] but the
   /// turn hasn't yet noticed and cleaned up.
-  bool isCancelRequested(int sessionId) =>
-      _cancelRequested.contains(sessionId);
+  bool isCancelRequested(int sessionId) => _cancelRequested.contains(sessionId);
 
   /// Request that the stream for [sessionId] be cancelled. The turn
   /// executor checks this flag between chunks and bails out of the

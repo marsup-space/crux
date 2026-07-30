@@ -33,18 +33,19 @@ void enableWindowsVt() {
   // the linker level. (Top-level `DynamicLibrary.open('kernel32.dll')`
   // would fail on macOS/Linux, so we must defer.)
   final kernel32 = DynamicLibrary.open('kernel32.dll');
-  final getStdHandle = kernel32.lookupFunction<
-    IntPtr Function(Uint32),
-    int Function(int)
-  >('GetStdHandle');
-  final getConsoleMode = kernel32.lookupFunction<
-    Int32 Function(IntPtr, Pointer<Uint32>),
-    int Function(int, Pointer<Uint32>)
-  >('GetConsoleMode');
-  final setConsoleMode = kernel32.lookupFunction<
-    Int32 Function(IntPtr, Uint32),
-    int Function(int, int)
-  >('SetConsoleMode');
+  final getStdHandle = kernel32
+      .lookupFunction<IntPtr Function(Uint32), int Function(int)>(
+        'GetStdHandle',
+      );
+  final getConsoleMode = kernel32
+      .lookupFunction<
+        Int32 Function(IntPtr, Pointer<Uint32>),
+        int Function(int, Pointer<Uint32>)
+      >('GetConsoleMode');
+  final setConsoleMode = kernel32
+      .lookupFunction<Int32 Function(IntPtr, Uint32), int Function(int, int)>(
+        'SetConsoleMode',
+      );
 
   final hOut = getStdHandle(_kStdOutputHandle);
   // INVALID_HANDLE_VALUE (-1) and NULL (0) both mean "no real console".

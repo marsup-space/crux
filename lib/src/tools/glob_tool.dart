@@ -173,10 +173,7 @@ class GlobTool extends ToolDef {
           truncated: true,
         );
       }
-      return ToolResult(
-        title: 'Glob: $pattern',
-        output: relative.join('\n'),
-      );
+      return ToolResult(title: 'Glob: $pattern', output: relative.join('\n'));
     } catch (e) {
       return ToolResult.error('glob failed: $e');
     }

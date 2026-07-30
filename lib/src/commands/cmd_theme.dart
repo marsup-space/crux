@@ -1,5 +1,6 @@
 import '../components/ui/toast.dart';
 import 'command_executor.dart';
+
 Future<void> executeTheme(List<String> parts, CommandContext ctx) async {
   final controller = ctx.themeController;
   if (controller == null) {
@@ -8,7 +9,9 @@ Future<void> executeTheme(List<String> parts, CommandContext ctx) async {
   }
   final id = parts.length > 1 ? parts[1].trim() : '';
   if (id.isEmpty) {
-    ctx.showToast('Current theme: ${controller.activeId}. Usage: /theme <name>');
+    ctx.showToast(
+      'Current theme: ${controller.activeId}. Usage: /theme <name>',
+    );
     return;
   }
   final result = await controller.switchTheme(id);

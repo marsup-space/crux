@@ -80,17 +80,12 @@ void main() {
         'which rg',
       ];
       for (final cmd in commands) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNull, reason: 'should not flag: "$cmd"');
       }
     });
 
-    test('does NOT flag stdin-filtering pipelines (perl|grep|head, etc.)',
-        () {
+    test('does NOT flag stdin-filtering pipelines (perl|grep|head, etc.)', () {
       // Per the "dumber detector" rule, only the FIRST verb is
       // checked. Pipelines where the first verb is a non-
       // violation shell-native command (`ps`, `env`, `flutter`,
@@ -107,11 +102,7 @@ void main() {
         'dart run bin/main.dart | grep "error" | tail',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNull, reason: 'should not flag: "$cmd"');
       }
     });
@@ -127,11 +118,7 @@ void main() {
         'cd /path && rg "TODO" lib/',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
@@ -147,11 +134,7 @@ void main() {
 echo "=== Final check: any remaining semble_search references? ==="
 grep -rn "semble_search\\|SembleSearchTool" lib test --include=*.dart 2>/dev/null
 echo "(should be empty)"''';
-      final v = detectShellGuard(
-        cmd,
-        isWindows: false,
-        currentStreak: 0,
-      );
+      final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
       expect(v, isNull);
     });
 
@@ -187,18 +170,13 @@ echo "(should be empty)"''';
         'echo "checking..." ; grep -r "TODO" .',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
     });
 
-    test('still flags grep when it is the FIRST segment (not in a script)',
-        () {
+    test('still flags grep when it is the FIRST segment (not in a script)', () {
       // `grep …` alone (no preceding cd/echo/etc.) IS a
       // bash+grep fallback — the LLM should have used the
       // `grep` tool. The shell-script leniency only kicks in
@@ -209,11 +187,7 @@ echo "(should be empty)"''';
         'grep foo && echo done', // echo is second, not first
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
@@ -229,11 +203,7 @@ echo "(should be empty)"''';
         'bat pubspec.yaml',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.read, reason: 'cmd="$cmd"');
         expect(v.toolName, 'read', reason: 'cmd="$cmd"');
@@ -249,11 +219,7 @@ echo "(should be empty)"''';
         'uniq input.txt',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.read, reason: 'cmd="$cmd"');
       }
@@ -268,11 +234,7 @@ echo "(should be empty)"''';
         'du -sh build/',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.glob, reason: 'cmd="$cmd"');
         expect(v.toolName, 'glob', reason: 'cmd="$cmd"');
@@ -289,11 +251,7 @@ echo "(should be empty)"''';
         'ag pattern lib/',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
         expect(v.toolName, 'grep', reason: 'cmd="$cmd"');
@@ -312,11 +270,7 @@ echo "(should be empty)"''';
         'ack "foo" lib/ | tail -5',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
         expect(v.toolName, 'grep', reason: 'cmd="$cmd"');
@@ -339,11 +293,7 @@ echo "(should be empty)"''';
           'du -sh * | sort -h | head -5',
         ];
         for (final cmd in cases) {
-          final v = detectShellGuard(
-            cmd,
-            isWindows: false,
-            currentStreak: 0,
-          );
+          final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
           expect(v, isNotNull, reason: 'should flag: "$cmd"');
           expect(v!.kind, ShellGuardKind.glob, reason: 'cmd="$cmd"');
           expect(v.toolName, 'glob', reason: 'cmd="$cmd"');
@@ -367,11 +317,7 @@ echo "(should be empty)"''';
             'ls build/releases/crux-macos-arm64/bin/ && '
             "echo '---' && "
             'build/releases/crux-macos-arm64/bin/crux --version 2>&1 | head -5';
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull);
         expect(v!.kind, ShellGuardKind.glob);
         expect(v.toolName, 'glob');
@@ -388,11 +334,7 @@ echo "(should be empty)"''';
         'cmp a.bin b.bin',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: false,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.read, reason: 'cmd="$cmd"');
       }
@@ -480,11 +422,7 @@ echo "(should be empty)"''';
     test('long command is truncated in verdict.command', () {
       final longPath = 'lib/${'a/' * 100}file.dart';
       final cmd = 'cat $longPath';
-      final v = detectShellGuard(
-        cmd,
-        isWindows: false,
-        currentStreak: 0,
-      );
+      final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
       expect(v, isNotNull);
       // Truncation marker (the `…` glyph) signals the
       // command was longer than the embed-friendly limit.
@@ -493,17 +431,9 @@ echo "(should be empty)"''';
     });
 
     test('empty command returns null', () {
-      final v = detectShellGuard(
-        '',
-        isWindows: false,
-        currentStreak: 0,
-      );
+      final v = detectShellGuard('', isWindows: false, currentStreak: 0);
       expect(v, isNull);
-      final v2 = detectShellGuard(
-        '   ',
-        isWindows: false,
-        currentStreak: 0,
-      );
+      final v2 = detectShellGuard('   ', isWindows: false, currentStreak: 0);
       expect(v2, isNull);
     });
 
@@ -529,11 +459,7 @@ The detector covers:
 
 Smart skips: input redirects/heredocs (< anywhere), no-arg tail,
 env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
-          final v = detectShellGuard(
-            cmd,
-            isWindows: false,
-            currentStreak: 0,
-          );
+          final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
           expect(v, isNull, reason: 'should not flag a commit message');
         },
       );
@@ -633,11 +559,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         'more big.log',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: true,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: true, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.read, reason: 'cmd="$cmd"');
       }
@@ -651,11 +573,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         'ls build/',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: true,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: true, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.glob, reason: 'cmd="$cmd"');
       }
@@ -669,11 +587,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         'find "auth" src/',
       ];
       for (final cmd in cases) {
-        final v = detectShellGuard(
-          cmd,
-          isWindows: true,
-          currentStreak: 0,
-        );
+        final v = detectShellGuard(cmd, isWindows: true, currentStreak: 0);
         expect(v, isNotNull, reason: 'should flag: "$cmd"');
         expect(v!.kind, ShellGuardKind.grep, reason: 'cmd="$cmd"');
       }
@@ -762,10 +676,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         currentStreak: 0,
       )!;
       final out = renderShellGuardEmbedded(v);
-      expect(
-        out,
-        contains(shellGuardEmbeddedMarker(ShellGuardSeverity.mild)),
-      );
+      expect(out, contains(shellGuardEmbeddedMarker(ShellGuardSeverity.mild)));
       expect(out, contains('cat lib/main.dart')); // command echoed
     });
 
@@ -776,10 +687,7 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         currentStreak: 1,
       )!;
       final out = renderShellGuardEmbedded(v);
-      expect(
-        out,
-        contains(shellGuardEmbeddedMarker(ShellGuardSeverity.firm)),
-      );
+      expect(out, contains(shellGuardEmbeddedMarker(ShellGuardSeverity.firm)));
     });
 
     test('reject tier throws (must use renderShellGuardRejection)', () {
@@ -811,21 +719,24 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(out, contains('`read`'));
     });
 
-    test('grep verdict body text still mentions semantic_search (general nudge)', () {
-      // The semantic-search verdict is gone, but the body text
-      // still mentions semantic_search as the preferred
-      // surface for "how does X work" questions — that's a
-      // general nudge to the LLM, independent of the verdict
-      // kind.
-      final v = detectShellGuard(
-        'rg "auth" lib/ | head -10',
-        isWindows: false,
-        currentStreak: 0,
-      )!;
-      expect(v.kind, ShellGuardKind.grep);
-      final out = renderShellGuardEmbedded(v);
-      expect(out, contains('semantic_search'));
-    });
+    test(
+      'grep verdict body text still mentions semantic_search (general nudge)',
+      () {
+        // The semantic-search verdict is gone, but the body text
+        // still mentions semantic_search as the preferred
+        // surface for "how does X work" questions — that's a
+        // general nudge to the LLM, independent of the verdict
+        // kind.
+        final v = detectShellGuard(
+          'rg "auth" lib/ | head -10',
+          isWindows: false,
+          currentStreak: 0,
+        )!;
+        expect(v.kind, ShellGuardKind.grep);
+        final out = renderShellGuardEmbedded(v);
+        expect(out, contains('semantic_search'));
+      },
+    );
   });
 
   group('renderShellGuardRejection (reject tier)', () {
@@ -967,22 +878,25 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       await db.close();
     });
 
-    test('addMessage with role=shell_guard stores streak in parallelCount', () async {
-      final v = detectShellGuard(
-        'cat lib/main.dart',
-        isWindows: false,
-        currentStreak: 0,
-      )!;
-      final msg = await store.messageStore.addMessage(
-        sessionId,
-        role: 'shell_guard',
-        content: renderShellGuardBubbleLabel(v),
-        parallelCount: v.streakAfter,
-      );
-      expect(msg.role, 'shell_guard');
-      expect(msg.parallelCount, 1);
-      expect(msg.content, 'shell-tool fallback · 1st · use `read` instead');
-    });
+    test(
+      'addMessage with role=shell_guard stores streak in parallelCount',
+      () async {
+        final v = detectShellGuard(
+          'cat lib/main.dart',
+          isWindows: false,
+          currentStreak: 0,
+        )!;
+        final msg = await store.messageStore.addMessage(
+          sessionId,
+          role: 'shell_guard',
+          content: renderShellGuardBubbleLabel(v),
+          parallelCount: v.streakAfter,
+        );
+        expect(msg.role, 'shell_guard');
+        expect(msg.parallelCount, 1);
+        expect(msg.content, 'shell-tool fallback · 1st · use `read` instead');
+      },
+    );
 
     test('reject-tier bubble stores streak=3 and the BLOCKED label', () async {
       final v = detectShellGuard(
@@ -1021,8 +935,10 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         results: [
           (
             callId: 'a',
-            output: '...cat output...\n\n[Crux system note — shell-tool fallback]\n...',
-            meta: '{"shellGuard":true,"shellGuardKind":"read","shellGuardSeverity":"mild","shellGuardStreakAfter":1}',
+            output:
+                '...cat output...\n\n[Crux system note — shell-tool fallback]\n...',
+            meta:
+                '{"shellGuard":true,"shellGuardKind":"read","shellGuardSeverity":"mild","shellGuardStreakAfter":1}',
           ),
         ],
       );
@@ -1050,40 +966,36 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
       expect(msgs.last.parallelCount, 1);
     });
 
-    test('multiple shell_guard rows in one session (escalation scenario)',
-        () async {
-      // Simulate the three-tier escalation: 1st (mild) →
-      // 2nd (firm) → 3rd (reject). Three bubbles, three
-      // different parallelCount values.
-      for (final streakBefore in [0, 1, 2]) {
-        final v = detectShellGuard(
-          'cat lib/main.dart',
-          isWindows: false,
-          currentStreak: streakBefore,
-        )!;
-        await store.messageStore.addMessage(
+    test(
+      'multiple shell_guard rows in one session (escalation scenario)',
+      () async {
+        // Simulate the three-tier escalation: 1st (mild) →
+        // 2nd (firm) → 3rd (reject). Three bubbles, three
+        // different parallelCount values.
+        for (final streakBefore in [0, 1, 2]) {
+          final v = detectShellGuard(
+            'cat lib/main.dart',
+            isWindows: false,
+            currentStreak: streakBefore,
+          )!;
+          await store.messageStore.addMessage(
+            sessionId,
+            role: 'shell_guard',
+            content: renderShellGuardBubbleLabel(v),
+            parallelCount: v.streakAfter,
+          );
+        }
+        final msgs = (await store.messageStore.getMessages(
           sessionId,
-          role: 'shell_guard',
-          content: renderShellGuardBubbleLabel(v),
-          parallelCount: v.streakAfter,
-        );
-      }
-      final msgs = (await store.messageStore.getMessages(sessionId))
-          .where((m) => m.role == 'shell_guard')
-          .toList();
-      expect(msgs.length, 3);
-      expect(
-        msgs.map((m) => m.parallelCount).toList(),
-        [1, 2, 3],
-      );
-      expect(
-        msgs.map((m) => m.content).toList(),
-        [
+        )).where((m) => m.role == 'shell_guard').toList();
+        expect(msgs.length, 3);
+        expect(msgs.map((m) => m.parallelCount).toList(), [1, 2, 3]);
+        expect(msgs.map((m) => m.content).toList(), [
           'shell-tool fallback · 1st · use `read` instead',
           'shell-tool fallback · 2nd · switch to `read`',
           'shell-tool fallback · 3rd · blocked — use `read`',
-        ],
-      );
-    });
+        ]);
+      },
+    );
   });
 }

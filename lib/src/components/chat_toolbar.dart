@@ -249,7 +249,6 @@ class _ChatToolbarState extends State<ChatToolbar> {
     );
   }
 
-
   /// Whether the active provider opted into the coding-plan
   /// mixin (and thus has a stream to subscribe to). The
   /// toolbar hides the quota cell when this is false so

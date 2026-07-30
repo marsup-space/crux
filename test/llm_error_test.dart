@@ -10,11 +10,7 @@ import 'package:test/test.dart';
 /// verified rather than ceremony. Takes `dynamic` for the expected
 /// value so callers can pass either concrete values (`true`,
 /// `'1002'`) or `Matcher`s (`isTrue`, `isNull`, `contains(...)`).
-void _assertField<T>(
-  T value,
-  Object? expected, {
-  String? field,
-}) {
+void _assertField<T>(T value, Object? expected, {String? field}) {
   expect(value, expected, reason: field != null ? 'field: $field' : null);
 }
 
@@ -42,7 +38,8 @@ void main() {
         expect(
           kind.isRetriable,
           isFalse,
-          reason: '$kind should NOT be retriable — retrying the same '
+          reason:
+              '$kind should NOT be retriable — retrying the same '
               'payload won\'t change the outcome',
         );
       }
@@ -65,11 +62,7 @@ void main() {
       _assertField(err.kind, LlmErrorKind.rateLimit, field: 'kind');
       _assertField(err.vendor, LlmVendor.minimax, field: 'vendor');
       _assertField(err.statusCode, 429, field: 'statusCode');
-      _assertField(
-        err.vendorCode,
-        '1002',
-        field: 'vendorCode',
-      );
+      _assertField(err.vendorCode, '1002', field: 'vendorCode');
       _assertField(err.isRetriable, isTrue, field: 'isRetriable');
     });
 
@@ -90,7 +83,10 @@ void main() {
       final err = parseHttpError(
         statusCode: 402,
         body: jsonEncode({
-          'base_resp': {'status_code': 1008, 'status_msg': 'insufficient balance'},
+          'base_resp': {
+            'status_code': 1008,
+            'status_msg': 'insufficient balance',
+          },
         }),
         vendor: LlmVendor.minimax,
         providerName: 'minimax',
@@ -103,7 +99,10 @@ void main() {
       final err = parseHttpError(
         statusCode: 400,
         body: jsonEncode({
-          'base_resp': {'status_code': 1026, 'status_msg': 'input new_sensitive'},
+          'base_resp': {
+            'status_code': 1026,
+            'status_msg': 'input new_sensitive',
+          },
         }),
         vendor: LlmVendor.minimax,
         providerName: 'minimax',
@@ -115,7 +114,10 @@ void main() {
       final err = parseHttpError(
         statusCode: 400,
         body: jsonEncode({
-          'base_resp': {'status_code': 1027, 'status_msg': 'output new_sensitive'},
+          'base_resp': {
+            'status_code': 1027,
+            'status_msg': 'output new_sensitive',
+          },
         }),
         vendor: LlmVendor.minimax,
         providerName: 'minimax',
@@ -155,7 +157,10 @@ void main() {
       final err = parseHttpError(
         statusCode: 429,
         body: jsonEncode({
-          'base_resp': {'status_code': 2056, 'status_msg': 'usage limit exceeded'},
+          'base_resp': {
+            'status_code': 2056,
+            'status_msg': 'usage limit exceeded',
+          },
         }),
         vendor: LlmVendor.minimax,
         providerName: 'minimax',
@@ -182,65 +187,68 @@ void main() {
 
   // ─── Anthropic HTTP+type ──────────────────────────────────────
 
-  group('parseHttpError — Anthropic {type: "error", error: {type, message}}', () {
-    test('401 authentication_error', () {
-      final err = parseHttpError(
-        statusCode: 401,
-        body: jsonEncode({
-          'type': 'error',
-          'error': {
-            'type': 'authentication_error',
-            'message': 'invalid x-api-key',
-          },
-        }),
-        vendor: LlmVendor.anthropic,
-        providerName: 'anthropic',
-        requestId: 'req_011CSHoEeqs5C35K2UUqR7Fy',
-      );
-      _assertField(err.kind, LlmErrorKind.auth);
-      _assertField(err.requestId, 'req_011CSHoEeqs5C35K2UUqR7Fy');
-    });
+  group(
+    'parseHttpError — Anthropic {type: "error", error: {type, message}}',
+    () {
+      test('401 authentication_error', () {
+        final err = parseHttpError(
+          statusCode: 401,
+          body: jsonEncode({
+            'type': 'error',
+            'error': {
+              'type': 'authentication_error',
+              'message': 'invalid x-api-key',
+            },
+          }),
+          vendor: LlmVendor.anthropic,
+          providerName: 'anthropic',
+          requestId: 'req_011CSHoEeqs5C35K2UUqR7Fy',
+        );
+        _assertField(err.kind, LlmErrorKind.auth);
+        _assertField(err.requestId, 'req_011CSHoEeqs5C35K2UUqR7Fy');
+      });
 
-    test('529 overloaded_error', () {
-      final err = parseHttpError(
-        statusCode: 529,
-        body: jsonEncode({
-          'type': 'error',
-          'error': {'type': 'overloaded_error', 'message': 'Overloaded'},
-        }),
-        vendor: LlmVendor.anthropic,
-        providerName: 'anthropic',
-      );
-      _assertField(err.kind, LlmErrorKind.overloaded);
-      _assertField(err.isRetriable, isTrue);
-    });
+      test('529 overloaded_error', () {
+        final err = parseHttpError(
+          statusCode: 529,
+          body: jsonEncode({
+            'type': 'error',
+            'error': {'type': 'overloaded_error', 'message': 'Overloaded'},
+          }),
+          vendor: LlmVendor.anthropic,
+          providerName: 'anthropic',
+        );
+        _assertField(err.kind, LlmErrorKind.overloaded);
+        _assertField(err.isRetriable, isTrue);
+      });
 
-    test('413 request_too_large', () {
-      final err = parseHttpError(
-        statusCode: 413,
-        body: jsonEncode({
-          'type': 'error',
-          'error': {'type': 'request_too_large', 'message': 'too big'},
-        }),
-        vendor: LlmVendor.anthropic,
-        providerName: 'anthropic',
-      );
-      _assertField(err.kind, LlmErrorKind.contextLength);
-    });
+      test('413 request_too_large', () {
+        final err = parseHttpError(
+          statusCode: 413,
+          body: jsonEncode({
+            'type': 'error',
+            'error': {'type': 'request_too_large', 'message': 'too big'},
+          }),
+          vendor: LlmVendor.anthropic,
+          providerName: 'anthropic',
+        );
+        _assertField(err.kind, LlmErrorKind.contextLength);
+      });
 
-    test('502 falls back to overloaded (no error.type provided)', () {
-      final err = parseHttpError(
-        statusCode: 502,
-        body: jsonEncode({
-          'type': 'error',
-          'error': {'message': 'gateway timeout'},
-        }),
-        vendor: LlmVendor.anthropic,
-        providerName: 'anthropic',
-      );
-      _assertField(err.kind, LlmErrorKind.overloaded);
-    });
-  });
+      test('502 falls back to overloaded (no error.type provided)', () {
+        final err = parseHttpError(
+          statusCode: 502,
+          body: jsonEncode({
+            'type': 'error',
+            'error': {'message': 'gateway timeout'},
+          }),
+          vendor: LlmVendor.anthropic,
+          providerName: 'anthropic',
+        );
+        _assertField(err.kind, LlmErrorKind.overloaded);
+      });
+    },
+  );
 
   // ─── OpenAI HTTP+code ─────────────────────────────────────────
 
@@ -254,8 +262,7 @@ void main() {
         statusCode: 400,
         body: jsonEncode({
           'error': {
-            'message':
-                "This model's maximum context length is 4096 tokens.",
+            'message': "This model's maximum context length is 4096 tokens.",
             'type': 'invalid_request_error',
             'param': 'messages',
             'code': 'context_length_exceeded',
@@ -305,10 +312,7 @@ void main() {
       final err = parseHttpError(
         statusCode: 503,
         body: jsonEncode({
-          'error': {
-            'message': 'Slow Down',
-            'type': 'slow_down',
-          },
+          'error': {'message': 'Slow Down', 'type': 'slow_down'},
         }),
         vendor: LlmVendor.openai,
         providerName: 'openai',
@@ -321,7 +325,10 @@ void main() {
       final err = parseHttpError(
         statusCode: 500,
         body: jsonEncode({
-          'error': {'message': 'The server had an error.', 'type': 'server_error'},
+          'error': {
+            'message': 'The server had an error.',
+            'type': 'server_error',
+          },
         }),
         vendor: LlmVendor.openai,
         providerName: 'openai',
@@ -343,8 +350,11 @@ void main() {
         requestId: 'req_abc',
       );
       _assertField(err.kind, LlmErrorKind.overloaded);
-      _assertField(err.statusCode, isNull,
-          field: 'statusCode must be null for mid-stream errors');
+      _assertField(
+        err.statusCode,
+        isNull,
+        field: 'statusCode must be null for mid-stream errors',
+      );
       _assertField(err.isRetriable, isTrue);
     });
 
@@ -550,20 +560,23 @@ void main() {
       expect(round.providerName, original.providerName);
     });
 
-    test('unknown kind in persisted JSON falls back to LlmErrorKind.unknown', () {
-      // Defensive: a future Crux version might add a new kind and a
-      // session opened in an older Crux would have that kind name in
-      // its persisted bubble. We don't want the chat history to
-      // crash — fall back to unknown.
-      final stale = jsonEncode({
-        'kind': 'new_kind_added_in_future',
-        'vendor': 'anthropic',
-        'message': 'something',
-      });
-      final err = decodeLlmErrorJson(stale);
-      _assertField(err.kind, LlmErrorKind.unknown);
-      _assertField(err.message, 'something');
-    });
+    test(
+      'unknown kind in persisted JSON falls back to LlmErrorKind.unknown',
+      () {
+        // Defensive: a future Crux version might add a new kind and a
+        // session opened in an older Crux would have that kind name in
+        // its persisted bubble. We don't want the chat history to
+        // crash — fall back to unknown.
+        final stale = jsonEncode({
+          'kind': 'new_kind_added_in_future',
+          'vendor': 'anthropic',
+          'message': 'something',
+        });
+        final err = decodeLlmErrorJson(stale);
+        _assertField(err.kind, LlmErrorKind.unknown);
+        _assertField(err.message, 'something');
+      },
+    );
 
     test('malformed JSON yields a generic unknown error', () {
       final err = decodeLlmErrorJson('not json {');
@@ -582,14 +595,20 @@ void main() {
     test('maps each registered provider type', () {
       expect(LlmVendorX.fromProviderName('minimax'), LlmVendor.minimax);
       expect(LlmVendorX.fromProviderName('anthropic'), LlmVendor.anthropic);
-      expect(LlmVendorX.fromProviderName('anthropic_compatible'),
-          LlmVendor.anthropic);
+      expect(
+        LlmVendorX.fromProviderName('anthropic_compatible'),
+        LlmVendor.anthropic,
+      );
       expect(LlmVendorX.fromProviderName('openai'), LlmVendor.openai);
-      expect(LlmVendorX.fromProviderName('openai_compatible'),
-          LlmVendor.openai);
+      expect(
+        LlmVendorX.fromProviderName('openai_compatible'),
+        LlmVendor.openai,
+      );
       expect(LlmVendorX.fromProviderName('deepseek'), LlmVendor.openai);
-      expect(LlmVendorX.fromProviderName('unknown-provider'),
-          LlmVendor.unknown);
+      expect(
+        LlmVendorX.fromProviderName('unknown-provider'),
+        LlmVendor.unknown,
+      );
     });
   });
 
@@ -636,10 +655,7 @@ void main() {
       final err = parseHttpError(
         statusCode: 400,
         body: jsonEncode({
-          'base_resp': {
-            'status_code': 1042,
-            'status_msg': 'invalid parameter',
-          },
+          'base_resp': {'status_code': 1042, 'status_msg': 'invalid parameter'},
         }),
         vendor: LlmVendor.minimax,
         providerName: 'minimax',
@@ -663,10 +679,7 @@ void main() {
           statusCode: 400,
           body: jsonEncode({
             'type': 'error',
-            'error': {
-              'type': 'invalid_request_error',
-              'message': msgText,
-            },
+            'error': {'type': 'invalid_request_error', 'message': msgText},
           }),
           vendor: LlmVendor.anthropic,
           providerName: 'anthropic',
@@ -679,9 +692,7 @@ void main() {
       }
     });
 
-    test(
-        'Anthropic 400 with non-tool invalid_request_error is NOT orphan',
-        () {
+    test('Anthropic 400 with non-tool invalid_request_error is NOT orphan', () {
       // A schema-validation 400 (e.g. wrong tool input_schema) uses
       // the same `invalid_request_error` kind but a totally
       // different cause. Must NOT trigger a session-wide repair.

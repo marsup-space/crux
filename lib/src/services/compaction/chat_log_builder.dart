@@ -116,12 +116,14 @@ ChatLogResult buildChatLog({
             continue;
           }
 
-          calls.add(_ResolvedCall(
-            call: call,
-            tool: tool,
-            result: result ?? '',
-            isError: isError,
-          ));
+          calls.add(
+            _ResolvedCall(
+              call: call,
+              tool: tool,
+              result: result ?? '',
+              isError: isError,
+            ),
+          );
 
           // Summary contribution: each tool decides whether to feed
           // the bottom-of-log section. Last-write-wins dedup happens
@@ -251,8 +253,7 @@ void _writeTurn(
 
   var isFirstChunk = true;
   for (final chunk in chunks) {
-    final visibleCalls =
-        chunk.calls.where((c) => !c.skipInPrune).toList();
+    final visibleCalls = chunk.calls.where((c) => !c.skipInPrune).toList();
     if (chunk.preamble.isEmpty && visibleCalls.isEmpty) continue;
 
     if (!isFirstChunk) buf.writeln();

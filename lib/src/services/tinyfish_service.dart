@@ -210,7 +210,8 @@ class TinyFishService {
               final retryAfterSec = _parseRetryAfter(retryAfterHeader);
 
               // 429 + transient 5xx -> retriable. Anything else -> final.
-              final retriable = status == 429 ||
+              final retriable =
+                  status == 429 ||
                   status == 502 ||
                   status == 503 ||
                   status == 504;
@@ -299,9 +300,7 @@ class TinyFishService {
     // Strip any existing TINYFISH_API_KEY line (top-level only).
     final stripped = existing
         .split('\n')
-        .where(
-          (line) => !RegExp(r'^\s*TINYFISH_API_KEY\s*=').hasMatch(line),
-        )
+        .where((line) => !RegExp(r'^\s*TINYFISH_API_KEY\s*=').hasMatch(line))
         .join('\n');
 
     // Build the new key line. If removing, just write the stripped
@@ -317,7 +316,9 @@ class TinyFishService {
       if (stripped.trim().isEmpty) {
         next = '$keyLine\n';
       } else {
-        next = stripped.endsWith('\n') ? '$stripped$keyLine\n' : '$stripped\n$keyLine\n';
+        next = stripped.endsWith('\n')
+            ? '$stripped$keyLine\n'
+            : '$stripped\n$keyLine\n';
       }
     }
 
@@ -578,10 +579,7 @@ class TinyFishFetchResponse {
   final List<TinyFishFetchResult> results;
   final List<TinyFishFetchError> errors;
 
-  const TinyFishFetchResponse({
-    required this.results,
-    required this.errors,
-  });
+  const TinyFishFetchResponse({required this.results, required this.errors});
 
   factory TinyFishFetchResponse.fromJson(Map<String, dynamic> j) {
     return TinyFishFetchResponse(

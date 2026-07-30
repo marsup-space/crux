@@ -26,12 +26,12 @@ class ShellMonitorLogSinkImpl implements ShellMonitorLogSink {
   final List<db.ShellMonitorLogsCompanion> _pending = [];
 
   ShellMonitorLogSinkImpl({
-    required ShellMonitorLogStore store,
+    required this._store,
     required this.sessionId,
     required this.runId,
     required this.command,
     required this.intent,
-  }) : _store = store;
+  });
 
   @override
   void log(ShellMonitorEvent event) {

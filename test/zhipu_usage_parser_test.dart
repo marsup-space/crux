@@ -70,12 +70,14 @@ void main() {
       expect(usage.weeklyRemains, isNotNull);
     });
 
-    test('inverts percentage (used → remaining) correctly across the range', () {
-      // A row at 100% used should map to 0% remaining (not
-      // 100%); 0% used should map to 100% remaining. Without
-      // the inversion the toolbar would always show "100%"
-      // and the user would never see their quota drain.
-      const body = '''
+    test(
+      'inverts percentage (used → remaining) correctly across the range',
+      () {
+        // A row at 100% used should map to 0% remaining (not
+        // 100%); 0% used should map to 100% remaining. Without
+        // the inversion the toolbar would always show "100%"
+        // and the user would never see their quota drain.
+        const body = '''
 {
   "code": 0,
   "data": {
@@ -87,12 +89,16 @@ void main() {
   }
 }
 ''';
-      final usage = parseZhipuUsageResponse(body);
-      expect(usage.intervalRemainingPct, 0,
-          reason: '100% used must clamp to 0% remaining, not 100%');
-      expect(usage.weeklyRemainingPct, 100);
-      expect(usage.modelName, 'ZHIPU Max');
-    });
+        final usage = parseZhipuUsageResponse(body);
+        expect(
+          usage.intervalRemainingPct,
+          0,
+          reason: '100% used must clamp to 0% remaining, not 100%',
+        );
+        expect(usage.weeklyRemainingPct, 100);
+        expect(usage.modelName, 'ZHIPU Max');
+      },
+    );
 
     test('picks rows by `unit`, not by array order', () {
       // The Zhipu API doesn't guarantee the order of
@@ -142,11 +148,18 @@ void main() {
 }
 ''';
       final usage = parseZhipuUsageResponse(body);
-      expect(usage.intervalRemainingPct, 80,
-          reason: 'unit=3 row present → 80% remaining (20 used)');
-      expect(usage.weeklyRemainingPct, 0,
-          reason: 'unit=6 row missing → defaults to 0% remaining, '
-              'not a crash');
+      expect(
+        usage.intervalRemainingPct,
+        80,
+        reason: 'unit=3 row present → 80% remaining (20 used)',
+      );
+      expect(
+        usage.weeklyRemainingPct,
+        0,
+        reason:
+            'unit=6 row missing → defaults to 0% remaining, '
+            'not a crash',
+      );
       expect(usage.intervalRemains, isNotNull);
       expect(usage.weeklyRemains, isNull);
     });
@@ -168,9 +181,13 @@ void main() {
 }
 ''';
       final usage = parseZhipuUsageResponse(body);
-      expect(usage.modelName, 'zhipu',
-          reason: 'missing level → fall back to the provider name, '
-              'not "ZHIPU " (with a trailing space) or empty');
+      expect(
+        usage.modelName,
+        'zhipu',
+        reason:
+            'missing level → fall back to the provider name, '
+            'not "ZHIPU " (with a trailing space) or empty',
+      );
     });
 
     test('past reset times produce null countdowns', () {
@@ -192,8 +209,11 @@ void main() {
 }
 ''';
       final usage = parseZhipuUsageResponse(body);
-      expect(usage.intervalRemains, isNull,
-          reason: 'past reset → no countdown (not negative duration)');
+      expect(
+        usage.intervalRemains,
+        isNull,
+        reason: 'past reset → no countdown (not negative duration)',
+      );
       expect(usage.weeklyRemains, isNull);
       // Percentages still read normally even when the
       // countdown is gone.
@@ -210,8 +230,7 @@ void main() {
           throwsA(
             isA<CodingPlanUsageError>()
                 .having((e) => e.kind, 'kind', CodingPlanUsageErrorKind.parse)
-                .having((e) => e.message, 'message',
-                    contains('code=401')),
+                .having((e) => e.message, 'message', contains('code=401')),
           ),
         );
       });
@@ -220,8 +239,13 @@ void main() {
         const body = '{ "code": 200 }';
         expect(
           () => parseZhipuUsageResponse(body),
-          throwsA(isA<CodingPlanUsageError>()
-              .having((e) => e.kind, 'kind', CodingPlanUsageErrorKind.parse)),
+          throwsA(
+            isA<CodingPlanUsageError>().having(
+              (e) => e.kind,
+              'kind',
+              CodingPlanUsageErrorKind.parse,
+            ),
+          ),
         );
       });
 
@@ -229,17 +253,24 @@ void main() {
         const body = '{ "code": 200, "data": { "limits": [] } }';
         expect(
           () => parseZhipuUsageResponse(body),
-          throwsA(isA<CodingPlanUsageError>()
-              .having((e) => e.kind, 'kind', CodingPlanUsageErrorKind.parse)),
+          throwsA(
+            isA<CodingPlanUsageError>().having(
+              (e) => e.kind,
+              'kind',
+              CodingPlanUsageErrorKind.parse,
+            ),
+          ),
         );
       });
 
       test('non-JSON body is a parse error', () {
         expect(
           () => parseZhipuUsageResponse('not json'),
-          throwsA(isA<CodingPlanUsageError>()
-              .having((e) => e.kind, 'kind', CodingPlanUsageErrorKind.parse)
-              .having((e) => e.message, 'message', contains('Invalid JSON'))),
+          throwsA(
+            isA<CodingPlanUsageError>()
+                .having((e) => e.kind, 'kind', CodingPlanUsageErrorKind.parse)
+                .having((e) => e.message, 'message', contains('Invalid JSON')),
+          ),
         );
       });
     });

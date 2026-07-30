@@ -66,7 +66,9 @@ class AskSpec {
 
   @override
   bool operator ==(Object other) =>
-      other is AskSpec && other.prompt == prompt && _listEq(other.groups, groups);
+      other is AskSpec &&
+      other.prompt == prompt &&
+      _listEq(other.groups, groups);
 
   @override
   int get hashCode => Object.hash(prompt, Object.hashAll(groups));
@@ -207,7 +209,8 @@ class AskTool extends ToolDef {
   String get name => 'ask';
 
   @override
-  String get description => 'Ask the user a structured multi-part '
+  String get description =>
+      'Ask the user a structured multi-part '
       'question with groups of selectable options. Use this when you '
       'need MULTIPLE answers at once (e.g. pick several modules to '
       'refactor AND pick a runtime), or when you need a MULTI-SELECT '
@@ -224,14 +227,16 @@ class AskTool extends ToolDef {
     'properties': {
       'prompt': {
         'type': 'string',
-        'description': "Optional directive shown above the group(s), "
+        'description':
+            "Optional directive shown above the group(s), "
             "e.g. 'Pick modules to refactor'. Omit when the groups are "
             'self-explanatory.',
       },
       'groups': {
         'type': 'array',
         'minItems': 1,
-        'description': 'One or more groups of options. Each group '
+        'description':
+            'One or more groups of options. Each group '
             'renders as a labeled row of checkboxes (multi) or radios '
             '(single). The user submits one combined answer for all '
             'groups at once.',
@@ -241,14 +246,16 @@ class AskTool extends ToolDef {
           'properties': {
             'name': {
               'type': 'string',
-              'description': 'Group heading shown to the user, e.g. '
+              'description':
+                  'Group heading shown to the user, e.g. '
                   "'modules', 'runtime'. Used as the key in the "
                   'serialized result.',
             },
             'multi': {
               'type': 'boolean',
               'default': false,
-              'description': 'true → multi-select (checkbox, zero or '
+              'description':
+                  'true → multi-select (checkbox, zero or '
                   'more picks). false → single-select (radio, at most '
                   'one pick).',
             },
@@ -265,7 +272,8 @@ class AskTool extends ToolDef {
                   },
                   'value': {
                     'type': 'string',
-                    'description': 'Value returned in the serialized '
+                    'description':
+                        'Value returned in the serialized '
                         'result when this option is picked. Defaults '
                         'to the label when omitted.',
                   },
@@ -312,13 +320,11 @@ class AskTool extends ToolDef {
   ) {
     final spec = parseAskSpec(args);
     final groupCount = spec?.groups.length ?? 0;
-    final optionCount = spec?.groups.fold<int>(
-          0,
-          (sum, g) => sum + g.options.length,
-        ) ??
-        0;
+    final optionCount =
+        spec?.groups.fold<int>(0, (sum, g) => sum + g.options.length) ?? 0;
     return CollapsedSummary(
-      text: 'ask form ($groupCount group${groupCount == 1 ? '' : 's'}, '
+      text:
+          'ask form ($groupCount group${groupCount == 1 ? '' : 's'}, '
           '$optionCount option${optionCount == 1 ? '' : 's'})',
       argsTokens: 0,
       totalTokens: 0,
@@ -368,10 +374,7 @@ AskSpec? parseAskSpec(Map<String, dynamic> args) {
   }
 
   final prompt = args['prompt'];
-  return AskSpec(
-    groups: groups,
-    prompt: prompt is String ? prompt.trim() : '',
-  );
+  return AskSpec(groups: groups, prompt: prompt is String ? prompt.trim() : '');
 }
 
 /// Serialize the user's selections into the prose form the agent

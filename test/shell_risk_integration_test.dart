@@ -47,25 +47,21 @@ void main() {
       required String intent,
       required bool isWindows,
       required AbortSignal abort,
-    })? evaluator,
-  }) =>
-      ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-        shellRiskEvaluator: evaluator,
-      );
+    })?
+    evaluator,
+  }) => ToolContext(
+    sessionId: 1,
+    messageId: 1,
+    abort: AbortSignal(),
+    workingDirectory: tempDir.path,
+    shellRiskEvaluator: evaluator,
+  );
 
-  Map<String, dynamic> callArgs(
-    String command, {
-    bool confirmed = false,
-  }) =>
-      {
-        'command': command,
-        'intent': 'integration test',
-        if (confirmed) 'confirmed': true,
-      };
+  Map<String, dynamic> callArgs(String command, {bool confirmed = false}) => {
+    'command': command,
+    'intent': 'integration test',
+    if (confirmed) 'confirmed': true,
+  };
 
   group('shell risk guardrail — safe tier', () {
     test('safe command runs with zero guardrail overhead', () async {
@@ -73,10 +69,18 @@ void main() {
       var evaluatorCalls = 0;
       final result = await tool.execute(
         callArgs('echo hello'),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          evaluatorCalls++;
-          return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                evaluatorCalls++;
+                return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
+              },
+        ),
       );
 
       expect(result.title, isNot('Error'));
@@ -95,10 +99,18 @@ void main() {
       var evaluatorCalls = 0;
       final result = await tool.execute(
         callArgs('rm -rf /'),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          evaluatorCalls++;
-          return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                evaluatorCalls++;
+                return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
+              },
+        ),
       );
 
       expect(result.title, 'Error');
@@ -113,17 +125,21 @@ void main() {
       expect(evaluatorCalls, 0);
     }, skip: Platform.isWindows);
 
-    test('confirmed: true does NOT bypass a catastrophic block', () async {
-      final tool = BashTool();
-      final result = await tool.execute(
-        callArgs('rm -rf /', confirmed: true),
-        ctx(),
-      );
+    test(
+      'confirmed: true does NOT bypass a catastrophic block',
+      () async {
+        final tool = BashTool();
+        final result = await tool.execute(
+          callArgs('rm -rf /', confirmed: true),
+          ctx(),
+        );
 
-      expect(result.title, 'Error');
-      expect(result.metadata['shellRisk'], 'blocked-catastrophic');
-      expect(result.metadata.containsKey('exitCode'), isFalse);
-    }, skip: Platform.isWindows);
+        expect(result.title, 'Error');
+        expect(result.metadata['shellRisk'], 'blocked-catastrophic');
+        expect(result.metadata.containsKey('exitCode'), isFalse);
+      },
+      skip: Platform.isWindows,
+    );
   });
 
   group('shell risk guardrail — suspicious tier', () {
@@ -131,18 +147,28 @@ void main() {
       final tool = BashTool();
       final result = await tool.execute(
         callArgs(suspiciousCommand),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          return const ShellRiskVerdict(
-            ShellRiskVerdictKind.unsafe,
-            'kills processes the user may still need',
-          );
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                return const ShellRiskVerdict(
+                  ShellRiskVerdictKind.unsafe,
+                  'kills processes the user may still need',
+                );
+              },
+        ),
       );
 
       expect(result.title, 'Error');
       expect(result.metadata['shellRisk'], 'blocked-unsafe');
-      expect(result.metadata['shellRiskReason'],
-          'kills processes the user may still need');
+      expect(
+        result.metadata['shellRiskReason'],
+        'kills processes the user may still need',
+      );
       // The rejection teaches the model both verdicts and the appeal
       // path (user approval → confirmed: true resend).
       expect(result.output, contains(heuristicReason));
@@ -155,9 +181,17 @@ void main() {
       final tool = BashTool();
       final result = await tool.execute(
         callArgs(suspiciousCommand),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          return const ShellRiskVerdict(ShellRiskVerdictKind.uncertain);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                return const ShellRiskVerdict(ShellRiskVerdictKind.uncertain);
+              },
+        ),
       );
 
       expect(result.title, 'Error');
@@ -170,9 +204,17 @@ void main() {
       final tool = BashTool();
       final result = await tool.execute(
         callArgs(suspiciousCommand),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                return const ShellRiskVerdict(ShellRiskVerdictKind.safe);
+              },
+        ),
       );
 
       expect(result.title, isNot('Error'));
@@ -201,9 +243,17 @@ void main() {
       final tool = BashTool();
       final result = await tool.execute(
         callArgs(suspiciousCommand),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
+              },
+        ),
       );
 
       expect(result.title, isNot('Error'));
@@ -217,10 +267,18 @@ void main() {
       var evaluatorCalls = 0;
       final result = await tool.execute(
         callArgs(suspiciousCommand, confirmed: true),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          evaluatorCalls++;
-          return const ShellRiskVerdict(ShellRiskVerdictKind.unsafe);
-        }),
+        ctx(
+          evaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                evaluatorCalls++;
+                return const ShellRiskVerdict(ShellRiskVerdictKind.unsafe);
+              },
+        ),
       );
 
       expect(result.title, isNot('Error'));
@@ -232,59 +290,79 @@ void main() {
       expect(evaluatorCalls, 0);
     }, skip: Platform.isWindows);
 
-    test('a throwing evaluator is treated as unavailable (fail-open)',
-        () async {
-      final tool = BashTool();
-      final result = await tool.execute(
-        callArgs(suspiciousCommand),
-        ctx(evaluator: (command, {required intent, required isWindows, required abort}) async {
-          throw StateError('aux transport exploded');
-        }),
-      );
+    test(
+      'a throwing evaluator is treated as unavailable (fail-open)',
+      () async {
+        final tool = BashTool();
+        final result = await tool.execute(
+          callArgs(suspiciousCommand),
+          ctx(
+            evaluator:
+                (
+                  command, {
+                  required intent,
+                  required isWindows,
+                  required abort,
+                }) async {
+                  throw StateError('aux transport exploded');
+                },
+          ),
+        );
 
-      expect(result.title, isNot('Error'));
-      expect(result.metadata['shellRisk'], 'fail-open');
-      expect(result.output, contains('[shell-risk: fail-open]'));
-    }, skip: Platform.isWindows);
+        expect(result.title, isNot('Error'));
+        expect(result.metadata['shellRisk'], 'fail-open');
+        expect(result.output, contains('[shell-risk: fail-open]'));
+      },
+      skip: Platform.isWindows,
+    );
   });
 
   group('shell risk guardrail — abort during evaluation', () {
-    test('abort while the evaluator is stuck prevents execution', () async {
-      final tool = BashTool();
-      final abort = AbortSignal();
-      final evaluatorStarted = Completer<void>();
-      final context = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: abort,
-        workingDirectory: tempDir.path,
-        shellRiskEvaluator:
-            (command, {required intent, required isWindows, required abort}) async {
-          evaluatorStarted.complete();
-          // Mirror the production _assessShellRiskWithAbort race: a
-          // stuck aux model must not hang the tool — it returns
-          // (unavailable → fail-open) once the abort signal fires.
-          // Without shell_base's post-evaluation abort gate, that
-          // fail-open verdict would let the command execute AFTER
-          // the user interrupted.
-          while (!abort.isAborted) {
-            await Future<void>.delayed(const Duration(milliseconds: 10));
-          }
-          return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
-        },
-      );
+    test(
+      'abort while the evaluator is stuck prevents execution',
+      () async {
+        final tool = BashTool();
+        final abort = AbortSignal();
+        final evaluatorStarted = Completer<void>();
+        final context = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: abort,
+          workingDirectory: tempDir.path,
+          shellRiskEvaluator:
+              (
+                command, {
+                required intent,
+                required isWindows,
+                required abort,
+              }) async {
+                evaluatorStarted.complete();
+                // Mirror the production _assessShellRiskWithAbort race: a
+                // stuck aux model must not hang the tool — it returns
+                // (unavailable → fail-open) once the abort signal fires.
+                // Without shell_base's post-evaluation abort gate, that
+                // fail-open verdict would let the command execute AFTER
+                // the user interrupted.
+                while (!abort.isAborted) {
+                  await Future<void>.delayed(const Duration(milliseconds: 10));
+                }
+                return const ShellRiskVerdict(ShellRiskVerdictKind.unavailable);
+              },
+        );
 
-      final resultFuture = tool.execute(callArgs(suspiciousCommand), context);
-      // Wait until the evaluator is actually running, then interrupt.
-      await evaluatorStarted.future;
-      abort.abort();
+        final resultFuture = tool.execute(callArgs(suspiciousCommand), context);
+        // Wait until the evaluator is actually running, then interrupt.
+        await evaluatorStarted.future;
+        abort.abort();
 
-      final result = await resultFuture.timeout(const Duration(seconds: 10));
-      expect(result.title, 'Error');
-      expect(result.output, contains('Aborted before execution'));
-      // The command never ran: no exit code, none of killall's output.
-      expect(result.metadata.containsKey('exitCode'), isFalse);
-      expect(result.output, isNot(contains('No matching processes')));
-    }, skip: Platform.isWindows);
+        final result = await resultFuture.timeout(const Duration(seconds: 10));
+        expect(result.title, 'Error');
+        expect(result.output, contains('Aborted before execution'));
+        // The command never ran: no exit code, none of killall's output.
+        expect(result.metadata.containsKey('exitCode'), isFalse);
+        expect(result.output, isNot(contains('No matching processes')));
+      },
+      skip: Platform.isWindows,
+    );
   });
 }

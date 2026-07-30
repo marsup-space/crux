@@ -68,7 +68,9 @@ class _FakeProcess implements Process {
         if (all.length < bodyEnd) return;
         final body = all.substring(bodyStart, bodyEnd);
         final leftover = all.substring(bodyEnd);
-        buf..clear()..write(leftover);
+        buf
+          ..clear()
+          ..write(leftover);
         _dispatch(body);
       }
     });
@@ -112,21 +114,14 @@ class _FakeProcess implements Process {
           'jsonrpc': '2.0',
           'id': id,
           'result': {
-            'capabilities': {
-              'textDocumentSync': 2,
-              'publishDiagnostics': true,
-            },
+            'capabilities': {'textDocumentSync': 2, 'publishDiagnostics': true},
           },
         });
         return;
       }
       // shutdown request → reply with null result.
       if (msg['method'] == 'shutdown') {
-        _send({
-          'jsonrpc': '2.0',
-          'id': id,
-          'result': null,
-        });
+        _send({'jsonrpc': '2.0', 'id': id, 'result': null});
         return;
       }
       // Default: MethodNotFound.
@@ -178,16 +173,15 @@ class _FakeSink implements IOSink {
   void writeCharCodes(Iterable<int> codes) =>
       _controller.add(codes.toList(growable: false));
   @override
-  void writeCharCode(int charCode) =>
-      _controller.add([charCode & 0xFF]);
+  void writeCharCode(int charCode) => _controller.add([charCode & 0xFF]);
   @override
-  void write(Object? object) =>
-      _controller.add(utf8.encode(object.toString()));
+  void write(Object? object) => _controller.add(utf8.encode(object.toString()));
   @override
   void writeAll(Iterable<dynamic> objects, [String separator = '']) {
     final str = objects.map((o) => o.toString()).join(separator);
     _controller.add(utf8.encode(str));
   }
+
   @override
   void writeln([Object? object = '']) => write('$object\n');
   bool get isClosed => _controller.isClosed;
@@ -239,7 +233,9 @@ void main() {
       final events = <LspEvent>[];
       actor.attach(events.add);
 
-      await actor.handle(LspCmdStart(root: '/fake/root', file: '/fake/root/x.test'));
+      await actor.handle(
+        LspCmdStart(root: '/fake/root', file: '/fake/root/x.test'),
+      );
 
       expect(events.whereType<LspEventStarted>(), hasLength(1));
       expect(events.whereType<LspEventStarted>().first.root, '/fake/root');
@@ -260,18 +256,20 @@ void main() {
       expect(actor.activeServerCount, 0);
     });
 
-    test('is idempotent: second LspCmdStart for same root is a no-op',
-        () async {
-      final actor = _TestActor();
-      final events = <LspEvent>[];
-      actor.attach(events.add);
+    test(
+      'is idempotent: second LspCmdStart for same root is a no-op',
+      () async {
+        final actor = _TestActor();
+        final events = <LspEvent>[];
+        actor.attach(events.add);
 
-      await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
-      await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
+        await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
+        await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
 
-      expect(actor.resolveSpecCalls, 1);
-      expect(events.whereType<LspEventStarted>(), hasLength(1));
-    });
+        expect(actor.resolveSpecCalls, 1);
+        expect(events.whereType<LspEventStarted>(), hasLength(1));
+      },
+    );
 
     test('LspCmdShutdownRoot(null) shuts down all roots', () async {
       final actor = _TestActor();
@@ -303,51 +301,55 @@ void main() {
   });
 
   group('LspServerActor document tracking', () {
-    test('opens documents via didOpen and emits diagnostics from server',
-        () async {
-      final actor = _TestActor();
-      final events = <LspEvent>[];
-      actor.attach(events.add);
+    test(
+      'opens documents via didOpen and emits diagnostics from server',
+      () async {
+        final actor = _TestActor();
+        final events = <LspEvent>[];
+        actor.attach(events.add);
 
-      await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
-      await actor.handle(LspCmdOpenDocument(
-        root: '/r',
-        path: '/r/a.test',
-        content: 'hello',
-        version: 0,
-      ));
+        await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
+        await actor.handle(
+          LspCmdOpenDocument(
+            root: '/r',
+            path: '/r/a.test',
+            content: 'hello',
+            version: 0,
+          ),
+        );
 
-      // Give the actor time to send didOpen.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+        // Give the actor time to send didOpen.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      // Server pushes a diagnostic for the document.
-      final proc = actor.lastProcess!;
-      proc.push({
-        'jsonrpc': '2.0',
-        'method': 'textDocument/publishDiagnostics',
-        'params': {
-          'uri': 'file:///r/a.test',
-          'diagnostics': [
-            {
-              'range': {
-                'start': {'line': 0, 'character': 0},
-                'end': {'line': 0, 'character': 5},
+        // Server pushes a diagnostic for the document.
+        final proc = actor.lastProcess!;
+        proc.push({
+          'jsonrpc': '2.0',
+          'method': 'textDocument/publishDiagnostics',
+          'params': {
+            'uri': 'file:///r/a.test',
+            'diagnostics': [
+              {
+                'range': {
+                  'start': {'line': 0, 'character': 0},
+                  'end': {'line': 0, 'character': 5},
+                },
+                'message': 'oops',
+                'severity': 1,
               },
-              'message': 'oops',
-              'severity': 1,
-            },
-          ],
-        },
-      });
+            ],
+          },
+        });
 
-      // Allow the peer to process.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+        // Allow the peer to process.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      final diagEvents = events.whereType<LspEventDiagnostics>().toList();
-      expect(diagEvents, hasLength(1));
-      expect(diagEvents.first.batch.diagnostics.first.message, 'oops');
-      expect(diagEvents.first.root, '/r');
-    });
+        final diagEvents = events.whereType<LspEventDiagnostics>().toList();
+        expect(diagEvents, hasLength(1));
+        expect(diagEvents.first.batch.diagnostics.first.message, 'oops');
+        expect(diagEvents.first.root, '/r');
+      },
+    );
   });
 
   group('LspServerActor standard handlers', () {
@@ -390,9 +392,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       // Inject an error into the peer's stdout stream.
-      actor.lastProcess!._stdoutController.addError(
-        StateError('pipe broken'),
-      );
+      actor.lastProcess!._stdoutController.addError(StateError('pipe broken'));
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       final fatals = events.whereType<LspEventRpcFatal>().toList();

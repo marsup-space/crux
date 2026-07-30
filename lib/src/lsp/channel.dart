@@ -164,10 +164,7 @@ class IsolateChannel implements LspChannel {
 
     await Isolate.spawn(
       _entryPoint,
-      _ActorSpawnArgs(
-        actorFactory: factory,
-        mainPort: mainReceive.sendPort,
-      ),
+      _ActorSpawnArgs(actorFactory: factory, mainPort: mainReceive.sendPort),
       debugName: 'lsp-actor',
     );
 
@@ -219,7 +216,7 @@ class IsolateChannel implements LspChannel {
   void send(LspCommand cmd) {
     if (_shutdownSent) return;
     final send = _send;
-    if (send == null) return;       // handshake not yet complete
+    if (send == null) return; // handshake not yet complete
     send.send(cmd);
   }
 
@@ -238,10 +235,7 @@ class IsolateChannel implements LspChannel {
     // or for the timeout. If the actor has already crashed, the
     // stream error listener completes _exit early.
     try {
-      await _exit.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {},
-      );
+      await _exit.future.timeout(const Duration(seconds: 5), onTimeout: () {});
     } finally {
       // Close the receive port so the listener stops firing and
       // the channel can be GC'd. Idempotent — close() is safe to
@@ -291,10 +285,7 @@ class _ActorExited {
 class _ActorSpawnArgs {
   final LspActorFactory actorFactory;
   final SendPort mainPort;
-  _ActorSpawnArgs({
-    required this.actorFactory,
-    required this.mainPort,
-  });
+  _ActorSpawnArgs({required this.actorFactory, required this.mainPort});
 }
 
 /// Adapts the actor's `void Function(LspEvent)` callback to a

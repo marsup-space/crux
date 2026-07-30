@@ -224,7 +224,9 @@ class WebProviderRegistry {
     for (final provider in _providers.values) {
       final key = provider.apiKey;
       if (key == null || key.isEmpty) continue;
-      additions.write('${_keyEnvFieldName(provider.id)} = ${_tomlEscape(key)}\n');
+      additions.write(
+        '${_keyEnvFieldName(provider.id)} = ${_tomlEscape(key)}\n',
+      );
     }
 
     String next;

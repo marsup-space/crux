@@ -238,7 +238,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             component.onLinkTap != null && !component.useIsolate;
 
         final dataChanged = data != _lastData;
-        final paramsChanged = styleSheet != _lastStyleSheet ||
+        final paramsChanged =
+            styleSheet != _lastStyleSheet ||
             theme.id != _lastThemeId ||
             maxWidth != _lastMaxWidth;
         if (dataChanged || paramsChanged) {
@@ -287,8 +288,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           // build branch below. The parse is a single regex pass
           // over the rendered spans, comparable in cost to the
           // session-refs pass.
-          _sessionRefs =
-              wantLinks ? parseSessionRefs(_spans) : const [];
+          _sessionRefs = wantLinks ? parseSessionRefs(_spans) : const [];
           _hoveredSessionRef = null;
           _quickReplies = component.useIsolate
               ? const []
@@ -339,11 +339,10 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         //     normal text, with no `ask://…` syntax leaking
         //     through.
         final haveSessionLinks = wantLinks && _sessionRefs.isNotEmpty;
-        final haveMarkdownLinks = wantMarkdownLinks && _markdownLinks.isNotEmpty;
-        final haveButtonReplies =
-            wantQuickReplies && _quickReplies.isNotEmpty;
-        final haveStaleReplies =
-            !wantQuickReplies && _quickReplies.isNotEmpty;
+        final haveMarkdownLinks =
+            wantMarkdownLinks && _markdownLinks.isNotEmpty;
+        final haveButtonReplies = wantQuickReplies && _quickReplies.isNotEmpty;
+        final haveStaleReplies = !wantQuickReplies && _quickReplies.isNotEmpty;
         final haveAnyReplies = haveButtonReplies || haveStaleReplies;
 
         // Overlay session-link styles on top of the highlight pass
@@ -351,12 +350,14 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         // hover style wins over the link style for the specific
         // ref under the cursor.
         if (haveSessionLinks) {
-          final linkStyle = component.sessionLinkStyle ??
+          final linkStyle =
+              component.sessionLinkStyle ??
               TextStyle(
                 color: theme.tldrLink,
                 decoration: TextDecoration.underline,
               );
-          final hoverStyle = component.sessionLinkHoverStyle ??
+          final hoverStyle =
+              component.sessionLinkHoverStyle ??
               TextStyle(
                 color: theme.onColor(theme.tldrLink),
                 backgroundColor: theme.tldrLink,
@@ -386,12 +387,14 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         // visitor already styles link spans with the same color, so
         // the no-op merge is cheap.
         if (haveMarkdownLinks) {
-          final linkStyle = component.linkStyle ??
+          final linkStyle =
+              component.linkStyle ??
               TextStyle(
                 color: theme.mdLink,
                 decoration: TextDecoration.underline,
               );
-          final hoverStyle = component.linkHoverStyle ??
+          final hoverStyle =
+              component.linkHoverStyle ??
               TextStyle(
                 color: theme.onColor(theme.mdLink),
                 backgroundColor: theme.mdLink,
@@ -417,13 +420,15 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         // so hit-testing (in button mode only) can locate the
         // substituted label.
         if (haveButtonReplies) {
-          final buttonStyle = component.quickReplyStyle ??
+          final buttonStyle =
+              component.quickReplyStyle ??
               TextStyle(
                 color: theme.buttonTextDisabled,
                 backgroundColor: theme.buttonBackground,
                 fontWeight: FontWeight.bold,
               );
-          final hoverStyle = component.quickReplyHoverStyle ??
+          final hoverStyle =
+              component.quickReplyHoverStyle ??
               TextStyle(
                 color: theme.buttonTextHover,
                 backgroundColor: theme.buttonBackgroundHover,
@@ -438,10 +443,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             hoveredReply: _hoveredQuickReply,
           );
         } else if (haveStaleReplies) {
-          renderedSpans = applyQuickReplyTokens(
-            renderedSpans,
-            _quickReplies,
-          );
+          renderedSpans = applyQuickReplyTokens(renderedSpans, _quickReplies);
         }
 
         final richText = RichText(
@@ -500,7 +502,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     final newReply = hit is QuickReply ? hit : null;
     final newLink = hit is MarkdownLink ? hit : null;
 
-    final sessionChanged = newSession?.sessionId != _hoveredSessionRef?.sessionId;
+    final sessionChanged =
+        newSession?.sessionId != _hoveredSessionRef?.sessionId;
     final replyChanged = !_sameQuickReply(newReply, _hoveredQuickReply);
     final linkChanged = !_sameMarkdownLink(newLink, _hoveredMarkdownLink);
 
@@ -600,9 +603,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     // setState + repaint on every cursor move). Compare URLs as
     // a tiebreaker in case two adjacent links happen to share
     // offsets — defensive only.
-    return a.offset == b.offset &&
-        a.length == b.length &&
-        a.url == b.url;
+    return a.offset == b.offset && a.length == b.length && a.url == b.url;
   }
 
   /// Submit a parse request to the worker. The result is
@@ -611,11 +612,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// in-flight parse covers "all data so far", and
   /// [_applyParse] will submit a follow-up if more data
   /// arrived in the meantime.
-  void _scheduleParse(
-    MarkdownThemeFields theme,
-    String data,
-    int? maxWidth,
-  ) {
+  void _scheduleParse(MarkdownThemeFields theme, String data, int? maxWidth) {
     if (_inFlight) return;
     _inFlight = true;
     _drainParse(theme, data, maxWidth);
@@ -626,11 +623,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// grown since submission; if so, submit a follow-up.
   /// On failure, just clear `_inFlight` — the next
   /// build will retry.
-  void _drainParse(
-    MarkdownThemeFields theme,
-    String data,
-    int? maxWidth,
-  ) {
+  void _drainParse(MarkdownThemeFields theme, String data, int? maxWidth) {
     MarkdownIsolate.instance.ensureSpawned().then((_) async {
       try {
         final response = await MarkdownIsolate.instance.parse(
@@ -787,9 +780,10 @@ List<InlineSpan> _applyHighlight(
       );
       final after = end < spanEnd ? span.$1.substring(end - spanStart) : '';
       if (before.isNotEmpty) result.add((before, span.$2));
-      result.add(
-        (match, _mergedWithHighlight(span.$2, selectionColor, onSelection)),
-      );
+      result.add((
+        match,
+        _mergedWithHighlight(span.$2, selectionColor, onSelection),
+      ));
       if (after.isNotEmpty) result.add((after, span.$2));
     }
     pos = spanEnd;
@@ -941,8 +935,8 @@ List<InlineSpan> parseMarkdownToInlineSpans(
   // reads the same `MarkdownThemeFields` getters the
   // visitor does, so a [WorkerTheme] from the markdown
   // isolate also works here.
-  final effectiveStyleSheet = styleSheet ??
-      HighlightMarkdownStyleSheet.fromThemeFields(theme);
+  final effectiveStyleSheet =
+      styleSheet ?? HighlightMarkdownStyleSheet.fromThemeFields(theme);
   final document = md.Document(
     extensionSet: md.ExtensionSet.gitHubFlavored,
     encodeHtml: false,
@@ -1292,10 +1286,7 @@ class _HighlightMarkdownVisitor {
           ),
         );
 
-        return TextSpan(
-          text: displayText,
-          style: styleSheet.linkStyle,
-        );
+        return TextSpan(text: displayText, style: styleSheet.linkStyle);
       case 'img':
         final alt = element.attributes['alt'] ?? 'image';
         return TextSpan(

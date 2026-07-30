@@ -102,8 +102,9 @@ class _AskFormState extends State<AskForm> {
     if (group.multi) {
       final exists = picks.any((o) => o.value == option.value);
       if (exists) {
-        _selections[group.name] =
-            picks.where((o) => o.value != option.value).toList();
+        _selections[group.name] = picks
+            .where((o) => o.value != option.value)
+            .toList();
       } else {
         _selections[group.name] = [...picks, option];
       }
@@ -350,10 +351,7 @@ class _AskFormState extends State<AskForm> {
         padding: const EdgeInsets.only(top: 1),
         child: Row(
           children: [
-            Text(
-              ' Notes: ',
-              style: TextStyle(color: theme.hintText),
-            ),
+            Text(' Notes: ', style: TextStyle(color: theme.hintText)),
             Expanded(
               // Tapping anywhere on the field — including its border
               // and padding, which sit outside the render text field's
@@ -396,7 +394,10 @@ class _AskFormState extends State<AskForm> {
             Text(' Esc: dismiss ', style: TextStyle(color: theme.hintText)),
             Row(
               children: [
-                Text('Tab: switch region  ', style: TextStyle(color: theme.hintText)),
+                Text(
+                  'Tab: switch region  ',
+                  style: TextStyle(color: theme.hintText),
+                ),
                 _ActionButton(
                   label: 'Submit',
                   focused: _focusRegion == _AskFocusRegion.submit,
@@ -446,7 +447,8 @@ class _AskFormState extends State<AskForm> {
     final rows = <Component>[];
     for (final option in group.options) {
       final flatIdx = _flatOptionFlatIndex(group, option);
-      final isFocused = _focusRegion == _AskFocusRegion.options &&
+      final isFocused =
+          _focusRegion == _AskFocusRegion.options &&
           flatIdx == _focusedOptionIndex;
       final isPicked = _isPicked(group, option);
       final marker = group.multi
@@ -505,7 +507,8 @@ class _AskFormState extends State<AskForm> {
   int _flatOptionFlatIndex(AskGroup group, AskOption option) {
     var idx = 0;
     for (final entry in _flatOptions) {
-      if (entry.group.name == group.name && entry.option.value == option.value) {
+      if (entry.group.name == group.name &&
+          entry.option.value == option.value) {
         return idx;
       }
       idx++;

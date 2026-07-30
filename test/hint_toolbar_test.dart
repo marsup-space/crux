@@ -27,14 +27,18 @@ void main() {
     await tester.pumpComponent(
       HintOverlay(
         child: Container(
-          child: Column(children: [
-            SizedBox(height: 10), // simulate chat history taking 10 rows
-            Row(children: [
-              Hinted(hint: 'Tooltip here', child: hintChild),
-              SizedBox(width: 2),
-              Hinted(hint: 'Another hint', child: Text('Btn2')),
-            ]),
-          ]),
+          child: Column(
+            children: [
+              SizedBox(height: 10), // simulate chat history taking 10 rows
+              Row(
+                children: [
+                  Hinted(hint: 'Tooltip here', child: hintChild),
+                  SizedBox(width: 2),
+                  Hinted(hint: 'Another hint', child: Text('Btn2')),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -64,42 +68,45 @@ void main() {
     }, size: const Size(80, 20));
   });
 
-  test('MouseRegion child at y=10 — above placement should fit with gap', () async {
-    await testNocterm('mouseregion-y10', (tester) async {
-      final (sb, hint) = await hoverItem(
-        tester,
-        // Simulates what Button/MetricsDisplay/GlossyModelButton do:
-        // own MouseRegion → Container → Text
-        MouseRegion(
-          opaque: false,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            child: Text('Btn'),
+  test(
+    'MouseRegion child at y=10 — above placement should fit with gap',
+    () async {
+      await testNocterm('mouseregion-y10', (tester) async {
+        final (sb, hint) = await hoverItem(
+          tester,
+          // Simulates what Button/MetricsDisplay/GlossyModelButton do:
+          // own MouseRegion → Container → Text
+          MouseRegion(
+            opaque: false,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: Text('Btn'),
+            ),
           ),
-        ),
-      );
-      expect(hint, 'Tooltip here');
-      expect(_r(tester, 9).trim(), '');
-      expect(_r(tester, 10).trim(), contains('Btn'));
-    }, size: const Size(80, 20));
-  });
+        );
+        expect(hint, 'Tooltip here');
+        expect(_r(tester, 9).trim(), '');
+        expect(_r(tester, 10).trim(), contains('Btn'));
+      }, size: const Size(80, 20));
+    },
+  );
 
-  test('Nested MouseRegion — verify sourceBounds uses outer MouseRegion', () async {
-    await testNocterm('nested-mr', (tester) async {
-      final (sb, _) = await hoverItem(
-        tester,
-        MouseRegion(
-          opaque: false,
-          child: Text('Nst'),
-        ),
-      );
-      expect(sb, isNotNull);
-      // The sourceBounds should come from the outer MouseRegion
-      // (the HintStateMixin's one), not the inner one.
-      // It should be at the toolbar row (y=10).
-      if (sb != null) {
-        expect(sb.top, greaterThanOrEqualTo(10));
-      }
-    }, size: const Size(80, 20));
-  });
+  test(
+    'Nested MouseRegion — verify sourceBounds uses outer MouseRegion',
+    () async {
+      await testNocterm('nested-mr', (tester) async {
+        final (sb, _) = await hoverItem(
+          tester,
+          MouseRegion(opaque: false, child: Text('Nst')),
+        );
+        expect(sb, isNotNull);
+        // The sourceBounds should come from the outer MouseRegion
+        // (the HintStateMixin's one), not the inner one.
+        // It should be at the toolbar row (y=10).
+        if (sb != null) {
+          expect(sb.top, greaterThanOrEqualTo(10));
+        }
+      }, size: const Size(80, 20));
+    },
+  );
 }

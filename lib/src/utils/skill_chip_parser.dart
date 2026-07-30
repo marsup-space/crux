@@ -120,10 +120,7 @@ SkillChipPosition? findActiveSkillChip(String text, int cursor) {
 ///     of [skillNames].
 ///   * The char after the name is not a skill-name char (so
 ///     `$pr-reviewfoo` does not match the skill `pr-review`).
-List<SkillChipMatch> findAllSkillChips(
-  String text,
-  Set<String> skillNames,
-) {
+List<SkillChipMatch> findAllSkillChips(String text, Set<String> skillNames) {
   final matches = <SkillChipMatch>[];
   for (var i = 0; i < text.length; i++) {
     if (text[i] != r'$') continue;
@@ -139,11 +136,9 @@ List<SkillChipMatch> findAllSkillChips(
     if (!skillNames.contains(candidate)) continue;
     // The char after the name must not be a skill-name char.
     if (j < text.length && isSkillNameChar(text[j])) continue;
-    matches.add(SkillChipMatch(
-      dollarOffset: i,
-      nameEndOffset: j,
-      skillName: candidate,
-    ));
+    matches.add(
+      SkillChipMatch(dollarOffset: i, nameEndOffset: j, skillName: candidate),
+    );
   }
   return matches;
 }

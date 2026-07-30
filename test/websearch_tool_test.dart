@@ -10,10 +10,7 @@ import 'package:test/test.dart';
 /// Test double for a web provider that supports search. Records
 /// each call so tests can assert on pagination behavior.
 class _ScriptedSearchProvider extends WebServiceProvider {
-  _ScriptedSearchProvider({
-    required this.id,
-    required this.pageResults,
-  });
+  _ScriptedSearchProvider({required this.id, required this.pageResults});
 
   /// Per-page scripted result list. Tool loops over pages 0..N
   /// and stops on empty page or when it has enough.
@@ -22,7 +19,7 @@ class _ScriptedSearchProvider extends WebServiceProvider {
   /// Records every call so tests can assert on inputs and
   /// pagination.
   final List<({String query, int page, String? location, String? language})>
-      calls = [];
+  calls = [];
 
   @override
   final String id;
@@ -51,7 +48,9 @@ class _ScriptedSearchProvider extends WebServiceProvider {
       language: language,
     ));
     final idx = page ?? 0;
-    final results = idx < pageResults.length ? pageResults[idx] : <WebSearchResult>[];
+    final results = idx < pageResults.length
+        ? pageResults[idx]
+        : <WebSearchResult>[];
     return WebSearchResponse(
       query: query,
       results: results,
@@ -139,11 +138,11 @@ void main() {
   });
 
   ToolContext ctx() => ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
+    sessionId: 1,
+    messageId: 1,
+    abort: AbortSignal(),
+    workingDirectory: tempDir.path,
+  );
 
   WebProviderRegistry registry(WebServiceProvider? provider) {
     final r = WebProviderRegistry(userDataDirOverride: tempDir.path);
@@ -188,8 +187,10 @@ void main() {
       final tool = WebSearchTool(registry(provider));
 
       // num_results: 2 → loop exits after page 0 (target met).
-      final result =
-          await tool.execute({'query': 'foo', 'num_results': 2}, ctx());
+      final result = await tool.execute({
+        'query': 'foo',
+        'num_results': 2,
+      }, ctx());
 
       expect(result.title, 'Web search: foo');
       expect(result.output, contains('Search results for: foo'));
@@ -204,54 +205,65 @@ void main() {
       expect(provider.calls.first.page, 0);
     });
 
-    test('multi-page pagination stops when target numResults is reached',
-        () async {
-      final provider = _ScriptedSearchProvider(
-        id: 'tinyfish',
-        pageResults: [
-        // 4 results per page, target = 7, so we need page 0 + page 1.
-        List.generate(4, (i) => _r(i + 1, 'P1-$i', 'https://p1.example/$i')),
-        List.generate(4, (i) => _r(i + 5, 'P2-$i', 'https://p2.example/$i')),
-        List.generate(4, (i) => _r(i + 9, 'P3-$i', 'https://p3.example/$i')),
-      ],
-      );
-      final tool = WebSearchTool(registry(provider));
+    test(
+      'multi-page pagination stops when target numResults is reached',
+      () async {
+        final provider = _ScriptedSearchProvider(
+          id: 'tinyfish',
+          pageResults: [
+            // 4 results per page, target = 7, so we need page 0 + page 1.
+            List.generate(
+              4,
+              (i) => _r(i + 1, 'P1-$i', 'https://p1.example/$i'),
+            ),
+            List.generate(
+              4,
+              (i) => _r(i + 5, 'P2-$i', 'https://p2.example/$i'),
+            ),
+            List.generate(
+              4,
+              (i) => _r(i + 9, 'P3-$i', 'https://p3.example/$i'),
+            ),
+          ],
+        );
+        final tool = WebSearchTool(registry(provider));
 
-      final result = await tool.execute(
-        {'query': 'foo', 'num_results': 7},
-        ctx(),
-      );
+        final result = await tool.execute({
+          'query': 'foo',
+          'num_results': 7,
+        }, ctx());
 
-      // We pulled 4 + 4 = 8 results, then truncated to 7.
-      expect(provider.calls, hasLength(2));
-      expect(provider.calls.map((c) => c.page).toList(), [0, 1]);
-      expect(result.output, contains('1. P1-0'));
-      // 7th entry is P2-2 (position 7 in the batch).
-      expect(result.output, contains('7. P2-2'));
-      // 8th result should NOT be present (truncated).
-      expect(result.output, isNot(contains('8. P2-3')));
-      expect(result.metadata['resultCount'], 7);
-      expect(result.metadata['truncated'], isTrue);
-    });
+        // We pulled 4 + 4 = 8 results, then truncated to 7.
+        expect(provider.calls, hasLength(2));
+        expect(provider.calls.map((c) => c.page).toList(), [0, 1]);
+        expect(result.output, contains('1. P1-0'));
+        // 7th entry is P2-2 (position 7 in the batch).
+        expect(result.output, contains('7. P2-2'));
+        // 8th result should NOT be present (truncated).
+        expect(result.output, isNot(contains('8. P2-3')));
+        expect(result.metadata['resultCount'], 7);
+        expect(result.metadata['truncated'], isTrue);
+      },
+    );
 
     test('pagination stops early on empty page', () async {
       final provider = _ScriptedSearchProvider(
         id: 'tinyfish',
         pageResults: [
-        // First page: 3 results. Second page: empty (provider
-        // ran out). Third page: would have more, but we never
-        // ask.
-        List.generate(3, (i) => _r(i + 1, 'P1-$i', 'https://p1.example/$i')),
-        const <WebSearchResult>[],
-        List.generate(3, (i) => _r(i + 1, 'P3-$i', 'https://p3.example/$i')),
-      ],
+          // First page: 3 results. Second page: empty (provider
+          // ran out). Third page: would have more, but we never
+          // ask.
+          List.generate(3, (i) => _r(i + 1, 'P1-$i', 'https://p1.example/$i')),
+          const <WebSearchResult>[],
+          List.generate(3, (i) => _r(i + 1, 'P3-$i', 'https://p3.example/$i')),
+        ],
       );
       final tool = WebSearchTool(registry(provider));
 
-      final result = await tool.execute(
-        {'query': 'foo', 'num_results': 50},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'query': 'foo',
+        'num_results': 50,
+      }, ctx());
 
       expect(provider.calls, hasLength(2));
       expect(provider.calls.map((c) => c.page).toList(), [0, 1]);
@@ -265,15 +277,18 @@ void main() {
         id: 'tinyfish',
         pageResults: List.generate(
           6,
-          (p) => List.generate(3, (i) => _r(i + 1, 'P$p-$i', 'https://p$p.example/$i')),
+          (p) => List.generate(
+            3,
+            (i) => _r(i + 1, 'P$p-$i', 'https://p$p.example/$i'),
+          ),
         ),
       );
       final tool = WebSearchTool(registry(provider));
 
-      final result = await tool.execute(
-        {'query': 'foo', 'num_results': 100},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'query': 'foo',
+        'num_results': 100,
+      }, ctx());
 
       expect(provider.calls, hasLength(5));
       expect(provider.calls.map((c) => c.page).toList(), [0, 1, 2, 3, 4]);
@@ -288,18 +303,18 @@ void main() {
       );
       final tool = WebSearchTool(registry(provider));
 
-      await tool.execute(
-        {'query': 'foo', 'location': 'US', 'language': 'en'},
-        ctx(),
-      );
+      await tool.execute({
+        'query': 'foo',
+        'location': 'US',
+        'language': 'en',
+      }, ctx());
 
       expect(provider.calls, hasLength(1));
       expect(provider.calls.first.location, 'US');
       expect(provider.calls.first.language, 'en');
     });
 
-    test('include_thumbnail adds thumbnail line to formatted output',
-        () async {
+    test('include_thumbnail adds thumbnail line to formatted output', () async {
       final provider = _ScriptedSearchProvider(
         id: 'tinyfish',
         pageResults: [
@@ -317,10 +332,10 @@ void main() {
       );
       final tool = WebSearchTool(registry(provider));
 
-      final result = await tool.execute(
-        {'query': 'foo', 'include_thumbnail': true},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'query': 'foo',
+        'include_thumbnail': true,
+      }, ctx());
 
       expect(result.output, contains('thumbnail: https://img.example/t.jpg'));
     });

@@ -69,15 +69,20 @@ class JavaServerActor extends LspServerActor {
       root: projectRoot,
       command: [
         java,
-        '-jar', launcherJar,
-        '-configuration', configDir,
-        '-data', dataDir.path,
+        '-jar',
+        launcherJar,
+        '-configuration',
+        configDir,
+        '-data',
+        dataDir.path,
         '-Declipse.application=org.eclipse.jdt.ls.core.id1',
         '-Dosgi.bundles.defaultStartLevel=4',
         '-Declipse.product=org.eclipse.jdt.ls.core.product',
         '--add-modules=ALL-SYSTEM',
-        '--add-opens', 'java.base/java.util=ALL-UNNAMED',
-        '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+        '--add-opens',
+        'java.base/java.util=ALL-UNNAMED',
+        '--add-opens',
+        'java.base/java.lang=ALL-UNNAMED',
       ],
       env: const {},
       initialization: const {},
@@ -146,8 +151,11 @@ class JavaServerActor extends LspServerActor {
         const url =
             'https://www.eclipse.org/downloads/download.php?file=/jdtls/snapshots/jdt-language-server-latest.tar.gz';
         final ok = await downloadAndExtract(
-          const ArchiveAsset(url, 'jdt-language-server.tar.gz',
-              format: 'tar.gz'),
+          const ArchiveAsset(
+            url,
+            'jdt-language-server.tar.gz',
+            format: 'tar.gz',
+          ),
           p.join(lspToolHome(), 'jdtls'),
         );
         return ok ? _jdtlsDistDir() : null;

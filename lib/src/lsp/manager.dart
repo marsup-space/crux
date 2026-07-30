@@ -73,9 +73,8 @@ class LspManager {
   LspManager({
     required this.workingDirectory,
     required Map<String, LspActorFactory> actorFactories,
-    bool useIsolates = false,
-  })  : _factories = actorFactories,
-        _useIsolates = useIsolates;
+    this._useIsolates = false,
+  }) : _factories = actorFactories;
 
   /// Construct an [LspManager]. Always returns immediately — slots
   /// are spawned lazily on the first matching request.
@@ -194,12 +193,14 @@ class LspManager {
     final normalizedPath = p.normalize(p.absolute(filePath));
 
     slot.send(LspCmdStart(root: root, file: filePath));
-    slot.send(LspCmdOpenDocument(
-      root: root,
-      path: normalizedPath,
-      content: content,
-      version: 0,
-    ));
+    slot.send(
+      LspCmdOpenDocument(
+        root: root,
+        path: normalizedPath,
+        content: content,
+        version: 0,
+      ),
+    );
 
     final completer = Completer<List<LspDiagnostic>>();
     final accumulator = <LspDiagnostic>[];
@@ -294,12 +295,14 @@ class LspManager {
       final content = await File(filePath).readAsString();
       final normalizedPath = p.normalize(p.absolute(filePath));
       slot.send(LspCmdStart(root: root, file: filePath));
-      slot.send(LspCmdOpenDocument(
-        root: root,
-        path: normalizedPath,
-        content: content,
-        version: 0,
-      ));
+      slot.send(
+        LspCmdOpenDocument(
+          root: root,
+          path: normalizedPath,
+          content: content,
+          version: 0,
+        ),
+      );
     } catch (_) {
       // Reading or sending failed silently; the next edit will retry.
     }

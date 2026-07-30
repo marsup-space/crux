@@ -26,7 +26,8 @@ Future<String?> installZls() async {
   if (File(bin).existsSync()) return bin;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/zigtools/zls/releases/latest');
+    'https://api.github.com/repos/zigtools/zls/releases/latest',
+  );
   if (release is! Map) return null;
   final assets = release['assets'];
   if (assets is! List) return null;
@@ -70,7 +71,8 @@ Future<String?> installClangd() async {
   if (existing != null) return existing;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/clangd/clangd/releases/latest');
+    'https://api.github.com/repos/clangd/clangd/releases/latest',
+  );
   if (release is! Map) return null;
   final tag = release['tag_name'];
   final assets = release['assets'];
@@ -137,7 +139,8 @@ Future<String?> installLuaLs() async {
   if (File(bin).existsSync()) return bin;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/LuaLS/lua-language-server/releases/latest');
+    'https://api.github.com/repos/LuaLS/lua-language-server/releases/latest',
+  );
   if (release is! Map) return null;
   final tag = release['tag_name'];
   final assets = release['assets'];
@@ -180,14 +183,14 @@ Future<String?> installTerraformLs() async {
   if (File(bin).existsSync()) return bin;
 
   final release = await fetchJson(
-      'https://api.releases.hashicorp.com/v1/releases/terraform-ls/latest');
+    'https://api.releases.hashicorp.com/v1/releases/terraform-ls/latest',
+  );
   if (release is! Map) return null;
   final builds = release['builds'];
   if (builds is! List) return null;
 
   final arch = currentArch() == 'arm64' ? 'arm64' : 'amd64';
-  final platform =
-      Platform.isWindows ? 'windows' : currentPlatformToken();
+  final platform = Platform.isWindows ? 'windows' : currentPlatformToken();
 
   String? url;
   for (final build in builds) {
@@ -200,7 +203,9 @@ Future<String?> installTerraformLs() async {
   if (url is! String) return null;
 
   if (!await downloadAndExtract(
-      ArchiveAsset(url, 'terraform-ls.zip', format: 'zip'), lspBinDir())) {
+    ArchiveAsset(url, 'terraform-ls.zip', format: 'zip'),
+    lspBinDir(),
+  )) {
     return null;
   }
   await chmodExecutable(bin);
@@ -216,7 +221,8 @@ Future<String?> installTinymist() async {
   if (File(bin).existsSync()) return bin;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/Myriad-Dreamin/tinymist/releases/latest');
+    'https://api.github.com/repos/Myriad-Dreamin/tinymist/releases/latest',
+  );
   if (release is! Map) return null;
   final assets = release['assets'];
   if (assets is! List) return null;
@@ -257,7 +263,8 @@ Future<String?> installTexlab() async {
   if (File(bin).existsSync()) return bin;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/latex-lsp/texlab/releases/latest');
+    'https://api.github.com/repos/latex-lsp/texlab/releases/latest',
+  );
   if (release is! Map) return null;
   final assets = release['assets'];
   if (assets is! List) return null;
@@ -289,7 +296,8 @@ Future<String?> installKotlinLs() async {
   if (File(script).existsSync()) return script;
 
   final release = await fetchJson(
-      'https://api.github.com/repos/Kotlin/kotlin-lsp/releases/latest');
+    'https://api.github.com/repos/Kotlin/kotlin-lsp/releases/latest',
+  );
   if (release is! Map) return null;
   final name = release['name'];
   if (name is! String) return null;

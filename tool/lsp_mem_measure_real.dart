@@ -37,11 +37,10 @@ Future<int> main() async {
 
   final samples = <int>[];
 
-  final p1 = await Process.start(
-    '/opt/homebrew/bin/dart',
-    ['language-server', '--lsp'],
-    workingDirectory: projectRoot,
-  );
+  final p1 = await Process.start('/opt/homebrew/bin/dart', [
+    'language-server',
+    '--lsp',
+  ], workingDirectory: projectRoot);
   // ignore: avoid_print
   print('Server #1 pid=${p1.pid}');
 
@@ -66,8 +65,10 @@ Future<int> main() async {
     },
   });
   // ignore: avoid_print
-  print('Initialize ok, capabilities: '
-      '${(initResult as Map)['capabilities']?.keys.toList()}');
+  print(
+    'Initialize ok, capabilities: '
+    '${(initResult as Map)['capabilities']?.keys.toList()}',
+  );
   peer.notify('initialized', {});
 
   // Open each file.
@@ -96,10 +97,12 @@ Future<int> main() async {
   final lastS = samples.last;
   final avgS = samples.reduce((a, b) => a + b) ~/ samples.length;
   // ignore: avoid_print
-  print('min=${(minS / 1024).toStringAsFixed(0)}MB '
-      'avg=${(avgS / 1024).toStringAsFixed(0)}MB '
-      'max=${(maxS / 1024).toStringAsFixed(0)}MB '
-      'last=${(lastS / 1024).toStringAsFixed(0)}MB');
+  print(
+    'min=${(minS / 1024).toStringAsFixed(0)}MB '
+    'avg=${(avgS / 1024).toStringAsFixed(0)}MB '
+    'max=${(maxS / 1024).toStringAsFixed(0)}MB '
+    'last=${(lastS / 1024).toStringAsFixed(0)}MB',
+  );
 
   p1.kill();
   await Future.delayed(const Duration(milliseconds: 500));

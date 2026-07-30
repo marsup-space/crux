@@ -12,70 +12,50 @@ void main() {
 
   group('isConnectionError', () {
     test('true for SocketException', () {
-      expect(
-        isConnectionError(const SocketException('refused')),
-        isTrue,
-      );
+      expect(isConnectionError(const SocketException('refused')), isTrue);
     });
 
     test('true for HandshakeException', () {
-      expect(
-        isConnectionError(
-          const HandshakeException('TLS error'),
-        ),
-        isTrue,
-      );
+      expect(isConnectionError(const HandshakeException('TLS error')), isTrue);
     });
 
     test('true for HttpException', () {
-      expect(
-        isConnectionError(const HttpException('bad response')),
-        isTrue,
-      );
+      expect(isConnectionError(const HttpException('bad response')), isTrue);
     });
 
     test('true for TimeoutException', () {
-      expect(
-        isConnectionError(TimeoutException('timed out')),
-        isTrue,
-      );
+      expect(isConnectionError(TimeoutException('timed out')), isTrue);
     });
 
     test('false for FormatException (bad payload, not a network issue)', () {
-      expect(
-        isConnectionError(const FormatException('bad json')),
-        isFalse,
-      );
+      expect(isConnectionError(const FormatException('bad json')), isFalse);
     });
 
     test('false for a plain Exception', () {
-      expect(
-        isConnectionError(Exception('something else')),
-        isFalse,
-      );
+      expect(isConnectionError(Exception('something else')), isFalse);
     });
 
     test('false for a state error (programming error, not network)', () {
-      expect(
-        isConnectionError(StateError('bad state')),
-        isFalse,
-      );
+      expect(isConnectionError(StateError('bad state')), isFalse);
     });
   });
 
   group('withProxyRetry', () {
-    test('returns the direct attempt result without retry on success', () async {
-      var calls = 0;
-      final result = await withProxyRetry<String>(
-        attempt: (proxy) async {
-          calls++;
-          expect(proxy, isNull, reason: 'first call is always direct');
-          return 'ok';
-        },
-      );
-      expect(result, 'ok');
-      expect(calls, 1, reason: 'must not retry on success');
-    });
+    test(
+      'returns the direct attempt result without retry on success',
+      () async {
+        var calls = 0;
+        final result = await withProxyRetry<String>(
+          attempt: (proxy) async {
+            calls++;
+            expect(proxy, isNull, reason: 'first call is always direct');
+            return 'ok';
+          },
+        );
+        expect(result, 'ok');
+        expect(calls, 1, reason: 'must not retry on success');
+      },
+    );
 
     test('retries through the system proxy on a connection error', () async {
       SystemProxyDetector.overrideForTesting(
@@ -133,8 +113,7 @@ void main() {
       expect(calls, 1, reason: 'non-connection errors propagate immediately');
     });
 
-    test(
-        'does NOT retry on a connection error when no system proxy is '
+    test('does NOT retry on a connection error when no system proxy is '
         'configured', () async {
       SystemProxyDetector.overrideForTesting(null);
 
@@ -250,69 +229,71 @@ void main() {
   });
 
   group('integration: withProxyRetry against a real local server', () {
-    test('first attempt gets a connection error → second attempt succeeds',
-        () async {
-      // Start a real HTTP server on a random localhost port that
-      // the retry attempt will target. The "direct" attempt is
-      // aimed at a TCP socket that accepts the connection and
-      // immediately resets it — a reliable way to force a
-      // connection error without depending on port-reuse races.
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() => server.close(force: true));
-      var proxyHits = 0;
-      server.listen((req) async {
-        proxyHits++;
-        req.response.statusCode = 200;
-        req.response.headers.contentType = ContentType.text;
-        req.response.write('hello from proxy');
-        await req.response.close();
-      });
+    test(
+      'first attempt gets a connection error → second attempt succeeds',
+      () async {
+        // Start a real HTTP server on a random localhost port that
+        // the retry attempt will target. The "direct" attempt is
+        // aimed at a TCP socket that accepts the connection and
+        // immediately resets it — a reliable way to force a
+        // connection error without depending on port-reuse races.
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        var proxyHits = 0;
+        server.listen((req) async {
+          proxyHits++;
+          req.response.statusCode = 200;
+          req.response.headers.contentType = ContentType.text;
+          req.response.write('hello from proxy');
+          await req.response.close();
+        });
 
-      final broken = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() => broken.close());
-      broken.listen((conn) {
-        // Accept and immediately destroy — the client sees a
-        // broken-pipe / connection-reset error, which `isConnectionError`
-        // recognises.
-        conn.destroy();
-      });
-      final directPort = broken.port;
-      final proxyPort = server.port;
+        final broken = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => broken.close());
+        broken.listen((conn) {
+          // Accept and immediately destroy — the client sees a
+          // broken-pipe / connection-reset error, which `isConnectionError`
+          // recognises.
+          conn.destroy();
+        });
+        final directPort = broken.port;
+        final proxyPort = server.port;
 
-      SystemProxyDetector.overrideForTesting(
-        SystemProxy(httpsUrl: 'http://127.0.0.1:$proxyPort'),
-      );
+        SystemProxyDetector.overrideForTesting(
+          SystemProxy(httpsUrl: 'http://127.0.0.1:$proxyPort'),
+        );
 
-      var calls = 0;
-      final result = await withProxyRetry<String>(
-        attempt: (proxy) async {
-          calls++;
-          final client = HttpClient();
-          if (proxy != null) client.findProxy = proxy.findProxyFor;
-          try {
-            // Note: we hit the proxy server directly (not via the
-            // findProxy callback) because this is a synthetic
-            // integration test — we're verifying the wrapper's
-            // retry logic, not the OS-level proxy plumbing.
-            final url = proxy != null
-                ? Uri.parse('http://127.0.0.1:$proxyPort/')
-                : Uri.parse('http://127.0.0.1:$directPort/');
-            final response = await client.getUrl(url).then(
-                  (req) => req.close(),
-                );
-            if (response.statusCode != 200) {
-              throw HttpException('status ${response.statusCode}');
+        var calls = 0;
+        final result = await withProxyRetry<String>(
+          attempt: (proxy) async {
+            calls++;
+            final client = HttpClient();
+            if (proxy != null) client.findProxy = proxy.findProxyFor;
+            try {
+              // Note: we hit the proxy server directly (not via the
+              // findProxy callback) because this is a synthetic
+              // integration test — we're verifying the wrapper's
+              // retry logic, not the OS-level proxy plumbing.
+              final url = proxy != null
+                  ? Uri.parse('http://127.0.0.1:$proxyPort/')
+                  : Uri.parse('http://127.0.0.1:$directPort/');
+              final response = await client
+                  .getUrl(url)
+                  .then((req) => req.close());
+              if (response.statusCode != 200) {
+                throw HttpException('status ${response.statusCode}');
+              }
+              return await response.transform(utf8.decoder).join();
+            } finally {
+              client.close(force: true);
             }
-            return await response.transform(utf8.decoder).join();
-          } finally {
-            client.close(force: true);
-          }
-        },
-      );
+          },
+        );
 
-      expect(result, 'hello from proxy');
-      expect(calls, 2);
-      expect(proxyHits, 1);
-    });
+        expect(result, 'hello from proxy');
+        expect(calls, 2);
+        expect(proxyHits, 1);
+      },
+    );
   });
 }

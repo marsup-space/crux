@@ -48,10 +48,7 @@ void main() {
   }
 
   int nonEmptyLineCount(String rendered) {
-    return rendered
-        .split('\n')
-        .where((line) => line.trim().isNotEmpty)
-        .length;
+    return rendered.split('\n').where((line) => line.trim().isNotEmpty).length;
   }
 
   test('error toast does not fill full screen', () async {
@@ -87,8 +84,7 @@ void main() {
     });
   });
 
-  test('info toast also shrink-wraps (does not fill full screen)',
-      () async {
+  test('info toast also shrink-wraps (does not fill full screen)', () async {
     await testNocterm('info toast shrink-wraps', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
       await tester.pumpComponent(toastHost(toastKey));
@@ -101,8 +97,7 @@ void main() {
     });
   });
 
-  test('status toast also shrink-wraps (does not fill full screen)',
-      () async {
+  test('status toast also shrink-wraps (does not fill full screen)', () async {
     await testNocterm('status toast shrink-wraps', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();
       await tester.pumpComponent(toastHost(toastKey));
@@ -133,8 +128,7 @@ void main() {
     });
   });
 
-  test(
-      'showing an error after a status toast (and vice versa) still '
+  test('showing an error after a status toast (and vice versa) still '
       'shrink-wraps', () async {
     await testNocterm('toast mode transitions', (tester) async {
       final toastKey = GlobalKey<ToastHubState>();

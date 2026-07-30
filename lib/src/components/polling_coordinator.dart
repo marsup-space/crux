@@ -38,8 +38,8 @@ class PollingCoordinator {
   PollingCoordinator({
     required this.providerService,
     required this.sessionController,
-    required bool Function() isProviderServiceReady,
-  }) : _isProviderServiceReady = isProviderServiceReady;
+    required this._isProviderServiceReady,
+  });
 
   /// True if any session is currently marked running.
   bool hasActiveSession() => sessionController.hasAnyRunningSession;

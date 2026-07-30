@@ -14,7 +14,8 @@ void main() {
   });
 
   test('finds marker in same directory as start', () async {
-    final marker = File(p.join(tmp.path, 'pubspec.yaml'))..writeAsStringSync('');
+    final marker = File(p.join(tmp.path, 'pubspec.yaml'))
+      ..writeAsStringSync('');
     final result = await findUp(
       markers: const ['pubspec.yaml'],
       start: tmp.path,
@@ -25,7 +26,8 @@ void main() {
   });
 
   test('walks up to find marker in parent directory', () async {
-    final sub = Directory(p.join(tmp.path, 'a', 'b'))..createSync(recursive: true);
+    final sub = Directory(p.join(tmp.path, 'a', 'b'))
+      ..createSync(recursive: true);
     File(p.join(tmp.path, 'pubspec.yaml')).writeAsStringSync('');
     final result = await findUp(
       markers: const ['pubspec.yaml'],
@@ -36,7 +38,8 @@ void main() {
   });
 
   test('returns null when no marker found and stop is reached', () async {
-    final sub = Directory(p.join(tmp.path, 'a', 'b'))..createSync(recursive: true);
+    final sub = Directory(p.join(tmp.path, 'a', 'b'))
+      ..createSync(recursive: true);
     final result = await findUp(
       markers: const ['pubspec.yaml'],
       start: sub.path,

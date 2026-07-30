@@ -234,11 +234,7 @@ const int _tierSubsequence = 1000;
 /// (preserves the caller's ordering — typically registry /
 /// definition order). Case-insensitive: the user typing
 /// `Continue` matches `/continue`.
-List<T> fuzzyRank<T>(
-  List<T> items,
-  String Function(T) keyOf,
-  String query,
-) {
+List<T> fuzzyRank<T>(List<T> items, String Function(T) keyOf, String query) {
   final q = query.trim();
   if (q.isEmpty) return List<T>.unmodifiable(items);
 

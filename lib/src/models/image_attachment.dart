@@ -63,10 +63,10 @@ class ImageAttachment {
 
   /// Serializes to a JSON-compatible map for persistence.
   Map<String, dynamic> toJson() => {
-        'mediaType': mediaType,
-        'base64Data': base64Data,
-        'label': label,
-      };
+    'mediaType': mediaType,
+    'base64Data': base64Data,
+    'label': label,
+  };
 
   /// Deserializes from a JSON-compatible map.
   static ImageAttachment fromJson(Map<String, dynamic> json) {

@@ -82,8 +82,10 @@ void main() {
     });
 
     test('is idempotent (same input → same output, every call)', () {
-      expect(nextSemanticSearchHintThreshold(450_000, 200000),
-          nextSemanticSearchHintThreshold(450_000, 200000));
+      expect(
+        nextSemanticSearchHintThreshold(450_000, 200000),
+        nextSemanticSearchHintThreshold(450_000, 200000),
+      );
     });
 
     test('the thresholds constant is [200k, 400k, 600k]', () {
@@ -105,11 +107,8 @@ void main() {
     /// flag value, and the post-injection threshold value. Lets us
     /// pin the full state-machine behaviour without standing up a
     /// session.
-    ({
-      Map<String, ToolResult> results,
-      bool flag,
-      int lastThreshold,
-    }) injectHint({
+    ({Map<String, ToolResult> results, bool flag, int lastThreshold})
+    injectHint({
       required Map<String, ToolResult> results,
       required List<String> toolNamesInOrder,
       required bool flagBefore,
@@ -119,8 +118,12 @@ void main() {
       var flag = flagBefore;
       var lastThreshold = lastThresholdBefore;
 
-      final shouldFire = !flag ||
-          nextSemanticSearchHintThreshold(currentContextTokens, lastThreshold) !=
+      final shouldFire =
+          !flag ||
+          nextSemanticSearchHintThreshold(
+                currentContextTokens,
+                lastThreshold,
+              ) !=
               null;
       if (!shouldFire) {
         return (results: results, flag: flag, lastThreshold: lastThreshold);
@@ -167,24 +170,29 @@ void main() {
       return (results: results, flag: flag, lastThreshold: lastThreshold);
     }
 
-    test('initial one-shot fires at context < 200k (first session grep/glob)',
-        () {
-      final results = <String, ToolResult>{
-        'a': const ToolResult(title: 'Grep: foo', output: 'matches'),
-      };
-      final out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep'],
-        flagBefore: false,
-        lastThresholdBefore: 0,
-        currentContextTokens: 100_000, // well below 200k
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.flag, isTrue);
-      // One-shot doesn't bump lastThreshold — the threshold logic
-      // is for subsequent fires. lastThreshold stays at 0.
-      expect(out.lastThreshold, 0);
-    });
+    test(
+      'initial one-shot fires at context < 200k (first session grep/glob)',
+      () {
+        final results = <String, ToolResult>{
+          'a': const ToolResult(title: 'Grep: foo', output: 'matches'),
+        };
+        final out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep'],
+          flagBefore: false,
+          lastThresholdBefore: 0,
+          currentContextTokens: 100_000, // well below 200k
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(out.flag, isTrue);
+        // One-shot doesn't bump lastThreshold — the threshold logic
+        // is for subsequent fires. lastThreshold stays at 0.
+        expect(out.lastThreshold, 0);
+      },
+    );
 
     test('no re-fire at context < 200k after the one-shot', () {
       final results = <String, ToolResult>{
@@ -198,8 +206,10 @@ void main() {
         currentContextTokens: 100_000,
       );
       // No fire — flag is true, no threshold crossed.
-      expect(out.results['a']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.lastThreshold, 0);
     });
 
@@ -214,7 +224,10 @@ void main() {
         lastThresholdBefore: 0,
         currentContextTokens: 250_000, // crossed 200k
       );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
       expect(out.flag, isTrue); // stays true
       expect(out.lastThreshold, 200000); // bumped to 200k
     });
@@ -230,7 +243,10 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 450_000, // crossed 400k
       );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
       expect(out.lastThreshold, 400000);
     });
 
@@ -245,7 +261,10 @@ void main() {
         lastThresholdBefore: 400000,
         currentContextTokens: 700_000, // crossed 600k
       );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
       expect(out.lastThreshold, 600000);
     });
 
@@ -260,8 +279,10 @@ void main() {
         lastThresholdBefore: 600000,
         currentContextTokens: 900_000, // above 600k, no more thresholds
       );
-      expect(out.results['a']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.lastThreshold, 600000);
     });
 
@@ -276,84 +297,99 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 300_000, // below 400k
       );
-      expect(out.results['a']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.lastThreshold, 200000); // unchanged
     });
 
-    test('multi-threshold context jump: first round fires 200k, subsequent rounds climb',
-        () {
-      // Simulate: context jumps 100k → 900k in one turn. The LLM
-      // does 3 rounds of grep/glob across the conversation,
-      // gradually bumping lastThreshold as each threshold fires.
-      const initialOutput = 'matches';
+    test(
+      'multi-threshold context jump: first round fires 200k, subsequent rounds climb',
+      () {
+        // Simulate: context jumps 100k → 900k in one turn. The LLM
+        // does 3 rounds of grep/glob across the conversation,
+        // gradually bumping lastThreshold as each threshold fires.
+        const initialOutput = 'matches';
 
-      // Round 1 (context = 900k, lastThreshold = 0):
-      //   - one-shot would have fired (but flag is already true here)
-      //   - threshold helper returns 200k (the lowest unsatisfied)
-      //   - hint fires, lastThreshold → 200k
-      Map<String, ToolResult> results = {
-        'a': const ToolResult(title: 'Grep: 1', output: initialOutput),
-      };
-      var out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep'],
-        flagBefore: true,
-        lastThresholdBefore: 0,
-        currentContextTokens: 900_000,
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.lastThreshold, 200000);
+        // Round 1 (context = 900k, lastThreshold = 0):
+        //   - one-shot would have fired (but flag is already true here)
+        //   - threshold helper returns 200k (the lowest unsatisfied)
+        //   - hint fires, lastThreshold → 200k
+        Map<String, ToolResult> results = {
+          'a': const ToolResult(title: 'Grep: 1', output: initialOutput),
+        };
+        var out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep'],
+          flagBefore: true,
+          lastThresholdBefore: 0,
+          currentContextTokens: 900_000,
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(out.lastThreshold, 200000);
 
-      // Round 2 (context = 900k, lastThreshold = 200k):
-      //   - threshold helper returns 400k
-      //   - hint fires, lastThreshold → 400k
-      results = {
-        'a': const ToolResult(title: 'Grep: 2', output: initialOutput),
-      };
-      out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep'],
-        flagBefore: true,
-        lastThresholdBefore: 200000,
-        currentContextTokens: 900_000,
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.lastThreshold, 400000);
+        // Round 2 (context = 900k, lastThreshold = 200k):
+        //   - threshold helper returns 400k
+        //   - hint fires, lastThreshold → 400k
+        results = {
+          'a': const ToolResult(title: 'Grep: 2', output: initialOutput),
+        };
+        out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep'],
+          flagBefore: true,
+          lastThresholdBefore: 200000,
+          currentContextTokens: 900_000,
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(out.lastThreshold, 400000);
 
-      // Round 3 (context = 900k, lastThreshold = 400k):
-      //   - threshold helper returns 600k
-      //   - hint fires, lastThreshold → 600k
-      results = {
-        'a': const ToolResult(title: 'Grep: 3', output: initialOutput),
-      };
-      out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep'],
-        flagBefore: true,
-        lastThresholdBefore: 400000,
-        currentContextTokens: 900_000,
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.lastThreshold, 600000);
+        // Round 3 (context = 900k, lastThreshold = 400k):
+        //   - threshold helper returns 600k
+        //   - hint fires, lastThreshold → 600k
+        results = {
+          'a': const ToolResult(title: 'Grep: 3', output: initialOutput),
+        };
+        out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep'],
+          flagBefore: true,
+          lastThresholdBefore: 400000,
+          currentContextTokens: 900_000,
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(out.lastThreshold, 600000);
 
-      // Round 4 (context = 900k, lastThreshold = 600k):
-      //   - no threshold above 600k
-      //   - hint does NOT fire
-      results = {
-        'a': const ToolResult(title: 'Grep: 4', output: initialOutput),
-      };
-      out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep'],
-        flagBefore: true,
-        lastThresholdBefore: 600000,
-        currentContextTokens: 900_000,
-      );
-      expect(out.results['a']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
-      expect(out.lastThreshold, 600000); // unchanged
-    });
+        // Round 4 (context = 900k, lastThreshold = 600k):
+        //   - no threshold above 600k
+        //   - hint does NOT fire
+        results = {
+          'a': const ToolResult(title: 'Grep: 4', output: initialOutput),
+        };
+        out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep'],
+          flagBefore: true,
+          lastThresholdBefore: 600000,
+          currentContextTokens: 900_000,
+        );
+        expect(
+          out.results['a']!.output,
+          isNot(contains(renderSemanticSearchHintEmbedded())),
+        );
+        expect(out.lastThreshold, 600000); // unchanged
+      },
+    );
 
     test('glob triggers threshold re-fires (same as grep)', () {
       final results = <String, ToolResult>{
@@ -366,32 +402,47 @@ void main() {
         lastThresholdBefore: 200000,
         currentContextTokens: 450_000, // crossed 400k
       );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
       expect(out.lastThreshold, 400000);
     });
 
-    test('mixed round: threshold re-fire on the first grep, not on later read/semantic_search',
-        () {
-      // LLM called grep, read, semantic_search all in one round. The
-      // threshold re-fire should hit the grep, not the others.
-      final results = <String, ToolResult>{
-        'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
-        'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
-        'c': const ToolResult(title: 'semantic_search: auth', output: 'snippets'),
-      };
-      final out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep', 'read', 'semantic_search'],
-        flagBefore: true,
-        lastThresholdBefore: 200000,
-        currentContextTokens: 450_000, // crossed 400k
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.results['b']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
-      expect(out.results['c']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())));
-      expect(out.lastThreshold, 400000);
-    });
+    test(
+      'mixed round: threshold re-fire on the first grep, not on later read/semantic_search',
+      () {
+        // LLM called grep, read, semantic_search all in one round. The
+        // threshold re-fire should hit the grep, not the others.
+        final results = <String, ToolResult>{
+          'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
+          'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
+          'c': const ToolResult(
+            title: 'semantic_search: auth',
+            output: 'snippets',
+          ),
+        };
+        final out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep', 'read', 'semantic_search'],
+          flagBefore: true,
+          lastThresholdBefore: 200000,
+          currentContextTokens: 450_000, // crossed 400k
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(
+          out.results['b']!.output,
+          isNot(contains(renderSemanticSearchHintEmbedded())),
+        );
+        expect(
+          out.results['c']!.output,
+          isNot(contains(renderSemanticSearchHintEmbedded())),
+        );
+        expect(out.lastThreshold, 400000);
+      },
+    );
   });
 }

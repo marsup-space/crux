@@ -152,9 +152,7 @@ class ThemeLoader {
       final raw = section?[key];
       if (raw == null) {
         if (section != null) {
-          warnings?.add(
-            'missing [$sectionName] "$key"; using Dracula default',
-          );
+          warnings?.add('missing [$sectionName] "$key"; using Dracula default');
         }
         return fallbackColor;
       }
@@ -304,7 +302,8 @@ class ThemeLoader {
       syntaxMeta: color(syntax, 'syntax', 'meta', fallback.syntaxMeta),
       // Chip background is optional in user theme TOML — we
       // fall back to `surface_variant` when not provided.
-      chipBackground: optionalColor(colors, 'chip_background') ?? surfaceVariant,
+      chipBackground:
+          optionalColor(colors, 'chip_background') ?? surfaceVariant,
       // Optional tokens with runtime-derived defaults (no warnings).
       assistantColor: optionalColor(colors, 'assistant'),
       diffAddedColor: optionalColor(colors, 'diff_added'),

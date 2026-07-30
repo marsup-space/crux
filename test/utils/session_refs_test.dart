@@ -17,9 +17,9 @@ void main() {
   group('parseSessionRefs — basic matching', () {
     test('finds a single bare reference', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('see ses://1014 for details', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([('see ses://1014 for details', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.sessionId, 1014);
       expect(refs.first.offset, 4);
@@ -28,9 +28,9 @@ void main() {
 
     test('finds multiple references in one span', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('jump from ses://42 to ses://9999', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([('jump from ses://42 to ses://9999', style)]),
+      );
       expect(refs, hasLength(2));
       expect(refs[0].sessionId, 42);
       expect(refs[1].sessionId, 9999);
@@ -38,10 +38,12 @@ void main() {
 
     test('offsets respect the running position across multiple spans', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('first ses://11', style),
-        (' then ses://22 end', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([
+          ('first ses://11', style),
+          (' then ses://22 end', style),
+        ]),
+      );
       expect(refs, hasLength(2));
       // `first ses://11` is 14 chars; `ses://11` starts at offset 6
       // within it (right after "first ").
@@ -59,26 +61,28 @@ void main() {
       // run and leaves the trailing digit as plain text — that's the
       // intended behaviour: a bare "ses://" followed by a 9-digit id
       // is always a valid ref, regardless of what comes next.
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('ses://1 ses://999999999 ses://1234567890', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([
+          ('ses://1 ses://999999999 ses://1234567890', style),
+        ]),
+      );
       expect(refs.map((r) => r.sessionId).toList(), [1, 999999999, 123456789]);
     });
 
     test('rejects id 0', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('ses://0 ses://7', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([('ses://0 ses://7', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.sessionId, 7);
     });
 
     test('returns no refs when there are no matches', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('plain text, no refs here', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([('plain text, no refs here', style)]),
+      );
       expect(refs, isEmpty);
     });
 
@@ -91,9 +95,9 @@ void main() {
       //   ses://abc   — no digits after the scheme
       // `ses://12a` is a deliberate near-miss: the regex matches the
       // 2-digit prefix and the trailing `a` is just plain text.
-      final refs = parseSessionRefs(_spansFromSegments([
-        ('ses:/12 ses:://34 ses-://56 ses://abc', style),
-      ]));
+      final refs = parseSessionRefs(
+        _spansFromSegments([('ses:/12 ses:://34 ses-://56 ses://abc', style)]),
+      );
       expect(refs, isEmpty);
     });
   });
@@ -161,9 +165,11 @@ void main() {
       // counter must increment past the parent text before walking
       // into children.
       final refs = parseSessionRefs([
-        const TextSpan(text: 'a ', style: text, children: [
-          TextSpan(text: 'b ses://5 c', style: text),
-        ]),
+        const TextSpan(
+          text: 'a ',
+          style: text,
+          children: [TextSpan(text: 'b ses://5 c', style: text)],
+        ),
       ]);
       expect(refs, hasLength(1));
       expect(refs.first.sessionId, 5);
@@ -195,17 +201,13 @@ void main() {
     );
 
     test('returns the original spans when there are no refs', () {
-      final spans = _spansFromSegments([
-        ('plain text', base),
-      ]);
+      final spans = _spansFromSegments([('plain text', base)]);
       final styled = applySessionLinkStyles(spans, const [], link, hover, null);
       expect(styled, equals(spans));
     });
 
     test('overlays link style on a single ref region', () {
-      final spans = _spansFromSegments([
-        ('see ses://1014 here', base),
-      ]);
+      final spans = _spansFromSegments([('see ses://1014 here', base)]);
       final refs = parseSessionRefs(spans);
       final styled = applySessionLinkStyles(spans, refs, link, hover, null);
 
@@ -253,9 +255,7 @@ void main() {
     });
 
     test('hovered ref uses hoverStyle instead of linkStyle', () {
-      final spans = _spansFromSegments([
-        ('a ses://1 b ses://2 c', base),
-      ]);
+      final spans = _spansFromSegments([('a ses://1 b ses://2 c', base)]);
       final refs = parseSessionRefs(spans);
       expect(refs, hasLength(2));
 
@@ -297,11 +297,15 @@ void main() {
     });
 
     test('null hoverStyle falls back to linkStyle for the hovered ref', () {
-      final spans = _spansFromSegments([
-        ('ses://9', base),
-      ]);
+      final spans = _spansFromSegments([('ses://9', base)]);
       final refs = parseSessionRefs(spans);
-      final styled = applySessionLinkStyles(spans, refs, link, null, refs.first);
+      final styled = applySessionLinkStyles(
+        spans,
+        refs,
+        link,
+        null,
+        refs.first,
+      );
 
       InlineSpan? refSpan;
       void walk(InlineSpan s) {

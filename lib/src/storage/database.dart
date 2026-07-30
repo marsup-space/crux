@@ -13,8 +13,14 @@ import 'tables.dart';
 part 'database.g.dart';
 
 @DriftDatabase(
-  tables: [Sessions, Messages, Parts, FileReadState, FileLastWriter,
-      ShellMonitorLogs],
+  tables: [
+    Sessions,
+    Messages,
+    Parts,
+    FileReadState,
+    FileLastWriter,
+    ShellMonitorLogs,
+  ],
 )
 class CruxDatabase extends _$CruxDatabase {
   CruxDatabase() : super(_openConnection());

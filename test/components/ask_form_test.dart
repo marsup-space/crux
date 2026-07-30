@@ -82,7 +82,11 @@ void main() {
       expect(
         parseAskSpec({
           'groups': [
-            {'options': [{'label': 'x'}]},
+            {
+              'options': [
+                {'label': 'x'},
+              ],
+            },
           ],
         }),
         isNull,
@@ -102,7 +106,9 @@ void main() {
           'groups': [
             {
               'name': 'g',
-              'options': [{'label': ''}],
+              'options': [
+                {'label': ''},
+              ],
             },
           ],
         }),
@@ -136,14 +142,10 @@ void main() {
     );
 
     test('serializes picks with comma-joined multi-select values', () {
-      final out = serializeAskAnswer(
-        spec,
-        {
-          'modules': [AskOption(label: 'web'), AskOption(label: 'cli')],
-          'runtime': [AskOption(label: 'Node', value: 'node')],
-        },
-        '',
-      );
+      final out = serializeAskAnswer(spec, {
+        'modules': [AskOption(label: 'web'), AskOption(label: 'cli')],
+        'runtime': [AskOption(label: 'Node', value: 'node')],
+      }, '');
       expect(out, contains('[prompt] Pick modules to refactor'));
       expect(out, contains('[modules] web, cli'));
       expect(out, contains('[runtime] node'));
@@ -151,30 +153,27 @@ void main() {
     });
 
     test('emits (none) for empty multi-select', () {
-      final out = serializeAskAnswer(
-        spec,
-        {'modules': <AskOption>[], 'runtime': <AskOption>[]},
-        '',
-      );
+      final out = serializeAskAnswer(spec, {
+        'modules': <AskOption>[],
+        'runtime': <AskOption>[],
+      }, '');
       expect(out, contains('[modules] (none)'));
       expect(out, contains('[runtime] (none)'));
     });
 
     test('emits [note] footer when note is non-empty', () {
-      final out = serializeAskAnswer(
-        spec,
-        {'modules': [AskOption(label: 'web')], 'runtime': [AskOption(label: 'Node', value: 'node')]},
-        'prefer bun actually',
-      );
+      final out = serializeAskAnswer(spec, {
+        'modules': [AskOption(label: 'web')],
+        'runtime': [AskOption(label: 'Node', value: 'node')],
+      }, 'prefer bun actually');
       expect(out, contains('[note] prefer bun actually'));
     });
 
     test('trims and omits note when whitespace-only', () {
-      final out = serializeAskAnswer(
-        spec,
-        {'modules': [AskOption(label: 'web')], 'runtime': [AskOption(label: 'Node', value: 'node')]},
-        '   \n  ',
-      );
+      final out = serializeAskAnswer(spec, {
+        'modules': [AskOption(label: 'web')],
+        'runtime': [AskOption(label: 'Node', value: 'node')],
+      }, '   \n  ');
       expect(out, isNot(contains('[note]')));
     });
   });
@@ -188,7 +187,14 @@ void main() {
       final ask = PendingAsk(
         sessionId: 1,
         callId: 'call-1',
-        spec: AskSpec(groups: [AskGroup(name: 'x', options: [AskOption(label: 'a')])]),
+        spec: AskSpec(
+          groups: [
+            AskGroup(
+              name: 'x',
+              options: [AskOption(label: 'a')],
+            ),
+          ],
+        ),
         completer: completer,
       );
       cubit.register(ask);
@@ -206,7 +212,14 @@ void main() {
       final ask = PendingAsk(
         sessionId: 1,
         callId: 'call-2',
-        spec: AskSpec(groups: [AskGroup(name: 'x', options: [AskOption(label: 'a')])]),
+        spec: AskSpec(
+          groups: [
+            AskGroup(
+              name: 'x',
+              options: [AskOption(label: 'a')],
+            ),
+          ],
+        ),
         completer: completer,
       );
       cubit.register(ask);
@@ -219,12 +232,21 @@ void main() {
     test('clearFor only affects the matching session', () async {
       final cubit = PendingAskCubit();
       final completer = Completer<ToolResult>();
-      cubit.register(PendingAsk(
-        sessionId: 7,
-        callId: 'c7',
-        spec: AskSpec(groups: [AskGroup(name: 'x', options: [AskOption(label: 'a')])]),
-        completer: completer,
-      ));
+      cubit.register(
+        PendingAsk(
+          sessionId: 7,
+          callId: 'c7',
+          spec: AskSpec(
+            groups: [
+              AskGroup(
+                name: 'x',
+                options: [AskOption(label: 'a')],
+              ),
+            ],
+          ),
+          completer: completer,
+        ),
+      );
       // clearFor on a different session should be a no-op.
       cubit.clearFor(99);
       expect(cubit.state.pending, isNotNull);
@@ -292,34 +314,37 @@ void main() {
       );
     }
 
-    test('renders prompt, group headings, options, note, and action row', () async {
-      await testNocterm('ask form renders', (tester) async {
-        await pumpAskForm(
-          tester,
-          pending: makePending(),
-          onSubmit: (_, _) => fail('submit should not fire'),
-          onDismiss: () => fail('dismiss should not fire'),
-        );
+    test(
+      'renders prompt, group headings, options, note, and action row',
+      () async {
+        await testNocterm('ask form renders', (tester) async {
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (_, _) => fail('submit should not fire'),
+            onDismiss: () => fail('dismiss should not fire'),
+          );
 
-        final ts = tester.terminalState;
-        expect(ts, containsText('Pick modules to refactor'));
-        expect(ts, containsText('modules'));
-        expect(ts, containsText('(multi)'));
-        expect(ts, containsText('web'));
-        expect(ts, containsText('api'));
-        expect(ts, containsText('cli'));
-        expect(ts, containsText('runtime'));
-        expect(ts, containsText('node'));
-        expect(ts, containsText('bun'));
-        expect(ts, containsText('Submit'));
-        expect(ts, containsText('Dismiss'));
+          final ts = tester.terminalState;
+          expect(ts, containsText('Pick modules to refactor'));
+          expect(ts, containsText('modules'));
+          expect(ts, containsText('(multi)'));
+          expect(ts, containsText('web'));
+          expect(ts, containsText('api'));
+          expect(ts, containsText('cli'));
+          expect(ts, containsText('runtime'));
+          expect(ts, containsText('node'));
+          expect(ts, containsText('bun'));
+          expect(ts, containsText('Submit'));
+          expect(ts, containsText('Dismiss'));
 
-        // Default selection: first option of every single-select group
-        // is pre-selected. 'runtime' is single-select, so 'node' is
-        // pre-picked — verified by a radio marker present on the row.
-        expect(ts, containsText('◉'));
-      }, size: const Size(80, 24));
-    });
+          // Default selection: first option of every single-select group
+          // is pre-selected. 'runtime' is single-select, so 'node' is
+          // pre-picked — verified by a radio marker present on the row.
+          expect(ts, containsText('◉'));
+        }, size: const Size(80, 24));
+      },
+    );
 
     test('keyboard: arrow down moves focus, space toggles checkbox', () async {
       await testNocterm('ask form keyboard toggle', (tester) async {
@@ -348,33 +373,36 @@ void main() {
       }, size: const Size(80, 24));
     });
 
-    test('keyboard: Enter on a single-select option submits the form', () async {
-      await testNocterm('ask form enter submits', (tester) async {
-        String? submittedProse;
-        await pumpAskForm(
-          tester,
-          pending: makePending(),
-          onSubmit: (p, _) => submittedProse = p,
-          onDismiss: () => fail('dismiss should not fire'),
-        );
+    test(
+      'keyboard: Enter on a single-select option submits the form',
+      () async {
+        await testNocterm('ask form enter submits', (tester) async {
+          String? submittedProse;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (p, _) => submittedProse = p,
+            onDismiss: () => fail('dismiss should not fire'),
+          );
 
-        // Default focus is options region, index 0 (the first group
-        // 'modules' is multi, so Enter on it toggles, not submits).
-        // Tab down to the single-select 'runtime' group: arrow down
-        // three times gets us to 'node' (index 3 in the flat list).
-        await tester.sendKey(LogicalKey.arrowDown);
-        await tester.sendKey(LogicalKey.arrowDown);
-        await tester.sendKey(LogicalKey.arrowDown);
-        // Now focused on 'node' in the single-select runtime group.
-        await tester.sendKey(LogicalKey.enter);
-        await tester.pump();
+          // Default focus is options region, index 0 (the first group
+          // 'modules' is multi, so Enter on it toggles, not submits).
+          // Tab down to the single-select 'runtime' group: arrow down
+          // three times gets us to 'node' (index 3 in the flat list).
+          await tester.sendKey(LogicalKey.arrowDown);
+          await tester.sendKey(LogicalKey.arrowDown);
+          await tester.sendKey(LogicalKey.arrowDown);
+          // Now focused on 'node' in the single-select runtime group.
+          await tester.sendKey(LogicalKey.enter);
+          await tester.pump();
 
-        expect(submittedProse, isNotNull);
-        // The single-select 'node' gets submitted. 'modules' (multi)
-        // started with no default selection → '(none)'.
-        expect(submittedProse, contains('[runtime] node'));
-      }, size: const Size(80, 24));
-    });
+          expect(submittedProse, isNotNull);
+          // The single-select 'node' gets submitted. 'modules' (multi)
+          // started with no default selection → '(none)'.
+          expect(submittedProse, contains('[runtime] node'));
+        }, size: const Size(80, 24));
+      },
+    );
 
     test('keyboard: Esc dismisses the form', () async {
       await testNocterm('ask form esc dismiss', (tester) async {
@@ -391,32 +419,35 @@ void main() {
       }, size: const Size(80, 24));
     });
 
-    test('keyboard: Tab cycles to note field, Enter from there submits', () async {
-      await testNocterm('ask form tab note submit', (tester) async {
-        String? submittedProse;
-        await pumpAskForm(
-          tester,
-          pending: makePending(),
-          onSubmit: (p, _) => submittedProse = p,
-          onDismiss: () => fail('dismiss should not fire'),
-        );
+    test(
+      'keyboard: Tab cycles to note field, Enter from there submits',
+      () async {
+        await testNocterm('ask form tab note submit', (tester) async {
+          String? submittedProse;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (p, _) => submittedProse = p,
+            onDismiss: () => fail('dismiss should not fire'),
+          );
 
-        // Tab forward: options → note.
-        await tester.sendTab();
-        await tester.pump();
+          // Tab forward: options → note.
+          await tester.sendTab();
+          await tester.pump();
 
-        // Type into the note field.
-        await tester.enterText('prefer bun');
-        await tester.pump();
+          // Type into the note field.
+          await tester.enterText('prefer bun');
+          await tester.pump();
 
-        // Enter from the note field submits the whole form.
-        await tester.sendEnter();
-        await tester.pump();
+          // Enter from the note field submits the whole form.
+          await tester.sendEnter();
+          await tester.pump();
 
-        expect(submittedProse, isNotNull);
-        expect(submittedProse, contains('[note] prefer bun'));
-      }, size: const Size(80, 24));
-    });
+          expect(submittedProse, isNotNull);
+          expect(submittedProse, contains('[note] prefer bun'));
+        }, size: const Size(80, 24));
+      },
+    );
 
     test('mouse: tap on an option toggles it', () async {
       await testNocterm('ask form tap toggle', (tester) async {
@@ -450,8 +481,9 @@ void main() {
         );
 
         // Tap directly on the placeholder text of the note field.
-        final positions =
-            tester.terminalState.findText('(optional) add extra context');
+        final positions = tester.terminalState.findText(
+          '(optional) add extra context',
+        );
         expect(positions.length, greaterThan(0));
         final pos = positions.first;
         await tester.tap(pos.x, pos.y);
@@ -470,37 +502,40 @@ void main() {
       }, size: const Size(80, 24));
     });
 
-    test('mouse: tap on the Notes label / border also focuses the field',
-        () async {
-      await testNocterm('ask form tap note border focuses', (tester) async {
-        String? submittedProse;
-        await pumpAskForm(
-          tester,
-          pending: makePending(),
-          onSubmit: (p, _) => submittedProse = p,
-          onDismiss: () => fail('dismiss should not fire'),
-        );
+    test(
+      'mouse: tap on the Notes label / border also focuses the field',
+      () async {
+        await testNocterm('ask form tap note border focuses', (tester) async {
+          String? submittedProse;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (p, _) => submittedProse = p,
+            onDismiss: () => fail('dismiss should not fire'),
+          );
 
-        // Tap on the note field's border — an area outside the render
-        // text field's own mouse region, covered by the outer
-        // GestureDetector. The border sits one column left of the
-        // placeholder text.
-        final positions =
-            tester.terminalState.findText('(optional) add extra context');
-        expect(positions.length, greaterThan(0));
-        final pos = positions.first;
-        await tester.tap(pos.x - 1, pos.y);
-        await tester.pump();
+          // Tap on the note field's border — an area outside the render
+          // text field's own mouse region, covered by the outer
+          // GestureDetector. The border sits one column left of the
+          // placeholder text.
+          final positions = tester.terminalState.findText(
+            '(optional) add extra context',
+          );
+          expect(positions.length, greaterThan(0));
+          final pos = positions.first;
+          await tester.tap(pos.x - 1, pos.y);
+          await tester.pump();
 
-        await tester.enterText('border tap');
-        await tester.pump();
-        await tester.sendEnter();
-        await tester.pump();
+          await tester.enterText('border tap');
+          await tester.pump();
+          await tester.sendEnter();
+          await tester.pump();
 
-        expect(submittedProse, isNotNull);
-        expect(submittedProse, contains('[note] border tap'));
-      }, size: const Size(80, 24));
-    });
+          expect(submittedProse, isNotNull);
+          expect(submittedProse, contains('[note] border tap'));
+        }, size: const Size(80, 24));
+      },
+    );
 
     test('mouse: tap on Dismiss fires onDismiss', () async {
       await testNocterm('ask form tap dismiss', (tester) async {
@@ -522,38 +557,46 @@ void main() {
       }, size: const Size(80, 24));
     });
 
-    test('keyboard: Shift+Tab from the note field goes back to options', () async {
-      await testNocterm('ask form shift tab reverse', (tester) async {
-        var submitted = false;
-        await pumpAskForm(
-          tester,
-          pending: makePending(),
-          onSubmit: (_, _) => submitted = true,
-          onDismiss: () {},
-        );
+    test(
+      'keyboard: Shift+Tab from the note field goes back to options',
+      () async {
+        await testNocterm('ask form shift tab reverse', (tester) async {
+          var submitted = false;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (_, _) => submitted = true,
+            onDismiss: () {},
+          );
 
-        // Tab to note field.
-        await tester.sendTab();
-        await tester.pump();
+          // Tab to note field.
+          await tester.sendTab();
+          await tester.pump();
 
-        // Shift+Tab back to options.
-        await tester.sendKeyEvent(KeyboardEvent(
-          logicalKey: LogicalKey.tab,
-          modifiers: const ModifierKeys(shift: true),
-        ));
-        await tester.pump();
+          // Shift+Tab back to options.
+          await tester.sendKeyEvent(
+            KeyboardEvent(
+              logicalKey: LogicalKey.tab,
+              modifiers: const ModifierKeys(shift: true),
+            ),
+          );
+          await tester.pump();
 
-        // Space should now toggle an option rather than enter the note
-        // field. We verify by toggling 'web' on (checkbox appears).
-        await tester.sendKey(LogicalKey.space);
-        await tester.pump();
-        expect(tester.terminalState, containsText('☑'));
+          // Space should now toggle an option rather than enter the note
+          // field. We verify by toggling 'web' on (checkbox appears).
+          await tester.sendKey(LogicalKey.space);
+          await tester.pump();
+          expect(tester.terminalState, containsText('☑'));
 
-        // Sanity: the form is still mounted.
-        expect(submitted, isFalse,
-            reason: 'just toggling, no submit happened');
-      }, size: const Size(80, 24));
-    });
+          // Sanity: the form is still mounted.
+          expect(
+            submitted,
+            isFalse,
+            reason: 'just toggling, no submit happened',
+          );
+        }, size: const Size(80, 24));
+      },
+    );
 
     test('layout: long option labels wrap instead of overflowing', () async {
       await testNocterm('ask form long labels wrap', (tester) async {

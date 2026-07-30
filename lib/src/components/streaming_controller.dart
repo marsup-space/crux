@@ -387,10 +387,9 @@ class StreamingController {
   Timer? _contextAnimTimer;
 
   StreamingController({
-    required SessionController sessionController,
-    required void Function() refresh,
-  }) : _sessionController = sessionController,
-       _refresh = refresh;
+    required this._sessionController,
+    required this._refresh,
+  });
 
   /// No-op legacy API. The metrics display is now driven
   /// by the [MetricsDisplay] widget, which owns its own

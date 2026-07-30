@@ -13,26 +13,32 @@ void main() {
   // ── Model/auxiliary button not clickable during streaming ──
 
   group('GlossyModelButton clickability', () {
-    test('does not fire onPressed when onPressed is null (streaming)', () async {
-      await testNocterm('glossy-btn-null', (tester) async {
-        var tapCount = 0;
+    test(
+      'does not fire onPressed when onPressed is null (streaming)',
+      () async {
+        await testNocterm('glossy-btn-null', (tester) async {
+          var tapCount = 0;
 
-        await tester.pumpComponent(
-          GlossyModelButton(
-            label: 'test/model',
-            isAnimating: true,
-            onPressed: null,
-          ),
-        );
+          await tester.pumpComponent(
+            GlossyModelButton(
+              label: 'test/model',
+              isAnimating: true,
+              onPressed: null,
+            ),
+          );
 
-        // Tap on the button. With onPressed=null, nothing should happen.
-        await tester.tap(2, 0);
-        await tester.pump();
+          // Tap on the button. With onPressed=null, nothing should happen.
+          await tester.tap(2, 0);
+          await tester.pump();
 
-        expect(tapCount, 0,
-            reason: 'Button with null onPressed must not invoke callback');
-      }, size: const Size(40, 5));
-    });
+          expect(
+            tapCount,
+            0,
+            reason: 'Button with null onPressed must not invoke callback',
+          );
+        }, size: const Size(40, 5));
+      },
+    );
 
     test('fires onPressed when set (not streaming)', () async {
       await testNocterm('glossy-btn-set', (tester) async {
@@ -49,8 +55,11 @@ void main() {
         await tester.tap(2, 0);
         await tester.pump();
 
-        expect(tapCount, 1,
-            reason: 'Button with onPressed must invoke callback on tap');
+        expect(
+          tapCount,
+          1,
+          reason: 'Button with onPressed must invoke callback on tap',
+        );
       }, size: const Size(40, 5));
     });
 
@@ -65,8 +74,11 @@ void main() {
         );
 
         final rendered = tester.renderToString();
-        expect(rendered.contains('c'), isTrue,
-            reason: 'Button label must render even when animating');
+        expect(
+          rendered.contains('c'),
+          isTrue,
+          reason: 'Button label must render even when animating',
+        );
       }, size: const Size(40, 5));
     });
   });

@@ -2,6 +2,7 @@ import '../components/ui/toast.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'command_executor.dart';
+
 Future<void> executeProject(List<String> parts, CommandContext ctx) async {
   if (parts.length > 1 && parts[1].isNotEmpty) {
     final expanded = _expandHome(parts[1]);
@@ -19,10 +20,13 @@ Future<void> executeProject(List<String> parts, CommandContext ctx) async {
     ctx.showToast('Usage: /project <path> (current: ${ctx.projectPath})');
   }
 }
+
 String _expandHome(String path) {
-  final hasHomePrefix = path == '~' || path.startsWith('~/') || path.startsWith(r'~\');
+  final hasHomePrefix =
+      path == '~' || path.startsWith('~/') || path.startsWith(r'~\');
   if (!hasHomePrefix) return path;
-  final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+  final home =
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
   if (home == null || home.isEmpty) return path;
   if (path == '~' || path.length == 2) return home;
   return p.join(home, path.substring(2));

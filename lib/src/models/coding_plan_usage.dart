@@ -62,9 +62,8 @@ class CodingPlanUsage {
   /// Format the weekly window's remaining time as a short human
   /// label (e.g. `"6d 4h"`, `"18h 32m"`). Returns `null` when
   /// the snapshot has no countdown.
-  String? formatWeeklyRemains() => weeklyRemains == null
-      ? null
-      : formatCodingPlanRemains(weeklyRemains!);
+  String? formatWeeklyRemains() =>
+      weeklyRemains == null ? null : formatCodingPlanRemains(weeklyRemains!);
 }
 
 /// Format a [Duration] as a compact countdown label. The pair of
@@ -95,9 +94,7 @@ String formatCodingPlanRemains(Duration d) {
   }
   if (d.inMinutes >= 1) {
     final seconds = d.inSeconds - d.inMinutes * 60;
-    return seconds > 0
-        ? '${d.inMinutes}m ${seconds}s'
-        : '${d.inMinutes}m';
+    return seconds > 0 ? '${d.inMinutes}m ${seconds}s' : '${d.inMinutes}m';
   }
   if (d.inSeconds >= 1) return '${d.inSeconds}s';
   return '<1s';

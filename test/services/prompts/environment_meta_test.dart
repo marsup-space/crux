@@ -17,8 +17,13 @@ void main() {
       );
 
       expect(out, contains('Working directory: /Users/test/proj'));
-      expect(out, contains('Model: claude-opus-4-6 (provider: anthropic, '
-          'context: 200000 tokens)'));
+      expect(
+        out,
+        contains(
+          'Model: claude-opus-4-6 (provider: anthropic, '
+          'context: 200000 tokens)',
+        ),
+      );
       expect(out, contains('Session started: 2026-01-15T10:30:00.000Z'));
       expect(out, contains('stale by design'));
     });

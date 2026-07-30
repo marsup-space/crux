@@ -14,16 +14,16 @@ class LspPosition {
 
   const LspPosition(this.line, this.character);
 
-  factory LspPosition.fromJson(Map<String, dynamic> json) => LspPosition(
-        json['line'] as int? ?? 0,
-        json['character'] as int? ?? 0,
-      );
+  factory LspPosition.fromJson(Map<String, dynamic> json) =>
+      LspPosition(json['line'] as int? ?? 0, json['character'] as int? ?? 0);
 
   Map<String, dynamic> toJson() => {'line': line, 'character': character};
 
   @override
   bool operator ==(Object other) =>
-      other is LspPosition && other.line == line && other.character == character;
+      other is LspPosition &&
+      other.line == line &&
+      other.character == character;
 
   @override
   int get hashCode => Object.hash(line, character);
@@ -40,14 +40,18 @@ class LspRange {
   const LspRange(this.start, this.end);
 
   factory LspRange.fromJson(Map<String, dynamic> json) => LspRange(
-        LspPosition.fromJson(
-            (json['start'] as Map?)?.cast<String, dynamic>() ?? const {}),
-        LspPosition.fromJson(
-            (json['end'] as Map?)?.cast<String, dynamic>() ?? const {}),
-      );
+    LspPosition.fromJson(
+      (json['start'] as Map?)?.cast<String, dynamic>() ?? const {},
+    ),
+    LspPosition.fromJson(
+      (json['end'] as Map?)?.cast<String, dynamic>() ?? const {},
+    ),
+  );
 
-  Map<String, dynamic> toJson() =>
-      {'start': start.toJson(), 'end': end.toJson()};
+  Map<String, dynamic> toJson() => {
+    'start': start.toJson(),
+    'end': end.toJson(),
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -88,7 +92,7 @@ class LspDiagnostic {
   final String message;
   final LspDiagnosticSeverity? severity;
   final String? source;
-  final String? code;       // server-reported; may be a string or number
+  final String? code; // server-reported; may be a string or number
   final List<LspDiagnosticRelatedInformation>? relatedInformation;
 
   const LspDiagnostic({
@@ -104,17 +108,21 @@ class LspDiagnostic {
     final related = json['relatedInformation'];
     return LspDiagnostic(
       range: LspRange.fromJson(
-          (json['range'] as Map?)?.cast<String, dynamic>() ?? const {}),
+        (json['range'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
       message: json['message'] as String? ?? '',
       severity: LspDiagnosticSeverity.fromJson(json['severity']),
       source: json['source'] as String?,
       code: _codeToString(json['code']),
       relatedInformation: related is List
           ? related
-              .whereType<Map>()
-              .map((m) => LspDiagnosticRelatedInformation.fromJson(
-                  m.cast<String, dynamic>()))
-              .toList(growable: false)
+                .whereType<Map>()
+                .map(
+                  (m) => LspDiagnosticRelatedInformation.fromJson(
+                    m.cast<String, dynamic>(),
+                  ),
+                )
+                .toList(growable: false)
           : null,
     );
   }
@@ -158,13 +166,13 @@ class LspDiagnostic {
 
   @override
   int get hashCode => Object.hash(
-        message,
-        severity,
-        source,
-        code,
-        range,
-        Object.hashAll(relatedInformation ?? const []),
-      );
+    message,
+    severity,
+    source,
+    code,
+    range,
+    Object.hashAll(relatedInformation ?? const []),
+  );
 }
 
 /// Reference to another location, attached to a diagnostic.
@@ -183,7 +191,8 @@ class LspDiagnosticRelatedInformation {
     return LspDiagnosticRelatedInformation(
       uri: json['uri'] as String? ?? '',
       range: LspRange.fromJson(
-          (json['range'] as Map?)?.cast<String, dynamic>() ?? const {}),
+        (json['range'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
       message: json['message'] as String? ?? '',
     );
   }
@@ -410,18 +419,20 @@ extension LspDiagnosticJson on LspDiagnostic {
   /// Encode back to JSON. Used by tests and by future code that wants
   /// to forward diagnostics through a different channel.
   String toJsonString() => jsonEncode({
-        'range': range.toJson(),
-        'message': message,
-        if (severity != null) 'severity': severity!.wireValue,
-        if (source != null) 'source': source,
-        if (code != null) 'code': code,
-        if (relatedInformation != null)
-          'relatedInformation': relatedInformation!
-              .map((r) => {
-                    'uri': r.uri,
-                    'range': r.range.toJson(),
-                    'message': r.message,
-                  })
-              .toList(),
-      });
+    'range': range.toJson(),
+    'message': message,
+    if (severity != null) 'severity': severity!.wireValue,
+    if (source != null) 'source': source,
+    if (code != null) 'code': code,
+    if (relatedInformation != null)
+      'relatedInformation': relatedInformation!
+          .map(
+            (r) => {
+              'uri': r.uri,
+              'range': r.range.toJson(),
+              'message': r.message,
+            },
+          )
+          .toList(),
+  });
 }

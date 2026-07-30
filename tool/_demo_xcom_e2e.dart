@@ -12,12 +12,12 @@ import 'package:crux/src/utils/system_proxy.dart';
 
 class _Ctx extends ToolContext {
   _Ctx()
-      : super(
-          sessionId: 0,
-          messageId: 0,
-          abort: AbortSignal(),
-          workingDirectory: Directory.systemTemp.path,
-        );
+    : super(
+        sessionId: 0,
+        messageId: 0,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
 }
 
 Future<void> main() async {
@@ -29,10 +29,11 @@ Future<void> main() async {
   final tool = WebFetchTool(WebProviderRegistry());
   final ctx = _Ctx();
   final sw = Stopwatch()..start();
-  final result = await tool.execute(
-    {'url': 'https://x.com/', 'format': 'text', 'timeout': 15},
-    ctx,
-  );
+  final result = await tool.execute({
+    'url': 'https://x.com/',
+    'format': 'text',
+    'timeout': 15,
+  }, ctx);
   sw.stop();
 
   stderr.writeln('Returned in ${sw.elapsedMilliseconds} ms');
@@ -43,7 +44,8 @@ Future<void> main() async {
 
   if (result.metadata['via'] == 'system-proxy') {
     stderr.writeln(
-        '→ tool metadata reports the response was fetched via the system proxy.');
+      '→ tool metadata reports the response was fetched via the system proxy.',
+    );
   }
 
   if (result.output.length > 500) {

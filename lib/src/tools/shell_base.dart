@@ -226,18 +226,18 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       final stdoutBuf = StringBuffer();
       final stderrBuf = StringBuffer();
       var totalOutputBytes = 0;
-      final stdoutFuture = process.stdout
-          .transform(utf8.decoder)
-          .forEach((chunk) {
-            totalOutputBytes += chunk.length;
-            stdoutBuf.write(chunk);
-          });
-      final stderrFuture = process.stderr
-          .transform(utf8.decoder)
-          .forEach((chunk) {
-            totalOutputBytes += chunk.length;
-            stderrBuf.write(chunk);
-          });
+      final stdoutFuture = process.stdout.transform(utf8.decoder).forEach((
+        chunk,
+      ) {
+        totalOutputBytes += chunk.length;
+        stdoutBuf.write(chunk);
+      });
+      final stderrFuture = process.stderr.transform(utf8.decoder).forEach((
+        chunk,
+      ) {
+        totalOutputBytes += chunk.length;
+        stderrBuf.write(chunk);
+      });
 
       // Wait for the process to finish, with timeout and abort.
       final exitCodeFuture = process.exitCode;
@@ -351,7 +351,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                       checkNumber: checkNumber,
                       elapsedSeconds: elapsedSecs(),
                       verdict: 'FALLBACK',
-                      reason: 'progress monitor unavailable; fell back '
+                      reason:
+                          'progress monitor unavailable; fell back '
                           'to timeout after ${timeout.inMilliseconds}ms',
                     ),
                   );
@@ -414,7 +415,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
 
       int exitCode;
-      int? finishExitCode; // mirrors exitCode for the FINISH event; null = killed pre-exit
+      int?
+      finishExitCode; // mirrors exitCode for the FINISH event; null = killed pre-exit
       String? monitorKillReason;
       try {
         // Race: process completion vs timeout vs abort vs monitor.
@@ -494,8 +496,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         monitorFallbackTimer?.cancel();
         // Unblock the monitor loop if it is still sleeping so it can
         // observe completion and return without firing a late verdict.
-        if (monitorKillCompleter != null &&
-            !monitorKillCompleter.isCompleted) {
+        if (monitorKillCompleter != null && !monitorKillCompleter.isCompleted) {
           monitorKillCompleter.complete('');
         }
         // Run-finish event + flush. Awaited so the batch actually
@@ -509,9 +510,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               checkNumber: -1,
               elapsedSeconds: 0,
               verdict: 'FINISH',
-              reason: code == null
-                  ? 'killed (no exit code)'
-                  : 'exit $code',
+              reason: code == null ? 'killed (no exit code)' : 'exit $code',
             ),
           );
           await monitorLogSink.finish(exitCode: code);
@@ -667,7 +666,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             // The user approved THIS exact command out-of-band; the
             // schema description for `confirmed` says so. Run it,
             // but leave a trace in the output.
-            shellRiskNote = '\n[shell-risk: confirmed bypass] This command '
+            shellRiskNote =
+                '\n[shell-risk: confirmed bypass] This command '
                 'was flagged as suspicious ($heuristicReason) and executed '
                 'only because `confirmed: true` was passed after explicit '
                 'user approval.';
@@ -678,7 +678,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               // No aux model wired (tests, or a setup without an
               // auxiliary model configured at the executor level) —
               // fail open rather than block work we cannot review.
-              shellRiskNote = '\n[shell-risk: fail-open] WARNING — this '
+              shellRiskNote =
+                  '\n[shell-risk: fail-open] WARNING — this '
                   'command was flagged as suspicious ($heuristicReason), '
                   'but no auxiliary-model reviewer is configured. It was '
                   'executed without a second opinion.';
@@ -714,15 +715,15 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                       verdict: verdict,
                     ),
                     metadata: {
-                      'shellRisk':
-                          verdict.kind == ShellRiskVerdictKind.unsafe
-                              ? 'blocked-unsafe'
-                              : 'blocked-uncertain',
+                      'shellRisk': verdict.kind == ShellRiskVerdictKind.unsafe
+                          ? 'blocked-unsafe'
+                          : 'blocked-uncertain',
                       'shellRiskReason': verdict.reason,
                     },
                   );
                 case ShellRiskVerdictKind.unavailable:
-                  shellRiskNote = '\n[shell-risk: fail-open] WARNING — this '
+                  shellRiskNote =
+                      '\n[shell-risk: fail-open] WARNING — this '
                       'command was flagged as suspicious ($heuristicReason), '
                       'and the auxiliary-model risk review was unavailable '
                       '(not configured, timed out, or errored). It was '
@@ -836,10 +837,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         output: finalOutput,
         truncated: truncated,
         outputPath: outputPath,
-        metadata: {
-          'exitCode': exitCode,
-          ...?extraMetadata,
-        },
+        metadata: {'exitCode': exitCode, ...?extraMetadata},
       );
     } catch (e) {
       // Keep the guardrail audit trail (confirmed-bypass / fail-open
@@ -970,10 +968,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
 /// Rejection body for the catastrophic tier of the shell high-risk
 /// guardrail: no appeal, no `confirmed` bypass, no aux-model review.
 /// Tells the model to stop and hand the decision back to the user.
-String _renderShellRiskCatastrophicRejection(
-  String command,
-  String reason,
-) {
+String _renderShellRiskCatastrophicRejection(String command, String reason) {
   return 'This shell command was BLOCKED by the high-risk command '
       'guardrail.\n'
       '\n'
@@ -1003,12 +998,12 @@ String _renderShellRiskEscalatedRejection({
   required String heuristicReason,
   required ShellRiskVerdict verdict,
 }) {
-  final verdictLabel =
-      verdict.kind == ShellRiskVerdictKind.unsafe ? 'UNSAFE' : 'UNCERTAIN';
-  final verdictReason =
-      (verdict.reason == null || verdict.reason!.isEmpty)
-          ? 'no reason given'
-          : verdict.reason!;
+  final verdictLabel = verdict.kind == ShellRiskVerdictKind.unsafe
+      ? 'UNSAFE'
+      : 'UNCERTAIN';
+  final verdictReason = (verdict.reason == null || verdict.reason!.isEmpty)
+      ? 'no reason given'
+      : verdict.reason!;
   return 'This shell command was BLOCKED by the high-risk command '
       'guardrail.\n'
       '\n'

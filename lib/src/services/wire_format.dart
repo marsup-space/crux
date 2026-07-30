@@ -203,7 +203,8 @@ int currentContextTokens({
     }
   }
   if (lastAiIdx < 0) {
-    var total = estimateTokens(systemPrompt ?? '') +
+    var total =
+        estimateTokens(systemPrompt ?? '') +
         estimateToolDefsTokens(toolDefs ?? const []);
     for (final m in messages) {
       total += _contentOnlyMessageTokens(m);
@@ -214,8 +215,10 @@ int currentContextTokens({
     return total;
   }
   final lastAi = messages[lastAiIdx];
-  final visibleResponse = (lastAi.tokensOut - lastAi.reasoningTokens)
-      .clamp(0, 1 << 31);
+  final visibleResponse = (lastAi.tokensOut - lastAi.reasoningTokens).clamp(
+    0,
+    1 << 31,
+  );
   var total = lastAi.tokensIn + visibleResponse;
   for (var i = lastAiIdx + 1; i < messages.length; i++) {
     total += _contentOnlyMessageTokens(messages[i]);

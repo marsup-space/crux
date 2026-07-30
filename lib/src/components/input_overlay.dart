@@ -68,7 +68,10 @@ class InputOverlay {
     // trigger that can be active at the same time as an at-mention
     // (they have different trigger chars), but for clarity we
     // check it before the at-mention.
-    final chip = findActiveSkillChip(text, textController.selection.extentOffset);
+    final chip = findActiveSkillChip(
+      text,
+      textController.selection.extentOffset,
+    );
     if (chip != null) {
       _showSkillChip(chip);
       _maybeRefresh();
@@ -168,10 +171,7 @@ class InputOverlay {
           CommandSuggestion(value: 'none', description: 'No auxiliary model'),
           ...providerService
               .allModelEntries()
-              .where(
-                (e) =>
-                    providerService.getApiKey(e.providerName) != null,
-              )
+              .where((e) => providerService.getApiKey(e.providerName) != null)
               .map((e) {
                 final ctx = e.model.contextSize >= 1000000
                     ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
@@ -225,10 +225,7 @@ class InputOverlay {
       if (providerServiceReady) {
         suggestions = providerService
             .allModelEntries()
-            .where(
-              (e) =>
-                  providerService.getApiKey(e.providerName) != null,
-            )
+            .where((e) => providerService.getApiKey(e.providerName) != null)
             .map((e) {
               final ctx = e.model.contextSize >= 1000000
                   ? '${(e.model.contextSize / 1048576).toStringAsFixed(0)}M'
@@ -261,7 +258,10 @@ class InputOverlay {
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }
-    overlayController.filteredSuggestions = filterSuggestions(suggestions, currentInput);
+    overlayController.filteredSuggestions = filterSuggestions(
+      suggestions,
+      currentInput,
+    );
 
     if (overlayController.filteredSuggestions.isEmpty) {
       overlayController.setOverlayOff();
@@ -402,8 +402,10 @@ class InputOverlay {
   }
 
   static String _describeRecentProject(RecentProject entry, DateTime now) {
-    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
-    final displayPath = (home != null && home.isNotEmpty && entry.path.startsWith(home))
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    final displayPath =
+        (home != null && home.isNotEmpty && entry.path.startsWith(home))
         ? '~${entry.path.substring(home.length)}'
         : entry.path;
 

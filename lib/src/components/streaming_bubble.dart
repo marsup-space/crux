@@ -484,9 +484,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
               child: _content.isEmpty && waitingSeconds != null
                   ? Row(
                       children: [
-                        Spinner(
-                          color: CruxTheme.of(context).onSurfaceDim,
-                        ),
+                        Spinner(color: CruxTheme.of(context).onSurfaceDim),
                         Text(
                           ' (waiting for ${_formatSeconds(waitingSeconds)})',
                           style: TextStyle(
@@ -498,9 +496,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                   : _content.isEmpty && executingSeconds != null
                   ? Row(
                       children: [
-                        Spinner(
-                          color: CruxTheme.of(context).onSurfaceDim,
-                        ),
+                        Spinner(color: CruxTheme.of(context).onSurfaceDim),
                         Text(
                           ' (executing tools for ${_formatSeconds(executingSeconds)})',
                           style: TextStyle(

@@ -39,8 +39,8 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
       ctx.showToast(
         modelDefault != null
             ? 'Temperature: model default '
-                '${formatSamplingValue(modelDefault)} '
-                '(no override set)'
+                  '${formatSamplingValue(modelDefault)} '
+                  '(no override set)'
             : 'Temperature: model default (no override set)',
         mode: ToastMode.info,
       );
@@ -49,7 +49,7 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
       // users can see what they're overriding from.
       final suffix = modelDefault != null
           ? ' (override; default '
-              '${formatSamplingValue(modelDefault)})'
+                '${formatSamplingValue(modelDefault)})'
           : ' (override)';
       ctx.showToast(
         'Temperature: ${formatSamplingValue(current)}$suffix',

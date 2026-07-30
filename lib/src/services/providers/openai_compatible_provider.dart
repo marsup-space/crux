@@ -210,8 +210,7 @@ class OpenAICompatibleProvider extends LlmProvider {
         if (toolCalls != null && toolCalls.isNotEmpty) {
           final kept = <Map<String, dynamic>>[
             for (final tc in toolCalls.cast<Map<String, dynamic>>())
-              if (tc['id'] is String && !orphanCallIds.contains(tc['id']))
-                tc,
+              if (tc['id'] is String && !orphanCallIds.contains(tc['id'])) tc,
           ];
           if (kept.length != toolCalls.length) {
             final patched = <String, dynamic>{...m};

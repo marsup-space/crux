@@ -124,7 +124,8 @@ class SummaryCollector {
         if (roomForBody > 256) {
           buf.writeln(r.key);
           buf.writeln(
-              '${body.substring(0, roomForBody)}... (truncated, re-read for full content)');
+            '${body.substring(0, roomForBody)}... (truncated, re-read for full content)',
+          );
           buf.writeln();
         }
         written = sectionCap;
@@ -138,7 +139,8 @@ class SummaryCollector {
     if (omitted > 0) {
       final noun = omitted == 1 ? 'file' : 'files';
       buf.writeln(
-          '($omitted more $noun omitted to fit ${sectionCap ~/ 1024}KB section cap; re-read on demand)');
+        '($omitted more $noun omitted to fit ${sectionCap ~/ 1024}KB section cap; re-read on demand)',
+      );
     }
   }
 

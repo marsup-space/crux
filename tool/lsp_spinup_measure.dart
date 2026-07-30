@@ -34,11 +34,10 @@ Future<_Timing> _measureOne(String projectRoot) async {
 
   // 1. Process spawn.
   final t0 = DateTime.now();
-  final p1 = await Process.start(
-    '/opt/homebrew/bin/dart',
-    ['language-server', '--lsp'],
-    workingDirectory: projectRoot,
-  );
+  final p1 = await Process.start('/opt/homebrew/bin/dart', [
+    'language-server',
+    '--lsp',
+  ], workingDirectory: projectRoot);
   final t1 = DateTime.now();
 
   final peer = RpcPeer.create(
@@ -84,9 +83,7 @@ Future<_Timing> _measureOne(String projectRoot) async {
 
   int? firstDiagMs;
   try {
-    final t4 = await diagCompleter.future.timeout(
-      const Duration(seconds: 10),
-    );
+    final t4 = await diagCompleter.future.timeout(const Duration(seconds: 10));
     firstDiagMs = t4.difference(t3).inMilliseconds;
   } on TimeoutException {
     firstDiagMs = null;
@@ -114,9 +111,11 @@ Future<void> main() async {
     final t = await _measureOne(projectRoot);
     timings.add(t);
     // ignore: avoid_print
-    print('Iter ${i + 1}: spawn=${t.spawnMs}ms '
-        'init=${t.initMs}ms '
-        'firstDiag=${t.firstDiagMs ?? "(no diag in 10s)"}ms');
+    print(
+      'Iter ${i + 1}: spawn=${t.spawnMs}ms '
+      'init=${t.initMs}ms '
+      'firstDiag=${t.firstDiagMs ?? "(no diag in 10s)"}ms',
+    );
   }
 
   // ignore: avoid_print
@@ -129,19 +128,25 @@ Future<void> main() async {
   int mx(int Function(_Timing) sel) =>
       timings.map(sel).reduce((a, b) => a > b ? a : b);
   // ignore: avoid_print
-  print('spawn:    min=${mn((t) => t.spawnMs)}ms '
-      'avg=${avg((t) => t.spawnMs)}ms '
-      'max=${mx((t) => t.spawnMs)}ms');
+  print(
+    'spawn:    min=${mn((t) => t.spawnMs)}ms '
+    'avg=${avg((t) => t.spawnMs)}ms '
+    'max=${mx((t) => t.spawnMs)}ms',
+  );
   // ignore: avoid_print
-  print('init:     min=${mn((t) => t.initMs)}ms '
-      'avg=${avg((t) => t.initMs)}ms '
-      'max=${mx((t) => t.initMs)}ms');
+  print(
+    'init:     min=${mn((t) => t.initMs)}ms '
+    'avg=${avg((t) => t.initMs)}ms '
+    'max=${mx((t) => t.initMs)}ms',
+  );
   final diags = timings.map((t) => t.firstDiagMs).whereType<int>().toList();
   if (diags.isNotEmpty) {
     // ignore: avoid_print
-    print('1stDiag:  min=${diags.reduce((a, b) => a < b ? a : b)}ms '
-        'avg=${diags.reduce((a, b) => a + b) ~/ diags.length}ms '
-        'max=${diags.reduce((a, b) => a > b ? a : b)}ms');
+    print(
+      '1stDiag:  min=${diags.reduce((a, b) => a < b ? a : b)}ms '
+      'avg=${diags.reduce((a, b) => a + b) ~/ diags.length}ms '
+      'max=${diags.reduce((a, b) => a > b ? a : b)}ms',
+    );
   } else {
     // ignore: avoid_print
     print('1stDiag:  (no diagnostics in any iteration)');

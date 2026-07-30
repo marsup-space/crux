@@ -1,5 +1,6 @@
 import '../components/ui/toast.dart';
 import 'command_executor.dart';
+
 Future<void> executeUndo(CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
     ctx.showToast('No active session', mode: ToastMode.error);
@@ -13,11 +14,17 @@ Future<void> executeUndo(CommandContext ctx) async {
   }
   final lastUser = await ctx.findLastUserMessage();
   if (lastUser == null) {
-    ctx.showToast('Nothing to undo — no user message yet', mode: ToastMode.info);
+    ctx.showToast(
+      'Nothing to undo — no user message yet',
+      mode: ToastMode.info,
+    );
     return;
   }
   await ctx.deleteMessagesFrom(lastUser.id);
   ctx.clearBtwTurns(sessionId);
   ctx.setInputText?.call(lastUser.content);
-  ctx.showToast('Undone — edit the prompt and press Enter to resend', mode: ToastMode.status);
+  ctx.showToast(
+    'Undone — edit the prompt and press Enter to resend',
+    mode: ToastMode.status,
+  );
 }

@@ -101,9 +101,7 @@ AtMentionPosition? findActiveMentionInText(String text, int cursor) {
       // char to inspect, so we look at the far side instead.
       final nextChar = i + 1 < clamped ? text[i + 1] : '';
       if (isPathNameChar(nextChar)) continue;
-      if (nextChar.isEmpty &&
-          i - 1 >= 0 &&
-          isPathNameChar(text[i - 1])) {
+      if (nextChar.isEmpty && i - 1 >= 0 && isPathNameChar(text[i - 1])) {
         continue;
       }
       return null;

@@ -10,9 +10,7 @@ Message _toolCallMsg(String callId, String toolName) => Message(
   sessionId: 1,
   role: 'tool_call',
   content: '',
-  toolCalls: [
-    ToolCallData(callId: callId, name: toolName, input: const {}),
-  ],
+  toolCalls: [ToolCallData(callId: callId, name: toolName, input: const {})],
 );
 
 /// Build a tool-result message with a persisted `meta` blob.
@@ -75,10 +73,22 @@ void main() {
 
   group('lspStateSeverity (worst-state-wins ranking)', () {
     test('orders errors > failed > clean > none > disabled', () {
-      expect(lspStateSeverity(LspState.errors), greaterThan(lspStateSeverity(LspState.failed)));
-      expect(lspStateSeverity(LspState.failed), greaterThan(lspStateSeverity(LspState.clean)));
-      expect(lspStateSeverity(LspState.clean), greaterThan(lspStateSeverity(LspState.none)));
-      expect(lspStateSeverity(LspState.none), greaterThan(lspStateSeverity(LspState.disabled)));
+      expect(
+        lspStateSeverity(LspState.errors),
+        greaterThan(lspStateSeverity(LspState.failed)),
+      );
+      expect(
+        lspStateSeverity(LspState.failed),
+        greaterThan(lspStateSeverity(LspState.clean)),
+      );
+      expect(
+        lspStateSeverity(LspState.clean),
+        greaterThan(lspStateSeverity(LspState.none)),
+      );
+      expect(
+        lspStateSeverity(LspState.none),
+        greaterThan(lspStateSeverity(LspState.disabled)),
+      );
     });
   });
 
@@ -104,14 +114,10 @@ void main() {
         _toolCallMsg('c2', 'write'),
         _toolResultMsg('c2', '{"lsp":"errors"}'),
       ]);
-      final segments = walkSegments(
-        messages,
-        {
-          'c1': _toolResultMsg('c1', '{"lsp":"clean"}'),
-          'c2': _toolResultMsg('c2', '{"lsp":"errors"}'),
-        },
-        ToolRegistry(),
-      );
+      final segments = walkSegments(messages, {
+        'c1': _toolResultMsg('c1', '{"lsp":"clean"}'),
+        'c2': _toolResultMsg('c2', '{"lsp":"errors"}'),
+      }, ToolRegistry());
       final entry = segments.single.tools!.entries.single;
       expect(entry.callCount, 2);
       expect(entry.lspState, LspState.errors);
@@ -155,10 +161,7 @@ void main() {
       // A guard-aborted / pre-feature write has empty meta — no `lsp`
       // field — so it must NOT show a gray "not applicable" glyph.
       final segments = walkSegments(
-        _wrap([
-          _toolCallMsg('c1', 'write'),
-          _toolResultMsg('c1', ''),
-        ]),
+        _wrap([_toolCallMsg('c1', 'write'), _toolResultMsg('c1', '')]),
         {'c1': _toolResultMsg('c1', '')},
         ToolRegistry(),
       );

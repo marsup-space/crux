@@ -40,11 +40,13 @@ void main() {
       expect(out, isNotEmpty);
     });
 
-    test('wraps the body in the `[Crux system note — prefer semantic_search]` marker',
-        () {
-      final out = renderSemanticSearchHintEmbedded();
-      expect(out, contains(semanticSearchHintMarker));
-    });
+    test(
+      'wraps the body in the `[Crux system note — prefer semantic_search]` marker',
+      () {
+        final out = renderSemanticSearchHintEmbedded();
+        expect(out, contains(semanticSearchHintMarker));
+      },
+    );
 
     test('mentions semantic_search by name (semantic search)', () {
       final out = renderSemanticSearchHintEmbedded();
@@ -76,7 +78,10 @@ void main() {
 
     test('is idempotent (same input → same output, every call)', () {
       // The renderer is pure; verify no hidden state.
-      expect(renderSemanticSearchHintEmbedded(), renderSemanticSearchHintEmbedded());
+      expect(
+        renderSemanticSearchHintEmbedded(),
+        renderSemanticSearchHintEmbedded(),
+      );
     });
   });
 
@@ -139,24 +144,35 @@ void main() {
         toolNamesInOrder: ['grep', 'read'],
         flagBefore: false,
       );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.results['b']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
+      expect(
+        out.results['b']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.flag, isTrue);
     });
 
-    test('appends hint to the first successful glob result (grep not called)',
-        () {
-      final results = <String, ToolResult>{
-        'a': const ToolResult(title: 'Glob: **.dart', output: 'files'),
-      };
-      final out = injectHint(
-        results: results,
-        toolNamesInOrder: ['glob'],
-        flagBefore: false,
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.flag, isTrue);
-    });
+    test(
+      'appends hint to the first successful glob result (grep not called)',
+      () {
+        final results = <String, ToolResult>{
+          'a': const ToolResult(title: 'Glob: **.dart', output: 'files'),
+        };
+        final out = injectHint(
+          results: results,
+          toolNamesInOrder: ['glob'],
+          flagBefore: false,
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(out.flag, isTrue);
+      },
+    );
 
     test('does NOT append hint when flag is already true', () {
       final results = <String, ToolResult>{
@@ -167,12 +183,14 @@ void main() {
         toolNamesInOrder: ['grep'],
         flagBefore: true, // already shown
       );
-      expect(out.results['a']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.flag, isTrue); // stays true
     });
 
-    test('only the FIRST grep/glob gets the hint (subsequent ones don\'t)',
-        () {
+    test('only the FIRST grep/glob gets the hint (subsequent ones don\'t)', () {
       final results = <String, ToolResult>{
         'a': const ToolResult(title: 'Grep: 1', output: 'out1'),
         'b': const ToolResult(title: 'Grep: 2', output: 'out2'),
@@ -184,30 +202,41 @@ void main() {
         flagBefore: false,
       );
       // First one: hint appended.
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
       // Second and third: no hint.
-      expect(out.results['b']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
-      expect(out.results['c']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['b']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
+      expect(
+        out.results['c']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
       expect(out.flag, isTrue);
     });
 
-    test('does NOT append hint for non-trigger tools (read / write / bash)',
-        () {
-      final results = <String, ToolResult>{
-        'a': const ToolResult(title: 'Read: file', output: 'contents'),
-        'b': const ToolResult(title: 'Bash: ls', output: 'files'),
-        'c': const ToolResult(title: 'Write: file', output: 'ok'),
-      };
-      final out = injectHint(
-        results: results,
-        toolNamesInOrder: ['read', 'bash', 'write'],
-        flagBefore: false,
-      );
-      for (final r in out.results.values) {
-        expect(r.output, isNot(contains(renderSemanticSearchHintEmbedded())));
-      }
-      expect(out.flag, isFalse); // never fired
-    });
+    test(
+      'does NOT append hint for non-trigger tools (read / write / bash)',
+      () {
+        final results = <String, ToolResult>{
+          'a': const ToolResult(title: 'Read: file', output: 'contents'),
+          'b': const ToolResult(title: 'Bash: ls', output: 'files'),
+          'c': const ToolResult(title: 'Write: file', output: 'ok'),
+        };
+        final out = injectHint(
+          results: results,
+          toolNamesInOrder: ['read', 'bash', 'write'],
+          flagBefore: false,
+        );
+        for (final r in out.results.values) {
+          expect(r.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+        }
+        expect(out.flag, isFalse); // never fired
+      },
+    );
 
     test('does NOT append hint to an error result (skip the failed call)', () {
       // In chat_service, a `title == 'Error'` result means the tool
@@ -222,7 +251,10 @@ void main() {
         flagBefore: false,
       );
       // The Error result should not get the hint.
-      expect(out.results['a']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
     });
 
     test('does NOT append hint when grep result is guard-triggered', () {
@@ -241,28 +273,45 @@ void main() {
         toolNamesInOrder: ['grep'],
         flagBefore: false,
       );
-      expect(out.results['a']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
+      expect(
+        out.results['a']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
     });
 
-    test('mixed round: hint fires on the first grep, not on later read/semantic_search',
-        () {
-      // LLM called grep, read, semantic_search all in one round. Hint
-      // fires on grep; the others (including semantic_search, which is
-      // already the right tool) get no hint.
-      final results = <String, ToolResult>{
-        'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
-        'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
-        'c': const ToolResult(title: 'semantic_search: auth', output: 'snippets'),
-      };
-      final out = injectHint(
-        results: results,
-        toolNamesInOrder: ['grep', 'read', 'semantic_search'],
-        flagBefore: false,
-      );
-      expect(out.results['a']!.output, contains(renderSemanticSearchHintEmbedded()));
-      expect(out.results['b']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
-      expect(out.results['c']!.output, isNot(contains(renderSemanticSearchHintEmbedded())));
-    });
+    test(
+      'mixed round: hint fires on the first grep, not on later read/semantic_search',
+      () {
+        // LLM called grep, read, semantic_search all in one round. Hint
+        // fires on grep; the others (including semantic_search, which is
+        // already the right tool) get no hint.
+        final results = <String, ToolResult>{
+          'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
+          'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
+          'c': const ToolResult(
+            title: 'semantic_search: auth',
+            output: 'snippets',
+          ),
+        };
+        final out = injectHint(
+          results: results,
+          toolNamesInOrder: ['grep', 'read', 'semantic_search'],
+          flagBefore: false,
+        );
+        expect(
+          out.results['a']!.output,
+          contains(renderSemanticSearchHintEmbedded()),
+        );
+        expect(
+          out.results['b']!.output,
+          isNot(contains(renderSemanticSearchHintEmbedded())),
+        );
+        expect(
+          out.results['c']!.output,
+          isNot(contains(renderSemanticSearchHintEmbedded())),
+        );
+      },
+    );
   });
 
   // ===========================================================================
@@ -318,39 +367,38 @@ void main() {
       await db.close();
     });
 
-    test('the hint text round-trips through addToolRound when appended', () async {
-      await store.messageStore.addMessage(
-        sessionId,
-        role: 'user',
-        content: 'find auth logic',
-      );
-      // Simulate the chat_service post-processing: append the hint
-      // to the grep result before persisting.
-      const rawOutput = 'lib/auth.dart:5: authenticate(user)';
-      final augmentedOutput = rawOutput + renderSemanticSearchHintEmbedded();
-      await store.messageStore.addToolRound(
-        sessionId,
-        roundText: '',
-        toolCalls: [
-          ToolCallData(callId: 'a', name: 'grep', input: {'pattern': 'auth'}),
-        ],
-        results: [
-          (callId: 'a', output: augmentedOutput, meta: ''),
-        ],
-      );
+    test(
+      'the hint text round-trips through addToolRound when appended',
+      () async {
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'user',
+          content: 'find auth logic',
+        );
+        // Simulate the chat_service post-processing: append the hint
+        // to the grep result before persisting.
+        const rawOutput = 'lib/auth.dart:5: authenticate(user)';
+        final augmentedOutput = rawOutput + renderSemanticSearchHintEmbedded();
+        await store.messageStore.addToolRound(
+          sessionId,
+          roundText: '',
+          toolCalls: [
+            ToolCallData(callId: 'a', name: 'grep', input: {'pattern': 'auth'}),
+          ],
+          results: [(callId: 'a', output: augmentedOutput, meta: '')],
+        );
 
-      final msgs = await store.messageStore.getMessages(sessionId);
-      final toolResult = msgs.firstWhere(
-        (m) => m.role == 'tool',
-      );
-      expect(toolResult.content, contains(semanticSearchHintMarker));
-      expect(toolResult.content, contains(rawOutput));
-      // The hint goes AFTER the tool's real output, so the raw
-      // output precedes the marker in the persisted text.
-      expect(
-        toolResult.content.indexOf(rawOutput),
-        lessThan(toolResult.content.indexOf(semanticSearchHintMarker)),
-      );
-    });
+        final msgs = await store.messageStore.getMessages(sessionId);
+        final toolResult = msgs.firstWhere((m) => m.role == 'tool');
+        expect(toolResult.content, contains(semanticSearchHintMarker));
+        expect(toolResult.content, contains(rawOutput));
+        // The hint goes AFTER the tool's real output, so the raw
+        // output precedes the marker in the persisted text.
+        expect(
+          toolResult.content.indexOf(rawOutput),
+          lessThan(toolResult.content.indexOf(semanticSearchHintMarker)),
+        );
+      },
+    );
   });
 }

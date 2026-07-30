@@ -69,10 +69,7 @@ void main() {
 
     test('returns empty string for direct routing (default)', () {
       // We never persist the default — direct means "no UI meta".
-      expect(
-        buildToolMeta(routing: const ToolRouting('direct')),
-        '',
-      );
+      expect(buildToolMeta(routing: const ToolRouting('direct')), '');
     });
 
     test('serialises system-proxy routing', () {

@@ -28,7 +28,8 @@ class SkillTool extends ToolDef {
   String get name => 'skill';
 
   @override
-  String get description => '🚨 Load a specialized skill when the user task matches '
+  String get description =>
+      '🚨 Load a specialized skill when the user task matches '
       'one of the names listed in `<available_skills>` in the system prompt.\n'
       '\n'
       'The system prompt exposes skill NAMES and one-line DESCRIPTIONS only. '
@@ -59,17 +60,17 @@ class SkillTool extends ToolDef {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'name': {
-            'type': 'string',
-            'description':
-                'The skill name, exactly as it appears in `<available_skills>` '
-                'in the system prompt. Case-sensitive.',
-          },
-        },
-        'required': ['name'],
-      };
+    'type': 'object',
+    'properties': {
+      'name': {
+        'type': 'string',
+        'description':
+            'The skill name, exactly as it appears in `<available_skills>` '
+            'in the system prompt. Case-sensitive.',
+      },
+    },
+    'required': ['name'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -190,7 +191,7 @@ String _renderSkillContent(SkillInfo skill, List<String> siblings) {
     '',
     'Base directory for this skill: $baseDir',
     'Relative paths in this skill (e.g., scripts/, reference/, assets/) '
-    'are relative to this base directory.',
+        'are relative to this base directory.',
     if (siblings.isNotEmpty) ...[
       '',
       '<skill_files>',

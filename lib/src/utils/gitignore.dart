@@ -107,9 +107,7 @@ class GitignoreMatcher {
       // relative to the project root. '.'' means the project
       // root. The path's first [scopeParts.length] segments must
       // match exactly for any of src's patterns to apply.
-      final scopeParts = src.dir == '.'
-          ? const <String>[]
-          : src.dir.split(sep);
+      final scopeParts = src.dir == '.' ? const <String>[] : src.dir.split(sep);
 
       if (parts.length < scopeParts.length) continue;
       var scopeMatch = true;

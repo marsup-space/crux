@@ -8,8 +8,7 @@ import 'package:test/test.dart';
 /// fallback for the mouse-tap path of `insertAtMention`).
 void main() {
   group('findActiveMentionInText — basic shape', () {
-    test('just `@` at the cursor is an active mention with empty query',
-        () {
+    test('just `@` at the cursor is an active mention with empty query', () {
       final pos = findActiveMentionInText('@', 1);
       expect(pos, isNotNull);
       expect(pos!.atOffset, 0);
@@ -62,8 +61,7 @@ void main() {
       expect(findActiveMentionInText('foo-bar@baz', 11), isNull);
     });
 
-    test('` @foo` *is* a mention (space before @, not identifier)',
-        () {
+    test('` @foo` *is* a mention (space before @, not identifier)', () {
       // The space before `@` is not an identifier char, so the
       // email-style rejection doesn't apply. The mention is
       // active with query `foo`.
@@ -151,10 +149,7 @@ void main() {
       // `my project/src/notes file.md` — every component has a
       // space, and the parser must walk past every one of them
       // to find the `@`.
-      final pos = findActiveMentionInText(
-        '@my project/src/notes file.md',
-        30,
-      );
+      final pos = findActiveMentionInText('@my project/src/notes file.md', 30);
       expect(pos, isNotNull);
       expect(pos!.atOffset, 0);
       expect(pos.query, 'my project/src/notes file.md');
@@ -178,16 +173,12 @@ void main() {
       // ends the mention, but the space *inside* the path does
       // not. The parser walks past the trailing space, hits the
       // comma, and returns null.
-      expect(
-        findActiveMentionInText('@My Documents, please', 20),
-        isNull,
-      );
+      expect(findActiveMentionInText('@My Documents, please', 20), isNull);
     });
   });
 
   group('findActiveMentionInText — whitespace that IS a terminator', () {
-    test('lone `@` followed by a space (empty query) ends the mention',
-        () {
+    test('lone `@` followed by a space (empty query) ends the mention', () {
       // `@ ` — the user typed `@` and then a space, with nothing
       // in between. The cursor is on the space. The char to the
       // left (`@`) is not a path-name char, so the space ends
@@ -202,38 +193,58 @@ void main() {
       expect(findActiveMentionInText('@( foo', 6), isNull);
     });
 
-    test('space preceded by a punctuation block on the far side ends the mention',
-        () {
-      // `@foo, bar` — the comma is a terminator. Walking back
-      // from the cursor, the parser hits the space at index 5,
-      // and text[i+1] is `b` (a path-name char) — so the space
-      // passes. Then it hits the comma at index 4, which is a
-      // terminator, and returns null.
-      expect(findActiveMentionInText('@foo, bar', 9), isNull);
-    });
+    test(
+      'space preceded by a punctuation block on the far side ends the mention',
+      () {
+        // `@foo, bar` — the comma is a terminator. Walking back
+        // from the cursor, the parser hits the space at index 5,
+        // and text[i+1] is `b` (a path-name char) — so the space
+        // passes. Then it hits the comma at index 4, which is a
+        // terminator, and returns null.
+        expect(findActiveMentionInText('@foo, bar', 9), isNull);
+      },
+    );
   });
 
   group('isPathNameChar', () {
-    test('letters, digits, underscore, hyphen, and period are path chars',
-        () {
-      for (final c in [
-        'a', 'Z', '0', '9',
-        '_', '-', '.',
-      ]) {
-        expect(isPathNameChar(c), isTrue, reason: 'expected `$c` to be a path char');
+    test('letters, digits, underscore, hyphen, and period are path chars', () {
+      for (final c in ['a', 'Z', '0', '9', '_', '-', '.']) {
+        expect(
+          isPathNameChar(c),
+          isTrue,
+          reason: 'expected `$c` to be a path char',
+        );
       }
     });
 
-    test('whitespace, punctuation, and other chars are not path chars',
-        () {
+    test('whitespace, punctuation, and other chars are not path chars', () {
       for (final c in [
-        ' ', '\t', '\n',
-        '(', ')', '[', ']', '{', '}',
-        ',', ';', '@', '!', '?',
-        '/', '\\',
-        '~', '*', '`', '\'',
+        ' ',
+        '\t',
+        '\n',
+        '(',
+        ')',
+        '[',
+        ']',
+        '{',
+        '}',
+        ',',
+        ';',
+        '@',
+        '!',
+        '?',
+        '/',
+        '\\',
+        '~',
+        '*',
+        '`',
+        '\'',
       ]) {
-        expect(isPathNameChar(c), isFalse, reason: 'expected `$c` to not be a path char');
+        expect(
+          isPathNameChar(c),
+          isFalse,
+          reason: 'expected `$c` to not be a path char',
+        );
       }
     });
 

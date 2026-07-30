@@ -95,54 +95,67 @@ void main() {
   final registry = ToolRegistry();
 
   group('replace-from-scratch compaction model', () {
-    test('with prior compaction: new compact covers full non-compaction history', () {
-      // History: user → ai → compaction #1 → user → ai
-      // The next compact's chat log should be the chat log of
-      // ALL non-compaction messages (everything except
-      // compaction #1), NOT just the new tail since #1, and
-      // should NOT include compaction #1's content (chain-
-      // accumulation was the old model).
-      final compact1Wrapped = 'sys preamble\n<compacted-session-log>\n'
-          '${'x' * 8000}\n</compacted-session-log>\n';
+    test(
+      'with prior compaction: new compact covers full non-compaction history',
+      () {
+        // History: user → ai → compaction #1 → user → ai
+        // The next compact's chat log should be the chat log of
+        // ALL non-compaction messages (everything except
+        // compaction #1), NOT just the new tail since #1, and
+        // should NOT include compaction #1's content (chain-
+        // accumulation was the old model).
+        final compact1Wrapped =
+            'sys preamble\n<compacted-session-log>\n'
+            '${'x' * 8000}\n</compacted-session-log>\n';
 
-      final history = <Message>[
-        _user(id: 1, content: 'previous question'),
-        _ai(id: 2, content: 'previous answer'),
-        _compaction(id: 3, content: compact1Wrapped),
-        _user(id: 4, content: 'new question'),
-        _ai(id: 5, content: 'new answer'),
-      ];
-      // In the new model, toCompress = full non-compaction
-      // history, not just the tail since the last compaction.
-      final toCompress = history
-          .where((m) => m.role != 'compaction')
-          .toList();
+        final history = <Message>[
+          _user(id: 1, content: 'previous question'),
+          _ai(id: 2, content: 'previous answer'),
+          _compaction(id: 3, content: compact1Wrapped),
+          _user(id: 4, content: 'new question'),
+          _ai(id: 5, content: 'new answer'),
+        ];
+        // In the new model, toCompress = full non-compaction
+        // history, not just the tail since the last compaction.
+        final toCompress = history
+            .where((m) => m.role != 'compaction')
+            .toList();
 
-      final accumulated = buildAccumulatedChatLog(
-        history: history,
-        toCompress: toCompress,
-        toolRegistry: registry,
-      );
+        final accumulated = buildAccumulatedChatLog(
+          history: history,
+          toCompress: toCompress,
+          toolRegistry: registry,
+        );
 
-      // The accumulated chat log must NOT start with compact1's
-      // content (the old chain-accumulation model started with
-      // the prior compact; the new model does not fold in
-      // prior compactions at all).
-      expect(accumulated, isNot(startsWith(compact1Wrapped)),
-          reason: 'new model does not fold in prior compactions');
+        // The accumulated chat log must NOT start with compact1's
+        // content (the old chain-accumulation model started with
+        // the prior compact; the new model does not fold in
+        // prior compactions at all).
+        expect(
+          accumulated,
+          isNot(startsWith(compact1Wrapped)),
+          reason: 'new model does not fold in prior compactions',
+        );
 
-      // It MUST mention the prior user/ai exchanges — the new
-      // model rebuilds from the full non-compaction history.
-      expect(accumulated, contains('previous question'),
-          reason: 'new model includes the full history');
-      expect(accumulated, contains('new question'));
+        // It MUST mention the prior user/ai exchanges — the new
+        // model rebuilds from the full non-compaction history.
+        expect(
+          accumulated,
+          contains('previous question'),
+          reason: 'new model includes the full history',
+        );
+        expect(accumulated, contains('new question'));
 
-      // compact1's body (the 8K of padding) is not in the
-      // chat log — it was a compaction message, not a
-      // user/ai/tool row, so buildChatLog doesn't see it.
-      expect(accumulated, isNot(contains('x' * 1000)),
-          reason: 'prior compaction content must not leak into the new log');
-    });
+        // compact1's body (the 8K of padding) is not in the
+        // chat log — it was a compaction message, not a
+        // user/ai/tool row, so buildChatLog doesn't see it.
+        expect(
+          accumulated,
+          isNot(contains('x' * 1000)),
+          reason: 'prior compaction content must not leak into the new log',
+        );
+      },
+    );
 
     test('with multiple prior compactions: new compact ignores them all', () {
       // The new model doesn't care how many prior compactions
@@ -163,9 +176,7 @@ void main() {
         _user(id: 7, content: 'q3'),
         _ai(id: 8, content: 'a3 ' * 10),
       ];
-      final toCompress = history
-          .where((m) => m.role != 'compaction')
-          .toList();
+      final toCompress = history.where((m) => m.role != 'compaction').toList();
 
       final accumulated = buildAccumulatedChatLog(
         history: history,
@@ -176,10 +187,16 @@ void main() {
       // Neither prior compaction's body should appear in the
       // new log. (The compaction messages are not in `toCompress`,
       // so buildChatLog never sees them.)
-      expect(accumulated, isNot(contains('compact-1-marker')),
-          reason: 'compact #1 content must not appear in the new log');
-      expect(accumulated, isNot(contains('compact-2-marker')),
-          reason: 'compact #2 content must not appear in the new log');
+      expect(
+        accumulated,
+        isNot(contains('compact-1-marker')),
+        reason: 'compact #1 content must not appear in the new log',
+      );
+      expect(
+        accumulated,
+        isNot(contains('compact-2-marker')),
+        reason: 'compact #2 content must not appear in the new log',
+      );
       // The repeated 'a' / 'b' padding (4000 chars each) would
       // be a giveaway if either leaked through.
       expect(accumulated, isNot(contains('a' * 1000)));
@@ -199,9 +216,7 @@ void main() {
         _user(id: 1, content: 'hi'),
         _ai(id: 2, content: 'hello'),
       ];
-      final toCompress = history
-          .where((m) => m.role != 'compaction')
-          .toList();
+      final toCompress = history.where((m) => m.role != 'compaction').toList();
 
       final accumulated = buildAccumulatedChatLog(
         history: history,
@@ -231,14 +246,25 @@ void main() {
       //   post = accumulated chat log + system + tools
       const sessionContextTokens = 155342; // what the bar reads
 
-      final compact1Wrapped = 'sys preamble\n'
+      final compact1Wrapped =
+          'sys preamble\n'
           '<compacted-session-log>\n${'x' * 30000}\n</compacted-session-log>\n';
       final history = <Message>[
         _user(id: 1, content: 'previous question'),
-        _ai(id: 2, content: 'previous answer ' * 50, tokensIn: 150000, tokensOut: 5000),
+        _ai(
+          id: 2,
+          content: 'previous answer ' * 50,
+          tokensIn: 150000,
+          tokensOut: 5000,
+        ),
         _compaction(id: 3, content: compact1Wrapped),
         _user(id: 4, content: 'new question'),
-        _ai(id: 5, content: 'new answer ' * 50, tokensIn: sessionContextTokens - 1000, tokensOut: 1000),
+        _ai(
+          id: 5,
+          content: 'new answer ' * 50,
+          tokensIn: sessionContextTokens - 1000,
+          tokensOut: 1000,
+        ),
       ];
       final toCompress = history.sublist(3);
 
@@ -255,20 +281,29 @@ void main() {
 
       print('SSoT pre: $pre');
       print('post: $post');
-      expect(pre, equals(sessionContextTokens),
-          reason: 'pre must equal session.contextTokens (SSoT)');
-      expect(post, greaterThan(estimateTokens(compact1Wrapped)),
-          reason: 'post must be ≥ previous compaction (accumulation works)');
+      expect(
+        pre,
+        equals(sessionContextTokens),
+        reason: 'pre must equal session.contextTokens (SSoT)',
+      );
+      expect(
+        post,
+        greaterThan(estimateTokens(compact1Wrapped)),
+        reason: 'post must be ≥ previous compaction (accumulation works)',
+      );
     });
 
-    test('falls back to currentContextTokens when session.contextTokens == 0', () {
-      // Fresh session — no AI has reported tokens yet, so
-      // session.contextTokens is 0. The bar uses
-      // currentContextTokens as a fallback. The hover pre should
-      // match that fallback so the two stay in lockstep.
-      // (Covered by the existing currentContextTokens test group
-      // for the SSoT itself — we just assert the hover pre's
-      // fallback path agrees with the bar's fallback.)
-    });
+    test(
+      'falls back to currentContextTokens when session.contextTokens == 0',
+      () {
+        // Fresh session — no AI has reported tokens yet, so
+        // session.contextTokens is 0. The bar uses
+        // currentContextTokens as a fallback. The hover pre should
+        // match that fallback so the two stay in lockstep.
+        // (Covered by the existing currentContextTokens test group
+        // for the SSoT itself — we just assert the hover pre's
+        // fallback path agrees with the bar's fallback.)
+      },
+    );
   });
 }

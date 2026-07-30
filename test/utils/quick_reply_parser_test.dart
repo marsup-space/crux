@@ -28,6 +28,7 @@ String _plainText(List<InlineSpan> spans) {
       }
     }
   }
+
   for (final s in spans) {
     walk(s);
   }
@@ -38,22 +39,29 @@ void main() {
   group('parseQuickReplies — basic matching (explicit form)', () {
     test('finds a single explicit-form token', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('try ask://Continue{yes, please continue} now', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('try ask://Continue{yes, please continue} now', style),
+        ]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Continue');
       expect(refs.first.answer, 'yes, please continue');
       expect(refs.first.sourceStart, 4);
       // Source length covers the full `ask://Continue{yes, please continue}`.
-      expect(refs.first.sourceLength, 'ask://Continue{yes, please continue}'.length);
+      expect(
+        refs.first.sourceLength,
+        'ask://Continue{yes, please continue}'.length,
+      );
     });
 
     test('trims whitespace inside label and answer', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://  Spaced label  {  spaced answer  }', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('ask://  Spaced label  {  spaced answer  }', style),
+        ]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Spaced label');
       expect(refs.first.answer, 'spaced answer');
@@ -61,9 +69,9 @@ void main() {
 
     test('finds multiple tokens in one span', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://A{a} or ask://B{b}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://A{a} or ask://B{b}', style)]),
+      );
       expect(refs, hasLength(2));
       expect(refs[0].label, 'A');
       expect(refs[0].answer, 'a');
@@ -73,10 +81,12 @@ void main() {
 
     test('offsets respect the running position across multiple spans', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('first ask://A{a}', style),
-        (' then ask://B{b} end', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('first ask://A{a}', style),
+          (' then ask://B{b} end', style),
+        ]),
+      );
       expect(refs, hasLength(2));
       // `first ask://A{a}` is 16 chars; `ask://A{a}` starts at 6.
       expect(refs[0].sourceStart, 6);
@@ -89,9 +99,9 @@ void main() {
 
     test('allows punctuation and special chars in answer', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Run{`npm install foo@1.2.3`}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Run{`npm install foo@1.2.3`}', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Run');
       expect(refs.first.answer, '`npm install foo@1.2.3`');
@@ -102,9 +112,9 @@ void main() {
       // The closing brace is the FIRST `}`, so `}`-inside-answer is
       // not supported — this is by design (see docs §"Reserved
       // characters"). Anything after the first `}` is dropped.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Bad{a} rest', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Bad{a} rest', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.answer, 'a');
       // Source length covers only `ask://Bad{a}`, not the trailing
@@ -119,17 +129,17 @@ void main() {
       // `}` on same line so this fails the explicit form. Falls
       // through to shorthand which terminates at `\n`. Either way,
       // there's no well-formed token here.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Bad{a\nb}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Bad{a\nb}', style)]),
+      );
       expect(refs, isEmpty);
     });
 
     test('returns no tokens when there are no matches', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('plain text, no quick replies here', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('plain text, no quick replies here', style)]),
+      );
       expect(refs, isEmpty);
     });
 
@@ -146,9 +156,11 @@ void main() {
       //     `F` as shorthand label, then `{...}` would be orphan
       //     text. Let's instead test `ask:// ` (just whitespace
       //     after) which trims to empty and is dropped.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask:/A ask::/B ask-://C ask:// ask://{e} ask:// ', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('ask:/A ask::/B ask-://C ask:// ask://{e} ask:// ', style),
+        ]),
+      );
       expect(refs, isEmpty);
     });
   });
@@ -156,9 +168,9 @@ void main() {
   group('parseQuickReplies — shorthand form', () {
     test('shorthand sets answer = label', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('choose ask://Yes ask://No', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('choose ask://Yes ask://No', style)]),
+      );
       expect(refs, hasLength(2));
       expect(refs[0].label, 'Yes');
       expect(refs[0].answer, 'Yes');
@@ -171,9 +183,9 @@ void main() {
       // Whitespace is NOT a shorthand boundary — multi-word labels
       // are valid. `ask://Use cache` (no second `ask://` to stop at)
       // runs all the way to end-of-input.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Use cache', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Use cache', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Use cache');
       expect(refs.first.answer, 'Use cache');
@@ -181,9 +193,9 @@ void main() {
 
     test('shorthand label terminates at next ask:// token', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Use cache ask://Disable', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Use cache ask://Disable', style)]),
+      );
       expect(refs, hasLength(2));
       expect(refs[0].label, 'Use cache');
       expect(refs[1].label, 'Disable');
@@ -191,9 +203,9 @@ void main() {
 
     test('shorthand label terminates at end of line', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Continue\nNext line', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Continue\nNext line', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Continue');
       expect(refs.first.sourceLength, 'ask://Continue'.length);
@@ -201,9 +213,9 @@ void main() {
 
     test('shorthand label terminates at end of input', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Final', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Final', style)]),
+      );
       expect(refs, hasLength(1));
       expect(refs.first.label, 'Final');
       expect(refs.first.answer, 'Final');
@@ -221,9 +233,9 @@ void main() {
     // the next token. The label itself is unchanged.
     test('shorthand source range excludes the separator before next token', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://Yes ask://No', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://Yes ask://No', style)]),
+      );
       expect(refs, hasLength(2));
       // First token's range covers "ask://Yes" only — the trailing
       // space stays outside so the renderer preserves it.
@@ -244,9 +256,11 @@ void main() {
       // terminates independently (boundary = `\n`), so the regex
       // matches each cleanly.
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('请选择:\nask://A{do A}\nask://B\nask://Continue{yes}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('请选择:\nask://A{do A}\nask://B\nask://Continue{yes}', style),
+        ]),
+      );
       expect(refs, hasLength(3));
       expect(refs[0].label, 'A');
       expect(refs[0].answer, 'do A');
@@ -260,9 +274,11 @@ void main() {
       // All-explicit inline form: each `ask://X{Y}` is unambiguous
       // because the regex matches each token's `{...}` exactly.
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://A{do A} ask://B{B} ask://Continue{yes}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([
+          ('ask://A{do A} ask://B{B} ask://Continue{yes}', style),
+        ]),
+      );
       expect(refs, hasLength(3));
       expect(refs[0].label, 'A');
       expect(refs[0].answer, 'do A');
@@ -352,10 +368,7 @@ void main() {
       // The whole source `ask://A{run \`npm install\`}` is 25 chars
       // and starts at offset 0 of the flat text.
       expect(refs.first.sourceStart, 0);
-      expect(
-        refs.first.sourceLength,
-        'ask://A{run `npm install`}'.length,
-      );
+      expect(refs.first.sourceLength, 'ask://A{run `npm install`}'.length);
     });
 
     test('explicit token with backticks at the start of the answer', () {
@@ -455,16 +468,33 @@ void main() {
       // ask://release.sh 加个检查{在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理}
 
       final spans = <InlineSpan>[
-        const TextSpan(text: 'ask://A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN{在 ~/.zshrc 加 ', style: text),
-        const TextSpan(text: '`export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`', style: code),
+        const TextSpan(
+          text: 'ask://A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN{在 ~/.zshrc 加 ',
+          style: text,
+        ),
+        const TextSpan(
+          text:
+              '`export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`',
+          style: code,
+        ),
         const TextSpan(text: ',最干净}\n', style: text),
-        const TextSpan(text: 'ask://B: 软链到 ~/.crux/bin/third_party/bin/{', style: text),
-        const TextSpan(text: '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`', style: code),
+        const TextSpan(
+          text: 'ask://B: 软链到 ~/.crux/bin/third_party/bin/{',
+          style: text,
+        ),
+        const TextSpan(
+          text:
+              '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`',
+          style: code,
+        ),
         const TextSpan(text: ',跟着 install 走}\n', style: text),
         const TextSpan(text: 'ask://C: 把 venv bin 加进 PATH{', style: text),
         const TextSpan(text: '`export PATH=...:\$PATH`', style: code),
         const TextSpan(text: ' 加到 ~/.zshrc,全局生效}\n', style: text),
-        const TextSpan(text: 'ask://release.sh 加个检查{在 release.sh 里加一段:装完检查 ', style: text),
+        const TextSpan(
+          text: 'ask://release.sh 加个检查{在 release.sh 里加一段:装完检查 ',
+          style: text,
+        ),
         const TextSpan(text: '`semble`', style: code),
         const TextSpan(text: ' 是否可达,缺了给提示并问怎么处理}', style: text),
       ];
@@ -473,20 +503,25 @@ void main() {
       expect(refs, hasLength(4));
 
       expect(refs[0].label, 'A: 在 ~/.zshrc 加 CRUX_THIRD_PARTY_BIN');
-      expect(refs[0].answer,
-          '在 ~/.zshrc 加 `export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`,最干净');
+      expect(
+        refs[0].answer,
+        '在 ~/.zshrc 加 `export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`,最干净',
+      );
 
       expect(refs[1].label, 'B: 软链到 ~/.crux/bin/third_party/bin/');
-      expect(refs[1].answer,
-          '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`,跟着 install 走');
+      expect(
+        refs[1].answer,
+        '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`,跟着 install 走',
+      );
 
       expect(refs[2].label, 'C: 把 venv bin 加进 PATH');
-      expect(refs[2].answer,
-          '`export PATH=...:\$PATH` 加到 ~/.zshrc,全局生效');
+      expect(refs[2].answer, '`export PATH=...:\$PATH` 加到 ~/.zshrc,全局生效');
 
       expect(refs[3].label, 'release.sh 加个检查');
-      expect(refs[3].answer,
-          '在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理');
+      expect(
+        refs[3].answer,
+        '在 release.sh 里加一段:装完检查 `semble` 是否可达,缺了给提示并问怎么处理',
+      );
     });
   });
 
@@ -506,8 +541,7 @@ void main() {
   // EXACTLY once in the rendered output regardless of how many
   // inline spans the markdown parser splits it into.
   group('applyQuickReplyTokens — code spans inside the LABEL', () {
-    test('label containing inline code spans is rendered once, not per-span',
-        () {
+    test('label containing inline code spans is rendered once, not per-span', () {
       const text = TextStyle(color: Color(0xFFFFFFFF));
       const code = TextStyle(
         color: Color(0xFF00FF00),
@@ -520,26 +554,32 @@ void main() {
       final spans = <InlineSpan>[
         // Token 1: label has 3 code spans → 7 inline sub-spans.
         const TextSpan(text: 'ask://(推荐) remove ', style: text),
-        const TextSpan(text: 'localPlayer.CurrentRoom == this/room', style: code),
+        const TextSpan(
+          text: 'localPlayer.CurrentRoom == this/room',
+          style: code,
+        ),
         const TextSpan(text: ' guards in ', style: text),
         const TextSpan(text: 'ClientRpcRoomEvent(EncounterEnemy)', style: code),
         const TextSpan(text: ' + ', style: text),
         const TextSpan(text: 'CloseDoorWhenMonsterPresent', style: code),
         const TextSpan(
-            text: ' — InBattle always wins when triggered{推荐}\n',
-            style: text),
+          text: ' — InBattle always wins when triggered{推荐}\n',
+          style: text,
+        ),
         // Token 2: label has 1 code span → 3 inline sub-spans.
         const TextSpan(text: 'ask://keep guards, but add ', style: text),
         const TextSpan(text: 'localPlayer.CurrentRoom = room', style: code),
         const TextSpan(
-            text:
-                ' defensive sync before the guard in the encounter path{不删 guard, 加防御 sync}\n',
-            style: text),
+          text:
+              ' defensive sync before the guard in the encounter path{不删 guard, 加防御 sync}\n',
+          style: text,
+        ),
         // Token 3: no code spans → 1 inline span.
         const TextSpan(
-            text:
-                'ask://hold off on code change — first let me trace runtime to see which guard actually fails in your test{先调查，不动代码}',
-            style: text),
+          text:
+              'ask://hold off on code change — first let me trace runtime to see which guard actually fails in your test{先调查，不动代码}',
+          style: text,
+        ),
       ];
 
       final replies = parseQuickReplies(spans);
@@ -556,16 +596,24 @@ void main() {
       const label3 =
           'hold off on code change — first let me trace runtime to see which guard actually fails in your test';
 
-      expect(label1.allMatches(rendered).length, 1,
-          reason: 'label with 3 code spans must be rendered exactly once');
-      expect(label2.allMatches(rendered).length, 1,
-          reason: 'label with 1 code span must be rendered exactly once');
-      expect(label3.allMatches(rendered).length, 1,
-          reason: 'label with 0 code spans must be rendered exactly once');
+      expect(
+        label1.allMatches(rendered).length,
+        1,
+        reason: 'label with 3 code spans must be rendered exactly once',
+      );
+      expect(
+        label2.allMatches(rendered).length,
+        1,
+        reason: 'label with 1 code span must be rendered exactly once',
+      );
+      expect(
+        label3.allMatches(rendered).length,
+        1,
+        reason: 'label with 0 code spans must be rendered exactly once',
+      );
     });
 
-    test('token straddling two adjacent code spans does not double-emit',
-        () {
+    test('token straddling two adjacent code spans does not double-emit', () {
       const text = TextStyle(color: Color(0xFFFFFFFF));
       const code = TextStyle(
         color: Color(0xFF00FF00),
@@ -590,32 +638,34 @@ void main() {
       expect('A'.allMatches(rendered).length, 1);
     });
 
-    test('adjacent text inside a straddling reply is dropped, not duplicated',
-        () {
-      const text = TextStyle(color: Color(0xFFFFFFFF));
-      const code = TextStyle(
-        color: Color(0xFF00FF00),
-        backgroundColor: Color(0xFF333333),
-      );
-      // Source: prefix ask://A{a} `tail` suffix
-      // The reply sits in the middle; the code span `tail` falls
-      // AFTER the reply's source range, so it's plain text that
-      // must still render. Verify it's preserved (not dropped) and
-      // the label is emitted once.
-      final spans = <InlineSpan>[
-        const TextSpan(text: 'prefix ask://A{a} ', style: text),
-        const TextSpan(text: 'tail', style: code),
-        const TextSpan(text: ' suffix', style: text),
-      ];
+    test(
+      'adjacent text inside a straddling reply is dropped, not duplicated',
+      () {
+        const text = TextStyle(color: Color(0xFFFFFFFF));
+        const code = TextStyle(
+          color: Color(0xFF00FF00),
+          backgroundColor: Color(0xFF333333),
+        );
+        // Source: prefix ask://A{a} `tail` suffix
+        // The reply sits in the middle; the code span `tail` falls
+        // AFTER the reply's source range, so it's plain text that
+        // must still render. Verify it's preserved (not dropped) and
+        // the label is emitted once.
+        final spans = <InlineSpan>[
+          const TextSpan(text: 'prefix ask://A{a} ', style: text),
+          const TextSpan(text: 'tail', style: code),
+          const TextSpan(text: ' suffix', style: text),
+        ];
 
-      final replies = parseQuickReplies(spans);
-      expect(replies, hasLength(1));
+        final replies = parseQuickReplies(spans);
+        expect(replies, hasLength(1));
 
-      final styled = applyQuickReplyTokens(spans, replies);
-      final rendered = _plainText(styled);
+        final styled = applyQuickReplyTokens(spans, replies);
+        final rendered = _plainText(styled);
 
-      expect(rendered, 'prefix A tail suffix');
-    });
+        expect(rendered, 'prefix A tail suffix');
+      },
+    );
 
     test('trailing text after the token in a straddling span survives', () {
       const text = TextStyle(color: Color(0xFFFFFFFF));
@@ -654,9 +704,11 @@ void main() {
       // must increment past the parent text before walking into
       // children.
       final refs = parseQuickReplies([
-        const TextSpan(text: 'a ', style: text, children: [
-          TextSpan(text: 'b ask://A{a} c', style: text),
-        ]),
+        const TextSpan(
+          text: 'a ',
+          style: text,
+          children: [TextSpan(text: 'b ask://A{a} c', style: text)],
+        ),
       ]);
       expect(refs, hasLength(1));
       expect(refs.first.label, 'A');
@@ -678,33 +730,33 @@ void main() {
       const style = TextStyle(color: Color(0xFFFFFFFF));
       // Explicit form: `ask://{a}` — label trims to empty.
       // Shorthand: `ask://  ` — label trims to empty.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://{a} ask://  ', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://{a} ask://  ', style)]),
+      );
       expect(refs, isEmpty);
     });
 
     test('drops tokens with empty answer (explicit form)', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
       // `ask://A{}` — explicit form, empty answer.
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('ask://A{}', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('ask://A{}', style)]),
+      );
       expect(refs, isEmpty);
     });
 
     test('containsIndex is correct', () {
       const style = TextStyle(color: Color(0xFFFFFFFF));
-      final refs = parseQuickReplies(_spansFromSegments([
-        ('hi ask://A{a} bye', style),
-      ]));
+      final refs = parseQuickReplies(
+        _spansFromSegments([('hi ask://A{a} bye', style)]),
+      );
       expect(refs, hasLength(1));
       final r = refs.first;
       expect(r.sourceStart, 3);
       expect(r.sourceEnd, 3 + 'ask://A{a}'.length);
-      expect(r.containsIndex(3), isTrue);     // start
+      expect(r.containsIndex(3), isTrue); // start
       expect(r.containsIndex(3 + 'ask://A{a}'.length - 1), isTrue); // last
-      expect(r.containsIndex(2), isFalse);    // before
+      expect(r.containsIndex(2), isFalse); // before
       expect(r.containsIndex(3 + 'ask://A{a}'.length), isFalse); // after
     });
   });
@@ -738,6 +790,7 @@ void main() {
           }
         }
       }
+
       for (final s in spans) {
         walk(s);
       }
@@ -770,24 +823,22 @@ void main() {
 
     test('returns the original spans when there are no replies', () {
       final spans = _spansFromSegments([('plain text', base)]);
-      final styled = applyQuickReplyTokens(spans, const [], buttonStyle: button);
+      final styled = applyQuickReplyTokens(
+        spans,
+        const [],
+        buttonStyle: button,
+      );
       expect(styled, equals(spans));
     });
 
     test('substitutes source text with label in button mode', () {
       // Source: `try ask://Continue{yes} now`
       // After:  `try Continue now` (label only, never the raw source)
-      final spans = _spansFromSegments([
-        ('try ask://Continue{yes} now', base),
-      ]);
+      final spans = _spansFromSegments([('try ask://Continue{yes} now', base)]);
       final replies = parseQuickReplies(spans);
       expect(replies, hasLength(1));
 
-      final styled = applyQuickReplyTokens(
-        spans,
-        replies,
-        buttonStyle: button,
-      );
+      final styled = applyQuickReplyTokens(spans, replies, buttonStyle: button);
 
       // Raw source text must NOT appear anywhere in the rendered
       // output — neither as visible text nor as part of a label.
@@ -807,9 +858,7 @@ void main() {
       // The label is emitted with the surrounding baseStyle
       // unchanged, so the output is indistinguishable from ordinary
       // prose.
-      final spans = _spansFromSegments([
-        ('try ask://Continue{yes} now', base),
-      ]);
+      final spans = _spansFromSegments([('try ask://Continue{yes} now', base)]);
       final replies = parseQuickReplies(spans);
       final styled = applyQuickReplyTokens(spans, replies);
 
@@ -855,9 +904,7 @@ void main() {
     });
 
     test('hovered reply uses hoverStyle instead of buttonStyle', () {
-      final spans = _spansFromSegments([
-        ('a ask://X{x} b ask://Y{y} c', base),
-      ]);
+      final spans = _spansFromSegments([('a ask://X{x} b ask://Y{y} c', base)]);
       final replies = parseQuickReplies(spans);
 
       final styled = applyQuickReplyTokens(
@@ -879,9 +926,7 @@ void main() {
     });
 
     test('null hoverStyle falls back to buttonStyle for the hovered reply', () {
-      final spans = _spansFromSegments([
-        ('ask://X{x}', base),
-      ]);
+      final spans = _spansFromSegments([('ask://X{x}', base)]);
       final replies = parseQuickReplies(spans);
       final styled = applyQuickReplyTokens(
         spans,
@@ -895,29 +940,30 @@ void main() {
       expect(span!.style!.backgroundColor, button.backgroundColor);
     });
 
-    test('adjacent text inherits baseStyle (not buttonStyle) in button mode', () {
-      final spans = _spansFromSegments([
-        ('before ask://X{x} after', base),
-      ]);
-      final replies = parseQuickReplies(spans);
-      final styled = applyQuickReplyTokens(
-        spans,
-        replies,
-        buttonStyle: button,
-      );
+    test(
+      'adjacent text inherits baseStyle (not buttonStyle) in button mode',
+      () {
+        final spans = _spansFromSegments([('before ask://X{x} after', base)]);
+        final replies = parseQuickReplies(spans);
+        final styled = applyQuickReplyTokens(
+          spans,
+          replies,
+          buttonStyle: button,
+        );
 
-      final before = findSpan(styled, 'before ');
-      expect(before, isNotNull);
-      expect(before!.style!.backgroundColor, isNull);
+        final before = findSpan(styled, 'before ');
+        expect(before, isNotNull);
+        expect(before!.style!.backgroundColor, isNull);
 
-      final after = findSpan(styled, ' after');
-      expect(after, isNotNull);
-      expect(after!.style!.backgroundColor, isNull);
+        final after = findSpan(styled, ' after');
+        expect(after, isNotNull);
+        expect(after!.style!.backgroundColor, isNull);
 
-      final label = findSpan(styled, 'X');
-      expect(label, isNotNull);
-      expect(label!.style!.backgroundColor, button.backgroundColor);
-    });
+        final label = findSpan(styled, 'X');
+        expect(label, isNotNull);
+        expect(label!.style!.backgroundColor, button.backgroundColor);
+      },
+    );
 
     test('preserves nested parent styles after substitution', () {
       // Regression: applyQuickReplyTokens used to flatten the span tree
@@ -1002,9 +1048,7 @@ void main() {
       });
 
       test('containsRenderedIndex works for substituted text', () {
-        final spans = _spansFromSegments([
-          ('hi ask://A{a} bye', base),
-        ]);
+        final spans = _spansFromSegments([('hi ask://A{a} bye', base)]);
         final replies = parseQuickReplies(spans);
         applyQuickReplyTokens(spans, replies, buttonStyle: button);
 
@@ -1028,9 +1072,7 @@ void main() {
         // Source: `ask://A{a} ask://B{b}` (positions 0..10, 11..21)
         // Rendered: `A B` (length 3)
         // Position of 'A' = 0, position of 'B' = 2.
-        final spans = _spansFromSegments([
-          ('ask://A{a} ask://B{b}', base),
-        ]);
+        final spans = _spansFromSegments([('ask://A{a} ask://B{b}', base)]);
         final replies = parseQuickReplies(spans);
         applyQuickReplyTokens(spans, replies);
 
@@ -1041,17 +1083,18 @@ void main() {
         expect(replies[1].renderedLength, 1);
       });
 
-      test('null renderedStart (parser-only, no renderer pass) disables hit-test', () {
-        // QuickReply created by parser but never fed to the
-        // renderer — renderedStart is null, containsRenderedIndex
-        // returns false.
-        final spans = _spansFromSegments([
-          ('ask://A{a}', base),
-        ]);
-        final replies = parseQuickReplies(spans);
-        expect(replies.first.renderedStart, isNull);
-        expect(replies.first.containsRenderedIndex(0), isFalse);
-      });
+      test(
+        'null renderedStart (parser-only, no renderer pass) disables hit-test',
+        () {
+          // QuickReply created by parser but never fed to the
+          // renderer — renderedStart is null, containsRenderedIndex
+          // returns false.
+          final spans = _spansFromSegments([('ask://A{a}', base)]);
+          final replies = parseQuickReplies(spans);
+          expect(replies.first.renderedStart, isNull);
+          expect(replies.first.containsRenderedIndex(0), isFalse);
+        },
+      );
     });
   });
 }

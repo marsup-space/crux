@@ -30,11 +30,7 @@ class SystemProxy {
   /// Hosts that should be reached directly, bypassing the proxy.
   final List<String> noProxy;
 
-  const SystemProxy({
-    this.httpUrl,
-    this.httpsUrl,
-    this.noProxy = const [],
-  });
+  const SystemProxy({this.httpUrl, this.httpsUrl, this.noProxy = const []});
 
   bool get isEmpty => httpUrl == null && httpsUrl == null;
   bool get isNotEmpty => !isEmpty;
@@ -46,8 +42,7 @@ class SystemProxy {
   /// - `DIRECT` if no proxy is configured for the requested scheme.
   String findProxyFor(Uri uri) {
     final host = uri.host;
-    if (host.isNotEmpty &&
-        _matchesNoProxy(host.toLowerCase(), noProxy)) {
+    if (host.isNotEmpty && _matchesNoProxy(host.toLowerCase(), noProxy)) {
       return 'DIRECT';
     }
     final url = uri.scheme == 'https' ? httpsUrl : httpUrl;
@@ -327,10 +322,8 @@ class SystemProxyDetector {
     if (mode == "'manual'") {
       final httpHost = _gsettingsGet('org.gnome.system.proxy.http', 'host');
       final httpPort = _gsettingsGet('org.gnome.system.proxy.http', 'port');
-      final httpsHost =
-          _gsettingsGet('org.gnome.system.proxy.https', 'host');
-      final httpsPort =
-          _gsettingsGet('org.gnome.system.proxy.https', 'port');
+      final httpsHost = _gsettingsGet('org.gnome.system.proxy.https', 'host');
+      final httpsPort = _gsettingsGet('org.gnome.system.proxy.https', 'port');
       final ignore = _gsettingsGet('org.gnome.system.proxy', 'ignore-hosts');
 
       String? httpUrl;
@@ -377,14 +370,10 @@ class SystemProxyDetector {
     if (gsettingsValue == '[]' || gsettingsValue == '@as []') {
       return const [];
     }
-    if (!gsettingsValue.startsWith('[') ||
-        !gsettingsValue.endsWith(']')) {
+    if (!gsettingsValue.startsWith('[') || !gsettingsValue.endsWith(']')) {
       return const [];
     }
-    final body = gsettingsValue.substring(
-      1,
-      gsettingsValue.length - 1,
-    );
+    final body = gsettingsValue.substring(1, gsettingsValue.length - 1);
     final out = <String>[];
     for (final match in RegExp(r"'([^']*)'").allMatches(body)) {
       out.add(match.group(1)!);
@@ -458,20 +447,11 @@ class SystemProxyDetector {
     }
 
     if (httpUrl == null && httpsUrl == null) return null;
-    return SystemProxy(
-      httpUrl: httpUrl,
-      httpsUrl: httpsUrl,
-      noProxy: noProxy,
-    );
+    return SystemProxy(httpUrl: httpUrl, httpsUrl: httpsUrl, noProxy: noProxy);
   }
 
   static String? _regQuery(String key, String valueName) {
-    final result = _runSync('reg', [
-      'query',
-      key,
-      '/v',
-      valueName,
-    ]);
+    final result = _runSync('reg', ['query', key, '/v', valueName]);
     return result;
   }
 

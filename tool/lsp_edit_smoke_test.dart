@@ -17,9 +17,9 @@ import 'package:path/path.dart' as p;
 Future<void> main() async {
   final tmp = await Directory.systemTemp.createTemp('lsp_edit_smoke_');
   try {
-    File(p.join(tmp.path, 'pubspec.yaml')).writeAsStringSync(
-      'name: smoke\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n',
-    );
+    File(
+      p.join(tmp.path, 'pubspec.yaml'),
+    ).writeAsStringSync('name: smoke\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n');
     final file = File(p.join(tmp.path, 'foo.dart'))
       ..writeAsStringSync('int main() {\n  return 42;\n}\n');
 
@@ -70,15 +70,19 @@ Future<void> main() async {
       exit(1);
     }
     if (diagnostics.first is! LspDiagnostic) {
-      print('FAIL: metadata diagnostic is wrong type: '
-          '${diagnostics.first.runtimeType}');
+      print(
+        'FAIL: metadata diagnostic is wrong type: '
+        '${diagnostics.first.runtimeType}',
+      );
       exit(1);
     }
     print('Metadata carries ${diagnostics.length} LSP diagnostic(s):');
     for (final d in diagnostics.cast<LspDiagnostic>()) {
-      print('  L${d.range.start.line + 1}:'
-          '${d.range.start.character + 1} ${d.severity?.name ?? '?'} '
-          '${d.message}');
+      print(
+        '  L${d.range.start.line + 1}:'
+        '${d.range.start.character + 1} ${d.severity?.name ?? '?'} '
+        '${d.message}',
+      );
     }
     print('PASS: edit tool surfaces LSP diagnostics via metadata');
 

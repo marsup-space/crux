@@ -144,39 +144,39 @@ class GitStatus {
   /// natively transferable) can cross the isolate boundary without
   /// needing a hand-written copy constructor.
   Map<String, dynamic> toJson() => {
-        'isRepo': isRepo,
-        'fetchedAt': fetchedAt.millisecondsSinceEpoch,
-        'branch': branch,
-        'ahead': ahead,
-        'behind': behind,
-        'stagedFiles': stagedFiles,
-        'modifiedFiles': modifiedFiles,
-        'deletedFiles': deletedFiles,
-        'untrackedFiles': untrackedFiles,
-        'conflictedFiles': conflictedFiles,
-        'addedLines': addedLines,
-        'deletedLines': deletedLines,
-      };
+    'isRepo': isRepo,
+    'fetchedAt': fetchedAt.millisecondsSinceEpoch,
+    'branch': branch,
+    'ahead': ahead,
+    'behind': behind,
+    'stagedFiles': stagedFiles,
+    'modifiedFiles': modifiedFiles,
+    'deletedFiles': deletedFiles,
+    'untrackedFiles': untrackedFiles,
+    'conflictedFiles': conflictedFiles,
+    'addedLines': addedLines,
+    'deletedLines': deletedLines,
+  };
 
   /// Inverse of [toJson]. Tolerant of missing keys (defaults match
   /// the constructor) so older snapshots from before a field was
   /// added still deserialise cleanly.
   factory GitStatus.fromJson(Map<String, dynamic> json) => GitStatus(
-        isRepo: json['isRepo'] as bool? ?? false,
-        fetchedAt: DateTime.fromMillisecondsSinceEpoch(
-          json['fetchedAt'] as int? ?? 0,
-        ),
-        branch: json['branch'] as String? ?? '',
-        ahead: json['ahead'] as int? ?? 0,
-        behind: json['behind'] as int? ?? 0,
-        stagedFiles: json['stagedFiles'] as int? ?? 0,
-        modifiedFiles: json['modifiedFiles'] as int? ?? 0,
-        deletedFiles: json['deletedFiles'] as int? ?? 0,
-        untrackedFiles: json['untrackedFiles'] as int? ?? 0,
-        conflictedFiles: json['conflictedFiles'] as int? ?? 0,
-        addedLines: json['addedLines'] as int? ?? 0,
-        deletedLines: json['deletedLines'] as int? ?? 0,
-      );
+    isRepo: json['isRepo'] as bool? ?? false,
+    fetchedAt: DateTime.fromMillisecondsSinceEpoch(
+      json['fetchedAt'] as int? ?? 0,
+    ),
+    branch: json['branch'] as String? ?? '',
+    ahead: json['ahead'] as int? ?? 0,
+    behind: json['behind'] as int? ?? 0,
+    stagedFiles: json['stagedFiles'] as int? ?? 0,
+    modifiedFiles: json['modifiedFiles'] as int? ?? 0,
+    deletedFiles: json['deletedFiles'] as int? ?? 0,
+    untrackedFiles: json['untrackedFiles'] as int? ?? 0,
+    conflictedFiles: json['conflictedFiles'] as int? ?? 0,
+    addedLines: json['addedLines'] as int? ?? 0,
+    deletedLines: json['deletedLines'] as int? ?? 0,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -225,14 +225,17 @@ void _gitIsolateEntry(SendPort mainSendPort) {
       return;
     }
     refreshing = true;
-    _gitFetchAndParse(path, commandTimeout).then((status) {
-      cachedStatus = status;
-      mainSendPort.send(['status', status.toJson()]);
-    }).catchError((Object e) {
-      mainSendPort.send(['error', e.toString()]);
-    }).whenComplete(() {
-      refreshing = false;
-    });
+    _gitFetchAndParse(path, commandTimeout)
+        .then((status) {
+          cachedStatus = status;
+          mainSendPort.send(['status', status.toJson()]);
+        })
+        .catchError((Object e) {
+          mainSendPort.send(['error', e.toString()]);
+        })
+        .whenComplete(() {
+          refreshing = false;
+        });
   }
 
   commandPort.listen((message) {
@@ -278,22 +281,21 @@ Future<GitStatus> _gitFetchAndParse(
   // and `git status --branch` only writes to its own process
   // index, so parallelising them is safe and roughly 3x faster
   // than serialising them on a cold cache.
-  final statusFut = _runGit([
-    'status',
-    '--porcelain=v1',
-    '--branch',
-    '--untracked-files=normal',
-  ], cwd: repoRoot, commandTimeout: commandTimeout);
+  final statusFut = _runGit(
+    ['status', '--porcelain=v1', '--branch', '--untracked-files=normal'],
+    cwd: repoRoot,
+    commandTimeout: commandTimeout,
+  );
   final unstagedFut = _runGit(
     ['diff', '--shortstat'],
     cwd: repoRoot,
     commandTimeout: commandTimeout,
   );
-  final stagedFut = _runGit([
-    'diff',
-    '--cached',
-    '--shortstat',
-  ], cwd: repoRoot, commandTimeout: commandTimeout);
+  final stagedFut = _runGit(
+    ['diff', '--cached', '--shortstat'],
+    cwd: repoRoot,
+    commandTimeout: commandTimeout,
+  );
 
   final statusResult = await statusFut;
   if (statusResult.exitCode != 0) {
@@ -349,16 +351,13 @@ Future<String?> _findRepoRoot(String start) async {
 /// Try to read the branch name with a separate, narrow command.
 /// Used as a fallback when `git status` errors out so the branch
 /// line still has something useful to display.
-Future<String> _safeBranchName(
-  String repoRoot,
-  Duration commandTimeout,
-) async {
+Future<String> _safeBranchName(String repoRoot, Duration commandTimeout) async {
   try {
-    final r = await _runGit([
-      'rev-parse',
-      '--abbrev-ref',
-      'HEAD',
-    ], cwd: repoRoot, commandTimeout: commandTimeout);
+    final r = await _runGit(
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      cwd: repoRoot,
+      commandTimeout: commandTimeout,
+    );
     if (r.exitCode != 0) return '';
     final name = r.stdout.trim();
     // `git rev-parse --abbrev-ref HEAD` returns the literal
@@ -366,11 +365,11 @@ Future<String> _safeBranchName(
     // `--branch` output uses the short SHA instead, so we fall
     // back to that for parity.
     if (name == 'HEAD') {
-      final sha = await _runGit([
-        'rev-parse',
-        '--short',
-        'HEAD',
-      ], cwd: repoRoot, commandTimeout: commandTimeout);
+      final sha = await _runGit(
+        ['rev-parse', '--short', 'HEAD'],
+        cwd: repoRoot,
+        commandTimeout: commandTimeout,
+      );
       return sha.exitCode == 0 ? sha.stdout.trim() : 'HEAD';
     }
     return name;

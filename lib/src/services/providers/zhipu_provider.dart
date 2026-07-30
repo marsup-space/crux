@@ -66,8 +66,7 @@ import 'openai_compatible_provider.dart';
 /// The response parser lives in `zhipu_usage_parser.dart` so
 /// it can be unit-tested against canned JSON payloads
 /// without standing up a fake HTTP server.
-class ZhipuProvider extends OpenAICompatibleProvider
-    with CodingPlanProvider {
+class ZhipuProvider extends OpenAICompatibleProvider with CodingPlanProvider {
   @override
   String get name => 'zhipu';
 

@@ -269,8 +269,9 @@ void main() {
         name: 'broken',
         description: 'valid',
       );
-      File(p.join(projectRoot.path, '.crux', 'skills', 'broken', 'SKILL.md'))
-          .writeAsStringSync('---\nname: broken\n---\nbody\n');
+      File(
+        p.join(projectRoot.path, '.crux', 'skills', 'broken', 'SKILL.md'),
+      ).writeAsStringSync('---\nname: broken\n---\nbody\n');
       // Global — good.
       _writeSkill(
         Directory(p.join(fakeHome.path, '.claude', 'skills')),
@@ -297,13 +298,15 @@ void main() {
         description: 'good',
       );
       // Overwrite with mismatched name.
-      File(p.join(
-        projectRoot.path,
-        '.crux',
-        'skills',
-        'actual-folder-name',
-        'SKILL.md',
-      )).writeAsStringSync(
+      File(
+        p.join(
+          projectRoot.path,
+          '.crux',
+          'skills',
+          'actual-folder-name',
+          'SKILL.md',
+        ),
+      ).writeAsStringSync(
         '---\nname: different-name\ndescription: A skill.\n---\nbody\n',
       );
 

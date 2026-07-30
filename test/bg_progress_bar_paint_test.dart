@@ -64,12 +64,18 @@ void main() {
     test('exact 0% renders all-empty with no partial cell', () async {
       await testNocterm('0%', (tester) async {
         await tester.pumpComponent(mount(0.0));
-        expect(boundaryIdx(0.0), -1,
-            reason: 'no partial cell when value is exactly 0');
+        expect(
+          boundaryIdx(0.0),
+          -1,
+          reason: 'no partial cell when value is exactly 0',
+        );
         for (var i = 0; i < width; i++) {
           final cell = tester.terminalState.getCellAt(i, 0)!;
-          expect(cell.style.backgroundColor, empty,
-              reason: 'cell $i should be empty at 0%');
+          expect(
+            cell.style.backgroundColor,
+            empty,
+            reason: 'cell $i should be empty at 0%',
+          );
         }
       });
     });
@@ -77,12 +83,18 @@ void main() {
     test('exact 100% renders all-filled with no partial cell', () async {
       await testNocterm('100%', (tester) async {
         await tester.pumpComponent(mount(1.0));
-        expect(boundaryIdx(1.0), -1,
-            reason: 'no partial cell when value is exactly 1');
+        expect(
+          boundaryIdx(1.0),
+          -1,
+          reason: 'no partial cell when value is exactly 1',
+        );
         for (var i = 0; i < width; i++) {
           final cell = tester.terminalState.getCellAt(i, 0)!;
-          expect(cell.style.backgroundColor, fill,
-              reason: 'cell $i should be filled at 100%');
+          expect(
+            cell.style.backgroundColor,
+            fill,
+            reason: 'cell $i should be filled at 100%',
+          );
         }
       });
     });
@@ -92,11 +104,15 @@ void main() {
         await tester.pumpComponent(mount(0.05));
         // 0.05 * 20 = 1.0 exactly, so no partial.
         expect(boundaryIdx(0.05), -1);
-        expect(tester.terminalState.getCellAt(0, 0)!.style.backgroundColor,
-            fill);
-        expect(tester.terminalState.getCellAt(1, 0)!.style.backgroundColor,
-            empty,
-            reason: 'cell 1 onward must be empty at exactly 5%');
+        expect(
+          tester.terminalState.getCellAt(0, 0)!.style.backgroundColor,
+          fill,
+        );
+        expect(
+          tester.terminalState.getCellAt(1, 0)!.style.backgroundColor,
+          empty,
+          reason: 'cell 1 onward must be empty at exactly 5%',
+        );
       });
     });
 
@@ -119,8 +135,7 @@ void main() {
       });
     });
 
-    test('37% fill: cells 0..6 fully filled, cell 7 is 40% blend',
-        () async {
+    test('37% fill: cells 0..6 fully filled, cell 7 is 40% blend', () async {
       await testNocterm('37%', (tester) async {
         await tester.pumpComponent(mount(0.37));
         // 0.37 * 20 = 7.4 → 7 fully filled, cell 7 at 0.4 lerp.
@@ -147,8 +162,7 @@ void main() {
       });
     });
 
-    test('boundary cell never goes out of bounds at exactly 1.0',
-        () async {
+    test('boundary cell never goes out of bounds at exactly 1.0', () async {
       // Regression: at fillRatio == 1.0, filledCount == width and
       // partial == 0.0. Without the boundaryIdx guard the code
       // would try to lerp the (non-existent) cell at index `width`.
@@ -156,20 +170,19 @@ void main() {
         await tester.pumpComponent(mount(1.0));
         // No exception, and the last cell is fully filled (not a
         // lerp toward empty).
-        expect(tester.terminalState.getCellAt(width - 1, 0)!
-                .style.backgroundColor,
-            fill);
+        expect(
+          tester.terminalState.getCellAt(width - 1, 0)!.style.backgroundColor,
+          fill,
+        );
       });
     });
 
-    test('label spanning the boundary cell picks the dominant fg',
-        () async {
+    test('label spanning the boundary cell picks the dominant fg', () async {
       // With a width-20 bar, a 20-char label covers the whole bar.
       // Verify the fg-color threshold at the boundary label char:
       // partial < 0.5 → labelEmptyFg; partial >= 0.5 → labelFillFg.
       await testNocterm('label fg threshold', (tester) async {
-        await tester.pumpComponent(mount(0.22,
-            label: '12345678901234567890'));
+        await tester.pumpComponent(mount(0.22, label: '12345678901234567890'));
         // 0.22 * 20 = 4.4, boundary at cell 4, partial = 0.4 → empty.
         expect(
           tester.terminalState.getCellAt(4, 0)!.style.color,
@@ -177,8 +190,7 @@ void main() {
           reason: 'partial 0.4 < 0.5 → empty-side fg on label char',
         );
 
-        await tester.pumpComponent(mount(0.78,
-            label: '12345678901234567890'));
+        await tester.pumpComponent(mount(0.78, label: '12345678901234567890'));
         // 0.78 * 20 = 15.6, boundary at cell 15, partial = 0.6 → fill.
         expect(
           tester.terminalState.getCellAt(15, 0)!.style.color,

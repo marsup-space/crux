@@ -130,8 +130,7 @@ ShellRiskAssessment assessShellRiskHeuristic(
 /// accepted false positive: `echo ":(){ :|:& };:"` (printing the
 /// string) trips it too — vanishingly rare in practice, and blocking
 /// an echo costs nothing real.
-final _forkBombPattern =
-    RegExp(r':\s*\(\s*\)\s*\{[^{}]*:\s*\|\s*:\s*&');
+final _forkBombPattern = RegExp(r':\s*\(\s*\)\s*\{[^{}]*:\s*\|\s*:\s*&');
 
 /// Shell redirect into a raw block device (`> /dev/sda`,
 /// `> /dev/nvme0n1`, …). Overwrites disk sectors directly, bypassing
@@ -171,24 +170,44 @@ final _winSystemDir = RegExp(
 /// Verbs that remove files on Windows — a mix of cmd builtins and
 /// PowerShell aliases for `Remove-Item`.
 const _winDeleteVerbs = <String>{
-  'del', 'erase', 'rd', 'rmdir',
-  'remove-item', 'ri', 'rm',
+  'del',
+  'erase',
+  'rd',
+  'rmdir',
+  'remove-item',
+  'ri',
+  'rm',
 };
 
 /// Pipe-to-shell tables: a payload-producing verb in one segment and
 /// a shell verb in another is the classic untrusted-installer shape
 /// (`curl … | sh`, `irm … | iex`, `base64 -d | sh`).
 const _posixShellVerbs = <String>{
-  'sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish',
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'ksh',
+  'ash',
+  'fish',
 };
 const _posixDownloaderVerbs = <String>{'curl', 'wget', 'fetch'};
 const _winShellVerbs = <String>{
-  'iex', 'invoke-expression', 'powershell', 'pwsh', 'cmd',
+  'iex',
+  'invoke-expression',
+  'powershell',
+  'pwsh',
+  'cmd',
 };
 const _winDownloaderVerbs = <String>{
-  'irm', 'invoke-restmethod',
-  'iwr', 'invoke-webrequest',
-  'curl', 'wget', 'curl.exe', 'wget.exe',
+  'irm',
+  'invoke-restmethod',
+  'iwr',
+  'invoke-webrequest',
+  'curl',
+  'wget',
+  'curl.exe',
+  'wget.exe',
 };
 
 // =============================================================================
@@ -232,9 +251,7 @@ String? _catastrophicPosix(String segment) {
       final recursive =
           _hasShortFlag(args, 'R') || _hasLongFlag(args, 'recursive');
       final worldWritable = args.any((a) => a == '777' || a == '0777');
-      if (recursive &&
-          worldWritable &&
-          _nonFlagArgs(args).any(_isRootTarget)) {
+      if (recursive && worldWritable && _nonFlagArgs(args).any(_isRootTarget)) {
         return 'chmod -R 777 on the filesystem root — '
             'breaks permissions system-wide';
       }
@@ -315,12 +332,14 @@ String? _suspiciousPosix(String segment) {
       }
       return null;
     case 'launchctl':
-      if (args.any((a) =>
-          a == 'stop' ||
-          a == 'unload' ||
-          a == 'remove' ||
-          a == 'disable' ||
-          a == 'bootout')) {
+      if (args.any(
+        (a) =>
+            a == 'stop' ||
+            a == 'unload' ||
+            a == 'remove' ||
+            a == 'disable' ||
+            a == 'bootout',
+      )) {
         return 'stops or unloads a system agent/daemon';
       }
       return null;
@@ -349,7 +368,8 @@ String? _suspiciousPosix(String segment) {
 /// Relative targets — `rm -rf ./build`, `rm -rf node_modules`,
 /// `rm -rf ../scratch` — match neither and stay safe, by design.
 String? _rmAssessment(List<String> args, {required bool rootOnly}) {
-  final recursive = _hasShortFlag(args, 'r') ||
+  final recursive =
+      _hasShortFlag(args, 'r') ||
       _hasShortFlag(args, 'R') ||
       _hasLongFlag(args, 'recursive');
   final force = _hasShortFlag(args, 'f') || _hasLongFlag(args, 'force');
@@ -453,7 +473,8 @@ String? _suspiciousWindows(String segment) {
       final modifiesHive =
           lowerArgs.contains('add') || lowerArgs.contains('delete');
       final targetsHklm = lowerArgs.any(
-          (a) => a.contains('hklm') || a.contains('hkey_local_machine'));
+        (a) => a.contains('hklm') || a.contains('hkey_local_machine'),
+      );
       if (modifiesHive && targetsHklm) {
         return 'modifies the HKLM registry hive — system-wide effect';
       }
@@ -582,11 +603,13 @@ _ParsedSegment _parseSegment(String segment) {
 /// both `r` and `f`. Long flags (`--force`) are excluded so
 /// `--force` doesn't trip the `f` check and `--recursive` doesn't
 /// trip `r`.
-bool _hasShortFlag(List<String> args, String flag) => args.any((a) =>
-    a.length > 1 &&
-    a.startsWith('-') &&
-    !a.startsWith('--') &&
-    a.contains(flag));
+bool _hasShortFlag(List<String> args, String flag) => args.any(
+  (a) =>
+      a.length > 1 &&
+      a.startsWith('-') &&
+      !a.startsWith('--') &&
+      a.contains(flag),
+);
 
 bool _hasLongFlag(List<String> args, String name) =>
     args.any((a) => a == '--$name');

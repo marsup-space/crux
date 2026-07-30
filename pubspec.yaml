@@ -4,7 +4,7 @@ version: 0.23.0
 publish_to: none
 
 environment:
-  sdk: ^3.11.3
+  sdk: ^3.12.0
 
 dependencies:
   nocterm:
@@ -29,6 +29,7 @@ dependencies:
   bloc: ^9.2.1
   nocterm_bloc: ^1.1.0
 
+  meta: any
 dev_dependencies:
   archive: ^4.0.9
   lints: ^6.0.0

@@ -82,11 +82,7 @@ void main() {
         final rt = ChatService.computeCompactionReserveAndThreshold(
           contextSize: ctx,
         );
-        expect(
-          rt.reserve + rt.threshold,
-          ctx,
-          reason: 'contextSize=$ctx',
-        );
+        expect(rt.reserve + rt.threshold, ctx, reason: 'contextSize=$ctx');
       }
     });
   });
@@ -203,8 +199,11 @@ void main() {
         contextSize: 1000000,
       );
       expect(rt.threshold, 990000);
-      expect(projected > rt.threshold, isFalse,
-          reason: '130k on 1M-context M3 must NOT trigger');
+      expect(
+        projected > rt.threshold,
+        isFalse,
+        reason: '130k on 1M-context M3 must NOT trigger',
+      );
     });
 
     test('M3: 995k projection DOES trigger', () {
@@ -224,12 +223,14 @@ void main() {
       final rt = ChatService.computeCompactionReserveAndThreshold(
         contextSize: 1000000,
       );
-      expect(projected > rt.threshold, isTrue,
-          reason: '995k on 1M-context M3 must trigger (threshold=990k)');
+      expect(
+        projected > rt.threshold,
+        isTrue,
+        reason: '995k on 1M-context M3 must trigger (threshold=990k)',
+      );
     });
 
-    test('Bug B regression: summed fallback no longer triggers at 130k',
-        () {
+    test('Bug B regression: summed fallback no longer triggers at 130k', () {
       // With the OLD buggy fallback (summing per-message cumulative
       // tokensIn), a session with even 2-3 AI messages would project
       // to 500k-1M+ even though actual context was 100-200k. Verify
@@ -252,8 +253,11 @@ void main() {
       );
       // Last AI = 150000 + 4000 = 154000. NOT a sum (which would be
       // 389000). On M3 (threshold 960k), neither triggers — correct.
-      expect(projected, 154000,
-          reason: 'must use only the last AI, not sum across history');
+      expect(
+        projected,
+        154000,
+        reason: 'must use only the last AI, not sum across history',
+      );
       final rt = ChatService.computeCompactionReserveAndThreshold(
         contextSize: 1000000,
       );
@@ -321,8 +325,11 @@ void main() {
       // Last AI only: 226k + (6k - 4k) = 228k. NOT the sum
       // (100k+2k-1k) + (150k+3k-2k) + (226k+6k-4k) = 101k+151k+228k = 480k.
       expect(ssot, 228000);
-      expect(ssot, lessThan(300000),
-          reason: 'must not be a sum of tokensIn across AI turns');
+      expect(
+        ssot,
+        lessThan(300000),
+        reason: 'must not be a sum of tokensIn across AI turns',
+      );
     });
 
     test('falls through to content + system + tools when no AI has tokens', () {
@@ -355,7 +362,7 @@ void main() {
       final history = [
         _user(id: 1),
         _ai(id: 2, tokensIn: 100000, tokensOut: 2000, reasoningTokens: 1000),
-        _user(id: 3, content: 'x' * 400),  // 400 chars → ~100 tokens
+        _user(id: 3, content: 'x' * 400), // 400 chars → ~100 tokens
       ];
       final ssot = ChatService.currentContextTokens(messages: history);
       // Last AI: 100k + (2k-1k) = 101k. Plus the trailing user

@@ -100,9 +100,7 @@ void main() {
 
     test('includes provider-level tuning when defined', () {
       final out = buildSystemPrompt(
-        provider: _provider(
-          systemPromptAddition: 'Provider-level tuning.',
-        ),
+        provider: _provider(systemPromptAddition: 'Provider-level tuning.'),
         model: _provider().models.first,
         cwd: '/tmp/x',
         worktree: '/tmp/x',
@@ -241,44 +239,48 @@ void main() {
       expect(sonnet, contains('claude-sonnet-4-6'));
     });
 
-    test('project notes appear between the universal layer and the env meta',
-        () {
-      final tempRoot = Directory.systemTemp.createTempSync('crux_proj_in_');
-      try {
-        File(p.join(tempRoot.path, 'AGENTS.md'))
-            .writeAsStringSync('Project rules.');
+    test(
+      'project notes appear between the universal layer and the env meta',
+      () {
+        final tempRoot = Directory.systemTemp.createTempSync('crux_proj_in_');
+        try {
+          File(
+            p.join(tempRoot.path, 'AGENTS.md'),
+          ).writeAsStringSync('Project rules.');
 
-        final out = buildSystemPrompt(
-          provider: _provider(systemPromptAddition: 'Tuning.'),
-          model: _provider().models.first,
-          cwd: tempRoot.path,
-          worktree: tempRoot.path,
-          sessionStarted: DateTime.utc(2026, 1, 1),
-        );
+          final out = buildSystemPrompt(
+            provider: _provider(systemPromptAddition: 'Tuning.'),
+            model: _provider().models.first,
+            cwd: tempRoot.path,
+            worktree: tempRoot.path,
+            sessionStarted: DateTime.utc(2026, 1, 1),
+          );
 
-        // Universal comes first, then tuning, then project notes,
-        // then env meta. We verify by substring position rather
-        // than splitting — the joined string is the right
-        // artifact.
-        final universalIdx = out.indexOf('You are Crux');
-        final tuningIdx = out.indexOf('Tuning.');
-        final projectIdx = out.indexOf('Project rules.');
-        final envIdx = out.indexOf('<env>');
-        expect(universalIdx, lessThan(tuningIdx));
-        expect(tuningIdx, lessThan(projectIdx));
-        expect(projectIdx, lessThan(envIdx));
-      } finally {
-        tempRoot.deleteSync(recursive: true);
-      }
-    });
+          // Universal comes first, then tuning, then project notes,
+          // then env meta. We verify by substring position rather
+          // than splitting — the joined string is the right
+          // artifact.
+          final universalIdx = out.indexOf('You are Crux');
+          final tuningIdx = out.indexOf('Tuning.');
+          final projectIdx = out.indexOf('Project rules.');
+          final envIdx = out.indexOf('<env>');
+          expect(universalIdx, lessThan(tuningIdx));
+          expect(tuningIdx, lessThan(projectIdx));
+          expect(projectIdx, lessThan(envIdx));
+        } finally {
+          tempRoot.deleteSync(recursive: true);
+        }
+      },
+    );
 
     test('available skills layer 3.5 is inserted between project notes '
         'and env meta when skills are present', () {
       final tempRoot = Directory.systemTemp.createTempSync('crux_skills_');
       try {
         // Write a real SKILL.md into .crux/skills/<name>/.
-        final skillDir = Directory(p.join(tempRoot.path, '.crux', 'skills',
-            'pr-review'))..createSync(recursive: true);
+        final skillDir = Directory(
+          p.join(tempRoot.path, '.crux', 'skills', 'pr-review'),
+        )..createSync(recursive: true);
         File(p.join(skillDir.path, 'SKILL.md')).writeAsStringSync(
           '---\n'
           'name: pr-review\n'

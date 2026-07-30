@@ -55,7 +55,11 @@ void main() {
       await providerService.initialize();
       store = SessionStore(CruxDatabase());
       final toolRegistry = ToolRegistry()
-        ..registerDefaults(FileReadTracker(), sessionStore: store, webProviderRegistry: WebProviderRegistry());
+        ..registerDefaults(
+          FileReadTracker(),
+          sessionStore: store,
+          webProviderRegistry: WebProviderRegistry(),
+        );
       sessionController = SessionController(
         store: store,
         providerService: providerService,
@@ -191,7 +195,8 @@ void main() {
         expect(
           tester.terminalState.findText('5,000 / 204k').isNotEmpty,
           isTrue,
-          reason: 'bar should snap to session B\'s base after '
+          reason:
+              'bar should snap to session B\'s base after '
               'switchSession commits currentSessionId + target atomically',
         );
       });

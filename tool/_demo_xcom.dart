@@ -29,8 +29,14 @@ class _Result {
   final String? error;
   final int ms;
   final bool usedProxy;
-  _Result(this.ok, this.ms,
-      {this.status, this.body, this.error, this.usedProxy = false});
+  _Result(
+    this.ok,
+    this.ms, {
+    this.status,
+    this.body,
+    this.error,
+    this.usedProxy = false,
+  });
   @override
   String toString() {
     if (ok) {
@@ -50,8 +56,12 @@ Future<_Result> _directAttempt() async {
     final resp = await req.close();
     final body = await resp.transform(utf8.decoder).join();
     sw.stop();
-    return _Result(true, sw.elapsedMilliseconds,
-        status: resp.statusCode, body: body);
+    return _Result(
+      true,
+      sw.elapsedMilliseconds,
+      status: resp.statusCode,
+      body: body,
+    );
   } catch (e) {
     sw.stop();
     return _Result(false, sw.elapsedMilliseconds, error: e.toString());
@@ -70,12 +80,21 @@ Future<_Result> _proxyAttempt(SystemProxy proxy) async {
     final resp = await req.close();
     final body = await resp.transform(utf8.decoder).join();
     sw.stop();
-    return _Result(true, sw.elapsedMilliseconds,
-        status: resp.statusCode, body: body, usedProxy: true);
+    return _Result(
+      true,
+      sw.elapsedMilliseconds,
+      status: resp.statusCode,
+      body: body,
+      usedProxy: true,
+    );
   } catch (e) {
     sw.stop();
-    return _Result(false, sw.elapsedMilliseconds,
-        error: e.toString(), usedProxy: true);
+    return _Result(
+      false,
+      sw.elapsedMilliseconds,
+      error: e.toString(),
+      usedProxy: true,
+    );
   } finally {
     client.close(force: true);
   }
@@ -101,8 +120,13 @@ Future<_Result> _withProxyRetryAttempt() async {
     );
     final body = await resp.transform(utf8.decoder).join();
     sw.stop();
-    return _Result(true, sw.elapsedMilliseconds,
-        status: resp.statusCode, body: body, usedProxy: usedProxy);
+    return _Result(
+      true,
+      sw.elapsedMilliseconds,
+      status: resp.statusCode,
+      body: body,
+      usedProxy: usedProxy,
+    );
   } catch (e) {
     sw.stop();
     return _Result(false, sw.elapsedMilliseconds, error: e.toString());
@@ -122,7 +146,9 @@ void main() async {
   stdout.writeln('Target URL: $_url');
 
   if (proxy == null) {
-    stderr.writeln('\nNo system proxy detected on this machine — demo cannot run.');
+    stderr.writeln(
+      '\nNo system proxy detected on this machine — demo cannot run.',
+    );
     exit(1);
   }
 

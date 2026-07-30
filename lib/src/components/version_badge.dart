@@ -15,7 +15,7 @@ const bool kIsJit = !bool.fromEnvironment('dart.vm.product');
 /// The badge lives in a [Stack] sibling to [child], so [child] keeps
 /// the full terminal bounds exactly as if the badge weren't there.
 /// When running under the JIT the label gets a ` jit` suffix
-/// (`v0.22.0 jit`) so dev runs are visually distinguishable from a
+/// (e.g. `v0.23.0 jit`) so dev runs are visually distinguishable from a
 /// release binary at a glance.
 ///
 /// Placement mirrors [HintOverlay]: put it just inside the themed
@@ -29,8 +29,7 @@ class VersionBadge extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final label =
-        kIsJit ? 'v$kCruxVersion jit' : 'v$kCruxVersion';
+    final label = kIsJit ? 'v$kCruxVersion jit' : 'v$kCruxVersion';
 
     return Stack(
       fit: StackFit.expand,

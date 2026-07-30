@@ -65,10 +65,7 @@ class GrepTool extends ToolDef {
         'type': 'integer',
         'description': 'Context lines around each match',
       },
-      'headLimit': {
-        'type': 'integer',
-        'description': 'Max results to return',
-      },
+      'headLimit': {'type': 'integer', 'description': 'Max results to return'},
     },
     'required': ['pattern'],
   };
@@ -185,20 +182,22 @@ class GrepTool extends ToolDef {
     final wasTruncated = totalMatches > _maxMatches;
 
     final kept = wasTruncated ? lines.sublist(0, _maxMatches) : lines;
-    final truncatedLines = kept.map((line) {
-      if (line.length > _maxLineLength) {
-        return '${line.substring(0, _maxLineLength)}...';
-      }
-      return line;
-    }).join('\n');
+    final truncatedLines = kept
+        .map((line) {
+          if (line.length > _maxLineLength) {
+            return '${line.substring(0, _maxLineLength)}...';
+          }
+          return line;
+        })
+        .join('\n');
 
     final header = wasTruncated
         ? 'Found $totalMatches matches (showing first $_maxMatches)\n'
         : '';
     final footer = wasTruncated
         ? '\n\n(Results truncated: showing $_maxMatches of $totalMatches matches '
-            '${totalMatches - _maxMatches} hidden). '
-            'Consider using a more specific path or pattern.)'
+              '${totalMatches - _maxMatches} hidden). '
+              'Consider using a more specific path or pattern.)'
         : '';
 
     return ToolResult(

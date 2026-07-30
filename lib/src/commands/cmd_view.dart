@@ -19,10 +19,7 @@ Future<void> executeView(List<String> parts, CommandContext ctx) async {
     final current = rt.chatDisplayMode == ChatDisplayMode.vibe
         ? 'vibe'
         : 'verbose';
-    ctx.showToast(
-      'Display mode: $current',
-      mode: ToastMode.info,
-    );
+    ctx.showToast('Display mode: $current', mode: ToastMode.info);
     return;
   }
 

@@ -37,10 +37,7 @@ void main() {
         httpsUrl: 'http://127.0.0.1:7897',
         noProxy: ['example.com'],
       );
-      expect(
-        proxy.findProxyFor(Uri.parse('https://example.com/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('https://example.com/')), 'DIRECT');
     });
 
     test('returns DIRECT for subdomains of a noProxy entry', () {
@@ -72,10 +69,7 @@ void main() {
         proxy.findProxyFor(Uri.parse('https://api.example.com/')),
         'DIRECT',
       );
-      expect(
-        proxy.findProxyFor(Uri.parse('https://10.0.0.5/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('https://10.0.0.5/')), 'DIRECT');
     });
 
     test('honors <local> in noProxy (hostnames without a dot)', () {
@@ -84,15 +78,13 @@ void main() {
         noProxy: ['<local>'],
       );
       // <local> matches bare hostnames (no dot).
-      expect(
-        proxy.findProxyFor(Uri.parse('https://internal/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('https://internal/')), 'DIRECT');
       // <local> does NOT match FQDNs (have a dot).
       expect(
         proxy.findProxyFor(Uri.parse('https://internal.local/')),
         'PROXY 127.0.0.1:7897',
-        reason: '<local> only matches hostnames without a dot — a '
+        reason:
+            '<local> only matches hostnames without a dot — a '
             'FQDN like `internal.local` is still proxied',
       );
       // FQDN still uses the proxy.
@@ -197,20 +189,11 @@ void main() {
         'PROXY 127.0.0.1:7897',
       );
       // The fixture's `localhost` entry bypasses bare hostnames.
-      expect(
-        proxy.findProxyFor(Uri.parse('http://localhost:8080/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('http://localhost:8080/')), 'DIRECT');
       // *.local matches a FQDN that ends in .local.
-      expect(
-        proxy.findProxyFor(Uri.parse('https://printer.local/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('https://printer.local/')), 'DIRECT');
       // The <local> entry matches a non-dot hostname.
-      expect(
-        proxy.findProxyFor(Uri.parse('http://router/')),
-        'DIRECT',
-      );
+      expect(proxy.findProxyFor(Uri.parse('http://router/')), 'DIRECT');
     });
 
     test('ignores SOCKS entries (only uses HTTP/HTTPS)', () {
@@ -219,23 +202,26 @@ void main() {
       // this; we verify the user-facing contract: a SystemProxy
       // built with only http/https URLs is what the detector exposes.
       const proxy = SystemProxy(httpsUrl: 'http://127.0.0.1:7897');
-      expect(proxy.findProxyFor(Uri.parse('https://example.com/')),
-          'PROXY 127.0.0.1:7897');
+      expect(
+        proxy.findProxyFor(Uri.parse('https://example.com/')),
+        'PROXY 127.0.0.1:7897',
+      );
     });
   });
 
   group('SystemProxyDetector — env-var parsing', () {
     test(
-        'override with HTTPS_PROXY produces a SystemProxy with httpsUrl set',
-        () {
-      SystemProxyDetector.overrideForTesting(
-        const SystemProxy(httpsUrl: 'http://proxy.example.com:8080'),
-      );
-      expect(
-        SystemProxyDetector.detect()?.httpsUrl,
-        'http://proxy.example.com:8080',
-      );
-    });
+      'override with HTTPS_PROXY produces a SystemProxy with httpsUrl set',
+      () {
+        SystemProxyDetector.overrideForTesting(
+          const SystemProxy(httpsUrl: 'http://proxy.example.com:8080'),
+        );
+        expect(
+          SystemProxyDetector.detect()?.httpsUrl,
+          'http://proxy.example.com:8080',
+        );
+      },
+    );
   });
 
   group('SystemProxyDetector — caching', () {
@@ -256,10 +242,7 @@ void main() {
   test('detect() on real platform does not throw', () {
     // Whatever the platform, detect() should return null or a valid
     // SystemProxy without throwing.
-    expect(
-      SystemProxyDetector.detect(),
-      anyOf(isNull, isA<SystemProxy>()),
-    );
+    expect(SystemProxyDetector.detect(), anyOf(isNull, isA<SystemProxy>()));
   });
 
   // Smoke test: Platform.environment is accessible (sanity check that

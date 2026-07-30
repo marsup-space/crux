@@ -294,7 +294,11 @@ class OverlayController {
 
   void onHoverFile(int index) {
     selectedFileIndex = index;
-    fileScrollOffset = computeScrollOffset(index, fileScrollOffset, maxVisibleItems);
+    fileScrollOffset = computeScrollOffset(
+      index,
+      fileScrollOffset,
+      maxVisibleItems,
+    );
   }
 
   void onScrollFile(MouseEvent event) {
@@ -302,10 +306,16 @@ class OverlayController {
         ? filteredFiles.length - maxVisibleItems
         : 0;
     if (event.button == MouseButton.wheelUp && fileScrollOffset > 0) {
-      fileScrollOffset = (fileScrollOffset - maxVisibleItems).clamp(0, maxOffset);
+      fileScrollOffset = (fileScrollOffset - maxVisibleItems).clamp(
+        0,
+        maxOffset,
+      );
     } else if (event.button == MouseButton.wheelDown &&
         fileScrollOffset < maxOffset) {
-      fileScrollOffset = (fileScrollOffset + maxVisibleItems).clamp(0, maxOffset);
+      fileScrollOffset = (fileScrollOffset + maxVisibleItems).clamp(
+        0,
+        maxOffset,
+      );
     }
   }
 
@@ -333,8 +343,8 @@ class OverlayController {
     // the chat input uses (including the "allow whitespace inside
     // a path component" rule for files in directories whose names
     // contain spaces), and rejects email-style mentions.
-    final resolvedStart = atStart ??
-        findActiveMentionInText(text, cursor)?.atOffset;
+    final resolvedStart =
+        atStart ?? findActiveMentionInText(text, cursor)?.atOffset;
     if (resolvedStart == null || resolvedStart < 0) return;
 
     // Always append a trailing space — whether the user picked a

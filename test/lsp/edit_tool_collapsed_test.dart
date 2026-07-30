@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crux/src/components/lsp_diagnostics_bubble.dart';
-import 'package:crux/src/components/system_hint_bubble.dart' show SystemHintKind;
+import 'package:crux/src/components/system_hint_bubble.dart'
+    show SystemHintKind;
 import 'package:crux/src/lsp/actor.dart';
 import 'package:crux/src/lsp/manager.dart' show LspManager;
 import 'package:crux/src/lsp/protocol.dart';
@@ -51,9 +52,10 @@ class _FakeProcess implements Process {
         final h = buf.toString().indexOf('\r\n\r\n');
         if (h < 0) return;
         final headers = buf.toString().substring(0, h);
-        final m = RegExp(r'Content-Length:\s*(\d+)',
-                caseSensitive: false)
-            .firstMatch(headers);
+        final m = RegExp(
+          r'Content-Length:\s*(\d+)',
+          caseSensitive: false,
+        ).firstMatch(headers);
         if (m == null) return;
         final length = int.parse(m.group(1)!);
         final bodyStart = h + 4;
@@ -115,10 +117,7 @@ class _FakeProcess implements Process {
     _send({
       'jsonrpc': '2.0',
       'method': 'textDocument/publishDiagnostics',
-      'params': {
-        'uri': Uri.file(filePath).toString(),
-        'diagnostics': items,
-      },
+      'params': {'uri': Uri.file(filePath).toString(), 'diagnostics': items},
     });
   }
 }
@@ -138,6 +137,7 @@ class _FakeSink implements IOSink {
       add(chunk);
     }
   }
+
   @override
   Future close() => _c.close();
   @override
@@ -179,11 +179,11 @@ class _PushActor extends LspServerActor {
 }
 
 ToolContext _ctx(String cwd) => ToolContext(
-      sessionId: 1,
-      messageId: 1,
-      abort: AbortSignal(sessionId: 1),
-      workingDirectory: cwd,
-    );
+  sessionId: 1,
+  messageId: 1,
+  abort: AbortSignal(sessionId: 1),
+  workingDirectory: cwd,
+);
 
 void main() {
   group('LspDiagnosticsBubble', () {
@@ -211,12 +211,8 @@ void main() {
       expect(bubble.body, 'lsp: 2 errors');
     });
 
-    test('body falls back to unprefixed form when language is null',
-        () {
-      const bubble = LspDiagnosticsBubble(
-        errorCount: 3,
-        filePath: 'foo.dart',
-      );
+    test('body falls back to unprefixed form when language is null', () {
+      const bubble = LspDiagnosticsBubble(errorCount: 3, filePath: 'foo.dart');
       // Pre-language-prefix rows from older sessions persist no
       // language info; the bubble must keep rendering the
       // legacy `"lsp: ..."` form rather than crashing on a
@@ -225,10 +221,7 @@ void main() {
     });
 
     test('build() returns SizedBox.shrink() for non-positive counts', () {
-      const bubble = LspDiagnosticsBubble(
-        errorCount: 0,
-        filePath: 'foo.dart',
-      );
+      const bubble = LspDiagnosticsBubble(errorCount: 0, filePath: 'foo.dart');
       // The build() method needs a BuildContext to actually
       // render. We assert that calling build with the same
       // context returns SizedBox.shrink() by checking the bubble
@@ -247,76 +240,79 @@ void main() {
       if (tmp.existsSync()) await tmp.delete(recursive: true);
     });
 
-    test('edit result stores diagnostics in metadata; output is just the diff',
-        () async {
-      final file = File(p.join(tmp.path, 'a.test'))
-        ..writeAsStringSync('hello\n');
-      final tracker = FileReadTracker();
-      await tracker.recordRead(
-          file.path, file.statSync().modified.millisecondsSinceEpoch);
+    test(
+      'edit result stores diagnostics in metadata; output is just the diff',
+      () async {
+        final file = File(p.join(tmp.path, 'a.test'))
+          ..writeAsStringSync('hello\n');
+        final tracker = FileReadTracker();
+        await tracker.recordRead(
+          file.path,
+          file.statSync().modified.millisecondsSinceEpoch,
+        );
 
-      final mgr = await LspManager.create(
-        workingDirectory: tmp.path,
-        actorFactories: {'push': _PushActor.new},
-      );
-      final tool = EditTool(tracker: tracker, lsp: mgr);
-      final result = await tool.execute({
-        'filePath': file.path,
-        'oldString': 'hello',
-        'newString': 'goodbye',
-        'intent': 'test',
-      }, _ctx(tmp.path));
-
-      // Output text should be the plain diff line — no LSP mention.
-      expect(result.output, contains('Edit applied'));
-      expect(result.output, isNot(contains('LSP')));
-
-      // Metadata carries the (empty) diagnostic list for chat_service.
-      expect(result.metadata['lsp'], isA<List<LspDiagnostic>>());
-      expect(result.metadata['lsp'], isEmpty);
-
-      // collapsedSummary stays clean (no [lsp] suffix).
-      final summary = tool.collapsedSummary(
-        {
+        final mgr = await LspManager.create(
+          workingDirectory: tmp.path,
+          actorFactories: {'push': _PushActor.new},
+        );
+        final tool = EditTool(tracker: tracker, lsp: mgr);
+        final result = await tool.execute({
+          'filePath': file.path,
           'oldString': 'hello',
           'newString': 'goodbye',
           'intent': 'test',
-        },
-        result,
-      );
-      expect(summary.text, isNot(contains('[lsp]')));
-      expect(summary.text, isNot(contains('error')));
+        }, _ctx(tmp.path));
 
-      await mgr.shutdown();
-    });
+        // Output text should be the plain diff line — no LSP mention.
+        expect(result.output, contains('Edit applied'));
+        expect(result.output, isNot(contains('LSP')));
 
-    test('write result stores diagnostics in metadata; output is just the diff',
-        () async {
-      final file = File(p.join(tmp.path, 'b.test'));
-      final tracker = FileReadTracker();
-      final mgr = await LspManager.create(
-        workingDirectory: tmp.path,
-        actorFactories: {'push': _PushActor.new},
-      );
-      final tool = WriteTool(tracker: tracker, lsp: mgr);
-      final result = await tool.execute({
-        'filePath': file.path,
-        'content': 'new content\n',
-        'intent': 'test',
-      }, _ctx(tmp.path));
+        // Metadata carries the (empty) diagnostic list for chat_service.
+        expect(result.metadata['lsp'], isA<List<LspDiagnostic>>());
+        expect(result.metadata['lsp'], isEmpty);
 
-      expect(result.output, contains('File written'));
-      expect(result.output, isNot(contains('LSP')));
-      expect(result.metadata['lsp'], isA<List<LspDiagnostic>>());
-      expect(file.readAsStringSync(), 'new content\n');
+        // collapsedSummary stays clean (no [lsp] suffix).
+        final summary = tool.collapsedSummary({
+          'oldString': 'hello',
+          'newString': 'goodbye',
+          'intent': 'test',
+        }, result);
+        expect(summary.text, isNot(contains('[lsp]')));
+        expect(summary.text, isNot(contains('error')));
 
-      final summary = tool.collapsedSummary(
-        {'content': 'new content\n', 'intent': 'test'},
-        result,
-      );
-      expect(summary.text, isNot(contains('[lsp]')));
+        await mgr.shutdown();
+      },
+    );
 
-      await mgr.shutdown();
-    });
+    test(
+      'write result stores diagnostics in metadata; output is just the diff',
+      () async {
+        final file = File(p.join(tmp.path, 'b.test'));
+        final tracker = FileReadTracker();
+        final mgr = await LspManager.create(
+          workingDirectory: tmp.path,
+          actorFactories: {'push': _PushActor.new},
+        );
+        final tool = WriteTool(tracker: tracker, lsp: mgr);
+        final result = await tool.execute({
+          'filePath': file.path,
+          'content': 'new content\n',
+          'intent': 'test',
+        }, _ctx(tmp.path));
+
+        expect(result.output, contains('File written'));
+        expect(result.output, isNot(contains('LSP')));
+        expect(result.metadata['lsp'], isA<List<LspDiagnostic>>());
+        expect(file.readAsStringSync(), 'new content\n');
+
+        final summary = tool.collapsedSummary({
+          'content': 'new content\n',
+          'intent': 'test',
+        }, result);
+        expect(summary.text, isNot(contains('[lsp]')));
+
+        await mgr.shutdown();
+      },
+    );
   });
 }

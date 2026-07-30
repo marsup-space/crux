@@ -79,9 +79,7 @@ abstract class WebServiceProvider {
     int? page,
     bool includeThumbnail = false,
   }) {
-    throw UnimplementedError(
-      '$displayName ($id) does not support web search',
-    );
+    throw UnimplementedError('$displayName ($id) does not support web search');
   }
 
   /// Fetch and extract one or more URLs. Default impl throws —
@@ -94,9 +92,7 @@ abstract class WebServiceProvider {
     int? ttl,
     int? perUrlTimeoutMs,
   }) {
-    throw UnimplementedError(
-      '$displayName ($id) does not support web fetch',
-    );
+    throw UnimplementedError('$displayName ($id) does not support web fetch');
   }
 }
 
@@ -193,11 +189,7 @@ class WebFetchError {
   final String url;
   final int? status;
 
-  const WebFetchError({
-    required this.code,
-    required this.url,
-    this.status,
-  });
+  const WebFetchError({required this.code, required this.url, this.status});
 }
 
 class WebFetchResponse {

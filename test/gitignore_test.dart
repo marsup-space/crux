@@ -16,7 +16,7 @@ void main() {
       return m;
     }
 
-        test('root-level glob matches at any depth', () {
+    test('root-level glob matches at any depth', () {
       final m = build({'.': '*.log'});
       expect(m.matches('foo.log', isDirectory: false), isTrue);
       expect(m.matches('sub/foo.log', isDirectory: false), isTrue);
@@ -72,10 +72,7 @@ void main() {
     });
 
     test('nested .gitignore only applies to its subtree', () {
-      final m = build({
-        '.': '*.log',
-        'sub': '*.tmp',
-      });
+      final m = build({'.': '*.log', 'sub': '*.tmp'});
       // *.log at the root, *.tmp under sub/.
       expect(m.matches('a.log', isDirectory: false), isTrue);
       expect(m.matches('sub/a.tmp', isDirectory: false), isTrue);
@@ -102,7 +99,9 @@ node_modules/
 ''');
         Directory(p.join(dir.path, 'build')).createSync();
         Directory(p.join(dir.path, 'src')).createSync();
-        File(p.join(dir.path, 'src/main.dart')).writeAsStringSync('void main() {}');
+        File(
+          p.join(dir.path, 'src/main.dart'),
+        ).writeAsStringSync('void main() {}');
         File(p.join(dir.path, 'src/main.pyc')).writeAsStringSync('x');
         File(p.join(dir.path, 'debug.log')).writeAsStringSync('x');
         File(p.join(dir.path, 'keep.log')).writeAsStringSync('x');
@@ -113,17 +112,32 @@ node_modules/
         final m = GitignoreMatcher();
         m.loadAll([(directory: '.', lines: gi)]);
 
-        expect(m.matches('build', isDirectory: true), isTrue,
-            reason: 'build/ should be ignored');
-        expect(m.matches('src/main.pyc', isDirectory: false), isTrue,
-            reason: '*.pyc at any depth');
+        expect(
+          m.matches('build', isDirectory: true),
+          isTrue,
+          reason: 'build/ should be ignored',
+        );
+        expect(
+          m.matches('src/main.pyc', isDirectory: false),
+          isTrue,
+          reason: '*.pyc at any depth',
+        );
         expect(m.matches('debug.log', isDirectory: false), isTrue);
-        expect(m.matches('keep.log', isDirectory: false), isFalse,
-            reason: '!keep.log overrides *.log');
-        expect(m.matches('root_only.tmp', isDirectory: false), isTrue,
-            reason: '/root_only.tmp matches at root only');
-        expect(m.matches('src/root_only.tmp', isDirectory: false), isFalse,
-            reason: '/root_only.tmp does NOT match in sub/');
+        expect(
+          m.matches('keep.log', isDirectory: false),
+          isFalse,
+          reason: '!keep.log overrides *.log',
+        );
+        expect(
+          m.matches('root_only.tmp', isDirectory: false),
+          isTrue,
+          reason: '/root_only.tmp matches at root only',
+        );
+        expect(
+          m.matches('src/root_only.tmp', isDirectory: false),
+          isFalse,
+          reason: '/root_only.tmp does NOT match in sub/',
+        );
         expect(m.matches('src/main.dart', isDirectory: false), isFalse);
       } finally {
         dir.deleteSync(recursive: true);

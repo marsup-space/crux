@@ -26,12 +26,13 @@ import 'wire_format.dart';
 // Re-export the public API surface so existing callers only need to
 // import this file.
 export '../models/chat_types.dart';
-export 'wire_format.dart' show
-    buildApiMessages,
-    currentContextTokens,
-    estimateProjectedContextTokens,
-    computeCompactionReserveAndThreshold,
-    ResolvedChatTarget;
+export 'wire_format.dart'
+    show
+        buildApiMessages,
+        currentContextTokens,
+        estimateProjectedContextTokens,
+        computeCompactionReserveAndThreshold,
+        ResolvedChatTarget;
 
 /// Facade for the chat subsystem.
 ///
@@ -66,10 +67,7 @@ class ChatService {
         toolExecutor,
         SessionLeaseManager(),
       ),
-      _auxiliaryService = AuxiliaryService(
-        providerService,
-        store.messageStore,
-      );
+      _auxiliaryService = AuxiliaryService(providerService, store.messageStore);
 
   // ── Session lease ─────────────────────────────────────────────────
 
@@ -77,8 +75,7 @@ class ChatService {
   /// Exposed so `/d-monitor` can read recent runs without going
   /// through the turn executor. Shared with the monitor log sink the
   /// executor wires into shell tools.
-  ShellMonitorLogStore get shellMonitorLogStore =>
-      _store.shellMonitorLogStore;
+  ShellMonitorLogStore get shellMonitorLogStore => _store.shellMonitorLogStore;
 
   /// True when [sessionId] is actively streaming.
   bool isStreaming(int sessionId) =>
@@ -123,7 +120,7 @@ class ChatService {
     required String incomingUserContent,
     required List<Map<String, dynamic>> toolDefs,
     Future<void> Function(Session childSession, Message placeholderMessage)?
-        onChildReady,
+    onChildReady,
   }) async {
     return null;
   }
@@ -135,12 +132,11 @@ class ChatService {
     String responseContent, {
     String? userQuestion,
     TldrDetail detail = TldrDetail.defaultLevel,
-  }) =>
-      _auxiliaryService.generateTldr(
-        responseContent,
-        userQuestion: userQuestion,
-        detail: detail,
-      );
+  }) => _auxiliaryService.generateTldr(
+    responseContent,
+    userQuestion: userQuestion,
+    detail: detail,
+  );
 
   // ── Compaction ────────────────────────────────────────────────────
 
@@ -152,14 +148,13 @@ class ChatService {
     required SessionRuntimeState runtime,
     required ToolRegistry toolRegistry,
     required CompactionReason reason,
-  }) =>
-      _compaction.createChatLogCompaction(
-        sessionId: sessionId,
-        session: session,
-        runtime: runtime,
-        toolRegistry: toolRegistry,
-        reason: reason,
-      );
+  }) => _compaction.createChatLogCompaction(
+    sessionId: sessionId,
+    session: session,
+    runtime: runtime,
+    toolRegistry: toolRegistry,
+    reason: reason,
+  );
 
   /// Project what an in-place chat-log compaction would produce,
   /// WITHOUT writing to the DB.
@@ -168,13 +163,12 @@ class ChatService {
     required Session session,
     required ToolRegistry toolRegistry,
     String? incomingUserContent,
-  }) =>
-      _compaction.estimateChatLogCompaction(
-        sessionId: sessionId,
-        session: session,
-        toolRegistry: toolRegistry,
-        incomingUserContent: incomingUserContent,
-      );
+  }) => _compaction.estimateChatLogCompaction(
+    sessionId: sessionId,
+    session: session,
+    toolRegistry: toolRegistry,
+    incomingUserContent: incomingUserContent,
+  );
 
   // Deprecated LLM-summary compaction path.
   @Deprecated('Use createChatLogCompaction (in-place chat-log compaction).')
@@ -187,7 +181,7 @@ class ChatService {
     ResolvedChatTarget? resolved,
     int? preTokensOverride,
     Future<void> Function(Session childSession, Message placeholderMessage)?
-        onChildReady,
+    onChildReady,
   }) async {
     throw StateError(
       'compactIntoChildSession is no longer supported. '
@@ -216,26 +210,25 @@ class ChatService {
     void Function(AbortSignal)? onAbortSignal,
     String? userContent,
     List<ImageAttachment> images = const [],
-  }) =>
-      _turnExecutor.sendMessage(
-        sessionId: sessionId,
-        session: session,
-        runtime: runtime,
-        onDelta: onDelta,
-        onReasoning: onReasoning,
-        onChunk: onChunk,
-        onComplete: onComplete,
-        onError: onError,
-        onStatus: onStatus,
-        onToolRound: onToolRound,
-        onToolUse: onToolUse,
-        onToolExecutionStart: onToolExecutionStart,
-        onStreamingGuardAbort: onStreamingGuardAbort,
-        onQueueDrain: onQueueDrain,
-        onAbortSignal: onAbortSignal,
-        userContent: userContent,
-        images: images,
-      );
+  }) => _turnExecutor.sendMessage(
+    sessionId: sessionId,
+    session: session,
+    runtime: runtime,
+    onDelta: onDelta,
+    onReasoning: onReasoning,
+    onChunk: onChunk,
+    onComplete: onComplete,
+    onError: onError,
+    onStatus: onStatus,
+    onToolRound: onToolRound,
+    onToolUse: onToolUse,
+    onToolExecutionStart: onToolExecutionStart,
+    onStreamingGuardAbort: onStreamingGuardAbort,
+    onQueueDrain: onQueueDrain,
+    onAbortSignal: onAbortSignal,
+    userContent: userContent,
+    images: images,
+  );
 
   // ── Lifecycle ─────────────────────────────────────────────────────
 
@@ -252,7 +245,11 @@ class ChatService {
     List<Message> history,
     WireFamily wireFamily, {
     String? systemPrompt,
-  }) => wire_format.buildApiMessages(history, wireFamily, systemPrompt: systemPrompt);
+  }) => wire_format.buildApiMessages(
+    history,
+    wireFamily,
+    systemPrompt: systemPrompt,
+  );
 
   static int estimateProjectedContextTokens({
     required Session session,
@@ -270,7 +267,9 @@ class ChatService {
 
   static ({int reserve, int threshold}) computeCompactionReserveAndThreshold({
     required int contextSize,
-  }) => wire_format.computeCompactionReserveAndThreshold(contextSize: contextSize);
+  }) => wire_format.computeCompactionReserveAndThreshold(
+    contextSize: contextSize,
+  );
 
   static int currentContextTokens({
     required List<Message> messages,

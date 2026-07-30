@@ -127,7 +127,8 @@ void main() {
         p.join(bundledThemes.path, 'dracula.toml'),
       ).readAsString();
       final theme = ThemeLoader.parse(
-        valid.replaceFirst('background = "#282A36"', 'background = "#1A2b3C"')
+        valid
+            .replaceFirst('background = "#282A36"', 'background = "#1A2b3C"')
             .replaceFirst('surface = "#21222C"', 'surface = "#abc"'),
         id: 'shorthand',
       );
@@ -135,26 +136,32 @@ void main() {
       expect(theme.surface, const Color(0xAABBCC));
     });
 
-    test('missing tokens fall back to Dracula defaults with warnings', () async {
-      final valid = await File(
-        p.join(bundledThemes.path, 'dracula.toml'),
-      ).readAsString();
-      final warnings = <String>[];
-      final theme = ThemeLoader.parse(
-        valid
-            .replaceFirst('background = "#282A36"\n', '')
-            .replaceFirst('heading = "#BD93F9"\n', ''),
-        id: 'sparse',
-        warnings: warnings,
-      );
-      expect(theme.background, CruxThemeData.draculaFallback.background);
-      expect(theme.markdownHeading, CruxThemeData.draculaFallback.markdownHeading);
-      // Untouched tokens still come from the file itself.
-      expect(theme.surface, const Color(0x21222C));
-      expect(warnings, hasLength(2));
-      expect(warnings.first, contains('[colors] "background"'));
-      expect(warnings.last, contains('[markdown] "heading"'));
-    });
+    test(
+      'missing tokens fall back to Dracula defaults with warnings',
+      () async {
+        final valid = await File(
+          p.join(bundledThemes.path, 'dracula.toml'),
+        ).readAsString();
+        final warnings = <String>[];
+        final theme = ThemeLoader.parse(
+          valid
+              .replaceFirst('background = "#282A36"\n', '')
+              .replaceFirst('heading = "#BD93F9"\n', ''),
+          id: 'sparse',
+          warnings: warnings,
+        );
+        expect(theme.background, CruxThemeData.draculaFallback.background);
+        expect(
+          theme.markdownHeading,
+          CruxThemeData.draculaFallback.markdownHeading,
+        );
+        // Untouched tokens still come from the file itself.
+        expect(theme.surface, const Color(0x21222C));
+        expect(warnings, hasLength(2));
+        expect(warnings.first, contains('[colors] "background"'));
+        expect(warnings.last, contains('[markdown] "heading"'));
+      },
+    );
 
     test('missing sections fall back wholesale with one warning each', () {
       final warnings = <String>[];
@@ -190,7 +197,10 @@ void main() {
       ).load();
 
       expect(registry['partial']!.background, const Color(0x000000));
-      expect(registry['partial']!.surface, CruxThemeData.draculaFallback.surface);
+      expect(
+        registry['partial']!.surface,
+        CruxThemeData.draculaFallback.surface,
+      );
       expect(registry.loadErrors, contains(file.path));
       expect(registry.loadErrors[file.path], contains('fallback defaults'));
     });

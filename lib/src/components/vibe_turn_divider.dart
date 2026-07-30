@@ -33,10 +33,7 @@ class VibeTurnDivider extends StatelessComponent {
   /// derived from this via [formatAgentTurnGap].
   final Duration sinceLastTurn;
 
-  const VibeTurnDivider({
-    required this.sinceLastTurn,
-    super.key,
-  });
+  const VibeTurnDivider({required this.sinceLastTurn, super.key});
 
   @override
   Component build(BuildContext context) {
@@ -57,7 +54,7 @@ class VibeTurnDivider extends StatelessComponent {
           builder: (ctx, constraints) {
             final maxWidth = constraints.maxWidth.isFinite
                 ? constraints.maxWidth.toInt()
-            : 0;
+                : 0;
             final label = ' ${formatAgentTurnGap(sinceLastTurn)} ';
             // Use nocterm's display-width util so the math here
             // matches what the inner `Text` widget actually paints
@@ -79,10 +76,7 @@ class VibeTurnDivider extends StatelessComponent {
               // way, dropping the dashes is the right call: the
               // label still renders, just without the flanking
               // padding.
-              return Text(
-                label,
-                style: TextStyle(color: theme.onSurfaceDim),
-              );
+              return Text(label, style: TextStyle(color: theme.onSurfaceDim));
             }
             // Distribute the remaining cells as evenly as possible
             // on both sides of the label. `leftPad` is the smaller

@@ -28,9 +28,13 @@ class PowerShellTool extends ShellBase {
       'shell-quoting bugs.';
 
   @override
-  ShellInvocation resolveInvocation(String command, {String encoding = 'utf8'}) {
+  ShellInvocation resolveInvocation(
+    String command, {
+    String encoding = 'utf8',
+  }) {
     final psEncoding = _toPowerShellEncoding(encoding);
-    final preamble = '[Console]::OutputEncoding = $psEncoding; '
+    final preamble =
+        '[Console]::OutputEncoding = $psEncoding; '
         '\$OutputEncoding = $psEncoding;';
     final fullCommand = '$preamble $command';
     return ShellInvocation(

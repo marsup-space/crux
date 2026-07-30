@@ -66,13 +66,15 @@ class _ScriptedFetchProvider extends WebServiceProvider {
       if (resp != null) {
         results.addAll(resp.results);
       } else {
-        results.add(WebFetchResult(
-          url: url,
-          finalUrl: url,
-          title: 'Default Title',
-          text: 'Default body for $url',
-          format: format,
-        ));
+        results.add(
+          WebFetchResult(
+            url: url,
+            finalUrl: url,
+            title: 'Default Title',
+            text: 'Default body for $url',
+            format: format,
+          ),
+        );
       }
     }
     return WebFetchResponse(results: results, errors: const []);
@@ -133,11 +135,11 @@ void main() {
   });
 
   ToolContext ctx() => ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
+    sessionId: 1,
+    messageId: 1,
+    abort: AbortSignal(),
+    workingDirectory: tempDir.path,
+  );
 
   WebProviderRegistry registry(WebServiceProvider? provider) {
     final r = WebProviderRegistry(userDataDirOverride: tempDir.path);
@@ -149,8 +151,7 @@ void main() {
   }
 
   group('WebFetchTool — provider path', () {
-    test('renders title, final URL, description, and body in order',
-        () async {
+    test('renders title, final URL, description, and body in order', () async {
       final provider = _ScriptedFetchProvider(id: 'tinyfish');
       final url = 'https://example.com/page';
       provider.scripted[url] = WebFetchResponse(
@@ -178,7 +179,9 @@ void main() {
       // Title comes first, then final URL, then meta line, then
       // description, then body.
       final titleIdx = result.output.indexOf('# Page Title');
-      final finalUrlIdx = result.output.indexOf('URL: https://example.com/canonical');
+      final finalUrlIdx = result.output.indexOf(
+        'URL: https://example.com/canonical',
+      );
       final metaIdx = result.output.indexOf('language: en');
       final descIdx = result.output.indexOf('> A short summary.');
       final bodyIdx = result.output.indexOf('Body text here.');
@@ -199,10 +202,10 @@ void main() {
       final provider = _ScriptedFetchProvider(id: 'tinyfish');
       final tool = WebFetchTool(registry(provider));
 
-      await tool.execute(
-        {'url': 'https://example.com/', 'format': 'text'},
-        ctx(),
-      );
+      await tool.execute({
+        'url': 'https://example.com/',
+        'format': 'text',
+      }, ctx());
 
       expect(provider.calls.first.format, 'text');
     });
@@ -213,11 +216,7 @@ void main() {
       provider.scripted[url] = WebFetchResponse(
         results: const [],
         errors: [
-          WebFetchError(
-            code: 'target_http_error',
-            url: url,
-            status: 404,
-          ),
+          WebFetchError(code: 'target_http_error', url: url, status: 404),
         ],
       );
       final tool = WebFetchTool(registry(provider));
@@ -230,26 +229,28 @@ void main() {
       expect(result.output, contains(url));
     });
 
-    test('surfaces WebProviderException directly (no silent fallback)',
-        () async {
-      final provider = _ThrowingFetchProvider(
-        id: 'tinyfish',
-        error: 'TinyFish HTTP 503: rate limited',
-      );
-      final tool = WebFetchTool(registry(provider));
+    test(
+      'surfaces WebProviderException directly (no silent fallback)',
+      () async {
+        final provider = _ThrowingFetchProvider(
+          id: 'tinyfish',
+          error: 'TinyFish HTTP 503: rate limited',
+        );
+        final tool = WebFetchTool(registry(provider));
 
-      final result =
-          await tool.execute({'url': 'https://example.com/'}, ctx());
+        final result = await tool.execute({
+          'url': 'https://example.com/',
+        }, ctx());
 
-      expect(result.title, 'Error');
-      // The whole point: a provider error must NOT silently
-      // fall back to raw HTML. The error message is surfaced
-      // verbatim.
-      expect(result.output, 'TinyFish HTTP 503: rate limited');
-    });
+        expect(result.title, 'Error');
+        // The whole point: a provider error must NOT silently
+        // fall back to raw HTML. The error message is surfaced
+        // verbatim.
+        expect(result.output, 'TinyFish HTTP 503: rate limited');
+      },
+    );
 
-    test('upgrades http:// to https:// before calling the provider',
-        () async {
+    test('upgrades http:// to https:// before calling the provider', () async {
       final provider = _ScriptedFetchProvider(id: 'tinyfish');
       final tool = WebFetchTool(registry(provider));
 
@@ -290,10 +291,9 @@ void main() {
         // network. 127.0.0.1 on a closed port gives a quick
         // ECONNREFUSED.
         final tool = WebFetchTool(registry(null));
-        final result = await tool.execute(
-          {'url': 'http://127.0.0.1:1/never-listens'},
-          ctx(),
-        );
+        final result = await tool.execute({
+          'url': 'http://127.0.0.1:1/never-listens',
+        }, ctx());
         // We expect either a network error (preferred) or a
         // successful fetch. What we DON'T expect is the
         // "provider not configured" message — that's the
@@ -310,10 +310,10 @@ void main() {
 
     test('blocks cloud-metadata endpoint before any network I/O', () async {
       final tool = WebFetchTool(registry(null));
-      final result = await tool.execute(
-        {'url': 'http://169.254.169.254/latest/meta-data', 'format': 'raw'},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'url': 'http://169.254.169.254/latest/meta-data',
+        'format': 'raw',
+      }, ctx());
       expect(result.title, 'Error');
       expect(result.output, contains('SSRF protection'));
       expect(result.output, contains('169.254.0.0/16'));
@@ -321,10 +321,9 @@ void main() {
 
     test('blocks metadata endpoint on the https path too', () async {
       final tool = WebFetchTool(registry(null));
-      final result = await tool.execute(
-        {'url': 'https://169.254.169.254/'},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'url': 'https://169.254.169.254/',
+      }, ctx());
       expect(result.title, 'Error');
       expect(result.output, contains('SSRF protection'));
     });
@@ -337,10 +336,9 @@ void main() {
     test('loopback URL bypasses the configured provider', () async {
       final provider = _ScriptedFetchProvider(id: 'tinyfish');
       final tool = WebFetchTool(registry(provider));
-      final result = await tool.execute(
-        {'url': 'http://127.0.0.1:1/never-listens'},
-        ctx(),
-      );
+      final result = await tool.execute({
+        'url': 'http://127.0.0.1:1/never-listens',
+      }, ctx());
       expect(provider.calls, isEmpty);
       // Local raw fetch was attempted and failed fast on the
       // closed port — a network error, not a provider result.
@@ -353,10 +351,10 @@ void main() {
       final tool = WebFetchTool(registry(provider));
       // unroutable test-net-ish private address on a closed port;
       // we only assert the provider was NOT consulted.
-      await tool.execute(
-        {'url': 'http://192.168.0.1:1/never-listens', 'timeout': 2},
-        ctx(),
-      );
+      await tool.execute({
+        'url': 'http://192.168.0.1:1/never-listens',
+        'timeout': 2,
+      }, ctx());
       expect(provider.calls, isEmpty);
     });
 

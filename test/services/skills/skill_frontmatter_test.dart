@@ -13,7 +13,8 @@ void main() {
   group('parseSkillContent — happy path', () {
     test('parses a minimal valid skill', () {
       final result = parseSkillContent(
-        content: '---\n'
+        content:
+            '---\n'
             'name: pr-review\n'
             'description: Reviews pull requests for correctness, style, and risks.\n'
             '---\n'
@@ -39,7 +40,8 @@ void main() {
     });
 
     test('preserves body content verbatim, only stripping the frontmatter', () {
-      final body = '# Title\n'
+      final body =
+          '# Title\n'
           '\n'
           '## Use this skill when\n'
           '- bullet 1\n'
@@ -126,7 +128,8 @@ void main() {
 
     test('rejects a name with a leading hyphen', () {
       final result = parseSkillContent(
-        content: '---\nname: -pr-review\ndescription: Bad leading hyphen.\n---\n',
+        content:
+            '---\nname: -pr-review\ndescription: Bad leading hyphen.\n---\n',
         location: '/x/-pr-review/SKILL.md',
         baseDirectory: '/x/-pr-review',
         folderName: '-pr-review',
@@ -137,7 +140,8 @@ void main() {
 
     test('rejects a name with consecutive hyphens', () {
       final result = parseSkillContent(
-        content: '---\nname: pr--review\ndescription: Bad double hyphen.\n---\n',
+        content:
+            '---\nname: pr--review\ndescription: Bad double hyphen.\n---\n',
         location: '/x/pr--review/SKILL.md',
         baseDirectory: '/x/pr--review',
         folderName: 'pr--review',
@@ -242,7 +246,8 @@ void main() {
       // Per the open standard + our spec, unknown fields are
       // silently ignored — strict on shape, lenient on noise.
       final result = parseSkillContent(
-        content: '---\n'
+        content:
+            '---\n'
             'name: foo\n'
             'description: A foo skill.\n'
             'license: MIT\n'

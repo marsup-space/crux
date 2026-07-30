@@ -1,5 +1,6 @@
 import 'package:crux/src/components/version_badge.dart';
 import 'package:crux/src/theme/crux_theme.dart';
+import 'package:crux/src/version.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
 
@@ -27,10 +28,10 @@ void main() {
         print(tester.renderToString());
 
         // Badge is visible, with jit suffix under the test runner.
-        expect(tester.terminalState, containsText('v0.22.0 jit'));
+        expect(tester.terminalState, containsText('v$kCruxVersion jit'));
 
         // Right-aligned on the top row.
-        final matches = tester.terminalState.findText('v0.22.0 jit');
+        final matches = tester.terminalState.findText('v$kCruxVersion jit');
         expect(matches, hasLength(1));
         expect(matches.first.y, 0);
 

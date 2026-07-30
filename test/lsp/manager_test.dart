@@ -24,8 +24,7 @@ class _FakeProcess implements Process {
   @override
   Stream<List<int>> get stdout => _stdoutController.stream;
   @override
-  Stream<List<int>> get stderr =>
-      const Stream<List<int>>.empty();
+  Stream<List<int>> get stderr => const Stream<List<int>>.empty();
   @override
   IOSink get stdin => _FakeSink(_stdinController);
   @override
@@ -49,9 +48,10 @@ class _FakeProcess implements Process {
         final h = buf.toString().indexOf('\r\n\r\n');
         if (h < 0) return;
         final headers = buf.toString().substring(0, h);
-        final m = RegExp(r'Content-Length:\s*(\d+)',
-                caseSensitive: false)
-            .firstMatch(headers);
+        final m = RegExp(
+          r'Content-Length:\s*(\d+)',
+          caseSensitive: false,
+        ).firstMatch(headers);
         if (m == null) return;
         final length = int.parse(m.group(1)!);
         final bodyStart = h + 4;
@@ -60,7 +60,9 @@ class _FakeProcess implements Process {
         if (all.length < bodyEnd) return;
         final body = all.substring(bodyStart, bodyEnd);
         final leftover = all.substring(bodyEnd);
-        buf..clear()..write(leftover);
+        buf
+          ..clear()
+          ..write(leftover);
         _dispatch(body);
       }
     });
@@ -171,8 +173,7 @@ void main() {
     if (tmpDir.existsSync()) await tmpDir.delete(recursive: true);
   });
 
-  test('touchFileAndWait returns diagnostics pushed by the server',
-      () async {
+  test('touchFileAndWait returns diagnostics pushed by the server', () async {
     final file = File(p.join(tmpDir.path, 'a.test'))..writeAsStringSync('hi');
     final manager = await LspManager.create(
       workingDirectory: tmpDir.path,
@@ -214,31 +215,29 @@ void main() {
     await manager.shutdown();
   });
 
-  test('returns empty list when file is outside the working directory',
-      () async {
-    final other = await Directory.systemTemp.createTemp('outside_');
-    final file = File(p.join(other.path, 'a.test'))
-      ..writeAsStringSync('hi');
-    final manager = await LspManager.create(
-      workingDirectory: tmpDir.path,
-      actorFactories: {'test': _TestActor.new},
-    );
+  test(
+    'returns empty list when file is outside the working directory',
+    () async {
+      final other = await Directory.systemTemp.createTemp('outside_');
+      final file = File(p.join(other.path, 'a.test'))..writeAsStringSync('hi');
+      final manager = await LspManager.create(
+        workingDirectory: tmpDir.path,
+        actorFactories: {'test': _TestActor.new},
+      );
 
-    final result = await manager.touchFileAndWait(file.path);
-    expect(result, isEmpty);
+      final result = await manager.touchFileAndWait(file.path);
+      expect(result, isEmpty);
 
-    await other.delete(recursive: true);
-    await manager.shutdown();
-  });
+      await other.delete(recursive: true);
+      await manager.shutdown();
+    },
+  );
 
   test('marks a server as broken after a failed start', () async {
-    final file = File(p.join(tmpDir.path, 'a.test'))
-      ..writeAsStringSync('hi');
+    final file = File(p.join(tmpDir.path, 'a.test'))..writeAsStringSync('hi');
     final manager = await LspManager.create(
       workingDirectory: tmpDir.path,
-      actorFactories: {
-        'fail': _FailingForManagerActor.new,
-      },
+      actorFactories: {'fail': _FailingForManagerActor.new},
     );
     // First call should not hang.
     final result = await manager

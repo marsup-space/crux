@@ -272,9 +272,7 @@ class FileSearcher {
     // Initials for the whole path. Tokenizes across `/`
     // boundaries so e.g. `lib/src/file_searcher.dart` →
     // `lsfsd`. Used by the path-initials tiers in [_score].
-    _initials = List<String>.unmodifiable(
-      paths.map(_initialsForPath).toList(),
-    );
+    _initials = List<String>.unmodifiable(paths.map(_initialsForPath).toList());
     _localIndexEpoch++;
   }
 

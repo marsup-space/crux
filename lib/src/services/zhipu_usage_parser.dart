@@ -169,7 +169,8 @@ Map<String, dynamic>? _findRow(
   required int unit,
 }) {
   for (final r in rows) {
-    if (r['type']?.toString() == type && r['unit'] is num &&
+    if (r['type']?.toString() == type &&
+        r['unit'] is num &&
         (r['unit'] as num).toInt() == unit) {
       return r;
     }
@@ -227,8 +228,5 @@ class _ZhipuUsageSnapshot {
   final int remainingPct;
   final Duration? resetIn;
 
-  const _ZhipuUsageSnapshot({
-    this.remainingPct = 0,
-    this.resetIn,
-  });
+  const _ZhipuUsageSnapshot({this.remainingPct = 0, this.resetIn});
 }

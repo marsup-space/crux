@@ -10,20 +10,14 @@ void main() {
       final m = AnimatedToolMetrics();
       m.setTarget(tokens: 12, addedLines: 5, removedLines: 3);
 
-      expect(
-        m.setTarget(tokens: 12, addedLines: 5, removedLines: 3),
-        isFalse,
-      );
+      expect(m.setTarget(tokens: 12, addedLines: 5, removedLines: 3), isFalse);
     });
 
     test('setTarget returns true when any value changes', () {
       final m = AnimatedToolMetrics();
       m.setTarget(tokens: 12, addedLines: 5, removedLines: 3);
 
-      expect(
-        m.setTarget(tokens: 13, addedLines: 5, removedLines: 3),
-        isTrue,
-      );
+      expect(m.setTarget(tokens: 13, addedLines: 5, removedLines: 3), isTrue);
     });
 
     test('advance moves the display toward the target', () {
@@ -99,7 +93,8 @@ void main() {
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',
-        'content': 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
+        'content':
+            'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
       };
 
       final delta = tool.toolMetricsLineDelta(args, result);
@@ -112,7 +107,8 @@ void main() {
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',
-        'content': 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
+        'content':
+            'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
       };
 
       final delta = tool.toolMetricsLineDelta(args, result);
@@ -125,7 +121,8 @@ void main() {
     final tool = EditTool();
 
     test('single replacement: +added -removed', () {
-      const output = 'Replaced 1 occurrence of oldString in lib/foo.dart (+2 -3 lines, 0.1KB)';
+      const output =
+          'Replaced 1 occurrence of oldString in lib/foo.dart (+2 -3 lines, 0.1KB)';
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',
@@ -139,7 +136,8 @@ void main() {
     });
 
     test('replaceAll: multiplied by the actual occurrence count', () {
-      const output = 'Replaced 4 occurrences of oldString in lib/foo.dart (+8 -12 lines, 0.1KB)';
+      const output =
+          'Replaced 4 occurrences of oldString in lib/foo.dart (+8 -12 lines, 0.1KB)';
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',

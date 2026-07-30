@@ -71,10 +71,7 @@ void main() {
       expect(usage.providerName, 'minimax');
       expect(usage.intervalRemainingPct, 98);
       expect(usage.weeklyRemainingPct, 73);
-      expect(
-        DateTime.now().difference(usage.fetchedAt).inSeconds,
-        lessThan(5),
-      );
+      expect(DateTime.now().difference(usage.fetchedAt).inSeconds, lessThan(5));
     });
 
     test('falls back to the first row when preferredModelName is absent', () {
@@ -247,10 +244,8 @@ void main() {
 
     test('throws when the response is not a JSON object', () {
       expect(
-        () => parseCodingPlanUsageResponse(
-          '[1, 2, 3]',
-          providerName: 'minimax',
-        ),
+        () =>
+            parseCodingPlanUsageResponse('[1, 2, 3]', providerName: 'minimax'),
         throwsA(isA<CodingPlanUsageError>()),
       );
     });
@@ -286,10 +281,7 @@ void main() {
 }
 ''';
       expect(
-        () => parseCodingPlanUsageResponse(
-          body,
-          providerName: 'minimax',
-        ),
+        () => parseCodingPlanUsageResponse(body, providerName: 'minimax'),
         throwsA(isA<CodingPlanUsageError>()),
       );
     });
@@ -411,8 +403,7 @@ void main() {
       expect(formatted.length, greaterThan(5));
     });
 
-    test('color t at t=0 is 0 (full flash), at t=1 is 1 (full normal)',
-        () {
+    test('color t at t=0 is 0 (full flash), at t=1 is 1 (full normal)', () {
       // colorT = 1 - (1 - t)^3 — cubic ease-out.
       double colorT(double t) => 1.0 - math.pow(1.0 - t, 3).toDouble();
       expect(colorT(0.0), 0.0);
@@ -607,9 +598,8 @@ void main() {
       // No clamp at 100% — degenerate "remainingTime >
       // totalWindow" cases (which the API shouldn't
       // produce, but might) correctly trend toward scarce.
-      final timeRemainingPct = (timeRemainingMs /
-              totalWindow.inMilliseconds *
-              100);
+      final timeRemainingPct =
+          (timeRemainingMs / totalWindow.inMilliseconds * 100);
       if (timeRemainingPct <= 0) return 0.0;
       return remainingPct / timeRemainingPct;
     }
@@ -635,8 +625,7 @@ void main() {
       expect(ratioColor(theme, r), theme.warning);
     });
 
-    test('50% remaining at 50% time left → middleground (ratio = 1.0)',
-        () {
+    test('50% remaining at 50% time left → middleground (ratio = 1.0)', () {
       // The user-defined on-pace case: 50% left, 50%
       // remaining time → exactly 1.0 → middleground
       // (idle).
@@ -766,8 +755,7 @@ void main() {
     // and we want the test to fail loudly if the rule
     // changes.
     bool hasCountdownData(CodingPlanUsage usage) {
-      return usage.intervalRemains != null ||
-          usage.weeklyRemains != null;
+      return usage.intervalRemains != null || usage.weeklyRemains != null;
     }
 
     CodingPlanUsage usageWith({
@@ -790,16 +778,20 @@ void main() {
       final u = usageWith(
         intervalRemains: const Duration(hours: 4, minutes: 32),
       );
-      expect(hasCountdownData(u), isTrue,
-          reason: '5h cell has countdown data — must tick');
+      expect(
+        hasCountdownData(u),
+        isTrue,
+        reason: '5h cell has countdown data — must tick',
+      );
     });
 
     test('ticks when only the 1w cell has countdown data', () {
-      final u = usageWith(
-        weeklyRemains: const Duration(days: 6, hours: 4),
+      final u = usageWith(weeklyRemains: const Duration(days: 6, hours: 4));
+      expect(
+        hasCountdownData(u),
+        isTrue,
+        reason: 'weekly cell has countdown data — must tick',
       );
-      expect(hasCountdownData(u), isTrue,
-          reason: 'weekly cell has countdown data — must tick');
     });
 
     test('ticks when both cells have countdown data', () {
@@ -810,23 +802,26 @@ void main() {
       expect(hasCountdownData(u), isTrue);
     });
 
-    test('ticks for sub-minute remaining (the previous "seconds visible" case)',
-        () {
-      // 45s remaining would have shown as "45s" under
-      // the old rule; it still has data, so the new
-      // rule also ticks. This test is here to make
-      // sure we didn't accidentally regress the
-      // sub-minute case.
-      final u = usageWith(
-        intervalRemains: const Duration(seconds: 45),
-      );
-      expect(hasCountdownData(u), isTrue);
-    });
+    test(
+      'ticks for sub-minute remaining (the previous "seconds visible" case)',
+      () {
+        // 45s remaining would have shown as "45s" under
+        // the old rule; it still has data, so the new
+        // rule also ticks. This test is here to make
+        // sure we didn't accidentally regress the
+        // sub-minute case.
+        final u = usageWith(intervalRemains: const Duration(seconds: 45));
+        expect(hasCountdownData(u), isTrue);
+      },
+    );
 
     test('does not tick when both countdowns are null', () {
       final u = usageWith();
-      expect(hasCountdownData(u), isFalse,
-          reason: 'no countdown data from the API');
+      expect(
+        hasCountdownData(u),
+        isFalse,
+        reason: 'no countdown data from the API',
+      );
     });
   });
 
@@ -841,8 +836,7 @@ void main() {
     Duration? effectiveIntervalRemains(CodingPlanUsage usage) {
       final r = usage.intervalRemains;
       if (r == null) return null;
-      final effective =
-          r - DateTime.now().difference(usage.fetchedAt);
+      final effective = r - DateTime.now().difference(usage.fetchedAt);
       return effective.isNegative ? Duration.zero : effective;
     }
 
@@ -944,10 +938,7 @@ void main() {
         formatCodingPlanRemains(const Duration(milliseconds: -100)),
         '<1s',
       );
-      expect(
-        formatCodingPlanRemains(const Duration(milliseconds: 500)),
-        '<1s',
-      );
+      expect(formatCodingPlanRemains(const Duration(milliseconds: 500)), '<1s');
     });
 
     test('drops trailing zero components', () {
@@ -1003,13 +994,11 @@ void main() {
       return m == null ? null : int.parse(m.group(1)!);
     }
 
-    test('ticks the displayed countdown when hovering with sub-minute remaining',
-        () async {
-      await testNocterm(
-        'coding-plan hover countdown ticks',
-        (tester) async {
-          final controller =
-              StreamController<CodingPlanUsage>.broadcast();
+    test(
+      'ticks the displayed countdown when hovering with sub-minute remaining',
+      () async {
+        await testNocterm('coding-plan hover countdown ticks', (tester) async {
+          final controller = StreamController<CodingPlanUsage>.broadcast();
           addTearDown(controller.close);
 
           var refreshCount = 0;
@@ -1041,11 +1030,16 @@ void main() {
           // Initial hover frame shows the raw snapshot
           // value (ticker hasn't fired yet).
           final initial = extractSeconds(readRow0(tester));
-          expect(initial, isNotNull,
-              reason: 'initial hover frame should show seconds');
-          expect(initial, greaterThanOrEqualTo(29),
-              reason:
-                  'initial countdown should be at or just below 30s');
+          expect(
+            initial,
+            isNotNull,
+            reason: 'initial hover frame should show seconds',
+          );
+          expect(
+            initial,
+            greaterThanOrEqualTo(29),
+            reason: 'initial countdown should be at or just below 30s',
+          );
 
           // Pump ~1 second of wall clock and verify
           // the displayed countdown has dropped by
@@ -1061,13 +1055,15 @@ void main() {
           expect(
             initial! - after1!,
             greaterThanOrEqualTo(1),
-            reason: 'countdown must drop by at least 1s after 1.1s '
+            reason:
+                'countdown must drop by at least 1s after 1.1s '
                 'of hover (got ${initial}s → ${after1}s)',
           );
           expect(
             initial - after1,
             lessThanOrEqualTo(3),
-            reason: 'countdown must not drop more than 3s in 1.1s '
+            reason:
+                'countdown must not drop more than 3s in 1.1s '
                 'of wall clock (got ${initial}s → ${after1}s)',
           );
 
@@ -1079,70 +1075,78 @@ void main() {
           expect(
             after1 - after2!,
             greaterThanOrEqualTo(1),
-            reason: 'countdown must keep dropping (got '
+            reason:
+                'countdown must keep dropping (got '
                 '${after1}s → ${after2}s after another 1.1s)',
           );
-        },
-        size: const Size(30, 1),
-      );
-    });
+        }, size: const Size(30, 1));
+      },
+    );
 
-    test('does not tick when both countdowns are null (no data from API)',
-        () async {
-      // The ticker is gated on `_hasCountdownData` —
-      // if the API didn't supply a countdown for
-      // either window, there's nothing to tick down.
-      // The display falls back to the raw percentage
-      // (hover path uses `format*Remains()` which
-      // returns null in this case, so we see the
-      // percentage instead).
-      await testNocterm(
-        'coding-plan hover with no countdown data does not tick',
-        (tester) async {
-          final controller =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controller.close);
+    test(
+      'does not tick when both countdowns are null (no data from API)',
+      () async {
+        // The ticker is gated on `_hasCountdownData` —
+        // if the API didn't supply a countdown for
+        // either window, there's nothing to tick down.
+        // The display falls back to the raw percentage
+        // (hover path uses `format*Remains()` which
+        // returns null in this case, so we see the
+        // percentage instead).
+        await testNocterm(
+          'coding-plan hover with no countdown data does not tick',
+          (tester) async {
+            final controller = StreamController<CodingPlanUsage>.broadcast();
+            addTearDown(controller.close);
 
-          var refreshCount = 0;
-          await tester.pumpComponent(
-            CodingPlanUsageDisplay(
-              stream: controller.stream,
-              initialUsage: CodingPlanUsage(
-                providerName: 'minimax',
-                modelName: 'general',
-                intervalRemainingPct: 50,
-                weeklyRemainingPct: 50,
-                fetchedAt: DateTime.now(),
-                // No countdown data: both `intervalRemains`
-                // and `weeklyRemains` left null.
+            var refreshCount = 0;
+            await tester.pumpComponent(
+              CodingPlanUsageDisplay(
+                stream: controller.stream,
+                initialUsage: CodingPlanUsage(
+                  providerName: 'minimax',
+                  modelName: 'general',
+                  intervalRemainingPct: 50,
+                  weeklyRemainingPct: 50,
+                  fetchedAt: DateTime.now(),
+                  // No countdown data: both `intervalRemains`
+                  // and `weeklyRemains` left null.
+                ),
+                onTap: () => refreshCount++,
               ),
-              onTap: () => refreshCount++,
-            ),
-          );
+            );
 
-          await tester.hover(5, 0);
-          await tester.pump();
+            await tester.hover(5, 0);
+            await tester.pump();
 
-          // Display shows the raw percentage as the
-          // hover fallback. We use the interval cell's
-          // "50.0%" form (1-decimal precision) to
-          // assert the cell is rendering.
-          expect(readRow0(tester), contains('50.0%'));
+            // Display shows the raw percentage as the
+            // hover fallback. We use the interval cell's
+            // "50.0%" form (1-decimal precision) to
+            // assert the cell is rendering.
+            expect(readRow0(tester), contains('50.0%'));
 
-          // Pump several seconds — without countdown
-          // data, the ticker must stay off, so the
-          // display remains the percentage and no
-          // refresh fires.
-          await tester.pump(const Duration(seconds: 3));
-          expect(readRow0(tester), contains('50.0%'),
-              reason: 'no countdown data → no ticking → display stable');
-          expect(refreshCount, 0,
-              reason: 'no refresh should fire when there is no '
-                  'countdown to tick down to zero');
-        },
-        size: const Size(30, 1),
-      );
-    });
+            // Pump several seconds — without countdown
+            // data, the ticker must stay off, so the
+            // display remains the percentage and no
+            // refresh fires.
+            await tester.pump(const Duration(seconds: 3));
+            expect(
+              readRow0(tester),
+              contains('50.0%'),
+              reason: 'no countdown data → no ticking → display stable',
+            );
+            expect(
+              refreshCount,
+              0,
+              reason:
+                  'no refresh should fire when there is no '
+                  'countdown to tick down to zero',
+            );
+          },
+          size: const Size(30, 1),
+        );
+      },
+    );
 
     test('ticks for > 1 minute remaining (not just sub-minute)', () async {
       // The "ticks at all magnitudes" half of the new
@@ -1158,8 +1162,7 @@ void main() {
       await testNocterm(
         'coding-plan hover ticks above the 1-minute threshold',
         (tester) async {
-          final controller =
-              StreamController<CodingPlanUsage>.broadcast();
+          final controller = StreamController<CodingPlanUsage>.broadcast();
           addTearDown(controller.close);
 
           var refreshCount = 0;
@@ -1204,14 +1207,18 @@ void main() {
           expect(
             initial.contains('4h 32m') || initial.contains('4h 31m'),
             isTrue,
-            reason: 'countdown must be in the 4h 32m → 4h 31m minute '
+            reason:
+                'countdown must be in the 4h 32m → 4h 31m minute '
                 'bucket (the ticker is anchored and decrementing); '
                 'got "$initial"',
           );
           // No refresh in 2 seconds — way above zero.
           await tester.pump(const Duration(seconds: 2));
-          expect(refreshCount, 0,
-              reason: '4h 32m has ~16k seconds left; no refresh yet');
+          expect(
+            refreshCount,
+            0,
+            reason: '4h 32m has ~16k seconds left; no refresh yet',
+          );
         },
         size: const Size(30, 1),
       );
@@ -1225,61 +1232,66 @@ void main() {
       // hover phase and we can clearly distinguish
       // "ticker ran" from "ticker was off the whole
       // time" by looking at the post-exit display.
-      await testNocterm(
-        'coding-plan hover countdown stops on exit',
-        (tester) async {
-          final controller =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controller.close);
+      await testNocterm('coding-plan hover countdown stops on exit', (
+        tester,
+      ) async {
+        final controller = StreamController<CodingPlanUsage>.broadcast();
+        addTearDown(controller.close);
 
-          var refreshCount = 0;
-          await tester.pumpComponent(
-            CodingPlanUsageDisplay(
-              stream: controller.stream,
-              initialUsage: CodingPlanUsage(
-                providerName: 'minimax',
-                modelName: 'general',
-                intervalRemainingPct: 50,
-                weeklyRemainingPct: 50,
-                fetchedAt: DateTime.now(),
-                intervalRemains: const Duration(seconds: 5),
-              ),
-              onTap: () => refreshCount++,
+        var refreshCount = 0;
+        await tester.pumpComponent(
+          CodingPlanUsageDisplay(
+            stream: controller.stream,
+            initialUsage: CodingPlanUsage(
+              providerName: 'minimax',
+              modelName: 'general',
+              intervalRemainingPct: 50,
+              weeklyRemainingPct: 50,
+              fetchedAt: DateTime.now(),
+              intervalRemains: const Duration(seconds: 5),
             ),
-          );
+            onTap: () => refreshCount++,
+          ),
+        );
 
-          await tester.hover(5, 0);
-          await tester.pump();
+        await tester.hover(5, 0);
+        await tester.pump();
 
-          // Pump 1 second while hovering — the ticker
-          // should be actively decrementing. 5s of
-          // wall clock minus 1s = 4s remaining, give
-          // or take a tick. Whatever the exact value,
-          // it should NOT be the original 5s.
-          await tester.pump(const Duration(milliseconds: 1100));
-          final midHover = readRow0(tester);
-          expect(midHover, isNot(contains('5s')),
-              reason: 'ticker must have decremented the value '
-                  'during hover (got "$midHover")');
+        // Pump 1 second while hovering — the ticker
+        // should be actively decrementing. 5s of
+        // wall clock minus 1s = 4s remaining, give
+        // or take a tick. Whatever the exact value,
+        // it should NOT be the original 5s.
+        await tester.pump(const Duration(milliseconds: 1100));
+        final midHover = readRow0(tester);
+        expect(
+          midHover,
+          isNot(contains('5s')),
+          reason:
+              'ticker must have decremented the value '
+              'during hover (got "$midHover")',
+        );
 
-          // Exit hover by moving the mouse to a row
-          // outside the widget. The widget spans row
-          // 0 only, so y=1 fires the MouseRegion's
-          // onExit and the ticker is cancelled.
-          await tester.hover(5, 1);
-          await tester.pump();
+        // Exit hover by moving the mouse to a row
+        // outside the widget. The widget spans row
+        // 0 only, so y=1 fires the MouseRegion's
+        // onExit and the ticker is cancelled.
+        await tester.hover(5, 1);
+        await tester.pump();
 
-          // Capture the post-exit display value, then
-          // pump wall clock again. With the ticker
-          // cancelled, the display must stay stable.
-          final postExit = readRow0(tester);
-          await tester.pump(const Duration(milliseconds: 1100));
-          expect(readRow0(tester), equals(postExit),
-              reason: 'after hover-exit the display must be frozen — '
-                  'the ticker should no longer decrement it');
-        },
-        size: const Size(30, 1),
-      );
+        // Capture the post-exit display value, then
+        // pump wall clock again. With the ticker
+        // cancelled, the display must stay stable.
+        final postExit = readRow0(tester);
+        await tester.pump(const Duration(milliseconds: 1100));
+        expect(
+          readRow0(tester),
+          equals(postExit),
+          reason:
+              'after hover-exit the display must be frozen — '
+              'the ticker should no longer decrement it',
+        );
+      }, size: const Size(30, 1));
     });
 
     test('triggers refresh when the countdown reaches zero', () async {
@@ -1288,46 +1300,46 @@ void main() {
       // it invokes [CodingPlanUsageDisplay.onTap]
       // (the same path a manual click takes). We use
       // a 2-second countdown so the test is fast.
-      await testNocterm(
-        'coding-plan hover countdown fires refresh at zero',
-        (tester) async {
-          final controller =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controller.close);
+      await testNocterm('coding-plan hover countdown fires refresh at zero', (
+        tester,
+      ) async {
+        final controller = StreamController<CodingPlanUsage>.broadcast();
+        addTearDown(controller.close);
 
-          var refreshCount = 0;
-          await tester.pumpComponent(
-            CodingPlanUsageDisplay(
-              stream: controller.stream,
-              initialUsage: CodingPlanUsage(
-                providerName: 'minimax',
-                modelName: 'general',
-                intervalRemainingPct: 50,
-                weeklyRemainingPct: 50,
-                fetchedAt: DateTime.now(),
-                intervalRemains: const Duration(seconds: 2),
-              ),
-              onTap: () => refreshCount++,
+        var refreshCount = 0;
+        await tester.pumpComponent(
+          CodingPlanUsageDisplay(
+            stream: controller.stream,
+            initialUsage: CodingPlanUsage(
+              providerName: 'minimax',
+              modelName: 'general',
+              intervalRemainingPct: 50,
+              weeklyRemainingPct: 50,
+              fetchedAt: DateTime.now(),
+              intervalRemains: const Duration(seconds: 2),
             ),
-          );
+            onTap: () => refreshCount++,
+          ),
+        );
 
-          await tester.hover(5, 0);
-          await tester.pump();
+        await tester.hover(5, 0);
+        await tester.pump();
 
-          // Pump 3 seconds — enough for the 2-second
-          // countdown to hit zero (well below the
-          // 3-second threshold for "no refresh when
-          // not yet zero").
-          await tester.pump(const Duration(seconds: 3));
-          await tester.pump();
+        // Pump 3 seconds — enough for the 2-second
+        // countdown to hit zero (well below the
+        // 3-second threshold for "no refresh when
+        // not yet zero").
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pump();
 
-          expect(refreshCount, greaterThanOrEqualTo(1),
-              reason:
-                  'countdown reaching zero must trigger the refresh '
-                  'path (onTap)');
-        },
-        size: const Size(30, 1),
-      );
+        expect(
+          refreshCount,
+          greaterThanOrEqualTo(1),
+          reason:
+              'countdown reaching zero must trigger the refresh '
+              'path (onTap)',
+        );
+      }, size: const Size(30, 1));
     });
   });
 
@@ -1390,324 +1402,335 @@ void main() {
     }
 
     test('snaps to the new provider value without lerp or flash', () async {
-      await testNocterm(
-        'coding-plan display snaps on stream switch',
-        (tester) async {
-          // --- Provider A: sets up a running animation ----
-          final controllerA =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerA.close);
+      await testNocterm('coding-plan display snaps on stream switch', (
+        tester,
+      ) async {
+        // --- Provider A: sets up a running animation ----
+        final controllerA = StreamController<CodingPlanUsage>.broadcast();
+        addTearDown(controllerA.close);
 
-          // Provider B's stream + initial value. We construct
-          // them up front so the rebuild closure can capture
-          // them by reference.
-          final controllerB =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerB.close);
+        // Provider B's stream + initial value. We construct
+        // them up front so the rebuild closure can capture
+        // them by reference.
+        final controllerB = StreamController<CodingPlanUsage>.broadcast();
+        addTearDown(controllerB.close);
 
-          // Mutable "current stream + initial" that the
-          // _RebuildOnDemand closure reads. Initially we're
-          // on provider A.
-          var activeStream = controllerA.stream;
-          var activeInitial = CodingPlanUsage(
-            providerName: 'a',
-            modelName: 'general',
-            intervalRemainingPct: 98,
-            weeklyRemainingPct: 73,
-            fetchedAt: DateTime.now(),
-          );
-          late void Function() switchToProviderB;
+        // Mutable "current stream + initial" that the
+        // _RebuildOnDemand closure reads. Initially we're
+        // on provider A.
+        var activeStream = controllerA.stream;
+        var activeInitial = CodingPlanUsage(
+          providerName: 'a',
+          modelName: 'general',
+          intervalRemainingPct: 98,
+          weeklyRemainingPct: 73,
+          fetchedAt: DateTime.now(),
+        );
+        late void Function() switchToProviderB;
 
-          await tester.pumpComponent(
-            _RebuildOnDemand(
-              builder: (context, setState) {
-                switchToProviderB = () {
-                  setState(() {
-                    activeStream = controllerB.stream;
-                    activeInitial = CodingPlanUsage(
-                      providerName: 'b',
-                      modelName: 'general',
-                      // Wildly different values so a lerp from
-                      // A would be obvious if it leaked.
-                      intervalRemainingPct: 50,
-                      weeklyRemainingPct: 40,
-                      fetchedAt: DateTime.now(),
-                    );
-                  });
-                };
-                return CodingPlanUsageDisplay(
-                  stream: activeStream,
-                  initialUsage: activeInitial,
-                );
-              },
-            ),
-          );
+        await tester.pumpComponent(
+          _RebuildOnDemand(
+            builder: (context, setState) {
+              switchToProviderB = () {
+                setState(() {
+                  activeStream = controllerB.stream;
+                  activeInitial = CodingPlanUsage(
+                    providerName: 'b',
+                    modelName: 'general',
+                    // Wildly different values so a lerp from
+                    // A would be obvious if it leaked.
+                    intervalRemainingPct: 50,
+                    weeklyRemainingPct: 40,
+                    fetchedAt: DateTime.now(),
+                  );
+                });
+              };
+              return CodingPlanUsageDisplay(
+                stream: activeStream,
+                initialUsage: activeInitial,
+              );
+            },
+          ),
+        );
 
-          // Provider A polls a decrement — kicks off the
-          // 3-second lerp animation with a red flash.
-          controllerA.add(CodingPlanUsage(
+        // Provider A polls a decrement — kicks off the
+        // 3-second lerp animation with a red flash.
+        controllerA.add(
+          CodingPlanUsage(
             providerName: 'a',
             modelName: 'general',
             intervalRemainingPct: 95,
             weeklyRemainingPct: 70,
             fetchedAt: DateTime.now(),
-          ));
-          await tester.pump();
+          ),
+        );
+        await tester.pump();
 
-          // Sanity: we're mid-animation, so the cell shows
-          // a lerp value somewhere between 98 and 95 (not
-          // the settled integer). The flash colour is red
-          // (decrement).
-          final midAnimText = readRow0(tester);
-          expect(midAnimText, contains('5h 9'));
-          // The animation start flash is red — pick it up
-          // so we know the colour-assertion path below is
-          // actually checking something meaningful.
-          final flashColor = intervalCellColor(tester);
-          expect(flashColor, isNotNull,
-              reason: 'mid-animation cell must have a colour');
+        // Sanity: we're mid-animation, so the cell shows
+        // a lerp value somewhere between 98 and 95 (not
+        // the settled integer). The flash colour is red
+        // (decrement).
+        final midAnimText = readRow0(tester);
+        expect(midAnimText, contains('5h 9'));
+        // The animation start flash is red — pick it up
+        // so we know the colour-assertion path below is
+        // actually checking something meaningful.
+        final flashColor = intervalCellColor(tester);
+        expect(
+          flashColor,
+          isNotNull,
+          reason: 'mid-animation cell must have a colour',
+        );
 
-          // --- Switch to provider B ----
-          switchToProviderB();
-          await tester.pump();
+        // --- Switch to provider B ----
+        switchToProviderB();
+        await tester.pump();
 
-          // The displayed value must be B's initial value
-          // (50.0% / 40.0%) — NOT a lerp from A's 95%/70%
-          // and NOT still showing A's mid-animation frame.
-          final switchedText = readRow0(tester);
-          expect(
-            switchedText,
-            contains('5h 50.0%'),
-            reason: 'stream switch must snap to the new value, not lerp',
-          );
-          expect(
-            switchedText,
-            contains('1w 40.0%'),
-            reason: 'weekly cell also snaps to the new value',
-          );
+        // The displayed value must be B's initial value
+        // (50.0% / 40.0%) — NOT a lerp from A's 95%/70%
+        // and NOT still showing A's mid-animation frame.
+        final switchedText = readRow0(tester);
+        expect(
+          switchedText,
+          contains('5h 50.0%'),
+          reason: 'stream switch must snap to the new value, not lerp',
+        );
+        expect(
+          switchedText,
+          contains('1w 40.0%'),
+          reason: 'weekly cell also snaps to the new value',
+        );
 
-          // And the cell colour is NOT a flash colour. We
-          // can't read the theme from the test directly,
-          // but we CAN assert the colour is different from
-          // the red flash we observed mid animation — a
-          // successful reset always repaints in the
-          // settled ratio colour.
-          final settledColor = intervalCellColor(tester);
-          expect(
-            settledColor,
-            isNot(equals(flashColor)),
-            reason: 'stream switch must clear the flash colour — the '
-                'cell should be in its settled ratio colour, not the '
-                'red/green animation flash',
-          );
+        // And the cell colour is NOT a flash colour. We
+        // can't read the theme from the test directly,
+        // but we CAN assert the colour is different from
+        // the red flash we observed mid animation — a
+        // successful reset always repaints in the
+        // settled ratio colour.
+        final settledColor = intervalCellColor(tester);
+        expect(
+          settledColor,
+          isNot(equals(flashColor)),
+          reason:
+              'stream switch must clear the flash colour — the '
+              'cell should be in its settled ratio colour, not the '
+              'red/green animation flash',
+        );
 
-          // --- The animation has stopped: pumping time
-          //     must NOT move the displayed value ----
-          await tester.pump(const Duration(seconds: 1));
-          expect(
-            readRow0(tester),
-            contains('5h 50.0%'),
-            reason: 'the previous animation must be cancelled — no '
-                'further lerping',
-          );
-        },
-        size: const Size(30, 1),
-      );
+        // --- The animation has stopped: pumping time
+        //     must NOT move the displayed value ----
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          readRow0(tester),
+          contains('5h 50.0%'),
+          reason:
+              'the previous animation must be cancelled — no '
+              'further lerping',
+        );
+      }, size: const Size(30, 1));
     });
 
-    test('after switch, normal deltas on the new stream still animate',
-        () async {
-      // The fix cancels the old provider's animation on
-      // switch, but it must NOT break the animation for
-      // the new provider. After switching, a delta on B's
-      // stream should still flash and lerp normally.
-      await testNocterm(
-        'coding-plan display animates new-provider deltas after switch',
-        (tester) async {
-          final controllerA =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerA.close);
-          final controllerB =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerB.close);
+    test(
+      'after switch, normal deltas on the new stream still animate',
+      () async {
+        // The fix cancels the old provider's animation on
+        // switch, but it must NOT break the animation for
+        // the new provider. After switching, a delta on B's
+        // stream should still flash and lerp normally.
+        await testNocterm(
+          'coding-plan display animates new-provider deltas after switch',
+          (tester) async {
+            final controllerA = StreamController<CodingPlanUsage>.broadcast();
+            addTearDown(controllerA.close);
+            final controllerB = StreamController<CodingPlanUsage>.broadcast();
+            addTearDown(controllerB.close);
 
-          var activeStream = controllerA.stream;
-          var activeInitial = CodingPlanUsage(
-            providerName: 'a',
-            modelName: 'general',
-            intervalRemainingPct: 90,
-            weeklyRemainingPct: 90,
-            fetchedAt: DateTime.now(),
-          );
-          late void Function() switchToProviderB;
+            var activeStream = controllerA.stream;
+            var activeInitial = CodingPlanUsage(
+              providerName: 'a',
+              modelName: 'general',
+              intervalRemainingPct: 90,
+              weeklyRemainingPct: 90,
+              fetchedAt: DateTime.now(),
+            );
+            late void Function() switchToProviderB;
 
-          await tester.pumpComponent(
-            _RebuildOnDemand(
-              builder: (context, setState) {
-                switchToProviderB = () {
-                  setState(() {
-                    activeStream = controllerB.stream;
-                    activeInitial = CodingPlanUsage(
-                      providerName: 'b',
-                      modelName: 'general',
-                      intervalRemainingPct: 80,
-                      weeklyRemainingPct: 80,
-                      fetchedAt: DateTime.now(),
-                    );
-                  });
-                };
-                return CodingPlanUsageDisplay(
-                  stream: activeStream,
-                  initialUsage: activeInitial,
-                );
-              },
-            ),
-          );
+            await tester.pumpComponent(
+              _RebuildOnDemand(
+                builder: (context, setState) {
+                  switchToProviderB = () {
+                    setState(() {
+                      activeStream = controllerB.stream;
+                      activeInitial = CodingPlanUsage(
+                        providerName: 'b',
+                        modelName: 'general',
+                        intervalRemainingPct: 80,
+                        weeklyRemainingPct: 80,
+                        fetchedAt: DateTime.now(),
+                      );
+                    });
+                  };
+                  return CodingPlanUsageDisplay(
+                    stream: activeStream,
+                    initialUsage: activeInitial,
+                  );
+                },
+              ),
+            );
 
-          // Switch to B. The cell snaps to 80/80 with no
-          // animation (asserted in the previous test).
-          switchToProviderB();
-          await tester.pump();
-          expect(readRow0(tester), contains('5h 80.0%'));
+            // Switch to B. The cell snaps to 80/80 with no
+            // animation (asserted in the previous test).
+            switchToProviderB();
+            await tester.pump();
+            expect(readRow0(tester), contains('5h 80.0%'));
 
-          // Now B polls a decrement. The widget should
-          // flash and lerp — this is a real within-provider
-          // delta and the animation is the right behaviour.
-          controllerB.add(CodingPlanUsage(
-            providerName: 'b',
-            modelName: 'general',
-            intervalRemainingPct: 77,
-            weeklyRemainingPct: 77,
-            fetchedAt: DateTime.now(),
-          ));
-          // Two pumps: the first lets the broadcast listener
-          // fire and the second lets the resulting setState
-          // dirty + the animation ticker's first tick land.
-          await tester.pump();
-          // Advance wall clock so the lerp has visibly moved.
-          // The animation runs over 3 seconds, so 300ms in is
-          // ~10% of the way (80 → 77 is a 3-unit delta, so
-          // the displayed value should be around 79.7%, which
-          // still contains '5h 7' as a prefix).
-          await tester.pump(const Duration(milliseconds: 300));
+            // Now B polls a decrement. The widget should
+            // flash and lerp — this is a real within-provider
+            // delta and the animation is the right behaviour.
+            controllerB.add(
+              CodingPlanUsage(
+                providerName: 'b',
+                modelName: 'general',
+                intervalRemainingPct: 77,
+                weeklyRemainingPct: 77,
+                fetchedAt: DateTime.now(),
+              ),
+            );
+            // Two pumps: the first lets the broadcast listener
+            // fire and the second lets the resulting setState
+            // dirty + the animation ticker's first tick land.
+            await tester.pump();
+            // Advance wall clock so the lerp has visibly moved.
+            // The animation runs over 3 seconds, so 300ms in is
+            // ~10% of the way (80 → 77 is a 3-unit delta, so
+            // the displayed value should be around 79.7%, which
+            // still contains '5h 7' as a prefix).
+            await tester.pump(const Duration(milliseconds: 300));
 
-          // The cell is now animating from 80 → 77. The
-          // displayed value is somewhere between them (lerp
-          // in flight). We don't assert an exact value, but
-          // the integer part must have dropped below 80 —
-          // i.e. the cell is no longer showing the settled
-          // 80.0% it had immediately after the switch.
-          final midText = readRow0(tester);
-          expect(
-            midText,
-            isNot(contains('5h 80.0%')),
-            reason: 'B-stream decrement must start a lerp away from '
-                'the post-switch 80.0% baseline',
-          );
-          expect(
-            midText,
-            contains('5h 7'),
-            reason: 'mid-animation value should read "5h 79.x%" or '
-                'similar — a 5h-cell value starting with 7',
-          );
-          // Definitely not yet at the final 77.0% — if it
-          // were, the animation didn't run.
-          expect(
-            midText,
-            isNot(contains('5h 77.0%')),
-            reason: 'mid-animation value must still be on the way '
-                'down from 80 (not yet at the settled 77%)',
-          );
-        },
-        size: const Size(30, 1),
-      );
-    });
+            // The cell is now animating from 80 → 77. The
+            // displayed value is somewhere between them (lerp
+            // in flight). We don't assert an exact value, but
+            // the integer part must have dropped below 80 —
+            // i.e. the cell is no longer showing the settled
+            // 80.0% it had immediately after the switch.
+            final midText = readRow0(tester);
+            expect(
+              midText,
+              isNot(contains('5h 80.0%')),
+              reason:
+                  'B-stream decrement must start a lerp away from '
+                  'the post-switch 80.0% baseline',
+            );
+            expect(
+              midText,
+              contains('5h 7'),
+              reason:
+                  'mid-animation value should read "5h 79.x%" or '
+                  'similar — a 5h-cell value starting with 7',
+            );
+            // Definitely not yet at the final 77.0% — if it
+            // were, the animation didn't run.
+            expect(
+              midText,
+              isNot(contains('5h 77.0%')),
+              reason:
+                  'mid-animation value must still be on the way '
+                  'down from 80 (not yet at the settled 77%)',
+            );
+          },
+          size: const Size(30, 1),
+        );
+      },
+    );
 
-    test('switch with no initialUsage shows placeholder, then animates later',
-        () async {
-      // New provider hasn't polled yet → `initialUsage` is
-      // null on the rebuild. The cell should show `—` (no
-      // lerp from the old value, no flash). When B's stream
-      // eventually emits, the normal animation path takes
-      // over (and since there's no `prev`, the first event
-      // just paints — no animation on the very first event
-      // of a fresh provider, matching the existing
-      // behaviour on first mount).
-      await testNocterm(
-        'coding-plan display with null initial shows placeholder after switch',
-        (tester) async {
-          final controllerA =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerA.close);
-          final controllerB =
-              StreamController<CodingPlanUsage>.broadcast();
-          addTearDown(controllerB.close);
+    test(
+      'switch with no initialUsage shows placeholder, then animates later',
+      () async {
+        // New provider hasn't polled yet → `initialUsage` is
+        // null on the rebuild. The cell should show `—` (no
+        // lerp from the old value, no flash). When B's stream
+        // eventually emits, the normal animation path takes
+        // over (and since there's no `prev`, the first event
+        // just paints — no animation on the very first event
+        // of a fresh provider, matching the existing
+        // behaviour on first mount).
+        await testNocterm(
+          'coding-plan display with null initial shows placeholder after switch',
+          (tester) async {
+            final controllerA = StreamController<CodingPlanUsage>.broadcast();
+            addTearDown(controllerA.close);
+            final controllerB = StreamController<CodingPlanUsage>.broadcast();
+            addTearDown(controllerB.close);
 
-          var activeStream = controllerA.stream;
-          CodingPlanUsage? activeInitial = CodingPlanUsage(
-            providerName: 'a',
-            modelName: 'general',
-            intervalRemainingPct: 88,
-            weeklyRemainingPct: 88,
-            fetchedAt: DateTime.now(),
-          );
-          late void Function() switchToProviderB;
+            var activeStream = controllerA.stream;
+            CodingPlanUsage? activeInitial = CodingPlanUsage(
+              providerName: 'a',
+              modelName: 'general',
+              intervalRemainingPct: 88,
+              weeklyRemainingPct: 88,
+              fetchedAt: DateTime.now(),
+            );
+            late void Function() switchToProviderB;
 
-          await tester.pumpComponent(
-            _RebuildOnDemand(
-              builder: (context, setState) {
-                switchToProviderB = () {
-                  setState(() {
-                    activeStream = controllerB.stream;
-                    activeInitial = null; // B hasn't polled yet
-                  });
-                };
-                return CodingPlanUsageDisplay(
-                  stream: activeStream,
-                  initialUsage: activeInitial,
-                );
-              },
-            ),
-          );
+            await tester.pumpComponent(
+              _RebuildOnDemand(
+                builder: (context, setState) {
+                  switchToProviderB = () {
+                    setState(() {
+                      activeStream = controllerB.stream;
+                      activeInitial = null; // B hasn't polled yet
+                    });
+                  };
+                  return CodingPlanUsageDisplay(
+                    stream: activeStream,
+                    initialUsage: activeInitial,
+                  );
+                },
+              ),
+            );
 
-          // Sanity: A's value is visible before the switch.
-          expect(readRow0(tester), contains('5h 88.0%'));
+            // Sanity: A's value is visible before the switch.
+            expect(readRow0(tester), contains('5h 88.0%'));
 
-          switchToProviderB();
-          await tester.pump();
+            switchToProviderB();
+            await tester.pump();
 
-          // Placeholder — NOT a lerp toward `—`.
-          expect(readRow0(tester), contains('5h —'));
+            // Placeholder — NOT a lerp toward `—`.
+            expect(readRow0(tester), contains('5h —'));
 
-          // B's stream emits its first snapshot. Since
-          // `_usage` was reset to null, there's no `prev`
-          // to lerp from — the value just paints, no flash.
-          controllerB.add(CodingPlanUsage(
-            providerName: 'b',
-            modelName: 'general',
-            intervalRemainingPct: 60,
-            weeklyRemainingPct: 60,
-            fetchedAt: DateTime.now(),
-          ));
-          // Broadcast streams dispatch synchronously, but the
-          // `_onUsage` callback calls setState, which schedules
-          // a rebuild for the next frame. One pump advances the
-          // frame; a second lets any tail-end setState from
-          // hover-countdown re-sync (defensive — matches the
-          // cadence the production chat panel drives the widget
-          // at).
-          await tester.pump();
-          await tester.pump();
-          expect(
-            readRow0(tester),
-            contains('5h 60.0%'),
-            reason: 'first event on B paints the value; no prior '
-                'value to lerp from',
-          );
-        },
-        size: const Size(30, 1),
-      );
-    });
+            // B's stream emits its first snapshot. Since
+            // `_usage` was reset to null, there's no `prev`
+            // to lerp from — the value just paints, no flash.
+            controllerB.add(
+              CodingPlanUsage(
+                providerName: 'b',
+                modelName: 'general',
+                intervalRemainingPct: 60,
+                weeklyRemainingPct: 60,
+                fetchedAt: DateTime.now(),
+              ),
+            );
+            // Broadcast streams dispatch synchronously, but the
+            // `_onUsage` callback calls setState, which schedules
+            // a rebuild for the next frame. One pump advances the
+            // frame; a second lets any tail-end setState from
+            // hover-countdown re-sync (defensive — matches the
+            // cadence the production chat panel drives the widget
+            // at).
+            await tester.pump();
+            await tester.pump();
+            expect(
+              readRow0(tester),
+              contains('5h 60.0%'),
+              reason:
+                  'first event on B paints the value; no prior '
+                  'value to lerp from',
+            );
+          },
+          size: const Size(30, 1),
+        );
+      },
+    );
   });
 
   // ─── Mixin lifecycle (using a fake provider) ───────────────
@@ -1794,58 +1817,62 @@ void main() {
       await provider.disposeCodingPlanPolling();
     });
 
-    test('setCodingPlanInterval updates the cadence without losing cache',
-        () async {
-      final provider = _FakeCodingPlanProvider();
-      provider.startCodingPlanPolling(
-        apiKey: 'test-key',
-        interval: const Duration(milliseconds: 50),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      final cached = provider.latestCodingPlanUsage;
-      final originalInterval = provider.codingPlanInterval;
-      expect(originalInterval, const Duration(milliseconds: 50));
+    test(
+      'setCodingPlanInterval updates the cadence without losing cache',
+      () async {
+        final provider = _FakeCodingPlanProvider();
+        provider.startCodingPlanPolling(
+          apiKey: 'test-key',
+          interval: const Duration(milliseconds: 50),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final cached = provider.latestCodingPlanUsage;
+        final originalInterval = provider.codingPlanInterval;
+        expect(originalInterval, const Duration(milliseconds: 50));
 
-      provider.setCodingPlanInterval(const Duration(seconds: 5));
-      expect(provider.codingPlanInterval, const Duration(seconds: 5));
-      expect(provider.isCodingPlanPolling, isTrue);
-      // Cache is preserved across the interval change.
-      expect(provider.latestCodingPlanUsage, cached);
+        provider.setCodingPlanInterval(const Duration(seconds: 5));
+        expect(provider.codingPlanInterval, const Duration(seconds: 5));
+        expect(provider.isCodingPlanPolling, isTrue);
+        // Cache is preserved across the interval change.
+        expect(provider.latestCodingPlanUsage, cached);
 
-      // Setting the same interval is a no-op (no error, no
-      // churn).
-      provider.setCodingPlanInterval(const Duration(seconds: 5));
-      expect(provider.codingPlanInterval, const Duration(seconds: 5));
+        // Setting the same interval is a no-op (no error, no
+        // churn).
+        provider.setCodingPlanInterval(const Duration(seconds: 5));
+        expect(provider.codingPlanInterval, const Duration(seconds: 5));
 
-      await provider.disposeCodingPlanPolling();
-    });
+        await provider.disposeCodingPlanPolling();
+      },
+    );
 
-    test('markNeedsPaint contract: each new snapshot increments a counter',
-        () async {
-      // This test doesn't actually paint anything (there's no
-      // widget in scope). It just verifies that the
-      // _CodingPlanController emits a fresh event per tick
-      // and that subscribers see them. The toolbar's
-      // render object would call markNeedsPaint on the
-      // stream; that's exercised at the integration level
-      // by the chat-panel test (see streaming_toolbar_test).
-      final provider = _FakeCodingPlanProvider();
-      var count = 0;
-      final sub = provider.codingPlanUsageStream.listen((_) => count++);
+    test(
+      'markNeedsPaint contract: each new snapshot increments a counter',
+      () async {
+        // This test doesn't actually paint anything (there's no
+        // widget in scope). It just verifies that the
+        // _CodingPlanController emits a fresh event per tick
+        // and that subscribers see them. The toolbar's
+        // render object would call markNeedsPaint on the
+        // stream; that's exercised at the integration level
+        // by the chat-panel test (see streaming_toolbar_test).
+        final provider = _FakeCodingPlanProvider();
+        var count = 0;
+        final sub = provider.codingPlanUsageStream.listen((_) => count++);
 
-      provider.startCodingPlanPolling(
-        apiKey: 'test-key',
-        interval: const Duration(milliseconds: 20),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      // Should have ticked at least 2-3 times in 80ms with
-      // a 20ms interval (allowing for the initial immediate
-      // tick plus a few timer fires).
-      expect(count, greaterThanOrEqualTo(2));
+        provider.startCodingPlanPolling(
+          apiKey: 'test-key',
+          interval: const Duration(milliseconds: 20),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        // Should have ticked at least 2-3 times in 80ms with
+        // a 20ms interval (allowing for the initial immediate
+        // tick plus a few timer fires).
+        expect(count, greaterThanOrEqualTo(2));
 
-      await sub.cancel();
-      await provider.disposeCodingPlanPolling();
-    });
+        await sub.cancel();
+        await provider.disposeCodingPlanPolling();
+      },
+    );
   });
 
   // ─── MiniMaxProvider integration ──────────────────────────
@@ -1883,8 +1910,7 @@ class _RebuildOnDemand extends StatefulComponent {
 
 class _RebuildOnDemandState extends State<_RebuildOnDemand> {
   @override
-  Component build(BuildContext context) =>
-      component.builder(context, setState);
+  Component build(BuildContext context) => component.builder(context, setState);
 }
 
 /// Minimal provider that does NOT include the

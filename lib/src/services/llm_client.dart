@@ -184,6 +184,7 @@ class LlmClient {
     int? thinkingBudget,
     int? maxTokens,
     double temperature = 0,
+
     /// Nucleus-sampling ceiling in [0.0, 1.0]. Crux's
     /// `chat_turn_executor` derives this from the effective
     /// temperature via `topPForTemperature`; production callers
@@ -281,8 +282,10 @@ class LlmClient {
             }
 
             final request = await _httpClient.postUrl(uri);
-            request.headers
-                .set('Content-Type', 'application/json; charset=utf-8');
+            request.headers.set(
+              'Content-Type',
+              'application/json; charset=utf-8',
+            );
             _setAuthHeaders(request, authStyle, apiKey);
 
             // Provider-specific wire-format sanitization (default no-op).
@@ -329,7 +332,8 @@ class LlmClient {
               error: LlmError(
                 kind: LlmErrorKind.timeout,
                 vendor: errorVendor,
-                message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+                message:
+                    'Stream idle for ${idleTimeout.inSeconds}s with '
                     'no response — connection may have stalled.',
                 providerName: config.name,
               ),
@@ -481,7 +485,8 @@ class LlmClient {
             error: LlmError(
               kind: LlmErrorKind.timeout,
               vendor: LlmVendorX.fromProviderName(providerName),
-              message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+              message:
+                  'Stream idle for ${idleTimeout.inSeconds}s with '
                   'no response — connection may have stalled.',
               providerName: providerName,
             ),
@@ -634,7 +639,8 @@ class LlmClient {
             error: LlmError(
               kind: LlmErrorKind.timeout,
               vendor: LlmVendorX.fromProviderName(providerName),
-              message: 'Stream idle for ${idleTimeout.inSeconds}s with '
+              message:
+                  'Stream idle for ${idleTimeout.inSeconds}s with '
                   'no response — connection may have stalled.',
               providerName: providerName,
             ),
@@ -678,7 +684,8 @@ class LlmClient {
                   error: LlmError(
                     kind: LlmErrorKind.timeout,
                     vendor: LlmVendorX.fromProviderName(providerName),
-                    message: 'Stream idle for ${idleTimeout.inSeconds}s '
+                    message:
+                        'Stream idle for ${idleTimeout.inSeconds}s '
                         'with no response — connection may have stalled.',
                     providerName: providerName,
                   ),

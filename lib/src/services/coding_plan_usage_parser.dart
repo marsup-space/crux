@@ -77,10 +77,9 @@ CodingPlanUsage parseCodingPlanUsageResponse(
     return CodingPlanUsage(
       providerName: providerName,
       modelName: decoded['model_name']?.toString() ?? 'unknown',
-      intervalRemainingPct:
-          (decoded['interval_remaining_percent'] as num).toInt(),
-      weeklyRemainingPct:
-          (decoded['weekly_remaining_percent'] as num).toInt(),
+      intervalRemainingPct: (decoded['interval_remaining_percent'] as num)
+          .toInt(),
+      weeklyRemainingPct: (decoded['weekly_remaining_percent'] as num).toInt(),
       intervalRemains: intervalMs is num
           ? Duration(milliseconds: intervalMs.toInt())
           : null,
@@ -107,8 +106,7 @@ CodingPlanUsage _pickFromRows(
   Map<String, dynamic>? chosen;
   if (preferredModelName != null) {
     for (final r in rows) {
-      if (r is Map<String, dynamic> &&
-          r['model_name'] == preferredModelName) {
+      if (r is Map<String, dynamic> && r['model_name'] == preferredModelName) {
         chosen = r;
         break;
       }

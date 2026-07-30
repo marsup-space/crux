@@ -130,7 +130,9 @@ class CommandDebug {
       buf.writeln('  modelConfig.contextSize: (model not resolved)');
     }
     buf.writeln('  turnsSinceLastCompact:   ${rt.turnsSinceLastCompact}');
-    buf.writeln('  compactFailures:         ${rt.consecutiveCompactionFailures}');
+    buf.writeln(
+      '  compactFailures:         ${rt.consecutiveCompactionFailures}',
+    );
     ctx.showToast(buf.toString().trimRight());
   }
 
@@ -465,8 +467,9 @@ class CommandDebug {
   static String _renderMonitorEvent(ShellMonitorLogEntry e) {
     final t = '+${e.elapsedSeconds}s';
     final verdict = e.verdict ?? '—';
-    final interval =
-        e.intervalSeconds != null ? ' next=${e.intervalSeconds}s' : '';
+    final interval = e.intervalSeconds != null
+        ? ' next=${e.intervalSeconds}s'
+        : '';
     final bytes = e.newOutputBytes != null
         ? ' +${e.newOutputBytes}B (tot ${e.totalOutputBytes ?? 0}B)'
         : '';

@@ -65,8 +65,7 @@ class QuickReply {
   /// [containsIndex].
   int? renderedLength;
 
-  bool containsIndex(int index) =>
-      index >= sourceStart && index < sourceEnd;
+  bool containsIndex(int index) => index >= sourceStart && index < sourceEnd;
 
   bool containsRenderedIndex(int index) {
     final rs = renderedStart;
@@ -77,8 +76,9 @@ class QuickReply {
 
   @override
   String toString() {
-    final rendered =
-        renderedStart != null ? ' rendered=$renderedStart:$renderedLength' : '';
+    final rendered = renderedStart != null
+        ? ' rendered=$renderedStart:$renderedLength'
+        : '';
     return 'QuickReply("$label" -> "$answer" '
         '@$sourceStart:$sourceLength$rendered)';
   }
@@ -107,10 +107,10 @@ class QuickReply {
 final _askRegex = RegExp(
   r'ask://'
   r'(?:'
-  r'([^{}\n]+?)\s*\{\s*([^}\n]*?)\s*\}'   // explicit: ask://label{answer}
+  r'([^{}\n]+?)\s*\{\s*([^}\n]*?)\s*\}' // explicit: ask://label{answer}
   r'|'
-  r'([^{}\n]+?)'                          // shorthand: ask://label
-  r'(?=ask://|$|\n)'                      //   terminated by next ask / eol / eof
+  r'([^{}\n]+?)' // shorthand: ask://label
+  r'(?=ask://|$|\n)' //   terminated by next ask / eol / eof
   r')',
   multiLine: true,
 );
@@ -164,10 +164,9 @@ List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
 
     if (text.isNotEmpty) {
       if (childInCode) {
-        codeRegions.add(_CodeRegion(
-          flatText.length,
-          flatText.length + text.length,
-        ));
+        codeRegions.add(
+          _CodeRegion(flatText.length, flatText.length + text.length),
+        );
       }
       flatText.write(text);
     }
@@ -265,12 +264,14 @@ List<QuickReply> parseQuickReplies(List<InlineSpan> spans) {
         .trimRight()
         .length;
 
-    result.add(QuickReply(
-      label: label,
-      answer: answer,
-      sourceStart: nextStart,
-      sourceLength: sourceLength,
-    ));
+    result.add(
+      QuickReply(
+        label: label,
+        answer: answer,
+        sourceStart: nextStart,
+        sourceLength: sourceLength,
+      ),
+    );
     pos = nextStart + m.end;
   }
 
@@ -471,8 +472,10 @@ List<InlineSpan> applyQuickReplyTokens(
       final replyEnd = r.sourceEnd;
 
       if (replyStart > cursor) {
-        final beforeText =
-            text.substring(cursor - spanStart, replyStart - spanStart);
+        final beforeText = text.substring(
+          cursor - spanStart,
+          replyStart - spanStart,
+        );
         result.add((beforeText, baseStyle));
         renderedPos += beforeText.length;
       }
@@ -508,9 +511,7 @@ List<InlineSpan> applyQuickReplyTokens(
     pos = spanEnd;
   }
 
-  return result
-      .map((e) => TextSpan(text: e.$1, style: e.$2))
-      .toList();
+  return result.map((e) => TextSpan(text: e.$1, style: e.$2)).toList();
 }
 
 typedef _FlatSpan = (String, TextStyle?);

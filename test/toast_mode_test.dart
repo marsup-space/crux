@@ -19,7 +19,10 @@ void main() {
       expect(detectToastMode('file not found'), equals(ToastMode.error));
       expect(detectToastMode('cannot open file'), equals(ToastMode.error));
       expect(detectToastMode('that is invalid'), equals(ToastMode.error));
-      expect(detectToastMode('a fatal crash happened'), equals(ToastMode.error));
+      expect(
+        detectToastMode('a fatal crash happened'),
+        equals(ToastMode.error),
+      );
     });
 
     test('returns status for English success keywords', () {
@@ -32,8 +35,10 @@ void main() {
     });
 
     test('returns info for English info keywords', () {
-      expect(detectToastMode('FYI: a new release is out'),
-          equals(ToastMode.info));
+      expect(
+        detectToastMode('FYI: a new release is out'),
+        equals(ToastMode.info),
+      );
       expect(detectToastMode('tip: use --help'), equals(ToastMode.info));
       expect(detectToastMode('note about the change'), equals(ToastMode.info));
     });

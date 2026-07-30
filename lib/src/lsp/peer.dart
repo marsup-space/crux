@@ -57,26 +57,25 @@ class RpcPeer {
 
   int _nextId = 1;
   final Map<int, _PendingRequest> _pending = {};
-  final Map<String, void Function(Map<String, dynamic>)>
-      _notificationHandlers = {};
-  final Map<String, FutureOr<Map<String, dynamic>> Function(
-      Map<String, dynamic>)> _requestHandlers = {};
+  final Map<String, void Function(Map<String, dynamic>)> _notificationHandlers =
+      {};
+  final Map<
+    String,
+    FutureOr<Map<String, dynamic>> Function(Map<String, dynamic>)
+  >
+  _requestHandlers = {};
 
-  final StreamController<String> _framedMessages =
-      StreamController<String>();
+  final StreamController<String> _framedMessages = StreamController<String>();
   final StringBuffer _readBuf = StringBuffer();
 
   bool _closed = false;
 
   RpcPeer._({
-    required Stream<List<int>> input,
-    required StreamSink<List<int>> output,
-    required String tag,
-    required void Function(Object, StackTrace?) onFatal,
-  })  : _input = input,
-        _output = output,
-        _tag = tag,
-        _onFatal = onFatal {
+    required this._input,
+    required this._output,
+    required this._tag,
+    required this._onFatal,
+  }) {
     _input.listen(_onChunk, onError: _onInputError, onDone: _onInputDone);
   }
 
@@ -102,10 +101,7 @@ class RpcPeer {
   /// The returned future resolves with the `result` payload or
   /// completes with an [LspRpcError] if the server returned an
   /// error response.
-  Future<dynamic> request(
-    String method, [
-    Map<String, dynamic>? params,
-  ]) {
+  Future<dynamic> request(String method, [Map<String, dynamic>? params]) {
     if (_closed) {
       return Future.error(
         StateError('[$_tag] cannot request $method: peer is closed'),
@@ -118,8 +114,10 @@ class RpcPeer {
       completer: completer,
       sentAt: DateTime.now(),
     );
-    _writeMessage(_encode(id: id, method: method, params: params))
-        .catchError((Object e, StackTrace st) {
+    _writeMessage(_encode(id: id, method: method, params: params)).catchError((
+      Object e,
+      StackTrace st,
+    ) {
       // If we can't even send, drop the pending entry and rethrow.
       _pending.remove(id);
       if (!completer.isCompleted) completer.completeError(e, st);
@@ -132,10 +130,14 @@ class RpcPeer {
     if (_closed) return;
     // Fire-and-forget; we don't await the future, but we catch errors
     // so they don't become unhandled.
-    unawaited(_writeMessage(_encode(method: method, params: params))
-        .catchError((Object e, StackTrace st) {
-      _onFatal(e, st);
-    }));
+    unawaited(
+      _writeMessage(_encode(method: method, params: params)).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        _onFatal(e, st);
+      }),
+    );
   }
 
   /// Register a handler for a server-initiated notification.
@@ -151,9 +153,8 @@ class RpcPeer {
   /// handler throws, the peer sends a JSON-RPC InternalError (-32603).
   void onRequest(
     String method,
-    FutureOr<Map<String, dynamic>> Function(
-      Map<String, dynamic> params,
-    ) handler,
+    FutureOr<Map<String, dynamic>> Function(Map<String, dynamic> params)
+    handler,
   ) {
     _requestHandlers[method] = handler;
   }
@@ -234,8 +235,10 @@ class RpcPeer {
       final length = _parseContentLength(headerBlock);
       if (length == null) {
         _onFatal(
-          StateError('[$_tag] malformed LSP frame: missing Content-Length '
-              '(headers: $headerBlock)'),
+          StateError(
+            '[$_tag] malformed LSP frame: missing Content-Length '
+            '(headers: $headerBlock)',
+          ),
           null,
         );
         return;
@@ -251,7 +254,7 @@ class RpcPeer {
       final bodyStart = headerEnd;
       final bodyEnd = bodyStart + length;
       final all = _readBuf.toString();
-      if (all.length < bodyEnd) return;        // body not yet arrived
+      if (all.length < bodyEnd) return; // body not yet arrived
 
       final body = all.substring(bodyStart, bodyEnd);
       // Compact buffer: drop everything we've consumed.
@@ -325,7 +328,7 @@ class RpcPeer {
     final rawId = msg['id'];
     if (rawId is! int) return;
     final pending = _pending.remove(rawId);
-    if (pending == null) return;     // response to cancelled request
+    if (pending == null) return; // response to cancelled request
     if (msg.containsKey('error') && msg['error'] != null) {
       pending.completer.completeError(
         LspRpcError.fromJson(
@@ -342,7 +345,7 @@ class RpcPeer {
     final method = msg['method'] as String;
     final params = (msg['params'] as Map?)?.cast<String, dynamic>() ?? const {};
     final handler = _notificationHandlers[method];
-    if (handler == null) return;     // silently drop unknown notifications
+    if (handler == null) return; // silently drop unknown notifications
     try {
       handler(params);
     } catch (e, st) {
@@ -358,11 +361,15 @@ class RpcPeer {
     final handler = _requestHandlers[method];
     if (handler == null) {
       // Per JSON-RPC 2.0: respond with MethodNotFound.
-      unawaited(_writeMessage(_encodeResponseError(
-        id: rawId,
-        code: -32601,
-        message: 'Method not found: $method',
-      )));
+      unawaited(
+        _writeMessage(
+          _encodeResponseError(
+            id: rawId,
+            code: -32601,
+            message: 'Method not found: $method',
+          ),
+        ),
+      );
       return;
     }
     try {
@@ -372,11 +379,15 @@ class RpcPeer {
     } catch (e, st) {
       _onFatal(e, st);
       if (!_closed) {
-        unawaited(_writeMessage(_encodeResponseError(
-          id: rawId,
-          code: -32603,
-          message: 'Internal error: $e',
-        )));
+        unawaited(
+          _writeMessage(
+            _encodeResponseError(
+              id: rawId,
+              code: -32603,
+              message: 'Internal error: $e',
+            ),
+          ),
+        );
       }
     }
   }

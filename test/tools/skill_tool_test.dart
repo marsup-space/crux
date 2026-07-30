@@ -24,16 +24,13 @@ void main() {
   setUp(() {
     tempRoot = Directory.systemTemp.createTempSync('crux_skill_tool_');
     fakeHome = Directory.systemTemp.createTempSync('crux_skill_tool_home_');
-    fakeUserData =
-        Directory.systemTemp.createTempSync('crux_skill_tool_data_');
+    fakeUserData = Directory.systemTemp.createTempSync('crux_skill_tool_data_');
     tool = SkillTool();
 
     // Build a single skill under the project root.
-    final skillsDir =
-        Directory(p.join(tempRoot.path, '.crux', 'skills'))
-          ..createSync(recursive: true);
-    final prDir = Directory(p.join(skillsDir.path, 'pr-review'))
-      ..createSync();
+    final skillsDir = Directory(p.join(tempRoot.path, '.crux', 'skills'))
+      ..createSync(recursive: true);
+    final prDir = Directory(p.join(skillsDir.path, 'pr-review'))..createSync();
     File(p.join(prDir.path, 'SKILL.md')).writeAsStringSync(
       '---\n'
       'name: pr-review\n'
@@ -48,8 +45,7 @@ void main() {
     );
     // Add a sibling file so the tool's "sampled files" list has
     // something to render.
-    File(p.join(prDir.path, 'examples.md'))
-        .writeAsStringSync('# Examples\n');
+    File(p.join(prDir.path, 'examples.md')).writeAsStringSync('# Examples\n');
 
     ctx = ToolContext(
       sessionId: 1,
@@ -76,8 +72,11 @@ void main() {
       expect(tool.name, 'skill');
       expect(tool.description, contains('available_skills'));
       // Don't leak implementation details to the agent.
-      expect(tool.description, isNot(contains('opencode')),
-          reason: 'agent-facing description should not name opencode');
+      expect(
+        tool.description,
+        isNot(contains('opencode')),
+        reason: 'agent-facing description should not name opencode',
+      );
     });
 
     test('parametersSchema requires `name`', () {
@@ -170,9 +169,5 @@ void main() {
 /// `input['name']` to be readable, which is enough for these
 /// unit tests of the SkillTool's overrides.
 ToolCallData _fakeCall(Map<String, dynamic> input) {
-  return ToolCallData(
-    callId: 'fake',
-    name: 'skill',
-    input: input,
-  );
+  return ToolCallData(callId: 'fake', name: 'skill', input: input);
 }

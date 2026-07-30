@@ -61,9 +61,7 @@ class AnthropicCompatibleProvider extends LlmProvider {
         'budget_tokens': thinkingBudget ?? 10000,
       };
       if (reasoningEffort != null) {
-        body['output_config'] = {
-          'effort': mapEffort(reasoningEffort),
-        };
+        body['output_config'] = {'effort': mapEffort(reasoningEffort)};
       }
     }
     if (tools != null && tools.isNotEmpty) {
@@ -77,10 +75,12 @@ class AnthropicCompatibleProvider extends LlmProvider {
   ) {
     if (systemMsg.isEmpty) return [];
     final blocks = systemMsg
-        .map((m) => <String, dynamic>{
-              'type': 'text',
-              'text': m['content'] as String,
-            })
+        .map(
+          (m) => <String, dynamic>{
+            'type': 'text',
+            'text': m['content'] as String,
+          },
+        )
         .toList();
     blocks.last['cache_control'] = <String, dynamic>{'type': 'ephemeral'};
     return blocks;
@@ -91,11 +91,13 @@ class AnthropicCompatibleProvider extends LlmProvider {
   ) {
     if (tools.isEmpty) return [];
     final result = tools
-        .map((t) => <String, dynamic>{
-              'name': t['name'],
-              'description': t['description'],
-              'input_schema': t['parameters'] as Map<String, dynamic>,
-            })
+        .map(
+          (t) => <String, dynamic>{
+            'name': t['name'],
+            'description': t['description'],
+            'input_schema': t['parameters'] as Map<String, dynamic>,
+          },
+        )
         .toList();
     result.last['cache_control'] = <String, dynamic>{'type': 'ephemeral'};
     return result;
@@ -105,9 +107,7 @@ class AnthropicCompatibleProvider extends LlmProvider {
     List<Map<String, dynamic>> chatMsgs,
   ) {
     if (chatMsgs.isEmpty) return chatMsgs;
-    final result = chatMsgs
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    final result = chatMsgs.map((m) => Map<String, dynamic>.from(m)).toList();
     final last = result.last;
     final content = last['content'];
     if (content == null) return result;

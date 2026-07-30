@@ -50,9 +50,10 @@ class _FakeProcess implements Process {
         final h = buf.toString().indexOf('\r\n\r\n');
         if (h < 0) return;
         final headers = buf.toString().substring(0, h);
-        final m = RegExp(r'Content-Length:\s*(\d+)',
-                caseSensitive: false)
-            .firstMatch(headers);
+        final m = RegExp(
+          r'Content-Length:\s*(\d+)',
+          caseSensitive: false,
+        ).firstMatch(headers);
         if (m == null) return;
         final length = int.parse(m.group(1)!);
         final bodyStart = h + 4;
@@ -143,6 +144,7 @@ class _FakeSink implements IOSink {
       add(chunk);
     }
   }
+
   @override
   Future close() => _c.close();
   @override
@@ -177,6 +179,7 @@ class _DiagActor extends LspServerActor {
       initialization: const {},
     );
   }
+
   @override
   Future<Process> spawnProcess(LspServerSpec spec) async {
     last = _FakeProcess();
@@ -197,7 +200,10 @@ void main() {
     final file = File(p.join(tmp.path, 'a.test'))
       ..writeAsStringSync('hello\nworld\n');
     final tracker = FileReadTracker();
-    await tracker.recordRead(file.path, file.statSync().modified.millisecondsSinceEpoch);
+    await tracker.recordRead(
+      file.path,
+      file.statSync().modified.millisecondsSinceEpoch,
+    );
 
     final manager = await LspManager.create(
       workingDirectory: tmp.path,
@@ -284,14 +290,16 @@ void main() {
     await manager.shutdown();
   });
 
-  test('edit works fine when LSP is null (existing tests)',
-      () async {
+  test('edit works fine when LSP is null (existing tests)', () async {
     final file = File(p.join(tmp.path, 'c.test'))
       ..writeAsStringSync('alpha\nbeta\n');
     final tracker = FileReadTracker();
-    await tracker.recordRead(file.path, file.statSync().modified.millisecondsSinceEpoch);
+    await tracker.recordRead(
+      file.path,
+      file.statSync().modified.millisecondsSinceEpoch,
+    );
 
-    final editTool = EditTool(tracker: tracker);  // lsp = null
+    final editTool = EditTool(tracker: tracker); // lsp = null
     final ctx = ToolContext(
       sessionId: 1,
       messageId: 1,

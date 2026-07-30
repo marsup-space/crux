@@ -29,20 +29,14 @@ class AuxiliaryService {
     if (auxKey == null || auxKey == 'none') return null;
 
     final slashIndex = auxKey.indexOf('/');
-    final providerName =
-        slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
-    final modelId =
-        slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
+    final providerName = slashIndex > 0 ? auxKey.substring(0, slashIndex) : '';
+    final modelId = slashIndex > 0 ? auxKey.substring(slashIndex + 1) : auxKey;
 
     final provider = _providerService.providerByName(providerName);
     final apiKey = _providerService.getApiKey(providerName);
     if (provider == null || apiKey == null || apiKey.isEmpty) return null;
 
-    return _AuxModel(
-      provider: provider,
-      apiKey: apiKey,
-      modelId: modelId,
-    );
+    return _AuxModel(provider: provider, apiKey: apiKey, modelId: modelId);
   }
 
   /// Stream a single-shot auxiliary call (no tools, no thinking).
@@ -72,7 +66,8 @@ class AuxiliaryService {
     final aux = _resolve();
     if (aux == null) return null;
 
-    final effectiveMessages = messages ??
+    final effectiveMessages =
+        messages ??
         <Map<String, dynamic>>[
           <String, dynamic>{'role': 'system', 'content': systemPrompt},
           if (userMessage != null && userMessage.isNotEmpty)
@@ -104,9 +99,11 @@ class AuxiliaryService {
         // Auxiliary calls are background work (title generation, TLDR)
         // — we don't surface errors as a persistent bubble, only log
         // the structured error so debugging has the kind/code/context.
-        print('[$logTag] ${streamError.kind.name}'
-            '${streamError.vendorCode != null ? "(${streamError.vendorCode})" : ""}'
-            ': ${streamError.toUserMessage()}');
+        print(
+          '[$logTag] ${streamError.kind.name}'
+          '${streamError.vendorCode != null ? "(${streamError.vendorCode})" : ""}'
+          ': ${streamError.toUserMessage()}',
+        );
         return null;
       }
       final result = buffer.toString().trim();
@@ -119,10 +116,7 @@ class AuxiliaryService {
     }
   }
 
-  Future<String?> generateTitle(
-    int sessionId, {
-    String? userContent,
-  }) async {
+  Future<String?> generateTitle(int sessionId, {String? userContent}) async {
     final lease = AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.title);
     try {
       return await _generateTitle(sessionId, userContent: userContent);
@@ -131,10 +125,7 @@ class AuxiliaryService {
     }
   }
 
-  Future<String?> _generateTitle(
-    int sessionId, {
-    String? userContent,
-  }) async {
+  Future<String?> _generateTitle(int sessionId, {String? userContent}) async {
     // Use the provided userContent directly when available (e.g. when
     // generating the title early, before the message has been persisted).
     // Otherwise fall back to reading from the store.
@@ -240,8 +231,9 @@ class AuxiliaryService {
     required String intent,
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    final lease =
-        AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.shellRisk);
+    final lease = AuxiliaryTaskTracker.instance.start(
+      AuxiliaryTaskKind.shellRisk,
+    );
     try {
       return await _assessShellCommand(
         command: command,
@@ -272,9 +264,11 @@ class AuxiliaryService {
     // and shared, so a leaked stream would hold a connection open.
     final cancelToken = LlmStreamCancelToken();
     final timer = Timer(timeout, () {
-      unawaited(cancelToken.cancelActiveStream(
-        reason: 'shell-risk assessment timed out after $timeout',
-      ));
+      unawaited(
+        cancelToken.cancelActiveStream(
+          reason: 'shell-risk assessment timed out after $timeout',
+        ),
+      );
     });
 
     String? raw;
@@ -335,8 +329,9 @@ class AuxiliaryService {
     required List<Map<String, dynamic>> messages,
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    final lease =
-        AuxiliaryTaskTracker.instance.start(AuxiliaryTaskKind.shellMonitor);
+    final lease = AuxiliaryTaskTracker.instance.start(
+      AuxiliaryTaskKind.shellMonitor,
+    );
     try {
       return await _assessShellProgress(messages: messages, timeout: timeout);
     } finally {
@@ -354,9 +349,11 @@ class AuxiliaryService {
 
     final cancelToken = LlmStreamCancelToken();
     final timer = Timer(timeout, () {
-      unawaited(cancelToken.cancelActiveStream(
-        reason: 'shell-monitor check timed out after $timeout',
-      ));
+      unawaited(
+        cancelToken.cancelActiveStream(
+          reason: 'shell-monitor check timed out after $timeout',
+        ),
+      );
     });
 
     String? raw;
@@ -441,9 +438,7 @@ ShellRiskVerdict _parseShellRiskVerdict(String raw) {
   final remainder = firstLine
       .substring(tokenMatch.end)
       .replaceAll(RegExp(r'^[\s:：;；,，.\-—]+'), '');
-  final reason = <String>[remainder, ...lines.skip(1)]
-      .join('\n')
-      .trim();
+  final reason = <String>[remainder, ...lines.skip(1)].join('\n').trim();
   return ShellRiskVerdict(kind, reason.isEmpty ? null : reason);
 }
 

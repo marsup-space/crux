@@ -24,10 +24,16 @@ void main() {
       expect(tool.description, contains('SEMANTIC'));
       // Implementation details shouldn't leak into the agent-facing
       // description.
-      expect(tool.description, isNot(contains('semble')),
-          reason: 'agent-facing description should not mention semble');
-      expect(tool.description, isNot(contains('CLI')),
-          reason: 'agent-facing description should not mention CLI');
+      expect(
+        tool.description,
+        isNot(contains('semble')),
+        reason: 'agent-facing description should not mention semble',
+      );
+      expect(
+        tool.description,
+        isNot(contains('CLI')),
+        reason: 'agent-facing description should not mention CLI',
+      );
     });
 
     test('missing query returns error', () async {
@@ -38,16 +44,16 @@ void main() {
     test(
       'finds semantic matches across a repo',
       () async {
-        final repo =
-            '/Users/developer/Projects/crux/.research/semble';
+        final repo = '/Users/developer/Projects/crux/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;
         }
-        final result = await tool.execute(
-          {'query': 'how does the indexer parse source files', 'path': repo, 'k': 3},
-          ctx,
-        );
+        final result = await tool.execute({
+          'query': 'how does the indexer parse source files',
+          'path': repo,
+          'k': 3,
+        }, ctx);
         expect(result.metadata['totalMatches'], greaterThan(0));
       },
       timeout: const Timeout(Duration(minutes: 5)),
@@ -56,16 +62,16 @@ void main() {
     test(
       'returns clean error when path does not exist',
       () async {
-        final result = await tool.execute(
-          {
-            'query': 'anything',
-            'path': '/nonexistent/path/xyzzy',
-            'k': 3,
-          },
-          ctx,
+        final result = await tool.execute({
+          'query': 'anything',
+          'path': '/nonexistent/path/xyzzy',
+          'k': 3,
+        }, ctx);
+        expect(
+          result.title,
+          equals('Error'),
+          reason: 'invalid path should produce a clean error',
         );
-        expect(result.title, equals('Error'),
-            reason: 'invalid path should produce a clean error');
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );
@@ -79,10 +85,10 @@ void main() {
           abort: AbortSignal(),
           workingDirectory: '/nonexistent/path/that/does/not/exist',
         );
-        final result = await tool.execute(
-          {'query': 'anything', 'path': '/nonexistent/path/xyzzy'},
-          ctx2,
-        );
+        final result = await tool.execute({
+          'query': 'anything',
+          'path': '/nonexistent/path/xyzzy',
+        }, ctx2);
         expect(result.title, equals('Error'));
       },
       timeout: const Timeout(Duration(seconds: 30)),
@@ -102,7 +108,8 @@ void main() {
         );
         const sentinelToken =
             'zylqwensecret_ophthalmosaurus_xyzzy12345_sentinel';
-        final sentinelContent = '''
+        final sentinelContent =
+            '''
 // This file exists only to verify that .gitignore is respected.
 // Token: $sentinelToken
 // If you see this content in a semantic_search result, .gitignore is broken.
@@ -111,8 +118,7 @@ class SentinelForSembleTest {
 }
 ''';
         final existed = sentinelFile.existsSync();
-        final priorContent =
-            existed ? sentinelFile.readAsStringSync() : null;
+        final priorContent = existed ? sentinelFile.readAsStringSync() : null;
         sentinelFile.writeAsStringSync(sentinelContent);
 
         addTearDown(() {
@@ -124,14 +130,11 @@ class SentinelForSembleTest {
         });
 
         try {
-          final result = await tool.execute(
-            {
-              'query': sentinelToken,
-              'path': repo,
-              'k': 5,
-            },
-            ctx,
-          );
+          final result = await tool.execute({
+            'query': sentinelToken,
+            'path': repo,
+            'k': 5,
+          }, ctx);
           expect(
             result.output,
             isNot(contains('sentinel_xyzzy12345_uniquename.dart')),

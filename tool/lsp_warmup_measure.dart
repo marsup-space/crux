@@ -30,7 +30,9 @@ Future<int> _measureColdEdit(String projectRoot, String filePath) async {
 }
 
 Future<({int warmEditMs, int diagnosticsCount})> _measureWarmEdit(
-    String projectRoot, String filePath) async {
+  String projectRoot,
+  String filePath,
+) async {
   final manager = LspManager(
     workingDirectory: projectRoot,
     actorFactories: const {'dart': DartServerActor.new},
@@ -52,8 +54,10 @@ Future<({int warmEditMs, int diagnosticsCount})> _measureWarmEdit(
   final warmEditMs = DateTime.now().difference(tEditStart).inMilliseconds;
 
   // ignore: avoid_print
-  print('  total warmup+wait+edit: '
-      '${DateTime.now().difference(tWarmStart).inMilliseconds}ms');
+  print(
+    '  total warmup+wait+edit: '
+    '${DateTime.now().difference(tWarmStart).inMilliseconds}ms',
+  );
 
   await manager.shutdown();
   return (warmEditMs: warmEditMs, diagnosticsCount: diagnostics.length);

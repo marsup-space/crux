@@ -129,17 +129,21 @@ void main() {
 
       // Exactly one user-role compaction block.
       final compactionBlocks = wireMessages
-          .where((m) =>
-              m['role'] == 'user' &&
-              (m['content'] as String).startsWith('## Compacted history'))
+          .where(
+            (m) =>
+                m['role'] == 'user' &&
+                (m['content'] as String).startsWith('## Compacted history'),
+          )
           .toList();
-      expect(compactionBlocks, hasLength(1),
-          reason: 'N compactions in storage → 1 block on wire');
+      expect(
+        compactionBlocks,
+        hasLength(1),
+        reason: 'N compactions in storage → 1 block on wire',
+      );
 
       // The emitted block is the latest (compact #2's chain).
       expect(compactionBlocks.single['content'], contains('compact #2 delta'));
-      expect(
-          compactionBlocks.single['content'], contains('compact #1 body'));
+      expect(compactionBlocks.single['content'], contains('compact #1 body'));
     });
 
     test('skips in-progress compaction placeholders in model context', () {

@@ -31,8 +31,13 @@ class _PipePair {
 /// messages, dispatches them, and writes responses.
 class _FakeServer {
   final _PipePair _pipe;
-  final List<void Function(Map<String, dynamic>, void Function(Map<String, dynamic>) send)>
-      _requestHandlers = [];
+  final List<
+    void Function(
+      Map<String, dynamic>,
+      void Function(Map<String, dynamic>) send,
+    )
+  >
+  _requestHandlers = [];
   final List<void Function(Map<String, dynamic>)> _notificationHandlers = [];
   final StreamController<String> _messages =
       StreamController<String>.broadcast();
@@ -47,7 +52,8 @@ class _FakeServer {
     void Function(
       Map<String, dynamic> params,
       void Function(Map<String, dynamic>) reply,
-    ) handler,
+    )
+    handler,
   ) {
     _requestHandlers.add(handler);
   }
@@ -81,7 +87,9 @@ class _FakeServer {
       if (all.length < bodyEnd) return;
       final body = all.substring(bodyStart, bodyEnd);
       final leftover = all.substring(bodyEnd);
-      _readBuf..clear()..write(leftover);
+      _readBuf
+        ..clear()
+        ..write(leftover);
       _messages.add(body);
     }
   }
@@ -114,11 +122,8 @@ class _FakeServer {
       for (final handler in _requestHandlers) {
         handler(
           (msg['params'] as Map?)?.cast<String, dynamic>() ?? const {},
-          (result) => _send({
-            'jsonrpc': '2.0',
-            'id': msg['id'],
-            'result': result,
-          }),
+          (result) =>
+              _send({'jsonrpc': '2.0', 'id': msg['id'], 'result': result}),
         );
         return;
       }
@@ -237,7 +242,10 @@ void main() {
       // We don't have a request in flight that matches this id — but
       // since _nextId starts at 1, an outgoing request from peer2 will
       // get id 1 and the response will match. Trigger a request:
-      final pending = peer2.request('test').then(completer.complete).catchError(completer.completeError);
+      final pending = peer2
+          .request('test')
+          .then(completer.complete)
+          .catchError(completer.completeError);
 
       final result = await completer.future;
       expect(result, {'split': true});
@@ -421,7 +429,9 @@ void main() {
       );
 
       peer.onRequest('workspace/configuration', (params) async {
-        return {'items': [null, null]};
+        return {
+          'items': [null, null],
+        };
       });
 
       // Capture peer's reply. Peer output goes to controllerB.sink;
@@ -475,7 +485,7 @@ void main() {
 
     test('cancelAll rejects all pending requests', () async {
       final pipe = _PipePair();
-      final server = _FakeServer(pipe);   // never replies
+      final server = _FakeServer(pipe); // never replies
       final peer = RpcPeer.create(
         input: pipe.aInput,
         output: pipe.aOutput,
@@ -503,10 +513,7 @@ void main() {
       );
       await pipe.controllerA.close();
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      await expectLater(
-        peer.request('x'),
-        throwsA(isA<StateError>()),
-      );
+      await expectLater(peer.request('x'), throwsA(isA<StateError>()));
       await pipe.close();
     });
   });

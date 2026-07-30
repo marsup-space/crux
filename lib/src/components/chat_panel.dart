@@ -1253,7 +1253,8 @@ class _ChatPanelState extends State<ChatPanel> {
                   builder: (context, pendingState) {
                     final sid = _sessionController.currentSessionId;
                     final pending = pendingState.pending;
-                    final showAskForm = pending != null &&
+                    final showAskForm =
+                        pending != null &&
                         sid != null &&
                         pending.sessionId == sid;
                     if (!showAskForm) {
@@ -1296,7 +1297,9 @@ class _ChatPanelState extends State<ChatPanel> {
                             final index = _sessionController
                                 .pendingImagesFor(sid)
                                 .length;
-                            _chatInputKey.currentState?.insertImageMarker(index);
+                            _chatInputKey.currentState?.insertImageMarker(
+                              index,
+                            );
                             _refresh();
                           }
                         },

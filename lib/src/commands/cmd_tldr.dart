@@ -2,6 +2,7 @@ import '../components/ui/toast.dart';
 import '../models/message.dart';
 import '../services/auxiliary_prompts.dart';
 import 'command_executor.dart';
+
 Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
     ctx.showToast('No active session', mode: ToastMode.error);

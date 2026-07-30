@@ -334,35 +334,32 @@ void main() {
       }
     });
 
-    test(
-      'K3: passes low/high/max reasoning_effort through unchanged',
-      () {
-        // K3 now accepts `low` / `high` / `max` on the wire
-        // (default `max`; unknown values 400). The KimiProvider
-        // overrides `mapEffort` so `low` passes through — the
-        // OpenAI-compatible base would otherwise map it to
-        // `high`. `normal` has no K3 equivalent and collapses
-        // onto `high` (the TOML renames it for display).
-        for (final (internal, wire) in const [
-          ('low', 'low'),
-          ('normal', 'high'),
-          ('high', 'high'),
-          ('max', 'max'),
-        ]) {
-          final body = provider.buildRequestBody(
-            'k3-1m',
-            userMsg,
-            thinkingMode: 'enabled',
-            reasoningEffort: internal,
-          );
-          expect(
-            body['reasoning_effort'],
-            wire,
-            reason: 'internal "$internal" should map to wire "$wire"',
-          );
-        }
-      },
-    );
+    test('K3: passes low/high/max reasoning_effort through unchanged', () {
+      // K3 now accepts `low` / `high` / `max` on the wire
+      // (default `max`; unknown values 400). The KimiProvider
+      // overrides `mapEffort` so `low` passes through — the
+      // OpenAI-compatible base would otherwise map it to
+      // `high`. `normal` has no K3 equivalent and collapses
+      // onto `high` (the TOML renames it for display).
+      for (final (internal, wire) in const [
+        ('low', 'low'),
+        ('normal', 'high'),
+        ('high', 'high'),
+        ('max', 'max'),
+      ]) {
+        final body = provider.buildRequestBody(
+          'k3-1m',
+          userMsg,
+          thinkingMode: 'enabled',
+          reasoningEffort: internal,
+        );
+        expect(
+          body['reasoning_effort'],
+          wire,
+          reason: 'internal "$internal" should map to wire "$wire"',
+        );
+      }
+    });
 
     test('K2.7: strips reasoning_effort (binary Thinking:ON/OFF only)', () {
       // The kimi-cli kosong SDK never sends `reasoning_effort`

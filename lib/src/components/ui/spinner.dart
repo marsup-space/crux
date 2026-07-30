@@ -110,9 +110,7 @@ class _SpinnerState extends State<Spinner> {
   Component build(BuildContext context) {
     return Text(
       spinnerFrameAt(_frame),
-      style: TextStyle(
-        color: component.color ?? CruxTheme.of(context).accent,
-      ),
+      style: TextStyle(color: component.color ?? CruxTheme.of(context).accent),
     );
   }
 }

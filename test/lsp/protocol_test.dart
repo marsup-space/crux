@@ -24,7 +24,10 @@ void main() {
 
     test('equality and hashCode work', () {
       expect(const LspPosition(1, 2), const LspPosition(1, 2));
-      expect(const LspPosition(1, 2).hashCode, const LspPosition(1, 2).hashCode);
+      expect(
+        const LspPosition(1, 2).hashCode,
+        const LspPosition(1, 2).hashCode,
+      );
       expect(const LspPosition(1, 2) == const LspPosition(1, 3), isFalse);
     });
   });
@@ -50,7 +53,10 @@ void main() {
     test('fromJson reads wire values', () {
       expect(LspDiagnosticSeverity.fromJson(1), LspDiagnosticSeverity.error);
       expect(LspDiagnosticSeverity.fromJson(2), LspDiagnosticSeverity.warning);
-      expect(LspDiagnosticSeverity.fromJson(3), LspDiagnosticSeverity.information);
+      expect(
+        LspDiagnosticSeverity.fromJson(3),
+        LspDiagnosticSeverity.information,
+      );
       expect(LspDiagnosticSeverity.fromJson(4), LspDiagnosticSeverity.hint);
     });
 
@@ -100,7 +106,10 @@ void main() {
 
     test('handles missing severity as null', () {
       final d = LspDiagnostic.fromJson({
-        'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 0}},
+        'range': {
+          'start': {'line': 0, 'character': 0},
+          'end': {'line': 0, 'character': 0},
+        },
         'message': 'note',
       });
       expect(d.severity, isNull);
@@ -109,10 +118,10 @@ void main() {
 
   group('LspRpcError', () {
     test('formats with method and code', () {
-      final err = LspRpcError.fromJson(
-        {'code': -32601, 'message': 'Method not found'},
-        method: 'foo/bar',
-      );
+      final err = LspRpcError.fromJson({
+        'code': -32601,
+        'message': 'Method not found',
+      }, method: 'foo/bar');
       expect(err.code, -32601);
       expect(err.message, 'Method not found');
       expect(err.method, 'foo/bar');
@@ -123,10 +132,7 @@ void main() {
   group('Diagnostic JSON round-trip via extension', () {
     test('encodes then decodes to an equal diagnostic', () {
       final original = LspDiagnostic(
-        range: const LspRange(
-          LspPosition(2, 3),
-          LspPosition(2, 9),
-        ),
+        range: const LspRange(LspPosition(2, 3), LspPosition(2, 9)),
         message: 'broken',
         severity: LspDiagnosticSeverity.warning,
         source: 'dart',

@@ -16,11 +16,8 @@ class QueuedMessage {
   /// When this message was enqueued (for display ordering).
   final DateTime enqueuedAt;
 
-  QueuedMessage({
-    required this.id,
-    required this.content,
-    DateTime? enqueuedAt,
-  }) : enqueuedAt = enqueuedAt ?? DateTime.now();
+  QueuedMessage({required this.id, required this.content, DateTime? enqueuedAt})
+    : enqueuedAt = enqueuedAt ?? DateTime.now();
 }
 
 /// Per-session message queue. When the agent is streaming, new user

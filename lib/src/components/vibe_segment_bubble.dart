@@ -142,10 +142,16 @@ class VibeSegmentBubble extends StatelessComponent {
       // the box's default text color. Entries with LspState.none get no
       // glyph and render as a plain single-span row.
       final rowSpans = tools.entries.map((e) {
-        final label = '${e.name} x${e.callCount}: ${formatTokens(e.totalTokens)}';
+        final label =
+            '${e.name} x${e.callCount}: ${formatTokens(e.totalTokens)}';
         final glyph = lspStateGlyphSpan(e.lspState, theme);
         if (glyph == null) return TextSpan(text: label);
-        return TextSpan(children: [TextSpan(text: label), glyph]);
+        return TextSpan(
+          children: [
+            TextSpan(text: label),
+            glyph,
+          ],
+        );
       }).toList();
       boxes.add(
         VibeBox(

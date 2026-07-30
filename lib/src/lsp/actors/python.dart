@@ -33,8 +33,8 @@ class PythonServerActor extends LspServerActor {
 
   @override
   Future<LspServerSpec?> resolveSpec(String root, String file) async {
-    var bin = whichBinary('pyright-langserver') ??
-        npmInstalled('pyright-langserver');
+    var bin =
+        whichBinary('pyright-langserver') ?? npmInstalled('pyright-langserver');
     if (bin == null) {
       bin = await installOnce(
         key: id,

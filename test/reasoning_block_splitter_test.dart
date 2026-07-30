@@ -23,27 +23,29 @@ void main() {
       // starts a new block, the third starts a third block.
       final input = 'aaaaaaaa\n\nbbbbbbbb\n\ncccccccc';
       final blocks = splitReasoningIntoBlocks(input, 10);
-      expect(blocks, [
-        'aaaaaaaa',
-        'bbbbbbbb',
-        'cccccccc',
-      ]);
+      expect(blocks, ['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
     });
 
-    test('block boundary preserves full paragraphs (never splits mid-para)', () {
-      // 12-char paragraph with cap=8 should not be sliced — it
-      // gets its own block exceeding the cap, but no mid-paragraph
-      // splitting happens.
-      final input = 'twelve chars';
-      final blocks = splitReasoningIntoBlocks(input, 8);
-      expect(blocks, ['twelve chars']);
-    });
+    test(
+      'block boundary preserves full paragraphs (never splits mid-para)',
+      () {
+        // 12-char paragraph with cap=8 should not be sliced — it
+        // gets its own block exceeding the cap, but no mid-paragraph
+        // splitting happens.
+        final input = 'twelve chars';
+        final blocks = splitReasoningIntoBlocks(input, 8);
+        expect(blocks, ['twelve chars']);
+      },
+    );
 
-    test('oversized paragraph + small paragraph → oversized alone, small alone', () {
-      final input = 'twelve chars\n\nshort';
-      final blocks = splitReasoningIntoBlocks(input, 8);
-      expect(blocks, ['twelve chars', 'short']);
-    });
+    test(
+      'oversized paragraph + small paragraph → oversized alone, small alone',
+      () {
+        final input = 'twelve chars\n\nshort';
+        final blocks = splitReasoningIntoBlocks(input, 8);
+        expect(blocks, ['twelve chars', 'short']);
+      },
+    );
 
     test('consecutive \\n\\n collapses to single \\n\\n', () {
       // "a\n\n\n\nb" split on "\n\n" yields ["a", "", "", "b"];
@@ -77,11 +79,7 @@ void main() {
       // split is three blocks: ['aaa\n\nbbb', 'ccc\n\nddd', 'eee'].
       final input = 'aaa\n\nbbb\n\nccc\n\nddd\n\neee';
       final blocks = splitReasoningIntoBlocks(input, 12);
-      expect(blocks, [
-        'aaa\n\nbbb',
-        'ccc\n\nddd',
-        'eee',
-      ]);
+      expect(blocks, ['aaa\n\nbbb', 'ccc\n\nddd', 'eee']);
     });
 
     test('only-whitespace paragraphs are preserved (not collapsed)', () {

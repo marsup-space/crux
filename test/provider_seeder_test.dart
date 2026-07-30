@@ -92,12 +92,12 @@ context_size = 128000
     test('overwrites file when SHA-256 differs (destructive)', () async {
       const builtInContent = 'NEW: bundled version 2.0';
       const userContent = 'OLD: user-edited version 1.0';
-      await File('${builtInDir.path}/provider.toml').writeAsString(
-        builtInContent,
-      );
-      await File('${userDir.path}/example.provider.toml').writeAsString(
-        userContent,
-      );
+      await File(
+        '${builtInDir.path}/provider.toml',
+      ).writeAsString(builtInContent);
+      await File(
+        '${userDir.path}/example.provider.toml',
+      ).writeAsString(userContent);
 
       final results = await seedExampleProviders(
         builtInDir: builtInDir,
@@ -113,51 +113,56 @@ context_size = 128000
       expect(await userFile.readAsString(), builtInContent);
     });
 
-    test('handles multiple files in alphabetical order, all prefixed', () async {
-      await File('${builtInDir.path}/zeta.toml').writeAsString('z');
-      await File('${builtInDir.path}/alpha.toml').writeAsString('a');
-      await File('${builtInDir.path}/middle.toml').writeAsString('m');
+    test(
+      'handles multiple files in alphabetical order, all prefixed',
+      () async {
+        await File('${builtInDir.path}/zeta.toml').writeAsString('z');
+        await File('${builtInDir.path}/alpha.toml').writeAsString('a');
+        await File('${builtInDir.path}/middle.toml').writeAsString('m');
 
-      final results = await seedExampleProviders(
-        builtInDir: builtInDir,
-        userDir: userDir,
-      );
+        final results = await seedExampleProviders(
+          builtInDir: builtInDir,
+          userDir: userDir,
+        );
 
-      expect(
-        results.map((r) => r.fileName).toList(),
-        ['example.alpha.toml', 'example.middle.toml', 'example.zeta.toml'],
-      );
-      expect(results.every((r) => r.action == SeedAction.created), isTrue);
-    });
+        expect(results.map((r) => r.fileName).toList(), [
+          'example.alpha.toml',
+          'example.middle.toml',
+          'example.zeta.toml',
+        ]);
+        expect(results.every((r) => r.action == SeedAction.created), isTrue);
+      },
+    );
 
-    test('strips pre-existing "example." prefix from built-in basename', () async {
-      // A built-in whose name already starts with `example.` should
-      // not produce a doubly-prefixed `example.example.X.toml` copy
-      // in the user dir. Without the strip the loader would still
-      // skip the file (startsWith("example.")), but the double prefix
-      // is confusing for users reading their providers directory.
-      await File('${builtInDir.path}/example.provider.toml').writeAsString(
-        'reference template',
-      );
-
-      final results = await seedExampleProviders(
-        builtInDir: builtInDir,
-        userDir: userDir,
-      );
-
-      expect(results.single.fileName, 'example.provider.toml');
-      expect(
-        await File('${userDir.path}/example.provider.toml').exists(),
-        isTrue,
-      );
-      expect(
+    test(
+      'strips pre-existing "example." prefix from built-in basename',
+      () async {
+        // A built-in whose name already starts with `example.` should
+        // not produce a doubly-prefixed `example.example.X.toml` copy
+        // in the user dir. Without the strip the loader would still
+        // skip the file (startsWith("example.")), but the double prefix
+        // is confusing for users reading their providers directory.
         await File(
-          '${userDir.path}/example.example.provider.toml',
-        ).exists(),
-        isFalse,
-        reason: 'No doubly-prefixed file should be created',
-      );
-    });
+          '${builtInDir.path}/example.provider.toml',
+        ).writeAsString('reference template');
+
+        final results = await seedExampleProviders(
+          builtInDir: builtInDir,
+          userDir: userDir,
+        );
+
+        expect(results.single.fileName, 'example.provider.toml');
+        expect(
+          await File('${userDir.path}/example.provider.toml').exists(),
+          isTrue,
+        );
+        expect(
+          await File('${userDir.path}/example.example.provider.toml').exists(),
+          isFalse,
+          reason: 'No doubly-prefixed file should be created',
+        );
+      },
+    );
 
     test('ignores non-TOML files in built-in dir', () async {
       await File('${builtInDir.path}/provider.toml').writeAsString('a');
@@ -172,46 +177,46 @@ context_size = 128000
       expect(results, hasLength(1));
       expect(results.single.fileName, 'example.provider.toml');
       // README and schema are left alone in the user dir
-      expect(
-        File('${userDir.path}/README.md').existsSync(),
-        isFalse,
-      );
+      expect(File('${userDir.path}/README.md').existsSync(), isFalse);
     });
 
-    test('mixed: some files exist (unchanged), some are new (created), some differ (overwritten)', () async {
-      // bundled has all three
-      await File('${builtInDir.path}/alpha.toml').writeAsString('a-v2');
-      await File('${builtInDir.path}/beta.toml').writeAsString('b-v2');
-      await File('${builtInDir.path}/gamma.toml').writeAsString('g-v2');
+    test(
+      'mixed: some files exist (unchanged), some are new (created), some differ (overwritten)',
+      () async {
+        // bundled has all three
+        await File('${builtInDir.path}/alpha.toml').writeAsString('a-v2');
+        await File('${builtInDir.path}/beta.toml').writeAsString('b-v2');
+        await File('${builtInDir.path}/gamma.toml').writeAsString('g-v2');
 
-      // user has: example.alpha unchanged, example.beta different, gamma missing
-      await File('${userDir.path}/example.alpha.toml').writeAsString('a-v2');
-      await File('${userDir.path}/example.beta.toml').writeAsString('b-v1');
+        // user has: example.alpha unchanged, example.beta different, gamma missing
+        await File('${userDir.path}/example.alpha.toml').writeAsString('a-v2');
+        await File('${userDir.path}/example.beta.toml').writeAsString('b-v1');
 
-      final results = await seedExampleProviders(
-        builtInDir: builtInDir,
-        userDir: userDir,
-      );
+        final results = await seedExampleProviders(
+          builtInDir: builtInDir,
+          userDir: userDir,
+        );
 
-      final byName = {for (final r in results) r.fileName: r};
-      expect(byName['example.alpha.toml']!.action, SeedAction.unchanged);
-      expect(byName['example.beta.toml']!.action, SeedAction.overwritten);
-      expect(byName['example.gamma.toml']!.action, SeedAction.created);
+        final byName = {for (final r in results) r.fileName: r};
+        expect(byName['example.alpha.toml']!.action, SeedAction.unchanged);
+        expect(byName['example.beta.toml']!.action, SeedAction.overwritten);
+        expect(byName['example.gamma.toml']!.action, SeedAction.created);
 
-      // File contents after seed
-      expect(
-        await File('${userDir.path}/example.alpha.toml').readAsString(),
-        'a-v2',
-      );
-      expect(
-        await File('${userDir.path}/example.beta.toml').readAsString(),
-        'b-v2',
-      );
-      expect(
-        await File('${userDir.path}/example.gamma.toml').readAsString(),
-        'g-v2',
-      );
-    });
+        // File contents after seed
+        expect(
+          await File('${userDir.path}/example.alpha.toml').readAsString(),
+          'a-v2',
+        );
+        expect(
+          await File('${userDir.path}/example.beta.toml').readAsString(),
+          'b-v2',
+        );
+        expect(
+          await File('${userDir.path}/example.gamma.toml').readAsString(),
+          'g-v2',
+        );
+      },
+    );
 
     test('second call after no-op is still a no-op', () async {
       await File('${builtInDir.path}/foo.toml').writeAsString('x');

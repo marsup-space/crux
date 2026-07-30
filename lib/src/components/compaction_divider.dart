@@ -25,10 +25,7 @@ class CompactionDivider extends StatefulComponent {
   /// running with `--debug` / `/debug on`.
   final VoidCallback? onTap;
 
-  const CompactionDivider({
-    super.key,
-    this.onTap,
-  });
+  const CompactionDivider({super.key, this.onTap});
 
   @override
   State<CompactionDivider> createState() => _CompactionDividerState();
@@ -110,10 +107,7 @@ class _CompactionDividerState extends State<CompactionDivider> {
     // dash characters), the LayoutBuilder would receive a
     // tight maxWidth, and the line would still float instead
     // of stretching edge-to-edge.
-    final stretch = SizedBox(
-      width: double.infinity,
-      child: body,
-    );
+    final stretch = SizedBox(width: double.infinity, child: body);
 
     if (!canTap) return stretch;
 

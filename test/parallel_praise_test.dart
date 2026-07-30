@@ -71,14 +71,8 @@ void main() {
     });
 
     test('uses plural "round trips" when savings >= 2', () {
-      expect(
-        renderParallelToolCallHint(3),
-        contains('saving 2 round trips'),
-      );
-      expect(
-        renderParallelToolCallHint(5),
-        contains('saving 4 round trips'),
-      );
+      expect(renderParallelToolCallHint(3), contains('saving 2 round trips'));
+      expect(renderParallelToolCallHint(5), contains('saving 4 round trips'));
     });
   });
 
@@ -181,39 +175,39 @@ void main() {
     });
   });
 
-  group(
-    'renderParallelSingleCallHintEmbedded (appended to last tool)',
-    () {
-      test('wraps the bare reminder with its own system-note marker', () {
-        final out = renderParallelSingleCallHintEmbedded(10);
-        expect(out, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
-        expect(out, contains('You have emitted 10 consecutive'));
-        // The marker must come before the body.
-        expect(
-          out.indexOf(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
-          lessThan(out.indexOf('You have emitted')),
-        );
-      });
+  group('renderParallelSingleCallHintEmbedded (appended to last tool)', () {
+    test('wraps the bare reminder with its own system-note marker', () {
+      final out = renderParallelSingleCallHintEmbedded(10);
+      expect(
+        out,
+        contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
+      );
+      expect(out, contains('You have emitted 10 consecutive'));
+      // The marker must come before the body.
+      expect(
+        out.indexOf(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
+        lessThan(out.indexOf('You have emitted')),
+      );
+    });
 
-      test('uses a DIFFERENT marker than the praise hint', () {
-        // Both hints share the wire-format placement but use
-        // distinct marker tags so the model can pattern-match
-        // which signal it's seeing. Pinned by this test.
-        expect(
-          parallelSingleCallHintMarker(SingleCallHintSeverity.mild),
-          isNot(equals(parallelHintEmbeddedMarker)),
-        );
-      });
+    test('uses a DIFFERENT marker than the praise hint', () {
+      // Both hints share the wire-format placement but use
+      // distinct marker tags so the model can pattern-match
+      // which signal it's seeing. Pinned by this test.
+      expect(
+        parallelSingleCallHintMarker(SingleCallHintSeverity.mild),
+        isNot(equals(parallelHintEmbeddedMarker)),
+      );
+    });
 
-      test('produces output suitable for appending to a tool result', () {
-        // Same boundary conventions as the praise hint: leading
-        // blank lines, bracketed marker, trailing newline.
-        final out = renderParallelSingleCallHintEmbedded(5);
-        expect(out, startsWith('\n\n'));
-        expect(out, endsWith('\n'));
-      });
-    },
-  );
+    test('produces output suitable for appending to a tool result', () {
+      // Same boundary conventions as the praise hint: leading
+      // blank lines, bracketed marker, trailing newline.
+      final out = renderParallelSingleCallHintEmbedded(5);
+      expect(out, startsWith('\n\n'));
+      expect(out, endsWith('\n'));
+    });
+  });
 
   // ─────────────────────────────────────────────────────────────────────
   // 2b. Wire-format injection (regression net for the "no user
@@ -275,42 +269,20 @@ void main() {
         {
           'role': 'assistant',
           'content': [
-            {
-              'type': 'tool_use',
-              'id': 'a',
-              'name': 'grep',
-              'input': {},
-            },
-            {
-              'type': 'tool_use',
-              'id': 'b',
-              'name': 'read',
-              'input': {},
-            },
+            {'type': 'tool_use', 'id': 'a', 'name': 'grep', 'input': {}},
+            {'type': 'tool_use', 'id': 'b', 'name': 'read', 'input': {}},
           ],
         },
         {
           'role': 'user',
           'content': [
-            {
-              'type': 'tool_result',
-              'tool_use_id': 'a',
-              'content': 'match',
-            },
-            {
-              'type': 'tool_result',
-              'tool_use_id': 'b',
-              'content': 'contents',
-            },
+            {'type': 'tool_result', 'tool_use_id': 'a', 'content': 'match'},
+            {'type': 'tool_result', 'tool_use_id': 'b', 'content': 'contents'},
           ],
         },
       ];
 
-      injectParallelToolCallHintIntoLastTool(
-        msgs,
-        isAnthropic: true,
-        count: 2,
-      );
+      injectParallelToolCallHintIntoLastTool(msgs, isAnthropic: true, count: 2);
 
       // Length unchanged: hint must not add a sibling text block or
       // a new user message.
@@ -321,8 +293,11 @@ void main() {
       expect(blocks, hasLength(2), reason: 'no new sibling block added');
 
       final lastBlock = blocks.last;
-      expect(lastBlock['type'], 'tool_result',
-          reason: 'last block must remain a tool_result, not a text block');
+      expect(
+        lastBlock['type'],
+        'tool_result',
+        reason: 'last block must remain a tool_result, not a text block',
+      );
       final lastContent = lastBlock['content'] as String;
       expect(lastContent, startsWith('contents'));
       expect(lastContent, contains(parallelHintEmbeddedMarker));
@@ -347,100 +322,104 @@ void main() {
   // ─────────────────────────────────────────────────────────────────
   // 2c. Single-call hint wire-format injection (new feature)
   // ─────────────────────────────────────────────────────────────────
-  group(
-    'injectParallelSingleCallHintIntoLastTool (reminder wire format)',
-    () {
-      test('OpenAI: appends to the last (and only) tool message', () {
-        final msgs = <Map<String, dynamic>>[
-          {'role': 'user', 'content': 'go'},
-          {
-            'role': 'assistant',
-            'content': null,
-            'tool_calls': [
-              {
-                'id': 'a',
-                'type': 'function',
-                'function': {'name': 'read', 'arguments': '{}'},
-              },
-            ],
-          },
-          {'role': 'tool', 'tool_call_id': 'a', 'content': 'file contents'},
-        ];
+  group('injectParallelSingleCallHintIntoLastTool (reminder wire format)', () {
+    test('OpenAI: appends to the last (and only) tool message', () {
+      final msgs = <Map<String, dynamic>>[
+        {'role': 'user', 'content': 'go'},
+        {
+          'role': 'assistant',
+          'content': null,
+          'tool_calls': [
+            {
+              'id': 'a',
+              'type': 'function',
+              'function': {'name': 'read', 'arguments': '{}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'a', 'content': 'file contents'},
+      ];
 
-        injectParallelSingleCallHintIntoLastTool(
-          msgs,
-          isAnthropic: false,
-          consecutiveCount: 10,
-        );
+      injectParallelSingleCallHintIntoLastTool(
+        msgs,
+        isAnthropic: false,
+        consecutiveCount: 10,
+      );
 
-        expect(msgs, hasLength(3),
-            reason: 'no new sibling user or text block added');
-        final last = msgs.last;
-        expect(last['role'], 'tool');
-        final content = last['content'] as String;
-        expect(content, startsWith('file contents'));
-        expect(content, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
-        expect(content, contains('10 consecutive'));
-        // And critically: NOT the praise marker. Same placement,
-        // different signal.
-        expect(content, isNot(contains(parallelHintEmbeddedMarker)));
-      });
+      expect(
+        msgs,
+        hasLength(3),
+        reason: 'no new sibling user or text block added',
+      );
+      final last = msgs.last;
+      expect(last['role'], 'tool');
+      final content = last['content'] as String;
+      expect(content, startsWith('file contents'));
+      expect(
+        content,
+        contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
+      );
+      expect(content, contains('10 consecutive'));
+      // And critically: NOT the praise marker. Same placement,
+      // different signal.
+      expect(content, isNot(contains(parallelHintEmbeddedMarker)));
+    });
 
-      test('Anthropic: appends to the last tool_result block', () {
-        final msgs = <Map<String, dynamic>>[
-          {'role': 'user', 'content': 'go'},
-          {
-            'role': 'assistant',
-            'content': [
-              {
-                'type': 'tool_use',
-                'id': 'a',
-                'name': 'read',
-                'input': {},
-              },
-            ],
-          },
-          {
-            'role': 'user',
-            'content': [
-              {
-                'type': 'tool_result',
-                'tool_use_id': 'a',
-                'content': 'file contents',
-              },
-            ],
-          },
-        ];
+    test('Anthropic: appends to the last tool_result block', () {
+      final msgs = <Map<String, dynamic>>[
+        {'role': 'user', 'content': 'go'},
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'tool_use', 'id': 'a', 'name': 'read', 'input': {}},
+          ],
+        },
+        {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'a',
+              'content': 'file contents',
+            },
+          ],
+        },
+      ];
 
-        injectParallelSingleCallHintIntoLastTool(
-          msgs,
-          isAnthropic: true,
-          consecutiveCount: 10,
-        );
+      injectParallelSingleCallHintIntoLastTool(
+        msgs,
+        isAnthropic: true,
+        consecutiveCount: 10,
+      );
 
-        expect(msgs, hasLength(3));
-        final lastMessage = msgs.last;
-        expect(lastMessage['role'], 'user');
-        final blocks = lastMessage['content'] as List;
-        expect(blocks, hasLength(1));
-        final block = blocks.first;
-        expect(block['type'], 'tool_result');
-        final content = block['content'] as String;
-        expect(content, contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)));
-        expect(content, contains('10 consecutive'));
-      });
+      expect(msgs, hasLength(3));
+      final lastMessage = msgs.last;
+      expect(lastMessage['role'], 'user');
+      final blocks = lastMessage['content'] as List;
+      expect(blocks, hasLength(1));
+      final block = blocks.first;
+      expect(block['type'], 'tool_result');
+      final content = block['content'] as String;
+      expect(
+        content,
+        contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
+      );
+      expect(content, contains('10 consecutive'));
+    });
 
-      test('is a no-op on an empty message list (defensive)', () {
-        final msgs = <Map<String, dynamic>>[];
-        injectParallelSingleCallHintIntoLastTool(
-          msgs,
-          isAnthropic: false,
-          consecutiveCount: 5,
-        );
-        expect(msgs, isEmpty);
-      });
+    test('is a no-op on an empty message list (defensive)', () {
+      final msgs = <Map<String, dynamic>>[];
+      injectParallelSingleCallHintIntoLastTool(
+        msgs,
+        isAnthropic: false,
+        consecutiveCount: 5,
+      );
+      expect(msgs, isEmpty);
+    });
 
-      test('THROWS if called for the urgent tier (use the user-message helper)', () {
+    test(
+      'THROWS if called for the urgent tier (use the user-message helper)',
+      () {
         // Round 30 with default threshold → urgent tier. The
         // tool-result-append helper refuses to render this and
         // tells the caller to use the user-role helper instead.
@@ -459,9 +438,9 @@ void main() {
           ),
           throwsA(isA<StateError>()),
         );
-      });
-    },
-  );
+      },
+    );
+  });
 
   // ─────────────────────────────────────────────────────────────────
   // 2d. Single-call hint tier logic (mild / firm / urgent)
@@ -469,14 +448,18 @@ void main() {
   group('singleCallHintSeverityFor (tier boundary)', () {
     test('count == threshold → mild', () {
       expect(singleCallHintSeverityFor(10), SingleCallHintSeverity.mild);
-      expect(singleCallHintSeverityFor(5, threshold: 5),
-          SingleCallHintSeverity.mild);
+      expect(
+        singleCallHintSeverityFor(5, threshold: 5),
+        SingleCallHintSeverity.mild,
+      );
     });
 
     test('count == 2 * threshold → firm', () {
       expect(singleCallHintSeverityFor(20), SingleCallHintSeverity.firm);
-      expect(singleCallHintSeverityFor(6, threshold: 3),
-          SingleCallHintSeverity.firm);
+      expect(
+        singleCallHintSeverityFor(6, threshold: 3),
+        SingleCallHintSeverity.firm,
+      );
     });
 
     test('count >= 3 * threshold → urgent', () {
@@ -568,8 +551,11 @@ void main() {
       // Length grew by exactly one — the new user message.
       expect(msgs, hasLength(4));
       final newMsg = msgs.last;
-      expect(newMsg['role'], 'user',
-          reason: 'urgent tier must surface as a user-role message');
+      expect(
+        newMsg['role'],
+        'user',
+        reason: 'urgent tier must surface as a user-role message',
+      );
       final content = newMsg['content'] as String;
       // The urgent-tier body is user-voice coaching rather than
       // meta-commentary, so the integer counter is gone. Pin the
@@ -592,16 +578,22 @@ void main() {
       // `renderParallelSingleCallHintUserMessage` docstring.
       expect(
         content,
-        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent))),
+        isNot(
+          contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent)),
+        ),
         reason: 'urgent-tier user message must not carry a system-note marker',
       );
       expect(
         content,
-        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild))),
+        isNot(
+          contains(parallelSingleCallHintMarker(SingleCallHintSeverity.mild)),
+        ),
       );
       expect(
         content,
-        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.firm))),
+        isNot(
+          contains(parallelSingleCallHintMarker(SingleCallHintSeverity.firm)),
+        ),
       );
       // And NOT the praise marker — this is the corrective signal,
       // not the positive one.
@@ -614,12 +606,7 @@ void main() {
         {
           'role': 'assistant',
           'content': [
-            {
-              'type': 'tool_use',
-              'id': 'a',
-              'name': 'read',
-              'input': {},
-            },
+            {'type': 'tool_use', 'id': 'a', 'name': 'read', 'input': {}},
           ],
         },
         {
@@ -657,7 +644,9 @@ void main() {
       // system-note marker on the urgent-tier user message.
       expect(
         text,
-        isNot(contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent))),
+        isNot(
+          contains(parallelSingleCallHintMarker(SingleCallHintSeverity.urgent)),
+        ),
         reason: 'urgent-tier user message must not carry a system-note marker',
       );
       expect(text, isNot(contains(parallelHintEmbeddedMarker)));
@@ -670,7 +659,10 @@ void main() {
       // helper and the user-message helper would never be
       // exercised in normal use.
       expect(singleCallHintSeverityFor(30), SingleCallHintSeverity.urgent);
-      expect(singleCallHintSeverityFor(20), isNot(SingleCallHintSeverity.urgent));
+      expect(
+        singleCallHintSeverityFor(20),
+        isNot(SingleCallHintSeverity.urgent),
+      );
     });
   });
 
@@ -804,9 +796,7 @@ void main() {
         // should pass it through untouched rather than treating it
         // as "absent".
         expect(
-          llm.effectiveHintParallelCallsSingleThresholdFor(
-            modelOverride: 0,
-          ),
+          llm.effectiveHintParallelCallsSingleThresholdFor(modelOverride: 0),
           equals(0),
         );
       });
@@ -863,10 +853,7 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-      expect(
-        loader.providerByName('custom')!.hintParallelCalls,
-        isTrue,
-      );
+      expect(loader.providerByName('custom')!.hintParallelCalls, isTrue);
     });
 
     test('provider-level override parses to false', () async {
@@ -880,10 +867,7 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-      expect(
-        loader.providerByName('custom')!.hintParallelCalls,
-        isFalse,
-      );
+      expect(loader.providerByName('custom')!.hintParallelCalls, isFalse);
     });
 
     test('model-level override parses independently', () async {
@@ -959,10 +943,8 @@ praise_parallel_calls = false
       },
     );
 
-    test(
-      'new key wins when both new and legacy keys are present',
-      () async {
-        await writeProvider('''
+    test('new key wins when both new and legacy keys are present', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls = false
@@ -973,24 +955,21 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        // The legacy key disagrees (true) but the new key (false) wins.
-        expect(
-          loader.providerByName('custom')!.hintParallelCalls,
-          isFalse,
-          reason: 'new key should win over legacy key on conflict',
-        );
-      },
-    );
+      // The legacy key disagrees (true) but the new key (false) wins.
+      expect(
+        loader.providerByName('custom')!.hintParallelCalls,
+        isFalse,
+        reason: 'new key should win over legacy key on conflict',
+      );
+    });
 
-    test(
-      'legacy key with wrong type alongside valid new key surfaces '
-      'a clear error',
-      () async {
-        // The new key is valid (false), but the legacy key is a
-        // string. The loader should reject the whole config rather
-        // than silently co-exist — otherwise a malformed legacy
-        // value would be invisible to the user.
-        await writeProvider('''
+    test('legacy key with wrong type alongside valid new key surfaces '
+        'a clear error', () async {
+      // The new key is valid (false), but the legacy key is a
+      // string. The loader should reject the whole config rather
+      // than silently co-exist — otherwise a malformed legacy
+      // value would be invisible to the user.
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls = false
@@ -1001,45 +980,42 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        expect(loader.providerByName('custom'), isNull);
-        final errors = loader.loadErrors().values.join('\n');
-        expect(
-          errors,
-          contains('praise_parallel_calls'),
-          reason: 'error message should name the legacy key',
-        );
-        expect(
-          errors,
-          contains('deprecated'),
-          reason: 'error message should hint at migration',
-        );
-      },
-    );
+      expect(loader.providerByName('custom'), isNull);
+      final errors = loader.loadErrors().values.join('\n');
+      expect(
+        errors,
+        contains('praise_parallel_calls'),
+        reason: 'error message should name the legacy key',
+      );
+      expect(
+        errors,
+        contains('deprecated'),
+        reason: 'error message should hint at migration',
+      );
+    });
   });
 
-  group(
-    'ProviderConfigLoader — hint_parallel_calls_single_threshold',
-    () {
-      late Directory tempDir;
-      late ProviderConfigLoader loader;
+  group('ProviderConfigLoader — hint_parallel_calls_single_threshold', () {
+    late Directory tempDir;
+    late ProviderConfigLoader loader;
 
-      setUp(() async {
-        tempDir = await Directory.systemTemp.createTemp('crux_threshold_');
-        loader = ProviderConfigLoader(providersDir: tempDir);
-      });
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_threshold_');
+      loader = ProviderConfigLoader(providersDir: tempDir);
+    });
 
-      tearDown(() async {
-        await tempDir.delete(recursive: true);
-      });
+    tearDown(() async {
+      await tempDir.delete(recursive: true);
+    });
 
-      Future<void> writeProvider(String body) async {
-        final f = File('${tempDir.path}/custom.toml');
-        await f.writeAsString(body);
-        await loader.loadAll();
-      }
+    Future<void> writeProvider(String body) async {
+      final f = File('${tempDir.path}/custom.toml');
+      await f.writeAsString(body);
+      await loader.loadAll();
+    }
 
-      test('defaults to null on both provider and model', () async {
-        await writeProvider('''
+    test('defaults to null on both provider and model', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 
@@ -1048,13 +1024,13 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        final p = loader.providerByName('custom')!;
-        expect(p.hintParallelCallsSingleThreshold, isNull);
-        expect(p.models.first.hintParallelCallsSingleThreshold, isNull);
-      });
+      final p = loader.providerByName('custom')!;
+      expect(p.hintParallelCallsSingleThreshold, isNull);
+      expect(p.models.first.hintParallelCallsSingleThreshold, isNull);
+    });
 
-      test('provider-level threshold parses', () async {
-        await writeProvider('''
+    test('provider-level threshold parses', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls_single_threshold = 25
@@ -1064,14 +1040,14 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        expect(
-          loader.providerByName('custom')!.hintParallelCallsSingleThreshold,
-          equals(25),
-        );
-      });
+      expect(
+        loader.providerByName('custom')!.hintParallelCallsSingleThreshold,
+        equals(25),
+      );
+    });
 
-      test('model-level threshold parses independently', () async {
-        await writeProvider('''
+    test('model-level threshold parses independently', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 
@@ -1081,13 +1057,13 @@ name = "M1"
 context_size = 1000
 hint_parallel_calls_single_threshold = 5
 ''');
-        final p = loader.providerByName('custom')!;
-        expect(p.hintParallelCallsSingleThreshold, isNull);
-        expect(p.models.first.hintParallelCallsSingleThreshold, equals(5));
-      });
+      final p = loader.providerByName('custom')!;
+      expect(p.hintParallelCallsSingleThreshold, isNull);
+      expect(p.models.first.hintParallelCallsSingleThreshold, equals(5));
+    });
 
-      test('0 is accepted (the modulo gate collapses to "always")', () async {
-        await writeProvider('''
+    test('0 is accepted (the modulo gate collapses to "always")', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls_single_threshold = 0
@@ -1097,14 +1073,14 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        expect(
-          loader.providerByName('custom')!.hintParallelCallsSingleThreshold,
-          equals(0),
-        );
-      });
+      expect(
+        loader.providerByName('custom')!.hintParallelCallsSingleThreshold,
+        equals(0),
+      );
+    });
 
-      test('negative value is rejected with FormatException', () async {
-        await writeProvider('''
+    test('negative value is rejected with FormatException', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls_single_threshold = -1
@@ -1114,13 +1090,13 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        expect(loader.providerByName('custom'), isNull);
-        final errors = loader.loadErrors().values.join('\n');
-        expect(errors, contains('>= 0'));
-      });
+      expect(loader.providerByName('custom'), isNull);
+      final errors = loader.loadErrors().values.join('\n');
+      expect(errors, contains('>= 0'));
+    });
 
-      test('non-integer value is rejected with FormatException', () async {
-        await writeProvider('''
+    test('non-integer value is rejected with FormatException', () async {
+      await writeProvider('''
 type = "openai_compatible"
 endpoint_url = "https://example.com/v1"
 hint_parallel_calls_single_threshold = "ten"
@@ -1130,12 +1106,11 @@ id = "m1"
 name = "M1"
 context_size = 1000
 ''');
-        expect(loader.providerByName('custom'), isNull);
-        final errors = loader.loadErrors().values.join('\n');
-        expect(errors, contains('must be an integer'));
-      });
-    },
-  );
+      expect(loader.providerByName('custom'), isNull);
+      final errors = loader.loadErrors().values.join('\n');
+      expect(errors, contains('must be an integer'));
+    });
+  });
 
   // ─────────────────────────────────────────────────────────────────────
   // 4. End-to-end persistence: parallel_praise row + value integrity
@@ -1186,39 +1161,46 @@ context_size = 1000
       expect(msg.parallelCount, 0);
     });
 
-    test('parallel_praise row appears after a tool_call row in order', () async {
-      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q');
-      await store.messageStore.addToolRound(
-        sessionId,
-        roundText: '',
-        toolCalls: [
-          ToolCallData(callId: 'a', name: 'grep', input: {}),
-          ToolCallData(callId: 'b', name: 'read', input: {}),
-        ],
-        results: [
-          (callId: 'a', output: 'match', meta: ''),
-          (callId: 'b', output: 'contents', meta: ''),
-        ],
-      );
-      await store.messageStore.addMessage(
-        sessionId,
-        role: 'parallel_praise',
-        content: renderParallelPraiseBubbleLabel(2),
-        parallelCount: 2,
-      );
+    test(
+      'parallel_praise row appears after a tool_call row in order',
+      () async {
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'user',
+          content: 'q',
+        );
+        await store.messageStore.addToolRound(
+          sessionId,
+          roundText: '',
+          toolCalls: [
+            ToolCallData(callId: 'a', name: 'grep', input: {}),
+            ToolCallData(callId: 'b', name: 'read', input: {}),
+          ],
+          results: [
+            (callId: 'a', output: 'match', meta: ''),
+            (callId: 'b', output: 'contents', meta: ''),
+          ],
+        );
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'parallel_praise',
+          content: renderParallelPraiseBubbleLabel(2),
+          parallelCount: 2,
+        );
 
-      final msgs = await store.messageStore.getMessages(sessionId);
-      // The renderer relies on this order to draw the praise inline
-      // directly below the matching tool-call list.
-      expect(msgs.map((m) => m.role).toList(), [
-        'user',
-        'tool_call',
-        'tool',
-        'tool',
-        'parallel_praise',
-      ]);
-      expect(msgs.last.parallelCount, 2);
-    });
+        final msgs = await store.messageStore.getMessages(sessionId);
+        // The renderer relies on this order to draw the praise inline
+        // directly below the matching tool-call list.
+        expect(msgs.map((m) => m.role).toList(), [
+          'user',
+          'tool_call',
+          'tool',
+          'tool',
+          'parallel_praise',
+        ]);
+        expect(msgs.last.parallelCount, 2);
+      },
+    );
   });
 
   // ─────────────────────────────────────────────────────────────────────
@@ -1251,108 +1233,123 @@ context_size = 1000
       await db.close();
     });
 
-    test('addMessage with role=single_call_reminder stores consecutiveCount', () async {
-      final msg = await store.messageStore.addMessage(
-        sessionId,
-        role: 'single_call_reminder',
-        content: renderSingleCallReminderBubbleLabel(10),
-        parallelCount: 10,
-      );
-      expect(msg.role, 'single_call_reminder');
-      expect(msg.parallelCount, 10);
-      expect(msg.content, contains('10 consecutive single-tool-call rounds'));
+    test(
+      'addMessage with role=single_call_reminder stores consecutiveCount',
+      () async {
+        final msg = await store.messageStore.addMessage(
+          sessionId,
+          role: 'single_call_reminder',
+          content: renderSingleCallReminderBubbleLabel(10),
+          parallelCount: 10,
+        );
+        expect(msg.role, 'single_call_reminder');
+        expect(msg.parallelCount, 10);
+        expect(msg.content, contains('10 consecutive single-tool-call rounds'));
 
-      // Round-trip through the DB to confirm the column persists.
-      final loaded = (await store.messageStore.getMessages(sessionId)).first;
-      expect(loaded.role, 'single_call_reminder');
-      expect(loaded.parallelCount, 10);
-    });
+        // Round-trip through the DB to confirm the column persists.
+        final loaded = (await store.messageStore.getMessages(sessionId)).first;
+        expect(loaded.role, 'single_call_reminder');
+        expect(loaded.parallelCount, 10);
+      },
+    );
 
-    test('single_call_reminder row appears after a tool_call row in order', () async {
-      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q');
-      await store.messageStore.addToolRound(
-        sessionId,
-        roundText: '',
-        toolCalls: [
-          // Single tool call (drift round) — produces one tool row.
-          ToolCallData(callId: 'a', name: 'read', input: {}),
-        ],
-        results: [
-          (callId: 'a', output: 'contents', meta: ''),
-        ],
-      );
-      await store.messageStore.addMessage(
-        sessionId,
-        role: 'single_call_reminder',
-        content: renderSingleCallReminderBubbleLabel(10),
-        parallelCount: 10,
-      );
+    test(
+      'single_call_reminder row appears after a tool_call row in order',
+      () async {
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'user',
+          content: 'q',
+        );
+        await store.messageStore.addToolRound(
+          sessionId,
+          roundText: '',
+          toolCalls: [
+            // Single tool call (drift round) — produces one tool row.
+            ToolCallData(callId: 'a', name: 'read', input: {}),
+          ],
+          results: [(callId: 'a', output: 'contents', meta: '')],
+        );
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'single_call_reminder',
+          content: renderSingleCallReminderBubbleLabel(10),
+          parallelCount: 10,
+        );
 
-      final msgs = await store.messageStore.getMessages(sessionId);
-      // Same inline-under-the-tool-call-list ordering contract as
-      // the praise bubble: the renderer draws the reminder
-      // directly below the matching tool-call row.
-      expect(msgs.map((m) => m.role).toList(), [
-        'user',
-        'tool_call',
-        'tool',
-        'single_call_reminder',
-      ]);
-      expect(msgs.last.parallelCount, 10);
-    });
+        final msgs = await store.messageStore.getMessages(sessionId);
+        // Same inline-under-the-tool-call-list ordering contract as
+        // the praise bubble: the renderer draws the reminder
+        // directly below the matching tool-call row.
+        expect(msgs.map((m) => m.role).toList(), [
+          'user',
+          'tool_call',
+          'tool',
+          'single_call_reminder',
+        ]);
+        expect(msgs.last.parallelCount, 10);
+      },
+    );
 
-    test('parallel_praise and single_call_reminder can coexist in one session', () async {
-      // Round 1: praise (batched).
-      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q');
-      await store.messageStore.addToolRound(
-        sessionId,
-        roundText: '',
-        toolCalls: [
-          ToolCallData(callId: 'a', name: 'grep', input: {}),
-          ToolCallData(callId: 'b', name: 'read', input: {}),
-        ],
-        results: [
-          (callId: 'a', output: 'match', meta: ''),
-          (callId: 'b', output: 'contents', meta: ''),
-        ],
-      );
-      await store.messageStore.addMessage(
-        sessionId,
-        role: 'parallel_praise',
-        content: renderParallelPraiseBubbleLabel(2),
-        parallelCount: 2,
-      );
-      // Round 2: drift (single call) + reminder.
-      await store.messageStore.addMessage(sessionId, role: 'user', content: 'q2');
-      await store.messageStore.addToolRound(
-        sessionId,
-        roundText: '',
-        toolCalls: [
-          ToolCallData(callId: 'c', name: 'read', input: {}),
-        ],
-        results: [
-          (callId: 'c', output: 'contents', meta: ''),
-        ],
-      );
-      await store.messageStore.addMessage(
-        sessionId,
-        role: 'single_call_reminder',
-        content: renderSingleCallReminderBubbleLabel(10),
-        parallelCount: 10,
-      );
+    test(
+      'parallel_praise and single_call_reminder can coexist in one session',
+      () async {
+        // Round 1: praise (batched).
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'user',
+          content: 'q',
+        );
+        await store.messageStore.addToolRound(
+          sessionId,
+          roundText: '',
+          toolCalls: [
+            ToolCallData(callId: 'a', name: 'grep', input: {}),
+            ToolCallData(callId: 'b', name: 'read', input: {}),
+          ],
+          results: [
+            (callId: 'a', output: 'match', meta: ''),
+            (callId: 'b', output: 'contents', meta: ''),
+          ],
+        );
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'parallel_praise',
+          content: renderParallelPraiseBubbleLabel(2),
+          parallelCount: 2,
+        );
+        // Round 2: drift (single call) + reminder.
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'user',
+          content: 'q2',
+        );
+        await store.messageStore.addToolRound(
+          sessionId,
+          roundText: '',
+          toolCalls: [ToolCallData(callId: 'c', name: 'read', input: {})],
+          results: [(callId: 'c', output: 'contents', meta: '')],
+        );
+        await store.messageStore.addMessage(
+          sessionId,
+          role: 'single_call_reminder',
+          content: renderSingleCallReminderBubbleLabel(10),
+          parallelCount: 10,
+        );
 
-      final msgs = await store.messageStore.getMessages(sessionId);
-      expect(msgs.map((m) => m.role).toList(), [
-        'user',
-        'tool_call',
-        'tool',
-        'tool',
-        'parallel_praise',
-        'user',
-        'tool_call',
-        'tool',
-        'single_call_reminder',
-      ]);
-    });
+        final msgs = await store.messageStore.getMessages(sessionId);
+        expect(msgs.map((m) => m.role).toList(), [
+          'user',
+          'tool_call',
+          'tool',
+          'tool',
+          'parallel_praise',
+          'user',
+          'tool_call',
+          'tool',
+          'single_call_reminder',
+        ]);
+      },
+    );
   });
 }

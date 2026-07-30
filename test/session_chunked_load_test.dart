@@ -43,7 +43,11 @@ void main() {
     providerService = ProviderService(userProvidersDir: tempDir.path);
     store = SessionStore(CruxDatabase());
     final toolRegistry = ToolRegistry()
-      ..registerDefaults(FileReadTracker(), sessionStore: store, webProviderRegistry: WebProviderRegistry());
+      ..registerDefaults(
+        FileReadTracker(),
+        sessionStore: store,
+        webProviderRegistry: WebProviderRegistry(),
+      );
     controller = SessionController(
       store: store,
       providerService: providerService,
@@ -88,56 +92,68 @@ void main() {
     }
   }
 
-  test('first chunk contains the latest messages (newest at the end)',
-      () async {
-    await seedMessages(120);
+  test(
+    'first chunk contains the latest messages (newest at the end)',
+    () async {
+      await seedMessages(120);
 
-    // Track every progress tick to verify the first one already
-    // has the latest messages in the cache.
-    final progressTicks = <List<dynamic>>[];
-    final completer = Completer<void>();
-    controller.beginSwitchSession(session.id);
-    final future = controller.completeSwitchSession(
-      session.id,
-      onProgress: () {
-        final cache = controller.messageCache[session.id];
-        progressTicks.add(cache?.map((m) => m.content).toList() ?? const []);
-        if (!completer.isCompleted &&
-            (cache?.length ?? 0) >= 120) {
-          completer.complete();
-        }
-      },
-    );
-    future.whenComplete(() {
-      if (!completer.isCompleted) completer.complete();
-    });
-    await completer.future;
-    await future;
+      // Track every progress tick to verify the first one already
+      // has the latest messages in the cache.
+      final progressTicks = <List<dynamic>>[];
+      final completer = Completer<void>();
+      controller.beginSwitchSession(session.id);
+      final future = controller.completeSwitchSession(
+        session.id,
+        onProgress: () {
+          final cache = controller.messageCache[session.id];
+          progressTicks.add(cache?.map((m) => m.content).toList() ?? const []);
+          if (!completer.isCompleted && (cache?.length ?? 0) >= 120) {
+            completer.complete();
+          }
+        },
+      );
+      future.whenComplete(() {
+        if (!completer.isCompleted) completer.complete();
+      });
+      await completer.future;
+      await future;
 
-    // At least one tick must have fired (first chunk or COUNT).
-    expect(progressTicks, isNotEmpty,
-        reason: 'onProgress must fire at least once after the '
-            'first chunk lands');
+      // At least one tick must have fired (first chunk or COUNT).
+      expect(
+        progressTicks,
+        isNotEmpty,
+        reason:
+            'onProgress must fire at least once after the '
+            'first chunk lands',
+      );
 
-    // Locate the first tick where the cache actually contains
-    // messages — this is the chat history's "first paint with
-    // content" event. (The very first tick might be a COUNT(*)
-    // callback that ran ahead of the first chunk.)
-    final firstWithContent = progressTicks.firstWhere(
-      (l) => l.isNotEmpty,
-      orElse: () => const [],
-    );
-    expect(firstWithContent, isNotEmpty,
-        reason: 'at least one progress tick must observe a '
-            'non-empty cache (first chunk landed)');
-    expect(firstWithContent.last, 'message #119',
-        reason: 'cache tail after first chunk must be the most-'
+      // Locate the first tick where the cache actually contains
+      // messages — this is the chat history's "first paint with
+      // content" event. (The very first tick might be a COUNT(*)
+      // callback that ran ahead of the first chunk.)
+      final firstWithContent = progressTicks.firstWhere(
+        (l) => l.isNotEmpty,
+        orElse: () => const [],
+      );
+      expect(
+        firstWithContent,
+        isNotEmpty,
+        reason:
+            'at least one progress tick must observe a '
+            'non-empty cache (first chunk landed)',
+      );
+      expect(
+        firstWithContent.last,
+        'message #119',
+        reason:
+            'cache tail after first chunk must be the most-'
             'recently-inserted message — this is what the user '
-            'sees at the bottom of the chat on first paint');
-  });
+            'sees at the bottom of the chat on first paint',
+      );
+    },
+  );
 
-  test('subsequent chunks are strictly older than the first chunk',
-      () async {
+  test('subsequent chunks are strictly older than the first chunk', () async {
     // 250 messages forces the loader into the "older chunks"
     // path (first chunk = 50, then more chunks of 200).
     await seedMessages(250);
@@ -155,10 +171,14 @@ void main() {
     // each chunk either adds older messages (length grows) or is
     // a label-only tick (length stays the same).
     for (var i = 1; i < lengths.length; i++) {
-      expect(lengths[i], greaterThanOrEqualTo(lengths[i - 1]),
-          reason: 'cache length should never shrink as chunks '
-              'arrive: was ${lengths[i - 1]} at tick $i-1, now '
-              '${lengths[i]} at tick $i');
+      expect(
+        lengths[i],
+        greaterThanOrEqualTo(lengths[i - 1]),
+        reason:
+            'cache length should never shrink as chunks '
+            'arrive: was ${lengths[i - 1]} at tick $i-1, now '
+            '${lengths[i]} at tick $i',
+      );
     }
 
     // Final cache must contain all 250 seeded messages in
@@ -170,8 +190,7 @@ void main() {
     expect(cache.last.content, 'message #249');
   });
 
-  test('small session (≤ first chunk size) completes in one chunk',
-      () async {
+  test('small session (≤ first chunk size) completes in one chunk', () async {
     // 40 messages < first-chunk-size (50), so the loader should
     // finish after the first chunk without entering the older-
     // chunk loop at all.
@@ -186,8 +205,11 @@ void main() {
       },
     );
 
-    expect(controller.messageCache[session.id]?.length, 40,
-        reason: 'all 40 messages should be loaded');
+    expect(
+      controller.messageCache[session.id]?.length,
+      40,
+      reason: 'all 40 messages should be loaded',
+    );
     // Three onProgress calls happen for a session that fits in
     // the first chunk:
     //   1. After the first chunk lands (cache = 40).
@@ -200,26 +222,39 @@ void main() {
     // increases again — that would mean the older-chunk loop ran.
     // All three ticks show length 40, so the loop was correctly
     // skipped for this session size.
-    expect(ticks.length, lessThanOrEqualTo(3),
-        reason: 'sessions within the first-chunk size should not '
-            'trigger the older-chunk loop (got ${ticks.length} '
-            'ticks: $ticks)');
-    expect(ticks.toSet(), {40},
-        reason: 'cache length should never change during a '
-            'single-chunk load — if any tick shows a different '
-            'length, the older-chunk loop ran unexpectedly '
-            '(ticks: $ticks)');
+    expect(
+      ticks.length,
+      lessThanOrEqualTo(3),
+      reason:
+          'sessions within the first-chunk size should not '
+          'trigger the older-chunk loop (got ${ticks.length} '
+          'ticks: $ticks)',
+    );
+    expect(
+      ticks.toSet(),
+      {40},
+      reason:
+          'cache length should never change during a '
+          'single-chunk load — if any tick shows a different '
+          'length, the older-chunk loop ran unexpectedly '
+          '(ticks: $ticks)',
+    );
   });
 
-  test('loading state clears after completeSwitchSession finishes',
-      () async {
+  test('loading state clears after completeSwitchSession finishes', () async {
     await seedMessages(50);
     controller.beginSwitchSession(session.id);
-    expect(controller.isLoadingMessages(session.id), isTrue,
-        reason: 'beginSwitchSession must mark the session as loading');
+    expect(
+      controller.isLoadingMessages(session.id),
+      isTrue,
+      reason: 'beginSwitchSession must mark the session as loading',
+    );
     await controller.completeSwitchSession(session.id);
-    expect(controller.isLoadingMessages(session.id), isFalse,
-        reason: 'loading state must be cleared in the finally block');
+    expect(
+      controller.isLoadingMessages(session.id),
+      isFalse,
+      reason: 'loading state must be cleared in the finally block',
+    );
     expect(controller.loadingMessageTotal(session.id), isNull);
     expect(controller.loadingMessageLoaded(session.id), isNull);
   });
@@ -247,8 +282,11 @@ void main() {
     final allMessages = controller.messageCache[session.id] = await store
         .messageStore
         .getMessages(session.id, limit: 50);
-    expect(allMessages.length, 50,
-        reason: 'pre-condition: 50 messages in the pre-populated cache');
+    expect(
+      allMessages.length,
+      50,
+      reason: 'pre-condition: 50 messages in the pre-populated cache',
+    );
 
     // Now run the chunked loader. It should detect the cache and
     // resume from `beforeId = preloadedFirstId`, NOT re-fetch the
@@ -264,26 +302,41 @@ void main() {
     // Final cache should contain all 120 messages — the pre-loaded
     // 50 plus the 70 older ones the chunked loop fetched.
     final finalCache = controller.messageCache[session.id]!;
-    expect(finalCache.length, 120,
-        reason: 'all 120 messages should be present after resume');
+    expect(
+      finalCache.length,
+      120,
+      reason: 'all 120 messages should be present after resume',
+    );
     expect(finalCache.first.content, 'message #0');
     expect(finalCache.last.content, 'message #119');
     // The cache should never shrink mid-load — preloaded messages
     // are kept and older chunks are prepended.
     for (var i = 1; i < lengths.length; i++) {
-      expect(lengths[i], greaterThanOrEqualTo(lengths[i - 1]),
-          reason: 'cache length must be monotonically non-decreasing '
-              'during resume: tick ${i - 1} had ${lengths[i - 1]}, '
-              'tick $i had ${lengths[i]}');
+      expect(
+        lengths[i],
+        greaterThanOrEqualTo(lengths[i - 1]),
+        reason:
+            'cache length must be monotonically non-decreasing '
+            'during resume: tick ${i - 1} had ${lengths[i - 1]}, '
+            'tick $i had ${lengths[i]}',
+      );
     }
     // And the resumed loader's first observed length must be the
     // pre-loaded count (50), NOT zero — proves the first-chunk
     // fetch was skipped.
-    expect(lengths.first, greaterThanOrEqualTo(50),
-        reason: 'first progress tick should already see the pre-'
-            'loaded 50 messages, not 0');
-    expect(lengths.first, lessThanOrEqualTo(50),
-        reason: 'first tick cannot have grown past the pre-loaded '
-            'count without fetching at least one older chunk');
+    expect(
+      lengths.first,
+      greaterThanOrEqualTo(50),
+      reason:
+          'first progress tick should already see the pre-'
+          'loaded 50 messages, not 0',
+    );
+    expect(
+      lengths.first,
+      lessThanOrEqualTo(50),
+      reason:
+          'first tick cannot have grown past the pre-loaded '
+          'count without fetching at least one older chunk',
+    );
   });
 }

@@ -58,7 +58,8 @@ class CSharpServerActor extends LspServerActor {
   String? _findBinary() {
     final onPath = whichBinary('roslyn-language-server');
     if (onPath != null) return onPath;
-    final home = Platform.environment['DOTNET_CLI_HOME'] ??
+    final home =
+        Platform.environment['DOTNET_CLI_HOME'] ??
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'];
     if (home == null) return null;
@@ -78,8 +79,12 @@ class CSharpServerActor extends LspServerActor {
     if (dotnet == null) return null;
     try {
       final result = await Process.run(dotnet, [
-        'tool', 'install', 'roslyn-language-server',
-        '--tool-path', lspBinDir(), '--prerelease',
+        'tool',
+        'install',
+        'roslyn-language-server',
+        '--tool-path',
+        lspBinDir(),
+        '--prerelease',
       ]).timeout(const Duration(minutes: 3));
       if (result.exitCode != 0) return null;
     } catch (_) {

@@ -124,10 +124,7 @@ class _CompactionFullpaneState extends State<CompactionFullpane> {
     }
     if (chips.isEmpty) {
       chips.add(
-        Text(
-          '(no metadata)',
-          style: TextStyle(color: theme.onSurfaceDim),
-        ),
+        Text('(no metadata)', style: TextStyle(color: theme.onSurfaceDim)),
       );
     }
     return chips;
@@ -140,10 +137,7 @@ class _CompactionFullpaneState extends State<CompactionFullpane> {
         color: theme.surfaceVariant,
         borderRadius: BorderRadius.circular(1),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: theme.onSurfaceVariant),
-      ),
+      child: Text(label, style: TextStyle(color: theme.onSurfaceVariant)),
     );
   }
 

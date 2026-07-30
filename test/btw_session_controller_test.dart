@@ -45,7 +45,11 @@ void main() {
     // We construct real instances because the constructor
     // signatures require them; both are cheap to build.
     final toolRegistry = ToolRegistry()
-      ..registerDefaults(FileReadTracker(), sessionStore: store, webProviderRegistry: WebProviderRegistry());
+      ..registerDefaults(
+        FileReadTracker(),
+        sessionStore: store,
+        webProviderRegistry: WebProviderRegistry(),
+      );
     return SessionController(
       store: store,
       providerService: providerService,
@@ -61,8 +65,11 @@ void main() {
 
   test('btwTurnsFor returns an empty list for an unseen session', () {
     final c = buildController();
-    expect(c.btwTurnsFor(42), isEmpty,
-        reason: 'no btw chain for a session that has never seen /btw');
+    expect(
+      c.btwTurnsFor(42),
+      isEmpty,
+      reason: 'no btw chain for a session that has never seen /btw',
+    );
   });
 
   test('appendPendingBtwTurn + updateLastBtwTurnAiText chains turns', () {
@@ -72,8 +79,11 @@ void main() {
     c.appendPendingBtwTurn(sid, 'how do I undo in vim?');
     expect(c.btwTurnsFor(sid), hasLength(1));
     expect(c.btwTurnsFor(sid).last.userText, 'how do I undo in vim?');
-    expect(c.btwTurnsFor(sid).last.aiText, isEmpty,
-        reason: 'pending turn starts with empty AI text');
+    expect(
+      c.btwTurnsFor(sid).last.aiText,
+      isEmpty,
+      reason: 'pending turn starts with empty AI text',
+    );
 
     // Simulate the LLM streaming in the response.
     c.updateLastBtwTurnAiText(sid, 'Press ');
@@ -81,8 +91,11 @@ void main() {
     c.updateLastBtwTurnAiText(sid, 'Press u to undo.');
 
     final turns = c.btwTurnsFor(sid);
-    expect(turns, hasLength(1),
-        reason: 'updates are in place; no new turn is created');
+    expect(
+      turns,
+      hasLength(1),
+      reason: 'updates are in place; no new turn is created',
+    );
     expect(turns.last.aiText, 'Press u to undo.');
 
     // A second round should append, not replace.
@@ -105,8 +118,11 @@ void main() {
     expect(c.btwTurnsFor(sid), hasLength(3));
 
     c.clearBtwTurnsFor(sid);
-    expect(c.btwTurnsFor(sid), isEmpty,
-        reason: 'clearBtwTurnsFor must drop every accumulated turn');
+    expect(
+      c.btwTurnsFor(sid),
+      isEmpty,
+      reason: 'clearBtwTurnsFor must drop every accumulated turn',
+    );
   });
 
   test('chains are isolated per session', () {
@@ -124,8 +140,11 @@ void main() {
     // Clearing session 1 must not touch session 2.
     c.clearBtwTurnsFor(1);
     expect(c.btwTurnsFor(1), isEmpty);
-    expect(c.btwTurnsFor(2), hasLength(1),
-        reason: 'chains are per-session, not global');
+    expect(
+      c.btwTurnsFor(2),
+      hasLength(1),
+      reason: 'chains are per-session, not global',
+    );
   });
 
   test('updateLastBtwTurnAiText is a no-op on an empty chain', () {
@@ -133,9 +152,13 @@ void main() {
     final sid = 11;
     // Must not throw, must not create a phantom turn.
     c.updateLastBtwTurnAiText(sid, 'orphan update');
-    expect(c.btwTurnsFor(sid), isEmpty,
-        reason: 'updates with no pending turn must not silently '
-            'create a chain entry');
+    expect(
+      c.btwTurnsFor(sid),
+      isEmpty,
+      reason:
+          'updates with no pending turn must not silently '
+          'create a chain entry',
+    );
   });
 
   test('switchSession preserves the prior session\'s btw chain', () async {
@@ -172,15 +195,24 @@ void main() {
     // Switching to B must NOT touch A's chain. B's chain is also
     // untouched (it belongs to the new current session).
     await c.switchSession(sessionB.id);
-    expect(c.btwTurnsFor(sessionA.id), hasLength(1),
-        reason: 'prior session\'s btw chain must survive a switch');
-    expect(c.btwTurnsFor(sessionB.id), hasLength(1),
-        reason: 'new session\'s chain must be untouched');
+    expect(
+      c.btwTurnsFor(sessionA.id),
+      hasLength(1),
+      reason: 'prior session\'s btw chain must survive a switch',
+    );
+    expect(
+      c.btwTurnsFor(sessionB.id),
+      hasLength(1),
+      reason: 'new session\'s chain must be untouched',
+    );
 
     // Switch back to A and verify the chain is still there.
     await c.switchSession(sessionA.id);
-    expect(c.btwTurnsFor(sessionA.id), hasLength(1),
-        reason: 'chain must still be intact after a round-trip switch');
+    expect(
+      c.btwTurnsFor(sessionA.id),
+      hasLength(1),
+      reason: 'chain must still be intact after a round-trip switch',
+    );
     expect(c.btwTurnsFor(sessionA.id).last.userText, 'a question');
     expect(c.btwTurnsFor(sessionA.id).last.aiText, 'an answer');
   });
@@ -207,16 +239,20 @@ void main() {
 
     // Delete session A and verify only B's chain survives.
     await c.deleteSession(sessionA.id);
-    expect(c.btwTurnsFor(sessionA.id), isEmpty,
-        reason: 'deleted session\'s chain must not leak');
-    expect(c.btwTurnsFor(sessionB.id), hasLength(1),
-        reason: 'unrelated sessions\' chains must be untouched');
+    expect(
+      c.btwTurnsFor(sessionA.id),
+      isEmpty,
+      reason: 'deleted session\'s chain must not leak',
+    );
+    expect(
+      c.btwTurnsFor(sessionB.id),
+      hasLength(1),
+      reason: 'unrelated sessions\' chains must be untouched',
+    );
   });
 
-  test(
-      'btw content is never persisted — the LLM context for a real '
-      'turn only sees persisted real messages, never the btw chain',
-      () async {
+  test('btw content is never persisted — the LLM context for a real '
+      'turn only sees persisted real messages, never the btw chain', () async {
     // This is the core guarantee: when the user types a non-`/btw`
     // message after a btw round, the LLM that responds to the real
     // turn must NOT see the btw content in its context. The design
@@ -279,23 +315,38 @@ void main() {
     // The persisted history (what the LLM sees) must contain only
     // the real turn — no btw content at all.
     final persisted = await store.messageStore.getMessages(session.id);
-    expect(persisted, hasLength(1),
-        reason: 'only the real turn should be persisted');
+    expect(
+      persisted,
+      hasLength(1),
+      reason: 'only the real turn should be persisted',
+    );
     expect(persisted.single.role, equals('user'));
     expect(persisted.single.content, equals("now let's refactor"));
 
     // And the btw chain is empty.
-    expect(c.btwTurnsFor(session.id), isEmpty,
-        reason: 'chain must be empty after a real turn');
+    expect(
+      c.btwTurnsFor(session.id),
+      isEmpty,
+      reason: 'chain must be empty after a real turn',
+    );
 
     // Critically: nowhere in the persisted history do any of the
     // btw strings appear.
     final allPersistedText = persisted.map((m) => m.content).join(' ');
-    expect(allPersistedText.contains('how do I undo'), isFalse,
-        reason: 'btw question must not leak into the real turn history');
-    expect(allPersistedText.contains('Press u'), isFalse,
-        reason: 'btw answer must not leak into the real turn history');
-    expect(allPersistedText.contains('Ctrl-r'), isFalse,
-        reason: 'btw follow-up must not leak into the real turn history');
+    expect(
+      allPersistedText.contains('how do I undo'),
+      isFalse,
+      reason: 'btw question must not leak into the real turn history',
+    );
+    expect(
+      allPersistedText.contains('Press u'),
+      isFalse,
+      reason: 'btw answer must not leak into the real turn history',
+    );
+    expect(
+      allPersistedText.contains('Ctrl-r'),
+      isFalse,
+      reason: 'btw follow-up must not leak into the real turn history',
+    );
   });
 }

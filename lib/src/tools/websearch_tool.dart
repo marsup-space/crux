@@ -53,60 +53,57 @@ class WebSearchTool extends ToolDef {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'query': {
-            'type': 'string',
-            'description':
-                'The search query string. Supports operators like '
-                    '"python tutorial site:docs.python.org" or '
-                    '"recipes -site:facebook.com".',
-          },
-          'num_results': {
-            'type': 'integer',
-            'description':
-                'Target number of results to return (1-50). Provider '
-                    'may return fewer. Beyond a single page (~10), '
-                    'the tool will automatically follow up with '
-                    'additional page requests.',
-            'minimum': 1,
-            'maximum': 50,
-            'default': 10,
-          },
-          'location': {
-            'type': 'string',
-            'description':
-                'ISO 3166-1 alpha-2 country code for geo-targeted '
-                    'results (e.g. "US", "GB", "FR", "DE", "JP"). '
-                    'When set without `language`, language auto-'
-                    'resolves to the most-used language in that '
-                    'country.',
-          },
-          'language': {
-            'type': 'string',
-            'description':
-                'Language code for result language (e.g. "en", '
-                    '"fr", "ja", "zh"). When set without `location`, '
-                    'location auto-resolves to the country where '
-                    'that language is most used.',
-          },
-          'include_thumbnail': {
-            'type': 'boolean',
-            'description':
-                'When true, includes a thumbnail URL on each result '
-                    'when the provider has one available. Off by '
-                    'default to keep the output small.',
-            'default': false,
-          },
-        },
-        'required': ['query'],
-      };
+    'type': 'object',
+    'properties': {
+      'query': {
+        'type': 'string',
+        'description':
+            'The search query string. Supports operators like '
+            '"python tutorial site:docs.python.org" or '
+            '"recipes -site:facebook.com".',
+      },
+      'num_results': {
+        'type': 'integer',
+        'description':
+            'Target number of results to return (1-50). Provider '
+            'may return fewer. Beyond a single page (~10), '
+            'the tool will automatically follow up with '
+            'additional page requests.',
+        'minimum': 1,
+        'maximum': 50,
+        'default': 10,
+      },
+      'location': {
+        'type': 'string',
+        'description':
+            'ISO 3166-1 alpha-2 country code for geo-targeted '
+            'results (e.g. "US", "GB", "FR", "DE", "JP"). '
+            'When set without `language`, language auto-'
+            'resolves to the most-used language in that '
+            'country.',
+      },
+      'language': {
+        'type': 'string',
+        'description':
+            'Language code for result language (e.g. "en", '
+            '"fr", "ja", "zh"). When set without `location`, '
+            'location auto-resolves to the country where '
+            'that language is most used.',
+      },
+      'include_thumbnail': {
+        'type': 'boolean',
+        'description':
+            'When true, includes a thumbnail URL on each result '
+            'when the provider has one available. Off by '
+            'default to keep the output small.',
+        'default': false,
+      },
+    },
+    'required': ['query'],
+  };
 
   @override
-  Future<ToolResult> execute(
-    Map<String, dynamic> args,
-    ToolContext ctx,
-  ) async {
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     final query = args['query'] as String?;
     if (query == null || query.isEmpty) {
       return ToolResult.error('Missing required parameter: query');

@@ -420,9 +420,7 @@ class FrameProfiler {
       last.activeFeatures.addAll(snapshot);
     }
 
-    final reason = _pendingReasons.isEmpty
-        ? 'idle'
-        : _pendingReasons.join('+');
+    final reason = _pendingReasons.isEmpty ? 'idle' : _pendingReasons.join('+');
 
     // The timerTickCounts and pendingReasons maps are mutated
     // by mark*() between frames. Copy them onto the frame
@@ -467,9 +465,7 @@ class FrameProfiler {
 
     int pct(List<int> sorted, double p) {
       if (sorted.isEmpty) return 0;
-      final i = (sorted.length * p)
-          .floor()
-          .clamp(0, sorted.length - 1);
+      final i = (sorted.length * p).floor().clamp(0, sorted.length - 1);
       return sorted[i];
     }
 
@@ -487,9 +483,7 @@ class FrameProfiler {
       final avg = vals.isEmpty
           ? 0
           : vals.reduce((a, b) => a + b) ~/ vals.length;
-      final max = vals.isEmpty
-          ? 0
-          : vals.reduce((a, b) => a > b ? a : b);
+      final max = vals.isEmpty ? 0 : vals.reduce((a, b) => a > b ? a : b);
       reasonStats[entry.key] = {
         'count': vals.length,
         'avgTotalUs': avg,
@@ -515,8 +509,8 @@ class FrameProfiler {
           final isOn = v is bool
               ? v
               : v is num
-                  ? v != 0
-                  : v != null;
+              ? v != 0
+              : v != null;
           (isOn ? on : off).add(f.totalUs);
         }
         int avg(List<int> xs) =>

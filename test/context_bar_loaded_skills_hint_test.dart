@@ -125,8 +125,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
     }
 
-    test(
-        'hint shows the merged usage + skills content; empty '
+    test('hint shows the merged usage + skills content; empty '
         'skills render as `Loaded skills : none`', () async {
       await testNocterm('hint empty', (tester) async {
         sessionController.sessions = [
@@ -152,15 +151,14 @@ void main() {
         expect(
           HintController.instance.activeHint,
           'Context window usage.\n'
-              'Click to compact the session history.\n'
-              '\n'
-              'Loaded skills : none',
+          'Click to compact the session history.\n'
+          '\n'
+          'Loaded skills : none',
         );
       }, size: const Size(80, 20));
     });
 
-    test(
-        'hint lists loaded skills when present, alphabetical order, '
+    test('hint lists loaded skills when present, alphabetical order, '
         'still merged with the usage block', () async {
       await testNocterm('hint populated', (tester) async {
         sessionController.sessions = [
@@ -176,23 +174,25 @@ void main() {
         // Insertion order is unrelated to alphabetical — the hint
         // sorts internally so the tooltip text is stable across
         // mid-stream additions.
-        sessionController.runtime(1).loadedSkillNames
-            .addAll({'zeta', 'alpha', 'mu'});
+        sessionController.runtime(1).loadedSkillNames.addAll({
+          'zeta',
+          'alpha',
+          'mu',
+        });
         await mountBar(tester);
         await hoverBarAndSettle(tester);
         expect(HintController.instance.visible, isTrue);
         expect(
           HintController.instance.activeHint,
           'Context window usage.\n'
-              'Click to compact the session history.\n'
-              '\n'
-              'Loaded skills : alpha, mu, zeta',
+          'Click to compact the session history.\n'
+          '\n'
+          'Loaded skills : alpha, mu, zeta',
         );
       }, size: const Size(80, 20));
     });
 
-    test(
-        'hint reflects the running-state wording when the session '
+    test('hint reflects the running-state wording when the session '
         'is responding (compaction gated)', () async {
       await testNocterm('hint running', (tester) async {
         sessionController.sessions = [
@@ -228,7 +228,8 @@ void main() {
         expect(
           HintController.instance.activeHint,
           contains('Compaction unavailable while the agent is responding.'),
-          reason: 'running sessions must show the gated wording, not '
+          reason:
+              'running sessions must show the gated wording, not '
               'the click-to-compact wording',
         );
         expect(
@@ -238,10 +239,8 @@ void main() {
       }, size: const Size(80, 20));
     });
 
-    test(
-        'hint is hidden when there is no active session — prevents '
-        '`runtime(null)` from crashing the tooltip resolver',
-        () async {
+    test('hint is hidden when there is no active session — prevents '
+        '`runtime(null)` from crashing the tooltip resolver', () async {
       await testNocterm('hint no session', (tester) async {
         // No sessions mounted; the bar still builds (renders a
         // SizedBox). The hint should hide because the resolver
@@ -266,8 +265,7 @@ void main() {
       }, size: const Size(80, 20));
     });
 
-    test(
-        'hintMaxLines grows with the skill count — single-line '
+    test('hintMaxLines grows with the skill count — single-line '
         'hint with 4 skills (no wrap) stays at the 4-line floor, '
         'a 20-skill session grows the tooltip to fit the full '
         'inventory', () async {
@@ -306,11 +304,14 @@ void main() {
         // 1. Empty runtime: floor of 4 lines (the overlay's default
         //    height for the merged "usage + Loaded skills : none"
         //    hint — using less would clip the usage block).
-        final emptyState =
-            tester.findState<ContextBarState>();
-        expect(emptyState.hintMaxLines, 4,
-            reason: 'empty runtime must use the 4-line floor so the '
-                'usage block + `Loaded skills : none` fit');
+        final emptyState = tester.findState<ContextBarState>();
+        expect(
+          emptyState.hintMaxLines,
+          4,
+          reason:
+              'empty runtime must use the 4-line floor so the '
+              'usage block + `Loaded skills : none` fit',
+        );
 
         // 2. Many skills: the hint grows to fit the comma-joined
         //    list. Build 20 names of ~10 chars each; joined that's
@@ -318,24 +319,45 @@ void main() {
         //    wrap lines; +3 for usage block = 9 lines.
         final rt = sessionController.runtime(1);
         rt.loadedSkillNames.addAll({
-          'alpha-skill', 'beta-skill', 'gamma-skill', 'delta-skill',
-          'epsilon-skill', 'zeta-skill', 'eta-skill', 'theta-skill',
-          'iota-skill', 'kappa-skill', 'lambda-skill', 'mu-skill',
-          'nu-skill', 'xi-skill', 'omicron-skill', 'pi-skill',
-          'rho-skill', 'sigma-skill', 'tau-skill', 'upsilon-skill',
+          'alpha-skill',
+          'beta-skill',
+          'gamma-skill',
+          'delta-skill',
+          'epsilon-skill',
+          'zeta-skill',
+          'eta-skill',
+          'theta-skill',
+          'iota-skill',
+          'kappa-skill',
+          'lambda-skill',
+          'mu-skill',
+          'nu-skill',
+          'xi-skill',
+          'omicron-skill',
+          'pi-skill',
+          'rho-skill',
+          'sigma-skill',
+          'tau-skill',
+          'upsilon-skill',
         });
-        final populatedState =
-            tester.findState<ContextBarState>();
-        expect(populatedState.hintMaxLines, greaterThan(4),
-            reason:
-                '20 skills must produce a taller tooltip than the '
-                'empty-state 4-line floor — otherwise the comma-joined '
-                'list gets truncated by the overlay default');
+        final populatedState = tester.findState<ContextBarState>();
+        expect(
+          populatedState.hintMaxLines,
+          greaterThan(4),
+          reason:
+              '20 skills must produce a taller tooltip than the '
+              'empty-state 4-line floor — otherwise the comma-joined '
+              'list gets truncated by the overlay default',
+        );
         // Sanity: the 4-line overlay default is what the user
         // complained about; this assertion proves we exceed it.
-        expect(populatedState.hintMaxLines, greaterThanOrEqualTo(8),
-            reason: 'rough lower bound — 20 skills + 3 fixed lines + '
-                '6 wrap lines of skill list = ~9 lines');
+        expect(
+          populatedState.hintMaxLines,
+          greaterThanOrEqualTo(8),
+          reason:
+              'rough lower bound — 20 skills + 3 fixed lines + '
+              '6 wrap lines of skill list = ~9 lines',
+        );
       }, size: const Size(80, 30));
     });
   });

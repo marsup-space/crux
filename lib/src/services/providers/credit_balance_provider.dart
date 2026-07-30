@@ -54,12 +54,10 @@ mixin CreditBalanceProvider on LlmProvider {
 
   /// The most recent error, or null. Cleared on the next
   /// successful fetch.
-  CreditBalanceError? get latestCreditBalanceError =>
-      _latestCreditBalanceError;
+  CreditBalanceError? get latestCreditBalanceError => _latestCreditBalanceError;
 
   /// Whether polling is currently scheduled.
-  bool get isCreditBalancePolling =>
-      _creditBalanceTimer?.isActive ?? false;
+  bool get isCreditBalancePolling => _creditBalanceTimer?.isActive ?? false;
 
   /// Current polling interval.
   Duration get creditBalanceInterval => _creditBalanceInterval;
@@ -77,10 +75,7 @@ mixin CreditBalanceProvider on LlmProvider {
   /// Idempotent: calling repeatedly with the same key and
   /// interval is a no-op. Changing [interval] reschedules
   /// the next tick on the new cadence.
-  void startCreditBalancePolling({
-    required String apiKey,
-    Duration? interval,
-  }) {
+  void startCreditBalancePolling({required String apiKey, Duration? interval}) {
     _creditBalanceApiKey = apiKey;
     final needsRestart = _creditBalanceTimer != null;
     if (interval != null) _creditBalanceInterval = interval;

@@ -159,13 +159,13 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
     final tokText = isResponding
         ? '${tokPerSec.toStringAsFixed(1)} tok/s'
         : tokPerSec > 0
-            ? '${tokPerSec.toStringAsFixed(1)} tok/s'
-            : '— tok/s';
+        ? '${tokPerSec.toStringAsFixed(1)} tok/s'
+        : '— tok/s';
     final ttftText = isResponding
         ? component.streamingController.formatTtft(ttftMs)
         : ttftMs > 0
-            ? component.streamingController.formatTtft(ttftMs)
-            : '—';
+        ? component.streamingController.formatTtft(ttftMs)
+        : '—';
     final fg = isResponding
         ? CruxTheme.of(ro.context!).metricsActive
         : CruxTheme.of(ro.context!).metricsIdle;
@@ -259,14 +259,11 @@ class RenderMetricsDisplay extends RenderObject {
   BuildContext? context;
 
   RenderMetricsDisplay({
-    required String tokText,
-    required String ttftText,
-    required Color fg,
-    bool hovered = false,
-  })  : _tokText = tokText,
-        _ttftText = ttftText,
-        _fg = fg,
-        _hovered = hovered;
+    required this._tokText,
+    required this._ttftText,
+    required this._fg,
+    this._hovered = false,
+  });
 
   /// Setter that the [State] calls on every timer tick and
   /// on every build. No-ops if the values haven't changed,

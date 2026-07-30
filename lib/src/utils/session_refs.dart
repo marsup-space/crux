@@ -26,8 +26,7 @@ class SessionRef {
     required this.length,
   });
 
-  bool containsIndex(int index) =>
-      index >= offset && index < offset + length;
+  bool containsIndex(int index) => index >= offset && index < offset + length;
 
   /// The literal text of the reference, e.g. `ses://1014`.
   String get displayText => 'ses://$sessionId';
@@ -70,11 +69,13 @@ List<SessionRef> parseSessionRefs(List<InlineSpan> spans) {
       for (final m in _sesRefRegex.allMatches(text)) {
         final id = int.tryParse(m.group(1)!);
         if (id != null && id > 0) {
-          result.add(SessionRef(
-            sessionId: id,
-            offset: offsetRef[0] + m.start,
-            length: m.group(0)!.length,
-          ));
+          result.add(
+            SessionRef(
+              sessionId: id,
+              offset: offsetRef[0] + m.start,
+              length: m.group(0)!.length,
+            ),
+          );
         }
       }
     }
@@ -178,11 +179,14 @@ List<InlineSpan> applySessionLinkStyles(
       final refEnd = r.offset + r.length;
 
       if (refStart > cursor) {
-        result.add((text.substring(cursor - spanStart, refStart - spanStart),
-            baseStyle));
+        result.add((
+          text.substring(cursor - spanStart, refStart - spanStart),
+          baseStyle,
+        ));
       }
 
-      final isHovered = hoveredRef != null &&
+      final isHovered =
+          hoveredRef != null &&
           hoveredRef.offset == r.offset &&
           hoveredRef.length == r.length;
       final overlay = (isHovered && hoverStyle != null)
@@ -203,9 +207,7 @@ List<InlineSpan> applySessionLinkStyles(
     pos = spanEnd;
   }
 
-  return result
-      .map((e) => TextSpan(text: e.$1, style: e.$2))
-      .toList();
+  return result.map((e) => TextSpan(text: e.$1, style: e.$2)).toList();
 }
 
 typedef _FlatSpan = (String, TextStyle?);

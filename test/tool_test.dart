@@ -33,14 +33,18 @@ void main() {
     });
 
     test('resolves relative path against working directory', () {
-      final cwd = Platform.isWindows ? r'C:\home\user\project' : '/home/user/project';
+      final cwd = Platform.isWindows
+          ? r'C:\home\user\project'
+          : '/home/user/project';
       final result = resolvePath('src/main.dart', cwd);
       expect(p.basename(result), 'main.dart');
       expect(p.dirname(result), p.join(cwd, 'src'));
     });
 
     test('resolves dot-relative path', () {
-      final cwd = Platform.isWindows ? r'C:\home\user\project' : '/home/user/project';
+      final cwd = Platform.isWindows
+          ? r'C:\home\user\project'
+          : '/home/user/project';
       final result = resolvePath('./lib/app.dart', cwd);
       expect(p.basename(result), 'app.dart');
       expect(p.dirname(result), endsWith(p.join('lib')));
@@ -133,10 +137,7 @@ void main() {
       registry.register(ReadTool());
       registry.register(GrepTool());
       final executor = ToolExecutor(registry);
-      expect(
-        executor.allToolNames(),
-        orderedEquals(['bash', 'read', 'grep']),
-      );
+      expect(executor.allToolNames(), orderedEquals(['bash', 'read', 'grep']));
     });
 
     test('allToolNames is empty when nothing is registered', () {
@@ -144,18 +145,19 @@ void main() {
       expect(executor.allToolNames(), isEmpty);
     });
 
-    test(
-      'lookupTool is case-insensitive (so the unknown-tool abort '
-      'cannot be tricked by mixed-case tool names)',
-      () {
-        registry.register(BashTool());
-        final executor = ToolExecutor(registry);
-        expect(executor.lookupTool('Bash'), isNotNull);
-        expect(executor.lookupTool('ASK'), isNull,
-            reason: 'hallucinated tool names like "ask" must miss the '
-                'registry look-up so the streaming-time abort fires');
-      },
-    );
+    test('lookupTool is case-insensitive (so the unknown-tool abort '
+        'cannot be tricked by mixed-case tool names)', () {
+      registry.register(BashTool());
+      final executor = ToolExecutor(registry);
+      expect(executor.lookupTool('Bash'), isNotNull);
+      expect(
+        executor.lookupTool('ASK'),
+        isNull,
+        reason:
+            'hallucinated tool names like "ask" must miss the '
+            'registry look-up so the streaming-time abort fires',
+      );
+    });
 
     test(
       'executeTool returns the same defensive "Unknown tool" error '
@@ -172,11 +174,7 @@ void main() {
         // path remains as a defense-in-depth fallback for race
         // conditions where a tool was registered when the stream
         // started but unregistered before execution.
-        final call = ToolCall(
-          callId: 'cb-1',
-          name: 'ask',
-          input: {},
-        );
+        final call = ToolCall(callId: 'cb-1', name: 'ask', input: {});
         final result = await executor.executeTool(call, ctx);
         expect(result.title, 'Error');
         expect(result.output, contains('Unknown tool: ask'));
@@ -248,19 +246,19 @@ void main() {
     );
 
     test(
-        'checkWriteGuard reads file for the agent and signals "you can write now"',
-        () async {
-      final file = File('${tempDir.path}/unread.txt');
-      await file.writeAsString('content here');
-      final guard = await tracker.checkWriteGuard(file.path);
-      expect(guard, isNotNull);
-      expect(guard!.header, contains('[GUARD]'));
-      expect(guard.header, contains('BLOCKED'));
-      expect(guard.content, 'content here');
-    });
+      'checkWriteGuard reads file for the agent and signals "you can write now"',
+      () async {
+        final file = File('${tempDir.path}/unread.txt');
+        await file.writeAsString('content here');
+        final guard = await tracker.checkWriteGuard(file.path);
+        expect(guard, isNotNull);
+        expect(guard!.header, contains('[GUARD]'));
+        expect(guard.header, contains('BLOCKED'));
+        expect(guard.content, 'content here');
+      },
+    );
 
-    test(
-        'checkWriteGuard reads file for the agent when file is modified, '
+    test('checkWriteGuard reads file for the agent when file is modified, '
         'with a clear "pattern must match this version" hint', () async {
       final file = File('${tempDir.path}/modified.txt');
       await file.writeAsString('original');
@@ -292,25 +290,29 @@ void main() {
       expect(tracker.toMap(), {'/new/path.dart': 222});
     });
 
-    test('onRecordRead callback fires with sessionId and normalized path',
-        () async {
-      final calls = <(int, String, int)>[];
-      final t = FileReadTracker(
-        sessionId: 7,
-        onRecordRead: (sid, path, mtime) async {
-          calls.add((sid, path, mtime));
-        },
-      );
-      await t.recordRead('/foo/bar.dart', 999);
-      expect(calls.length, 1);
-      expect(calls[0], (7, '/foo/bar.dart', 999));
-    });
+    test(
+      'onRecordRead callback fires with sessionId and normalized path',
+      () async {
+        final calls = <(int, String, int)>[];
+        final t = FileReadTracker(
+          sessionId: 7,
+          onRecordRead: (sid, path, mtime) async {
+            calls.add((sid, path, mtime));
+          },
+        );
+        await t.recordRead('/foo/bar.dart', 999);
+        expect(calls.length, 1);
+        expect(calls[0], (7, '/foo/bar.dart', 999));
+      },
+    );
 
     test('onRecordRead does not fire when sessionId is null', () async {
       var called = false;
-      final t = FileReadTracker(onRecordRead: (_, _, _) async {
-        called = true;
-      });
+      final t = FileReadTracker(
+        onRecordRead: (_, _, _) async {
+          called = true;
+        },
+      );
       await t.recordRead('/foo/bar.dart', 999);
       expect(called, isFalse);
     });
@@ -322,17 +324,12 @@ void main() {
       expect(tracker.toMap().length, 0);
     });
 
-    test(
-        'recordWrite updates the in-memory cache so a follow-up guard check '
+    test('recordWrite updates the in-memory cache so a follow-up guard check '
         'does not false-trigger drift', () async {
       final file = File('${tempDir.path}/record_write_cache.dart');
       await file.writeAsString('original');
       final m1 = file.statSync().modified.millisecondsSinceEpoch;
-      await tracker.recordWrite(
-        file.path,
-        mtimeMs: m1,
-        intent: 'fix typo',
-      );
+      await tracker.recordWrite(file.path, mtimeMs: m1, intent: 'fix typo');
       // No real edit happened, but for the guard's purposes the
       // recorded mtime should now equal on-disk mtime.
       final guard = await tracker.checkWriteGuard(file.path);
@@ -340,87 +337,90 @@ void main() {
     });
 
     test(
-        'recordWrite fires onRecordWrite with sessionId, path, mtime, intent',
-        () async {
-      final writes = <(int, String, int, String)>[];
-      final t = FileReadTracker(
-        sessionId: 11,
-        onRecordWrite: (sid, path, mtime, intent) async {
-          writes.add((sid, path, mtime, intent));
-        },
-      );
-      await t.recordWrite('/x.dart', mtimeMs: 999, intent: 'add helper');
-      expect(writes, [(11, '/x.dart', 999, 'add helper')]);
-    });
+      'recordWrite fires onRecordWrite with sessionId, path, mtime, intent',
+      () async {
+        final writes = <(int, String, int, String)>[];
+        final t = FileReadTracker(
+          sessionId: 11,
+          onRecordWrite: (sid, path, mtime, intent) async {
+            writes.add((sid, path, mtime, intent));
+          },
+        );
+        await t.recordWrite('/x.dart', mtimeMs: 999, intent: 'add helper');
+        expect(writes, [(11, '/x.dart', 999, 'add helper')]);
+      },
+    );
 
     test(
-        'checkWriteGuard drift branch shows attribution when lookupAttribution '
-        'returns a different session with matching mtime', () async {
-      final file = File('${tempDir.path}/cross_session.dart');
-      await file.writeAsString('original');
-      final m1 = file.statSync().modified.millisecondsSinceEpoch;
-      // One tracker for both recordRead and checkWriteGuard so the
-      // drift branch (not the "never read" branch) is what fires.
-      final t = FileReadTracker(
-        onLookupAttribution: (path, currentMtime) async {
-          return (
-            sessionId: 42,
-            intent: 'refactor parser',
-            title: 'Refactor parser session',
-          );
-        },
-      );
-      await t.recordRead(file.path, m1);
-      // External write by another session — bump mtime on disk.
-      await Future.delayed(const Duration(milliseconds: 1100));
-      await file.writeAsString('updated');
-      final m2 = file.statSync().modified.millisecondsSinceEpoch;
+      'checkWriteGuard drift branch shows attribution when lookupAttribution '
+      'returns a different session with matching mtime',
+      () async {
+        final file = File('${tempDir.path}/cross_session.dart');
+        await file.writeAsString('original');
+        final m1 = file.statSync().modified.millisecondsSinceEpoch;
+        // One tracker for both recordRead and checkWriteGuard so the
+        // drift branch (not the "never read" branch) is what fires.
+        final t = FileReadTracker(
+          onLookupAttribution: (path, currentMtime) async {
+            return (
+              sessionId: 42,
+              intent: 'refactor parser',
+              title: 'Refactor parser session',
+            );
+          },
+        );
+        await t.recordRead(file.path, m1);
+        // External write by another session — bump mtime on disk.
+        await Future.delayed(const Duration(milliseconds: 1100));
+        await file.writeAsString('updated');
+        final m2 = file.statSync().modified.millisecondsSinceEpoch;
 
-      final guard = await t.checkWriteGuard(file.path);
-      expect(guard, isNotNull);
-      expect(guard!.header, contains('Last modified by session://42'));
-      expect(guard.header, contains('[Refactor parser session]'));
-      expect(guard.header, contains('with intent: "refactor parser"'));
-      expect(guard.header, contains('Use the session tool'));
-      // Sanity: m2 > m1 so the drift branch is what we're testing.
-      expect(m2, greaterThan(m1));
-    });
-
-    test(
-        'checkWriteGuard drift branch hides attribution when recorded mtime '
-        'does not match on-disk mtime (external edit since the write)',
-        () async {
-      final file = File('${tempDir.path}/stale_attribution.dart');
-      await file.writeAsString('original');
-      var lookupCalls = 0;
-      final t = FileReadTracker(
-        onLookupAttribution: (path, currentMtime) async {
-          lookupCalls++;
-          // Mirror the real chat_panel callback: drop the
-          // attribution row when its mtime no longer matches the
-          // on-disk mtime. External edit between the write and
-          // the guard check is exactly this case.
-          return null;
-        },
-      );
-      await t.recordRead(
-        file.path,
-        file.statSync().modified.millisecondsSinceEpoch,
-      );
-      await Future.delayed(const Duration(milliseconds: 1100));
-      await file.writeAsString('updated');
-      final m2 = file.statSync().modified.millisecondsSinceEpoch;
-
-      final guard = await t.checkWriteGuard(file.path);
-      expect(guard, isNotNull);
-      expect(guard!.header, isNot(contains('Last modified by')));
-      expect(guard.header, contains('modified since last read'));
-      expect(lookupCalls, 1); // queried, but callback returned null
-      expect(m2, greaterThan(0));
-    });
+        final guard = await t.checkWriteGuard(file.path);
+        expect(guard, isNotNull);
+        expect(guard!.header, contains('Last modified by session://42'));
+        expect(guard.header, contains('[Refactor parser session]'));
+        expect(guard.header, contains('with intent: "refactor parser"'));
+        expect(guard.header, contains('Use the session tool'));
+        // Sanity: m2 > m1 so the drift branch is what we're testing.
+        expect(m2, greaterThan(m1));
+      },
+    );
 
     test(
-        'checkWriteGuard drift branch hides attribution when the writer is '
+      'checkWriteGuard drift branch hides attribution when recorded mtime '
+      'does not match on-disk mtime (external edit since the write)',
+      () async {
+        final file = File('${tempDir.path}/stale_attribution.dart');
+        await file.writeAsString('original');
+        var lookupCalls = 0;
+        final t = FileReadTracker(
+          onLookupAttribution: (path, currentMtime) async {
+            lookupCalls++;
+            // Mirror the real chat_panel callback: drop the
+            // attribution row when its mtime no longer matches the
+            // on-disk mtime. External edit between the write and
+            // the guard check is exactly this case.
+            return null;
+          },
+        );
+        await t.recordRead(
+          file.path,
+          file.statSync().modified.millisecondsSinceEpoch,
+        );
+        await Future.delayed(const Duration(milliseconds: 1100));
+        await file.writeAsString('updated');
+        final m2 = file.statSync().modified.millisecondsSinceEpoch;
+
+        final guard = await t.checkWriteGuard(file.path);
+        expect(guard, isNotNull);
+        expect(guard!.header, isNot(contains('Last modified by')));
+        expect(guard.header, contains('modified since last read'));
+        expect(lookupCalls, 1); // queried, but callback returned null
+        expect(m2, greaterThan(0));
+      },
+    );
+
+    test('checkWriteGuard drift branch hides attribution when the writer is '
         'the same session (no cross-session info to add)', () async {
       final file = File('${tempDir.path}/self_write.dart');
       await file.writeAsString('original');
@@ -440,8 +440,7 @@ void main() {
       expect(guard!.header, isNot(contains('Last modified by')));
     });
 
-    test(
-        'readAttributionBanner returns [NOTE: …] line when lookupAttribution '
+    test('readAttributionBanner returns [NOTE: …] line when lookupAttribution '
         'returns a different session with matching mtime', () async {
       final t = FileReadTracker(
         onLookupAttribution: (path, currentMtime) async {
@@ -460,8 +459,7 @@ void main() {
       expect(banner, endsWith('.]'));
     });
 
-    test(
-        'readAttributionBanner returns empty string when lookupAttribution '
+    test('readAttributionBanner returns empty string when lookupAttribution '
         'returns null (no row or mtime mismatch)', () async {
       final t = FileReadTracker(
         onLookupAttribution: (path, currentMtime) async => null,
@@ -471,20 +469,20 @@ void main() {
     });
 
     test(
-        'readAttributionBanner returns empty when writer is the current session',
-        () async {
-      final t = FileReadTracker(
-        sessionId: 7,
-        onLookupAttribution: (path, currentMtime) async {
-          return (sessionId: 7, intent: 'self', title: 'me');
-        },
-      );
-      final banner = await t.readAttributionBanner('/foo.dart', 12345);
-      expect(banner, isEmpty);
-    });
+      'readAttributionBanner returns empty when writer is the current session',
+      () async {
+        final t = FileReadTracker(
+          sessionId: 7,
+          onLookupAttribution: (path, currentMtime) async {
+            return (sessionId: 7, intent: 'self', title: 'me');
+          },
+        );
+        final banner = await t.readAttributionBanner('/foo.dart', 12345);
+        expect(banner, isEmpty);
+      },
+    );
 
-    test(
-        'readAttributionBanner returns empty when both title and intent are '
+    test('readAttributionBanner returns empty when both title and intent are '
         'empty (nothing meaningful to say)', () async {
       final t = FileReadTracker(
         onLookupAttribution: (path, currentMtime) async {
@@ -495,16 +493,14 @@ void main() {
       expect(banner, isEmpty);
     });
 
-    test(
-        'readAttributionBanner returns empty when onLookupAttribution is null '
+    test('readAttributionBanner returns empty when onLookupAttribution is null '
         '(tracker constructed without attribution support)', () async {
       final t = FileReadTracker();
       final banner = await t.readAttributionBanner('/foo.dart', 12345);
       expect(banner, isEmpty);
     });
 
-    test(
-        'readAttributionBanner swallows lookup failures (returns empty, '
+    test('readAttributionBanner swallows lookup failures (returns empty, '
         'does not throw)', () async {
       final t = FileReadTracker(
         onLookupAttribution: (path, currentMtime) async {
@@ -530,14 +526,13 @@ void main() {
     });
 
     ToolContext makeCtx() => ToolContext(
-          sessionId: 1,
-          messageId: 1,
-          abort: AbortSignal(),
-          workingDirectory: tempDir.path,
-        );
+      sessionId: 1,
+      messageId: 1,
+      abort: AbortSignal(),
+      workingDirectory: tempDir.path,
+    );
 
-    test(
-        'read pre-pends [NOTE: …] attribution banner when the file was last '
+    test('read pre-pends [NOTE: …] attribution banner when the file was last '
         'written by a different session', () async {
       final file = File('${tempDir.path}/attributed.dart');
       await file.writeAsString('line one\nline two\n');
@@ -565,9 +560,7 @@ void main() {
       expect(result.output, contains('2: line two'));
     });
 
-    test(
-        'read omits the banner when lookupAttribution returns null',
-        () async {
+    test('read omits the banner when lookupAttribution returns null', () async {
       final file = File('${tempDir.path}/no_attribution.dart');
       await file.writeAsString('plain content\n');
 
@@ -583,25 +576,25 @@ void main() {
     });
 
     test(
-        'read omits the banner when the writer is the current session',
-        () async {
-      final file = File('${tempDir.path}/self_write.dart');
-      await file.writeAsString('our own work\n');
+      'read omits the banner when the writer is the current session',
+      () async {
+        final file = File('${tempDir.path}/self_write.dart');
+        await file.writeAsString('our own work\n');
 
-      final tracker = FileReadTracker(
-        sessionId: 7,
-        onLookupAttribution: (path, currentMtime) async {
-          return (sessionId: 7, intent: 'self', title: 'me');
-        },
-      );
-      final tool = ReadTool(tracker: tracker);
-      final result = await tool.execute({"filePath": file.path}, makeCtx());
+        final tracker = FileReadTracker(
+          sessionId: 7,
+          onLookupAttribution: (path, currentMtime) async {
+            return (sessionId: 7, intent: 'self', title: 'me');
+          },
+        );
+        final tool = ReadTool(tracker: tracker);
+        final result = await tool.execute({"filePath": file.path}, makeCtx());
 
-      expect(result.output, isNot(contains('[NOTE:')));
-    });
+        expect(result.output, isNot(contains('[NOTE:')));
+      },
+    );
 
-    test(
-        'read omits the banner when no attribution callback is wired '
+    test('read omits the banner when no attribution callback is wired '
         '(tracker constructed without onLookupAttribution)', () async {
       final file = File('${tempDir.path}/plain.dart');
       await file.writeAsString('content\n');
@@ -858,45 +851,52 @@ void main() {
       expect(result.metadata['exitCode'], 0);
     }, skip: !Platform.isWindows);
 
-    test('handles quoted slashes in arguments (regression for session 13 hang)',
-        () async {
-      final tool = CmdTool();
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
-      );
-      final result = await tool.execute({
-        'command': r'echo "fix /continue"',
-      }, ctx);
-      expect(
-        result.output.contains("'/continue' is outside repository"),
-        isFalse,
-        reason: 'should not leak git-style pathspec errors',
-      );
-      expect(result.output.toLowerCase(), contains('fix /continue'));
-    }, skip: !Platform.isWindows);
+    test(
+      'handles quoted slashes in arguments (regression for session 13 hang)',
+      () async {
+        final tool = CmdTool();
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: Directory(r'C:\Projects\crux').absolute.path,
+        );
+        final result = await tool.execute({
+          'command': r'echo "fix /continue"',
+        }, ctx);
+        expect(
+          result.output.contains("'/continue' is outside repository"),
+          isFalse,
+          reason: 'should not leak git-style pathspec errors',
+        );
+        expect(result.output.toLowerCase(), contains('fix /continue'));
+      },
+      skip: !Platform.isWindows,
+    );
 
-    test('handles multi-line commands with quoted slashes (session 13 commit)',
-        () async {
-      final tool = CmdTool();
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: r'C:\Projects\crux',
-      );
-      final result = await tool.execute({
-        'command': r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
-      }, ctx);
-      expect(
-        result.output.contains("'/continue' is outside repository"),
-        isFalse,
-      );
-      expect(result.output.toLowerCase(), contains('fix(commands)'));
-      expect(result.output.toLowerCase(), contains('second line'));
-    }, skip: !Platform.isWindows);
+    test(
+      'handles multi-line commands with quoted slashes (session 13 commit)',
+      () async {
+        final tool = CmdTool();
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: r'C:\Projects\crux',
+        );
+        final result = await tool.execute({
+          'command':
+              r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
+        }, ctx);
+        expect(
+          result.output.contains("'/continue' is outside repository"),
+          isFalse,
+        );
+        expect(result.output.toLowerCase(), contains('fix(commands)'));
+        expect(result.output.toLowerCase(), contains('second line'));
+      },
+      skip: !Platform.isWindows,
+    );
 
     test('cleans up temp .bat file after execution', () async {
       final tool = CmdTool();
@@ -1125,77 +1125,87 @@ void main() {
 
   group('EditTool + WriteTool auto-detect encoding/line ending', () {
     test(
-        'EditTool preserves UTF-8 BOM when file has it (agent edit does not strip it)',
-        () async {
-      // Session 70/72 pain: agents edit, file loses BOM, downstream tools
-      // (or other Windows editors) complain. Now EditTool reads bytes,
-      // detects BOM, re-writes with BOM intact.
-      final tempDir = await Directory.systemTemp.createTemp('crux_bom_');
-      final filePath = p.join(tempDir.path, 'sample.dart');
-      final bom = <int>[0xEF, 0xBB, 0xBF];
-      final originalBytes = <int>[
-        ...bom,
-        ...utf8.encode('hello\r\nworld\r\n'),
-      ];
-      await File(filePath).writeAsBytes(originalBytes);
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
-      await EditTool().execute({
-        'filePath': filePath,
-        'oldString': 'hello\nworld',
-        'newString': 'goodbye\nworld',
-      }, ctx);
-      final after = await File(filePath).readAsBytes();
-      expect(after[0], 0xEF,
-          reason: 'BOM byte 1 must be preserved');
-      expect(after[1], 0xBB,
-          reason: 'BOM byte 2 must be preserved');
-      expect(after[2], 0xBF,
-          reason: 'BOM byte 3 must be preserved');
-      final content = utf8.decode(after.sublist(3));
-      expect(content, contains('goodbye\r\nworld'),
-          reason: 'CRLF must be preserved (file was CRLF)');
-      expect(content, isNot(contains('goodbye\nworld')),
-          reason: 'should not have LF-only after the edit');
-      await tempDir.delete(recursive: true);
-    });
+      'EditTool preserves UTF-8 BOM when file has it (agent edit does not strip it)',
+      () async {
+        // Session 70/72 pain: agents edit, file loses BOM, downstream tools
+        // (or other Windows editors) complain. Now EditTool reads bytes,
+        // detects BOM, re-writes with BOM intact.
+        final tempDir = await Directory.systemTemp.createTemp('crux_bom_');
+        final filePath = p.join(tempDir.path, 'sample.dart');
+        final bom = <int>[0xEF, 0xBB, 0xBF];
+        final originalBytes = <int>[
+          ...bom,
+          ...utf8.encode('hello\r\nworld\r\n'),
+        ];
+        await File(filePath).writeAsBytes(originalBytes);
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+        await EditTool().execute({
+          'filePath': filePath,
+          'oldString': 'hello\nworld',
+          'newString': 'goodbye\nworld',
+        }, ctx);
+        final after = await File(filePath).readAsBytes();
+        expect(after[0], 0xEF, reason: 'BOM byte 1 must be preserved');
+        expect(after[1], 0xBB, reason: 'BOM byte 2 must be preserved');
+        expect(after[2], 0xBF, reason: 'BOM byte 3 must be preserved');
+        final content = utf8.decode(after.sublist(3));
+        expect(
+          content,
+          contains('goodbye\r\nworld'),
+          reason: 'CRLF must be preserved (file was CRLF)',
+        );
+        expect(
+          content,
+          isNot(contains('goodbye\nworld')),
+          reason: 'should not have LF-only after the edit',
+        );
+        await tempDir.delete(recursive: true);
+      },
+    );
 
     test(
-        'EditTool does NOT introduce BOM when editing a non-BOM file',
-        () async {
-      final tempDir = await Directory.systemTemp.createTemp('crux_nobom_');
-      final filePath = p.join(tempDir.path, 'sample.dart');
-      await File(filePath).writeAsString('hello\nworld\n');
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
-      await EditTool().execute({
-        'filePath': filePath,
-        'oldString': 'hello\nworld',
-        'newString': 'goodbye\nworld',
-      }, ctx);
-      final after = await File(filePath).readAsBytes();
-      expect(after.isNotEmpty, isTrue);
-      expect(after[0] != 0xEF || after.length < 3 || after[1] != 0xBB || after[2] != 0xBF,
+      'EditTool does NOT introduce BOM when editing a non-BOM file',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('crux_nobom_');
+        final filePath = p.join(tempDir.path, 'sample.dart');
+        await File(filePath).writeAsString('hello\nworld\n');
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: tempDir.path,
+        );
+        await EditTool().execute({
+          'filePath': filePath,
+          'oldString': 'hello\nworld',
+          'newString': 'goodbye\nworld',
+        }, ctx);
+        final after = await File(filePath).readAsBytes();
+        expect(after.isNotEmpty, isTrue);
+        expect(
+          after[0] != 0xEF ||
+              after.length < 3 ||
+              after[1] != 0xBB ||
+              after[2] != 0xBF,
           isTrue,
-          reason: 'BOM must NOT be added to a non-BOM file');
-      await tempDir.delete(recursive: true);
-    });
+          reason: 'BOM must NOT be added to a non-BOM file',
+        );
+        await tempDir.delete(recursive: true);
+      },
+    );
 
-    test(
-        'WriteTool preserves UTF-8 BOM when overwriting a BOM file',
-        () async {
+    test('WriteTool preserves UTF-8 BOM when overwriting a BOM file', () async {
       final tempDir = await Directory.systemTemp.createTemp('crux_wbom_');
       final filePath = p.join(tempDir.path, 'sample.dart');
       await File(filePath).writeAsBytes(<int>[
-        0xEF, 0xBB, 0xBF,
+        0xEF,
+        0xBB,
+        0xBF,
         ...utf8.encode('old content\r\n'),
       ]);
       final ctx = ToolContext(
@@ -1214,16 +1224,18 @@ void main() {
       expect(after[1], 0xBB);
       expect(after[2], 0xBF);
       final content = utf8.decode(after.sublist(3));
-      expect(content, equals('new content\r\n'),
-          reason: 'WriteTool should preserve CRLF and add it even though '
-              'agent provided LF');
+      expect(
+        content,
+        equals('new content\r\n'),
+        reason:
+            'WriteTool should preserve CRLF and add it even though '
+            'agent provided LF',
+      );
       await tempDir.delete(recursive: true);
     });
 
-    test(
-        'WriteTool preserves CRLF when overwriting a CRLF file, '
-        'normalizing agent\'s LF input to match',
-        () async {
+    test('WriteTool preserves CRLF when overwriting a CRLF file, '
+        'normalizing agent\'s LF input to match', () async {
       final tempDir = await Directory.systemTemp.createTemp('crux_wcrlf_');
       final filePath = p.join(tempDir.path, 'sample.txt');
       await File(filePath).writeAsString('line1\r\nline2\r\nline3\r\n');
@@ -1239,8 +1251,11 @@ void main() {
         'intent': 'test',
       }, ctx);
       final after = await File(filePath).readAsString();
-      expect(after, equals('line1\r\nline2\r\nline3\r\n'),
-          reason: 'CRLF must be preserved when overwriting CRLF file');
+      expect(
+        after,
+        equals('line1\r\nline2\r\nline3\r\n'),
+        reason: 'CRLF must be preserved when overwriting CRLF file',
+      );
       await tempDir.delete(recursive: true);
     });
   });
@@ -1343,7 +1358,10 @@ void main() {
         {'name': 'read', 'description': 'Reads a file', 'parameters': {}},
         {'name': 'write', 'description': 'Writes a file', 'parameters': {}},
       ];
-      expect(estimateToolDefsTokens(two), greaterThan(estimateToolDefsTokens(one)));
+      expect(
+        estimateToolDefsTokens(two),
+        greaterThan(estimateToolDefsTokens(one)),
+      );
     });
   });
 
@@ -1354,16 +1372,14 @@ void main() {
         1: (callId: 'call_b', name: 'read'),
       };
 
-      final grepDelta = contentBlockDeltaToChunk(
-        {
-          'index': 0,
-          'delta': {
-            'type': 'input_json_delta',
-            'partial_json': '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
-          },
+      final grepDelta = contentBlockDeltaToChunk({
+        'index': 0,
+        'delta': {
+          'type': 'input_json_delta',
+          'partial_json':
+              '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
         },
-        toolBlocks,
-      );
+      }, toolBlocks);
       expect(grepDelta, isNotNull);
       expect(grepDelta!.toolUse, isNotNull);
       expect(grepDelta.toolUse!.index, 0, reason: 'index must be propagated');
@@ -1374,16 +1390,13 @@ void main() {
         '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
       );
 
-      final readDelta = contentBlockDeltaToChunk(
-        {
-          'index': 1,
-          'delta': {
-            'type': 'input_json_delta',
-            'partial_json': '{"filePath": "c:\\\\Projects\\\\crux"}',
-          },
+      final readDelta = contentBlockDeltaToChunk({
+        'index': 1,
+        'delta': {
+          'type': 'input_json_delta',
+          'partial_json': '{"filePath": "c:\\\\Projects\\\\crux"}',
         },
-        toolBlocks,
-      );
+      }, toolBlocks);
       expect(readDelta!.toolUse!.index, 1);
       expect(readDelta.toolUse!.callId, 'call_b');
       expect(readDelta.toolUse!.name, 'read');
@@ -1395,26 +1408,20 @@ void main() {
         1: (callId: 'call_read', name: 'read'),
       };
       final deltas = [
-        contentBlockDeltaToChunk(
-          {
-            'index': 0,
-            'delta': {
-              'type': 'input_json_delta',
-              'partial_json': '{"pattern": "TODO", "path": "lib"}',
-            },
+        contentBlockDeltaToChunk({
+          'index': 0,
+          'delta': {
+            'type': 'input_json_delta',
+            'partial_json': '{"pattern": "TODO", "path": "lib"}',
           },
-          toolBlocks,
-        )!,
-        contentBlockDeltaToChunk(
-          {
-            'index': 1,
-            'delta': {
-              'type': 'input_json_delta',
-              'partial_json': '{"filePath": "lib/foo.dart"}',
-            },
+        }, toolBlocks)!,
+        contentBlockDeltaToChunk({
+          'index': 1,
+          'delta': {
+            'type': 'input_json_delta',
+            'partial_json': '{"filePath": "lib/foo.dart"}',
           },
-          toolBlocks,
-        )!,
+        }, toolBlocks)!,
       ];
       final calls = ToolExecutor.parseToolUseFromChunks(deltas);
       expect(calls.length, 2);
@@ -1429,29 +1436,32 @@ void main() {
   });
 
   group('GrepTool with file path (regression for session 12 hang)', () {
-    test('treats a file path as single-file grep, not directory listing', () async {
-      final workingDirectory = Directory.current.absolute.path;
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: workingDirectory,
-      );
-      final result = await GrepTool().execute({
-        'pattern': r'filterCommands|isCommandAvailable|filterSuggestions',
-        'path': p.join(
-          workingDirectory,
-          'lib',
-          'src',
-          'components',
-          'input_overlay.dart',
-        ),
-        'context': 3,
-      }, ctx);
-      expect(result.output, isNot(contains('Directory listing failed')));
-      expect(result.output, isNot(contains('FileSystemException')));
-      expect(result.output.toLowerCase(), contains('filtercommands'));
-    });
+    test(
+      'treats a file path as single-file grep, not directory listing',
+      () async {
+        final workingDirectory = Directory.current.absolute.path;
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 1,
+          abort: AbortSignal(),
+          workingDirectory: workingDirectory,
+        );
+        final result = await GrepTool().execute({
+          'pattern': r'filterCommands|isCommandAvailable|filterSuggestions',
+          'path': p.join(
+            workingDirectory,
+            'lib',
+            'src',
+            'components',
+            'input_overlay.dart',
+          ),
+          'context': 3,
+        }, ctx);
+        expect(result.output, isNot(contains('Directory listing failed')));
+        expect(result.output, isNot(contains('FileSystemException')));
+        expect(result.output.toLowerCase(), contains('filtercommands'));
+      },
+    );
 
     test('does not throw on directory paths either (sanity)', () async {
       final workingDirectory = Directory.current.absolute.path;
@@ -1477,7 +1487,8 @@ void main() {
             index: 0,
             callId: 'call_a',
             name: 'grep',
-            inputDelta: '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
+            inputDelta:
+                '{"pattern": "/continue", "path": "c:\\\\Projects\\\\crux"}',
           ),
         ),
         const LlmChunk(
@@ -1543,14 +1554,11 @@ void main() {
   group('CollapsedSummary', () {
     test('WriteTool returns text + args-only + total tokens', () {
       final tool = WriteTool();
-      final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'content': 'a' * 5000,
-          'intent': '...',
-        },
-        ToolResult(title: 'Write', output: 'Wrote 5000 chars'),
-      );
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'content': 'a' * 5000,
+        'intent': '...',
+      }, ToolResult(title: 'Write', output: 'Wrote 5000 chars'));
       expect(summary, isA<CollapsedSummary>());
       // No _existingLineCount in args → treated as a new file →
       // text is `+1 lines, 4.9KB` (the `a` * 5000 string has
@@ -1568,8 +1576,7 @@ void main() {
       expect(summary.totalTokens, greaterThan(0));
     });
 
-    test('WriteTool summary shows +N -M when overwriting an existing file',
-        () {
+    test('WriteTool summary shows +N -M when overwriting an existing file', () {
       final tool = WriteTool();
       // Realistic output shape that _doWrite emits for an
       // overwrite: "File written: <path>, +added -removed lines, size".
@@ -1577,11 +1584,7 @@ void main() {
       // half rather than stashed on the LLM-controlled args
       // map (see EditTool collapsedSummary for the rationale).
       final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'content': 'a' * 5000,
-          'intent': '...',
-        },
+        {'filePath': 'foo.py', 'content': 'a' * 5000, 'intent': '...'},
         ToolResult(
           title: 'Write',
           output: 'File written: foo.py (intent: \'...\'), +1 -17 lines, 4.9KB',
@@ -1596,11 +1599,7 @@ void main() {
     test('WriteTool summary shows new-file form when existing is zero', () {
       final tool = WriteTool();
       final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'content': 'hello\nworld\n',
-          'intent': '...',
-        },
+        {'filePath': 'foo.py', 'content': 'hello\nworld\n', 'intent': '...'},
         ToolResult(
           title: 'Write',
           output: 'File written: foo.py, +3 lines, 12B',
@@ -1613,43 +1612,37 @@ void main() {
       expect(summary.text, isNot(contains('-')));
     });
 
-    test(
-      'WriteTool summary parses -M out of success message '
-      'even when LLM echoes a stale _existingLineCount in args',
-      () {
-        // Regression guard: the old code read `_existingLineCount`
-        // from args. The LLM can echo that field in its input
-        // (sometimes with a wrong value or wrong type). The
-        // refactor reads from output instead, so any value in
-        // args is ignored.
-        final tool = WriteTool();
-        final summary = tool.collapsedSummary(
-          {
-            'filePath': 'foo.py',
-            'content': 'new\n',
-            'intent': '...',
-            '_existingLineCount': '7', // poison from LLM echo
-          },
-          ToolResult(
-            title: 'Write',
-            output: 'File written: foo.py, +2 -5 lines, 4B',
-          ),
-        );
-        expect(summary.text, '+2 -5 lines, 4B');
-      },
-    );
-
-    test('EditTool args-only includes the large args (stand-ins or full)', () {
-      final tool = EditTool();
+    test('WriteTool summary parses -M out of success message '
+        'even when LLM echoes a stale _existingLineCount in args', () {
+      // Regression guard: the old code read `_existingLineCount`
+      // from args. The LLM can echo that field in its input
+      // (sometimes with a wrong value or wrong type). The
+      // refactor reads from output instead, so any value in
+      // args is ignored.
+      final tool = WriteTool();
       final summary = tool.collapsedSummary(
         {
           'filePath': 'foo.py',
-          'oldString': 'a' * 2000,
-          'newString': 'b' * 2000,
+          'content': 'new\n',
           'intent': '...',
+          '_existingLineCount': '7', // poison from LLM echo
         },
-        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
+        ToolResult(
+          title: 'Write',
+          output: 'File written: foo.py, +2 -5 lines, 4B',
+        ),
       );
+      expect(summary.text, '+2 -5 lines, 4B');
+    });
+
+    test('EditTool args-only includes the large args (stand-ins or full)', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'oldString': 'a' * 2000,
+        'newString': 'b' * 2000,
+        'intent': '...',
+      }, ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'));
       // No _replaceCount in args → defaults to 1. The single-line
       // strings each count as 1 line, so the diff is +1 -1.
       expect(summary.text, '1 replacement, +1 -1 lines');
@@ -1663,128 +1656,113 @@ void main() {
       expect(summary.totalTokens, greaterThanOrEqualTo(summary.argsTokens));
     });
 
-    test('EditTool summary reflects actual replacement count parsed from output',
-        () {
-      // Previously the count was stashed on args as `_replaceCount`
-      // by execute(). That round-tripped back to the LLM as part
-      // of the assistant message's tool_use input, where the
-      // model could echo it back in a shape that broke the
-      // consumer (string instead of int, etc). Now the count is
-      // parsed out of `result.output`'s canonical
-      // `"Replaced N occurrence(s)"` form, which is set by
-      // execute() and never user-controlled.
-      final tool = EditTool();
-      final summary = tool.collapsedSummary(
-        {
+    test(
+      'EditTool summary reflects actual replacement count parsed from output',
+      () {
+        // Previously the count was stashed on args as `_replaceCount`
+        // by execute(). That round-tripped back to the LLM as part
+        // of the assistant message's tool_use input, where the
+        // model could echo it back in a shape that broke the
+        // consumer (string instead of int, etc). Now the count is
+        // parsed out of `result.output`'s canonical
+        // `"Replaced N occurrence(s)"` form, which is set by
+        // execute() and never user-controlled.
+        final tool = EditTool();
+        final summary = tool.collapsedSummary({
           'filePath': 'foo.py',
           'oldString': 'foo',
           'newString': 'bar',
           'intent': '...',
           '_replaceCount': 3, // any value in args is now ignored
-        },
-        ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'),
-      );
-      // 3 replacements * 1 line each → +3 -3.
-      expect(summary.text, '3 replacements, +3 -3 lines');
-    });
-
-    test('EditTool summary handles multi-line oldString / newString', () {
-      final tool = EditTool();
-      final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'oldString': 'a\nb\nc\nd',
-          'newString': 'x\ny',
-          'intent': '...',
-          '_replaceCount': 1,
-        },
-        ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
-      );
-      // oldString is 4 lines, newString is 2 lines, 1 replacement.
-      expect(summary.text, '1 replacement, +2 -4 lines');
-    });
-
-
-    test('EditTool summary shows "new file" when oldString is empty', () {
-      final tool = EditTool();
-      final summary = tool.collapsedSummary(
-        {
-          'filePath': 'foo.py',
-          'oldString': '',
-          'newString': 'alpha\nbeta\ngamma\n',
-          'intent': '...',
-          '_replaceCount': 1,
-        },
-        ToolResult(title: 'Edit', output: 'Created file'),
-      );
-      expect(summary.text, 'new file, 4 lines');
-    });
-
-    test(
-      'EditTool summary tolerates String _replaceCount '
-      '(JSON round-trip / LLM echo)',
-      () {
-        // `_replaceCount` isn't in the schema but gets stashed on
-        // args by execute() and round-tripped back to the LLM as
-        // part of the assistant tool_use/input. Once the model
-        // sees the field in conversation history it occasionally
-        // echoes it — sometimes as a quoted number — and SQLite
-        // preserves the type on reload. A naive `as int?` here
-        // would crash the bubble build.
-        final tool = EditTool();
-        final summary = tool.collapsedSummary(
-          {
-            'filePath': 'foo.py',
-            'oldString': 'foo',
-            'newString': 'bar',
-            'intent': '...',
-            '_replaceCount': '3', // String, not int
-          },
-          ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'),
-        );
+        }, ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'));
+        // 3 replacements * 1 line each → +3 -3.
         expect(summary.text, '3 replacements, +3 -3 lines');
       },
     );
 
+    test('EditTool summary handles multi-line oldString / newString', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'oldString': 'a\nb\nc\nd',
+        'newString': 'x\ny',
+        'intent': '...',
+        '_replaceCount': 1,
+      }, ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'));
+      // oldString is 4 lines, newString is 2 lines, 1 replacement.
+      expect(summary.text, '1 replacement, +2 -4 lines');
+    });
+
+    test('EditTool summary shows "new file" when oldString is empty', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'oldString': '',
+        'newString': 'alpha\nbeta\ngamma\n',
+        'intent': '...',
+        '_replaceCount': 1,
+      }, ToolResult(title: 'Edit', output: 'Created file'));
+      expect(summary.text, 'new file, 4 lines');
+    });
+
+    test('EditTool summary tolerates String _replaceCount '
+        '(JSON round-trip / LLM echo)', () {
+      // `_replaceCount` isn't in the schema but gets stashed on
+      // args by execute() and round-tripped back to the LLM as
+      // part of the assistant tool_use/input. Once the model
+      // sees the field in conversation history it occasionally
+      // echoes it — sometimes as a quoted number — and SQLite
+      // preserves the type on reload. A naive `as int?` here
+      // would crash the bubble build.
+      final tool = EditTool();
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'oldString': 'foo',
+        'newString': 'bar',
+        'intent': '...',
+        '_replaceCount': '3', // String, not int
+      }, ToolResult(title: 'Edit', output: 'Replaced 3 occurrences'));
+      expect(summary.text, '3 replacements, +3 -3 lines');
+    });
+
+    test('EditTool summary ignores garbage _replaceCount '
+        'instead of crashing the bubble', () {
+      final tool = EditTool();
+      final summary = tool.collapsedSummary({
+        'filePath': 'foo.py',
+        'oldString': 'foo',
+        'newString': 'bar',
+        'intent': '...',
+        '_replaceCount': 'not-a-number',
+      }, ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'));
+      // Falls back to 1; doesn't throw.
+      expect(summary.text, '1 replacement, +1 -1 lines');
+    });
+
     test(
-      'EditTool summary ignores garbage _replaceCount '
-      'instead of crashing the bubble',
+      'ReadTool returns lines + size, args-only == total (not offloadable)',
       () {
-        final tool = EditTool();
-        final summary = tool.collapsedSummary(
-          {
-            'filePath': 'foo.py',
-            'oldString': 'foo',
-            'newString': 'bar',
-            'intent': '...',
-            '_replaceCount': 'not-a-number',
-          },
-          ToolResult(title: 'Edit', output: 'Replaced 1 occurrence'),
-        );
-        // Falls back to 1; doesn't throw.
-        expect(summary.text, '1 replacement, +1 -1 lines');
+        final tool = ReadTool();
+        final summary = tool.collapsedSummary({
+          'filePath': 'foo.py',
+        }, ToolResult(title: 'Read', output: 'x' * 2000));
+        expect(summary.text, '1 lines, 2.0KB');
+        // Read isn't a LargePayloadTool, so args-only and total
+        // are identical — there's no compression distinction to
+        // make, and the bubble just shows the single number.
+        expect(summary.argsTokens, summary.totalTokens);
       },
     );
-
-    test('ReadTool returns lines + size, args-only == total (not offloadable)',
-        () {
-      final tool = ReadTool();
-      final summary = tool.collapsedSummary(
-        {'filePath': 'foo.py'},
-        ToolResult(title: 'Read', output: 'x' * 2000),
-      );
-      expect(summary.text, '1 lines, 2.0KB');
-      // Read isn't a LargePayloadTool, so args-only and total
-      // are identical — there's no compression distinction to
-      // make, and the bubble just shows the single number.
-      expect(summary.argsTokens, summary.totalTokens);
-    });
 
     test('BashTool shows line count and size in collapsed summary', () {
       final tool = BashTool();
       final summary = tool.collapsedSummary(
         {'command': 'ls -la /tmp', 'intent': 'list files'},
-        ToolResult(title: 'Bash', output: 'foo\nbar\n', metadata: {'exitCode': 0}),
+        ToolResult(
+          title: 'Bash',
+          output: 'foo\nbar\n',
+          metadata: {'exitCode': 0},
+        ),
       );
       expect(summary.text, contains('lines'));
       expect(summary.text, contains('B'));
@@ -1792,37 +1770,31 @@ void main() {
       expect(summary.totalTokens, summary.argsTokens);
     });
 
-    test('EditTool shows "all" when replaceAll is true and output has no count',
-        () {
-      // The success message always includes "Replaced N occurrence(s)",
-      // so the count comes from the parsed output, not from a flag.
-      // The "all" label is a fallback for when parsing fails
-      // (e.g. an old/legacy or custom output shape). Force the
-      // fallback here by passing output without the canonical form.
-      final tool = EditTool();
-      final summary = tool.collapsedSummary(
-        {
+    test(
+      'EditTool shows "all" when replaceAll is true and output has no count',
+      () {
+        // The success message always includes "Replaced N occurrence(s)",
+        // so the count comes from the parsed output, not from a flag.
+        // The "all" label is a fallback for when parsing fails
+        // (e.g. an old/legacy or custom output shape). Force the
+        // fallback here by passing output without the canonical form.
+        final tool = EditTool();
+        final summary = tool.collapsedSummary({
           'filePath': 'foo.py',
           'oldString': 'foo',
           'newString': 'bar',
           'replaceAll': true,
           'intent': '...',
-        },
-        ToolResult(title: 'Edit', output: 'unparseable output'),
-      );
-      expect(summary.text, startsWith('all replacements,'));
-    });
+        }, ToolResult(title: 'Edit', output: 'unparseable output'));
+        expect(summary.text, startsWith('all replacements,'));
+      },
+    );
 
     test('BashTool shows [exit N] suffix for non-zero exit codes', () {
       final tool = BashTool();
-      final summary = tool.collapsedSummary(
-        {'command': 'false'},
-        ToolResult(
-          title: 'Bash',
-          output: '',
-          metadata: {'exitCode': 1},
-        ),
-      );
+      final summary = tool.collapsedSummary({
+        'command': 'false',
+      }, ToolResult(title: 'Bash', output: '', metadata: {'exitCode': 1}));
       expect(summary.text, contains('[exit 1]'));
     });
 
@@ -1879,8 +1851,10 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'hi\nworld\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        'hi\nworld\n',
+      );
     });
 
     test('exact multi-line match replaces block', () async {
@@ -1892,8 +1866,10 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'alpha\nmiddle\ndelta\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        'alpha\nmiddle\ndelta\n',
+      );
     });
 
     test('replaceAll replaces every occurrence', () async {
@@ -1906,8 +1882,10 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 3 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'baz bar baz bar baz');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        'baz bar baz bar baz',
+      );
     });
 
     // ── Auto-read on mismatch ──
@@ -1928,17 +1906,19 @@ void main() {
       expect(result.metadata['autoRead'], isTrue);
     });
 
-    test('multiple exact matches without replaceAll returns auto-read',
-        () async {
-      await fileHelper('test.txt', 'dup\nunique\ndup\n');
-      final result = await EditTool().execute({
-        'filePath': 'test.txt',
-        'oldString': 'dup',
-        'newString': 'replaced',
-      }, ctx());
+    test(
+      'multiple exact matches without replaceAll returns auto-read',
+      () async {
+        await fileHelper('test.txt', 'dup\nunique\ndup\n');
+        final result = await EditTool().execute({
+          'filePath': 'test.txt',
+          'oldString': 'dup',
+          'newString': 'replaced',
+        }, ctx());
 
-      expect(result.metadata['autoRead'], isTrue);
-    });
+        expect(result.metadata['autoRead'], isTrue);
+      },
+    );
 
     test('disproportionate match returns auto-read', () async {
       // Multi-line oldString against content with large whitespace
@@ -1981,8 +1961,10 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          '        replaced\n    beta\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        '        replaced\n    beta\n',
+      );
     });
 
     test('exact multi-line match preserves indentation', () async {
@@ -1997,23 +1979,29 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          '    replacement\n    gamma\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        '    replacement\n    gamma\n',
+      );
     });
 
-    test('whitespace-normalized single-line match succeeds (tabs vs spaces)',
-        () async {
-      await fileHelper('test.txt', 'prefix\tfoo\tbar\tsuffix');
-      final result = await EditTool().execute({
-        'filePath': 'test.txt',
-        'oldString': 'foo bar',
-        'newString': 'baz qux',
-      }, ctx());
+    test(
+      'whitespace-normalized single-line match succeeds (tabs vs spaces)',
+      () async {
+        await fileHelper('test.txt', 'prefix\tfoo\tbar\tsuffix');
+        final result = await EditTool().execute({
+          'filePath': 'test.txt',
+          'oldString': 'foo bar',
+          'newString': 'baz qux',
+        }, ctx());
 
-      expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'prefix\tbaz qux\tsuffix');
-    });
+        expect(result.output, contains('Replaced 1 occurrence'));
+        expect(
+          await File('${tempDir.path}/test.txt').readAsString(),
+          'prefix\tbaz qux\tsuffix',
+        );
+      },
+    );
 
     // ── Validation ──
 
@@ -2025,8 +2013,10 @@ void main() {
         'newString': 'hello',
       }, ctx());
 
-      expect(result.output,
-          contains('oldString and newString must be different'));
+      expect(
+        result.output,
+        contains('oldString and newString must be different'),
+      );
     });
 
     test('missing filePath returns error', () async {
@@ -2053,8 +2043,7 @@ void main() {
         'oldString': 'x',
       }, ctx());
 
-      expect(result.output,
-          contains('Missing required parameter: newString'));
+      expect(result.output, contains('Missing required parameter: newString'));
     });
 
     test('file not found returns error', () async {
@@ -2080,8 +2069,7 @@ void main() {
 
     // ── Read-before-write guard ──
 
-    test('read-before-write guard triggers when file was never read',
-        () async {
+    test('read-before-write guard triggers when file was never read', () async {
       final tracker = FileReadTracker();
       final tool = EditTool(tracker: tracker);
       final filePath = '${tempDir.path}/guarded.txt';
@@ -2099,27 +2087,33 @@ void main() {
       expect(result.metadata['guardTriggered'], isTrue);
     });
 
-    test('read-before-write guard triggers when file was modified since read',
-        () async {
-      final tracker = FileReadTracker();
-      final tool = EditTool(tracker: tracker);
-      final filePath = '${tempDir.path}/modified.txt';
-      await File(filePath).writeAsString('version 1');
-      await tracker.recordRead(filePath,
-          DateTime.now().subtract(const Duration(seconds: 10)).millisecondsSinceEpoch);
+    test(
+      'read-before-write guard triggers when file was modified since read',
+      () async {
+        final tracker = FileReadTracker();
+        final tool = EditTool(tracker: tracker);
+        final filePath = '${tempDir.path}/modified.txt';
+        await File(filePath).writeAsString('version 1');
+        await tracker.recordRead(
+          filePath,
+          DateTime.now()
+              .subtract(const Duration(seconds: 10))
+              .millisecondsSinceEpoch,
+        );
 
-      await File(filePath).writeAsString('version 2');
-      final result = await tool.execute({
-        'filePath': filePath,
-        'oldString': 'version 1',
-        'newString': 'version 2',
-      }, ctx());
+        await File(filePath).writeAsString('version 2');
+        final result = await tool.execute({
+          'filePath': filePath,
+          'oldString': 'version 1',
+          'newString': 'version 2',
+        }, ctx());
 
-      expect(result.output, contains('[GUARD]'));
-      expect(result.output, contains('BLOCKED'));
-      expect(result.output, contains('version 2'));
-      expect(result.metadata['guardTriggered'], isTrue);
-    });
+        expect(result.output, contains('[GUARD]'));
+        expect(result.output, contains('BLOCKED'));
+        expect(result.output, contains('version 2'));
+        expect(result.metadata['guardTriggered'], isTrue);
+      },
+    );
 
     // ── Match positions are correct ──
 
@@ -2133,8 +2127,10 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'line zero\nREPLACED\nline two\nline three\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        'line zero\nREPLACED\nline two\nline three\n',
+      );
     });
 
     test('mid-line exact match replaces only the matched span', () async {
@@ -2146,70 +2142,71 @@ void main() {
       }, ctx());
 
       expect(result.output, contains('Replaced 1 occurrence'));
-      expect(await File('${tempDir.path}/test.txt').readAsString(),
-          'prefix new center suffix\n');
+      expect(
+        await File('${tempDir.path}/test.txt').readAsString(),
+        'prefix new center suffix\n',
+      );
     });
 
     // ── File not changed on failed edit ──
 
-    test('file is unchanged when auto-read fires (no write happened)',
-        () async {
-      final original = 'alpha\nbeta\ngamma\n';
-      await fileHelper('test.txt', original);
-      await EditTool().execute({
-        'filePath': 'test.txt',
-        'oldString': 'nonexistent',
-        'newString': 'replacement',
-      }, ctx());
+    test(
+      'file is unchanged when auto-read fires (no write happened)',
+      () async {
+        final original = 'alpha\nbeta\ngamma\n';
+        await fileHelper('test.txt', original);
+        await EditTool().execute({
+          'filePath': 'test.txt',
+          'oldString': 'nonexistent',
+          'newString': 'replacement',
+        }, ctx());
 
-      expect(await File('${tempDir.path}/test.txt').readAsString(), original);
-    });
+        expect(await File('${tempDir.path}/test.txt').readAsString(), original);
+      },
+    );
 
     // ── Line diff in success message + collapsedSummary ──
 
-    test(
-      'execute() emits +N -M line diff in the success message '
-      'and the bubble parses it back out for collapsedSummary',
-      () async {
-        // 3-line oldString, 2-line newString, single replacement.
-        await fileHelper('test.txt', 'header\nold-a\nold-b\nold-c\nfooter\n');
-        final args = <String, dynamic>{
-          'filePath': 'test.txt',
-          'oldString': 'old-a\nold-b\nold-c',
-          'newString': 'new-a\nnew-b',
-        };
-        final result = await EditTool().execute(args, ctx());
+    test('execute() emits +N -M line diff in the success message '
+        'and the bubble parses it back out for collapsedSummary', () async {
+      // 3-line oldString, 2-line newString, single replacement.
+      await fileHelper('test.txt', 'header\nold-a\nold-b\nold-c\nfooter\n');
+      final args = <String, dynamic>{
+        'filePath': 'test.txt',
+        'oldString': 'old-a\nold-b\nold-c',
+        'newString': 'new-a\nnew-b',
+      };
+      final result = await EditTool().execute(args, ctx());
 
-        // Success message should report the per-replacement diff.
-        expect(result.output, contains('Replaced 1 occurrence'));
-        expect(result.output, contains('+2 -3 lines'));
+      // Success message should report the per-replacement diff.
+      expect(result.output, contains('Replaced 1 occurrence'));
+      expect(result.output, contains('+2 -3 lines'));
 
-        // The bubble renders the diff by parsing it out of the
-        // result output. The stash-on-args pattern was removed
-        // because it conflated LLM-controlled input with tool
-        // internal state (and the LLM could echo the stash back
-        // in a shape that broke the consumer).
-        expect(args['_replaceCount'], isNull,
-            reason: 'no internal state should leak into LLM input');
+      // The bubble renders the diff by parsing it out of the
+      // result output. The stash-on-args pattern was removed
+      // because it conflated LLM-controlled input with tool
+      // internal state (and the LLM could echo the stash back
+      // in a shape that broke the consumer).
+      expect(
+        args['_replaceCount'],
+        isNull,
+        reason: 'no internal state should leak into LLM input',
+      );
 
-        // The summary should derive `+2 -3 lines` from the
-        // `Replaced N occurrence(s)` half of the result text.
-        final summary = EditTool().collapsedSummary(
-          args,
-          ToolResult(title: 'Edit', output: result.output),
-        );
-        expect(summary.text, '1 replacement, +2 -3 lines');
-      },
-    );
+      // The summary should derive `+2 -3 lines` from the
+      // `Replaced N occurrence(s)` half of the result text.
+      final summary = EditTool().collapsedSummary(
+        args,
+        ToolResult(title: 'Edit', output: result.output),
+      );
+      expect(summary.text, '1 replacement, +2 -3 lines');
+    });
 
     test(
       'execute() with replaceAll reports the actual count, '
       'and the summary parses it back out from the success message',
       () async {
-        await fileHelper(
-          'test.txt',
-          'foo\nfoo\nfoo\nbetween\nfoo\n',
-        );
+        await fileHelper('test.txt', 'foo\nfoo\nfoo\nbetween\nfoo\n');
         final args = <String, dynamic>{
           'filePath': 'test.txt',
           'oldString': 'foo',
@@ -2221,8 +2218,11 @@ void main() {
         expect(result.output, contains('Replaced 4 occurrences'));
         // 4 occurrences * 1 line each → +4 -4.
         expect(result.output, contains('+4 -4 lines'));
-        expect(args['_replaceCount'], isNull,
-            reason: 'no internal state should leak into LLM input');
+        expect(
+          args['_replaceCount'],
+          isNull,
+          reason: 'no internal state should leak into LLM input',
+        );
 
         final summary = EditTool().collapsedSummary(
           args,
@@ -2249,8 +2249,11 @@ void main() {
         expect(result.output, contains('Created file'));
         // 'one\ntwo\nthree\n' is 4 lines (trailing \n adds one).
         expect(result.output, contains('+4 lines'));
-        expect(args['_replaceCount'], isNull,
-            reason: 'new-file path also does not leak internal state');
+        expect(
+          args['_replaceCount'],
+          isNull,
+          reason: 'new-file path also does not leak internal state',
+        );
         // The collapsedSummary uses the "new file" form when
         // oldString is empty, regardless of any count that
         // might appear in the output.
@@ -2283,61 +2286,61 @@ void main() {
       workingDirectory: tempDir.path,
     );
 
-    test(
-      'execute() emits +N -M in the success message and the bubble '
-      'parses it back out for collapsedSummary',
-      () async {
-        // Pre-existing file with 6 lines (a\nb\nc\nd\ne\n);
-        // we'll overwrite with 4 (x\ny\nz\n).
-        final f = File('${tempDir.path}/existing.txt');
-        await f.writeAsString('a\nb\nc\nd\ne\n');
+    test('execute() emits +N -M in the success message and the bubble '
+        'parses it back out for collapsedSummary', () async {
+      // Pre-existing file with 6 lines (a\nb\nc\nd\ne\n);
+      // we'll overwrite with 4 (x\ny\nz\n).
+      final f = File('${tempDir.path}/existing.txt');
+      await f.writeAsString('a\nb\nc\nd\ne\n');
 
-        final args = <String, dynamic>{
-          'filePath': 'existing.txt',
-          'content': 'x\ny\nz\n',
-          'intent': 'shrink it',
-        };
-        final result = await WriteTool().execute(args, ctx());
+      final args = <String, dynamic>{
+        'filePath': 'existing.txt',
+        'content': 'x\ny\nz\n',
+        'intent': 'shrink it',
+      };
+      final result = await WriteTool().execute(args, ctx());
 
-        // Success message reports the diff.
-        expect(result.output, contains('+4 -6 lines'));
+      // Success message reports the diff.
+      expect(result.output, contains('+4 -6 lines'));
 
-        // No internal state should leak into the LLM-controlled
-        // args map. The bubble parses the diff back out of the
-        // success message at render time.
-        expect(args['_existingLineCount'], isNull,
-            reason: 'no internal state should leak into LLM input');
+      // No internal state should leak into the LLM-controlled
+      // args map. The bubble parses the diff back out of the
+      // success message at render time.
+      expect(
+        args['_existingLineCount'],
+        isNull,
+        reason: 'no internal state should leak into LLM input',
+      );
 
-        final summary = WriteTool().collapsedSummary(
-          args,
-          ToolResult(title: 'Write', output: result.output),
-        );
-        expect(summary.text, startsWith('+4 -6 lines,'));
-      },
-    );
+      final summary = WriteTool().collapsedSummary(
+        args,
+        ToolResult(title: 'Write', output: result.output),
+      );
+      expect(summary.text, startsWith('+4 -6 lines,'));
+    });
 
-    test(
-      'execute() on a brand-new file emits only the +N half',
-      () async {
-        final args = <String, dynamic>{
-          'filePath': 'brand_new.txt',
-          'content': 'first\nsecond\nthird\n',
-        };
-        final result = await WriteTool().execute(args, ctx());
+    test('execute() on a brand-new file emits only the +N half', () async {
+      final args = <String, dynamic>{
+        'filePath': 'brand_new.txt',
+        'content': 'first\nsecond\nthird\n',
+      };
+      final result = await WriteTool().execute(args, ctx());
 
-        // 'first\nsecond\nthird\n' is 4 lines.
-        expect(result.output, contains('+4 lines'));
-        // No `-N` half when the file didn't previously exist.
-        expect(result.output, isNot(contains('-')));
-        expect(args['_existingLineCount'], isNull,
-            reason: 'no internal state should leak into LLM input');
+      // 'first\nsecond\nthird\n' is 4 lines.
+      expect(result.output, contains('+4 lines'));
+      // No `-N` half when the file didn't previously exist.
+      expect(result.output, isNot(contains('-')));
+      expect(
+        args['_existingLineCount'],
+        isNull,
+        reason: 'no internal state should leak into LLM input',
+      );
 
-        final summary = WriteTool().collapsedSummary(
-          args,
-          ToolResult(title: 'Write', output: result.output),
-        );
-        expect(summary.text, startsWith('+4 lines,'));
-      },
-    );
+      final summary = WriteTool().collapsedSummary(
+        args,
+        ToolResult(title: 'Write', output: result.output),
+      );
+      expect(summary.text, startsWith('+4 lines,'));
+    });
   });
 }

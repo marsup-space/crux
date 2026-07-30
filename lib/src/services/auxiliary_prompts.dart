@@ -69,8 +69,9 @@ const _tldrQuestionContext =
 String tldrSystemPromptFor(TldrDetail detail) {
   final level = switch (detail) {
     TldrDetail.concise => 'Be as concise as possible — only the essentials. ',
-    TldrDetail.detailed => 'Make it easy to read and do not skip any topic '
-        'from the original. ',
+    TldrDetail.detailed =>
+      'Make it easy to read and do not skip any topic '
+          'from the original. ',
     TldrDetail.defaultLevel => '',
   };
   return '$_tldrQuestionContext$level$_headingRefInstruction';

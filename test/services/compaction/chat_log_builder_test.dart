@@ -45,9 +45,7 @@ Message _toolCall({
     sessionId: 1,
     role: 'tool_call',
     content: '',
-    toolCalls: [
-      ToolCallData(callId: 'call_$id', name: toolName, input: input),
-    ],
+    toolCalls: [ToolCallData(callId: 'call_$id', name: toolName, input: input)],
   );
 }
 
@@ -73,7 +71,7 @@ class _StubReadTool extends ToolDef {
   final SummaryContribution contribution;
   final String _name;
 
-  _StubReadTool(this.contribution, {String name = 'read'}) : _name = name;
+  _StubReadTool(this.contribution, {this._name = 'read'});
 
   @override
   String get name => _name;
@@ -106,8 +104,7 @@ class _StubReadTool extends ToolDef {
     required String pairedResult,
     required bool isError,
     required String workingDirectory,
-  }) =>
-      contribution;
+  }) => contribution;
 }
 
 /// Stub `write` tool. Same shape as [_StubReadTool] but with a
@@ -119,7 +116,7 @@ class _StubWriteTool extends ToolDef {
   final SummaryContribution contribution;
   final String _name;
 
-  _StubWriteTool(this.contribution, {String name = 'write'}) : _name = name;
+  _StubWriteTool(this.contribution, {this._name = 'write'});
 
   @override
   String get name => _name;
@@ -151,8 +148,7 @@ class _StubWriteTool extends ToolDef {
     required String pairedResult,
     required bool isError,
     required String workingDirectory,
-  }) =>
-      contribution;
+  }) => contribution;
 }
 
 /// Stub `skill` tool. `extractPruneSummary` returns the fixed
@@ -195,8 +191,7 @@ class _StubSkillTool extends ToolDef {
     required String pairedResult,
     required bool isError,
     required String workingDirectory,
-  }) =>
-      contribution;
+  }) => contribution;
 }
 
 void main() {
@@ -258,8 +253,7 @@ void main() {
       expect(result.markdown, contains('crux: short reply'));
     });
 
-    test('preserves the user: line alongside the tldr-substituted crux',
-        () {
+    test('preserves the user: line alongside the tldr-substituted crux', () {
       final result = buildChatLog(
         messages: [
           _user(id: 1, content: 'what does foo do?'),
@@ -273,31 +267,33 @@ void main() {
       expect(result.markdown, contains('crux: short'));
     });
 
-    test('tldr substitution applies per turn (each ai checked independently)',
-        () {
-      // Two AI turns, one with tldr, one without. The first should
-      // collapse to its tldr, the second stays verbatim. Catches a
-      // buggy "sticky tldr" implementation that caches a previous
-      // tldr across the walk.
-      final result = buildChatLog(
-        messages: [
-          _user(id: 1),
-          _ai(id: 2, content: 'first long reply', tldr: 'first TLDR'),
-          _user(id: 3, content: 'another question'),
-          _ai(id: 4, content: 'second short reply'),
-        ],
-        workingDirectory: '/tmp/proj',
-        toolRegistry: registry,
-      );
+    test(
+      'tldr substitution applies per turn (each ai checked independently)',
+      () {
+        // Two AI turns, one with tldr, one without. The first should
+        // collapse to its tldr, the second stays verbatim. Catches a
+        // buggy "sticky tldr" implementation that caches a previous
+        // tldr across the walk.
+        final result = buildChatLog(
+          messages: [
+            _user(id: 1),
+            _ai(id: 2, content: 'first long reply', tldr: 'first TLDR'),
+            _user(id: 3, content: 'another question'),
+            _ai(id: 4, content: 'second short reply'),
+          ],
+          workingDirectory: '/tmp/proj',
+          toolRegistry: registry,
+        );
 
-      expect(result.markdown, contains('crux: first TLDR'));
-      expect(result.markdown, contains('crux: second short reply'));
-      expect(
-        result.markdown,
-        isNot(contains('first long reply')),
-        reason: 'first turn should be replaced by its tldr',
-      );
-    });
+        expect(result.markdown, contains('crux: first TLDR'));
+        expect(result.markdown, contains('crux: second short reply'));
+        expect(
+          result.markdown,
+          isNot(contains('first long reply')),
+          reason: 'first turn should be replaced by its tldr',
+        );
+      },
+    );
   });
 
   group('buildChatLog — bottom-of-log summary section', () {
@@ -314,17 +310,23 @@ void main() {
       // re-read of disk). The chat log preserves the model's
       // memory, not the current file state.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/foo.dart',
-          content: 'class Foo {}',
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/foo.dart',
+            content: 'class Foo {}',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1, content: 'look at foo'),
-          _toolCall(id: 2, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'read',
+            input: {'filePath': 'lib/foo.dart'},
+          ),
           _toolResult(id: 3, content: 'class Foo {}'),
         ],
         workingDirectory: '/tmp/proj',
@@ -350,17 +352,23 @@ void main() {
       // `read files:` section stays empty when no read has
       // contributed.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubWriteTool(
-        SummaryContribution.writtenFile(
-          path: 'lib/new.dart',
-          content: 'class New {}',
+      registryWithStub.register(
+        _StubWriteTool(
+          SummaryContribution.writtenFile(
+            path: 'lib/new.dart',
+            content: 'class New {}',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1, content: 'create new.dart'),
-          _toolCall(id: 2, toolName: 'write', input: {'filePath': 'lib/new.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'write',
+            input: {'filePath': 'lib/new.dart'},
+          ),
           _toolResult(id: 3, content: 'File written: lib/new.dart'),
         ],
         workingDirectory: '/tmp/proj',
@@ -412,38 +420,56 @@ void main() {
       // partial-fit, the third gets omitted with a marker.
       // Each stub uses a distinct tool name because
       // [ToolRegistry.register] overwrites by name.
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/big_a.dart',
-          content: 'a' * 20 * 1024,
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/big_a.dart',
+            content: 'a' * 20 * 1024,
+          ),
+          name: 'read_a',
         ),
-        name: 'read_a',
-      ));
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/big_b.dart',
-          content: 'b' * 20 * 1024,
+      );
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/big_b.dart',
+            content: 'b' * 20 * 1024,
+          ),
+          name: 'read_b',
         ),
-        name: 'read_b',
-      ));
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/big_c.dart',
-          content: 'c' * 20 * 1024,
+      );
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/big_c.dart',
+            content: 'c' * 20 * 1024,
+          ),
+          name: 'read_c',
         ),
-        name: 'read_c',
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
-          _toolCall(id: 2, toolName: 'read_a', input: {'filePath': 'lib/big_a.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'read_a',
+            input: {'filePath': 'lib/big_a.dart'},
+          ),
           _toolResult(id: 3),
           _user(id: 4),
-          _toolCall(id: 5, toolName: 'read_b', input: {'filePath': 'lib/big_b.dart'}),
+          _toolCall(
+            id: 5,
+            toolName: 'read_b',
+            input: {'filePath': 'lib/big_b.dart'},
+          ),
           _toolResult(id: 6),
           _user(id: 7),
-          _toolCall(id: 8, toolName: 'read_c', input: {'filePath': 'lib/big_c.dart'}),
+          _toolCall(
+            id: 8,
+            toolName: 'read_c',
+            input: {'filePath': 'lib/big_c.dart'},
+          ),
           _toolResult(id: 9),
         ],
         workingDirectory: '/tmp/proj',
@@ -457,15 +483,21 @@ void main() {
       expect(section, contains('lib/big_a.dart'));
       // The third file is dropped (omitted) — its body must
       // not appear, only the path in the marker.
-      expect(section, isNot(contains('c' * 1024)),
-          reason: 'c.dart body must not appear when omitted');
+      expect(
+        section,
+        isNot(contains('c' * 1024)),
+        reason: 'c.dart body must not appear when omitted',
+      );
 
       // Overflow marker is present so the LLM knows the file
       // exists but wasn't shown. The path is recoverable from
       // the inline `read:` line in the per-turn chat log, so
       // the marker only needs a count.
-      expect(section, contains('omitted to fit'),
-          reason: 'overflow marker must be present');
+      expect(
+        section,
+        contains('omitted to fit'),
+        reason: 'overflow marker must be present',
+      );
       expect(section, contains('32KB section cap'));
       expect(section, contains('1 more file'));
 
@@ -473,7 +505,8 @@ void main() {
       expect(
         section.length,
         lessThanOrEqualTo(kInlineSummarySectionMaxChars + 200),
-        reason: 'section must not exceed the cap (small slack for the marker line)',
+        reason:
+            'section must not exceed the cap (small slack for the marker line)',
       );
     });
 
@@ -482,38 +515,56 @@ void main() {
       // section. Same cap and overflow behavior; only the
       // section header differs.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubWriteTool(
-        SummaryContribution.writtenFile(
-          path: 'lib/big_a.dart',
-          content: 'a' * 20 * 1024,
+      registryWithStub.register(
+        _StubWriteTool(
+          SummaryContribution.writtenFile(
+            path: 'lib/big_a.dart',
+            content: 'a' * 20 * 1024,
+          ),
+          name: 'write_a',
         ),
-        name: 'write_a',
-      ));
-      registryWithStub.register(_StubWriteTool(
-        SummaryContribution.writtenFile(
-          path: 'lib/big_b.dart',
-          content: 'b' * 20 * 1024,
+      );
+      registryWithStub.register(
+        _StubWriteTool(
+          SummaryContribution.writtenFile(
+            path: 'lib/big_b.dart',
+            content: 'b' * 20 * 1024,
+          ),
+          name: 'write_b',
         ),
-        name: 'write_b',
-      ));
-      registryWithStub.register(_StubWriteTool(
-        SummaryContribution.writtenFile(
-          path: 'lib/big_c.dart',
-          content: 'c' * 20 * 1024,
+      );
+      registryWithStub.register(
+        _StubWriteTool(
+          SummaryContribution.writtenFile(
+            path: 'lib/big_c.dart',
+            content: 'c' * 20 * 1024,
+          ),
+          name: 'write_c',
         ),
-        name: 'write_c',
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
-          _toolCall(id: 2, toolName: 'write_a', input: {'filePath': 'lib/big_a.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'write_a',
+            input: {'filePath': 'lib/big_a.dart'},
+          ),
           _toolResult(id: 3),
           _user(id: 4),
-          _toolCall(id: 5, toolName: 'write_b', input: {'filePath': 'lib/big_b.dart'}),
+          _toolCall(
+            id: 5,
+            toolName: 'write_b',
+            input: {'filePath': 'lib/big_b.dart'},
+          ),
           _toolResult(id: 6),
           _user(id: 7),
-          _toolCall(id: 8, toolName: 'write_c', input: {'filePath': 'lib/big_c.dart'}),
+          _toolCall(
+            id: 8,
+            toolName: 'write_c',
+            input: {'filePath': 'lib/big_c.dart'},
+          ),
           _toolResult(id: 9),
         ],
         workingDirectory: '/tmp/proj',
@@ -522,10 +573,16 @@ void main() {
 
       final section = result.markdown.split('write files:').last;
       expect(section, contains('lib/big_a.dart'));
-      expect(section, isNot(contains('c' * 1024)),
-          reason: 'c.dart body must not appear when omitted');
-      expect(section, contains('omitted to fit'),
-          reason: 'overflow marker must be present');
+      expect(
+        section,
+        isNot(contains('c' * 1024)),
+        reason: 'c.dart body must not appear when omitted',
+      );
+      expect(
+        section,
+        contains('omitted to fit'),
+        reason: 'overflow marker must be present',
+      );
       expect(section, contains('1 more file'));
       expect(
         section.length,
@@ -541,28 +598,40 @@ void main() {
       // path stays so the LLM knows which file the snippet
       // belongs to.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/big_a.dart',
-          content: 'a' * 25 * 1024, // 25KB — first file
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/big_a.dart',
+            content: 'a' * 25 * 1024, // 25KB — first file
+          ),
+          name: 'read_a',
         ),
-        name: 'read_a',
-      ));
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/big_b.dart',
-          content: 'b' * 25 * 1024, // 25KB — partial fit
+      );
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/big_b.dart',
+            content: 'b' * 25 * 1024, // 25KB — partial fit
+          ),
+          name: 'read_b',
         ),
-        name: 'read_b',
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
-          _toolCall(id: 2, toolName: 'read_a', input: {'filePath': 'lib/big_a.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'read_a',
+            input: {'filePath': 'lib/big_a.dart'},
+          ),
           _toolResult(id: 3),
           _user(id: 4),
-          _toolCall(id: 5, toolName: 'read_b', input: {'filePath': 'lib/big_b.dart'}),
+          _toolCall(
+            id: 5,
+            toolName: 'read_b',
+            input: {'filePath': 'lib/big_b.dart'},
+          ),
           _toolResult(id: 6),
         ],
         workingDirectory: '/tmp/proj',
@@ -572,28 +641,43 @@ void main() {
       final section = result.markdown.split('read files:').last;
       // b.dart body is truncated — full body (25KB) is not
       // present, but the marker is.
-      expect(section, isNot(contains('b' * 25 * 1024)),
-          reason: 'b.dart body must be truncated');
-      expect(section, contains('(truncated, re-read for full content)'),
-          reason: 'truncation marker must be present');
-      expect(section.length, lessThanOrEqualTo(kInlineSummarySectionMaxChars + 200));
+      expect(
+        section,
+        isNot(contains('b' * 25 * 1024)),
+        reason: 'b.dart body must be truncated',
+      );
+      expect(
+        section,
+        contains('(truncated, re-read for full content)'),
+        reason: 'truncation marker must be present',
+      );
+      expect(
+        section.length,
+        lessThanOrEqualTo(kInlineSummarySectionMaxChars + 200),
+      );
     });
 
     test('single small file: no truncation, no marker', () {
       // Sanity: a single file well under the cap renders
       // unchanged. Catches a bug that always truncates.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/small.dart',
-          content: 'short body',
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/small.dart',
+            content: 'short body',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
-          _toolCall(id: 2, toolName: 'read', input: {'filePath': 'lib/small.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'read',
+            input: {'filePath': 'lib/small.dart'},
+          ),
           _toolResult(id: 3),
         ],
         workingDirectory: '/tmp/proj',
@@ -613,23 +697,37 @@ void main() {
       // section, by contrast, dedupes by (category, key) — only
       // ONE entry for `lib/foo.dart` should survive at the bottom.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/foo.dart',
-          content: 'final content',
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/foo.dart',
+            content: 'final content',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
-          _toolCall(id: 2, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolCall(
+            id: 2,
+            toolName: 'read',
+            input: {'filePath': 'lib/foo.dart'},
+          ),
           _toolResult(id: 3),
           _user(id: 4),
-          _toolCall(id: 5, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolCall(
+            id: 5,
+            toolName: 'read',
+            input: {'filePath': 'lib/foo.dart'},
+          ),
           _toolResult(id: 6),
           _user(id: 7),
-          _toolCall(id: 8, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolCall(
+            id: 8,
+            toolName: 'read',
+            input: {'filePath': 'lib/foo.dart'},
+          ),
           _toolResult(id: 9),
         ],
         workingDirectory: '/tmp/proj',
@@ -639,7 +737,9 @@ void main() {
       // Inline: three separate turns each render their own
       // `read: lib/foo.dart` line.
       expect(
-          'read: lib/foo.dart'.allMatches(result.markdown).length, equals(3));
+        'read: lib/foo.dart'.allMatches(result.markdown).length,
+        equals(3),
+      );
 
       // Summary section: split on the `read files:` header so we
       // only count occurrences in the bottom-of-log block.
@@ -647,8 +747,11 @@ void main() {
       // though three reads contributed.
       final summarySection = result.markdown.split('read files:').last;
       // The value (content body) renders exactly once.
-      expect('final content'.allMatches(summarySection).length, equals(1),
-          reason: 'summary section dedupes same path');
+      expect(
+        'final content'.allMatches(summarySection).length,
+        equals(1),
+        reason: 'summary section dedupes same path',
+      );
     });
   });
 
@@ -659,13 +762,16 @@ void main() {
       // renders it under `loaded skills:` so a post-compact
       // session keeps the procedure without re-invoking the tool.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubSkillTool(
-        SummaryContribution(
-          category: 'skill-bodies',
-          key: 'pr-review',
-          value: '<skill_content name="pr-review">\nProcedure body\n</skill_content>',
+      registryWithStub.register(
+        _StubSkillTool(
+          SummaryContribution(
+            category: 'skill-bodies',
+            key: 'pr-review',
+            value:
+                '<skill_content name="pr-review">\nProcedure body\n</skill_content>',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
@@ -688,26 +794,34 @@ void main() {
       // Skill bodies are instructions the resumed agent must
       // follow while reading the file snapshots — they go first.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubSkillTool(
-        SummaryContribution(
-          category: 'skill-bodies',
-          key: 'pr-review',
-          value: 'Procedure body',
+      registryWithStub.register(
+        _StubSkillTool(
+          SummaryContribution(
+            category: 'skill-bodies',
+            key: 'pr-review',
+            value: 'Procedure body',
+          ),
         ),
-      ));
-      registryWithStub.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/foo.dart',
-          content: 'class Foo {}',
+      );
+      registryWithStub.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/foo.dart',
+            content: 'class Foo {}',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
           _user(id: 1),
           _toolCall(id: 2, toolName: 'skill', input: {'name': 'pr-review'}),
           _toolResult(id: 3, content: 'ok'),
-          _toolCall(id: 4, toolName: 'read', input: {'filePath': 'lib/foo.dart'}),
+          _toolCall(
+            id: 4,
+            toolName: 'read',
+            input: {'filePath': 'lib/foo.dart'},
+          ),
           _toolResult(id: 5, content: 'class Foo {}'),
         ],
         workingDirectory: '/tmp/proj',
@@ -718,8 +832,11 @@ void main() {
       final readsIdx = result.markdown.indexOf('read files:');
       expect(skillsIdx, greaterThanOrEqualTo(0));
       expect(readsIdx, greaterThanOrEqualTo(0));
-      expect(skillsIdx, lessThan(readsIdx),
-          reason: 'loaded skills section renders before read files');
+      expect(
+        skillsIdx,
+        lessThan(readsIdx),
+        reason: 'loaded skills section renders before read files',
+      );
     });
 
     test('dedupes the same skill loaded multiple times', () {
@@ -729,13 +846,15 @@ void main() {
       // dedup collapses them to one — the body must NOT be
       // doubled in the summary.
       final registryWithStub = ToolRegistry();
-      registryWithStub.register(_StubSkillTool(
-        SummaryContribution(
-          category: 'skill-bodies',
-          key: 'pr-review',
-          value: 'Procedure body',
+      registryWithStub.register(
+        _StubSkillTool(
+          SummaryContribution(
+            category: 'skill-bodies',
+            key: 'pr-review',
+            value: 'Procedure body',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
@@ -751,8 +870,11 @@ void main() {
       );
 
       final summarySection = result.markdown.split('loaded skills:').last;
-      expect('Procedure body'.allMatches(summarySection).length, equals(1),
-          reason: 'summary section dedupes same skill name');
+      expect(
+        'Procedure body'.allMatches(summarySection).length,
+        equals(1),
+        reason: 'summary section dedupes same skill name',
+      );
     });
   });
 
@@ -802,37 +924,45 @@ void main() {
       // explicit. With the new leading-window check, the result
       // starts with `1: import '...'`, so the heuristic correctly
       // returns false.
-      expect(dartSourceThatTrippedTheHeuristic.contains('exit code:'),
-          isTrue,
-          reason: 'fixture includes the trigger substring to prove '
-              'the old heuristic would have matched');
-      expect(dartSourceThatTrippedTheHeuristic.contains('failed'),
-          isTrue,
-          reason: 'fixture includes the trigger substring to prove '
-              'the old heuristic would have matched');
+      expect(
+        dartSourceThatTrippedTheHeuristic.contains('exit code:'),
+        isTrue,
+        reason:
+            'fixture includes the trigger substring to prove '
+            'the old heuristic would have matched',
+      );
+      expect(
+        dartSourceThatTrippedTheHeuristic.contains('failed'),
+        isTrue,
+        reason:
+            'fixture includes the trigger substring to prove '
+            'the old heuristic would have matched',
+      );
 
       // Run the inline rendering and assert the result does NOT
       // contain the result payload.
       final registry = ToolRegistry();
-      registry.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: 'lib/src/services/compaction/chat_log_builder.dart',
-          content: dartSourceThatTrippedTheHeuristic,
+      registry.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: 'lib/src/services/compaction/chat_log_builder.dart',
+            content: dartSourceThatTrippedTheHeuristic,
+          ),
         ),
-      ));
+      );
       final result = buildChatLog(
         messages: [
           _user(id: 1, content: 'read chat_log_builder.dart'),
           _toolCall(
-              id: 2,
-              toolName: 'read',
-              input: {
-                'filePath': 'lib/src/services/compaction/'
-                    'chat_log_builder.dart',
-              }),
-          _toolResult(
-              id: 3,
-              content: dartSourceThatTrippedTheHeuristic),
+            id: 2,
+            toolName: 'read',
+            input: {
+              'filePath':
+                  'lib/src/services/compaction/'
+                  'chat_log_builder.dart',
+            },
+          ),
+          _toolResult(id: 3, content: dartSourceThatTrippedTheHeuristic),
         ],
         workingDirectory: '/tmp/proj',
         toolRegistry: registry,
@@ -842,12 +972,21 @@ void main() {
       // payload. The presence of `→` means the result got
       // classified as an error and the inline rendering took
       // the error branch.
-      expect(result.markdown, contains('read: lib/src/services/'
-          'compaction/chat_log_builder.dart'));
-      expect(result.markdown, isNot(contains('→ 1: import')),
-          reason: 'inline read line must not include tool result '
-              'content when the result is a successful read that '
-              'happens to contain the trigger substrings');
+      expect(
+        result.markdown,
+        contains(
+          'read: lib/src/services/'
+          'compaction/chat_log_builder.dart',
+        ),
+      );
+      expect(
+        result.markdown,
+        isNot(contains('→ 1: import')),
+        reason:
+            'inline read line must not include tool result '
+            'content when the result is a successful read that '
+            'happens to contain the trigger substrings',
+      );
 
       // The bottom-of-log `read files:` section MAY include the
       // content (that's its job), so we don't assert on the
@@ -859,32 +998,40 @@ void main() {
       // Sanity check: the leading-window check shouldn't make
       // the heuristic a no-op. An actual `Error: ...` prefix
       // in the leading 200 chars must still be detected.
-      final errorResult = 'Error: file not found at /tmp/missing.txt\n'
+      final errorResult =
+          'Error: file not found at /tmp/missing.txt\n'
           'This is a simulated error message from the tool layer.';
       final registry = ToolRegistry();
-      registry.register(_StubReadTool(
-        SummaryContribution.readFile(
-          path: '/tmp/missing.txt',
-          content: errorResult,
+      registry.register(
+        _StubReadTool(
+          SummaryContribution.readFile(
+            path: '/tmp/missing.txt',
+            content: errorResult,
+          ),
         ),
-      ));
+      );
       final result = buildChatLog(
         messages: [
           _user(id: 1, content: 'read missing'),
           _toolCall(
-              id: 2,
-              toolName: 'read',
-              input: {'filePath': '/tmp/missing.txt'}),
+            id: 2,
+            toolName: 'read',
+            input: {'filePath': '/tmp/missing.txt'},
+          ),
           _toolResult(id: 3, content: errorResult),
         ],
         workingDirectory: '/tmp/proj',
         toolRegistry: registry,
       );
       // Error path: inline line includes the result payload.
-      expect(result.markdown, contains('→ Error: file not found'),
-          reason: 'real error markers must still trigger the '
-              'inline result-passthrough so the user sees the '
-              'failure context in the chat log');
+      expect(
+        result.markdown,
+        contains('→ Error: file not found'),
+        reason:
+            'real error markers must still trigger the '
+            'inline result-passthrough so the user sees the '
+            'failure context in the chat log',
+      );
     });
   });
 
@@ -905,8 +1052,7 @@ void main() {
     // Real EditTool / WriteTool (not stubs) — stubs don't
     // implement the new [ToolDef.isNoOpForCompaction] hook.
 
-    test('edit read-before-write guard is dropped from the chat log',
-        () {
+    test('edit read-before-write guard is dropped from the chat log', () {
       // The production shape of `_doMutation`'s read-before-
       // write guard: header starts with `[GUARD]`, then a
       // blank line, then the current file body. The chat log
@@ -941,21 +1087,32 @@ void main() {
       );
 
       // Inline line gone.
-      expect(result.markdown, isNot(contains('edit: lib/foo.dart')),
-          reason: 'guarded edit must be dropped from the inline '
-              'log; the follow-up retry is what matters');
-      expect(result.markdown, isNot(contains('[GUARD]')),
-          reason: 'guard header / file body must not leak into the '
-              'compacted log');
+      expect(
+        result.markdown,
+        isNot(contains('edit: lib/foo.dart')),
+        reason:
+            'guarded edit must be dropped from the inline '
+            'log; the follow-up retry is what matters',
+      );
+      expect(
+        result.markdown,
+        isNot(contains('[GUARD]')),
+        reason:
+            'guard header / file body must not leak into the '
+            'compacted log',
+      );
       // No summary contribution either — guarded edit never
       // touched the file.
-      expect(result.markdown, isNot(contains('read files:')),
-          reason: 'no read / write-files section when the only '
-              'tool call was a guard');
+      expect(
+        result.markdown,
+        isNot(contains('read files:')),
+        reason:
+            'no read / write-files section when the only '
+            'tool call was a guard',
+      );
     });
 
-    test('edit streaming abort (mid-stream guard catch) is dropped',
-        () {
+    test('edit streaming abort (mid-stream guard catch) is dropped', () {
       // Streaming-time abort path (`_buildGuardAbortedToolResult`)
       // wraps the guard header + file content + an early-abort
       // marker. Same `[GUARD]` header shape → same filter
@@ -1039,14 +1196,25 @@ void main() {
       // The aborted call should not appear in any of the
       // summary sections — its body is treated like a guard
       // message: dropped wholesale.
-      expect(result.markdown, isNot(contains('[UNKNOWN TOOL]')),
-          reason: 'unknown-tool header must not leak into the '
-              'compacted log');
-      expect(result.markdown, isNot(contains('tool-call early abort')),
-          reason: 'early-abort marker should not survive compaction');
-      expect(result.markdown, isNot(contains('asked me a question')),
-          reason: 'no surrounding-text or summary contribution '
-              'should remain from the aborted round');
+      expect(
+        result.markdown,
+        isNot(contains('[UNKNOWN TOOL]')),
+        reason:
+            'unknown-tool header must not leak into the '
+            'compacted log',
+      );
+      expect(
+        result.markdown,
+        isNot(contains('tool-call early abort')),
+        reason: 'early-abort marker should not survive compaction',
+      );
+      expect(
+        result.markdown,
+        isNot(contains('asked me a question')),
+        reason:
+            'no surrounding-text or summary contribution '
+            'should remain from the aborted round',
+      );
     });
 
     test('edit "Tool aborted" output is dropped', () {
@@ -1182,8 +1350,7 @@ void main() {
       expect(result.markdown, isNot(contains('Tool aborted')));
     });
 
-    test('non-edit/write tools are not affected (read errors are kept)',
-        () {
+    test('non-edit/write tools are not affected (read errors are kept)', () {
       // The filter is opt-in per tool — the default
       // `isNoOpForCompaction` returns false, so a `read`
       // failure (e.g. file not found) is still rendered
@@ -1191,13 +1358,15 @@ void main() {
       // specifically about edit / write noise; other tools
       // benefit from keeping the error visible in the log.
       final registry = ToolRegistry();
-      registry.register(_StubReadTool(
-        const SummaryContribution(
-          category: 'read-files',
-          key: 'lib/missing.dart',
-          value: '',
+      registry.register(
+        _StubReadTool(
+          const SummaryContribution(
+            category: 'read-files',
+            key: 'lib/missing.dart',
+            value: '',
+          ),
         ),
-      ));
+      );
 
       final result = buildChatLog(
         messages: [
@@ -1209,10 +1378,7 @@ void main() {
           ),
           // Real read-error prefix that `_looksLikeError`
           // catches.
-          _toolResult(
-            id: 3,
-            content: 'Path not found: lib/missing.dart',
-          ),
+          _toolResult(id: 3, content: 'Path not found: lib/missing.dart'),
         ],
         workingDirectory: '/tmp/proj',
         toolRegistry: registry,
@@ -1221,7 +1387,8 @@ void main() {
       expect(
         result.markdown,
         contains('read: lib/missing.dart → Path not found'),
-        reason: 'read failures must NOT be dropped — the filter '
+        reason:
+            'read failures must NOT be dropped — the filter '
             'is opt-in per tool, and the default keeps the '
             'error visible',
       );
@@ -1291,14 +1458,16 @@ void main() {
       expect(
         result.markdown,
         contains('edit: lib/foo.dart for {rename}'),
-        reason: 'auto-read edit is kept inline as the tool the '
+        reason:
+            'auto-read edit is kept inline as the tool the '
             'model actually called',
       );
       // The auto-read response text is NOT pasted inline.
       expect(
         result.markdown,
         isNot(contains('[AUTOREAD]')),
-        reason: 'auto-read header / hint paragraph must not leak '
+        reason:
+            'auto-read header / hint paragraph must not leak '
             'into the chat log body',
       );
       // File content makes it into the read files section.
@@ -1307,23 +1476,18 @@ void main() {
         contains('read files:'),
         reason: 'auto-read contributes to the read files section',
       );
-      expect(
-        result.markdown,
-        contains('lib/foo.dart'),
-      );
+      expect(result.markdown, contains('lib/foo.dart'));
       expect(
         result.markdown,
         contains('class Foo {'),
-        reason: 'file body from the auto-read response is '
+        reason:
+            'file body from the auto-read response is '
             'preserved verbatim in the summary section',
       );
       // The internal blank line in the file body is preserved
       // (the parser joins segments with `\n\n` instead of
       // collapsing them).
-      expect(
-        result.markdown,
-        contains('// blank-line comment'),
-      );
+      expect(result.markdown, contains('// blank-line comment'));
     });
 
     test('guard followed by successful edit in the same round: only '
@@ -1400,15 +1564,13 @@ void main() {
       );
 
       // The retry renders inline (success path).
-      expect(
-        result.markdown,
-        contains('edit: lib/foo.dart for {rename}'),
-      );
+      expect(result.markdown, contains('edit: lib/foo.dart for {rename}'));
       // The guarded call is gone — no [GUARD] / guard header.
       expect(
         result.markdown,
         isNot(contains('[GUARD]')),
-        reason: 'guarded edit is dropped; the successful retry '
+        reason:
+            'guarded edit is dropped; the successful retry '
             'is the durable signal',
       );
       // No `→` for the retry (success path; error path would
@@ -1416,7 +1578,8 @@ void main() {
       expect(
         result.markdown,
         isNot(contains('Edit applied to lib/foo.dart →')),
-        reason: 'successful edit renders without the result '
+        reason:
+            'successful edit renders without the result '
             'payload; the success summary is in the model\'s '
             'tool call history, not the chat log',
       );

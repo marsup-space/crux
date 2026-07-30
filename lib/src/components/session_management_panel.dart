@@ -82,10 +82,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     // above the header.
     final baseOffset = _mode == _PanelMode.confirmDelete ? 2.0 : 0.0;
     final itemOffset = baseOffset + 1.0 + _selectedIndex.toDouble();
-    _scrollController.ensureVisible(
-      itemOffset: itemOffset,
-      itemExtent: 1.0,
-    );
+    _scrollController.ensureVisible(itemOffset: itemOffset, itemExtent: 1.0);
   }
 
   void _initiateDelete() {

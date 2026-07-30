@@ -70,25 +70,27 @@ void main() {
     );
   }
 
-  test('initSessions mirrors sessions list, archivedCount, and currentId',
-      () async {
-    final idle = await store.create(
-      title: 'Idle',
-      model: '',
-      projectPath: Directory.current.path,
-    );
+  test(
+    'initSessions mirrors sessions list, archivedCount, and currentId',
+    () async {
+      final idle = await store.create(
+        title: 'Idle',
+        model: '',
+        projectPath: Directory.current.path,
+      );
 
-    final controller = buildController();
-    await controller.initSessions();
+      final controller = buildController();
+      await controller.initSessions();
 
-    expect(controller.currentSessionId, idle.id);
-    expect(controller.cubit.state.currentSessionId, idle.id);
-    expect(
-      controller.cubit.state.sessions.map((s) => s.id),
-      controller.sessions.map((s) => s.id),
-    );
-    expect(controller.cubit.state.archivedCount, controller.archivedCount);
-  });
+      expect(controller.currentSessionId, idle.id);
+      expect(controller.cubit.state.currentSessionId, idle.id);
+      expect(
+        controller.cubit.state.sessions.map((s) => s.id),
+        controller.sessions.map((s) => s.id),
+      );
+      expect(controller.cubit.state.archivedCount, controller.archivedCount);
+    },
+  );
 
   test('loadMessages puts cached messages into the cubit', () async {
     final session = await store.create(
@@ -114,42 +116,44 @@ void main() {
     expect(controller.cubit.state.messagesFor(session.id), hasLength(2));
   });
 
-  test('switchSession lifecycle mirrors loading state into the cubit',
-      () async {
-    final session = await store.create(
-      title: 'Big',
-      model: '',
-      projectPath: Directory.current.path,
-    );
-    for (var i = 0; i < 30; i++) {
-      await store.messageStore.addMessage(
-        session.id,
-        role: 'user',
-        content: 'message #$i',
+  test(
+    'switchSession lifecycle mirrors loading state into the cubit',
+    () async {
+      final session = await store.create(
+        title: 'Big',
+        model: '',
+        projectPath: Directory.current.path,
       );
-    }
+      for (var i = 0; i < 30; i++) {
+        await store.messageStore.addMessage(
+          session.id,
+          role: 'user',
+          content: 'message #$i',
+        );
+      }
 
-    final controller = buildController()..sessions = [session];
-    controller.beginSwitchSession(session.id);
-    expect(
-      controller.cubit.state.isLoadingMessages(session.id),
-      isTrue,
-      reason: 'beginSwitchSession should mirror loading=true into the cubit',
-    );
+      final controller = buildController()..sessions = [session];
+      controller.beginSwitchSession(session.id);
+      expect(
+        controller.cubit.state.isLoadingMessages(session.id),
+        isTrue,
+        reason: 'beginSwitchSession should mirror loading=true into the cubit',
+      );
 
-    await controller.completeSwitchSession(session.id);
+      await controller.completeSwitchSession(session.id);
 
-    expect(
-      controller.cubit.state.isLoadingMessages(session.id),
-      isFalse,
-      reason: 'completeSwitchSession should mirror loading=false finally',
-    );
-    expect(
-      controller.cubit.state.messagesFor(session.id),
-      hasLength(30),
-      reason: 'chunked load should mirror every cache update',
-    );
-  });
+      expect(
+        controller.cubit.state.isLoadingMessages(session.id),
+        isFalse,
+        reason: 'completeSwitchSession should mirror loading=false finally',
+      );
+      expect(
+        controller.cubit.state.messagesFor(session.id),
+        hasLength(30),
+        reason: 'chunked load should mirror every cache update',
+      );
+    },
+  );
 
   test('message queue enqueue / discard / drain mirror to the cubit', () {
     final controller = buildController();
@@ -157,10 +161,7 @@ void main() {
 
     final id1 = controller.enqueueMessage(sessionId, 'first');
     expect(controller.cubit.state.queuedMessagesFor(sessionId), hasLength(1));
-    expect(
-      controller.cubit.state.queuedMessagesFor(sessionId).first.id,
-      id1,
-    );
+    expect(controller.cubit.state.queuedMessagesFor(sessionId).first.id, id1);
 
     controller.enqueueMessage(sessionId, 'second');
     expect(controller.cubit.state.queuedMessagesFor(sessionId), hasLength(2));
@@ -253,68 +254,71 @@ void main() {
   });
 
   test(
-      'generateTitle mirrors whatever state the controller ends up in',
-      () async {
-    final session = await store.create(
-      title: 'New Session',
-      model: '',
-      projectPath: Directory.current.path,
-    );
-    // ProviderService in this fixture has no auxiliary model
-    // configured, so generateTitle returns immediately without
-    // flipping the isGeneratingTitle flag. Verify the cubit's
-    // final state still matches the controller's flag — i.e. the
-    // cubit never diverges from the controller's source of truth.
-    final controller = buildController()
-      ..sessions = [session]
-      ..currentSessionId = session.id;
+    'generateTitle mirrors whatever state the controller ends up in',
+    () async {
+      final session = await store.create(
+        title: 'New Session',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      // ProviderService in this fixture has no auxiliary model
+      // configured, so generateTitle returns immediately without
+      // flipping the isGeneratingTitle flag. Verify the cubit's
+      // final state still matches the controller's flag — i.e. the
+      // cubit never diverges from the controller's source of truth.
+      final controller = buildController()
+        ..sessions = [session]
+        ..currentSessionId = session.id;
 
-    await controller.generateTitle(session.id);
+      await controller.generateTitle(session.id);
 
-    expect(
-      controller.cubit.state.isGeneratingTitle,
-      controller.isGeneratingTitle,
-      reason: 'cubit.isGeneratingTitle should track controller.isGeneratingTitle',
-    );
-    expect(controller.cubit.state.isGeneratingTitle, isFalse);
-  });
+      expect(
+        controller.cubit.state.isGeneratingTitle,
+        controller.isGeneratingTitle,
+        reason:
+            'cubit.isGeneratingTitle should track controller.isGeneratingTitle',
+      );
+      expect(controller.cubit.state.isGeneratingTitle, isFalse);
+    },
+  );
 
   test(
-      'deleteSession mirrors session removal + reload into the cubit',
-      () async {
-    final keep = await store.create(
-      title: 'Keep',
-      model: '',
-      projectPath: Directory.current.path,
-    );
-    final drop = await store.create(
-      title: 'Drop',
-      model: '',
-      projectPath: Directory.current.path,
-    );
+    'deleteSession mirrors session removal + reload into the cubit',
+    () async {
+      final keep = await store.create(
+        title: 'Keep',
+        model: '',
+        projectPath: Directory.current.path,
+      );
+      final drop = await store.create(
+        title: 'Drop',
+        model: '',
+        projectPath: Directory.current.path,
+      );
 
-    final controller = buildController()
-      ..sessions = [drop, keep]
-      ..currentSessionId = drop.id;
+      final controller = buildController()
+        ..sessions = [drop, keep]
+        ..currentSessionId = drop.id;
 
-    await controller.deleteSession(drop.id);
+      await controller.deleteSession(drop.id);
 
-    expect(
-      controller.cubit.state.sessions.map((s) => s.id),
-      [keep.id],
-      reason: 'removed session should be gone from the cubit list',
-    );
-    expect(
-      controller.cubit.state.currentSessionId,
-      keep.id,
-      reason: 'currentSessionId should rebalance to the remaining session',
-    );
-    expect(
-      controller.cubit.state.messagesFor(drop.id),
-      isEmpty,
-      reason: 'removeSessionState should clear the deleted cache',
-    );
-  });
+      expect(
+        controller.cubit.state.sessions.map((s) => s.id),
+        [keep.id],
+        reason: 'removed session should be gone from the cubit list',
+      );
+      expect(
+        controller.cubit.state.currentSessionId,
+        keep.id,
+        reason: 'currentSessionId should rebalance to the remaining session',
+      );
+      expect(
+        controller.cubit.state.messagesFor(drop.id),
+        isEmpty,
+        reason: 'removeSessionState should clear the deleted cache',
+      );
+    },
+  );
 
   group('btwCubit mirror', () {
     test('appendBtwTurn / appendPendingBtwTurn mirror into btwCubit', () {
@@ -326,10 +330,7 @@ void main() {
       expect(controller.btwCubit.state.turnsFor(1), [completed]);
 
       controller.appendPendingBtwTurn(1, 'followup');
-      expect(
-        controller.btwCubit.state.turnsFor(1),
-        [completed, pending],
-      );
+      expect(controller.btwCubit.state.turnsFor(1), [completed, pending]);
     });
 
     test('updateLastBtwTurnAiText mirrors into the last turn', () {
@@ -337,8 +338,10 @@ void main() {
       controller.appendPendingBtwTurn(2, 'what is dart?');
       controller.updateLastBtwTurnAiText(2, 'Dart is a programming language.');
 
-      expect(controller.btwCubit.state.turnsFor(2).single.aiText,
-          'Dart is a programming language.');
+      expect(
+        controller.btwCubit.state.turnsFor(2).single.aiText,
+        'Dart is a programming language.',
+      );
       // The controller's own btw buffer should agree with the cubit.
       expect(
         controller.btwTurnsFor(2).single.aiText,
@@ -368,10 +371,7 @@ void main() {
         ..sessions = [session]
         ..currentSessionId = session.id;
       controller.appendPendingBtwTurn(session.id, 'a turn');
-      expect(
-        controller.btwCubit.state.turnsFor(session.id),
-        hasLength(1),
-      );
+      expect(controller.btwCubit.state.turnsFor(session.id), hasLength(1));
 
       await controller.deleteSession(session.id);
 
@@ -385,8 +385,7 @@ void main() {
   });
 
   group('metricsCubit mirror', () {
-    test('runtime() seeds contextTargetTokens into metricsCubit',
-        () async {
+    test('runtime() seeds contextTargetTokens into metricsCubit', () async {
       final session = await store.create(
         title: 'With runtime',
         model: '',
@@ -402,45 +401,50 @@ void main() {
       final rt = controller.runtime(session.id);
       expect(rt.contextTargetTokens, 0);
       expect(
-        controller.metricsCubit.state.sessionState(session.id).contextTargetTokens,
+        controller.metricsCubit.state
+            .sessionState(session.id)
+            .contextTargetTokens,
         0,
         reason: 'fresh runtime should mirror initial context into the cubit',
       );
     });
 
     test(
-        'switchSession lifecycle updates contextTargetTokens in metricsCubit',
-        () async {
-      final session = await store.create(
-        title: 'Has messages',
-        model: '',
-        projectPath: Directory.current.path,
-      );
-      // Seed enough messages for computeBaseContext to have something
-      // to walk (it falls back to message sum when session.contextTokens
-      // is 0).
-      for (var i = 0; i < 4; i++) {
-        await store.messageStore.addMessage(
-          session.id,
-          role: 'user',
-          content: 'm$i',
+      'switchSession lifecycle updates contextTargetTokens in metricsCubit',
+      () async {
+        final session = await store.create(
+          title: 'Has messages',
+          model: '',
+          projectPath: Directory.current.path,
         );
-      }
+        // Seed enough messages for computeBaseContext to have something
+        // to walk (it falls back to message sum when session.contextTokens
+        // is 0).
+        for (var i = 0; i < 4; i++) {
+          await store.messageStore.addMessage(
+            session.id,
+            role: 'user',
+            content: 'm$i',
+          );
+        }
 
-      final controller = buildController()
-        ..sessions = [session]
-        ..currentSessionId = session.id;
-      controller.beginSwitchSession(session.id);
-      await controller.completeSwitchSession(session.id);
+        final controller = buildController()
+          ..sessions = [session]
+          ..currentSessionId = session.id;
+        controller.beginSwitchSession(session.id);
+        await controller.completeSwitchSession(session.id);
 
-      // Controller mirrors whatever base context was computed.
-      final rt = controller.runtime(session.id);
-      expect(
-        controller.metricsCubit.state.sessionState(session.id).contextTargetTokens,
-        rt.contextTargetTokens,
-        reason: 'metricsCubit contextTargetTokens should match controller rt',
-      );
-    });
+        // Controller mirrors whatever base context was computed.
+        final rt = controller.runtime(session.id);
+        expect(
+          controller.metricsCubit.state
+              .sessionState(session.id)
+              .contextTargetTokens,
+          rt.contextTargetTokens,
+          reason: 'metricsCubit contextTargetTokens should match controller rt',
+        );
+      },
+    );
 
     test('deleteSession drops the metricsCubit entry', () async {
       final keep = await store.create(
@@ -470,7 +474,8 @@ void main() {
       expect(
         controller.metricsCubit.state.sessionState(drop.id).contextTargetTokens,
         0,
-        reason: 'deleted session should fall back to the default '
+        reason:
+            'deleted session should fall back to the default '
             '(zeroed) MetricsSessionState in the cubit',
       );
     });
@@ -496,47 +501,56 @@ void main() {
       expect(s.btwMode, isFalse);
     });
 
-    test('mirrorTurnFlags maps responding + btwMode → responding + btw', () async {
-      final session = await store.create(
-        title: 'responding',
-        model: '',
-        projectPath: Directory.current.path,
-      );
-      final controller = buildController()
-        ..sessions = [session]
-        ..currentSessionId = session.id;
-      final rt = controller.runtime(session.id);
-      rt.isResponding = true;
-      rt.btwMode = true;
+    test(
+      'mirrorTurnFlags maps responding + btwMode → responding + btw',
+      () async {
+        final session = await store.create(
+          title: 'responding',
+          model: '',
+          projectPath: Directory.current.path,
+        );
+        final controller = buildController()
+          ..sessions = [session]
+          ..currentSessionId = session.id;
+        final rt = controller.runtime(session.id);
+        rt.isResponding = true;
+        rt.btwMode = true;
 
-      controller.mirrorTurnFlags(session.id);
-      final s = controller.chatTurnCubit.state.sessionState(session.id);
-      expect(s.phase, ChatTurnPhase.responding);
-      expect(s.isResponding, isTrue);
-      expect(s.btwMode, isTrue,
-          reason: 'btwMode should mirror when the turn is responding');
-      expect(s.kind, TurnKind.btw);
-    });
+        controller.mirrorTurnFlags(session.id);
+        final s = controller.chatTurnCubit.state.sessionState(session.id);
+        expect(s.phase, ChatTurnPhase.responding);
+        expect(s.isResponding, isTrue);
+        expect(
+          s.btwMode,
+          isTrue,
+          reason: 'btwMode should mirror when the turn is responding',
+        );
+        expect(s.kind, TurnKind.btw);
+      },
+    );
 
-    test('mirrorTurnFlags maps interrupted → ChatTurnPhase.interrupted', () async {
-      final session = await store.create(
-        title: 'interrupted',
-        model: '',
-        projectPath: Directory.current.path,
-      );
-      final controller = buildController()
-        ..sessions = [session]
-        ..currentSessionId = session.id;
-      final rt = controller.runtime(session.id);
-      rt.isResponding = false;
-      rt.interrupted = true;
+    test(
+      'mirrorTurnFlags maps interrupted → ChatTurnPhase.interrupted',
+      () async {
+        final session = await store.create(
+          title: 'interrupted',
+          model: '',
+          projectPath: Directory.current.path,
+        );
+        final controller = buildController()
+          ..sessions = [session]
+          ..currentSessionId = session.id;
+        final rt = controller.runtime(session.id);
+        rt.isResponding = false;
+        rt.interrupted = true;
 
-      controller.mirrorTurnFlags(session.id);
-      final s = controller.chatTurnCubit.state.sessionState(session.id);
-      expect(s.phase, ChatTurnPhase.interrupted);
-      expect(s.interrupted, isTrue);
-      expect(s.isResponding, isFalse);
-    });
+        controller.mirrorTurnFlags(session.id);
+        final s = controller.chatTurnCubit.state.sessionState(session.id);
+        expect(s.phase, ChatTurnPhase.interrupted);
+        expect(s.interrupted, isTrue);
+        expect(s.isResponding, isFalse);
+      },
+    );
 
     test('mirrorTurnFlags updates isGeneratingTldr', () async {
       final session = await store.create(
@@ -552,14 +566,18 @@ void main() {
       rt.isGeneratingTldr = true;
       controller.mirrorTurnFlags(session.id);
       expect(
-        controller.chatTurnCubit.state.sessionState(session.id).isGeneratingTldr,
+        controller.chatTurnCubit.state
+            .sessionState(session.id)
+            .isGeneratingTldr,
         isTrue,
       );
 
       rt.isGeneratingTldr = false;
       controller.mirrorTurnFlags(session.id);
       expect(
-        controller.chatTurnCubit.state.sessionState(session.id).isGeneratingTldr,
+        controller.chatTurnCubit.state
+            .sessionState(session.id)
+            .isGeneratingTldr,
         isFalse,
       );
     });
@@ -586,8 +604,9 @@ void main() {
       expect(
         controller.chatTurnCubit.state.sessionState(session.id).phase,
         ChatTurnPhase.idle,
-        reason: 'deleted session should fall back to default ChatTurnSessionState',
+        reason:
+            'deleted session should fall back to default ChatTurnSessionState',
       );
-  });
+    });
   });
 }

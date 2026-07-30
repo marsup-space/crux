@@ -55,11 +55,13 @@ void main() {
       expect(topPForTemperature(0.7), closeTo(0.895, 1e-9));
     });
 
-    test('always returns a value inside the API-valid [0.0, 1.0] window',
-        () {
+    test('always returns a value inside the API-valid [0.0, 1.0] window', () {
       for (final t in [-100.0, -1.0, 0.0, 0.5, 1.0, 2.0, 100.0]) {
-        expect(topPForTemperature(t), inInclusiveRange(0.0, 1.0),
-            reason: 'top_p at temp=$t must be in API window');
+        expect(
+          topPForTemperature(t),
+          inInclusiveRange(0.0, 1.0),
+          reason: 'top_p at temp=$t must be in API window',
+        );
       }
     });
 
@@ -70,8 +72,11 @@ void main() {
         final topP = topPForTemperature(t);
         final prev = previous;
         if (prev != null) {
-          expect(topP, lessThanOrEqualTo(prev),
-              reason: 'top_p must not widen as temperature rises');
+          expect(
+            topP,
+            lessThanOrEqualTo(prev),
+            reason: 'top_p must not widen as temperature rises',
+          );
         }
         previous = topP;
       }

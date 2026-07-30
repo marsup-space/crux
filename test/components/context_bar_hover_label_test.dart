@@ -37,10 +37,7 @@ import 'package:test/test.dart';
 import 'package:crux/src/components/context_bar.dart';
 import 'package:crux/src/services/chat_service.dart';
 
-ChatLogCompactionEstimate _est({
-  required int pre,
-  required int post,
-}) =>
+ChatLogCompactionEstimate _est({required int pre, required int post}) =>
     ChatLogCompactionEstimate(
       preTokens: pre,
       postEstimateTokens: post,
@@ -126,8 +123,7 @@ void main() {
       // When we render `skip`, neither arrow (`→` nor `←`) may
       // be present. Catches a future regression that re-adds
       // the arrow for "clarity" (the skip verb is the clarity).
-      final rendered =
-          ContextBarState.formatCompactHoverLabel(68_718, 71_000);
+      final rendered = ContextBarState.formatCompactHoverLabel(68_718, 71_000);
       expect(rendered, isNot(contains('←')));
       expect(rendered, isNot(contains('→')));
       expect(rendered, contains('skip'));
@@ -159,11 +155,7 @@ void main() {
         equals('10k · skip'),
       );
       expect(
-        ContextBarState.formatCompactHoverLabel(
-          10_000,
-          9_800,
-          debugMode: true,
-        ),
+        ContextBarState.formatCompactHoverLabel(10_000, 9_800, debugMode: true),
         equals('9k ← 10k'),
       );
     });
@@ -209,7 +201,8 @@ void main() {
       // the no-op return in `_onCompactButtonPressed`.
       expect(
         ContextBarState.isCompactCounterproductive(
-            _est(pre: 68_718, post: 71_000)),
+          _est(pre: 68_718, post: 71_000),
+        ),
         isTrue,
       );
     });
@@ -220,7 +213,8 @@ void main() {
       // blocked too.
       expect(
         ContextBarState.isCompactCounterproductive(
-            _est(pre: 50_000, post: 50_000)),
+          _est(pre: 50_000, post: 50_000),
+        ),
         isTrue,
       );
     });
@@ -231,7 +225,8 @@ void main() {
       // write and chat log re-render.
       expect(
         ContextBarState.isCompactCounterproductive(
-            _est(pre: 10_000, post: 9_800)),
+          _est(pre: 10_000, post: 9_800),
+        ),
         isTrue,
       );
     });
@@ -243,7 +238,8 @@ void main() {
       // wrong.
       expect(
         ContextBarState.isCompactCounterproductive(
-            _est(pre: 10_000, post: 9_490)),
+          _est(pre: 10_000, post: 9_490),
+        ),
         isFalse,
       );
     });
@@ -254,13 +250,13 @@ void main() {
       // proceeds, auto-compact fires).
       expect(
         ContextBarState.isCompactCounterproductive(
-            _est(pre: 123_000, post: 56_000)),
+          _est(pre: 123_000, post: 56_000),
+        ),
         isFalse,
       );
     });
 
-    test('gate is honored across all entry points (click, /compact, auto)',
-        () {
+    test('gate is honored across all entry points (click, /compact, auto)', () {
       // The same `isCompactCounterproductive` predicate is now
       // used at every layer:
       //   * hover label → renders `X · skip` (formatCompactHoverLabel)

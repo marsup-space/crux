@@ -65,7 +65,8 @@ String renderParallelToolCallHint(int count) {
 /// Renamed from `parallelPraiseEmbeddedMarker`. The literal text also
 /// changed from `…parallel-tool-call praise` to `…parallel-tool-call
 /// hint` to match the unified feature name.
-const parallelHintEmbeddedMarker = '[Crux system note — parallel-tool-call hint]';
+const parallelHintEmbeddedMarker =
+    '[Crux system note — parallel-tool-call hint]';
 
 /// Render the praise-hint wrapped in the embedded marker, ready to
 /// be appended to a tool's `content` field.
@@ -392,10 +393,7 @@ String renderParallelSingleCallHintUserMessage(
   int consecutiveCount, {
   int threshold = 10,
 }) {
-  return renderParallelSingleCallHint(
-    consecutiveCount,
-    threshold: threshold,
-  );
+  return renderParallelSingleCallHint(consecutiveCount, threshold: threshold);
 }
 
 /// Append the embedded single-call hint to the *last* tool result in
@@ -483,10 +481,7 @@ void injectParallelSingleCallHintAsUserMessage(
       ],
     });
   } else {
-    apiMessages.add({
-      'role': 'user',
-      'content': text,
-    });
+    apiMessages.add({'role': 'user', 'content': text});
   }
 }
 

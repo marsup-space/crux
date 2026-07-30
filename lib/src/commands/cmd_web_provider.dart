@@ -2,6 +2,7 @@ import '../components/ui/toast.dart';
 import '../services/web_service_provider.dart';
 import '../utils/terminal_symbols.dart';
 import 'command_executor.dart';
+
 Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   final registry = ctx.webProviderRegistry;
   if (parts.length == 1) {
@@ -67,6 +68,7 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
     ctx.showToast(e.message.toString(), mode: ToastMode.error);
   }
 }
+
 String _webProviderStatusLine(WebServiceProvider p) {
   final caps = <String>[
     if (p.supportsSearch) 'search',

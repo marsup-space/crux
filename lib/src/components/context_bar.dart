@@ -294,9 +294,9 @@ class ContextBarState extends State<ContextBar>
   }
 
   String _fmtNum(int n) => n.toString().replaceAllMapped(
-        RegExp(r'\B(?=(\d{3})+(?!\d))'),
-        (m) => ',',
-      );
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (m) => ',',
+  );
 
   /// Format a token count for the context bar's label. Token
   /// counts are decimal (1k = 1000), not binary (1Ki = 1024) —
@@ -321,10 +321,7 @@ class ContextBarState extends State<ContextBar>
       return '${m.toStringAsFixed(fractionDigits)}M';
     }
     final k = n ~/ 1000;
-    return '${k.toString().replaceAllMapped(
-      RegExp(r'\B(?=(\d{3})+(?!\d))'),
-      (m) => ',',
-    )}k';
+    return '${k.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',')}k';
   }
 
   // =====================================================================
@@ -365,13 +362,13 @@ class ContextBarState extends State<ContextBar>
         : 'Loaded skills : ${(names.toList()..sort()).join(', ')}';
     final usageBlock = component.disabled
         ? 'Context window usage.\n'
-            'Compaction unavailable while the agent is responding.'
+              'Compaction unavailable while the agent is responding.'
         : 'Context window usage.\n'
-            'Click to compact the session history.';
+              'Click to compact the session history.';
     return '$usageBlock\n\n$skillsLine';
   }
 
-    /// Tooltip placement: prefer *below* the bar rather than above.
+  /// Tooltip placement: prefer *below* the bar rather than above.
   /// The bar lives at the very top of the chat panel, so the
   /// overlay's preferred-side attempt of "above" would run off
   /// the top edge of the terminal. Declaring "below" lands
@@ -516,8 +513,7 @@ class ContextBarState extends State<ContextBar>
     // timer stops.
     if (_animState == _AnimState.cooling) {
       final started = _coolingStartedAt;
-      if (started != null &&
-          DateTime.now().difference(started) >= _idleGrace) {
+      if (started != null && DateTime.now().difference(started) >= _idleGrace) {
         _displayTokens = _contextTargetFor(sessionId).toDouble();
         _pushToRenderObject();
         _stopTimer();
@@ -568,8 +564,7 @@ class ContextBarState extends State<ContextBar>
     final ro = _renderObject;
     if (ro == null) return;
     final display = _displayTokens.round();
-    final fillRatio =
-        (display / component.contextMaxTokens).clamp(0.0, 1.0);
+    final fillRatio = (display / component.contextMaxTokens).clamp(0.0, 1.0);
     ro.update(
       fillRatio: fillRatio,
       label: _formatLabel(display, component.contextMaxTokens, _hovered),
@@ -669,13 +664,12 @@ class ContextBarState extends State<ContextBar>
     // non-hover palette so the widget doesn't visually pretend
     // to be a button.
     final showHovered = _hovered && !component.disabled;
-    final fillColor =
-        showHovered ? theme.metricsActive : theme.progressFill;
+    final fillColor = showHovered ? theme.metricsActive : theme.progressFill;
     final emptyColor = theme.progressEmpty;
-    final labelFillFg =
-        showHovered ? theme.outlineDim : theme.buttonBackground;
-    final labelEmptyFg =
-        showHovered ? theme.metricsActive : theme.progressLabelEmpty;
+    final labelFillFg = showHovered ? theme.outlineDim : theme.buttonBackground;
+    final labelEmptyFg = showHovered
+        ? theme.metricsActive
+        : theme.progressLabelEmpty;
 
     return buildWithHint(
       GestureDetector(
@@ -688,8 +682,10 @@ class ContextBarState extends State<ContextBar>
         behavior: HitTestBehavior.opaque,
         child: _ContextBarBridge(
           width: 20,
-          initialFillRatio:
-              (_displayTokens / component.contextMaxTokens).clamp(0.0, 1.0),
+          initialFillRatio: (_displayTokens / component.contextMaxTokens).clamp(
+            0.0,
+            1.0,
+          ),
           initialLabel: _formatLabel(
             _displayTokens.round(),
             component.contextMaxTokens,
@@ -767,20 +763,14 @@ class RenderContextBar extends RenderObject {
   final Color _labelEmptyFg;
 
   RenderContextBar({
-    required int width,
-    required double fillRatio,
-    required String label,
-    required Color fillColor,
-    required Color emptyColor,
-    required Color labelFillFg,
-    required Color labelEmptyFg,
-  })  : _width = width,
-        _fillRatio = fillRatio,
-        _label = label,
-        _fillColor = fillColor,
-        _emptyColor = emptyColor,
-        _labelFillFg = labelFillFg,
-        _labelEmptyFg = labelEmptyFg;
+    required this._width,
+    required this._fillRatio,
+    required this._label,
+    required this._fillColor,
+    required this._emptyColor,
+    required this._labelFillFg,
+    required this._labelEmptyFg,
+  });
 
   /// Setter that the [State] calls on every timer tick.
   /// No-ops if the value hasn't changed, and otherwise
@@ -830,8 +820,9 @@ class RenderContextBar extends RenderObject {
     // Only one cell gets the interpolated bg, and only if there's a
     // non-zero partial AND there's still a cell to place it in (avoids
     // an out-of-bounds boundary when fillRatio is exactly 1.0).
-    final boundaryIdx =
-        (partial > 0.0 && filledCount < _width) ? filledCount : -1;
+    final boundaryIdx = (partial > 0.0 && filledCount < _width)
+        ? filledCount
+        : -1;
 
     final labelLen = _label.length;
     final labelStart = (_width - labelLen) ~/ 2;

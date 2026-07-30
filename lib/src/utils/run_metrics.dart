@@ -305,11 +305,7 @@ class RunMetrics {
       // summary still renders cleanly without colour codes.
       return _renderSummaryPlain(cells, indent: indent);
     }
-    return _renderSummaryStyled(
-      cells,
-      theme: effectiveTheme,
-      indent: indent,
-    );
+    return _renderSummaryStyled(cells, theme: effectiveTheme, indent: indent);
   }
 
   /// Reset all counters. Test-only — production code never
@@ -388,8 +384,11 @@ class RunMetrics {
       ];
     }
 
-    List<_SummaryCell> contentRow(String label, String value,
-        _SummaryCellKind valueKind) {
+    List<_SummaryCell> contentRow(
+      String label,
+      String value,
+      _SummaryCellKind valueKind,
+    ) {
       // │  <label>...<value>  │
       final pad = boxWidth - 2 - 4 - label.length - value.length;
       final padding = pad < 1 ? 1 : pad;
@@ -417,39 +416,47 @@ class RunMetrics {
       // skip the zero-only token rows. The "no LLM calls
       // this run" line uses `valueMuted` so the renderer
       // can dim it.
-      rows.add(contentRow(
-        'Duration:',
-        _formatDuration(snap.duration),
-        _SummaryCellKind.value,
-      ));
+      rows.add(
+        contentRow(
+          'Duration:',
+          _formatDuration(snap.duration),
+          _SummaryCellKind.value,
+        ),
+      );
       rows.add(contentRow('Turns:', '0', _SummaryCellKind.value));
-      rows.add(contentRow(
-        'Status:',
-        'no LLM calls this run',
-        _SummaryCellKind.valueMuted,
-      ));
+      rows.add(
+        contentRow(
+          'Status:',
+          'no LLM calls this run',
+          _SummaryCellKind.valueMuted,
+        ),
+      );
     } else {
-      rows.add(contentRow(
-        'Duration:',
-        _formatDuration(snap.duration),
-        _SummaryCellKind.value,
-      ));
-      rows.add(contentRow(
-        'Turns:',
-        snap.turnCount.toString(),
-        _SummaryCellKind.value,
-      ));
-      rows.add(contentRow(
-        'Tokens in:',
-        '${_formatTokenCount(snap.totalTokensIn)}  '
-            '${_formatCacheSuffix(snap)}',
-        _SummaryCellKind.value,
-      ));
-      rows.add(contentRow(
-        'Tokens out:',
-        _formatTokenCount(snap.totalTokensOut),
-        _SummaryCellKind.value,
-      ));
+      rows.add(
+        contentRow(
+          'Duration:',
+          _formatDuration(snap.duration),
+          _SummaryCellKind.value,
+        ),
+      );
+      rows.add(
+        contentRow('Turns:', snap.turnCount.toString(), _SummaryCellKind.value),
+      );
+      rows.add(
+        contentRow(
+          'Tokens in:',
+          '${_formatTokenCount(snap.totalTokensIn)}  '
+              '${_formatCacheSuffix(snap)}',
+          _SummaryCellKind.value,
+        ),
+      );
+      rows.add(
+        contentRow(
+          'Tokens out:',
+          _formatTokenCount(snap.totalTokensOut),
+          _SummaryCellKind.value,
+        ),
+      );
     }
 
     rows.add(bottomRow());
@@ -465,9 +472,7 @@ class RunMetrics {
     List<List<_SummaryCell>> grid, {
     String indent = '',
   }) {
-    return grid
-        .map((row) => indent + row.map((c) => c.char).join())
-        .join('\n');
+    return grid.map((row) => indent + row.map((c) => c.char).join()).join('\n');
   }
 
   /// Flatten the cell grid into a string with ANSI SGR
@@ -493,10 +498,7 @@ class RunMetrics {
         case _SummaryCellKind.border:
           return TextStyle(color: theme.borderSubtle);
         case _SummaryCellKind.title:
-          return TextStyle(
-            color: theme.primary,
-            fontWeight: FontWeight.bold,
-          );
+          return TextStyle(color: theme.primary, fontWeight: FontWeight.bold);
         case _SummaryCellKind.label:
           return TextStyle(color: theme.textMuted);
         case _SummaryCellKind.value:

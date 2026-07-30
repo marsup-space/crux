@@ -55,9 +55,7 @@ ProviderConfig _provider({
     type: type,
     wireFamily: resolveProvider(type).wire,
     endpointUrl: endpointUrl,
-    models: [
-      ModelConfig(id: modelId, name: modelId, contextSize: 1000),
-    ],
+    models: [ModelConfig(id: modelId, name: modelId, contextSize: 1000)],
   );
 }
 
@@ -113,37 +111,39 @@ void main() {
       },
     );
 
-    test('appends /chat/completions to a /v1/ endpoint (trailing slash)',
-        () async {
-      // `uri.resolve` on a trailing-slash URL yields `...//v1/...` —
-      // double-slash. The fix's `_endsWithVersionSegment` strips the
-      // trailing slash first, so the path stays clean.
-      final server = _CapturingServer(200, '{}');
-      final base = await server.start();
-      addTearDown(server.stop);
+    test(
+      'appends /chat/completions to a /v1/ endpoint (trailing slash)',
+      () async {
+        // `uri.resolve` on a trailing-slash URL yields `...//v1/...` —
+        // double-slash. The fix's `_endsWithVersionSegment` strips the
+        // trailing slash first, so the path stays clean.
+        final server = _CapturingServer(200, '{}');
+        final base = await server.start();
+        addTearDown(server.stop);
 
-      final client = LlmClient();
-      addTearDown(client.dispose);
+        final client = LlmClient();
+        addTearDown(client.dispose);
 
-      final config = _provider(
-        type: 'openai_compatible',
-        endpointUrl: '$base/v1/',
-      );
+        final config = _provider(
+          type: 'openai_compatible',
+          endpointUrl: '$base/v1/',
+        );
 
-      await for (final _ in client.streamChat(
-        endpointUrl: config.endpointUrl,
-        config: config,
-        apiKey: 'sk-fake',
-        modelId: 'm',
-        messages: const [],
-      )) {}
+        await for (final _ in client.streamChat(
+          endpointUrl: config.endpointUrl,
+          config: config,
+          apiKey: 'sk-fake',
+          modelId: 'm',
+          messages: const [],
+        )) {}
 
-      expect(
-        server.lastPath,
-        '/v1/chat/completions',
-        reason: 'No double-slash, no double /v1',
-      );
-    });
+        expect(
+          server.lastPath,
+          '/v1/chat/completions',
+          reason: 'No double-slash, no double /v1',
+        );
+      },
+    );
 
     test('auto-appends /v1 when endpoint has no version segment', () async {
       // For endpoints that don't include /v1 in the URL (some
@@ -173,46 +173,46 @@ void main() {
       expect(server.lastPath, '/v1/chat/completions');
     });
 
-    test('does NOT append /v1 when endpoint already ends in /v4 (Zhipu)',
-        () async {
-      // Regression: the Zhipu Coding Plan base URL is
-      // `https://open.bigmodel.cn/api/coding/paas/v4`. The
-      // original `_endsWithVersionSegment` only recognized `/v1`
-      // (the OpenAI / DeepSeek / Kimi / LongCat convention), so
-      // it prepended a second `/v1` and the request hit
-      // `/v4/v1/chat/completions` — the upstream returned 404
-      // `Resource not found`. The fix recognizes any `/v\d+`
-      // version segment. The captured path must be exactly
-      // `/v4/chat/completions` with no doubled `/v1` between
-      // the version and `chat/completions`.
-      final server = _CapturingServer(200, '{}');
-      final base = await server.start();
-      addTearDown(server.stop);
+    test(
+      'does NOT append /v1 when endpoint already ends in /v4 (Zhipu)',
+      () async {
+        // Regression: the Zhipu Coding Plan base URL is
+        // `https://open.bigmodel.cn/api/coding/paas/v4`. The
+        // original `_endsWithVersionSegment` only recognized `/v1`
+        // (the OpenAI / DeepSeek / Kimi / LongCat convention), so
+        // it prepended a second `/v1` and the request hit
+        // `/v4/v1/chat/completions` — the upstream returned 404
+        // `Resource not found`. The fix recognizes any `/v\d+`
+        // version segment. The captured path must be exactly
+        // `/v4/chat/completions` with no doubled `/v1` between
+        // the version and `chat/completions`.
+        final server = _CapturingServer(200, '{}');
+        final base = await server.start();
+        addTearDown(server.stop);
 
-      final client = LlmClient();
-      addTearDown(client.dispose);
+        final client = LlmClient();
+        addTearDown(client.dispose);
 
-      final config = _provider(
-        type: 'zhipu',
-        endpointUrl: '$base/v4',
-      );
+        final config = _provider(type: 'zhipu', endpointUrl: '$base/v4');
 
-      await for (final _ in client.streamChat(
-        endpointUrl: config.endpointUrl,
-        config: config,
-        apiKey: 'sk-fake',
-        modelId: 'glm-5.2',
-        messages: const [],
-      )) {}
+        await for (final _ in client.streamChat(
+          endpointUrl: config.endpointUrl,
+          config: config,
+          apiKey: 'sk-fake',
+          modelId: 'glm-5.2',
+          messages: const [],
+        )) {}
 
-      expect(
-        server.lastPath,
-        '/v4/chat/completions',
-        reason: 'A /v4 endpoint must not get a second /v1 prepended — '
-            'the upstream at /v4/v1/chat/completions returns 404. '
-            'See the Zhipu provider notes in providers/zhipu.toml.',
-      );
-    });
+        expect(
+          server.lastPath,
+          '/v4/chat/completions',
+          reason:
+              'A /v4 endpoint must not get a second /v1 prepended — '
+              'the upstream at /v4/v1/chat/completions returns 404. '
+              'See the Zhipu provider notes in providers/zhipu.toml.',
+        );
+      },
+    );
 
     test('appends /messages to an Anthropic-compatible endpoint', () async {
       // The Anthropic path was always correct (it used `replace(path:)`
@@ -241,8 +241,7 @@ void main() {
     });
   });
 
-  group(
-      'LlmClient — OpenAI-compatible provider runs sanitizeMessages before '
+  group('LlmClient — OpenAI-compatible provider runs sanitizeMessages before '
       'sending (regression: 400 errors from malformed wire payloads)', () {
     // Verifies the full path: buildRequestBody receives messages
     // whose assistant entries all carry `reasoning_content`, so
@@ -260,11 +259,16 @@ void main() {
         capturedBody = await utf8.decoder.bind(req).join();
         req.response.statusCode = 200;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write(jsonEncode({
-          'choices': [
-            {'delta': {'content': 'ok'}, 'finish_reason': 'stop'},
-          ],
-        }));
+        req.response.write(
+          jsonEncode({
+            'choices': [
+              {
+                'delta': {'content': 'ok'},
+                'finish_reason': 'stop',
+              },
+            ],
+          }),
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -310,7 +314,8 @@ void main() {
       expect(
         assistant['reasoning_content'],
         '',
-        reason: 'DeepSeek sanitizer must backfill empty reasoning_content '
+        reason:
+            'DeepSeek sanitizer must backfill empty reasoning_content '
             'on assistant messages from other providers',
       );
       // Sanity: user messages are not touched.
@@ -327,8 +332,10 @@ void main() {
         capturedBody = await utf8.decoder.bind(req).join();
         req.response.statusCode = 200;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write('{"choices":[{"delta":{"content":"ok"},'
-            '"finish_reason":"stop"}]}');
+        req.response.write(
+          '{"choices":[{"delta":{"content":"ok"},'
+          '"finish_reason":"stop"}]}',
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -364,13 +371,16 @@ void main() {
       final body = jsonDecode(capturedBody!) as Map<String, dynamic>;
       final sentMessages = body['messages'] as List<dynamic>;
       final assistant = sentMessages[1] as Map<String, dynamic>;
-      expect(assistant['reasoning_content'], preserved,
-          reason: 'a real reasoning_content value must be preserved '
-              '(no-op path)');
+      expect(
+        assistant['reasoning_content'],
+        preserved,
+        reason:
+            'a real reasoning_content value must be preserved '
+            '(no-op path)',
+      );
     });
 
-    test(
-        'drops orphan tool_calls from assistant messages whose tool results '
+    test('drops orphan tool_calls from assistant messages whose tool results '
         'were never persisted (regression: 400 "an assistant message with '
         'tool_call must be followed by tool messages responding to each '
         'tool_call_id")', () async {
@@ -389,8 +399,10 @@ void main() {
         capturedBody = await utf8.decoder.bind(req).join();
         req.response.statusCode = 200;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write('{"choices":[{"delta":{"content":"ok"},'
-            '"finish_reason":"stop"}]}');
+        req.response.write(
+          '{"choices":[{"delta":{"content":"ok"},'
+          '"finish_reason":"stop"}]}',
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -402,10 +414,7 @@ void main() {
       // Use plain openai_compatible to verify the pairing fix lives
       // on the base class (not just DeepSeek). DeepSeek inherits
       // and adds the reasoning_content backfill on top.
-      final config = _provider(
-        type: 'openai_compatible',
-        endpointUrl: base,
-      );
+      final config = _provider(type: 'openai_compatible', endpointUrl: base);
 
       // The history: a tool-calling round whose tool results were
       // never written (e.g. mid-round interruption), followed by
@@ -443,15 +452,17 @@ void main() {
       final assistant = sentMessages[1] as Map<String, dynamic>;
       expect(assistant['role'], 'assistant');
       expect(assistant['content'], 'ok');
-      expect(assistant.containsKey('tool_calls'), isFalse,
-          reason: 'orphan tool_call array must be dropped entirely');
+      expect(
+        assistant.containsKey('tool_calls'),
+        isFalse,
+        reason: 'orphan tool_call array must be dropped entirely',
+      );
       // The user messages are preserved.
       expect((sentMessages[0] as Map)['content'], 'list /tmp');
       expect((sentMessages[2] as Map)['content'], 'never mind, just say hi');
     });
 
-    test(
-        'drops orphan tool messages that have no preceding assistant '
+    test('drops orphan tool messages that have no preceding assistant '
         'tool_call (regression: same 400 error class)', () async {
       // Symmetric case: a `role: tool` message lands in the
       // history without a matching assistant `tool_call`. OpenAI
@@ -464,8 +475,10 @@ void main() {
         capturedBody = await utf8.decoder.bind(req).join();
         req.response.statusCode = 200;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write('{"choices":[{"delta":{"content":"ok"},'
-            '"finish_reason":"stop"}]}');
+        req.response.write(
+          '{"choices":[{"delta":{"content":"ok"},'
+          '"finish_reason":"stop"}]}',
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -474,10 +487,7 @@ void main() {
       final client = LlmClient();
       addTearDown(client.dispose);
 
-      final config = _provider(
-        type: 'openai_compatible',
-        endpointUrl: base,
-      );
+      final config = _provider(type: 'openai_compatible', endpointUrl: base);
 
       final messages = [
         {'role': 'user', 'content': 'do it'},
@@ -496,8 +506,11 @@ void main() {
 
       final body = jsonDecode(capturedBody!) as Map<String, dynamic>;
       final sentMessages = body['messages'] as List<dynamic>;
-      expect(sentMessages, hasLength(2),
-          reason: 'orphan tool message must be removed');
+      expect(
+        sentMessages,
+        hasLength(2),
+        reason: 'orphan tool message must be removed',
+      );
       expect(sentMessages.where((m) => (m as Map)['role'] == 'tool'), isEmpty);
     });
   });
@@ -518,9 +531,11 @@ void main() {
         await utf8.decoder.bind(req).join();
         req.response.statusCode = 429;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write(jsonEncode({
-          'base_resp': {'status_code': 1002, 'status_msg': 'rate limit'},
-        }));
+        req.response.write(
+          jsonEncode({
+            'base_resp': {'status_code': 1002, 'status_msg': 'rate limit'},
+          }),
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -542,7 +557,9 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'm',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       )) {
         if (chunk.error != null) errors.add(chunk.error!);
       }
@@ -561,10 +578,12 @@ void main() {
         req.response.statusCode = 529;
         req.response.headers.set('content-type', 'application/json');
         req.response.headers.set('request-id', 'req_test_123');
-        req.response.write(jsonEncode({
-          'type': 'error',
-          'error': {'type': 'overloaded_error', 'message': 'Overloaded'},
-        }));
+        req.response.write(
+          jsonEncode({
+            'type': 'error',
+            'error': {'type': 'overloaded_error', 'message': 'Overloaded'},
+          }),
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -586,7 +605,9 @@ void main() {
         config: config,
         apiKey: 'sk-ant-fake',
         modelId: 'm',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       )) {
         if (chunk.error != null) errors.add(chunk.error!);
       }
@@ -604,13 +625,15 @@ void main() {
         await utf8.decoder.bind(req).join();
         req.response.statusCode = 401;
         req.response.headers.set('content-type', 'application/json');
-        req.response.write(jsonEncode({
-          'error': {
-            'message': 'Incorrect API key provided',
-            'type': 'invalid_request_error',
-            'code': 'invalid_api_key',
-          },
-        }));
+        req.response.write(
+          jsonEncode({
+            'error': {
+              'message': 'Incorrect API key provided',
+              'type': 'invalid_request_error',
+              'code': 'invalid_api_key',
+            },
+          }),
+        );
         await req.response.close();
       });
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -629,7 +652,9 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'm',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       )) {
         if (chunk.error != null) errors.add(chunk.error!);
       }
@@ -714,7 +739,9 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'm',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       );
       final sub = stream.listen((chunk) {
         if (chunk.error != null) errors.add(chunk.error!);
@@ -735,14 +762,22 @@ void main() {
       // idle timer fired in the brief window before close).
       // We DO assert that the stream ended with SOME error
       // rather than hanging — the bug we're guarding against.
-      expect(errors, isNotEmpty,
-          reason: 'stream that goes silent must end with an '
-              'LlmError, not hang indefinitely');
+      expect(
+        errors,
+        isNotEmpty,
+        reason:
+            'stream that goes silent must end with an '
+            'LlmError, not hang indefinitely',
+      );
       // And that error must be retriable — both `network` and
       // `timeout` are, so the retry button should always show.
-      expect(errors.first.isRetriable, isTrue,
-          reason: 'silent-stream errors must be retriable so '
-              'the user can click Retry on the persisted bubble');
+      expect(
+        errors.first.isRetriable,
+        isTrue,
+        reason:
+            'silent-stream errors must be retriable so '
+            'the user can click Retry on the persisted bubble',
+      );
     });
   });
 }
