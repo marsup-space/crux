@@ -8,6 +8,47 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-30
+
+02f423b
+
+### Features
+
+- **UI: faint top-right version badge with JIT suffix**
+  (`189e287`) — a new `crux v0.23.0` badge sits in the
+  top-right corner of the chat panel, dim enough to stay
+  out of the way but readable at a glance. When the binary
+  was built from a dirty tree or unpushed commit, the
+  suffix shows `+jit` so it's obvious the running build
+  isn't a tagged release.
+- **Ask-form: recap bubble for submitted answers
+  (vibe + verbose)** (`77b39e8`) — after the user submits
+  an ask-form, the chat log now shows a recap bubble of
+  the chosen answers instead of letting the raw wire
+  prose stand on its own. Both the compact (`vibe`) and
+  the detailed (`verbose`) chat modes render an answer
+  card that lists the selected options and any free-text
+  note.
+
+### Fixes
+
+- **Ask-form: persist the answer row at submit so the
+  bubble survives turn end** (`2307b80`) — the ask-form's
+  recap bubble used to disappear as soon as the session
+  ended; the answer row is now persisted at submit time
+  so it survives into subsequent turns and across
+  compaction.
+- **Ctrl+C is quit-only; ESC×2 is the sole interrupt**
+  (`02f423b`) — Ctrl+C no longer cancels a streaming
+  response — it only quits the app. When any session is
+  running (including a streaming one), the first press
+  arms the double-press quit guard with a warning toast;
+  a quick second press within 3s exits. With nothing
+  running, Ctrl+C quits immediately as before.
+  Interrupting a response is now exclusively ESC×2's job;
+  the input placeholder, `/help` sheet, `/quit` rejection
+  toast, and Ctrl+C guard tests are updated to match.
+
 ## [0.22.0] - 2026-07-29
 
 905e1da
