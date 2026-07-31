@@ -78,23 +78,32 @@ class VibeBox extends StatelessComponent {
     // via the wrapping style; spans that set their own color (the LSP
     // glyph) keep it because TextSpan children override the inherited
     // style per-span. Plain rows fall back to simple Text widgets.
-    final List<Component> bodyChildren;
+    //
+    // The list is created with an explicit `<Component>` type argument
+    // (not `.toList()` on the mapped iterable) so its reified element
+    // type is Component. `.map(...).toList()` would reify to the mapped
+    // type (Text / RichText), and the later `add(Padding(...))` — a
+    // different component subclass — would then throw
+    // "type 'Padding' is not a subtype of type 'Text'" at runtime.
+    final bodyChildren = <Component>[];
     final spans = bodyRowSpans;
     if (spans != null) {
-      bodyChildren = spans
-          .map(
-            (span) => RichText(
-              text: TextSpan(
-                style: TextStyle(color: effectiveBodyColor),
-                children: [span],
-              ),
+      for (final span in spans) {
+        bodyChildren.add(
+          RichText(
+            text: TextSpan(
+              style: TextStyle(color: effectiveBodyColor),
+              children: [span],
             ),
-          )
-          .toList();
+          ),
+        );
+      }
     } else {
-      bodyChildren = bodyRows
-          .map((row) => Text(row, style: TextStyle(color: effectiveBodyColor)))
-          .toList();
+      for (final row in bodyRows) {
+        bodyChildren.add(
+          Text(row, style: TextStyle(color: effectiveBodyColor)),
+        );
+      }
     }
 
     // Optional footer button row (e.g. the files box's open/diff
@@ -102,12 +111,7 @@ class VibeBox extends StatelessComponent {
     // buttons read as a separate affordance, not another file row.
     final buttons = footerButtons;
     if (buttons != null && buttons.isNotEmpty) {
-      bodyChildren.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 0),
-          child: Row(children: buttons),
-        ),
-      );
+      bodyChildren.add(Row(children: buttons));
     }
 
     return Container(
