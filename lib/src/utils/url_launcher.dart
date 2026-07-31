@@ -100,10 +100,99 @@ OpenDirectoryResult openDirectory(String path) {
   }
 }
 
+/// Outcome of a [revealInFileManager] call. Mirrors [OpenDirectoryResult]
+/// so the call site can surface a single toast for either failure kind.
+enum RevealResult {
+  /// The OS-level helper was invoked to reveal the file.
+  launched,
+
+  /// [path] does not exist.
+  notFound,
+
+  /// The platform-specific helper could not be started.
+  failed,
+}
+
+/// Reveals [path] in the system file manager with the file **selected**
+/// where the platform supports it (Finder on macOS via `open -R`,
+/// Explorer on Windows via `explorer /select,`). On Linux there is no
+/// reliable cross-file-manager "select" verb, so we fall back to opening
+/// the file's parent directory.
+///
+/// [path] may be relative; it is resolved against [workingDirectory]. A
+/// missing file is reported as [RevealResult.notFound] rather than thrown
+/// so the caller can toast without crashing the TUI.
+RevealResult revealInFileManager(String path, {String? workingDirectory}) {
+  final resolved = _resolveFilePath(path, workingDirectory);
+  if (resolved == null) return RevealResult.notFound;
+
+  try {
+    final helper = _revealHelperForPlatform(resolved);
+    if (helper == null) return RevealResult.failed;
+    Process.start(
+      helper.executable,
+      helper.args,
+      mode: ProcessStartMode.detached,
+    );
+    return RevealResult.launched;
+  } catch (_) {
+    return RevealResult.failed;
+  }
+}
+
+/// Resolve [path] to an absolute file path, or null when it doesn't name
+/// an existing file. Relative paths are joined onto [workingDirectory]
+/// (falling back to the process CWD). The path must point at a file —
+/// a directory yields null so "open" on a directory-shaped row degrades
+/// to a toast instead of a confusing no-op.
+String? _resolveFilePath(String path, String? workingDirectory) {
+  if (path.isEmpty) return null;
+  var candidate = path;
+  if (!_isAbsolute(candidate)) {
+    final base = workingDirectory ?? Directory.current.path;
+    candidate = _joinPath(base, candidate);
+  }
+  final file = File(candidate);
+  return file.existsSync() ? file.absolute.path : null;
+}
+
+bool _isAbsolute(String path) {
+  if (Platform.isWindows) {
+    return path.length >= 2 && path[1] == ':' || path.startsWith('\\\\');
+  }
+  return path.startsWith('/');
+}
+
+String _joinPath(String a, String b) {
+  final sep = Platform.isWindows ? '\\' : '/';
+  if (a.endsWith(sep)) return '$a$b';
+  return '$a$sep$b';
+}
+
 class _Helper {
   final String executable;
   final List<String> args;
   const _Helper({required this.executable, required this.args});
+}
+
+/// Returns the platform-specific "reveal this file in the file manager"
+/// helper for an absolute [filePath], or null when the platform has no
+/// known reveal verb.
+_Helper? _revealHelperForPlatform(String filePath) {
+  if (Platform.isMacOS) {
+    // `open -R` opens Finder with the file selected.
+    return _Helper(executable: 'open', args: ['-R', filePath]);
+  }
+  if (Platform.isWindows) {
+    // `explorer /select,<path>` opens Explorer with the file selected.
+    return _Helper(executable: 'explorer', args: ['/select,$filePath']);
+  }
+  if (Platform.isLinux) {
+    // No portable "select" verb — open the containing directory instead.
+    final parent = Directory(filePath).parent.path;
+    return _Helper(executable: 'xdg-open', args: [parent]);
+  }
+  return null;
 }
 
 /// Returns the platform-specific "open a URL" helper, or null if the

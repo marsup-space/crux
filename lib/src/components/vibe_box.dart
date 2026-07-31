@@ -48,6 +48,12 @@ class VibeBox extends StatelessComponent {
   /// Text color for the body rows. Defaults to the theme's `text` color.
   final Color? bodyColor;
 
+  /// Optional action buttons rendered as a footer row inside the box,
+  /// below the body rows. Used by the `files` box to surface per-box
+  /// actions (`open`, `diff`) without growing the box's height when
+  /// they're absent. When null/empty no footer renders.
+  final List<Component>? footerButtons;
+
   const VibeBox({
     required this.title,
     this.bodyRows = const [],
@@ -56,6 +62,7 @@ class VibeBox extends StatelessComponent {
     required this.mutedColor,
     required this.activeColor,
     this.bodyColor,
+    this.footerButtons,
     super.key,
   });
 
@@ -88,6 +95,19 @@ class VibeBox extends StatelessComponent {
       bodyChildren = bodyRows
           .map((row) => Text(row, style: TextStyle(color: effectiveBodyColor)))
           .toList();
+    }
+
+    // Optional footer button row (e.g. the files box's open/diff
+    // actions). Rendered after the body rows with a one-cell gap so the
+    // buttons read as a separate affordance, not another file row.
+    final buttons = footerButtons;
+    if (buttons != null && buttons.isNotEmpty) {
+      bodyChildren.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 0),
+          child: Row(children: buttons),
+        ),
+      );
     }
 
     return Container(

@@ -1,12 +1,14 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
+import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'ui/button.dart';
 import 'lsp_state_glyph.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
@@ -70,6 +72,19 @@ class VibeSegmentBubble extends StatelessComponent {
   /// links render as plain prose.
   final void Function(MarkdownLink link)? onLinkTap;
 
+  /// Fired when the user clicks the `open` button under the files box.
+  /// Receives the segment's [ModBoxData]; the chat panel reveals the
+  /// first file in the system file manager. When null, the button is
+  /// omitted.
+  final void Function(ModBoxData mods)? onOpenFiles;
+
+  /// Fired when the user clicks the `diff` button under the files box.
+  /// Receives the segment's [ModBoxData] and the segment's mutating
+  /// tool calls (the `write`/`edit` [ToolCallData] across the segment,
+  /// in order) so the diff fullpane can rebuild each file's before/after.
+  /// When null, the button is omitted.
+  final void Function(ModBoxData mods, List<ToolCallData> calls)? onDiffFiles;
+
   /// Reasoning presets from the session's provider, used to map
   /// the persisted [ThinkBoxData.effort] internal value to its
   /// display label (e.g. `normal` → `adaptive` for MiniMax).
@@ -85,9 +100,13 @@ class VibeSegmentBubble extends StatelessComponent {
     this.enableQuickReplies = false,
     this.onSessionLinkTap,
     this.onLinkTap,
+    this.onOpenFiles,
+    this.onDiffFiles,
     this.reasoningPresets = const [],
     super.key,
   });
+
+  
 
   /// Map a persisted effort internal value to its display label
   /// using the provider's reasoning presets. Returns the raw
@@ -168,23 +187,56 @@ class VibeSegmentBubble extends StatelessComponent {
       // Show just the filename — the directory prefix is rarely
       // interesting at a glance and the box is narrow enough that
       // full paths would push the +N -M diff off the visible
-      // region. The full path is still in [ModBoxData.paths] for
-      // any future tooltip / filter / drill-down.
-      final rows = mods.paths.map((path) {
+      // region. Each row uses its own per-file counts from
+      // [ModBoxData.files] (falling back to the segment sums for
+      // legacy segments that predate per-file entries). The full path
+      // is still in [ModBoxData.paths] for any future tooltip /
+      // filter / drill-down.
+      final rows = <String>[];
+      for (var i = 0; i < mods.paths.length; i++) {
+        final path = mods.paths[i];
         final name = p.basename(path);
-        final added = mods.linesAdded;
-        final removed = mods.linesRemoved;
-        return '$name +$added -$removed';
-      }).toList();
+        final entry = i < mods.files.length ? mods.files[i] : null;
+        final added = entry?.linesAdded ?? mods.linesAdded;
+        final removed = entry?.linesRemoved ?? mods.linesRemoved;
+        rows.add('$name +$added -$removed');
+      }
       if (mods.overflowCount > 0) {
         rows.add('+${mods.overflowCount} more files');
       }
+      // Footer actions. `open` reveals the first file in the system
+      // file manager; `diff` opens the segment-scoped diff fullpane.
+      // A button is omitted when its callback is null so the box never
+      // grows a dead row.
+      final footer = <Component>[
+        if (onOpenFiles != null)
+          Button(
+            label: 'open',
+            onPressed: () => onOpenFiles!(mods),
+            color: theme.success,
+            hoverColor: theme.warning,
+            bgColor: null,
+            hoverBgColor: theme.buttonBackgroundHover,
+          ),
+        if (onOpenFiles != null && onDiffFiles != null)
+          const SizedBox(width: 1),
+        if (onDiffFiles != null)
+          Button(
+            label: 'diff',
+            onPressed: () => onDiffFiles!(mods, segment.modCalls),
+            color: theme.success,
+            hoverColor: theme.warning,
+            bgColor: null,
+            hoverBgColor: theme.buttonBackgroundHover,
+          ),
+      ];
       boxes.add(
         VibeBox(
           title: 'files',
           bodyRows: rows,
           mutedColor: theme.success,
           activeColor: theme.warning,
+          footerButtons: footer.isEmpty ? null : footer,
         ),
       );
     }

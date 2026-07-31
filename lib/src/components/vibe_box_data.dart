@@ -76,22 +76,38 @@ class ToolBoxData {
   const ToolBoxData({required this.entries, required this.totalTokens});
 }
 
+/// One file's line delta within a [ModBoxData]. [path] is the display
+/// path (relative when possible); [linesAdded] / [linesRemoved] are the
+/// per-file diff counts summed across that file's calls in the segment.
+class ModFileEntry {
+  final String path;
+  final int linesAdded;
+  final int linesRemoved;
+
+  const ModFileEntry(this.path, this.linesAdded, this.linesRemoved);
+}
+
 /// Aggregated files-box data for one vibe segment.
 ///
 /// [paths] preserves first-touch order, capped at 8 entries.
 /// [overflowCount] is the number of files past the 8-row cap.
 /// [linesAdded] / [linesRemoved] are sums across the segment.
+/// [files] carries the per-file entries (same order/cap as [paths]) so
+/// the files box can render each row's own `+N -M` and so the diff
+/// fullpane can seed the selected file's header counts.
 class ModBoxData {
   final List<String> paths;
   final int linesAdded;
   final int linesRemoved;
   final int overflowCount;
+  final List<ModFileEntry> files;
 
   const ModBoxData({
     required this.paths,
     required this.linesAdded,
     required this.linesRemoved,
     required this.overflowCount,
+    this.files = const [],
   });
 }
 
@@ -138,6 +154,13 @@ class VibeSegment {
   final Message? prose;
   final bool showUserMessage;
 
+  /// The segment's mutating `write`/`edit` tool calls, in emission
+  /// order. The walker accumulates these alongside [ModBoxData] so the
+  /// files box's `diff` action can rebuild each file's before/after from
+  /// the persisted call args (old/new content) without re-reading the
+  /// live file. Empty when the segment mutated nothing.
+  final List<ToolCallData> modCalls;
+
   const VibeSegment({
     required this.userMessage,
     this.think,
@@ -145,6 +168,7 @@ class VibeSegment {
     this.mods,
     this.prose,
     this.showUserMessage = true,
+    this.modCalls = const [],
   });
 }
 
@@ -205,17 +229,95 @@ List<VibeSegment> walkSegments(
   final seenModBasenames = <String>{};
   final modLinesAdded = <String, int>{};
   final modLinesRemoved = <String, int>{};
+  // The segment's write/edit calls, in order, for the files box's diff
+  // action. Accumulated alongside modPaths and reset on each emit.
+  final modCalls = <ToolCallData>[];
   // `true` once the current user turn has produced its first
   // emitted segment. The first segment carries the `you:` line;
   // siblings in the same turn render prose only. Reset on
   // user-boundary.
   bool userLineShown = false;
 
+  // Tracks whether the most recent non-system message was a
+  // `role: 'tool'` result row. Used to recognize an `ask` form
+  // answer: the chat panel persists the user's picks as a bare
+  // `role: 'user'` row inserted immediately after the `ask` tool's
+  // result (mid-round), where a normal conversation never has a
+  // user message. Such a row is an answer boundary, not a fresh
+  // user turn.
+  bool lastWasToolResult = false;
+
   for (final msg in messages) {
     // Skip system-role messages entirely.
     if (_systemRoles.contains(msg.role)) continue;
 
     if (msg.role == 'user') {
+      // Ask-answer boundary: a `role: 'user'` row that lands right
+      // after a tool result is the submitted `ask` form, not a new
+      // turn. Flush the in-flight segment (the ask call + its prose
+      // close), then emit the answer as its OWN segment — no boxes,
+      // no prose — so the AskAnswerBubble renders at the answer's
+      // true position: after the preceding tool round, before the
+      // continuation. The continuation keeps the same [currentUser]
+      // anchor but suppresses its user line (the answer bubble
+      // already showed who answered), so the follow-up tools/prose
+      // render as a sibling segment below the answer.
+      if (lastWasToolResult) {
+        _emitSegment(
+          segments,
+          currentUser,
+          thinkDuration,
+          thinkTokens,
+          thinkEffort,
+          toolEntries,
+          toolOrder,
+          toolTotalTokens,
+          modPaths,
+          modLinesAdded,
+          modLinesRemoved,
+          modCalls,
+          null,
+          showUserLine: !userLineShown,
+        );
+        // The standalone answer segment: anchored to the answer row,
+        // carrying the user line (which chat_history swaps for the
+        // AskAnswerBubble), nothing else.
+        currentUser = msg;
+        _emitSegment(
+          segments,
+          currentUser,
+          Duration.zero,
+          0,
+          null,
+          const {},
+          const [],
+          0,
+          const [],
+          const {},
+          const {},
+          const [],
+          null,
+          showUserLine: true,
+        );
+        // Continuation below the answer reuses this user anchor but
+        // hides its `you:` line — the answer bubble already stands
+        // in for it.
+        userLineShown = true;
+        thinkDuration = Duration.zero;
+        thinkTokens = 0;
+        thinkEffort = null;
+        toolEntries.clear();
+        toolOrder.clear();
+        toolTotalTokens = 0;
+        modPaths.clear();
+        seenModBasenames.clear();
+        modLinesAdded.clear();
+        modLinesRemoved.clear();
+        modCalls.clear();
+        lastWasToolResult = false;
+        continue;
+      }
+
       // Flush whatever the previous turn's pending state looks
       // like, then reset for the new turn. This is also the
       // path that emits the pending segment for a user who
@@ -232,6 +334,7 @@ List<VibeSegment> walkSegments(
         modPaths,
         modLinesAdded,
         modLinesRemoved,
+        modCalls,
         null,
         showUserLine: !userLineShown,
       );
@@ -247,10 +350,21 @@ List<VibeSegment> walkSegments(
       seenModBasenames.clear();
       modLinesAdded.clear();
       modLinesRemoved.clear();
+      modCalls.clear();
+      lastWasToolResult = false;
+      continue;
+    }
+
+    if (msg.role == 'tool') {
+      // Tool result row: paired with its `tool_call` inside the
+      // accumulation above (via resultsByCallId), so no segment work
+      // here — just record the boundary for ask-answer detection.
+      lastWasToolResult = true;
       continue;
     }
 
     if (msg.role == 'ai' || msg.role == 'tool_call') {
+      lastWasToolResult = false;
       // Accumulate think data from reasoning-bearing messages.
       if (msg.reasoningContent.isNotEmpty) {
         thinkDuration += Duration(milliseconds: msg.thinkingDurationMs);
@@ -326,6 +440,13 @@ List<VibeSegment> walkSegments(
           if (toolDef != null && toolResult != null) {
             final modSummary = toolDef.modSummary(tc.input, toolResult);
             if (modSummary != null) {
+              // Record the mutating call for the files box's diff
+              // action. Only calls that actually produced a mod summary
+              // (a real write/edit mutation, not a guard-aborted or
+              // errored one) carry reconstructable old/new content.
+              if (tc.name == 'write' || tc.name == 'edit') {
+                modCalls.add(tc);
+              }
               for (final change in modSummary.changes) {
                 final base = p.basename(change.path);
                 if (base.isEmpty) continue;
@@ -395,6 +516,7 @@ List<VibeSegment> walkSegments(
           modPaths,
           modLinesAdded,
           modLinesRemoved,
+          modCalls,
           msg,
           showUserLine: !userLineShown,
         );
@@ -413,6 +535,7 @@ List<VibeSegment> walkSegments(
         seenModBasenames.clear();
         modLinesAdded.clear();
         modLinesRemoved.clear();
+        modCalls.clear();
         // Critically, do NOT clear `currentUser` here. The
         // spec doesn't say to, and the earlier implementation
         // did — that's what silently dropped a 2nd
@@ -442,6 +565,7 @@ List<VibeSegment> walkSegments(
     modPaths,
     modLinesAdded,
     modLinesRemoved,
+    modCalls,
     null,
     showUserLine: !userLineShown,
   );
@@ -481,6 +605,7 @@ void _emitSegment(
   List<String> modPaths,
   Map<String, int> modLinesAdded,
   Map<String, int> modLinesRemoved,
+  List<ToolCallData> modCalls,
   Message? closing, {
   required bool showUserLine,
 }) {
@@ -535,9 +660,24 @@ void _emitSegment(
                         sum + (modLinesRemoved[p.basename(path)] ?? 0),
                   ),
               overflowCount: modPaths.length > 8 ? modPaths.length - 8 : 0,
+              // Per-file entries, same order/cap as `paths`, keyed by
+              // basename for the diff counts. The files box renders each
+              // row's own `+N -M` from these, and the diff fullpane uses
+              // them to seed the selected file's header.
+              files: modPaths
+                  .take(8)
+                  .map(
+                    (path) => ModFileEntry(
+                      path,
+                      modLinesAdded[p.basename(path)] ?? 0,
+                      modLinesRemoved[p.basename(path)] ?? 0,
+                    ),
+                  )
+                  .toList(),
             )
           : null,
       prose: closing,
+      modCalls: List.unmodifiable(modCalls),
     ),
   );
 }

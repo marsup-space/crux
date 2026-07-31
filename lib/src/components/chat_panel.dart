@@ -55,6 +55,8 @@ import 'session_management_panel.dart';
 import 'streaming_controller.dart';
 import 'suggestion_overlay.dart';
 import 'tool_detail_pane.dart';
+import 'vibe_box_data.dart';
+import 'vibe_diff_fullpane.dart';
 import 'ui/toast.dart';
 import 'ui/button.dart';
 import 'ui/fullpane.dart';
@@ -67,8 +69,10 @@ class ChatPanelBootState {
   final ProviderService providerService;
   final SessionStore store;
   final List<Session> sessions;
+  final List<Session> chats;
   final int currentSessionId;
   final int archivedCount;
+  final int archivedChatCount;
   final Map<int, List<Message>> messageCache;
   final Map<String, int> currentFileReadState;
   final int? messagesTotal;
@@ -77,8 +81,10 @@ class ChatPanelBootState {
     required this.providerService,
     required this.store,
     required this.sessions,
+    this.chats = const [],
     required this.currentSessionId,
     required this.archivedCount,
+    this.archivedChatCount = 0,
     required this.messageCache,
     required this.currentFileReadState,
     this.messagesTotal,
@@ -124,6 +130,8 @@ Future<ChatPanelBootState> loadChatPanelBootState({
   );
 
   var sessions = await resolvedStore.list(projectPath: resolvedProjectPath);
+  final chats = await resolvedStore.listChats();
+  final archivedChatCount = await resolvedStore.archivedChatCount();
   var archivedCount = await resolvedStore.archivedCount(
     projectPath: resolvedProjectPath,
   );
@@ -178,8 +186,10 @@ Future<ChatPanelBootState> loadChatPanelBootState({
     providerService: resolvedProviderService,
     store: resolvedStore,
     sessions: sessions,
+    chats: chats,
     currentSessionId: currentSessionId,
     archivedCount: archivedCount,
+    archivedChatCount: archivedChatCount,
     messageCache: {currentSessionId: firstChunk},
     currentFileReadState: fileReadState,
     messagesTotal: messagesTotal,
@@ -240,6 +250,7 @@ class _ChatPanelState extends State<ChatPanel> {
 
   ToolDetailData? _toolDetailData;
   Message? _compactionFullpaneMessage;
+  VibeDiffRequest? _vibeDiffRequest;
   bool _providerServiceReady = false;
 
   final _toastKey = GlobalKey<ToastHubState>();
@@ -382,8 +393,10 @@ class _ChatPanelState extends State<ChatPanel> {
     if (bootState != null) {
       _providerServiceReady = true;
       _sessionController.sessions = List<Session>.from(bootState.sessions);
+      _sessionController.chats = List<Session>.from(bootState.chats);
       _sessionController.currentSessionId = bootState.currentSessionId;
       _sessionController.archivedCount = bootState.archivedCount;
+      _sessionController.archivedChatCount = bootState.archivedChatCount;
       _sessionController.messageCache.addAll(
         bootState.messageCache.map(
           (id, messages) => MapEntry(id, List<Message>.from(messages)),
@@ -702,7 +715,9 @@ class _ChatPanelState extends State<ChatPanel> {
     // round-trip through the controller (initSessions, switchSession, …).
     _sessionController.cubit.replaceSessions(
       sessions: _sessionController.sessions,
+      chats: _sessionController.chats,
       archivedCount: _sessionController.archivedCount,
+      archivedChatCount: _sessionController.archivedChatCount,
       currentSessionId: _sessionController.currentSessionId,
     );
     await _switchSession(session.id);
@@ -735,6 +750,7 @@ class _ChatPanelState extends State<ChatPanel> {
       switchSession: _switchSession,
       initSessions: _initSessions,
       createNewSession: _createNewSession,
+      createChatSession: _sessionController.createChatSession,
       runtime: _sessionController.runtime,
       persistThinkingLevel: _sessionController.persistThinkingLevel,
       persistChatDisplayMode: _sessionController.persistChatDisplayMode,
@@ -893,6 +909,10 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildFullpane() {
+    final vibeDiff = _vibeDiffRequest;
+    if (vibeDiff != null) {
+      return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane);
+    }
     final compactionMsg = _compactionFullpaneMessage;
     if (compactionMsg != null) {
       return Fullpane(
@@ -961,6 +981,39 @@ class _ChatPanelState extends State<ChatPanel> {
       _overlayController.showFullpane = false;
       _toolDetailData = null;
       _compactionFullpaneMessage = null;
+      _vibeDiffRequest = null;
+    });
+  }
+
+  /// Reveal the first file of a vibe files box in the system file
+  /// manager (Finder on macOS, Explorer on Windows, the default manager
+  /// on Linux). Wired to the box's `open` button. Toasts on failure so a
+  /// missing file or absent helper never crashes the TUI.
+  void _openVibeFiles(ModBoxData mods) {
+    if (mods.paths.isEmpty) return;
+    final result = revealInFileManager(
+      mods.paths.first,
+      workingDirectory: Directory.current.path,
+    );
+    switch (result) {
+      case RevealResult.launched:
+        return;
+      case RevealResult.notFound:
+        _showToast('File not found: ${mods.paths.first}',
+            mode: ToastMode.error);
+      case RevealResult.failed:
+        _showToast("Couldn't open file manager", mode: ToastMode.error);
+    }
+  }
+
+  /// Open the segment-scoped diff fullpane for a vibe files box. Wired
+  /// to the box's `diff` button. The request carries the per-file
+  /// entries and the segment's mutating calls; the fullpane rebuilds each
+  /// file's before/after from those args (no git, no live re-read).
+  void _openVibeDiff(ModBoxData mods, List<ToolCallData> calls) {
+    setState(() {
+      _vibeDiffRequest = VibeDiffRequest(files: mods.files, calls: calls);
+      _overlayController.showFullpane = true;
     });
   }
 
@@ -974,6 +1027,7 @@ class _ChatPanelState extends State<ChatPanel> {
   Component _buildSessionManager() {
     return SessionManagementPanel(
       sessions: _sessionController.sessions,
+      chats: _sessionController.chats,
       currentSessionId: _sessionController.currentSessionId ?? 0,
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
@@ -1176,6 +1230,8 @@ class _ChatPanelState extends State<ChatPanel> {
                         onQuickReplyTap: _handleQuickReplyTap,
                         onLinkTap: _handleMarkdownLinkTap,
                         onRetryContinue: _retryContinue,
+                        onVibeOpenFiles: _openVibeFiles,
+                        onVibeDiffFiles: _openVibeDiff,
                         onCompactionTap: CommandRegistry.instance.debugEnabled
                             ? _openCompactionFullpane
                             : null,
@@ -1405,10 +1461,14 @@ class _ChatPanelState extends State<ChatPanel> {
                     width: panelWidth,
                     child: ExtraInfoPanel(
                       sessions: _sessionController.sessions,
+                      chats: _sessionController.chats,
                       currentSessionId:
                           _sessionController.currentSessionId ?? 0,
                       onSwitchSession: _switchSession,
                       archivedCount: _sessionController.archivedCount,
+                      archivedChatCount: _sessionController.archivedChatCount,
+                      onCreateChat: _sessionController.createChatSession,
+                      onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
                       onSessionTitleTap: () {
                         setState(() {

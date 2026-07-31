@@ -110,6 +110,18 @@ class ChatHistory extends StatefulComponent {
   /// always meaningless.
   final void Function(Message message)? onCompactionTap;
 
+  /// Fired when the user clicks the `open` button under a vibe files box.
+  /// Receives the segment's [ModBoxData]; the chat panel reveals the first
+  /// file in the system file manager. When null, the button is omitted.
+  final void Function(ModBoxData mods)? onVibeOpenFiles;
+
+  /// Fired when the user clicks the `diff` button under a vibe files box.
+  /// Receives the segment's [ModBoxData] and its mutating tool calls, so
+  /// the chat panel can open the segment-scoped diff fullpane. When null,
+  /// the button is omitted.
+  final void Function(ModBoxData mods, List<ToolCallData> calls)?
+  onVibeDiffFiles;
+
   /// Callback fired when the user clicks the `▶ retry (/continue)`
   /// affordance on a `stream_error` bubble. The chat panel wires
   /// this to the command executor's `/continue` flow so the
@@ -133,6 +145,8 @@ class ChatHistory extends StatefulComponent {
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onCompactionTap,
+    this.onVibeOpenFiles,
+    this.onVibeDiffFiles,
     this.onRetryContinue,
   });
 
@@ -451,6 +465,57 @@ class _ChatHistoryState extends State<ChatHistory> {
         resultByCallId,
         component.toolRegistry,
       );
+
+      // Compaction messages render as a [CompactionDivider] instead
+      // of being folded into a segment — the chat log content is
+      // meant for the LLM, not the user; the divider is the
+      // user-facing marker that this boundary exists. The segment
+      // walker skips `role: 'compaction'` rows entirely (they're in
+      // `_systemRoles`), so the vibe path must re-insert the
+      // divider at the right position or the compaction boundary
+      // is invisible in vibe mode. Under the "replace from
+      // scratch" model there is at most ONE such divider per
+      // session, so it carries no per-session index.
+      //
+      // Anchoring: the compaction row always lands BETWEEN two
+      // user turns (the compacted turn closed with an `ai` row,
+      // the compaction was inserted, then the next user message
+      // opened a fresh turn). We therefore attach the divider to
+      // the segment that shows the FIRST `role: 'user'` message
+      // persisted after the compaction row, and emit it
+      // immediately before that segment's user line — i.e. before
+      // the VibeTurnDivider that segment may also carry, so the
+      // structural markers stack as
+      //   ---- Compaction ----
+      //   ---- 5 minutes ago ----
+      //   you: ...
+      // A compaction with no subsequent user message (compact ran
+      // and the user hasn't typed since) anchors to null and
+      // renders after all segments.
+      int? compactionSegmentIndex;
+      Message? compactionMessage;
+      for (var i = 0; i < messages.length; i++) {
+        if (messages[i].role != 'compaction') continue;
+        compactionMessage = messages[i];
+        // Latest compaction wins; under the current model there
+        // is only ever one, but if a chain ever returns this
+        // keeps the most recent boundary.
+        int? anchor;
+        for (var j = i + 1; j < messages.length; j++) {
+          if (messages[j].role == 'user') {
+            final anchorId = messages[j].id;
+            for (var s = 0; s < segments.length; s++) {
+              if (identical(segments[s].userMessage, messages[j]) ||
+                  segments[s].userMessage.id == anchorId) {
+                anchor = s;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        compactionSegmentIndex = anchor;
+      }
       // The trailing `prose == null` segment is not a completed segment —
       // it is the persisted portion of the same response-bounded segment
       // that VibeStreamingBubble is about to continue. Keep its user line
@@ -488,6 +553,23 @@ class _ChatHistoryState extends State<ChatHistory> {
         // the user line. Without this, `userItemIndices` stays
         // empty and the scrollbar has no markers.
         if (seg.showUserMessage) {
+          // Emit the compaction divider ahead of this segment's
+          // user line when the compaction row anchors here (see
+          // the anchor computation above). Sits above the
+          // VibeTurnDivider so the two structural markers read
+          // "boundary crossed, then this much time passed".
+          if (compactionMessage != null &&
+              compactionSegmentIndex != null &&
+              identical(seg, segments[compactionSegmentIndex])) {
+            final msg = compactionMessage;
+            items.add(
+              (ctx) => CompactionDivider(
+                onTap: component.onCompactionTap == null
+                    ? null
+                    : () => component.onCompactionTap!(msg),
+              ),
+            );
+          }
           // Insert a "time since last agent turn" divider above
           // this user line. The divider matches the
           // [CompactionDivider]'s centered-dash visual so the chat
@@ -524,6 +606,13 @@ class _ChatHistoryState extends State<ChatHistory> {
           seg.userMessage,
         );
         if (askView != null && seg.showUserMessage) {
+          // The walker splits the ask answer into its OWN segment
+          // (no boxes, no prose — just the user line), so this branch
+          // only swaps that user line for the recap bubble. The
+          // continuation's tools/think/prose live in the FOLLOWING
+          // sibling segment (same user anchor, user line suppressed)
+          // and render through the normal path below — nothing to
+          // re-emit here.
           items.add((ctx) => AskAnswerBubble(answer: askView));
           if (!isLiveOpenSegment) {
             items.add((ctx) => const SizedBox(height: 1));
@@ -540,6 +629,14 @@ class _ChatHistoryState extends State<ChatHistory> {
             items.add((ctx) => VibeSegmentBubble(segment: userOnly));
           }
         } else {
+          // Capture the segment's item index + prose reference before
+          // appending so the TLDR reference-tap handler below can scroll
+          // to this segment (mirrors the verbose path's capture of
+          // `aiMessageItemIndex` ahead of the divider/TldrBubble insert).
+          final aiMessageItemIndex = items.length;
+          final aiMessage = seg.prose;
+          final aiMessageId = aiMessage?.id ?? 0;
+          final aiMessageContent = aiMessage?.content ?? '';
           items.add(
             (ctx) => VibeSegmentBubble(
               segment: seg,
@@ -547,6 +644,8 @@ class _ChatHistoryState extends State<ChatHistory> {
               enableQuickReplies: isLatestClosedAi,
               onSessionLinkTap: component.onSessionLinkTap,
               onLinkTap: component.onLinkTap,
+              onOpenFiles: component.onVibeOpenFiles,
+              onDiffFiles: component.onVibeDiffFiles,
               // Pass the provider's reasoning presets so the
               // persisted segment's think box maps the internal
               // effort (e.g. `normal`) to its display label
@@ -560,7 +659,71 @@ class _ChatHistoryState extends State<ChatHistory> {
             ),
           );
           items.add((ctx) => const SizedBox(height: 1));
+
+          // TLDR block — mirrors the verbose path (lines ~783-816):
+          // after the AI bubble, if the message carries a TLDR (or one
+          // is being generated), render the flanked TldrBubble. Without
+          // this branch, vibe mode rendered zero TLDRs — both auto-tldr
+          // and `/tldr` persisted the text to the DB but it was
+          // invisible because the verbose-only block below is gated on
+          // `!isVibeMode`.
+          //
+          // The generating state is gated to [isLatestClosedAi]
+          // (stricter than verbose, which is session-wide): vibe mode
+          // fans a turn into multiple segments, and showing
+          // "generating..." on every older AI segment without a TLDR
+          // would be noisy. Only the segment actually being summarized
+          // animates.
+          if (aiMessage != null &&
+              aiMessage.role == 'ai' &&
+              aiMessage.id > 0) {
+            final hasTldr = aiMessage.tldr.isNotEmpty;
+            final showGenerating =
+                isGeneratingTldr && isLatestClosedAi && !hasTldr;
+            if (hasTldr || showGenerating) {
+              items.add(
+                (ctx) =>
+                    Divider(color: CruxTheme.of(ctx).divider, height: 1),
+              );
+              items.add((ctx) {
+                return TldrBubble(
+                  tldrText: aiMessage.tldr,
+                  headings: extractHeadings(aiMessage.content),
+                  isGenerating: showGenerating,
+                  hasAuxiliaryModel:
+                      component.providerService.auxiliaryModel != null &&
+                      component.providerService.auxiliaryModel != 'none',
+                  onHeadingTap: (heading, url) => _handleTldrReferenceTap(
+                    itemIndex: aiMessageItemIndex,
+                    messageId: aiMessageId,
+                    messageContent: aiMessageContent,
+                    heading: heading,
+                    url: url,
+                  ),
+                );
+              });
+              items.add(
+                (ctx) =>
+                    Divider(color: CruxTheme.of(ctx).divider, height: 1),
+              );
+            }
+          }
         }
+      }
+
+      // Fallback: a compaction row with no subsequent `role: 'user'`
+      // message (the user compacted and hasn't typed since) has no
+      // segment to anchor to — render the divider after all
+      // segments so the boundary is still visible.
+      if (compactionMessage != null && compactionSegmentIndex == null) {
+        final msg = compactionMessage;
+        items.add(
+          (ctx) => CompactionDivider(
+            onTap: component.onCompactionTap == null
+                ? null
+                : () => component.onCompactionTap!(msg),
+          ),
+        );
       }
     }
 
