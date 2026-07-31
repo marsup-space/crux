@@ -250,12 +250,18 @@ class ChatInputState extends State<ChatInput> {
 
     if (text.startsWith('/')) {
       final cmd = findCommand(text.split(' ').first);
-      if (isResponding && (cmd == null || !cmd.availableDuringResponse)) {
+      // A leading '/' that doesn't resolve to a command isn't a command
+      // — it's a pasted path (e.g. /Users/foo/file) or text the user
+      // prepended onto. Send it as a normal message instead of toasting
+      // "Unknown command" and discarding the input.
+      if (cmd != null) {
+        if (isResponding && !cmd.availableDuringResponse) {
+          return;
+        }
+        component.textController.clear();
+        component.onExecuteCommand(text);
         return;
       }
-      component.textController.clear();
-      component.onExecuteCommand(text);
-      return;
     }
 
     _commandStashedText = null;

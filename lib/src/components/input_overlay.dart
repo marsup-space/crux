@@ -112,14 +112,23 @@ class InputOverlay {
     final commandName = trimmed.substring(0, spaceIndex);
     final command = findCommand(commandName);
 
-    if (command == null ||
-        (!command.hasSuggestionsForParam(0) &&
-            commandName != '/model' &&
-            commandName != '/auxiliary' &&
-            commandName != '/provider' &&
-            commandName != '/web-provider' &&
-            commandName != '/theme' &&
-            commandName != '/project')) {
+    // A '/' token with arguments that doesn't resolve to a command is
+    // not a command at all — it's a pasted path or plain text the user
+    // prepended onto. Leave the overlay off so it behaves as a normal
+    // message (and submits as text) instead of a broken command.
+    if (command == null) {
+      overlayController.setOverlayOff();
+      _maybeRefresh();
+      return;
+    }
+
+    if (!command.hasSuggestionsForParam(0) &&
+        commandName != '/model' &&
+        commandName != '/auxiliary' &&
+        commandName != '/provider' &&
+        commandName != '/web-provider' &&
+        commandName != '/theme' &&
+        commandName != '/project') {
       overlayController.setOverlayOff();
       _maybeRefresh();
       return;

@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../commands/registry.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/skill_chip_parser.dart';
 import 'overlay_controller.dart';
@@ -36,6 +37,29 @@ int? _skillChipDollarOffsetAt(String text, int cursor) {
   // parser at submit time too).
   if (i > 0 && isSkillNameChar(text[i - 1])) return null;
   return i;
+}
+
+/// True when [text] starts with '/' but its command token no longer
+/// resolves to a registered command — e.g. a pasted path
+/// (`/Users/foo/file`) or a mistyped name. `/` alone, and any token
+/// that is still a prefix of a real command (`/he` → `/help`), count
+/// as *in-progress* command typing and return false so command mode
+/// (and its picker) stay active.
+///
+/// Top-level and pure so it can be unit-tested without the TUI harness.
+bool isUnresolvedSlashToken(String text) {
+  if (!text.startsWith('/')) return false;
+  final token = text.split(' ').first;
+  if (token == '/') return false;
+  if (findCommand(token) != null) return false;
+  // Keep command mode while the token is still a prefix of a real
+  // command — that's the user mid-typing, not a dead token.
+  for (final cmd in CommandRegistry.instance.all) {
+    for (final name in cmd.allNames) {
+      if (name.startsWith(token)) return false;
+    }
+  }
+  return true;
 }
 
 /// Handles all keyboard events for the chat input.
@@ -162,9 +186,33 @@ class InputKeyHandler {
     final text = textController.text;
     final selection = textController.selection;
     final cursorOffset = selection.extentOffset.clamp(0, text.length);
-    final inCommandMode = text.startsWith('/');
+    var inCommandMode = text.startsWith('/');
+
+    // --- Escape hatch: a leading '/' that no longer names a command ---
+    //
+    // Pasting a path like `/Users/foo/file` or typing a '/' the user
+    // didn't mean as a command drops the input into command mode
+    // (see the '/'-at-position-0 branch below). Once the token stops
+    // resolving to a real command, staying in that mode traps the
+    // user: every guard here treats the '/' as sacred, so nothing can
+    // be typed or pasted *before* it, and submitting just toasts
+    // "Unknown command". Detect the dead token on the next key event
+    // and drop back to plain-text mode, keeping the text intact.
+    //
+    // `/` alone (and any prefix of a real command, e.g. `/he`) is left
+    // untouched so normal command typing and the picker still work.
+    if (inCommandMode && isUnresolvedSlashToken(text)) {
+      inCommandMode = false;
+      overlayController.setOverlayOff();
+      onStateChanged();
+    }
 
     // --- Command mode: intercept character insertion before the '/' ---
+    //
+    // Runs only while the token still resolves to a command (the
+    // escape hatch above downgrades `inCommandMode` for dead tokens),
+    // so a plain-text leading '/' — a pasted path — can once again be
+    // prepended to.
     if (inCommandMode) {
       final isCharacterInput =
           event.character != null || getCharFromKey(event.logicalKey) != null;
@@ -187,7 +235,13 @@ class InputKeyHandler {
     }
 
     // --- Detect entering command mode: typing '/' at position 0 ---
+    //
+    // Only on an empty field. If text already holds a leading '/' that
+    // the escape hatch just deemed a dead token (a pasted path), a '/' —
+    // or any char — typed at position 0 is plain prepending; forcing it
+    // back to a bare '/' would swallow the path and re-trap the user.
     if (!inCommandMode &&
+        text.isEmpty &&
         (event.character == '/' || event.logicalKey == LogicalKey.slash)) {
       final selStart = selection.start.clamp(0, text.length);
       if (selStart == 0) {
