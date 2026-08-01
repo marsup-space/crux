@@ -1206,15 +1206,18 @@ void main() {
       );
     });
 
-    test('drops orphan tool messages with no preceding assistant tool_call', () {
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'tool', 'tool_call_id': 'call_ghost', 'content': '???'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out, hasLength(1));
-      expect(out[0]['role'], 'user');
-    });
+    test(
+      'drops orphan tool messages with no preceding assistant tool_call',
+      () {
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'tool', 'tool_call_id': 'call_ghost', 'content': '???'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(1));
+        expect(out[0]['role'], 'user');
+      },
+    );
   });
 
   group('DeepSeekProvider.buildRequestBody (Responses API)', () {
@@ -1271,27 +1274,21 @@ void main() {
 
     test('converter maps assistant tool_calls + tool results to function_call '
         'and function_call_output items', () {
-      final body = provider.buildRequestBody(
-        'deepseek-v4-flash',
-        [
-          {'role': 'user', 'content': 'read /tmp'},
-          {
-            'role': 'assistant',
-            'content': '',
-            'tool_calls': [
-              {
-                'id': 'call_7',
-                'type': 'function',
-                'function': {
-                  'name': 'bash',
-                  'arguments': '{"cmd":"cat /tmp"}',
-                },
-              },
-            ],
-          },
-          {'role': 'tool', 'tool_call_id': 'call_7', 'content': 'file body'},
-        ],
-      );
+      final body = provider.buildRequestBody('deepseek-v4-flash', [
+        {'role': 'user', 'content': 'read /tmp'},
+        {
+          'role': 'assistant',
+          'content': '',
+          'tool_calls': [
+            {
+              'id': 'call_7',
+              'type': 'function',
+              'function': {'name': 'bash', 'arguments': '{"cmd":"cat /tmp"}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'call_7', 'content': 'file body'},
+      ]);
       final input = body['input'] as List;
       // user, function_call, function_call_output
       expect(input, hasLength(3));
@@ -1308,11 +1305,9 @@ void main() {
     });
 
     test('omits reasoning when thinkingMode is disabled', () {
-      final body = provider.buildRequestBody(
-        'deepseek-v4-flash',
-        [{'role': 'user', 'content': 'hi'}],
-        thinkingMode: 'disabled',
-      );
+      final body = provider.buildRequestBody('deepseek-v4-flash', [
+        {'role': 'user', 'content': 'hi'},
+      ], thinkingMode: 'disabled');
       expect(body.containsKey('reasoning'), isFalse);
     });
   });

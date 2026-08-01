@@ -127,53 +127,46 @@ void main() {
       archivedCount: 0,
       currentSessionId: sessionId,
     );
-    sessionController.runtime(sessionId).chatDisplayMode =
-        ChatDisplayMode.vibe;
+    sessionController.runtime(sessionId).chatDisplayMode = ChatDisplayMode.vibe;
 
     String rendered = '';
-    await testNocterm(
-      'render',
-      (tester) async {
-        await tester.pumpComponent(
-          MultiBlocProvider(
-            providers: [
-              BlocProvider<SessionCubit>.value(
-                value: sessionController.cubit,
-              ),
-              BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
-              BlocProvider<MetricsCubit>.value(
-                value: sessionController.metricsCubit,
-              ),
-              BlocProvider<ChatTurnCubit>.value(
-                value: sessionController.chatTurnCubit,
-              ),
-              BlocProvider<StreamingCubit>.value(
-                value: sessionController.streamingCubit,
-              ),
-            ],
-            child: CruxTheme(
-              data: CruxThemeData.draculaFallback,
-              child: Container(
-                width: 100,
-                height: 30,
-                child: ChatHistory(
-                  scrollController: scrollController,
-                  sessionController: sessionController,
-                  streamingController: streamingController,
-                  turnOrchestrator: turnOrchestrator,
-                  providerService: providerService,
-                  toolRegistry: toolRegistry,
-                  showToast: (_, {mode = ToastMode.info}) {},
-                  refresh: () {},
-                ),
+    await testNocterm('render', (tester) async {
+      await tester.pumpComponent(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<SessionCubit>.value(value: sessionController.cubit),
+            BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
+            BlocProvider<MetricsCubit>.value(
+              value: sessionController.metricsCubit,
+            ),
+            BlocProvider<ChatTurnCubit>.value(
+              value: sessionController.chatTurnCubit,
+            ),
+            BlocProvider<StreamingCubit>.value(
+              value: sessionController.streamingCubit,
+            ),
+          ],
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 100,
+              height: 30,
+              child: ChatHistory(
+                scrollController: scrollController,
+                sessionController: sessionController,
+                streamingController: streamingController,
+                turnOrchestrator: turnOrchestrator,
+                providerService: providerService,
+                toolRegistry: toolRegistry,
+                showToast: (_, {mode = ToastMode.info}) {},
+                refresh: () {},
               ),
             ),
           ),
-        );
-        rendered = tester.renderToString(showBorders: false);
-      },
-      size: const Size(100, 30),
-    );
+        ),
+      );
+      rendered = tester.renderToString(showBorders: false);
+    }, size: const Size(100, 30));
     return rendered;
   }
 
@@ -193,7 +186,10 @@ void main() {
         Message(id: 5, sessionId: 1, role: 'ai', content: 'second answer'),
       ];
 
-      final rendered = await renderVibeHistory(sessionId: 1, messages: messages);
+      final rendered = await renderVibeHistory(
+        sessionId: 1,
+        messages: messages,
+      );
 
       expect(
         RegExp(r'\bCompaction\b').allMatches(rendered),
@@ -207,16 +203,8 @@ void main() {
       final secondQuestionAt = rendered.indexOf('second question');
       expect(firstAnswerAt, greaterThanOrEqualTo(0), reason: rendered);
       expect(secondQuestionAt, greaterThanOrEqualTo(0), reason: rendered);
-      expect(
-        compactionAt,
-        greaterThan(firstAnswerAt),
-        reason: rendered,
-      );
-      expect(
-        compactionAt,
-        lessThan(secondQuestionAt),
-        reason: rendered,
-      );
+      expect(compactionAt, greaterThan(firstAnswerAt), reason: rendered);
+      expect(compactionAt, lessThan(secondQuestionAt), reason: rendered);
     },
   );
 
@@ -234,7 +222,10 @@ void main() {
         ),
       ];
 
-      final rendered = await renderVibeHistory(sessionId: 2, messages: messages);
+      final rendered = await renderVibeHistory(
+        sessionId: 2,
+        messages: messages,
+      );
 
       expect(
         RegExp(r'\bCompaction\b').allMatches(rendered),

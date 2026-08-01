@@ -418,10 +418,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
             );
             children.add(
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 1,
-                  vertical: 0,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
                 child: Text(
                   row.label,
                   style: TextStyle(

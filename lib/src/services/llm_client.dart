@@ -1133,10 +1133,8 @@ LlmChunk openAiUsageToChunk(Map<String, dynamic> usage) {
 LlmChunk responsesApiUsageToChunk(Map<String, dynamic> usage) {
   final inputTokens = usage['input_tokens'] as int?;
   final outputTokens = usage['output_tokens'] as int?;
-  final inputDetails =
-      usage['input_tokens_details'] as Map<String, dynamic>?;
-  final outputDetails =
-      usage['output_tokens_details'] as Map<String, dynamic>?;
+  final inputDetails = usage['input_tokens_details'] as Map<String, dynamic>?;
+  final outputDetails = usage['output_tokens_details'] as Map<String, dynamic>?;
   final cacheHitTokens = inputDetails?['cached_tokens'] as int?;
   final cacheMissTokens = inputTokens == null
       ? null

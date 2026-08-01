@@ -151,9 +151,7 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
               'type': 'function_call',
               'call_id': callId,
               'name': fnName,
-              'arguments': args is String
-                  ? args
-                  : jsonEncode(args ?? const {}),
+              'arguments': args is String ? args : jsonEncode(args ?? const {}),
             });
           }
         }
@@ -197,9 +195,7 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
       // Responses API honors (no `summary`). Force `high` as the
       // floor — `low`/`normal` are SDK aliases that resolve to high,
       // and emitting them verbatim just mirrors that.
-      body['reasoning'] = {
-        'effort': mapEffort(reasoningEffort ?? 'high'),
-      };
+      body['reasoning'] = {'effort': mapEffort(reasoningEffort ?? 'high')};
     }
 
     if (maxTokens != null) {
@@ -211,12 +207,14 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
       // `{type:'function', name, description, parameters}` — not the
       // Chat Completions nested `{type:'function', function:{...}}`.
       body['tools'] = tools
-          .map((t) => {
-            'type': 'function',
-            'name': t['name'],
-            'description': t['description'],
-            'parameters': t['parameters'],
-          })
+          .map(
+            (t) => {
+              'type': 'function',
+              'name': t['name'],
+              'description': t['description'],
+              'parameters': t['parameters'],
+            },
+          )
           .toList();
     }
 

@@ -74,8 +74,7 @@ void main() {
     expect(projA, isEmpty);
   });
 
-  test('archivedCount excludes chats; archivedChatCount counts them',
-      () async {
+  test('archivedCount excludes chats; archivedChatCount counts them', () async {
     final chat = await createChat();
     await createSession();
 

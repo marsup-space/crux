@@ -255,7 +255,9 @@ class SessionStore implements SessionStoreAccessor {
       ..where(_db.sessions.archivedAt.isNotNull())
       // Chat rows belong to the global "Chats" section; count them
       // separately via [archivedChatCount].
-      ..where(_db.sessions.kind.isNull() | _db.sessions.kind.isNotValue('chat'));
+      ..where(
+        _db.sessions.kind.isNull() | _db.sessions.kind.isNotValue('chat'),
+      );
 
     if (projectPath != null) {
       query.where(_db.sessions.projectPath.equals(projectPath));

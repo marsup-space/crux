@@ -194,26 +194,28 @@ void main() {
     },
   );
 
-  test('initSessions loads chats globally alongside project sessions',
-      () async {
-    final store = SessionStore(db, instanceId: 'local');
-    final projectPath = Directory.current.path;
-    await store.create(title: 'WS', model: '', projectPath: projectPath);
-    final chat = await store.create(
-      title: 'Chat',
-      model: '',
-      projectPath: '',
-      kind: 'chat',
-    );
+  test(
+    'initSessions loads chats globally alongside project sessions',
+    () async {
+      final store = SessionStore(db, instanceId: 'local');
+      final projectPath = Directory.current.path;
+      await store.create(title: 'WS', model: '', projectPath: projectPath);
+      final chat = await store.create(
+        title: 'Chat',
+        model: '',
+        projectPath: '',
+        kind: 'chat',
+      );
 
-    final controller = buildController(store);
-    await controller.initSessions();
+      final controller = buildController(store);
+      await controller.initSessions();
 
-    expect(controller.sessions.any((s) => s.isChat), isFalse);
-    expect(controller.chats.map((s) => s.id), contains(chat.id));
-    // findSession resolves across both lists.
-    expect(controller.findSession(chat.id)?.isChat, isTrue);
-  });
+      expect(controller.sessions.any((s) => s.isChat), isFalse);
+      expect(controller.chats.map((s) => s.id), contains(chat.id));
+      // findSession resolves across both lists.
+      expect(controller.findSession(chat.id)?.isChat, isTrue);
+    },
+  );
 
   test(
     'switchSession refuses a chat that is live in another instance',

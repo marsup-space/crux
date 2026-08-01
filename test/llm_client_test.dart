@@ -270,13 +270,16 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'deepseek-v4-flash',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       )) {}
 
       expect(
         server.lastPath,
         '/responses',
-        reason: 'DeepSeek Responses API lives at <base>/responses, '
+        reason:
+            'DeepSeek Responses API lives at <base>/responses, '
             'no /v1 (verified against the live endpoint).',
       );
     });
@@ -329,7 +332,9 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'deepseek-v4-flash',
-        messages: const [{'role': 'user', 'content': 'read /a'}],
+        messages: const [
+          {'role': 'user', 'content': 'read /a'},
+        ],
       )) {
         if (c.finishReason != null) finishReason = c.finishReason;
       }
@@ -363,7 +368,9 @@ void main() {
         config: config,
         apiKey: 'sk-fake',
         modelId: 'deepseek-v4-flash',
-        messages: const [{'role': 'user', 'content': 'hi'}],
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
       )) {
         if (c.finishReason != null) finishReason = c.finishReason;
       }
@@ -412,18 +419,11 @@ void main() {
             {
               'id': 'call_42',
               'type': 'function',
-              'function': {
-                'name': 'bash',
-                'arguments': '{"cmd":"ls /tmp"}',
-              },
+              'function': {'name': 'bash', 'arguments': '{"cmd":"ls /tmp"}'},
             },
           ],
         },
-        {
-          'role': 'tool',
-          'tool_call_id': 'call_42',
-          'content': 'file1\nfile2',
-        },
+        {'role': 'tool', 'tool_call_id': 'call_42', 'content': 'file1\nfile2'},
         {'role': 'user', 'content': 'thanks'},
       ];
 
