@@ -8,7 +8,6 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
-import 'package:nocterm/nocterm_test.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
 import 'package:test/test.dart';
 
@@ -111,9 +110,7 @@ void main() {
       providers: [
         BlocProvider<SessionCubit>.value(value: sessionController.cubit),
         BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
-        BlocProvider<MetricsCubit>.value(
-          value: sessionController.metricsCubit,
-        ),
+        BlocProvider<MetricsCubit>.value(value: sessionController.metricsCubit),
         BlocProvider<ChatTurnCubit>.value(
           value: sessionController.chatTurnCubit,
         ),
@@ -160,11 +157,15 @@ void main() {
         id: 4,
         sessionId: sessionId,
         role: 'user',
-        content:
-            '[prompt] test\n\n[g] render_ok\n\n[note] 123',
+        content: '[prompt] test\n\n[g] render_ok\n\n[note] 123',
       );
       final messages = <Message>[
-        Message(id: 1, sessionId: sessionId, role: 'user', content: '再 askform 试试看'),
+        Message(
+          id: 1,
+          sessionId: sessionId,
+          role: 'user',
+          content: '再 askform 试试看',
+        ),
         Message(
           id: 2,
           sessionId: sessionId,
@@ -175,11 +176,7 @@ void main() {
           thinkingDurationMs: 4200,
           reasoningEffort: 'max',
           toolCalls: const [
-            ToolCallData(
-              callId: 'ask-1',
-              name: 'ask',
-              input: {'groups': []},
-            ),
+            ToolCallData(callId: 'ask-1', name: 'ask', input: {'groups': []}),
           ],
         ),
         Message(
@@ -236,45 +233,43 @@ void main() {
       // Register the answer recap exactly like chat_panel's onSubmit does.
       sessionController.registerAskAnswerView(
         answerMsg,
-        const AskAnswerView(
-          prompt: 'test',
-          selections: [],
-          note: '123',
-        ),
+        const AskAnswerView(prompt: 'test', selections: [], note: '123'),
       );
 
-      await testNocterm(
-        'ask continuation ai reply renders',
-        (tester) async {
-          await tester.pumpComponent(buildHistory());
-          await tester.pump();
+      await testNocterm('ask continuation ai reply renders', (tester) async {
+        await tester.pumpComponent(buildHistory());
+        await tester.pump();
 
-          final rendered = tester.renderToString(showBorders: false);
-          print('===== RENDER =====');
-          print(rendered);
-          print('==================');
+        final rendered = tester.renderToString(showBorders: false);
+        print('===== RENDER =====');
+        print(rendered);
+        print('==================');
 
-          expect(
-            rendered,
-            contains('表单测试成功'),
-            reason: 'final ai reply must render in vibe mode\n$rendered',
-          );
+        expect(
+          rendered,
+          contains('表单测试成功'),
+          reason: 'final ai reply must render in vibe mode\n$rendered',
+        );
 
-          // Ordering: the AskAnswerBubble must land at the answer's
-          // TRUE position — after the ask call's tools box and its
-          // opening prose, before the continuation's reply. Not at
-          // the very top of the turn.
-          final askCall = rendered.indexOf('好，我直接调一次 ask');
-          final answer = rendered.indexOf('Ask'); // recap bubble chip
-          final continuation = rendered.indexOf('表单测试成功');
-          expect(askCall, greaterThanOrEqualTo(0), reason: rendered);
-          expect(answer, greaterThan(askCall),
-              reason: 'answer bubble after the ask call\n$rendered');
-          expect(continuation, greaterThan(answer),
-              reason: 'continuation reply after the answer\n$rendered');
-        },
-        size: const Size(120, 40),
-      );
+        // Ordering: the AskAnswerBubble must land at the answer's
+        // TRUE position — after the ask call's tools box and its
+        // opening prose, before the continuation's reply. Not at
+        // the very top of the turn.
+        final askCall = rendered.indexOf('好，我直接调一次 ask');
+        final answer = rendered.indexOf('Ask'); // recap bubble chip
+        final continuation = rendered.indexOf('表单测试成功');
+        expect(askCall, greaterThanOrEqualTo(0), reason: rendered);
+        expect(
+          answer,
+          greaterThan(askCall),
+          reason: 'answer bubble after the ask call\n$rendered',
+        );
+        expect(
+          continuation,
+          greaterThan(answer),
+          reason: 'continuation reply after the answer\n$rendered',
+        );
+      }, size: const Size(120, 40));
     },
   );
 }
