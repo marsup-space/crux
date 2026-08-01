@@ -8,6 +8,95 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-01
+
+4bd1ab8
+
+### Features
+
+- **Chat mode: workspace-free conversations via `/chat`**
+  (`25d2291`) — a new `/chat` slash command opens a session with
+  no project attached (`projectPath=''`, minimal system prompt
+  with no AGENTS.md / CLAUDE.md / skill discovery). Chat sessions
+  are listed in a global "Chats" sidebar section visible in every
+  Crux instance, rather than the project-scoped "Sessions" list,
+  and are guarded by the same running-lease mechanism so a chat
+  streaming in one instance can't be opened in another. Schema
+  bumps to v29 with `sessions.kind`; storage gains `listChats`,
+  `archivedChatCount`, and a 3-day `autoArchiveChats` sweep.
+- **DeepSeek: route every model through the Responses API wire
+  family** (`e6dbc88`) — DeepSeek's Responses API replaces Chat
+  Completions as of deepseek-v4-flash (2026-07). Crux now POSTs
+  to `https://api.deepseek.com/responses`, translates the
+  OpenAI-IR message list into Responses input items, and parses
+  the semantic SSE event stream (`response.output_text.delta`,
+  `response.reasoning_text.delta`,
+  `response.function_call_arguments.delta`) ending with
+  `response.completed` / `response.incomplete` / `response.failed`.
+  Gating on the wire family rather than the model id makes
+  deepseek-v4-pro a no-op when it lands in early August 2026.
+- **Vibe diff: streamline the fullpane for the single-file case**
+  (`5933ed2`) — the diff fullpane now drops the redundant files
+  box when only one file changed and keeps the file's header
+  context in place, so single-file reviews no longer scroll past
+  the file picker before the diff.
+- **Vibe diff: syntax highlighting and line numbers** (`2acf972`)
+  — diff lines render in their language's syntax colour via the
+  textmate grammar, and a left gutter shows the source line
+  number for each diff row, matching the diff view in the IDE
+  users already know.
+- **Vibe files: per-file multibutton rows and width-adaptive diff
+  fullpane** (`4a91d6f`) — each file in the changed-files box
+  now sits on its own MultiButton row (open, diff, archive), and
+  the diff fullpane adapts its width to the terminal so the
+  per-file layout doesn't waste columns at 120-col terminals.
+- **Vibe files: open / diff actions on every file row** (`3a55e50`)
+  — the files box exposes an open action (open the file in the
+  configured editor) and a diff action (jump straight to the
+  diff fullpane for that file) per row, removing the
+  open-via-sidebar round-trip.
+- **Vibe diff: soft-wrap is always on; horizontal scroll and the
+  wrap toggle are gone** (`1584916`) — diff lines now soft-wrap
+  on word boundaries regardless of terminal width. The horizontal
+  scroll fallback and the keyboard wrap toggle were removed
+  because soft-wrap is the only sensible behaviour for prose in
+  a narrow terminal; the wrap-toggle UI is no longer needed.
+
+### Fixes
+
+- **Diff: highlight comments correctly via textmate per-line fix**
+  (`467758b`) — the diff view used to apply textmate colour to
+  the whole snapshot, which leaked scope across lines and made
+  comment tokens render with the wrong hue. Comments now colour
+  correctly per line.
+- **Vibe diff: force comment lines to the comment colour**
+  (`751aec1`) — comment lines in the diff view occasionally
+  lost their colour because textmate's range highlighting didn't
+  paint comment-only spans. The diff renderer now forces
+  comment lines to the configured comment token.
+- **Vibe diff: highlight the whole snapshot, add horizontal
+  scroll + wrap toggle** (`ebac84eb`) — superseded by the
+  soft-wrap feature above; kept here so the commit history
+  stays traceable. Diff lines that lost their syntax colour
+  when the snapshot grew past a single screen now colour
+  consistently, and the wrap toggle gives users control over
+  line-wrapping behaviour. (The toggle was later removed when
+  soft-wrap became the default; see the matching feature.)
+- **Vibe diff: actually show syntax colours** (`9ff5a3db`) — the
+  textmate highlight pipeline was wired but never invoked for
+  the diff rows; the live renderer now calls the grammar and
+  the colours paint.
+- **Vibe files: build the files-box body as a growable Component
+  list** (`495dc928`) — the files-box used a fixed-size list that
+  overflowed when more than a handful of files changed; the body
+  is now a growable Component list that scrolls cleanly.
+- **Chat input: don't trap the user when text starts with `/`
+  but isn't a command** (`f22c9b2`) — typing `/foo` where `foo`
+  isn't a registered slash command used to leave the input in a
+  state where it couldn't be cleared or focused. The input now
+  stays editable when a `/`-prefixed message isn't a registered
+  command.
+
 ## [0.23.0] - 2026-07-30
 
 02f423b
