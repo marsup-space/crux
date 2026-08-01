@@ -349,9 +349,18 @@ ResolvedProvider resolveProvider(String type) {
         authStyle: AuthStyle.anthropicApiKey,
       );
     case 'deepseek':
+      // DeepSeek's Responses API replaces Chat Completions as of
+      // deepseek-v4-flash (2026-07). The endpoint is
+      // POST `https://api.deepseek.com/responses` (no `/v1`),
+      // the request body uses the Responses API input-item format,
+      // and the SSE stream is semantic events
+      // (`response.output_text.delta`, etc.) with no `[DONE]`.
+      // `deepseek-v4-pro` will land Responses API support in
+      // early August 2026 — gating on the wire family, not the
+      // model id, makes that switch a no-op.
       return ResolvedProvider(
         provider: DeepSeekProvider(),
-        wire: WireFamily.openaiCompatible,
+        wire: WireFamily.responsesApi,
         authStyle: AuthStyle.bearer,
       );
     case 'minimax':

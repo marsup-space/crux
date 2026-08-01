@@ -25,7 +25,15 @@
 /// `llm_provider.dart`. Two providers can share a [WireFamily] (e.g. DeepSeek
 /// and a generic OpenAI-compatible endpoint) but have different request
 /// bodies — that's what the [LlmProvider] implementation handles.
-enum WireFamily { openaiCompatible, anthropicCompatible }
+///
+/// - [openaiCompatible] — POST `<base>/v1/chat/completions`, Chat
+///   Completions message shape, OpenAI SSE deltas, `data: [DONE]` end.
+/// - [anthropicCompatible] — POST `<base>/messages`, Anthropic content-block
+///   message shape, Anthropic SSE events with `event:` headers.
+/// - [responsesApi] — POST `<base>/responses`, OpenAI Responses API input
+///   items, semantic SSE events (`response.output_text.delta`, etc.),
+///   no `[DONE]`. Used by DeepSeek's Responses API endpoint.
+enum WireFamily { openaiCompatible, anthropicCompatible, responsesApi }
 
 /// How the API key is sent in HTTP headers — independent of [WireFamily].
 ///
@@ -41,6 +49,8 @@ String wireFamilyLabel(WireFamily w) {
       return 'OpenAI-compatible';
     case WireFamily.anthropicCompatible:
       return 'Anthropic-compatible';
+    case WireFamily.responsesApi:
+      return 'Responses API';
   }
 }
 

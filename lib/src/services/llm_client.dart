@@ -399,6 +399,16 @@ class LlmClient {
             maxTimer: maxTimer,
             idleTimeout: idleTimeout,
           );
+        } else if (wireFamily == WireFamily.responsesApi) {
+          await _handleResponsesApiStream(
+            response,
+            controller,
+            cancelToken,
+            providerName: config.name,
+            idleTimer: idleTimer,
+            maxTimer: maxTimer,
+            idleTimeout: idleTimeout,
+          );
         } else {
           await _handleOpenAiStream(
             response,
@@ -580,6 +590,251 @@ class LlmClient {
           if (json.containsKey('usage') && json['usage'] != null) {
             final usage = json['usage'] as Map<String, dynamic>;
             controller.add(openAiUsageToChunk(usage));
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    idleTimer?.cancel();
+    maxTimer?.cancel();
+    controller.add(const LlmChunk(finishReason: 'done'));
+    await controller.close();
+  }
+
+  /// Parse the OpenAI/DeepSeek Responses API SSE stream.
+  ///
+  /// The Responses API emits *semantic* events (each prefixed with
+  /// `event: <type>` and paired with a `data:` JSON line whose
+  /// `type` field mirrors the event name). There is no
+  /// `data: [DONE]` terminator — the stream ends on one of:
+  /// `response.completed`, `response.incomplete`, `response.failed`.
+  ///
+  /// We translate the event types into the same `LlmChunk` shape the
+  /// OpenAI Chat Completions parser produces, so the rest of Crux's
+  /// pipeline (streaming controller, executor, usage persistence)
+  /// doesn't need any Responses-API-specific code.
+  ///
+  /// Event → chunk mapping (empirically verified against the live
+  /// DeepSeek `/responses` endpoint):
+  ///
+  ///   - `response.reasoning_text.delta` → `reasoningContent`
+  ///   - `response.output_text.delta` → `textDelta`
+  ///   - `response.output_item.added` (item.type == `function_call`)
+  ///     → seeds a tool block keyed by `output_index` with the
+  ///     `call_id` and `name`, exactly like Anthropic's
+  ///     `content_block_start`.
+  ///   - `response.function_call_arguments.delta` → a `ToolUseChunk`
+  ///     whose `index` is the Responses `output_index` and whose
+  ///     `inputDelta` is the partial JSON args string.
+  ///   - `response.completed` → a single usage chunk
+  ///     (`input_tokens` / `output_tokens` /
+  ///     `input_tokens_details.cached_tokens` /
+  ///     `output_tokens_details.reasoning_tokens`) + finishReason.
+  ///   - `response.failed` → an `LlmError` chunk via
+  ///     [parseResponsesApiStreamError].
+  ///   - `response.incomplete` → finishReason `'length'` (the only
+  ///     observed cause is `max_output_tokens` truncation).
+  Future<void> _handleResponsesApiStream(
+    HttpClientResponse response,
+    StreamController<LlmChunk> controller,
+    LlmStreamCancelToken? cancelToken, {
+    required String providerName,
+    required Timer? idleTimer,
+    required Timer? maxTimer,
+    required Duration idleTimeout,
+  }) async {
+    String buffer = '';
+    // Function-call blocks seeded by `response.output_item.added`,
+    // keyed by the `output_index` the Responses API assigns each
+    // function_call item. Used to carry the call_id / name into the
+    // argument-delta chunks (which arrive separately and reference
+    // the item only by index + item_id).
+    final toolBlocks = <int, ({String callId, String name})>{};
+    // The Responses API does NOT distinguish "tool calls emitted"
+    // from "text done" via the terminal event: both end with
+    // `response.completed` and `status == "completed"`. The OpenAI
+    // Chat Completions shape the executor still expects uses
+    // `finish_reason: tool_calls` to gate the tool-execution arm of
+    // the agentic loop — without that signal the loop bails out on
+    // the very first round and tool calls are silently dropped
+    // (verified: that's the bug that broke DeepSeek tool-calling).
+    // We therefore remember whether ANY function_call output item
+    // streamed in, and translate the terminal `completed` /
+    // `[DONE]` chunk into `tool_calls` / `stop` accordingly. The
+    // `parseFinishReason` helper in `tool_executor.dart` maps both
+    // `tool_use` and `tool_calls` onto its internal `tool_use`.
+    var sawFunctionCall = false;
+
+    await for (final chunk in response) {
+      if (cancelToken?.isCancelled ?? false) {
+        idleTimer?.cancel();
+        maxTimer?.cancel();
+        controller.add(
+          LlmChunk(
+            abortReason: cancelToken?.reason ?? 'cancelled',
+            guardAbort: cancelToken?.guardAbort ?? false,
+          ),
+        );
+        await controller.close();
+        return;
+      }
+      // Reset the idle watchdog on every raw byte batch — same
+      // rationale as in the OpenAI handler.
+      idleTimer?.cancel();
+      idleTimer = Timer(idleTimeout, () {
+        if (controller.isClosed) return;
+        controller.add(
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.timeout,
+              vendor: LlmVendorX.fromProviderName(providerName),
+              message:
+                  'Stream idle for ${idleTimeout.inSeconds}s with '
+                  'no response — connection may have stalled.',
+              providerName: providerName,
+            ),
+          ),
+        );
+        controller.close();
+      });
+
+      buffer += utf8.decode(chunk, allowMalformed: true);
+      final lines = buffer.split('\n');
+      buffer = lines.removeLast();
+
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        if (trimmed.startsWith('event: ')) continue;
+        if (!trimmed.startsWith('data: ')) continue;
+
+        final data = trimmed.substring(6);
+        if (data == '[DONE]') {
+          // The Responses API doesn't emit `[DONE]`, but the guard
+          // stays as defence-in-depth for proxies / mirrors that
+          // add one.
+          idleTimer.cancel();
+          maxTimer?.cancel();
+          controller.add(
+            LlmChunk(finishReason: sawFunctionCall ? 'tool_calls' : 'stop'),
+          );
+          await controller.close();
+          return;
+        }
+
+        try {
+          final json = jsonDecode(data) as Map<String, dynamic>;
+          final type = json['type'] as String?;
+
+          if (type == null) continue;
+
+          // Reasoning chain-of-thought delta.
+          if (type == 'response.reasoning_text.delta') {
+            final delta = json['delta'] as String?;
+            if (delta != null && delta.isNotEmpty) {
+              controller.add(LlmChunk(reasoningContent: delta));
+            }
+            continue;
+          }
+
+          // Final answer text delta.
+          if (type == 'response.output_text.delta') {
+            final delta = json['delta'] as String?;
+            if (delta != null && delta.isNotEmpty) {
+              controller.add(LlmChunk(textDelta: delta));
+            }
+            continue;
+          }
+
+          // A new output item appears. For function_call items this
+          // is where we learn the call_id + name — argument deltas
+          // arrive later and only reference the output_index.
+          if (type == 'response.output_item.added') {
+            final item = json['item'] as Map<String, dynamic>?;
+            if (item != null && item['type'] == 'function_call') {
+              final index = json['output_index'] as int? ?? 0;
+              toolBlocks[index] = (
+                callId: item['call_id'] as String? ?? '',
+                name: item['name'] as String? ?? '',
+              );
+              sawFunctionCall = true;
+            }
+            continue;
+          }
+
+          // Function-call argument JSON stream. Each delta carries a
+          // fragment of the arguments JSON string.
+          if (type == 'response.function_call_arguments.delta') {
+            final index = json['output_index'] as int? ?? 0;
+            final block = toolBlocks[index];
+            sawFunctionCall = true;
+            controller.add(
+              LlmChunk(
+                toolUse: ToolUseChunk(
+                  index: index,
+                  callId: block?.callId ?? '',
+                  name: block?.name ?? '',
+                  inputDelta: json['delta'] as String? ?? '',
+                ),
+              ),
+            );
+            continue;
+          }
+
+          // Terminal events.
+          if (type == 'response.completed') {
+            final respObject = json['response'] as Map<String, dynamic>?;
+            final usage = respObject?['usage'] as Map<String, dynamic>?;
+            if (usage != null) {
+              controller.add(responsesApiUsageToChunk(usage));
+            }
+            idleTimer.cancel();
+            maxTimer?.cancel();
+            // The Responses API's terminal `status` is always
+            // "completed" whether the model emitted text, tool
+            // calls, or both — there is no Chat-Completions-style
+            // `tool_calls` finish_reason. Reconstruct it from the
+            // per-stream `sawFunctionCall` flag so the agentic
+            // loop's `parseFinishReason` recognises the tool-call
+            // arm (`tool_calls` → `tool_use` in tool_executor.dart).
+            controller.add(
+              LlmChunk(finishReason: sawFunctionCall ? 'tool_calls' : 'stop'),
+            );
+            await controller.close();
+            return;
+          }
+
+          if (type == 'response.incomplete') {
+            // Truncated, typically by max_output_tokens. Still emit
+            // any final usage so the metrics bar reflects the
+            // billed tokens.
+            final respObject = json['response'] as Map<String, dynamic>?;
+            final usage = respObject?['usage'] as Map<String, dynamic>?;
+            if (usage != null) {
+              controller.add(responsesApiUsageToChunk(usage));
+            }
+            idleTimer.cancel();
+            maxTimer?.cancel();
+            controller.add(const LlmChunk(finishReason: 'length'));
+            await controller.close();
+            return;
+          }
+
+          if (type == 'response.failed') {
+            idleTimer.cancel();
+            maxTimer?.cancel();
+            controller.add(
+              LlmChunk(
+                error: parseResponsesApiStreamError(
+                  eventJson: json,
+                  providerName: providerName,
+                ),
+              ),
+            );
+            await controller.close();
+            return;
           }
         } catch (_) {
           continue;
@@ -780,6 +1035,15 @@ class LlmClient {
           : '${uri.path}/messages';
       return uri.replace(path: path);
     }
+    if (wireFamily == WireFamily.responsesApi) {
+      // The Responses API endpoint is `<base>/responses` with NO
+      // version segment. DeepSeek's base is `https://api.deepseek.com`
+      // and the Python SDK appends `/responses` directly — no `/v1`.
+      final path = uri.path.endsWith('/')
+          ? '${uri.path}responses'
+          : '${uri.path}/responses';
+      return uri.replace(path: path);
+    }
     // For OpenAI-compatible endpoints, append `/chat/completions` to
     // the existing path (don't use `uri.resolve`, which would replace
     // the last path segment — e.g. `.../v1` would become `.../`).
@@ -844,6 +1108,46 @@ LlmChunk openAiUsageToChunk(Map<String, dynamic> usage) {
     promptCacheHitTokens: cacheHitTokens,
     promptCacheMissTokens: cacheMissTokens,
     reasoningTokens: completionDetails?['reasoning_tokens'] as int?,
+  );
+}
+
+/// Translate a Responses API `usage` object into an [LlmChunk].
+///
+/// The Responses API uses different field names than Chat Completions:
+///   - `input_tokens` (not `prompt_tokens`)
+///   - `output_tokens` (not `completion_tokens`)
+///   - `input_tokens_details.cached_tokens` (not
+///     `prompt_tokens_details.cached_tokens`)
+///   - `output_tokens_details.reasoning_tokens`
+///
+/// Empirically verified shape (DeepSeek `/responses`, 2026-07-31):
+/// ```json
+/// {
+///   "input_tokens": 94,
+///   "input_tokens_details": {"cached_tokens": 0},
+///   "output_tokens": 13,
+///   "output_tokens_details": {"reasoning_tokens": 11},
+///   "total_tokens": 107
+/// }
+/// ```
+LlmChunk responsesApiUsageToChunk(Map<String, dynamic> usage) {
+  final inputTokens = usage['input_tokens'] as int?;
+  final outputTokens = usage['output_tokens'] as int?;
+  final inputDetails =
+      usage['input_tokens_details'] as Map<String, dynamic>?;
+  final outputDetails =
+      usage['output_tokens_details'] as Map<String, dynamic>?;
+  final cacheHitTokens = inputDetails?['cached_tokens'] as int?;
+  final cacheMissTokens = inputTokens == null
+      ? null
+      : (inputTokens - (cacheHitTokens ?? 0)).clamp(0, inputTokens);
+
+  return LlmChunk(
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
+    promptCacheHitTokens: cacheHitTokens,
+    promptCacheMissTokens: cacheMissTokens,
+    reasoningTokens: outputDetails?['reasoning_tokens'] as int?,
   );
 }
 

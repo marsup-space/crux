@@ -3,16 +3,59 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../models/credit_balance.dart';
+import '../../models/provider_config.dart';
 import '../../utils/proxy_aware_http.dart';
-import '../providers/openai_compatible_provider.dart';
+import '../llm_provider.dart';
 import 'credit_balance_provider.dart';
 
-class DeepSeekProvider extends OpenAICompatibleProvider
-    with CreditBalanceProvider {
+/// DeepSeek provider, speaking the **Responses API** wire
+/// (`WireFamily.responsesApi`) since deepseek-v4-flash (2026-07).
+///
+/// The older Chat Completions endpoint (`/v1/chat/completions`) still
+/// exists, but DeepSeek is moving all model launches onto the Responses
+/// API (`/responses`) — deepseek-v4-pro will pick it up in early
+/// August 2026. Crux therefore routes **every** DeepSeek model through
+/// the Responses API so the v4-pro switch is a no-op.
+///
+/// ## Wire shape (empirically verified 2026-07-31)
+///
+/// - Endpoint: `POST https://api.deepseek.com/responses` (no `/v1`).
+/// - Request body: Responses API — `instructions` (the system prompt),
+///   `input` (a list of input items or a plain string), `reasoning:
+///   {effort}`, `max_output_tokens`, flat `tools: [{type,function,name,
+///   description,parameters}]`, `stream: true`.
+/// - SSE: semantic events (`response.output_text.delta`,
+///   `response.reasoning_text.delta`,
+///   `response.function_call_arguments.delta`, …), ending with
+///   `response.completed` / `response.incomplete` / `response.failed`.
+///   No `data: [DONE]`.
+///
+/// ## Message history IR
+///
+/// Crux's storage / executor / `buildApiMessages` all use the OpenAI
+/// Chat Completions message shape (`{role, content}`,
+/// `{role: 'assistant', tool_calls: [...]}`,
+/// `{role: 'tool', tool_call_id, content}`). The executor picks that
+/// shape for any non-Anthropic wire family — including
+/// [WireFamily.responsesApi]. This provider's [buildRequestBody]
+/// converts that OpenAI-IR list into Responses input items at the last
+/// moment, so no change is needed in the executor or the wire-format
+/// builder.
+class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
   @override
   String get name => 'deepseek';
 
   @override
+  WireFamily get wire => WireFamily.responsesApi;
+
+  @override
+  AuthStyle get authStyle => AuthStyle.bearer;
+
+  /// Map Crux's internal reasoning effort values onto DeepSeek's
+  /// wire values. Declared on this provider (not inherited from
+  /// [OpenAICompatibleProvider], which [DeepSeekProvider] no longer
+  /// extends) because the Responses API wire still takes the same
+  /// `high`/`max` scale.
   String mapEffort(String? effort) {
     switch (effort) {
       case 'max':
@@ -24,65 +67,260 @@ class DeepSeekProvider extends OpenAICompatibleProvider
     }
   }
 
-  /// Compose two sanitizers for the DeepSeek wire format:
+  /// Build the DeepSeek Responses API request body.
   ///
-  ///   1. **Inherited from [OpenAICompatibleProvider.sanitizeMessages]**
-  ///      — enforces the OpenAI tool_call ↔ tool message pairing
-  ///      invariant. Repairs orphan `tool_calls` (e.g. from a
-  ///      mid-round interruption or a wire-family switch from
-  ///      MiniMax's Anthropic shape) so the request doesn't get
-  ///      rejected with the 400 "an assistant message with tool_call
-  ///      must be followed by tool messages responding to each
-  ///      tool_call_id" error.
-  ///   2. **DeepSeek-specific** — backfill `reasoning_content: ''`
-  ///      on every `assistant` message that lacks the field. When a
-  ///      session switches the active model from a non-DeepSeek
-  ///      provider to DeepSeek, the prior `assistant` messages in
-  ///      the wire-format history were serialized without a
-  ///      `reasoning_content` field — Crux's OpenAI-compatible wire
-  ///      emitters don't emit one, and the Anthropic emitter uses a
-  ///      different shape (`thinking` content block). DeepSeek's
-  ///      API requires every prior `assistant` message to include
-  ///      a `reasoning_content` field when the request is in
-  ///      thinking mode and a previous turn involved a tool call:
-  ///      "If your code does not correctly pass back
-  ///      `reasoning_content`, the API will return a 400 error."
-  ///      ([source](https://api-docs.deepseek.com/guides/thinking_mode))
-  ///      Per the same docs, the field is ignored for turns that
-  ///      didn't perform a tool call, so always backfilling is
-  ///      safe.
+  /// [messages] arrive in OpenAI Chat Completions shape (the
+  /// executor-internal IR). We translate them into Responses
+  /// API `input` items:
   ///
-  /// The backfill runs after the pairing repair so that messages
-  /// touched by step 1 (e.g. an assistant message that had its
-  /// `tool_calls` array emptied) still get a `reasoning_content`
-  /// key, matching what a DeepSeek-produced assistant message
-  /// would have looked like.
+  ///   - `{role: 'system', content}` — pulled out and sent as the
+  ///     top-level `instructions` field (the Responses API's system
+  ///     prompt slot). If there are multiple system messages they
+  ///     are concatenated; the Responses API only accepts a single
+  ///     `instructions` string.
+  ///   - `{role: 'user'|'assistant', content}` — emitted as a
+  ///     `{role, content}` input item. We drop a `null` content
+  ///     rather than passing it through (the Responses API expects a
+  ///     string for a `message` item).
+  ///   - `{role: 'assistant', tool_calls: [...]}` — translated to a
+  ///     sequence of `{type: 'function_call', call_id, name,
+  ///     arguments}` items, placed *after* any sibling text content
+  ///     for that assistant turn.
+  ///   - `{role: 'tool', tool_call_id, content}` — translated to a
+  ///     `{type: 'function_call_output', call_id, output}` item.
   ///
-  /// Returns the original list reference when neither step changes
-  /// anything, so the common case (DeepSeek-produced history) is
-  /// free.
+  /// The body also carries `reasoning: {effort}` (DeepSeek reflects
+  /// the documented `high`/`max` scale), `max_output_tokens`, the
+  /// flat-shape `tools` array, and `stream: true`.
+  @override
+  Map<String, dynamic> buildRequestBody(
+    String modelId,
+    List<Map<String, dynamic>> messages, {
+    String thinkingMode = 'enabled',
+    String? reasoningEffort,
+    int? thinkingBudget,
+    int? maxTokens,
+    double temperature = 0,
+    double topP = 1.0,
+    List<Map<String, dynamic>>? tools,
+    String? userId,
+  }) {
+    final instructions = StringBuffer();
+    final input = <Map<String, dynamic>>[];
+
+    for (final m in messages) {
+      final role = m['role'] as String?;
+      if (role == 'system' || role == 'developer') {
+        final content = m['content'];
+        if (content is String && content.isNotEmpty) {
+          if (instructions.isNotEmpty) instructions.write('\n\n');
+          instructions.write(content);
+        }
+        continue;
+      }
+      if (role == 'tool') {
+        // OpenAI-IR tool result → Responses function_call_output.
+        final callId = m['tool_call_id'] as String?;
+        final output = m['content'];
+        if (callId != null && callId.isNotEmpty) {
+          input.add({
+            'type': 'function_call_output',
+            'call_id': callId,
+            'output': output is String ? output : jsonEncode(output),
+          });
+        }
+        continue;
+      }
+      if (role == 'assistant') {
+        // Assistant text → a message item.
+        final content = m['content'];
+        if (content is String && content.isNotEmpty) {
+          input.add({'role': 'assistant', 'content': content});
+        }
+        // Assistant tool_calls → function_call items (JSON-string args).
+        final toolCalls = m['tool_calls'] as List?;
+        if (toolCalls != null) {
+          for (final tc in toolCalls) {
+            if (tc is! Map) continue;
+            final fn = tc['function'] as Map?;
+            final callId = tc['id'] as String?;
+            final fnName = fn?['name'] as String?;
+            if (callId == null || fnName == null) continue;
+            final args = fn?['arguments'];
+            input.add({
+              'type': 'function_call',
+              'call_id': callId,
+              'name': fnName,
+              'arguments': args is String
+                  ? args
+                  : jsonEncode(args ?? const {}),
+            });
+          }
+        }
+        continue;
+      }
+      // user (and anything we didn't pattern-match) — pass content
+      // through as a message item, mirroring how the wire-format
+      // builder handles plain user turns.
+      final content = m['content'];
+      if (content is String) {
+        input.add({'role': role ?? 'user', 'content': content});
+      } else if (content is List) {
+        // Multi-modal OpenAI content blocks. The DeepSeek Responses
+        // API only accepts `input_text` / `output_text` parts for
+        // messages (no images). Reduce to the text parts joined.
+        final text = content
+            .whereType<Map>()
+            .where((b) => b['type'] == 'text' || b['type'] == 'input_text')
+            .map((b) => b['text'] as String? ?? '')
+            .join();
+        if (text.isNotEmpty) {
+          input.add({'role': role ?? 'user', 'content': text});
+        }
+      }
+    }
+
+    final body = <String, dynamic>{
+      'model': modelId,
+      'input': input,
+      'stream': true,
+      'temperature': temperature,
+      'top_p': topP,
+    };
+
+    if (instructions.isNotEmpty) {
+      body['instructions'] = instructions.toString();
+    }
+
+    if (thinkingMode == 'enabled') {
+      // `reasoning.effort` is the only reasoning knob DeepSeek's
+      // Responses API honors (no `summary`). Force `high` as the
+      // floor — `low`/`normal` are SDK aliases that resolve to high,
+      // and emitting them verbatim just mirrors that.
+      body['reasoning'] = {
+        'effort': mapEffort(reasoningEffort ?? 'high'),
+      };
+    }
+
+    if (maxTokens != null) {
+      body['max_output_tokens'] = maxTokens;
+    }
+
+    if (tools != null && tools.isNotEmpty) {
+      // Responses API tools use the FLAT shape
+      // `{type:'function', name, description, parameters}` — not the
+      // Chat Completions nested `{type:'function', function:{...}}`.
+      body['tools'] = tools
+          .map((t) => {
+            'type': 'function',
+            'name': t['name'],
+            'description': t['description'],
+            'parameters': t['parameters'],
+          })
+          .toList();
+    }
+
+    if (userId != null && userId.isNotEmpty) {
+      body['user'] = userId;
+    }
+
+    return body;
+  }
+
+  /// Sanitize the OpenAI-IR message list before it's converted to
+  /// Responses input items in [buildRequestBody].
+  ///
+  /// This is the Responses-API analogue of
+  /// [OpenAICompatibleProvider.sanitizeMessages]: it enforces the
+  /// tool_call ↔ tool result pairing invariant (function_call →
+  /// function_call_output pairing in Responses terms) so a
+  /// half-persisted multi-tool round doesn't surface as a 400.
+  ///
+  /// The repair walks the list once, identifies orphan `tool_call_id`s
+  /// — assistant tool calls with no matching `role:'tool'` reply,
+  /// and tool messages with no preceding announcing assistant — and
+  /// prunes them. User/system/assistant-text messages are untouched.
+  ///
+  /// Returns the original list reference unchanged when no orphans
+  /// are detected (the well-formed-history fast path is free).
   @override
   List<Map<String, dynamic>> sanitizeMessages(
     List<Map<String, dynamic>> messages,
   ) {
-    final paired = super.sanitizeMessages(messages);
-    return _backfillReasoningContent(paired);
+    return _enforceToolCallPairing(messages);
   }
 
-  List<Map<String, dynamic>> _backfillReasoningContent(
+  static List<Map<String, dynamic>> _enforceToolCallPairing(
     List<Map<String, dynamic>> messages,
   ) {
-    var modified = false;
+    final orphanCallIds = <String>{};
+    var hasMalformedToolMessage = false;
+    Set<String>? pending;
+
+    for (final m in messages) {
+      final role = m['role'];
+      if (role == 'assistant') {
+        final toolCalls = m['tool_calls'] as List?;
+        if (toolCalls != null && toolCalls.isNotEmpty) {
+          pending?.forEach(orphanCallIds.add);
+          pending = <String>{
+            for (final tc in toolCalls)
+              if (tc is Map && tc['id'] is String) tc['id'] as String,
+          };
+        } else {
+          pending?.forEach(orphanCallIds.add);
+          pending = null;
+        }
+      } else if (role == 'tool') {
+        final callId = m['tool_call_id'] as String?;
+        if (callId == null) {
+          hasMalformedToolMessage = true;
+          continue;
+        }
+        if (pending == null || !pending.remove(callId)) {
+          orphanCallIds.add(callId);
+        }
+      } else {
+        pending?.forEach(orphanCallIds.add);
+        pending = null;
+      }
+    }
+    pending?.forEach(orphanCallIds.add);
+
+    if (orphanCallIds.isEmpty && !hasMalformedToolMessage) return messages;
+
     final out = <Map<String, dynamic>>[];
     for (final m in messages) {
-      if (m['role'] == 'assistant' && m['reasoning_content'] == null) {
-        out.add({...m, 'reasoning_content': ''});
-        modified = true;
+      final role = m['role'];
+      if (role == 'assistant') {
+        final toolCalls = m['tool_calls'] as List?;
+        if (toolCalls != null && toolCalls.isNotEmpty) {
+          final kept = <Map<String, dynamic>>[
+            for (final tc in toolCalls.cast<Map<String, dynamic>>())
+              if (tc['id'] is String && !orphanCallIds.contains(tc['id'])) tc,
+          ];
+          if (kept.length != toolCalls.length) {
+            final patched = <String, dynamic>{...m};
+            if (kept.isEmpty) {
+              patched.remove('tool_calls');
+            } else {
+              patched['tool_calls'] = kept;
+            }
+            out.add(patched);
+            continue;
+          }
+        }
+        out.add(m);
+      } else if (role == 'tool') {
+        final callId = m['tool_call_id'] as String?;
+        if (callId == null) continue;
+        if (orphanCallIds.contains(callId)) continue;
+        out.add(m);
       } else {
         out.add(m);
       }
     }
-    return modified ? out : messages;
+    return out;
   }
 
   // ─── CreditBalanceProvider implementation ───────────────────

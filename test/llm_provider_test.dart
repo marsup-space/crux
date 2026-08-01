@@ -263,14 +263,16 @@ void main() {
       },
     );
 
-    test('inherits user_id from OpenAICompatibleProvider', () {
+    test('passes userId through as `user` (Responses API field)', () {
       final body = provider.buildRequestBody(
         'deepseek-v4-pro',
         userMsg,
         thinkingMode: 'enabled',
         userId: 'abc123-7',
       );
-      expect(body['user_id'], 'abc123-7');
+      // The Responses API's user-identifier field is `user`, not
+      // Chat Completions' `user_id`.
+      expect(body['user'], 'abc123-7');
     });
 
     test('passes "high" through unchanged (DeepSeek accepts it as-is)', () {
@@ -1144,209 +1146,174 @@ void main() {
   group('DeepSeekProvider.sanitizeMessages', () {
     final provider = DeepSeekProvider();
 
-    test('returns the original list reference when no assistant messages '
-        'need backfilling', () {
-      // All assistant messages already carry a reasoning_content
-      // field (e.g. the conversation was started under DeepSeek),
-      // so the sanitizer should be a true no-op — same list
+    test('returns the original list reference when there are no orphans', () {
+      // The Responses-API sanitizer is a responses-shape analogue of
+      // the OpenAI pairing repair: it walks the OpenAI-IR messages
+      // (the storage shape the executor still uses for any
+      // non-Anthropic wire family) and prunes orphan tool_calls /
+      // tool messages. Well-formed history is a no-op: same list
       // reference, no allocation.
       final messages = [
         {'role': 'user', 'content': 'hi'},
         {
           'role': 'assistant',
-          'content': 'hello',
-          'reasoning_content': 'the user said hi, I will greet them',
-        },
-      ];
-      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
-    });
-
-    test('backfills reasoning_content: "" on assistant messages that lack '
-        'the field', () {
-      // Regression for the "reasoning context must be passed back"
-      // 400 from DeepSeek when switching the session model
-      // mid-conversation from a non-DeepSeek provider.
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'assistant', 'content': 'hello'}, // M3-produced
-        {'role': 'user', 'content': 'how are you?'},
-        {
-          'role': 'assistant',
-          'content': 'good',
-          // already backfilled, must be left alone
-          'reasoning_content': 'I was asked how I am',
-        },
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out, hasLength(4));
-      expect(
-        out[0]['reasoning_content'],
-        isNull,
-        reason: 'user messages are not touched',
-      );
-      expect(out[1]['role'], 'assistant');
-      expect(out[1]['content'], 'hello');
-      expect(
-        out[1]['reasoning_content'],
-        '',
-        reason: 'missing field is backfilled with empty string',
-      );
-      expect(
-        out[2]['reasoning_content'],
-        isNull,
-        reason: 'user messages are not touched',
-      );
-      expect(out[2]['content'], 'how are you?');
-      expect(
-        out[3]['reasoning_content'],
-        'I was asked how I am',
-        reason: 'pre-existing value is preserved',
-      );
-    });
-
-    test('treats explicit null the same as a missing key', () {
-      // `m['reasoning_content'] == null` covers both the
-      // "key absent" case (Dart returns null for missing keys)
-      // and the "key present with null value" case. Both should
-      // be backfilled — otherwise a future refactor that
-      // explicitly nulls the field would silently regress this
-      // fix.
-      final messages = [
-        {'role': 'assistant', 'content': 'hello', 'reasoning_content': null},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out.single['reasoning_content'], '');
-    });
-
-    test('preserves tool_calls on assistant messages that get backfilled', () {
-      // The wire-format emitter for `tool_call`-role history
-      // messages produces a map with `role`, `content`, and
-      // `tool_calls` (OpenAI shape) — no `reasoning_content`.
-      // Sanitizing must not drop the `tool_calls` array. This
-      // matters most for DeepSeek's tool-call turns, which is
-      // exactly the case the docs say is the strictest about
-      // reasoning_content being present.
-      final messages = [
-        {
-          'role': 'assistant',
-          'content': null,
-          'tool_calls': [
-            {
-              'id': 'call_1',
-              'type': 'function',
-              'function': {'name': 'read', 'arguments': '{"path": "/tmp/a"}'},
-            },
-          ],
-        },
-        {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'file contents'},
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(out[0]['reasoning_content'], '');
-      expect(out[0]['tool_calls'], hasLength(1));
-      expect(out[0]['tool_calls'][0]['id'], 'call_1');
-      expect(
-        out[1]['reasoning_content'],
-        isNull,
-        reason: 'tool messages are not assistant messages',
-      );
-    });
-
-    test('does not mutate the original message maps', () {
-      // Sanitizer must produce new map instances for the rows it
-      // modifies, otherwise downstream callers (e.g. cache-key
-      // computation, log diffing) that hold a reference to the
-      // pre-sanitize map would see surprising mutations across
-      // requests.
-      final originalAssistant = {'role': 'assistant', 'content': 'hello'};
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
-        originalAssistant,
-      ];
-      final out = provider.sanitizeMessages(messages);
-      expect(
-        identical(out[1], originalAssistant),
-        isFalse,
-        reason: 'modified rows must be a fresh map',
-      );
-      expect(
-        originalAssistant.containsKey('reasoning_content'),
-        isFalse,
-        reason: 'original map must not be mutated in place',
-      );
-    });
-
-    test('composes the inherited pairing fix with the reasoning_content '
-        'backfill (full M3→DeepSeek switch)', () {
-      // Real-world scenario the user reported: a session was started
-      // under MiniMax (Anthropic wire), executed a tool round, and
-      // the user then switched the active model to DeepSeek
-      // (OpenAI-compatible wire). The history Crux serializes for
-      // DeepSeek looks like:
-      //   - user
-      //   - assistant {tool_calls: [A, B], content: null}  ← no
-      //     reasoning_content (Anthropic wire used a thinking
-      //     content block, not this field)
-      //   - tool {tool_call_id: A}                        ← no
-      //     tool response for B (B's tool was interrupted or
-      //     the round aborted before its result was written)
-      //   - user
-      //
-      // Two things must be repaired before the request is valid:
-      //   1. The orphan `call_b` must be dropped from the
-      //      assistant's `tool_calls` (OpenAI protocol requires
-      //      every tool_call to be responded to immediately).
-      //   2. `reasoning_content: ''` must be backfilled on every
-      //      assistant message (DeepSeek protocol requirement
-      //      when in thinking mode and a prior turn had tool
-      //      calls).
-      //
-      // The DeepSeek sanitizer runs both — pairing via the
-      // inherited OpenAICompatibleProvider implementation, then
-      // backfill on the result.
-      final messages = [
-        {'role': 'user', 'content': 'do both'},
-        {
-          'role': 'assistant',
-          'content': 'calling both tools',
+          'content': 'calling read',
           'tool_calls': [
             {
               'id': 'call_a',
               'type': 'function',
               'function': {'name': 'read', 'arguments': '{"p":"/a"}'},
             },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'a contents'},
+      ];
+      expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    });
+
+    test('drops orphan tool_calls whose tool results were never persisted', () {
+      // Regression for the "an assistant message with tool_call must
+      // be followed by tool messages responding to each tool_call_id"
+      // 400. With the Responses API the same invariant holds under a
+      // different name (function_call must pair with a
+      // function_call_output), and the OpenAI-IR sanitizer still
+      // repairs it before buildRequestBody converts the shape.
+      final messages = [
+        {'role': 'user', 'content': 'list /tmp'},
+        {
+          'role': 'assistant',
+          'content': 'ok',
+          'tool_calls': [
             {
-              'id': 'call_b',
+              'id': 'call_1',
               'type': 'function',
-              'function': {'name': 'read', 'arguments': '{"p":"/b"}'},
+              'function': {'name': 'bash', 'arguments': '{"cmd": "ls /tmp"}'},
             },
           ],
         },
-        {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'contents of a'},
-        {'role': 'user', 'content': 'just give me a for now'},
+        // No `tool` message for call_1 — interrupted mid-round.
+        {'role': 'user', 'content': 'never mind, just say hi'},
       ];
       final out = provider.sanitizeMessages(messages);
-      // 4 messages: user, repaired-assistant, tool A, user.
-      expect(out, hasLength(4));
-      // The assistant's tool_calls is now just [A]; B is gone.
+      expect(out, hasLength(3));
       final assistant = out[1];
-      expect(assistant['tool_calls'], hasLength(1));
-      expect(assistant['tool_calls'][0]['id'], 'call_a');
-      // The text content is preserved.
-      expect(assistant['content'], 'calling both tools');
-      // And — crucially — reasoning_content has been backfilled
-      // on this repaired row, matching what a DeepSeek-produced
-      // assistant message would look like.
+      expect(assistant['role'], 'assistant');
+      expect(assistant['content'], 'ok');
       expect(
-        assistant['reasoning_content'],
-        '',
-        reason:
-            'DeepSeek-specific backfill runs after the inherited pairing fix',
+        assistant.containsKey('tool_calls'),
+        isFalse,
+        reason: 'orphan tool_call array must be dropped entirely',
       );
-      // call_a's tool response is preserved verbatim.
-      expect(out[2]['tool_call_id'], 'call_a');
-      expect(out[2]['content'], 'contents of a');
-      // The interrupting user message is preserved.
-      expect(out[3]['content'], 'just give me a for now');
+    });
+
+    test('drops orphan tool messages with no preceding assistant tool_call', () {
+      final messages = [
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'tool', 'tool_call_id': 'call_ghost', 'content': '???'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(1));
+      expect(out[0]['role'], 'user');
+    });
+  });
+
+  group('DeepSeekProvider.buildRequestBody (Responses API)', () {
+    final provider = DeepSeekProvider();
+
+    test('produces the Responses wire shape — input items + instructions + '
+        'reasoning.effort — not Chat Completions messages', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-flash',
+        [
+          {'role': 'system', 'content': 'Be terse.'},
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': 'hello'},
+          {'role': 'user', 'content': 'bye'},
+        ],
+        thinkingMode: 'enabled',
+        reasoningEffort: 'max',
+        maxTokens: 1000,
+        topP: 0.9,
+        tools: [
+          {
+            'name': 'read',
+            'description': 'read a file',
+            'parameters': {'type': 'object'},
+          },
+        ],
+      );
+
+      // system → instructions
+      expect(body['instructions'], 'Be terse.');
+      // No Chat Completions `messages` key.
+      expect(body.containsKey('messages'), isFalse);
+      // input is the item list (system item NOT present — it was hoisted).
+      expect(body['input'], [
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'assistant', 'content': 'hello'},
+        {'role': 'user', 'content': 'bye'},
+      ]);
+      // Reasoning effort is nested, not top-level.
+      expect(body['reasoning'], {'effort': 'max'});
+      expect(body['max_output_tokens'], 1000);
+      expect(body['top_p'], 0.9);
+      expect(body['stream'], true);
+      // tools are FLAT — no nested {function: {...}} wrapper.
+      final tools = body['tools'] as List;
+      expect(tools, hasLength(1));
+      expect(tools[0], {
+        'type': 'function',
+        'name': 'read',
+        'description': 'read a file',
+        'parameters': {'type': 'object'},
+      });
+    });
+
+    test('converter maps assistant tool_calls + tool results to function_call '
+        'and function_call_output items', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-flash',
+        [
+          {'role': 'user', 'content': 'read /tmp'},
+          {
+            'role': 'assistant',
+            'content': '',
+            'tool_calls': [
+              {
+                'id': 'call_7',
+                'type': 'function',
+                'function': {
+                  'name': 'bash',
+                  'arguments': '{"cmd":"cat /tmp"}',
+                },
+              },
+            ],
+          },
+          {'role': 'tool', 'tool_call_id': 'call_7', 'content': 'file body'},
+        ],
+      );
+      final input = body['input'] as List;
+      // user, function_call, function_call_output
+      expect(input, hasLength(3));
+      expect(input[0], {'role': 'user', 'content': 'read /tmp'});
+      final fc = input[1] as Map<String, dynamic>;
+      expect(fc['type'], 'function_call');
+      expect(fc['call_id'], 'call_7');
+      expect(fc['name'], 'bash');
+      expect(fc['arguments'], '{"cmd":"cat /tmp"}');
+      final fco = input[2] as Map<String, dynamic>;
+      expect(fco['type'], 'function_call_output');
+      expect(fco['call_id'], 'call_7');
+      expect(fco['output'], 'file body');
+    });
+
+    test('omits reasoning when thinkingMode is disabled', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-flash',
+        [{'role': 'user', 'content': 'hi'}],
+        thinkingMode: 'disabled',
+      );
+      expect(body.containsKey('reasoning'), isFalse);
     });
   });
 

@@ -241,100 +241,150 @@ void main() {
     });
   });
 
-  group('LlmClient — OpenAI-compatible provider runs sanitizeMessages before '
-      'sending (regression: 400 errors from malformed wire payloads)', () {
-    // Verifies the full path: buildRequestBody receives messages
-    // whose assistant entries all carry `reasoning_content`, so
-    // the wire body the server sees is valid for DeepSeek's
-    // multi-round thinking-mode contract. Regression for the bug
-    // where switching the active model from a non-DeepSeek
-    // provider to DeepSeek mid-session triggered a 400.
+  group('LlmClient — DeepSeek Responses API', () {
+    // The DeepSeek provider now speaks the Responses API
+    // (WireFamily.responsesApi): POST `<base>/responses`, request
+    // body uses `instructions` + `input` items, and the SSE stream
+    // is semantic events with no `[DONE]`. These tests pin both the
+    // URL routing and the body shape produced by
+    // DeepSeekProvider.buildRequestBody so a regression there
+    // surfaces before it hits the real upstream.
 
-    test('backfills reasoning_content on assistant messages from other '
-        'providers', () async {
-      String? capturedBody;
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() => server.close(force: true));
-      server.listen((req) async {
-        capturedBody = await utf8.decoder.bind(req).join();
-        req.response.statusCode = 200;
-        req.response.headers.set('content-type', 'application/json');
-        req.response.write(
-          jsonEncode({
-            'choices': [
-              {
-                'delta': {'content': 'ok'},
-                'finish_reason': 'stop',
-              },
-            ],
-          }),
-        );
-        await req.response.close();
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      final base = 'http://127.0.0.1:${server.port}';
+    test('routes to /responses with no /v1 prefix', () async {
+      final server = _CapturingServer(
+        200,
+        // Minimal Responses-API terminal event so the stream drains.
+        'event: response.completed\n'
+        'data: {"type":"response.completed","response":{"usage":null,"status":"completed"}}\n\n',
+      );
+      final base = await server.start();
+      addTearDown(server.stop);
 
       final client = LlmClient();
       addTearDown(client.dispose);
 
-      final config = _provider(
-        type: 'deepseek',
-        endpointUrl: base,
-        modelId: 'deepseek-v4-pro',
-      );
-
-      // User asks a question, assistant replies (e.g. produced by
-      // a previous MiniMax turn — no `reasoning_content` field),
-      // user asks a follow-up. Without the sanitizer, the
-      // second request would 400 on DeepSeek.
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'assistant', 'content': 'hello'},
-        {'role': 'user', 'content': 'how are you?'},
-      ];
+      final config = _provider(type: 'deepseek', endpointUrl: base);
 
       await for (final _ in client.streamChat(
         endpointUrl: config.endpointUrl,
         config: config,
         apiKey: 'sk-fake',
-        modelId: 'deepseek-v4-pro',
-        messages: messages,
+        modelId: 'deepseek-v4-flash',
+        messages: const [{'role': 'user', 'content': 'hi'}],
       )) {}
 
-      expect(capturedBody, isNotNull);
-      final body = jsonDecode(capturedBody!) as Map<String, dynamic>;
-      final sentMessages = body['messages'] as List<dynamic>;
-      expect(sentMessages, hasLength(3));
-      // The assistant message that arrived via model switch must
-      // now carry an empty reasoning_content — that's the
-      // contract DeepSeek's API requires.
-      final assistant = sentMessages[1] as Map<String, dynamic>;
-      expect(assistant['role'], 'assistant');
-      expect(assistant['content'], 'hello');
       expect(
-        assistant['reasoning_content'],
-        '',
-        reason:
-            'DeepSeek sanitizer must backfill empty reasoning_content '
-            'on assistant messages from other providers',
+        server.lastPath,
+        '/responses',
+        reason: 'DeepSeek Responses API lives at <base>/responses, '
+            'no /v1 (verified against the live endpoint).',
       );
-      // Sanity: user messages are not touched.
-      expect((sentMessages[0] as Map)['reasoning_content'], isNull);
-      expect((sentMessages[2] as Map)['reasoning_content'], isNull);
     });
 
-    test('leaves assistant messages that already have a non-null '
-        'reasoning_content untouched', () async {
-      String? capturedBody;
+    // Regression for the bug that broke DeepSeek tool-calling: the
+    // Responses API's terminal `response.completed` event has
+    // `status: "completed"` whether the model emitted text OR tool
+    // calls — there's no Chat-Completions-style `tool_calls`
+    // finish_reason. The executor's agentic loop breaks out unless
+    // it sees `finish_reason == 'tool_use'` (parsed from `'tool_calls'`
+    // or `'tool_use'` in tool_executor.dart). The stream handler
+    // therefore MUST synthesise `tool_calls` when any function_call
+    // output item streamed in, and `stop` otherwise.
+    test('emits finishReason=tool_calls on response.completed when any '
+        'function_call output item streamed', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() => server.close(force: true));
       server.listen((req) async {
+        await utf8.decoder.bind(req).join();
+        req.response.statusCode = 200;
+        req.response.headers.set('content-type', 'text/event-stream');
+        // A faithful replay of a real DeepSeek tool-call stream:
+        // output_item.added (function_call) → function_call_arguments.delta
+        // (×2) → response.completed.
+        req.response.write(
+          'event: response.output_item.added\n'
+          'data: {"type":"response.output_item.added","output_index":1,'
+          '"item":{"type":"function_call","call_id":"call_00_x","name":"read","arguments":""}}\n\n'
+          'event: response.function_call_arguments.delta\n'
+          'data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\\"p\\":"}\n\n'
+          'event: response.function_call_arguments.delta\n'
+          'data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"\\"/a\\"}"}\n\n'
+          'event: response.completed\n'
+          'data: {"type":"response.completed","response":{"usage":null,"status":"completed"}}\n\n',
+        );
+        await req.response.close();
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final client = LlmClient();
+      addTearDown(client.dispose);
+      final config = _provider(
+        type: 'deepseek',
+        endpointUrl: 'http://127.0.0.1:${server.port}',
+      );
+
+      String? finishReason;
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'deepseek-v4-flash',
+        messages: const [{'role': 'user', 'content': 'read /a'}],
+      )) {
+        if (c.finishReason != null) finishReason = c.finishReason;
+      }
+      expect(
+        finishReason,
+        'tool_calls',
+        reason:
+            'The agentic loop bails out unless finishReason is tool_calls. '
+            'A response whose terminal event is "completed" but which '
+            'contained a function_call item must synthesise tool_calls.',
+      );
+    });
+
+    test('emits finishReason=stop on a pure-text response.completed', () async {
+      final server = _CapturingServer(
+        200,
+        'event: response.output_text.delta\n'
+        'data: {"type":"response.output_text.delta","delta":"hi"}\n\n'
+        'event: response.completed\n'
+        'data: {"type":"response.completed","response":{"usage":null,"status":"completed"}}\n\n',
+      );
+      final base = await server.start();
+      addTearDown(server.stop);
+      final client = LlmClient();
+      addTearDown(client.dispose);
+      final config = _provider(type: 'deepseek', endpointUrl: base);
+
+      String? finishReason;
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'deepseek-v4-flash',
+        messages: const [{'role': 'user', 'content': 'hi'}],
+      )) {
+        if (c.finishReason != null) finishReason = c.finishReason;
+      }
+      expect(finishReason, 'stop');
+    });
+
+    test('builds Responses input items from OpenAI-IR messages '
+        '(system → instructions, assistant+tool_calls → function_call, '
+        'tool → function_call_output)', () async {
+      String? capturedBody;
+      String? capturedPath;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((req) async {
+        capturedPath = req.uri.path;
         capturedBody = await utf8.decoder.bind(req).join();
         req.response.statusCode = 200;
-        req.response.headers.set('content-type', 'application/json');
+        req.response.headers.set('content-type', 'text/event-stream');
         req.response.write(
-          '{"choices":[{"delta":{"content":"ok"},'
-          '"finish_reason":"stop"}]}',
+          'event: response.completed\n'
+          'data: {"type":"response.completed","response":{"usage":null,"status":"completed"}}\n\n',
         );
         await req.response.close();
       });
@@ -347,38 +397,87 @@ void main() {
       final config = _provider(
         type: 'deepseek',
         endpointUrl: base,
-        modelId: 'deepseek-v4-pro',
+        modelId: 'deepseek-v4-flash',
       );
 
-      final preserved = 'the user said hi, I will greet them';
-      final messages = [
-        {'role': 'user', 'content': 'hi'},
+      // OpenAI-IR history: system, user, assistant w/ tool_calls,
+      // tool result, follow-up user.
+      final messages = <Map<String, dynamic>>[
+        {'role': 'system', 'content': 'Be helpful.'},
+        {'role': 'user', 'content': 'list /tmp'},
         {
           'role': 'assistant',
-          'content': 'hello',
-          'reasoning_content': preserved,
+          'content': 'ok',
+          'tool_calls': [
+            {
+              'id': 'call_42',
+              'type': 'function',
+              'function': {
+                'name': 'bash',
+                'arguments': '{"cmd":"ls /tmp"}',
+              },
+            },
+          ],
         },
+        {
+          'role': 'tool',
+          'tool_call_id': 'call_42',
+          'content': 'file1\nfile2',
+        },
+        {'role': 'user', 'content': 'thanks'},
       ];
 
       await for (final _ in client.streamChat(
         endpointUrl: config.endpointUrl,
         config: config,
         apiKey: 'sk-fake',
-        modelId: 'deepseek-v4-pro',
+        modelId: 'deepseek-v4-flash',
         messages: messages,
+        reasoningEffort: 'high',
       )) {}
 
+      expect(capturedPath, '/responses');
       final body = jsonDecode(capturedBody!) as Map<String, dynamic>;
-      final sentMessages = body['messages'] as List<dynamic>;
-      final assistant = sentMessages[1] as Map<String, dynamic>;
-      expect(
-        assistant['reasoning_content'],
-        preserved,
-        reason:
-            'a real reasoning_content value must be preserved '
-            '(no-op path)',
-      );
+      // system content hoisted into the single `instructions` field.
+      expect(body['instructions'], 'Be helpful.');
+      expect(body.containsKey('messages'), isFalse);
+      expect(body['model'], 'deepseek-v4-flash');
+      expect(body['stream'], true);
+      // Reasoning effort is nested under `reasoning.effort`.
+      expect(body['reasoning'], {'effort': 'high'});
+
+      final input = body['input'] as List<dynamic>;
+      // 2 user messages, 1 assistant text, 1 function_call,
+      // 1 function_call_output = 5 items (system is NOT an input item).
+      expect(input, hasLength(5));
+      // user / list /tmp
+      expect(input[0], {'role': 'user', 'content': 'list /tmp'});
+      // assistant text 'ok'
+      expect(input[1], {'role': 'assistant', 'content': 'ok'});
+      // function_call — JSON-string arguments, flat id/name
+      final fc = input[2] as Map<String, dynamic>;
+      expect(fc['type'], 'function_call');
+      expect(fc['call_id'], 'call_42');
+      expect(fc['name'], 'bash');
+      expect(fc['arguments'], '{"cmd":"ls /tmp"}');
+      // function_call_output — string output, same call_id
+      final fco = input[3] as Map<String, dynamic>;
+      expect(fco['type'], 'function_call_output');
+      expect(fco['call_id'], 'call_42');
+      expect(fco['output'], 'file1\nfile2');
+      // final user msg
+      expect(input[4], {'role': 'user', 'content': 'thanks'});
     });
+  });
+
+  group('LlmClient — sanitizeMessages before sending '
+      '(regression: 400 errors from malformed wire payloads)', () {
+    // Verifies the full path: the sanitizer in
+    // OpenAICompatibleProvider prunes orphan tool_calls / tool
+    // messages so the wire payload is well-formed. These tests use
+    // the generic openai_compatible type (still Chat Completions
+    // wire) since that's what carries the pairing sanitizer for
+    // the OpenAI family.
 
     test('drops orphan tool_calls from assistant messages whose tool results '
         'were never persisted (regression: 400 "an assistant message with '

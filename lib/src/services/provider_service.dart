@@ -195,6 +195,13 @@ class ProviderService {
       return _discoverOpenAIModels(provider);
     }
 
+    // Responses-API providers (DeepSeek) still expose the OpenAI-style
+    // /models discovery endpoint at <endpoint_url>/models — the
+    // /responses path is only for chat. Reuse the OpenAI discovery.
+    if (provider.wireFamily == WireFamily.responsesApi) {
+      return _discoverOpenAIModels(provider);
+    }
+
     // Other provider types: not yet supported
     return [];
   }

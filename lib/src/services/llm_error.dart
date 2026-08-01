@@ -543,6 +543,49 @@ LlmError parseOpenAiStreamError({
   );
 }
 
+/// Parse a Responses API mid-stream `response.failed` event.
+///
+/// The Responses API wraps the error one level deeper than the
+/// Chat Completions wire: the terminal event payload is
+/// `{type: 'response.failed', response: {error: {message, type,
+/// code, param}, ...}}`. We unwrap `response.error` and feed it
+/// through the same OpenAI error classifier — the inner shape is
+/// identical (verified against the DeepSeek `/responses` endpoint:
+/// `{"error":{"message":"...","type":"...","param":null,"code":"..."}}`).
+///
+/// Returns `LlmErrorKind.unknown` if the payload shape is
+/// unrecognised, matching the OpenAI parser's defensive behaviour.
+LlmError parseResponsesApiStreamError({
+  required Map<String, dynamic> eventJson,
+  String providerName = '',
+}) {
+  // Unwrap response.error; fall back to a top-level error if the
+  // upstream ever emits it at the event root (defence-in-depth).
+  final responseObj = eventJson['response'];
+  Map? errorObj;
+  if (responseObj is Map) {
+    errorObj = responseObj['error'] as Map?;
+  }
+  errorObj ??= eventJson['error'] as Map?;
+
+  if (errorObj is Map) {
+    return _fromOpenAi(
+      errorType: errorObj['type'] as String?,
+      errorCode: errorObj['code'] as String?,
+      message: errorObj['message'] as String?,
+      param: errorObj['param'] as String?,
+      statusCode: null,
+      providerName: providerName,
+    );
+  }
+  return LlmError(
+    kind: LlmErrorKind.unknown,
+    vendor: LlmVendorX.fromProviderName(providerName),
+    message: eventJson.toString(),
+    providerName: providerName,
+  );
+}
+
 /// Classify a thrown exception from the HTTP layer into an
 /// [LlmError]. Handles the `dart:io` exceptions surfaced by
 /// `HttpClient` plus a final fallback for anything else.
