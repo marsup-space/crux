@@ -294,22 +294,32 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
 
 // ── shared helpers ───────────────────────────────────────────────────
 
-/// Highlight [text] as [language], blending the diff foreground/background
-/// onto each token. Returns a single plain span when the highlighter isn't
-/// available (grammar not loaded) or the line is empty.
+/// Highlight [text] as [language], keeping each token's syntax color as
+/// the foreground and laying the diff row's background behind it. The
+/// diff's add/remove/context identity is carried by the row background
+/// (and the `-`/`+` marker), NOT by flattening every token to one
+/// foreground — that would erase the highlight we just computed.
+///
+/// [fgFallback] is used only when a token carries no color of its own
+/// (the highlighter's "plain text" spans), so unchanged code in a context
+/// row still reads dim instead of falling back to the theme default.
+/// Returns a single plain span when the grammar isn't loaded or the line
+/// is empty.
 List<TextSpan> _highlightLine(
   String text,
   String language,
   CruxThemeData theme,
-  Color fg,
+  Color fgFallback,
   Color? bg,
 ) {
   if (text.isEmpty) {
-    return [TextSpan(text: '', style: TextStyle(color: fg, backgroundColor: bg))];
+    return [
+      TextSpan(text: '', style: TextStyle(color: fgFallback, backgroundColor: bg)),
+    ];
   }
   if (language.isEmpty) {
     return [
-      TextSpan(text: text, style: TextStyle(color: fg, backgroundColor: bg)),
+      TextSpan(text: text, style: TextStyle(color: fgFallback, backgroundColor: bg)),
     ];
   }
   final spans = highlightCode(text, language, theme);
@@ -319,7 +329,9 @@ List<TextSpan> _highlightLine(
         TextSpan(
           text: span.text,
           style: (span.style ?? const TextStyle()).copyWith(
-            color: fg,
+            // Keep the token's syntax color; only fall back to the diff
+            // color when the token has no color of its own.
+            color: span.style?.color ?? fgFallback,
             backgroundColor: bg,
           ),
         ),
