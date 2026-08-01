@@ -285,5 +285,73 @@ void main() {
         size: const Size(90, 26),
       );
     });
+
+    test('a comment at the end of the snapshot stays comment-colored', () async {
+      // Regression: the Dart TextMate grammar only recognizes a doc comment
+      // when code follows it, so a trailing comment (exactly what a
+      // pure-deletion diff produces) was tokenized as code — its prose
+      // rendered cyan/pink/yellow. Comment lines are now forced to the
+      // comment color regardless of the grammar.
+      await HighlightService.initialize();
+      await testNocterm(
+        'trailing comment highlight',
+        (tester) async {
+          await tester.pumpComponent(
+            CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: Container(
+                width: 130,
+                height: 24,
+                child: VibeDiffFullpane(
+                  request: VibeDiffRequest(
+                    files: const [ModFileEntry('lib/foo.dart', 1, 4)],
+                    calls: const [
+                      ToolCallData(
+                        callId: 'c1',
+                        name: 'edit',
+                        input: {
+                          'filePath': 'lib/foo.dart',
+                          'oldString':
+                              "/// How many cells.\nconst double _k = 4;\n\n/// Full-screen diff view for a vibe segment's `files` box.",
+                          'newString':
+                              "/// Full-screen diff view for a vibe segment's `files` box.",
+                        },
+                      ),
+                    ],
+                  ),
+                  onClose: () {},
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+
+          final commentColor = CruxThemeData.draculaFallback.highlightComment;
+          final state = tester.terminalState;
+          final lines = state.getText().split('\n');
+          var checked = 0;
+          for (var i = 0; i < lines.length; i++) {
+            if (lines[i].contains('Full-screen') ||
+                lines[i].contains('How many')) {
+              for (var x = 0; x < lines[i].length; x++) {
+                final cell = state.getCellAt(x, i);
+                final ch = cell?.char ?? ' ';
+                if (RegExp(r'[a-zA-Z/]').hasMatch(ch)) {
+                  expect(
+                    cell?.style.color,
+                    equals(commentColor),
+                    reason: 'comment line $i should be comment-colored',
+                  );
+                  checked++;
+                  break;
+                }
+              }
+            }
+          }
+          expect(checked, greaterThanOrEqualTo(2));
+        },
+        size: const Size(140, 26),
+      );
+    });
   });
 }
