@@ -321,17 +321,28 @@ class ChatTurnExecutor {
     }
 
     String? systemPrompt = session.systemPrompt;
-    if (systemPrompt == null || systemPrompt.isEmpty) {
+    // A chat prompt rendered before the workspace-free env meta still
+    // names the launch directory — rebuild it rather than keep leaking.
+    final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
+    if (systemPrompt == null || systemPrompt.isEmpty || staleChat) {
       if (modelConfig == null) {
         systemPrompt = null;
       } else {
-        systemPrompt = buildSystemPrompt(
-          provider: provider,
-          model: modelConfig,
-          cwd: session.projectPath,
-          worktree: session.projectPath,
-          sessionStarted: session.createdAt,
-        );
+        // Chat-mode sessions get the minimal workspace-free prompt;
+        // regular sessions get the full layered prompt.
+        systemPrompt = session.isChat
+            ? buildChatSystemPrompt(
+                provider: provider,
+                model: modelConfig,
+                sessionStarted: session.createdAt,
+              )
+            : buildSystemPrompt(
+                provider: provider,
+                model: modelConfig,
+                cwd: session.projectPath,
+                worktree: session.projectPath,
+                sessionStarted: session.createdAt,
+              );
         session.systemPrompt = systemPrompt;
         await store.update(sessionId, systemPrompt: systemPrompt);
       }

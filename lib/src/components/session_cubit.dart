@@ -8,8 +8,10 @@ import '../models/session.dart';
 class SessionCubitState {
   SessionCubitState({
     List<Session> sessions = const [],
+    List<Session> chats = const [],
     this.currentSessionId,
     this.archivedCount = 0,
+    this.archivedChatCount = 0,
     Map<int, List<Message>> messageCache = const {},
     Set<int> loadingSessionIds = const {},
     Map<int, int> loadingTotalCounts = const {},
@@ -21,6 +23,7 @@ class SessionCubitState {
     this.auxiliaryModelShortName = 'auxiliary',
     this.revision = 0,
   }) : sessions = List.unmodifiable(sessions),
+       chats = List.unmodifiable(chats),
        messageCache = _deepUnmodifiableMessageMap(messageCache),
        loadingSessionIds = Set.unmodifiable(loadingSessionIds),
        loadingTotalCounts = Map.unmodifiable(loadingTotalCounts),
@@ -30,8 +33,10 @@ class SessionCubitState {
        inputTextStash = Map.unmodifiable(inputTextStash);
 
   final List<Session> sessions;
+  final List<Session> chats;
   final int? currentSessionId;
   final int archivedCount;
+  final int archivedChatCount;
   final Map<int, List<Message>> messageCache;
   final Set<int> loadingSessionIds;
   final Map<int, int> loadingTotalCounts;
@@ -73,8 +78,10 @@ class SessionCubitState {
 
   SessionCubitState copyWith({
     List<Session>? sessions,
+    List<Session>? chats,
     Object? currentSessionId = _unset,
     int? archivedCount,
+    int? archivedChatCount,
     Map<int, List<Message>>? messageCache,
     Set<int>? loadingSessionIds,
     Map<int, int>? loadingTotalCounts,
@@ -88,10 +95,12 @@ class SessionCubitState {
   }) {
     return SessionCubitState(
       sessions: sessions ?? this.sessions,
+      chats: chats ?? this.chats,
       currentSessionId: identical(currentSessionId, _unset)
           ? this.currentSessionId
           : currentSessionId as int?,
       archivedCount: archivedCount ?? this.archivedCount,
+      archivedChatCount: archivedChatCount ?? this.archivedChatCount,
       messageCache: messageCache ?? this.messageCache,
       loadingSessionIds: loadingSessionIds ?? this.loadingSessionIds,
       loadingTotalCounts: loadingTotalCounts ?? this.loadingTotalCounts,
@@ -114,8 +123,10 @@ class SessionCubitState {
   bool operator ==(Object other) {
     return other is SessionCubitState &&
         _listEquals(other.sessions, sessions) &&
+        _listEquals(other.chats, chats) &&
         other.currentSessionId == currentSessionId &&
         other.archivedCount == archivedCount &&
+        other.archivedChatCount == archivedChatCount &&
         _mapListEquals(other.messageCache, messageCache) &&
         _setEquals(other.loadingSessionIds, loadingSessionIds) &&
         _mapEquals(other.loadingTotalCounts, loadingTotalCounts) &&
@@ -131,8 +142,10 @@ class SessionCubitState {
   @override
   int get hashCode => Object.hash(
     Object.hashAll(sessions),
+    Object.hashAll(chats),
     currentSessionId,
     archivedCount,
+    archivedChatCount,
     _mapListHash(messageCache),
     Object.hashAllUnordered(loadingSessionIds),
     _mapHash(loadingTotalCounts),
@@ -152,13 +165,17 @@ class SessionCubit extends Cubit<SessionCubitState> {
 
   void replaceSessions({
     required List<Session> sessions,
+    List<Session>? chats,
     required int archivedCount,
+    int? archivedChatCount,
     int? currentSessionId,
   }) {
     emit(
       state.copyWith(
         sessions: sessions,
+        chats: chats,
         archivedCount: archivedCount,
+        archivedChatCount: archivedChatCount,
         currentSessionId: currentSessionId,
       ),
     );
@@ -185,6 +202,10 @@ class SessionCubit extends Cubit<SessionCubitState> {
         sessions: [
           for (final session in state.sessions)
             if (session.id != sessionId) session,
+        ],
+        chats: [
+          for (final chat in state.chats)
+            if (chat.id != sessionId) chat,
         ],
         messageCache: _withoutKey(state.messageCache, sessionId),
         loadingSessionIds: {...state.loadingSessionIds}..remove(sessionId),

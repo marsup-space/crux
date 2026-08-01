@@ -6,6 +6,10 @@ import 'ui/fullpane.dart';
 
 class SessionManagementPanel extends StatefulComponent {
   final List<Session> sessions;
+
+  /// Chat-mode sessions (global). Rendered in a separate "Chats"
+  /// section below the project "Sessions".
+  final List<Session> chats;
   final int currentSessionId;
   final Future<void> Function(int sessionId) onDeleteSession;
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
@@ -14,6 +18,7 @@ class SessionManagementPanel extends StatefulComponent {
 
   const SessionManagementPanel({
     required this.sessions,
+    this.chats = const [],
     required this.currentSessionId,
     required this.onDeleteSession,
     required this.onRenameSession,
@@ -27,15 +32,55 @@ class SessionManagementPanel extends StatefulComponent {
 
 enum _PanelMode { browse, confirmDelete, rename }
 
+/// One row in the flat list the panel renders: either a section
+/// header or an actual session/chat row.
+sealed class _Row {
+  const _Row();
+}
+
+class _HeaderRow extends _Row {
+  final String label;
+  const _HeaderRow(this.label);
+}
+
+class _SessionRow extends _Row {
+  final Session session;
+  const _SessionRow(this.session);
+}
+
 class _SessionManagementPanelState extends State<SessionManagementPanel> {
   int _selectedIndex = 0;
   _PanelMode _mode = _PanelMode.browse;
   final _renameController = TextEditingController();
   final _scrollController = ScrollController();
 
-  List<Session> get _sorted {
-    return List<Session>.from(component.sessions)
+  /// Flat row list: "Sessions" header + session rows, then "Chats"
+  /// header + chat rows. Selection moves over session rows only;
+  /// headers are skipped by the nav helpers.
+  List<_Row> get _rows {
+    final sessions = List<Session>.from(component.sessions)
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final chats = List<Session>.from(component.chats)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final rows = <_Row>[];
+    if (sessions.isNotEmpty) {
+      rows.add(const _HeaderRow('Sessions'));
+      rows.addAll(sessions.map(_SessionRow.new));
+    }
+    if (chats.isNotEmpty) {
+      rows.add(const _HeaderRow('Chats'));
+      rows.addAll(chats.map(_SessionRow.new));
+    }
+    return rows;
+  }
+
+  /// Only the selectable session rows (headers filtered out), used by
+  /// the nav/enter/delete/rename logic which operates on sessions.
+  List<Session> get _sorted {
+    return [
+      for (final row in _rows)
+        if (row is _SessionRow) row.session,
+    ];
   }
 
   @override
@@ -77,11 +122,28 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   }
 
   void _ensureSelectedVisible() {
-    // Each session row is 1 terminal row. The header is 1 row.
-    // In confirm-delete mode there are 2 extra rows (message + divider)
-    // above the header.
+    // Each session row is 1 terminal row. In confirm-delete mode there
+    // are 2 extra rows (message + divider) above the list.
+    //
+    // The selected index counts *selectable session rows* (headers are
+    // filtered out of `_sorted`), but the rendered list also contains
+    // header rows. Map the session index to its rendered row offset by
+    // counting how many header rows precede it.
+    final rows = _rows;
+    var sessionOrdinal = -1;
+    var renderedOffset = 0;
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      if (row is _HeaderRow) {
+        renderedOffset += 2; // divider + label (see _buildRows render)
+        continue;
+      }
+      sessionOrdinal++;
+      if (sessionOrdinal == _selectedIndex) break;
+      renderedOffset += 1;
+    }
     final baseOffset = _mode == _PanelMode.confirmDelete ? 2.0 : 0.0;
-    final itemOffset = baseOffset + 1.0 + _selectedIndex.toDouble();
+    final itemOffset = baseOffset + renderedOffset.toDouble();
     _scrollController.ensureVisible(itemOffset: itemOffset, itemExtent: 1.0);
   }
 
@@ -280,6 +342,8 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           );
         }
 
+        // Column header shared by both sections. Rendered once at the
+        // top of the scrollable list.
         final headerBg = CruxTheme.of(context).wizardRowBgSelected;
         children.add(
           Container(
@@ -341,8 +405,37 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           ),
         );
 
-        for (int i = 0; i < sorted.length; i++) {
-          final s = sorted[i];
+        // Iterate the flat row list (section headers + session rows).
+        // `selectableOrdinal` tracks the index into `_sorted` (the
+        // header-free selectable list) so selection, hover, and tap
+        // all line up with `_selectedIndex`.
+        final rows = _rows;
+        var selectableOrdinal = -1;
+        for (final row in rows) {
+          if (row is _HeaderRow) {
+            children.add(
+              Divider(color: CruxTheme.of(context).outline, height: 1),
+            );
+            children.add(
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 1,
+                  vertical: 0,
+                ),
+                child: Text(
+                  row.label,
+                  style: TextStyle(
+                    color: CruxTheme.of(context).onSurfaceDim,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+            continue;
+          }
+          final s = (row as _SessionRow).session;
+          selectableOrdinal++;
+          final i = selectableOrdinal;
           final isSelected = i == _selectedIndex;
           final isCurrent = s.id == component.currentSessionId;
 

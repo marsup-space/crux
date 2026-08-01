@@ -100,13 +100,23 @@ class ChatService {
     final model = provider?.modelById(modelId);
     if (provider == null || model == null) return;
 
-    final built = buildSystemPrompt(
-      provider: provider,
-      model: model,
-      cwd: session.projectPath,
-      worktree: session.projectPath,
-      sessionStarted: session.createdAt,
-    );
+    // For chats, always rebuild from the current (workspace-free)
+    // template — a prompt cached before the workspace-leak fix would
+    // otherwise survive because `built == session.systemPrompt` only
+    // guards against no-op writes, not against a stale cached value.
+    final built = session.isChat
+        ? buildChatSystemPrompt(
+            provider: provider,
+            model: model,
+            sessionStarted: session.createdAt,
+          )
+        : buildSystemPrompt(
+            provider: provider,
+            model: model,
+            cwd: session.projectPath,
+            worktree: session.projectPath,
+            sessionStarted: session.createdAt,
+          );
     if (built == session.systemPrompt) return;
     await _store.update(sessionId, systemPrompt: built);
   }

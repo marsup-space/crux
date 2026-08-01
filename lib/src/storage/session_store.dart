@@ -77,6 +77,7 @@ class SessionStore implements SessionStoreAccessor {
     String projectPath = '',
     String agent = '',
     int? parentId,
+    String? kind,
   }) async {
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -94,6 +95,7 @@ class SessionStore implements SessionStoreAccessor {
             agent: Value(agent),
             parentId: Value(parentId),
             projectPath: Value(projectPath),
+            kind: Value(kind),
           ),
         );
     return Session(
@@ -105,6 +107,7 @@ class SessionStore implements SessionStoreAccessor {
       agent: agent,
       parentId: parentId,
       projectPath: projectPath,
+      kind: kind,
       createdAt: now,
       updatedAt: now,
     );
@@ -128,18 +131,48 @@ class SessionStore implements SessionStoreAccessor {
       ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
       ..limit(limit, offset: offset);
 
-    if (projectPath != null || !includeArchived) {
-      query.where((t) {
-        final conditions = <Expression<bool>>[];
-        if (projectPath != null) {
-          conditions.add(t.projectPath.equals(projectPath));
-        }
-        if (!includeArchived) {
-          conditions.add(t.archivedAt.isNull());
-        }
-        return conditions.reduce((a, b) => a & b);
-      });
-    }
+    query.where((t) {
+      final conditions = <Expression<bool>>[];
+      // Chat-mode rows are never returned by [list] — they belong to
+      // the global "Chats" section (see [listChats]), not the
+      // project-scoped "Sessions" list.
+      conditions.add(t.kind.isNull() | t.kind.isNotValue('chat'));
+      if (projectPath != null) {
+        conditions.add(t.projectPath.equals(projectPath));
+      }
+      if (!includeArchived) {
+        conditions.add(t.archivedAt.isNull());
+      }
+      return conditions.reduce((a, b) => a & b);
+    });
+
+    final rows = await query.get();
+    return rows.map(_rowToSession).toList();
+  }
+
+  /// List Chat-mode sessions across *all* projects. Chats are not
+  /// tied to a workspace (`projectPath` is `''`), so they are visible
+  /// in every Crux instance's "Chats" section. The running-lease
+  /// fields on each row ([Session.runningOwnerId],
+  /// [Session.runningHeartbeatAt]) are what make a chat that's open
+  /// (streaming) in one instance refuse to open in another — the same
+  /// mechanism that guards regular sessions.
+  Future<List<Session>> listChats({
+    int limit = 100,
+    int offset = 0,
+    bool includeArchived = false,
+  }) async {
+    final query = _db.select(_db.sessions)
+      ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+      ..limit(limit, offset: offset);
+
+    query.where((t) {
+      final conditions = <Expression<bool>>[t.kind.equals('chat')];
+      if (!includeArchived) {
+        conditions.add(t.archivedAt.isNull());
+      }
+      return conditions.reduce((a, b) => a & b);
+    });
 
     final rows = await query.get();
     return rows.map(_rowToSession).toList();
@@ -180,12 +213,35 @@ class SessionStore implements SessionStoreAccessor {
       ..where((t) => t.updatedAt.isSmallerThanValue(cutoffMs));
 
     if (projectPath != null) {
+      // Project-scoped pass. Chat rows have projectPath='' so they
+      // never match here; chats are swept separately by
+      // [autoArchiveChats].
       query.where((t) => t.projectPath.equals(projectPath));
     }
 
     return query.write(
       db.SessionsCompanion(archivedAt: Value(nowMs), updatedAt: Value(nowMs)),
     );
+  }
+
+  /// Auto-archive Chat-mode sessions not updated in [olderThan].
+  /// Mirrors the per-project [autoArchive] but scoped to `kind='chat'`
+  /// rows globally (chats aren't tied to any workspace). Keeps the
+  /// "Chats" sidebar section from filling with stale rows, matching
+  /// the 3-day behaviour regular sessions get.
+  Future<int> autoArchiveChats({required Duration olderThan}) async {
+    final cutoffMs = DateTime.now().subtract(olderThan).millisecondsSinceEpoch;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    return (_db.update(_db.sessions)
+          ..where((t) => t.kind.equals('chat'))
+          ..where((t) => t.archivedAt.isNull())
+          ..where((t) => t.updatedAt.isSmallerThanValue(cutoffMs)))
+        .write(
+          db.SessionsCompanion(
+            archivedAt: Value(nowMs),
+            updatedAt: Value(nowMs),
+          ),
+        );
   }
 
   /// Count of archived sessions for a given project path.
@@ -196,12 +252,26 @@ class SessionStore implements SessionStoreAccessor {
     final countExp = countAll();
     final query = _db.selectOnly(_db.sessions)
       ..addColumns([countExp])
-      ..where(_db.sessions.archivedAt.isNotNull());
+      ..where(_db.sessions.archivedAt.isNotNull())
+      // Chat rows belong to the global "Chats" section; count them
+      // separately via [archivedChatCount].
+      ..where(_db.sessions.kind.isNull() | _db.sessions.kind.isNotValue('chat'));
 
     if (projectPath != null) {
       query.where(_db.sessions.projectPath.equals(projectPath));
     }
 
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
+  }
+
+  /// Count of archived Chat-mode sessions (global, not project-scoped).
+  Future<int> archivedChatCount() async {
+    final countExp = countAll();
+    final query = _db.selectOnly(_db.sessions)
+      ..addColumns([countExp])
+      ..where(_db.sessions.archivedAt.isNotNull())
+      ..where(_db.sessions.kind.equals('chat'));
     final row = await query.getSingle();
     return row.read(countExp) ?? 0;
   }
@@ -634,6 +704,7 @@ WHERE status = ?
       runningHeartbeatAt: row.runningHeartbeatAt != null
           ? DateTime.fromMillisecondsSinceEpoch(row.runningHeartbeatAt!)
           : null,
+      kind: row.kind,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
       archivedAt: row.archivedAt != null

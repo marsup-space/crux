@@ -73,8 +73,19 @@ class SessionController {
   final StreamingCubit streamingCubit = StreamingCubit();
 
   List<Session> sessions = [];
+
+  /// Chat-mode sessions, loaded globally (not project-scoped) so they
+  /// are visible in every Crux instance's "Chats" section. Kept
+  /// separate from [sessions] so the project "Sessions" list never
+  /// shows chats. A chat that's streaming in another instance is
+  /// refused by [beginSwitchSession] via the running-lease check.
+  List<Session> chats = [];
   int? currentSessionId;
   int archivedCount = 0;
+
+  /// Number of archived Chat-mode sessions (global). Displayed as a
+  /// hint at the bottom of the "Chats" sidebar section.
+  int archivedChatCount = 0;
   final Map<int, SessionRuntimeState> _runtimeStates = {};
   final Map<int, List<Message>> messageCache = {};
   String auxiliaryModelShortName = 'auxiliary';
@@ -331,10 +342,8 @@ class SessionController {
     if (currentSessionId == null) {
       return Session(id: 0, title: 'New Session');
     }
-    return sessions.firstWhere(
-      (s) => s.id == currentSessionId,
-      orElse: () => Session(id: 0, title: 'New Session'),
-    );
+    final found = findSession(currentSessionId!);
+    return found ?? Session(id: 0, title: 'New Session');
   }
 
   List<Message> get currentMessages {
@@ -344,6 +353,9 @@ class SessionController {
 
   Session? findSession(int id) {
     for (final s in sessions) {
+      if (s.id == id) return s;
+    }
+    for (final s in chats) {
       if (s.id == id) return s;
     }
     return null;
@@ -604,10 +616,13 @@ class SessionController {
       projectPath: Directory.current.path,
       olderThan: const Duration(days: 3),
     );
+    await _store.autoArchiveChats(olderThan: const Duration(days: 3));
     sessions = await _store.list(projectPath: Directory.current.path);
+    chats = await _store.listChats();
     archivedCount = await _store.archivedCount(
       projectPath: Directory.current.path,
     );
+    archivedChatCount = await _store.archivedChatCount();
     if (sessions.isEmpty) {
       await _providerService.initialize();
       final model = _providerService.resolveDefaultModel() ?? '';
@@ -644,9 +659,36 @@ class SessionController {
     await loadMessages(currentSessionId!);
     cubit.replaceSessions(
       sessions: sessions,
+      chats: chats,
       archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
       currentSessionId: currentSessionId,
     );
+    _refresh();
+  }
+
+  /// Create a Chat-mode session and switch to it. Chats are not tied
+  /// to the workspace (`projectPath: ''`), so they show up in every
+  /// Crux instance's "Chats" section. The running-lease mechanism
+  /// prevents the same chat from being open in two instances at once.
+  Future<void> createChatSession() async {
+    await _providerService.initialize();
+    final model = _providerService.resolveDefaultModel() ?? '';
+    final chat = await _store.create(
+      title: 'New Chat',
+      model: model,
+      projectPath: '',
+      kind: 'chat',
+    );
+    chats = [chat, ...chats];
+    cubit.replaceSessions(
+      sessions: sessions,
+      chats: chats,
+      archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
+      currentSessionId: currentSessionId,
+    );
+    await switchSession(chat.id);
     _refresh();
   }
 
@@ -785,7 +827,9 @@ class SessionController {
   void syncCubitFromLegacyState() {
     cubit.replaceSessions(
       sessions: sessions,
+      chats: chats,
       archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
       currentSessionId: currentSessionId,
     );
     for (final entry in messageCache.entries) {
@@ -1144,18 +1188,30 @@ class SessionController {
     // Also drop the deleted session's message queue.
     _messageQueues.remove(sessionId);
     sessions = await _store.list(projectPath: Directory.current.path);
+    chats = await _store.listChats();
     archivedCount = await _store.archivedCount(
       projectPath: Directory.current.path,
     );
+    archivedChatCount = await _store.archivedChatCount();
     cubit.replaceSessions(
       sessions: sessions,
+      chats: chats,
       archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
       currentSessionId: currentSessionId,
     );
 
     if (wasCurrent) {
       if (sessions.isNotEmpty) {
         currentSessionId = sessions.first.id;
+        cubit.setCurrentSession(currentSessionId);
+        await loadMessages(currentSessionId!);
+        final rt = runtime(currentSessionId!);
+        final base = computeBaseContext(currentSessionId!);
+        rt.contextTargetTokens = base;
+        rt.contextDisplayTokens = base.toDouble();
+      } else if (chats.isNotEmpty) {
+        currentSessionId = chats.first.id;
         cubit.setCurrentSession(currentSessionId);
         await loadMessages(currentSessionId!);
         final rt = runtime(currentSessionId!);
@@ -1173,7 +1229,9 @@ class SessionController {
         currentSessionId = session.id;
         cubit.replaceSessions(
           sessions: sessions,
+          chats: chats,
           archivedCount: archivedCount,
+          archivedChatCount: archivedChatCount,
           currentSessionId: currentSessionId,
         );
         await loadMessages(session.id);
@@ -1190,7 +1248,9 @@ class SessionController {
       session.title = newTitle;
       cubit.replaceSessions(
         sessions: sessions,
+        chats: chats,
         archivedCount: archivedCount,
+        archivedChatCount: archivedChatCount,
         currentSessionId: currentSessionId,
       );
     }
@@ -1224,12 +1284,16 @@ class SessionController {
       );
       if (title == null) return;
       final session = findSession(sessionId);
-      if (session == null || session.title != 'New Session') return;
+      if (session == null) return;
+      final placeholder = session.isChat ? 'New Chat' : 'New Session';
+      if (session.title != placeholder) return;
       await _store.update(sessionId, title: title);
       session.title = title;
       cubit.replaceSessions(
         sessions: sessions,
+        chats: chats,
         archivedCount: archivedCount,
+        archivedChatCount: archivedChatCount,
         currentSessionId: currentSessionId,
       );
       _refresh();

@@ -34,6 +34,21 @@ class Sessions extends Table {
   RealColumn get temperatureOverride => real().nullable()();
   TextColumn get runningOwnerId => text().nullable()();
   IntColumn get runningHeartbeatAt => integer().nullable()();
+
+  /// Session kind: `NULL`/`'session'` for a normal workspace-bound
+  /// session, `'chat'` for Chat mode. Chat rows are workspace-free
+  /// (`projectPath` is `''`), carry a minimal system prompt (no
+  /// project notes, no skills), are listed in every Crux instance's
+  /// "Chats" section (not the project-scoped "Sessions" list), and
+  /// are mutually exclusive across instances via the same
+  /// running-lease mechanism that guards regular sessions.
+  ///
+  /// Nullable rather than `withDefault('session')` so the v29
+  /// migration is a single `ALTER TABLE ADD COLUMN` with no
+  /// backfill — existing rows read as `NULL`, which the model
+  /// layer treats identically to `'session'`.
+  TextColumn get kind => text().nullable()();
+
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();

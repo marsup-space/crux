@@ -319,12 +319,12 @@ void main() {
     });
 
     test('exact matches outrank prefix matches in display order', () {
-      // `/c` is a prefix of `/compact` and `/continue`.
-      // Neither equals `/c` exactly, so the prefix tier
-      // applies to both. The shorter candidate wins, so
-      // `/compact` should rank first.
+      // `/c` is a prefix of `/chat`, `/compact`, and `/continue`.
+      // None equals `/c` exactly, so the prefix tier applies to all.
+      // The shortest candidate wins — `/chat` (5 chars) is now the
+      // shortest `/c*` command, so it ranks first.
       final hits = filterCommands('/c');
-      expect(hits.first.name, equals('/compact'));
+      expect(hits.first.name, equals('/chat'));
     });
 
     test('returns matches ordered by descending score', () {

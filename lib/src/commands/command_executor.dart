@@ -17,6 +17,7 @@ import 'cmd_model.dart';
 import 'cmd_auxiliary.dart';
 import 'cmd_session.dart';
 import 'cmd_new.dart';
+import 'cmd_chat.dart';
 import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
@@ -53,6 +54,12 @@ class CommandContext {
   final Future<void> Function(int) switchSession;
   final Future<void> Function() initSessions;
   final Future<void> Function() createNewSession;
+
+  /// Creates a Chat-mode session and switches to it. Wired by the
+  /// chat panel to [SessionController.createChatSession]; null in
+  /// tests/legacy harnesses, in which case `/chat` reports
+  /// "not available".
+  final Future<void> Function()? createChatSession;
   final SessionRuntimeState Function(int) runtime;
   final void Function(SessionRuntimeState) persistThinkingLevel;
   final void Function(SessionRuntimeState) persistChatDisplayMode;
@@ -99,6 +106,7 @@ class CommandContext {
     required this.switchSession,
     required this.initSessions,
     required this.createNewSession,
+    this.createChatSession,
     required this.runtime,
     required this.persistThinkingLevel,
     required this.persistChatDisplayMode,
@@ -138,6 +146,8 @@ class CommandExecutor {
         await executeSession(parts, ctx);
       case '/new':
         await executeNew(ctx);
+      case '/chat':
+        await executeChat(ctx);
       case '/provider':
         await executeProvider(parts, ctx);
       case '/web-provider':

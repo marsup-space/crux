@@ -50,6 +50,32 @@ String buildEnvironmentMeta({
       '</env>';
 }
 
+/// Build the env-meta block for a Chat-mode session.
+///
+/// Workspace-free by design: Chat mode is not tied to any directory,
+/// so the block deliberately omits the `Working directory` and
+/// `Is directory a git repo` lines that [buildEnvironmentMeta]
+/// renders. Surfacing a launch directory here made the model treat
+/// the chat as workspace-bound (it would mention and offer to work
+/// on that directory), which defeats the point of Chat mode. Only
+/// platform / model / session-start survive — all workspace-agnostic.
+String buildChatEnvironmentMeta({
+  required String modelId,
+  required String providerName,
+  required int contextSize,
+  required DateTime sessionStarted,
+}) {
+  final platform = _platformLabel(Platform.operatingSystem);
+  final started = sessionStarted.toUtc().toIso8601String();
+
+  return '<env>\n'
+      '  Mode: chat (not tied to any workspace or directory)\n'
+      '  Platform: $platform\n'
+      '  Model: $modelId (provider: $providerName, context: $contextSize tokens)\n'
+      '  Session started: $started (stale by design — captured at session start, not now)\n'
+      '</env>';
+}
+
 /// Cheap, best-effort git detection: walks up from [cwd] looking
 /// for a `.git` entry. Returns `true` on the first hit, `false`
 /// at the filesystem root or on any error.

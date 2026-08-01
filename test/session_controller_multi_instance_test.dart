@@ -193,4 +193,56 @@ void main() {
       expect((await local.getById(running.id))!.status, SessionStatus.running);
     },
   );
+
+  test('initSessions loads chats globally alongside project sessions',
+      () async {
+    final store = SessionStore(db, instanceId: 'local');
+    final projectPath = Directory.current.path;
+    await store.create(title: 'WS', model: '', projectPath: projectPath);
+    final chat = await store.create(
+      title: 'Chat',
+      model: '',
+      projectPath: '',
+      kind: 'chat',
+    );
+
+    final controller = buildController(store);
+    await controller.initSessions();
+
+    expect(controller.sessions.any((s) => s.isChat), isFalse);
+    expect(controller.chats.map((s) => s.id), contains(chat.id));
+    // findSession resolves across both lists.
+    expect(controller.findSession(chat.id)?.isChat, isTrue);
+  });
+
+  test(
+    'switchSession refuses a chat that is live in another instance',
+    () async {
+      final owner = SessionStore(db, instanceId: 'owner');
+      final local = SessionStore(db, instanceId: 'local');
+      final projectPath = Directory.current.path;
+      final idle = await local.create(
+        title: 'Idle',
+        model: '',
+        projectPath: projectPath,
+      );
+      final runningChat = await owner.create(
+        title: 'Chat elsewhere',
+        model: '',
+        projectPath: '',
+        kind: 'chat',
+      );
+      await owner.update(runningChat.id, status: SessionStatus.running);
+
+      final controller = buildController(local);
+      controller.sessions = [idle];
+      controller.chats = [(await local.getById(runningChat.id))!];
+      controller.currentSessionId = idle.id;
+
+      final error = await controller.switchSession(runningChat.id);
+
+      expect(error, contains('another Crux instance'));
+      expect(controller.currentSessionId, idle.id);
+    },
+  );
 }

@@ -120,8 +120,14 @@ class CruxDatabase extends _$CruxDatabase {
   ///         DB write. `/d-monitor` reads this to verify the aux
   ///         monitor is judging correctly. No FK from `run_id` back
   ///         to anything — runs have no row of their own.
+  ///   v29 – added `sessions.kind` (nullable TEXT). `'chat'` marks
+  ///         a Chat-mode session: workspace-free (`projectPath=''`),
+  ///         minimal system prompt, listed globally in every Crux
+  ///         instance's "Chats" section. `NULL`/absent means a
+  ///         regular workspace session. Nullable so the migration
+  ///         is a bare ADD COLUMN with no backfill.
   @override
-  int get schemaVersion => 28;
+  int get schemaVersion => 29;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -427,6 +433,21 @@ CREATE TABLE IF NOT EXISTS shell_monitor_logs (
           'CREATE INDEX IF NOT EXISTS idx_shell_monitor_logs_session_run '
           'ON shell_monitor_logs(session_id, run_id, id)',
         );
+      }
+      if (from < 29) {
+        // Add `sessions.kind` for Chat mode. Idempotent guard mirrors
+        // the v26 temperature_override rationale: a dev build that
+        // created the column via onCreate without bumping user_version
+        // would otherwise abort startup with "duplicate column name".
+        final hasKind = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('sessions') "
+              "WHERE name = 'kind' LIMIT 1",
+            )
+            .get();
+        if (hasKind.isEmpty) {
+          await m.addColumn(sessions, sessions.kind);
+        }
       }
     },
   );

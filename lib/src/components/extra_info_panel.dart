@@ -23,7 +23,9 @@ import 'ui/multi_button.dart';
 enum _SessionGroup {
   yesterday('Yesterday'),
   threeDays('3 Days'),
-  archived('Archived');
+  archived('Archived'),
+  chats('Chats'),
+  chatsArchived('ChatsArchived');
 
   const _SessionGroup(this.label);
   final String label;
@@ -45,12 +47,30 @@ enum _SessionGroup {
 /// the user about `/unarchive`.
 class ExtraInfoPanel extends StatefulComponent {
   final List<Session> sessions;
+
+  /// Chat-mode sessions (global, not project-scoped). Rendered in a
+  /// "Chats" section below the "Sessions" list. Visible in every
+  /// Crux instance.
+  final List<Session> chats;
   final int currentSessionId;
   final void Function(int) onSwitchSession;
   final VoidCallback? onSessionTitleTap;
 
   /// Number of archived sessions (not included in [sessions]).
   final int archivedCount;
+
+  /// Number of archived Chat-mode sessions (not included in [chats]).
+  final int archivedChatCount;
+
+  /// Creates a new Chat-mode session. Wired by the chat panel to
+  /// [SessionController.createChatSession]; when null the "Chats"
+  /// section header hides its add button.
+  final Future<void> Function()? onCreateChat;
+
+  /// Creates a new workspace session. Wired by the chat panel to the
+  /// `/new` path; when null the "Sessions" header hides its add
+  /// button.
+  final Future<void> Function()? onCreateSession;
 
   /// Invoked when the user clicks the `open` segment of the project
   /// path button. Should open the project directory in the system
@@ -82,9 +102,13 @@ class ExtraInfoPanel extends StatefulComponent {
 
   const ExtraInfoPanel({
     required this.sessions,
+    this.chats = const [],
     required this.currentSessionId,
     required this.onSwitchSession,
     required this.archivedCount,
+    this.archivedChatCount = 0,
+    this.onCreateChat,
+    this.onCreateSession,
     required this.gitStatusService,
     this.onSessionTitleTap,
     this.onOpenProject,
@@ -135,7 +159,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// flat list.
   List<Object> _rows = const [];
   List<Session>? _prevSessions;
+  List<Session>? _prevChats;
   int _prevArchivedCount = 0;
+  int _prevArchivedChatCount = 0;
   int _prevFingerprint = 0;
 
   /// Compute a lightweight fingerprint of the session list so that
@@ -144,12 +170,17 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// list.  Using [identical] on the list reference is insufficient
   /// because [Session.updatedAt] is mutated on the existing object
   /// without replacing the list.
-  static int _fingerprint(List<Session> sessions) {
+  static int _fingerprint(List<Session> sessions, List<Session> chats) {
     var hash = 0;
     for (final s in sessions) {
       //updatedAt.millisecondsSinceEpoch changes when a session is
       // continued, which is exactly the signal we need.
       hash ^= s.id ^ s.updatedAt.millisecondsSinceEpoch;
+    }
+    // Mix chats in with a distinct constant so a chat and a session
+    // with the same id/updatedAt don't cancel out in the XOR.
+    for (final s in chats) {
+      hash ^= (s.id ^ s.updatedAt.millisecondsSinceEpoch) * 0x9e3779b1;
     }
     return hash;
   }
@@ -162,7 +193,12 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// - "Yesterday" header + yesterday's sessions
   /// - "3 Days" header + sessions from 2–3 days ago
   /// - "N archived /unarchive #id" hint
-  static List<Object> _buildRows(List<Session> sorted, int archivedCount) {
+  static List<Object> _buildRows(
+    List<Session> sorted,
+    int archivedCount,
+    List<Session> sortedChats,
+    int archivedChatCount,
+  ) {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
@@ -199,22 +235,65 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     if (archivedCount > 0) {
       rows.add(_SessionGroup.archived);
     }
+
+    // ── Chats section ────────────────────────────────────────────
+    // Workspace-free conversations, listed globally. Mirrors the
+    // sessions list's recency grouping (today unlabeled, then
+    // "Yesterday" / "3 Days") so the two sections read identically.
+    // A chat running in another Crux instance is refused on tap by
+    // SessionController's lease check.
+    if (sortedChats.isNotEmpty || archivedChatCount > 0) {
+      rows.add(_SessionGroup.chats);
+
+      final chatsToday = <Session>[];
+      final chatsYesterday = <Session>[];
+      final chatsThreeDays = <Session>[];
+      for (final s in sortedChats) {
+        if (!s.updatedAt.isBefore(todayStart)) {
+          chatsToday.add(s);
+        } else if (!s.updatedAt.isBefore(yesterdayStart)) {
+          chatsYesterday.add(s);
+        } else if (!s.updatedAt.isBefore(threeDaysAgo)) {
+          chatsThreeDays.add(s);
+        }
+      }
+      rows.addAll(chatsToday);
+      if (chatsYesterday.isNotEmpty) {
+        rows.add(_SessionGroup.yesterday);
+        rows.addAll(chatsYesterday);
+      }
+      if (chatsThreeDays.isNotEmpty) {
+        rows.add(_SessionGroup.threeDays);
+        rows.addAll(chatsThreeDays);
+      }
+      if (archivedChatCount > 0) {
+        rows.add(_SessionGroup.chatsArchived);
+      }
+    }
     return rows;
   }
 
   List<Object> get _ensureRows {
     final sessions = component.sessions;
+    final chats = component.chats;
     final archived = component.archivedCount;
-    final fp = _fingerprint(sessions);
+    final archivedChat = component.archivedChatCount;
+    final fp = _fingerprint(sessions, chats);
     if (_prevSessions != sessions ||
+        _prevChats != chats ||
         _prevFingerprint != fp ||
-        _prevArchivedCount != archived) {
+        _prevArchivedCount != archived ||
+        _prevArchivedChatCount != archivedChat) {
       _prevSessions = sessions;
+      _prevChats = chats;
       _prevFingerprint = fp;
       _prevArchivedCount = archived;
+      _prevArchivedChatCount = archivedChat;
       final sorted = List<Session>.from(sessions)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      _rows = _buildRows(sorted, archived);
+      final sortedChats = List<Session>.from(chats)
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      _rows = _buildRows(sorted, archived, sortedChats, archivedChat);
     }
     return _rows;
   }
@@ -430,42 +509,55 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         final panel = component;
         final rows = _ensureRows;
 
-        final header = MouseRegion(
-          onEnter: (_) => setState(() => _titleHovered = true),
-          onExit: (_) => setState(() => _titleHovered = false),
-          opaque: false,
-          child: GestureDetector(
-            onTap: () => component.onSessionTitleTap?.call(),
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              decoration: BoxDecoration(
-                color: _titleHovered
-                    ? CruxTheme.of(context).wizardRowBgSelected
-                    : CruxTheme.of(context).buttonBackground,
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    'Sessions',
-                    style: TextStyle(
-                      color: _titleHovered
-                          ? CruxTheme.of(context).wizardTextSelected
-                          : CruxTheme.of(context).wizardTitle,
-                      fontWeight: FontWeight.bold,
+        final header = Container(
+          decoration: BoxDecoration(
+            color: _titleHovered
+                ? CruxTheme.of(context).wizardRowBgSelected
+                : CruxTheme.of(context).buttonBackground,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _titleHovered = true),
+                  onExit: (_) => setState(() => _titleHovered = false),
+                  opaque: false,
+                  child: GestureDetector(
+                    onTap: () => component.onSessionTitleTap?.call(),
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      children: [
+                        Text(
+                          'Sessions',
+                          style: TextStyle(
+                            color: _titleHovered
+                                ? CruxTheme.of(context).wizardTextSelected
+                                : CruxTheme.of(context).wizardTitle,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (component.onSessionTitleTap != null)
+                          Text(
+                            ' ⚙',
+                            style: TextStyle(
+                              color: _titleHovered
+                                  ? CruxTheme.of(context).buttonTextFocused
+                                  : CruxTheme.of(context).outline,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  if (component.onSessionTitleTap != null)
-                    Text(
-                      ' ⚙',
-                      style: TextStyle(
-                        color: _titleHovered
-                            ? CruxTheme.of(context).buttonTextFocused
-                            : CruxTheme.of(context).outline,
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ),
+              // "+" → new workspace session. Sits at the right edge of
+              // the "Sessions" title row.
+              if (component.onCreateSession != null)
+                _AddButton(
+                  hint: 'New session',
+                  onPressed: component.onCreateSession!,
+                ),
+            ],
           ),
         );
 
@@ -586,10 +678,67 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     );
   }
 
-  /// Build a group header row (Yesterday / 3 Days / Archived).rchived).
+  /// Build a group header row (Yesterday / 3 Days / Archived / Chats).
   Component _buildGroupHeader(_SessionGroup group) {
     if (group == _SessionGroup.archived) {
       final count = component.archivedCount;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Row(
+          children: [
+            Text(
+              '$count archived',
+              style: TextStyle(
+                color: CruxTheme.of(context).onSurfaceDim,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              ' /unarchive #id',
+              style: TextStyle(color: CruxTheme.of(context).hintText),
+            ),
+          ],
+        ),
+      );
+    }
+    // "Chats" section header — a divider + label so it reads as a
+    // distinct section below the project sessions. The "+" button for
+    // creating a chat lives in the fixed panel header area (next to
+    // the "Sessions" title's own add button), not here, to keep the
+    // scrollable rows stateless.
+    if (group == _SessionGroup.chats) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(color: CruxTheme.of(context).outline, height: 1),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Chats',
+                    style: TextStyle(
+                      color: CruxTheme.of(context).onSurfaceDim,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                // "+" → new Chat-mode session. Mirrors the "Sessions"
+                // header's own add button.
+                if (component.onCreateChat != null)
+                  _AddButton(
+                    hint: 'New chat',
+                    onPressed: component.onCreateChat!,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    if (group == _SessionGroup.chatsArchived) {
+      final count = component.archivedChatCount;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
         child: Row(
@@ -659,6 +808,56 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small "+" affordance rendered at the right edge of the
+/// "Sessions" and "Chats" section titles. Creates a new session of
+/// the corresponding kind. Styled to read as a subtle glyph that
+/// brightens on hover, matching the panel's other header chrome.
+class _AddButton extends StatefulComponent {
+  final String hint;
+  final Future<void> Function() onPressed;
+
+  const _AddButton({required this.hint, required this.onPressed});
+
+  @override
+  State<_AddButton> createState() => _AddButtonState();
+}
+
+class _AddButtonState extends State<_AddButton> {
+  bool _hovered = false;
+  bool _busy = false;
+
+  @override
+  Component build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      opaque: false,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_busy) return;
+          setState(() => _busy = true);
+          component.onPressed().whenComplete(() {
+            if (mounted) setState(() => _busy = false);
+          });
+        },
+        child: Hinted(
+          hint: component.hint,
+          child: Text(
+            ' + ',
+            style: TextStyle(
+              color: _hovered
+                  ? CruxTheme.of(context).buttonTextFocused
+                  : CruxTheme.of(context).outline,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),

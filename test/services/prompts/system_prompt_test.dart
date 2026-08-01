@@ -315,4 +315,91 @@ void main() {
       }
     });
   });
+
+  group('buildChatSystemPrompt', () {
+    test('is minimal: identity + language, no workspace doctrine', () {
+      final out = buildChatSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('Chat mode'));
+      expect(out, contains('Language'));
+      // None of the agent-harness / workspace framing survives.
+      expect(out, isNot(contains('semantic_search')));
+      expect(out, isNot(contains('Codebase exploration')));
+      expect(out, isNot(contains('Tool tiers')));
+      expect(out, isNot(contains('available_skills')));
+      expect(out, isNot(contains('AGENTS.md')));
+    });
+
+    test('env meta carries no working directory (workspace-free)', () {
+      final out = buildChatSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      // The whole point of Chat mode: nothing to anchor a workspace on.
+      expect(out, isNot(contains('Working directory:')));
+      expect(out, isNot(contains('Is directory a git repo')));
+      expect(out, contains('<env>'));
+      expect(out, contains('not tied to any workspace'));
+    });
+
+    test('includes provider system_prompt_addition and env meta', () {
+      final out = buildChatSystemPrompt(
+        provider: _provider(systemPromptAddition: 'Be extra terse.'),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('Be extra terse.'));
+      expect(out, contains('<env>'));
+    });
+
+    test('omits skills block even when skills exist on disk', () {
+      final tempRoot = Directory.systemTemp.createTempSync('crux_chatprompt_');
+      try {
+        final skillDir = Directory(
+          p.join(tempRoot.path, '.claude', 'skills', 'pr-review'),
+        )..createSync(recursive: true);
+        File(p.join(skillDir.path, 'SKILL.md')).writeAsStringSync(
+          '---\n'
+          'name: pr-review\n'
+          'description: Reviews pull requests\n'
+          '---\n'
+          '# PR Review\n',
+        );
+
+        final out = buildChatSystemPrompt(
+          provider: _provider(),
+          model: _provider().models.first,
+          sessionStarted: DateTime.utc(2026, 1, 1),
+        );
+        // Chat mode never loads workspace skills.
+        expect(out, isNot(contains('<available_skills>')));
+        expect(out, isNot(contains('pr-review')));
+      } finally {
+        tempRoot.deleteSync(recursive: true);
+      }
+    });
+
+    test('isStaleChatSystemPrompt flags pre-fix cached prompts', () {
+      // A prompt rendered before the workspace-free env meta still has
+      // a Working directory line → stale → must be rebuilt.
+      expect(
+        isStaleChatSystemPrompt('foo\n  Working directory: /tmp/x\nbar'),
+        isTrue,
+      );
+      // The current template has no such line → not stale.
+      final fresh = buildChatSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(isStaleChatSystemPrompt(fresh), isFalse);
+      // Null / empty → nothing to judge (treated as "build anyway").
+      expect(isStaleChatSystemPrompt(null), isFalse);
+      expect(isStaleChatSystemPrompt(''), isFalse);
+    });
+  });
 }

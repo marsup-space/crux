@@ -354,14 +354,21 @@ class ResolvedChatTarget {
     }
 
     String? systemPrompt = session.systemPrompt;
-    if (systemPrompt == null || systemPrompt.isEmpty) {
-      systemPrompt = buildSystemPrompt(
-        provider: provider,
-        model: modelConfig,
-        cwd: session.projectPath,
-        worktree: session.projectPath,
-        sessionStarted: session.createdAt,
-      );
+    final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
+    if (systemPrompt == null || systemPrompt.isEmpty || staleChat) {
+      systemPrompt = session.isChat
+          ? buildChatSystemPrompt(
+              provider: provider,
+              model: modelConfig,
+              sessionStarted: session.createdAt,
+            )
+          : buildSystemPrompt(
+              provider: provider,
+              model: modelConfig,
+              cwd: session.projectPath,
+              worktree: session.projectPath,
+              sessionStarted: session.createdAt,
+            );
       session.systemPrompt = systemPrompt;
       await store.update(session.id, systemPrompt: systemPrompt);
     }

@@ -283,3 +283,77 @@ String buildSystemPrompt({
 
   return blocks.join('\n\n');
 }
+
+/// The minimal layer 1 for Chat mode. No codebase-exploration rules,
+/// no tool-tier doctrine, no project conventions — the model is not
+/// operating on a workspace, so the entire agent-harness framing is
+/// out of scope. Only identity and the language-mirroring rule
+/// survive (both are workspace-agnostic).
+const String kChatSystemPrompt = '''
+You are Crux in Chat mode — a general-purpose AI assistant having a
+conversation, not tied to any code workspace.
+
+## Language (hard rule)
+
+Match the user's language exactly. If the user writes Chinese, reply
+in Chinese; English, reply in English; and so on. Do NOT translate
+code, identifiers, file paths, shell commands, or quoted source —
+those stay in their original form verbatim. Do NOT mix languages
+within a single response unless the user did.
+''';
+
+/// True when [cached] is a Chat-mode system prompt rendered before
+/// the workspace-free env meta existed — i.e. it still carries a
+/// `Working directory:` line. The chat prompt is stored verbatim on
+/// the session row and reused on every turn, so a chat created before
+/// the workspace-leak fix would otherwise keep leaking the launch
+/// directory forever. The three prompt-build call sites check this
+/// and rebuild (rather than reuse) when it returns true.
+bool isStaleChatSystemPrompt(String? cached) {
+  if (cached == null || cached.isEmpty) return false;
+  return cached.contains('Working directory:');
+}
+
+/// Build the minimal system prompt for a Chat-mode session.
+///
+/// Composes only the workspace-agnostic layers:
+///   [1] kChatSystemPrompt                       — identity + language
+///   [2] provider/model system_prompt_addition   — per model, from TOML
+///   [4] env meta (workspace-free)               — per session
+///
+/// Project notes (AGENTS.md / CLAUDE.md / crux-addition.md) and the
+/// `<available_skills>` block are deliberately omitted: Chat mode is
+/// not tied to the current workspace, so loading workspace agent
+/// instructions and skills would be both wrong (no workspace) and
+/// wasteful (tokens for context the model can't act on). The env
+/// meta is the workspace-free [buildChatEnvironmentMeta] — it carries
+/// no working directory, so the model has nothing to anchor on.
+String buildChatSystemPrompt({
+  required ProviderConfig provider,
+  required ModelConfig model,
+  required DateTime sessionStarted,
+}) {
+  final blocks = <String>[];
+
+  // Layer 1: minimal chat identity, always present.
+  blocks.add(kChatSystemPrompt);
+
+  // Layer 2: provider/model tuning. Same rule as the full prompt.
+  final addition = provider.effectiveSystemPromptAdditionFor(model);
+  if (addition != null && addition.trim().isNotEmpty) {
+    blocks.add(addition);
+  }
+
+  // Layer 4: workspace-free env meta. No working directory — that's
+  // the whole point of Chat mode.
+  blocks.add(
+    buildChatEnvironmentMeta(
+      modelId: model.id,
+      providerName: provider.name,
+      contextSize: model.contextSize,
+      sessionStarted: sessionStarted,
+    ),
+  );
+
+  return blocks.join('\n\n');
+}

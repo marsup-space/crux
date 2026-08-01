@@ -173,12 +173,21 @@ class ChatTurnOrchestrator {
     String? llmText;
     if (text != null && text.isNotEmpty) {
       final session = _sessionController.currentSession;
-      final cwd = session.projectPath;
-      final expansion = expandSkillChips(
-        input: text,
-        available: discoverSkills(cwd: cwd),
-        alreadyLoaded: rt.loadedSkillNames,
-      );
+      // Chat mode is workspace-free: don't discover or expand skills
+      // (there's no project to attach them to, and the minimal prompt
+      // never advertises a skill vocabulary). A bare chip-less pass
+      // keeps the typed text as the LLM message.
+      final expansion = session.isChat
+          ? expandSkillChips(
+              input: text,
+              available: const [],
+              alreadyLoaded: rt.loadedSkillNames,
+            )
+          : expandSkillChips(
+              input: text,
+              available: discoverSkills(cwd: session.projectPath),
+              alreadyLoaded: rt.loadedSkillNames,
+            );
       llmText = expansion.userMessage;
       // Mirror the resolved chip names onto the runtime so the
       // [ContextBar] hover hint can show the currently-loaded
@@ -582,7 +591,8 @@ class ChatTurnOrchestrator {
                   .copyWith(cacheHitPct: rt.cacheHitPct),
             );
             _refresh();
-            if (_sessionController.currentSession.title == 'New Session') {
+            final currentTitle = _sessionController.currentSession.title;
+            if (currentTitle == 'New Session' || currentTitle == 'New Chat') {
               _sessionController.generateTitle(sessionId);
             }
             final lastAiMsg = msgs.lastWhere(
@@ -986,7 +996,8 @@ class ChatTurnOrchestrator {
   }
 
   void _maybeKickOffTitleEarly(int sessionId, String userContent) {
-    if (_sessionController.currentSession.title != 'New Session') return;
+    final title = _sessionController.currentSession.title;
+    if (title != 'New Session' && title != 'New Chat') return;
     if (_shouldDeferTitleToAfterResponse()) return;
     _sessionController.generateTitle(sessionId, userContent: userContent);
   }

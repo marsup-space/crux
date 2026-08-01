@@ -35,6 +35,17 @@ class Session {
 
   String? runningOwnerId;
   DateTime? runningHeartbeatAt;
+
+  /// Session kind from the DB row: `'chat'` for Chat mode, anything
+  /// else (`NULL`, `''`, `'session'`) for a regular workspace session.
+  /// Use [isChat] rather than comparing this field directly.
+  final String? kind;
+
+  /// True for Chat-mode sessions: workspace-free, minimal system
+  /// prompt, listed globally across Crux instances in the "Chats"
+  /// section rather than the project-scoped "Sessions" list.
+  bool get isChat => kind == 'chat';
+
   final DateTime createdAt;
   DateTime updatedAt;
   DateTime? archivedAt;
@@ -67,6 +78,7 @@ class Session {
     this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,
+    this.kind,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.archivedAt,

@@ -217,6 +217,15 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -282,6 +291,7 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     temperatureOverride,
     runningOwnerId,
     runningHeartbeatAt,
+    kind,
     createdAt,
     updatedAt,
     archivedAt,
@@ -428,6 +438,12 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         ),
       );
     }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -546,6 +562,10 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.int,
         data['${effectivePrefix}running_heartbeat_at'],
       ),
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -604,6 +624,20 @@ class Session extends DataClass implements Insertable<Session> {
   final double? temperatureOverride;
   final String? runningOwnerId;
   final int? runningHeartbeatAt;
+
+  /// Session kind: `NULL`/`'session'` for a normal workspace-bound
+  /// session, `'chat'` for Chat mode. Chat rows are workspace-free
+  /// (`projectPath` is `''`), carry a minimal system prompt (no
+  /// project notes, no skills), are listed in every Crux instance's
+  /// "Chats" section (not the project-scoped "Sessions" list), and
+  /// are mutually exclusive across instances via the same
+  /// running-lease mechanism that guards regular sessions.
+  ///
+  /// Nullable rather than `withDefault('session')` so the v29
+  /// migration is a single `ALTER TABLE ADD COLUMN` with no
+  /// backfill — existing rows read as `NULL`, which the model
+  /// layer treats identically to `'session'`.
+  final String? kind;
   final int createdAt;
   final int updatedAt;
   final int? archivedAt;
@@ -646,6 +680,7 @@ class Session extends DataClass implements Insertable<Session> {
     this.temperatureOverride,
     this.runningOwnerId,
     this.runningHeartbeatAt,
+    this.kind,
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
@@ -686,6 +721,9 @@ class Session extends DataClass implements Insertable<Session> {
     }
     if (!nullToAbsent || runningHeartbeatAt != null) {
       map['running_heartbeat_at'] = Variable<int>(runningHeartbeatAt);
+    }
+    if (!nullToAbsent || kind != null) {
+      map['kind'] = Variable<String>(kind);
     }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
@@ -729,6 +767,7 @@ class Session extends DataClass implements Insertable<Session> {
       runningHeartbeatAt: runningHeartbeatAt == null && nullToAbsent
           ? const Value.absent()
           : Value(runningHeartbeatAt),
+      kind: kind == null && nullToAbsent ? const Value.absent() : Value(kind),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       archivedAt: archivedAt == null && nullToAbsent
@@ -771,6 +810,7 @@ class Session extends DataClass implements Insertable<Session> {
       ),
       runningOwnerId: serializer.fromJson<String?>(json['runningOwnerId']),
       runningHeartbeatAt: serializer.fromJson<int?>(json['runningHeartbeatAt']),
+      kind: serializer.fromJson<String?>(json['kind']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
@@ -802,6 +842,7 @@ class Session extends DataClass implements Insertable<Session> {
       'temperatureOverride': serializer.toJson<double?>(temperatureOverride),
       'runningOwnerId': serializer.toJson<String?>(runningOwnerId),
       'runningHeartbeatAt': serializer.toJson<int?>(runningHeartbeatAt),
+      'kind': serializer.toJson<String?>(kind),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
@@ -829,6 +870,7 @@ class Session extends DataClass implements Insertable<Session> {
     Value<double?> temperatureOverride = const Value.absent(),
     Value<String?> runningOwnerId = const Value.absent(),
     Value<int?> runningHeartbeatAt = const Value.absent(),
+    Value<String?> kind = const Value.absent(),
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
@@ -861,6 +903,7 @@ class Session extends DataClass implements Insertable<Session> {
     runningHeartbeatAt: runningHeartbeatAt.present
         ? runningHeartbeatAt.value
         : this.runningHeartbeatAt,
+    kind: kind.present ? kind.value : this.kind,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
@@ -903,6 +946,7 @@ class Session extends DataClass implements Insertable<Session> {
       runningHeartbeatAt: data.runningHeartbeatAt.present
           ? data.runningHeartbeatAt.value
           : this.runningHeartbeatAt,
+      kind: data.kind.present ? data.kind.value : this.kind,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       archivedAt: data.archivedAt.present
@@ -936,6 +980,7 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('temperatureOverride: $temperatureOverride, ')
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
+          ..write('kind: $kind, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
@@ -965,6 +1010,7 @@ class Session extends DataClass implements Insertable<Session> {
     temperatureOverride,
     runningOwnerId,
     runningHeartbeatAt,
+    kind,
     createdAt,
     updatedAt,
     archivedAt,
@@ -993,6 +1039,7 @@ class Session extends DataClass implements Insertable<Session> {
           other.temperatureOverride == this.temperatureOverride &&
           other.runningOwnerId == this.runningOwnerId &&
           other.runningHeartbeatAt == this.runningHeartbeatAt &&
+          other.kind == this.kind &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.archivedAt == this.archivedAt &&
@@ -1019,6 +1066,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<double?> temperatureOverride;
   final Value<String?> runningOwnerId;
   final Value<int?> runningHeartbeatAt;
+  final Value<String?> kind;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
@@ -1043,6 +1091,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.temperatureOverride = const Value.absent(),
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
+    this.kind = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
@@ -1068,6 +1117,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.temperatureOverride = const Value.absent(),
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
+    this.kind = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
@@ -1095,6 +1145,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<double>? temperatureOverride,
     Expression<String>? runningOwnerId,
     Expression<int>? runningHeartbeatAt,
+    Expression<String>? kind,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
@@ -1123,6 +1174,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (runningOwnerId != null) 'running_owner_id': runningOwnerId,
       if (runningHeartbeatAt != null)
         'running_heartbeat_at': runningHeartbeatAt,
+      if (kind != null) 'kind': kind,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
@@ -1150,6 +1202,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<double?>? temperatureOverride,
     Value<String?>? runningOwnerId,
     Value<int?>? runningHeartbeatAt,
+    Value<String?>? kind,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
@@ -1175,6 +1228,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       temperatureOverride: temperatureOverride ?? this.temperatureOverride,
       runningOwnerId: runningOwnerId ?? this.runningOwnerId,
       runningHeartbeatAt: runningHeartbeatAt ?? this.runningHeartbeatAt,
+      kind: kind ?? this.kind,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
@@ -1246,6 +1300,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (runningHeartbeatAt.present) {
       map['running_heartbeat_at'] = Variable<int>(runningHeartbeatAt.value);
     }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1283,6 +1340,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('temperatureOverride: $temperatureOverride, ')
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
+          ..write('kind: $kind, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
@@ -4368,6 +4426,7 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<double?> temperatureOverride,
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
@@ -4394,6 +4453,7 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<double?> temperatureOverride,
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
@@ -4608,6 +4668,11 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<int> get runningHeartbeatAt => $composableBuilder(
     column: $table.runningHeartbeatAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4861,6 +4926,11 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4963,6 +5033,9 @@ class $$SessionsTableAnnotationComposer
     column: $table.runningHeartbeatAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5159,6 +5232,7 @@ class $$SessionsTableTableManager
                 Value<double?> temperatureOverride = const Value.absent(),
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
+                Value<String?> kind = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
@@ -5183,6 +5257,7 @@ class $$SessionsTableTableManager
                 temperatureOverride: temperatureOverride,
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
+                kind: kind,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -5209,6 +5284,7 @@ class $$SessionsTableTableManager
                 Value<double?> temperatureOverride = const Value.absent(),
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
+                Value<String?> kind = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
@@ -5233,6 +5309,7 @@ class $$SessionsTableTableManager
                 temperatureOverride: temperatureOverride,
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
+                kind: kind,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,

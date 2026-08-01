@@ -132,6 +132,17 @@ const List<SlashCommand> _baseCommands = [
     description: 'Create a new session',
     availableDuringResponse: true,
   ),
+  // Chat mode: a workspace-free conversation. The session gets the
+  // minimal system prompt (no AGENTS.md / CLAUDE.md project notes,
+  // no skills), is not tied to the current project directory, and
+  // lands in the global "Chats" section (visible in every Crux
+  // instance) instead of the project "Sessions" list. The running
+  // lease keeps one chat from being open in two instances at once.
+  SlashCommand(
+    name: '/chat',
+    description: 'Start a workspace-free chat (global, minimal prompt)',
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/session',
     description: 'Switch to a session',
