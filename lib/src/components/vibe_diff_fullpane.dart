@@ -45,21 +45,37 @@ class VibeDiffRequest {
 /// rule, applied per the fullpane's measured width.
 const double kMinSplitWidth = 100;
 
+/// How many cells a `←`/`→` press pans the diff horizontally.
+const double _kHorizontalScrollStep = 4;
+
 /// Full-screen diff view for a vibe segment's `files` box.
 ///
 /// Shows **one file at a time** (the user asked for a file picker rather
 /// than a stacked all-files list): a header row with the full file list,
-/// and the selected file's diff below. `←`/`→` (or `h`/`l`) move between
-/// files; `j`/`k` and the arrow/page keys scroll.
+/// and the selected file's diff below. With several files `←`/`→` (or
+/// `h`/`l`) move between them; `j`/`k` and the arrow/page keys scroll.
 ///
 /// The selected file's diff renders **side-by-side when the pane is wide
 /// enough** (≥ [kMinSplitWidth]) and unified otherwise — the opencode
 /// viewer's split/unified-by-width behaviour. Code is syntax-highlighted
 /// from the file's extension and every row carries old/new line numbers
-/// in a gutter. Each file's before/after is rebuilt from the segment's
-/// own persisted `write`/`edit` args (see [computeVibeFileDiff]) — no
-/// git, no live re-read — so the view stays anchored to what the agent
-/// changed in this segment.
+/// in a gutter. The highlight runs over the **whole** old/new snapshot
+/// once, then slices per line, so multi-line constructs (block comments,
+/// template strings) keep their color — highlighting each diff line in
+/// isolation would lose the parser's cross-line state and mis-color the
+/// continuation lines. Each file's before/after is rebuilt from the
+/// segment's own persisted `write`/`edit` args (see [computeVibeFileDiff])
+/// — no git, no live re-read — so the view stays anchored to what the
+/// agent changed in this segment.
+///
+/// Long lines **scroll horizontally** by default (`←`/`→` pan the view
+/// when there's a single file, or the mouse wheel); pressing `w` toggles
+/// **soft-wrap** so the full line is visible without scrolling. The two
+/// per-axis [SingleChildScrollView]s are nested (vertical outer,
+/// horizontal inner) so a wide diff pans left/right while scrolling
+/// up/down. When a segment has several files, `←`/`→` switch files and
+/// horizontal scrolling falls back to the mouse wheel — file switching
+/// is the more common action, so it keeps the arrows.
 class VibeDiffFullpane extends StatefulComponent {
   final VibeDiffRequest request;
   final VoidCallback onClose;
@@ -80,10 +96,16 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     math.max(0, component.request.files.length - 1),
   );
   final ScrollController _scroll = ScrollController();
+  final ScrollController _hScroll = ScrollController();
+
+  /// Whether long lines soft-wrap (true) or scroll horizontally (false).
+  /// Horizontal scroll is the default so code alignment is preserved.
+  bool _wrap = false;
 
   @override
   void dispose() {
     _scroll.dispose();
+    _hScroll.dispose();
     super.dispose();
   }
 
@@ -91,26 +113,68 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     if (index == _index) return;
     setState(() {
       _index = index;
-      // Jump back to the top so the newly selected file's diff starts at
-      // its first line rather than inheriting the previous file's scroll
-      // offset.
+      // Jump back to the top/left so the newly selected file's diff
+      // starts at its first line rather than inheriting the previous
+      // file's scroll offset.
       _scroll.jumpTo(0);
+      _hScroll.jumpTo(0);
     });
+  }
+
+  void _scrollHorizontal(double delta) {
+    _hScroll.jumpTo(
+      (_hScroll.offset + delta).clamp(0.0, _hScroll.maxScrollExtent),
+    );
   }
 
   bool _handleKey(KeyboardEvent event) {
     final files = component.request.files;
     if (files.isEmpty) return false;
     final key = event.logicalKey;
-    if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
-      _selectFile((_index + 1).clamp(0, files.length - 1));
+
+    // `w` toggles soft-wrap in both single- and multi-file modes.
+    if (key == LogicalKey.keyW) {
+      setState(() {
+        _wrap = !_wrap;
+        // Reset the horizontal offset when entering wrap — the lines now
+        // fit the width, so any leftover scroll would clip the left edge.
+        if (_wrap) _hScroll.jumpTo(0);
+      });
       return true;
     }
-    if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
-      _selectFile((_index - 1).clamp(0, files.length - 1));
-      return true;
+
+    if (files.length > 1) {
+      // Multi-file: arrows switch files (the more common action);
+      // horizontal scrolling is available via the mouse wheel.
+      if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
+        _selectFile((_index + 1).clamp(0, files.length - 1));
+        return true;
+      }
+      if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
+        _selectFile((_index - 1).clamp(0, files.length - 1));
+        return true;
+      }
+    } else {
+      // Single file: arrows pan horizontally; `h`/`l` mirror them for
+      // vi-style navigation.
+      if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
+        _scrollHorizontal(_kHorizontalScrollStep);
+        return true;
+      }
+      if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
+        _scrollHorizontal(-_kHorizontalScrollStep);
+        return true;
+      }
+      if (key == LogicalKey.home) {
+        _hScroll.jumpTo(0);
+        return true;
+      }
+      if (key == LogicalKey.end) {
+        _hScroll.jumpTo(_hScroll.maxScrollExtent);
+        return true;
+      }
     }
-    // Let scroll keys fall through to the SingleChildScrollView's
+    // Vertical scroll keys fall through to the SingleChildScrollView's
     // keyboardScrollable handling (and the Fullpane's own escape).
     return false;
   }
@@ -131,7 +195,9 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     return Fullpane(
       title: title,
       onClose: component.onClose,
-      onKeyEvent: multiple ? _handleKey : null,
+      // Always wired: `w` toggles wrap in both modes, and in single-file
+      // mode the arrows pan horizontally.
+      onKeyEvent: _handleKey,
       shortcuts: [
         if (multiple) ...[
           FullpaneShortcut(
@@ -149,6 +215,13 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
                 _selectFile((_index + 1).clamp(0, files.length - 1)),
           ),
         ],
+        FullpaneShortcut(
+          label: _wrap ? 'wrap: on' : 'wrap: off',
+          keyHint: 'w',
+          matches: (e) => e.logicalKey == LogicalKey.keyW,
+          onActivate: () =>
+              _handleKey(const KeyboardEvent(logicalKey: LogicalKey.keyW)),
+        ),
       ],
       contentBuilder: (context) => LayoutBuilder(
         builder: (context, constraints) => _buildBody(theme, constraints),
@@ -188,19 +261,28 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           Divider(color: theme.outline, height: 1),
         ],
         Expanded(
+          // Vertical scroll on the outside, horizontal on the inside. The
+          // inner viewport gives the diff unbounded width so long lines lay
+          // out at full length and pan via the horizontal controller; in
+          // wrap mode the rows instead size to the viewport width.
           child: SingleChildScrollView(
             controller: _scroll,
             keyboardScrollable: true,
-            child: _fileDiff(
-              entry,
-              theme,
-              constraints.maxWidth,
-              useSplit,
-              // With a single file the fullpath is already the fullpane
-              // title, so the body header shows only the +N -M counts;
-              // with several files the picker shows basenames, so the body
-              // header keeps the full path for clarity.
-              showPath: multiple,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              controller: _hScroll,
+              child: _fileDiff(
+                entry,
+                theme,
+                constraints.maxWidth,
+                useSplit,
+                wrap: _wrap,
+                // With a single file the fullpath is already the fullpane
+                // title, so the body header shows only the +N -M counts;
+                // with several files the picker shows basenames, so the
+                // body header keeps the full path for clarity.
+                showPath: multiple,
+              ),
             ),
           ),
         ),
@@ -258,15 +340,20 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     CruxThemeData theme,
     double maxWidth,
     bool useSplit, {
+    required bool wrap,
     bool showPath = true,
   }) {
     final calls = component.request.calls
         .where((c) => _callTouchesPath(c, entry.path))
         .toList();
-    final lines = computeVibeFileDiff(
+    final result = computeVibeFileDiff(
       VibeFileDiffInput(path: entry.path, calls: calls),
     );
     final language = languageFromPath(entry.path);
+
+    final body = result == null
+        ? null
+        : _highlighted(result, language, theme);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,20 +362,23 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           padding: const EdgeInsets.symmetric(
             horizontal: kContentHorizontalPadding,
           ),
+          // No Expanded/Spacer: this header sits inside the inner
+          // horizontal scroll view, which gives it an unbounded width —
+          // a flex child would throw. Shrink-wrap instead.
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              if (showPath)
-                Expanded(
-                  child: Text(
-                    entry.path,
-                    style: TextStyle(
-                      color: theme.foreground,
-                      fontWeight: FontWeight.bold,
-                    ),
+              if (showPath) ...[
+                Text(
+                  entry.path,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: theme.foreground,
+                    fontWeight: FontWeight.bold,
                   ),
-                )
-              else
-                const Spacer(),
+                ),
+                const Text('  '),
+              ],
               Text(
                 '+${entry.linesAdded}',
                 style: TextStyle(color: theme.diffAdded),
@@ -301,7 +391,7 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
             ],
           ),
         ),
-        if (lines == null)
+        if (result == null || body == null)
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: kContentHorizontalPadding,
@@ -316,94 +406,124 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           )
         else if (useSplit)
           _SplitDiff(
-            lines: lines,
+            lines: result.lines,
             theme: theme,
-            language: language,
             totalWidth: maxWidth,
+            wrap: wrap,
+            gutterWidth: _gutterWidth(result),
+            leftSpans: body.left,
+            rightSpans: body.right,
           )
         else
-          _UnifiedDiff(lines: lines, theme: theme, language: language),
+          _UnifiedDiff(
+            lines: result.lines,
+            theme: theme,
+            wrap: wrap,
+            gutterWidth: _gutterWidth(result),
+            leftSpans: body.left,
+            rightSpans: body.right,
+          ),
       ],
+    );
+  }
+
+  /// The digit width of the line-number gutter: 2 cells when every number
+  /// fits, else the widest number's width.
+  int _gutterWidth(VibeFileDiffResult result) {
+    final old = result.oldLines.length;
+    final newLines = result.newLines.length;
+    if (old <= 99 && newLines <= 99) return 2;
+    return math.max(old.toString().length, newLines.toString().length);
+  }
+
+  /// Highlight the whole old/new snapshot once and slice into per-line
+  /// span lists (0-indexed by line number − 1). Highlighting per line
+  /// would reset the TextMate state at every boundary and miscolor
+  /// multi-line block comments / strings; highlighting whole and slicing
+  /// keeps it.
+  _Highlighted _highlighted(
+    VibeFileDiffResult result,
+    String language,
+    CruxThemeData theme,
+  ) {
+    return _Highlighted(
+      left: _highlightLines(result.oldLines, language, theme),
+      right: _highlightLines(result.newLines, language, theme),
     );
   }
 }
 
-// ── shared helpers ───────────────────────────────────────────────────
+/// The per-line syntax spans for both sides of a file's diff.
+class _Highlighted {
+  /// Spans for the old snapshot, one entry per line (0-indexed).
+  final List<List<TextSpan>> left;
 
-/// Highlight [text] as [language], keeping each token's syntax color as
-/// the foreground and laying the diff row's background behind it. The
-/// diff's add/remove/context identity is carried by the row background
-/// (and the `-`/`+` marker), NOT by flattening every token to one
-/// foreground — that would erase the highlight we just computed.
-///
-/// [fgFallback] is used only when a token carries no color of its own
-/// (the highlighter's "plain text" spans), so unchanged code in a context
-/// row still reads dim instead of falling back to the theme default.
-/// Returns a single plain span when the grammar isn't loaded or the line
-/// is empty.
-List<TextSpan> _highlightLine(
-  String text,
-  String language,
-  CruxThemeData theme,
-  Color fgFallback,
-  Color? bg,
-) {
-  if (text.isEmpty) {
-    return [
-      TextSpan(text: '', style: TextStyle(color: fgFallback, backgroundColor: bg)),
-    ];
-  }
-  if (language.isEmpty) {
-    return [
-      TextSpan(text: text, style: TextStyle(color: fgFallback, backgroundColor: bg)),
-    ];
-  }
-  final spans = highlightCode(text, language, theme);
-  return [
-    for (final span in spans)
-      if (span is TextSpan)
-        TextSpan(
-          text: span.text,
-          style: (span.style ?? const TextStyle()).copyWith(
-            // Keep the token's syntax color; only fall back to the diff
-            // color when the token has no color of its own.
-            color: span.style?.color ?? fgFallback,
-            backgroundColor: bg,
-          ),
-        ),
-  ];
+  /// Spans for the new snapshot, one entry per line (0-indexed).
+  final List<List<TextSpan>> right;
+
+  const _Highlighted({required this.left, required this.right});
 }
 
-/// Whether every rendered line number fits in two cells, which lets the
-/// gutter use a compact fixed width instead of measuring the file.
-bool _allLineNumbersFit(int oldLines, int newLines) =>
-    oldLines <= 99 && newLines <= 99;
+/// Highlight each line of [lines] as [language] by running the
+/// highlighter over the whole joined text and slicing the resulting spans
+/// at the line boundaries. Returns one span list per line (0-indexed).
+///
+/// Highlighting the whole text once (rather than line-by-line) preserves
+/// the TextMate parser's cross-line state, so multi-line constructs —
+/// block comments, template strings, raw strings — keep their color on
+/// every continuation line instead of being re-tokenized as plain code.
+List<List<TextSpan>> _highlightLines(
+  List<String> lines,
+  String language,
+  CruxThemeData theme,
+) {
+  if (lines.isEmpty) return const [];
+  if (language.isEmpty) {
+    return [for (final l in lines) [TextSpan(text: l)]];
+  }
+  final joined = lines.join('\n');
+  final spans = highlightCode(joined, language, theme);
+
+  // Slice the flat span list at each '\n'. A span may straddle a line
+  // boundary (a multi-line token such as a block-comment run), so split
+  // it and carry its style across the boundary.
+  final perLine = <List<TextSpan>>[];
+  var current = <TextSpan>[];
+  for (final span in spans) {
+    if (span is! TextSpan) continue;
+    var remaining = span.text ?? '';
+    while (remaining.isNotEmpty) {
+      final nl = remaining.indexOf('\n');
+      if (nl < 0) {
+        current.add(TextSpan(text: remaining, style: span.style));
+        remaining = '';
+      } else {
+        final piece = remaining.substring(0, nl);
+        if (piece.isNotEmpty) {
+          current.add(TextSpan(text: piece, style: span.style));
+        }
+        perLine.add(current);
+        current = <TextSpan>[];
+        remaining = remaining.substring(nl + 1);
+      }
+    }
+  }
+  // The joined text does not end with '\n', so the trailing line's spans
+  // are still in `current` — flush them.
+  perLine.add(current);
+
+  // Defensive: if the highlighter dropped a line, pad with plain text so
+  // the per-line index still lines up with the diff's line numbers.
+  while (perLine.length < lines.length) {
+    perLine.add([TextSpan(text: lines[perLine.length])]);
+  }
+  return perLine;
+}
 
 /// Format a gutter cell: right-align the present side's number to [width],
 /// blank when that side has no line. [width] is the number of digit cells.
 String _gutterCell(int? number, int width) =>
     number == null ? ' ' * width : number.toString().padLeft(width);
-
-/// Count the old/new lines a diff spans, for sizing the line-number gutter.
-(int, int) _diffExtent(List<DiffLine> lines) {
-  var old = 0;
-  var newLines = 0;
-  for (final line in lines) {
-    switch (line.kind) {
-      case DiffLineKind.context:
-        old++;
-        newLines++;
-      case DiffLineKind.removed:
-        old++;
-      case DiffLineKind.added:
-        newLines++;
-      case DiffLineKind.gap:
-        old += line.elidedCount;
-        newLines += line.elidedCount;
-    }
-  }
-  return (old, newLines);
-}
 
 /// Unified (single-column) diff — the same visual language as the edit
 /// tool's inline diff: `-` rows tinted removed, `+` rows added, context
@@ -412,42 +532,50 @@ String _gutterCell(int? number, int width) =>
 class _UnifiedDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
-  final String language;
+
+  /// Whether long lines soft-wrap (true) or stay on one line for
+  /// horizontal scrolling (false).
+  final bool wrap;
+
+  /// Digit width of the line-number gutter.
+  final int gutterWidth;
+
+  /// Per-line syntax spans for the old (removed/context) side.
+  final List<List<TextSpan>> leftSpans;
+
+  /// Per-line syntax spans for the new (added/context) side.
+  final List<List<TextSpan>> rightSpans;
 
   const _UnifiedDiff({
     required this.lines,
     required this.theme,
-    required this.language,
+    required this.wrap,
+    required this.gutterWidth,
+    required this.leftSpans,
+    required this.rightSpans,
   });
 
   @override
   Component build(BuildContext context) {
     final gapGlyph = terminalSymbol('⋮', '|');
-    final (oldTotal, newTotal) = _diffExtent(lines);
-    final width = _allLineNumbersFit(oldTotal, newTotal)
-        ? 2
-        : math.max(
-            oldTotal.toString().length,
-            newTotal.toString().length,
-          );
+    final gutterStyle = TextStyle(color: theme.codeBlockGutter);
 
     var oldLine = 1;
     var newLine = 1;
-    final gutterStyle = TextStyle(color: theme.codeBlockGutter);
-
     final rows = <Component>[];
     for (final line in lines) {
       switch (line.kind) {
         case DiffLineKind.gap:
-          rows.add(_gap(gapGlyph, line.elidedCount, width));
+          rows.add(_gap(gapGlyph, line.elidedCount));
           oldLine += line.elidedCount;
           newLine += line.elidedCount;
         case DiffLineKind.removed:
           rows.add(
             _row(
-              gutter: '${_gutterCell(oldLine, width)} ${_gutterCell(null, width)}',
+              gutter:
+                  '${_gutterCell(oldLine, gutterWidth)} ${_gutterCell(null, gutterWidth)}',
               prefix: '-',
-              text: line.text,
+              spans: _spansFor(leftSpans, oldLine, line.text),
               fg: theme.diffRemoved,
               bg: theme.diffRemovedBackground,
               gutterStyle: gutterStyle,
@@ -457,9 +585,10 @@ class _UnifiedDiff extends StatelessComponent {
         case DiffLineKind.added:
           rows.add(
             _row(
-              gutter: '${_gutterCell(null, width)} ${_gutterCell(newLine, width)}',
+              gutter:
+                  '${_gutterCell(null, gutterWidth)} ${_gutterCell(newLine, gutterWidth)}',
               prefix: '+',
-              text: line.text,
+              spans: _spansFor(rightSpans, newLine, line.text),
               fg: theme.diffAdded,
               bg: theme.diffAddedBackground,
               gutterStyle: gutterStyle,
@@ -469,9 +598,10 @@ class _UnifiedDiff extends StatelessComponent {
         case DiffLineKind.context:
           rows.add(
             _row(
-              gutter: '${_gutterCell(oldLine, width)} ${_gutterCell(newLine, width)}',
+              gutter:
+                  '${_gutterCell(oldLine, gutterWidth)} ${_gutterCell(newLine, gutterWidth)}',
               prefix: ' ',
-              text: line.text,
+              spans: _spansFor(leftSpans, oldLine, line.text),
               fg: theme.onSurfaceDim,
               bg: null,
               gutterStyle: gutterStyle,
@@ -482,19 +612,22 @@ class _UnifiedDiff extends StatelessComponent {
       }
     }
 
+    // The inner horizontal scroll view already gives this column unbounded
+    // width, so it shrink-wraps to its longest row and the viewport pans
+    // over it; in wrap mode each row wraps to the viewport width instead.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: rows,
     );
   }
 
-  Component _gap(String glyph, int count, int width) {
+  Component _gap(String glyph, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kContentHorizontalPadding,
       ),
       child: Text(
-        '${' ' * (width * 2 + 2)} $glyph $count unchanged lines',
+        '${' ' * (gutterWidth * 2 + 2)} $glyph $count unchanged lines',
         style: TextStyle(
           color: theme.onSurfaceDim,
           fontStyle: FontStyle.italic,
@@ -506,28 +639,28 @@ class _UnifiedDiff extends StatelessComponent {
   Component _row({
     required String gutter,
     required String prefix,
-    required String text,
+    required List<TextSpan> spans,
     required Color fg,
     required Color? bg,
     required TextStyle gutterStyle,
   }) {
-    return SizedBox(
-      width: double.infinity,
-      child: Container(
-        decoration: bg != null ? BoxDecoration(color: bg) : null,
-        padding: const EdgeInsets.symmetric(
-          horizontal: kContentHorizontalPadding,
-        ),
-        child: RichText(
-          softWrap: false,
-          overflow: TextOverflow.clip,
-          text: TextSpan(
-            children: [
-              TextSpan(text: gutter, style: gutterStyle),
-              TextSpan(text: ' $prefix ', style: TextStyle(color: fg, backgroundColor: bg)),
-              ..._highlightLine(text, language, theme, fg, bg),
-            ],
-          ),
+    return Container(
+      decoration: bg != null ? BoxDecoration(color: bg) : null,
+      padding: const EdgeInsets.symmetric(
+        horizontal: kContentHorizontalPadding,
+      ),
+      child: RichText(
+        softWrap: wrap,
+        overflow: TextOverflow.clip,
+        text: TextSpan(
+          children: [
+            TextSpan(text: gutter, style: gutterStyle),
+            TextSpan(
+              text: ' $prefix ',
+              style: TextStyle(color: fg, backgroundColor: bg),
+            ),
+            ..._applyBackground(spans, fg, bg),
+          ],
         ),
       ),
     );
@@ -539,12 +672,24 @@ class _UnifiedDiff extends StatelessComponent {
 /// Rows are paired old|new: a context line appears on both sides, a run of
 /// removals pairs with the following run of additions (a replaced hunk),
 /// and unpaired removals/additions sit against an empty placeholder on the
-/// other side. Each column has its own line-number gutter and clips its
-/// highlighted code to its own width.
+/// other side. Each column has its own line-number gutter. In horizontal
+/// scroll mode the code is clipped to its column; in wrap mode it wraps.
 class _SplitDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
-  final String language;
+
+  /// Whether long lines soft-wrap (true) or stay clipped for horizontal
+  /// scrolling (false).
+  final bool wrap;
+
+  /// Digit width of the line-number gutter.
+  final int gutterWidth;
+
+  /// Per-line syntax spans for the old (left) side.
+  final List<List<TextSpan>> leftSpans;
+
+  /// Per-line syntax spans for the new (right) side.
+  final List<List<TextSpan>> rightSpans;
 
   /// The full usable width of the diff area; each column gets half minus
   /// the separator.
@@ -553,22 +698,17 @@ class _SplitDiff extends StatelessComponent {
   const _SplitDiff({
     required this.lines,
     required this.theme,
-    required this.language,
+    required this.wrap,
+    required this.gutterWidth,
+    required this.leftSpans,
+    required this.rightSpans,
     required this.totalWidth,
   });
 
   @override
   Component build(BuildContext context) {
     final gapGlyph = terminalSymbol('⋮', '|');
-    final (oldTotal, newTotal) = _diffExtent(lines);
-    final width = _allLineNumbersFit(oldTotal, newTotal)
-        ? 2
-        : math.max(
-            oldTotal.toString().length,
-            newTotal.toString().length,
-          );
-
-    final rows = _pairRows(width);
+    final rows = _pairRows();
     // 1 cell for the separator between the two columns.
     final colWidth = ((totalWidth - 1) / 2).floorToDouble();
     return Column(
@@ -576,13 +716,13 @@ class _SplitDiff extends StatelessComponent {
       children: [
         for (final row in rows)
           row.isGap
-              ? _gapRow(gapGlyph, row.gapCount, width)
+              ? _gapRow(gapGlyph, row.gapCount)
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
                       width: colWidth,
-                      child: _cell(row.left, width, isLeft: true),
+                      child: _cell(row.left, isLeft: true),
                     ),
                     SizedBox(
                       width: 1,
@@ -593,7 +733,7 @@ class _SplitDiff extends StatelessComponent {
                     ),
                     SizedBox(
                       width: colWidth,
-                      child: _cell(row.right, width, isLeft: false),
+                      child: _cell(row.right, isLeft: false),
                     ),
                   ],
                 ),
@@ -601,7 +741,7 @@ class _SplitDiff extends StatelessComponent {
     );
   }
 
-  Component _gapRow(String glyph, int count, int width) {
+  Component _gapRow(String glyph, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kContentHorizontalPadding,
@@ -619,7 +759,7 @@ class _SplitDiff extends StatelessComponent {
   /// One side of a split row. Null [side] is an empty placeholder (the
   /// other half of an unpaired add/remove). Text is clipped, not wrapped,
   /// so a long line doesn't push the two columns out of alignment.
-  Component _cell(_Side? side, int width, {required bool isLeft}) {
+  Component _cell(_Side? side, {required bool isLeft}) {
     if (side == null) {
       return const SizedBox();
     }
@@ -628,6 +768,11 @@ class _SplitDiff extends StatelessComponent {
       DiffLineKind.added => (theme.diffAdded, theme.diffAddedBackground),
       _ => (theme.onSurfaceDim, null),
     };
+    final spans = _spansFor(
+      isLeft ? leftSpans : rightSpans,
+      side.lineNumber,
+      side.text,
+    );
     final gutterStyle = TextStyle(color: theme.codeBlockGutter);
     return Container(
       decoration: bg != null ? BoxDecoration(color: bg) : null,
@@ -635,13 +780,19 @@ class _SplitDiff extends StatelessComponent {
         horizontal: kContentHorizontalPadding,
       ),
       child: RichText(
-        softWrap: false,
+        softWrap: wrap,
         overflow: TextOverflow.clip,
         text: TextSpan(
           children: [
-            TextSpan(text: _gutterCell(side.lineNumber, width), style: gutterStyle),
-            TextSpan(text: ' ', style: TextStyle(color: fg, backgroundColor: bg)),
-            ..._highlightLine(side.text, language, theme, fg, bg),
+            TextSpan(
+              text: _gutterCell(side.lineNumber, gutterWidth),
+              style: gutterStyle,
+            ),
+            TextSpan(
+              text: ' ',
+              style: TextStyle(color: fg, backgroundColor: bg),
+            ),
+            ..._applyBackground(spans, fg, bg),
           ],
         ),
       ),
@@ -653,7 +804,7 @@ class _SplitDiff extends StatelessComponent {
   /// consecutive additions are zipped line-by-line (a replaced hunk);
   /// leftover removals/additions pair with an empty placeholder. Context
   /// lines occupy both columns.
-  List<_SplitRow> _pairRows(int width) {
+  List<_SplitRow> _pairRows() {
     final rows = <_SplitRow>[];
     var oldLine = 1;
     var newLine = 1;
@@ -703,6 +854,42 @@ class _SplitDiff extends StatelessComponent {
     }
     return rows;
   }
+}
+
+/// Fetch the syntax spans for [lineNumber] (1-based) from [perLine],
+/// falling back to a single plain span of [text] when the index is out of
+/// range (a gap/padding mismatch) so a row never renders empty.
+List<TextSpan> _spansFor(
+  List<List<TextSpan>> perLine,
+  int lineNumber,
+  String text,
+) {
+  final i = lineNumber - 1;
+  if (i < 0 || i >= perLine.length) return [TextSpan(text: text)];
+  final spans = perLine[i];
+  return spans.isEmpty ? [TextSpan(text: text)] : spans;
+}
+
+/// Blend the diff row's background onto each syntax span, keeping the
+/// token's syntax color as the foreground. The diff's add/remove/context
+/// identity is carried by the row background and the `-`/`+` marker, NOT
+/// by flattening every token to one foreground — that would erase the
+/// highlight. [fgFallback] covers tokens the highlighter left uncolored.
+List<TextSpan> _applyBackground(
+  List<TextSpan> spans,
+  Color fgFallback,
+  Color? bg,
+) {
+  return [
+    for (final span in spans)
+      TextSpan(
+        text: span.text,
+        style: (span.style ?? const TextStyle()).copyWith(
+          color: span.style?.color ?? fgFallback,
+          backgroundColor: bg,
+        ),
+      ),
+  ];
 }
 
 /// One side of a split diff row: the code text plus its line number on

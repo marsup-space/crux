@@ -1,6 +1,32 @@
 import '../models/message.dart';
 import 'tool_detail_utils.dart';
 
+/// The reconstructed before→after state for one file in a vibe segment:
+/// the unified line diff plus the full old/new snapshots it was computed
+/// from.
+///
+/// The snapshots are returned alongside the lines so callers can
+/// syntax-highlight the **whole** text once (preserving multi-line
+/// constructs such as block comments and template strings) and slice the
+/// resulting spans per line — highlighting each diff line in isolation
+/// loses the parser's cross-line state and miscolors those constructs.
+class VibeFileDiffResult {
+  /// The unified line diff (context/removed/added/gap rows).
+  final List<DiffLine> lines;
+
+  /// The reconstructed old snapshot, as a list of lines.
+  final List<String> oldLines;
+
+  /// The reconstructed new snapshot, as a list of lines.
+  final List<String> newLines;
+
+  const VibeFileDiffResult({
+    required this.lines,
+    required this.oldLines,
+    required this.newLines,
+  });
+}
+
 /// Reconstructs a segment-scoped before→after diff for one file from the
 /// segment's persisted `write`/`edit` tool-call args.
 ///
@@ -31,7 +57,7 @@ import 'tool_detail_utils.dart';
 /// Returns `null` when the file has no reconstructable content in this
 /// segment (e.g. it was only `read`, or its calls were guard-aborted
 /// before any mutation). The fullpane shows a placeholder in that case.
-List<DiffLine>? computeVibeFileDiff(VibeFileDiffInput input) {
+VibeFileDiffResult? computeVibeFileDiff(VibeFileDiffInput input) {
   final oldParts = <String>[];
   final newParts = <String>[];
   var sawMutation = false;
@@ -77,7 +103,27 @@ List<DiffLine>? computeVibeFileDiff(VibeFileDiffInput input) {
   final hasChange = lines.any(
     (l) => l.kind == DiffLineKind.added || l.kind == DiffLineKind.removed,
   );
-  return hasChange ? lines : null;
+  if (!hasChange) return null;
+
+  return VibeFileDiffResult(
+    lines: lines,
+    oldLines: _splitLines(oldText),
+    newLines: _splitLines(newText),
+  );
+}
+
+/// Split [text] into lines the same way the diff does — a single trailing
+/// newline (the conventional EOF marker) does not produce a phantom empty
+/// line, and an empty string yields zero lines. Kept in sync with the
+/// diff's own splitter so the snapshot line indices line up with the
+/// per-line numbers the renderers assign.
+List<String> _splitLines(String text) {
+  if (text.isEmpty) return const [];
+  final lines = text.split('\n');
+  if (lines.length > 1 && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  return lines;
 }
 
 /// Input to [computeVibeFileDiff]: the ordered mutating calls that touched

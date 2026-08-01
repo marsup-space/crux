@@ -10,6 +10,7 @@
 // the pane is wide enough (≥ kMinSplitWidth) and unified otherwise, the
 // opencode viewer's split/unified-by-width rule.
 
+import 'package:crux/src/components/ui/highlight_service.dart';
 import 'package:crux/src/components/vibe_box_data.dart';
 import 'package:crux/src/components/vibe_diff_fullpane.dart';
 import 'package:crux/src/components/vibe_file_row.dart';
@@ -211,6 +212,77 @@ void main() {
           expect(tester.terminalState.findText('line three'), isNotEmpty);
         },
         size: const Size(100, 40),
+      );
+    });
+
+    test('highlights a multi-line block comment across every line', () async {
+      // Regression: highlighting each diff line in isolation loses the
+      // TextMate state at line boundaries, so the continuation lines of a
+      // block comment were re-tokenized as plain code. The whole snapshot
+      // must be highlighted once and sliced per line.
+      await HighlightService.initialize();
+      await testNocterm(
+        'block comment highlight',
+        (tester) async {
+          await tester.pumpComponent(
+            CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: Container(
+                width: 80,
+                height: 24,
+                child: VibeDiffFullpane(
+                  request: VibeDiffRequest(
+                    files: const [ModFileEntry('lib/foo.dart', 3, 1)],
+                    calls: const [
+                      ToolCallData(
+                        callId: 'c1',
+                        name: 'edit',
+                        input: {
+                          'filePath': 'lib/foo.dart',
+                          'oldString': 'int x = 1;',
+                          'newString': '/*\n * block comment\n */\nint x = 1;',
+                        },
+                      ),
+                    ],
+                  ),
+                  onClose: () {},
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+
+          // All three comment lines should carry the comment color
+          // (draculaFallback's highlightComment), not the plain default.
+          final commentColor = CruxThemeData.draculaFallback.highlightComment;
+          final state = tester.terminalState;
+          final lines = state.getText().split('\n');
+          final commentRows = <int>[];
+          for (var i = 0; i < lines.length; i++) {
+            if (lines[i].contains('* block comment') ||
+                lines[i].contains('*/') ||
+                lines[i].contains('+ /*')) {
+              // Find the first code glyph after the marker and assert its
+              // color is the comment color.
+              for (var x = 0; x < lines[i].length; x++) {
+                final cell = state.getCellAt(x, i);
+                final ch = cell?.char ?? ' ';
+                if (RegExp(r'[/*a-z]').hasMatch(ch)) {
+                  expect(
+                    cell?.style.color,
+                    equals(commentColor),
+                    reason: 'comment line $i should use the comment color',
+                  );
+                  commentRows.add(i);
+                  break;
+                }
+              }
+            }
+          }
+          // The opener, the middle, and the closer must all be found.
+          expect(commentRows.length, greaterThanOrEqualTo(3));
+        },
+        size: const Size(90, 26),
       );
     });
   });
