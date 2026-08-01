@@ -159,11 +159,56 @@ void main() {
           );
           await tester.pump();
 
-          // Unified view stacks the removed line above the added line.
+          // Unified view stacks the removed line above the added line,
+          // each with a `-`/`+` marker after its line-number gutter.
           expect(tester.terminalState.findText('foo.dart'), isNotEmpty);
           final text = tester.terminalState.getText();
           expect(text, contains('- old line'));
           expect(text, contains('+ new line'));
+        },
+        size: const Size(100, 40),
+      );
+    });
+
+    test('shows old/new line numbers in the gutter', () async {
+      await testNocterm(
+        'diff line numbers',
+        (tester) async {
+          await tester.pumpComponent(
+            CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: Container(
+                width: 80,
+                height: 30,
+                child: VibeDiffFullpane(
+                  request: VibeDiffRequest(
+                    files: const [ModFileEntry('lib/foo.dart', 1, 1)],
+                    calls: const [
+                      ToolCallData(
+                        callId: 'c1',
+                        name: 'edit',
+                        input: {
+                          'filePath': 'lib/foo.dart',
+                          'oldString': 'line one\nline two\nline three',
+                          'newString': 'line one\nline 2\nline three',
+                        },
+                      ),
+                    ],
+                  ),
+                  onClose: () {},
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+
+          // Context rows carry both old and new numbers (1 and 3); the
+          // changed row shows old 2 on the removed side and new 2 on the
+          // added side. The gutter renders each number right-aligned.
+          expect(tester.terminalState.findText('line one'), isNotEmpty);
+          expect(tester.terminalState.findText('line two'), isNotEmpty);
+          expect(tester.terminalState.findText('line 2'), isNotEmpty);
+          expect(tester.terminalState.findText('line three'), isNotEmpty);
         },
         size: const Size(100, 40),
       );

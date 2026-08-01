@@ -8,6 +8,7 @@ import '../theme/crux_theme.dart';
 import '../utils/terminal_symbols.dart';
 import 'tool_detail_utils.dart';
 import 'ui/fullpane.dart';
+import 'ui/highlight_service.dart';
 import 'ui/layout_metrics.dart';
 import 'vibe_box_data.dart';
 import 'vibe_file_diff.dart';
@@ -53,10 +54,12 @@ const double kMinSplitWidth = 100;
 ///
 /// The selected file's diff renders **side-by-side when the pane is wide
 /// enough** (≥ [kMinSplitWidth]) and unified otherwise — the opencode
-/// viewer's split/unified-by-width behaviour. Each file's before/after is
-/// rebuilt from the segment's own persisted `write`/`edit` args (see
-/// [computeVibeFileDiff]) — no git, no live re-read — so the view stays
-/// anchored to what the agent changed in this segment.
+/// viewer's split/unified-by-width behaviour. Code is syntax-highlighted
+/// from the file's extension and every row carries old/new line numbers
+/// in a gutter. Each file's before/after is rebuilt from the segment's
+/// own persisted `write`/`edit` args (see [computeVibeFileDiff]) — no
+/// git, no live re-read — so the view stays anchored to what the agent
+/// changed in this segment.
 class VibeDiffFullpane extends StatefulComponent {
   final VibeDiffRequest request;
   final VoidCallback onClose;
@@ -230,6 +233,7 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     final lines = computeVibeFileDiff(
       VibeFileDiffInput(path: entry.path, calls: calls),
     );
+    final language = languageFromPath(entry.path);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,62 +279,174 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
             ),
           )
         else if (useSplit)
-          _SplitDiff(lines: lines, theme: theme, totalWidth: maxWidth)
+          _SplitDiff(
+            lines: lines,
+            theme: theme,
+            language: language,
+            totalWidth: maxWidth,
+          )
         else
-          _UnifiedDiff(lines: lines, theme: theme),
+          _UnifiedDiff(lines: lines, theme: theme, language: language),
       ],
     );
   }
 }
 
+// ── shared helpers ───────────────────────────────────────────────────
+
+/// Highlight [text] as [language], blending the diff foreground/background
+/// onto each token. Returns a single plain span when the highlighter isn't
+/// available (grammar not loaded) or the line is empty.
+List<TextSpan> _highlightLine(
+  String text,
+  String language,
+  CruxThemeData theme,
+  Color fg,
+  Color? bg,
+) {
+  if (text.isEmpty) {
+    return [TextSpan(text: '', style: TextStyle(color: fg, backgroundColor: bg))];
+  }
+  if (language.isEmpty) {
+    return [
+      TextSpan(text: text, style: TextStyle(color: fg, backgroundColor: bg)),
+    ];
+  }
+  final spans = highlightCode(text, language, theme);
+  return [
+    for (final span in spans)
+      if (span is TextSpan)
+        TextSpan(
+          text: span.text,
+          style: (span.style ?? const TextStyle()).copyWith(
+            color: fg,
+            backgroundColor: bg,
+          ),
+        ),
+  ];
+}
+
+/// Whether every rendered line number fits in two cells, which lets the
+/// gutter use a compact fixed width instead of measuring the file.
+bool _allLineNumbersFit(int oldLines, int newLines) =>
+    oldLines <= 99 && newLines <= 99;
+
+/// Format a gutter cell: right-align the present side's number to [width],
+/// blank when that side has no line. [width] is the number of digit cells.
+String _gutterCell(int? number, int width) =>
+    number == null ? ' ' * width : number.toString().padLeft(width);
+
+/// Count the old/new lines a diff spans, for sizing the line-number gutter.
+(int, int) _diffExtent(List<DiffLine> lines) {
+  var old = 0;
+  var newLines = 0;
+  for (final line in lines) {
+    switch (line.kind) {
+      case DiffLineKind.context:
+        old++;
+        newLines++;
+      case DiffLineKind.removed:
+        old++;
+      case DiffLineKind.added:
+        newLines++;
+      case DiffLineKind.gap:
+        old += line.elidedCount;
+        newLines += line.elidedCount;
+    }
+  }
+  return (old, newLines);
+}
+
 /// Unified (single-column) diff — the same visual language as the edit
 /// tool's inline diff: `-` rows tinted removed, `+` rows added, context
-/// dimmed, long unchanged runs collapsed to a gap marker.
+/// dimmed, long unchanged runs collapsed to a gap marker. Every row is
+/// prefixed with its old/new line numbers and the code is highlighted.
 class _UnifiedDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
+  final String language;
 
-  const _UnifiedDiff({required this.lines, required this.theme});
+  const _UnifiedDiff({
+    required this.lines,
+    required this.theme,
+    required this.language,
+  });
 
   @override
   Component build(BuildContext context) {
     final gapGlyph = terminalSymbol('⋮', '|');
+    final (oldTotal, newTotal) = _diffExtent(lines);
+    final width = _allLineNumbersFit(oldTotal, newTotal)
+        ? 2
+        : math.max(
+            oldTotal.toString().length,
+            newTotal.toString().length,
+          );
+
+    var oldLine = 1;
+    var newLine = 1;
+    final gutterStyle = TextStyle(color: theme.codeBlockGutter);
+
+    final rows = <Component>[];
+    for (final line in lines) {
+      switch (line.kind) {
+        case DiffLineKind.gap:
+          rows.add(_gap(gapGlyph, line.elidedCount, width));
+          oldLine += line.elidedCount;
+          newLine += line.elidedCount;
+        case DiffLineKind.removed:
+          rows.add(
+            _row(
+              gutter: '${_gutterCell(oldLine, width)} ${_gutterCell(null, width)}',
+              prefix: '-',
+              text: line.text,
+              fg: theme.diffRemoved,
+              bg: theme.diffRemovedBackground,
+              gutterStyle: gutterStyle,
+            ),
+          );
+          oldLine++;
+        case DiffLineKind.added:
+          rows.add(
+            _row(
+              gutter: '${_gutterCell(null, width)} ${_gutterCell(newLine, width)}',
+              prefix: '+',
+              text: line.text,
+              fg: theme.diffAdded,
+              bg: theme.diffAddedBackground,
+              gutterStyle: gutterStyle,
+            ),
+          );
+          newLine++;
+        case DiffLineKind.context:
+          rows.add(
+            _row(
+              gutter: '${_gutterCell(oldLine, width)} ${_gutterCell(newLine, width)}',
+              prefix: ' ',
+              text: line.text,
+              fg: theme.onSurfaceDim,
+              bg: null,
+              gutterStyle: gutterStyle,
+            ),
+          );
+          oldLine++;
+          newLine++;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final line in lines)
-          switch (line.kind) {
-            DiffLineKind.removed => _row(
-              '- ',
-              line.text,
-              theme.diffRemoved,
-              theme.diffRemovedBackground,
-            ),
-            DiffLineKind.added => _row(
-              '+ ',
-              line.text,
-              theme.diffAdded,
-              theme.diffAddedBackground,
-            ),
-            DiffLineKind.context => _row(
-              '  ',
-              line.text,
-              theme.onSurfaceDim,
-              null,
-            ),
-            DiffLineKind.gap => _gap(gapGlyph, line.elidedCount),
-          },
-      ],
+      children: rows,
     );
   }
 
-  Component _gap(String glyph, int count) {
+  Component _gap(String glyph, int count, int width) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kContentHorizontalPadding,
       ),
       child: Text(
-        '  $glyph $count unchanged lines',
+        '${' ' * (width * 2 + 2)} $glyph $count unchanged lines',
         style: TextStyle(
           color: theme.onSurfaceDim,
           fontStyle: FontStyle.italic,
@@ -339,7 +455,14 @@ class _UnifiedDiff extends StatelessComponent {
     );
   }
 
-  Component _row(String prefix, String text, Color fg, Color? bg) {
+  Component _row({
+    required String gutter,
+    required String prefix,
+    required String text,
+    required Color fg,
+    required Color? bg,
+    required TextStyle gutterStyle,
+  }) {
     return SizedBox(
       width: double.infinity,
       child: Container(
@@ -347,9 +470,16 @@ class _UnifiedDiff extends StatelessComponent {
         padding: const EdgeInsets.symmetric(
           horizontal: kContentHorizontalPadding,
         ),
-        child: Text(
-          '$prefix$text',
-          style: TextStyle(color: fg, backgroundColor: bg),
+        child: RichText(
+          softWrap: false,
+          overflow: TextOverflow.clip,
+          text: TextSpan(
+            children: [
+              TextSpan(text: gutter, style: gutterStyle),
+              TextSpan(text: ' $prefix ', style: TextStyle(color: fg, backgroundColor: bg)),
+              ..._highlightLine(text, language, theme, fg, bg),
+            ],
+          ),
         ),
       ),
     );
@@ -361,10 +491,12 @@ class _UnifiedDiff extends StatelessComponent {
 /// Rows are paired old|new: a context line appears on both sides, a run of
 /// removals pairs with the following run of additions (a replaced hunk),
 /// and unpaired removals/additions sit against an empty placeholder on the
-/// other side. Each side wraps/clips within its own column width.
+/// other side. Each column has its own line-number gutter and clips its
+/// highlighted code to its own width.
 class _SplitDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
+  final String language;
 
   /// The full usable width of the diff area; each column gets half minus
   /// the separator.
@@ -373,13 +505,22 @@ class _SplitDiff extends StatelessComponent {
   const _SplitDiff({
     required this.lines,
     required this.theme,
+    required this.language,
     required this.totalWidth,
   });
 
   @override
   Component build(BuildContext context) {
     final gapGlyph = terminalSymbol('⋮', '|');
-    final rows = _pairRows();
+    final (oldTotal, newTotal) = _diffExtent(lines);
+    final width = _allLineNumbersFit(oldTotal, newTotal)
+        ? 2
+        : math.max(
+            oldTotal.toString().length,
+            newTotal.toString().length,
+          );
+
+    final rows = _pairRows(width);
     // 1 cell for the separator between the two columns.
     final colWidth = ((totalWidth - 1) / 2).floorToDouble();
     return Column(
@@ -387,13 +528,13 @@ class _SplitDiff extends StatelessComponent {
       children: [
         for (final row in rows)
           row.isGap
-              ? _gapRow(gapGlyph, row.gapCount)
+              ? _gapRow(gapGlyph, row.gapCount, width)
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
                       width: colWidth,
-                      child: _cell(row.left, isLeft: true),
+                      child: _cell(row.left, width, isLeft: true),
                     ),
                     SizedBox(
                       width: 1,
@@ -404,7 +545,7 @@ class _SplitDiff extends StatelessComponent {
                     ),
                     SizedBox(
                       width: colWidth,
-                      child: _cell(row.right, isLeft: false),
+                      child: _cell(row.right, width, isLeft: false),
                     ),
                   ],
                 ),
@@ -412,7 +553,7 @@ class _SplitDiff extends StatelessComponent {
     );
   }
 
-  Component _gapRow(String glyph, int count) {
+  Component _gapRow(String glyph, int count, int width) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kContentHorizontalPadding,
@@ -430,76 +571,83 @@ class _SplitDiff extends StatelessComponent {
   /// One side of a split row. Null [side] is an empty placeholder (the
   /// other half of an unpaired add/remove). Text is clipped, not wrapped,
   /// so a long line doesn't push the two columns out of alignment.
-  Component _cell(_Side? side, {required bool isLeft}) {
+  Component _cell(_Side? side, int width, {required bool isLeft}) {
     if (side == null) {
       return const SizedBox();
     }
-    final (prefix, fg, bg) = switch (side.kind) {
-      DiffLineKind.removed => (
-        '- ',
-        theme.diffRemoved,
-        theme.diffRemovedBackground,
-      ),
-      DiffLineKind.added => ('+ ', theme.diffAdded, theme.diffAddedBackground),
-      _ => ('  ', theme.onSurfaceDim, null),
+    final (fg, bg) = switch (side.kind) {
+      DiffLineKind.removed => (theme.diffRemoved, theme.diffRemovedBackground),
+      DiffLineKind.added => (theme.diffAdded, theme.diffAddedBackground),
+      _ => (theme.onSurfaceDim, null),
     };
+    final gutterStyle = TextStyle(color: theme.codeBlockGutter);
     return Container(
       decoration: bg != null ? BoxDecoration(color: bg) : null,
       padding: const EdgeInsets.symmetric(
         horizontal: kContentHorizontalPadding,
       ),
-      child: Text(
-        '$prefix${side.text}',
+      child: RichText(
         softWrap: false,
         overflow: TextOverflow.clip,
-        style: TextStyle(color: fg, backgroundColor: bg),
+        text: TextSpan(
+          children: [
+            TextSpan(text: _gutterCell(side.lineNumber, width), style: gutterStyle),
+            TextSpan(text: ' ', style: TextStyle(color: fg, backgroundColor: bg)),
+            ..._highlightLine(side.text, language, theme, fg, bg),
+          ],
+        ),
       ),
     );
   }
 
-  /// Pair the linear diff into old|new rows. Consecutive removals followed
-  /// by consecutive additions are zipped line-by-line (a replaced hunk);
+  /// Pair the linear diff into old|new rows, assigning old/new line
+  /// numbers in a single forward pass. Consecutive removals followed by
+  /// consecutive additions are zipped line-by-line (a replaced hunk);
   /// leftover removals/additions pair with an empty placeholder. Context
   /// lines occupy both columns.
-  List<_SplitRow> _pairRows() {
+  List<_SplitRow> _pairRows(int width) {
     final rows = <_SplitRow>[];
+    var oldLine = 1;
+    var newLine = 1;
     var i = 0;
     while (i < lines.length) {
       final line = lines[i];
       if (line.kind == DiffLineKind.context) {
         rows.add(
           _SplitRow(
-            left: _Side(DiffLineKind.context, line.text),
-            right: _Side(DiffLineKind.context, line.text),
+            left: _Side(DiffLineKind.context, line.text, oldLine),
+            right: _Side(DiffLineKind.context, line.text, newLine),
           ),
         );
+        oldLine++;
+        newLine++;
         i++;
       } else if (line.kind == DiffLineKind.gap) {
         rows.add(_SplitRow.gap(line.elidedCount));
+        oldLine += line.elidedCount;
+        newLine += line.elidedCount;
         i++;
       } else {
         // Collect the run of removals and the run of additions that make
         // up this change hunk, then zip them.
-        final removed = <String>[];
+        final removed = <_Side>[];
         while (i < lines.length && lines[i].kind == DiffLineKind.removed) {
-          removed.add(lines[i].text);
+          removed.add(_Side(DiffLineKind.removed, lines[i].text, oldLine));
+          oldLine++;
           i++;
         }
-        final added = <String>[];
+        final added = <_Side>[];
         while (i < lines.length && lines[i].kind == DiffLineKind.added) {
-          added.add(lines[i].text);
+          added.add(_Side(DiffLineKind.added, lines[i].text, newLine));
+          newLine++;
           i++;
         }
         final n = math.max(removed.length, added.length);
         for (var k = 0; k < n; k++) {
           rows.add(
             _SplitRow(
-              left: k < removed.length
-                  ? _Side(DiffLineKind.removed, removed[k])
-                  : null,
-              right: k < added.length
-                  ? _Side(DiffLineKind.added, added[k])
-                  : null,
+              left: k < removed.length ? removed[k] : null,
+              right: k < added.length ? added[k] : null,
             ),
           );
         }
@@ -509,11 +657,13 @@ class _SplitDiff extends StatelessComponent {
   }
 }
 
-/// One side of a split diff row.
+/// One side of a split diff row: the code text plus its line number on
+/// this side (old on the left, new on the right).
 class _Side {
   final DiffLineKind kind;
   final String text;
-  const _Side(this.kind, this.text);
+  final int lineNumber;
+  const _Side(this.kind, this.text, this.lineNumber);
 }
 
 /// A paired old|new row, or a full-width gap marker.
