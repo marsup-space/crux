@@ -119,23 +119,36 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
     final files = component.request.files;
+    final multiple = files.length > 1;
+    // The title is the current file's full path. For a multi-file segment
+    // we also show the position (n/N) so the prev/next shortcuts have a
+    // visible anchor; for a single file the path alone is the title.
+    final title = files.isEmpty
+        ? 'Diff'
+        : multiple
+            ? '${files[_index].path}  ${_index + 1}/${files.length}'
+            : files[_index].path;
     return Fullpane(
-      title: 'Diff — ${files.isEmpty ? 0 : _index + 1}/${files.length}',
+      title: title,
       onClose: component.onClose,
-      onKeyEvent: _handleKey,
+      onKeyEvent: multiple ? _handleKey : null,
       shortcuts: [
-        FullpaneShortcut(
-          label: 'prev file',
-          keyHint: '←',
-          matches: (e) => e.logicalKey == LogicalKey.arrowLeft,
-          onActivate: () => _selectFile((_index - 1).clamp(0, files.length - 1)),
-        ),
-        FullpaneShortcut(
-          label: 'next file',
-          keyHint: '→',
-          matches: (e) => e.logicalKey == LogicalKey.arrowRight,
-          onActivate: () => _selectFile((_index + 1).clamp(0, files.length - 1)),
-        ),
+        if (multiple) ...[
+          FullpaneShortcut(
+            label: 'prev file',
+            keyHint: '←',
+            matches: (e) => e.logicalKey == LogicalKey.arrowLeft,
+            onActivate: () =>
+                _selectFile((_index - 1).clamp(0, files.length - 1)),
+          ),
+          FullpaneShortcut(
+            label: 'next file',
+            keyHint: '→',
+            matches: (e) => e.logicalKey == LogicalKey.arrowRight,
+            onActivate: () =>
+                _selectFile((_index + 1).clamp(0, files.length - 1)),
+          ),
+        ],
       ],
       contentBuilder: (context) => LayoutBuilder(
         builder: (context, constraints) => _buildBody(theme, constraints),
@@ -162,17 +175,33 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     // The content area is inside the fullpane's 1-cell horizontal padding,
     // so `constraints.maxWidth` is already the usable width for the diff.
     final useSplit = constraints.maxWidth >= kMinSplitWidth;
+    // The file picker (and its divider) is only useful when there's more
+    // than one file to switch between — with a single file the title
+    // already names it, so we go straight to the diff.
+    final multiple = files.length > 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _filePicker(theme),
-        Divider(color: theme.outline, height: 1),
+        if (multiple) ...[
+          _filePicker(theme),
+          Divider(color: theme.outline, height: 1),
+        ],
         Expanded(
           child: SingleChildScrollView(
             controller: _scroll,
             keyboardScrollable: true,
-            child: _fileDiff(entry, theme, constraints.maxWidth, useSplit),
+            child: _fileDiff(
+              entry,
+              theme,
+              constraints.maxWidth,
+              useSplit,
+              // With a single file the fullpath is already the fullpane
+              // title, so the body header shows only the +N -M counts;
+              // with several files the picker shows basenames, so the body
+              // header keeps the full path for clarity.
+              showPath: multiple,
+            ),
           ),
         ),
       ],
@@ -220,13 +249,17 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
   }
 
   /// The selected file's diff: a header (path + segment `+N -M`), then the
-  /// diff body in split or unified form by [useSplit].
+  /// diff body in split or unified form by [useSplit]. When [showPath] is
+  /// false (a single-file segment, where the fullpath is already the
+  /// fullpane title) the header collapses to just the right-aligned
+  /// `+N -M` counts.
   Component _fileDiff(
     ModFileEntry entry,
     CruxThemeData theme,
     double maxWidth,
-    bool useSplit,
-  ) {
+    bool useSplit, {
+    bool showPath = true,
+  }) {
     final calls = component.request.calls
         .where((c) => _callTouchesPath(c, entry.path))
         .toList();
@@ -244,15 +277,18 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: Text(
-                  entry.path,
-                  style: TextStyle(
-                    color: theme.foreground,
-                    fontWeight: FontWeight.bold,
+              if (showPath)
+                Expanded(
+                  child: Text(
+                    entry.path,
+                    style: TextStyle(
+                      color: theme.foreground,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ),
+                )
+              else
+                const Spacer(),
               Text(
                 '+${entry.linesAdded}',
                 style: TextStyle(color: theme.diffAdded),
