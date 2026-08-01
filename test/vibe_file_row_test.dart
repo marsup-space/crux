@@ -287,11 +287,14 @@ void main() {
     });
 
     test('a comment at the end of the snapshot stays comment-colored', () async {
-      // Regression: the Dart TextMate grammar only recognizes a doc comment
-      // when code follows it, so a trailing comment (exactly what a
-      // pure-deletion diff produces) was tokenized as code — its prose
-      // rendered cyan/pink/yellow. Comment lines are now forced to the
-      // comment color regardless of the grammar.
+      // Regression: the TextMate parser (span_parser) scanned grammar
+      // regexes against the full remaining text rather than the current
+      // line, so a `while`-match on a trailing `///` doc comment lost its
+      // line boundary and re-tokenized the comment prose as code —
+      // `Full` rendered cyan, `for` pink, `'s` / `` `files` `` yellow-
+      // string. The parser now scopes every regex to the current line
+      // (matching upstream DevTools), so a trailing comment keeps its
+      // doc-comment scope and reads as a comment on every line.
       await HighlightService.initialize();
       await testNocterm(
         'trailing comment highlight',

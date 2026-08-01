@@ -411,14 +411,6 @@ List<List<TextSpan>> _highlightLines(
   final joined = lines.join('\n');
   final spans = highlightCode(joined, language, theme);
 
-  // Comment lines are forced to the comment color below. The TextMate
-  // grammars mis-highlight a comment that is the LAST thing in the text
-  // (their doc-comment rule is anchored to a following declaration, which
-  // a pure-deletion diff doesn't have), painting the comment prose as
-  // code. Stripping the highlight on comment lines sidesteps the grammar
-  // quirk and is more readable: a comment reads as one tone.
-  final commentStyle = TextStyle(color: theme.highlightComment);
-
   // Slice the flat span list at each '\n'. A span may straddle a line
   // boundary (a multi-line token such as a block-comment run), so split
   // it and carry its style across the boundary.
@@ -452,15 +444,7 @@ List<List<TextSpan>> _highlightLines(
   while (perLine.length < lines.length) {
     perLine.add([TextSpan(text: lines[perLine.length])]);
   }
-
-  // Force comment lines to the comment color (see the note above).
-  final commentRe = RegExp(r'^\s*//');
-  return [
-    for (var i = 0; i < perLine.length; i++)
-      commentRe.hasMatch(lines[i])
-          ? [TextSpan(text: lines[i], style: commentStyle)]
-          : perLine[i],
-  ];
+  return perLine;
 }
 
 /// Format a gutter cell: right-align the present side's number to [width],
