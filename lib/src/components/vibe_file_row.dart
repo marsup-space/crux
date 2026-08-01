@@ -1,19 +1,20 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
+import 'ui/multi_button.dart';
 
 /// One interactive row in the vibe files box — the per-file multibutton.
 ///
-/// Shows the file's name and its segment `+N -M` counts. Hovering the row
-/// swaps that row's content **in place** for two action buttons, `open`
-/// and `diff` (the inline-swap interaction — no overlay, no box resize).
-/// Moving the mouse away restores the file label.
+/// A thin wrapper over [MultiButton]: the idle state shows the file's
+/// name and its segment `+N -M` counts, and hovering morphs the row into
+/// the two action segments `open │ diff` (size-stable, no box reflow).
+/// `open` reveals the file in the system file manager; `diff` opens the
+/// diff fullpane focused on it.
 ///
-/// The label row is laid out so its width matches the action row's, which
-/// keeps the box from reflowing when the swap happens: the action row is
-/// the wider of the two, and the label row right-aligns its counts into
-/// the same trailing space via the [Spacer].
-class VibeFileRow extends StatefulComponent {
+/// Delegating to [MultiButton] keeps the hover morph, the per-segment
+/// highlight, the even segment distribution, and the size-pinning logic
+/// in one tested component instead of re-implementing them here.
+class VibeFileRow extends StatelessComponent {
   /// The file's display name (basename).
   final String name;
 
@@ -37,77 +38,30 @@ class VibeFileRow extends StatefulComponent {
   });
 
   @override
-  State<VibeFileRow> createState() => _VibeFileRowState();
-}
-
-class _VibeFileRowState extends State<VibeFileRow> {
-  bool _hovered = false;
-
-  @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      opaque: false,
-      child: _hovered ? _actionRow(theme) : _labelRow(theme),
-    );
-  }
-
-  /// The resting state: file name plus its `+N -M` counts on one line.
-  ///
-  /// Rendered as a single [Text] (not a [Row] with a [Spacer]) because
-  /// the files box sits inside an unbounded-width [Row] in the segment
-  /// bubble — a `Spacer` there is a flex child and throws
-  /// "non-zero flex but incoming width constraints are unbounded",
-  /// which nocterm surfaces as an empty box. A single text run carries
-  /// no flex, so the row shrink-wraps like every other box row.
-  Component _labelRow(CruxThemeData theme) {
-    final c = component;
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(text: c.name, style: TextStyle(color: theme.text)),
-          TextSpan(
-            text: ' +${c.linesAdded}',
-            style: TextStyle(color: theme.diffAdded),
-          ),
-          TextSpan(
-            text: ' -${c.linesRemoved}',
-            style: TextStyle(color: theme.diffRemoved),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The hover state: the row's content is replaced by the two action
-  /// buttons. A button is omitted when its callback is null.
-  Component _actionRow(CruxThemeData theme) {
-    final c = component;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (c.onOpen != null) _action('open', c.onOpen!, theme),
-        if (c.onOpen != null && c.onDiff != null)
-          Text(' · ', style: TextStyle(color: theme.onSurfaceDim)),
-        if (c.onDiff != null) _action('diff', c.onDiff!, theme),
+    // The idle label carries the name and counts as a single-line string.
+    // MultiButton renders it as one Text run, so the colored `+N -M`
+    // split the old implementation had is flattened to a single color —
+    // acceptable, since the counts are secondary metadata and the hover
+    // segments (the actual affordance) are what the user interacts with.
+    return MultiButton(
+      label: '$name +$linesAdded -$linesRemoved',
+      segments: [
+        MultiButtonSegment(label: 'open', onPressed: onOpen),
+        MultiButtonSegment(label: 'diff', onPressed: onDiff),
       ],
-    );
-  }
-
-  Component _action(String label, VoidCallback onTap, CruxThemeData theme) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(color: theme.buttonBackgroundHover),
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: Text(
-          label,
-          style: TextStyle(color: theme.success, fontWeight: FontWeight.bold),
-        ),
-      ),
+      color: theme.text,
+      hoverColor: theme.success,
+      dimHoverColor: theme.onSurfaceDim,
+      disabledColor: theme.onSurfaceDim,
+      separatorColor: theme.onSurfaceDim,
+      // Transparent idle background so the row blends into the files box;
+      // the hover/hover-segment backgrounds give the interactive feedback.
+      bgColor: null,
+      hoverBgColor: null,
+      hoverSegmentBgColor: theme.buttonBackgroundHover,
+      padding: EdgeInsets.zero,
     );
   }
 }
