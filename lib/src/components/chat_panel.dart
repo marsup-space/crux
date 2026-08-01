@@ -985,34 +985,37 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
-  /// Reveal the first file of a vibe files box in the system file
-  /// manager (Finder on macOS, Explorer on Windows, the default manager
-  /// on Linux). Wired to the box's `open` button. Toasts on failure so a
-  /// missing file or absent helper never crashes the TUI.
-  void _openVibeFiles(ModBoxData mods) {
-    if (mods.paths.isEmpty) return;
+  /// Reveal a vibe file row's file in the system file manager (Finder on
+  /// macOS, Explorer on Windows, the default manager on Linux). Wired to
+  /// the row's `open` action. Toasts on failure so a missing file or
+  /// absent helper never crashes the TUI.
+  void _openVibeFile(String path) {
     final result = revealInFileManager(
-      mods.paths.first,
+      path,
       workingDirectory: Directory.current.path,
     );
     switch (result) {
       case RevealResult.launched:
         return;
       case RevealResult.notFound:
-        _showToast('File not found: ${mods.paths.first}',
-            mode: ToastMode.error);
+        _showToast('File not found: $path', mode: ToastMode.error);
       case RevealResult.failed:
         _showToast("Couldn't open file manager", mode: ToastMode.error);
     }
   }
 
-  /// Open the segment-scoped diff fullpane for a vibe files box. Wired
-  /// to the box's `diff` button. The request carries the per-file
-  /// entries and the segment's mutating calls; the fullpane rebuilds each
-  /// file's before/after from those args (no git, no live re-read).
-  void _openVibeDiff(ModBoxData mods, List<ToolCallData> calls) {
+  /// Open the segment-scoped diff fullpane focused on the file whose
+  /// `diff` action was activated. The request carries the per-file
+  /// entries, the segment's mutating calls, and the tapped file's index;
+  /// the fullpane rebuilds each file's before/after from those args (no
+  /// git, no live re-read).
+  void _openVibeDiff(int fileIndex, ModBoxData mods, List<ToolCallData> calls) {
     setState(() {
-      _vibeDiffRequest = VibeDiffRequest(files: mods.files, calls: calls);
+      _vibeDiffRequest = VibeDiffRequest(
+        files: mods.files,
+        calls: calls,
+        initialIndex: fileIndex,
+      );
       _overlayController.showFullpane = true;
     });
   }
@@ -1230,7 +1233,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         onQuickReplyTap: _handleQuickReplyTap,
                         onLinkTap: _handleMarkdownLinkTap,
                         onRetryContinue: _retryContinue,
-                        onVibeOpenFiles: _openVibeFiles,
+                        onVibeOpenFile: _openVibeFile,
                         onVibeDiffFiles: _openVibeDiff,
                         onCompactionTap: CommandRegistry.instance.debugEnabled
                             ? _openCompactionFullpane

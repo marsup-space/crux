@@ -48,21 +48,22 @@ class VibeBox extends StatelessComponent {
   /// Text color for the body rows. Defaults to the theme's `text` color.
   final Color? bodyColor;
 
-  /// Optional action buttons rendered as a footer row inside the box,
-  /// below the body rows. Used by the `files` box to surface per-box
-  /// actions (`open`, `diff`) without growing the box's height when
-  /// they're absent. When null/empty no footer renders.
-  final List<Component>? footerButtons;
+  /// Interactive body rows. When non-null this takes precedence over both
+  /// [bodyRows] and [bodyRowSpans]; each entry renders as its own
+  /// component, so a row can host hover / tap affordances (the files
+  /// box's per-row open·diff swap). Rows are laid out exactly like the
+  /// plain text rows — one per line, left-aligned.
+  final List<Component>? bodyRowComponents;
 
   const VibeBox({
     required this.title,
     this.bodyRows = const [],
     this.bodyRowSpans,
+    this.bodyRowComponents,
     this.active = false,
     required this.mutedColor,
     required this.activeColor,
     this.bodyColor,
-    this.footerButtons,
     super.key,
   });
 
@@ -86,8 +87,13 @@ class VibeBox extends StatelessComponent {
     // different component subclass — would then throw
     // "type 'Padding' is not a subtype of type 'Text'" at runtime.
     final bodyChildren = <Component>[];
+    final rowComponents = bodyRowComponents;
     final spans = bodyRowSpans;
-    if (spans != null) {
+    if (rowComponents != null) {
+      // Interactive rows (the files box): each entry is already a full
+      // component — render as-is.
+      bodyChildren.addAll(rowComponents);
+    } else if (spans != null) {
       for (final span in spans) {
         bodyChildren.add(
           RichText(
@@ -104,14 +110,6 @@ class VibeBox extends StatelessComponent {
           Text(row, style: TextStyle(color: effectiveBodyColor)),
         );
       }
-    }
-
-    // Optional footer button row (e.g. the files box's open/diff
-    // actions). Rendered after the body rows with a one-cell gap so the
-    // buttons read as a separate affordance, not another file row.
-    final buttons = footerButtons;
-    if (buttons != null && buttons.isNotEmpty) {
-      bodyChildren.add(Row(children: buttons));
     }
 
     return Container(

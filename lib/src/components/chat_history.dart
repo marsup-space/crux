@@ -110,16 +110,16 @@ class ChatHistory extends StatefulComponent {
   /// always meaningless.
   final void Function(Message message)? onCompactionTap;
 
-  /// Fired when the user clicks the `open` button under a vibe files box.
-  /// Receives the segment's [ModBoxData]; the chat panel reveals the first
-  /// file in the system file manager. When null, the button is omitted.
-  final void Function(ModBoxData mods)? onVibeOpenFiles;
+  /// Fired when the user activates `open` on a vibe file row. Receives the
+  /// file's display path; the chat panel reveals it in the system file
+  /// manager. When null, the row's `open` action is omitted.
+  final void Function(String path)? onVibeOpenFile;
 
-  /// Fired when the user clicks the `diff` button under a vibe files box.
-  /// Receives the segment's [ModBoxData] and its mutating tool calls, so
-  /// the chat panel can open the segment-scoped diff fullpane. When null,
-  /// the button is omitted.
-  final void Function(ModBoxData mods, List<ToolCallData> calls)?
+  /// Fired when the user activates `diff` on a vibe file row. Receives the
+  /// file's index, the segment's [ModBoxData], and its mutating tool calls,
+  /// so the chat panel can open the segment-scoped diff fullpane focused on
+  /// that file. When null, the row's `diff` action is omitted.
+  final void Function(int fileIndex, ModBoxData mods, List<ToolCallData> calls)?
   onVibeDiffFiles;
 
   /// Callback fired when the user clicks the `▶ retry (/continue)`
@@ -145,7 +145,7 @@ class ChatHistory extends StatefulComponent {
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onCompactionTap,
-    this.onVibeOpenFiles,
+    this.onVibeOpenFile,
     this.onVibeDiffFiles,
     this.onRetryContinue,
   });
@@ -644,7 +644,7 @@ class _ChatHistoryState extends State<ChatHistory> {
               enableQuickReplies: isLatestClosedAi,
               onSessionLinkTap: component.onSessionLinkTap,
               onLinkTap: component.onLinkTap,
-              onOpenFiles: component.onVibeOpenFiles,
+              onOpenFile: component.onVibeOpenFile,
               onDiffFiles: component.onVibeDiffFiles,
               // Pass the provider's reasoning presets so the
               // persisted segment's think box maps the internal
