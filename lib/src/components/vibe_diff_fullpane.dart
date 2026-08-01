@@ -45,9 +45,6 @@ class VibeDiffRequest {
 /// rule, applied per the fullpane's measured width.
 const double kMinSplitWidth = 100;
 
-/// How many cells a `←`/`→` press pans the diff horizontally.
-const double _kHorizontalScrollStep = 4;
-
 /// Full-screen diff view for a vibe segment's `files` box.
 ///
 /// Shows **one file at a time** (the user asked for a file picker rather
@@ -68,14 +65,10 @@ const double _kHorizontalScrollStep = 4;
 /// — no git, no live re-read — so the view stays anchored to what the
 /// agent changed in this segment.
 ///
-/// Long lines **scroll horizontally** by default (`←`/`→` pan the view
-/// when there's a single file, or the mouse wheel); pressing `w` toggles
-/// **soft-wrap** so the full line is visible without scrolling. The two
-/// per-axis [SingleChildScrollView]s are nested (vertical outer,
-/// horizontal inner) so a wide diff pans left/right while scrolling
-/// up/down. When a segment has several files, `←`/`→` switch files and
-/// horizontal scrolling falls back to the mouse wheel — file switching
-/// is the more common action, so it keeps the arrows.
+/// Long lines **soft-wrap** to fit the pane width, so the full line is
+/// always visible without any horizontal scrolling. The diff scrolls
+/// vertically only. `←`/`→` (or `h`/`l`) switch files when a segment has
+/// several.
 class VibeDiffFullpane extends StatefulComponent {
   final VibeDiffRequest request;
   final VoidCallback onClose;
@@ -96,16 +89,10 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     math.max(0, component.request.files.length - 1),
   );
   final ScrollController _scroll = ScrollController();
-  final ScrollController _hScroll = ScrollController();
-
-  /// Whether long lines soft-wrap (true) or scroll horizontally (false).
-  /// Horizontal scroll is the default so code alignment is preserved.
-  bool _wrap = false;
 
   @override
   void dispose() {
     _scroll.dispose();
-    _hScroll.dispose();
     super.dispose();
   }
 
@@ -113,66 +100,25 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     if (index == _index) return;
     setState(() {
       _index = index;
-      // Jump back to the top/left so the newly selected file's diff
-      // starts at its first line rather than inheriting the previous
-      // file's scroll offset.
+      // Jump back to the top so the newly selected file's diff starts at
+      // its first line rather than inheriting the previous file's scroll
+      // offset.
       _scroll.jumpTo(0);
-      _hScroll.jumpTo(0);
     });
-  }
-
-  void _scrollHorizontal(double delta) {
-    _hScroll.jumpTo(
-      (_hScroll.offset + delta).clamp(0.0, _hScroll.maxScrollExtent),
-    );
   }
 
   bool _handleKey(KeyboardEvent event) {
     final files = component.request.files;
     if (files.isEmpty) return false;
     final key = event.logicalKey;
-
-    // `w` toggles soft-wrap in both single- and multi-file modes.
-    if (key == LogicalKey.keyW) {
-      setState(() {
-        _wrap = !_wrap;
-        // Reset the horizontal offset when entering wrap — the lines now
-        // fit the width, so any leftover scroll would clip the left edge.
-        if (_wrap) _hScroll.jumpTo(0);
-      });
+    // Arrows (or h/l) switch files; only relevant with several files.
+    if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
+      _selectFile((_index + 1).clamp(0, files.length - 1));
       return true;
     }
-
-    if (files.length > 1) {
-      // Multi-file: arrows switch files (the more common action);
-      // horizontal scrolling is available via the mouse wheel.
-      if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
-        _selectFile((_index + 1).clamp(0, files.length - 1));
-        return true;
-      }
-      if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
-        _selectFile((_index - 1).clamp(0, files.length - 1));
-        return true;
-      }
-    } else {
-      // Single file: arrows pan horizontally; `h`/`l` mirror them for
-      // vi-style navigation.
-      if (key == LogicalKey.arrowRight || key == LogicalKey.keyL) {
-        _scrollHorizontal(_kHorizontalScrollStep);
-        return true;
-      }
-      if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
-        _scrollHorizontal(-_kHorizontalScrollStep);
-        return true;
-      }
-      if (key == LogicalKey.home) {
-        _hScroll.jumpTo(0);
-        return true;
-      }
-      if (key == LogicalKey.end) {
-        _hScroll.jumpTo(_hScroll.maxScrollExtent);
-        return true;
-      }
+    if (key == LogicalKey.arrowLeft || key == LogicalKey.keyH) {
+      _selectFile((_index - 1).clamp(0, files.length - 1));
+      return true;
     }
     // Vertical scroll keys fall through to the SingleChildScrollView's
     // keyboardScrollable handling (and the Fullpane's own escape).
@@ -195,8 +141,6 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     return Fullpane(
       title: title,
       onClose: component.onClose,
-      // Always wired: `w` toggles wrap in both modes, and in single-file
-      // mode the arrows pan horizontally.
       onKeyEvent: _handleKey,
       shortcuts: [
         if (multiple) ...[
@@ -215,13 +159,6 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
                 _selectFile((_index + 1).clamp(0, files.length - 1)),
           ),
         ],
-        FullpaneShortcut(
-          label: _wrap ? 'wrap: on' : 'wrap: off',
-          keyHint: 'w',
-          matches: (e) => e.logicalKey == LogicalKey.keyW,
-          onActivate: () =>
-              _handleKey(const KeyboardEvent(logicalKey: LogicalKey.keyW)),
-        ),
       ],
       contentBuilder: (context) => LayoutBuilder(
         builder: (context, constraints) => _buildBody(theme, constraints),
@@ -261,28 +198,21 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           Divider(color: theme.outline, height: 1),
         ],
         Expanded(
-          // Vertical scroll on the outside, horizontal on the inside. The
-          // inner viewport gives the diff unbounded width so long lines lay
-          // out at full length and pan via the horizontal controller; in
-          // wrap mode the rows instead size to the viewport width.
+          // Vertical scrolling only — the diff soft-wraps to the pane
+          // width, so there's nothing to pan horizontally.
           child: SingleChildScrollView(
             controller: _scroll,
             keyboardScrollable: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              controller: _hScroll,
-              child: _fileDiff(
-                entry,
-                theme,
-                constraints.maxWidth,
-                useSplit,
-                wrap: _wrap,
-                // With a single file the fullpath is already the fullpane
-                // title, so the body header shows only the +N -M counts;
-                // with several files the picker shows basenames, so the
-                // body header keeps the full path for clarity.
-                showPath: multiple,
-              ),
+            child: _fileDiff(
+              entry,
+              theme,
+              constraints.maxWidth,
+              useSplit,
+              // With a single file the fullpath is already the fullpane
+              // title, so the body header shows only the +N -M counts;
+              // with several files the picker shows basenames, so the
+              // body header keeps the full path for clarity.
+              showPath: multiple,
             ),
           ),
         ),
@@ -340,7 +270,6 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     CruxThemeData theme,
     double maxWidth,
     bool useSplit, {
-    required bool wrap,
     bool showPath = true,
   }) {
     final calls = component.request.calls
@@ -409,7 +338,6 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
             lines: result.lines,
             theme: theme,
             totalWidth: maxWidth,
-            wrap: wrap,
             gutterWidth: _gutterWidth(result),
             leftSpans: body.left,
             rightSpans: body.right,
@@ -418,7 +346,6 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           _UnifiedDiff(
             lines: result.lines,
             theme: theme,
-            wrap: wrap,
             gutterWidth: _gutterWidth(result),
             leftSpans: body.left,
             rightSpans: body.right,
@@ -533,10 +460,6 @@ class _UnifiedDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
 
-  /// Whether long lines soft-wrap (true) or stay on one line for
-  /// horizontal scrolling (false).
-  final bool wrap;
-
   /// Digit width of the line-number gutter.
   final int gutterWidth;
 
@@ -549,7 +472,6 @@ class _UnifiedDiff extends StatelessComponent {
   const _UnifiedDiff({
     required this.lines,
     required this.theme,
-    required this.wrap,
     required this.gutterWidth,
     required this.leftSpans,
     required this.rightSpans,
@@ -650,7 +572,7 @@ class _UnifiedDiff extends StatelessComponent {
         horizontal: kContentHorizontalPadding,
       ),
       child: RichText(
-        softWrap: wrap,
+        softWrap: true,
         overflow: TextOverflow.clip,
         text: TextSpan(
           children: [
@@ -672,15 +594,11 @@ class _UnifiedDiff extends StatelessComponent {
 /// Rows are paired old|new: a context line appears on both sides, a run of
 /// removals pairs with the following run of additions (a replaced hunk),
 /// and unpaired removals/additions sit against an empty placeholder on the
-/// other side. Each column has its own line-number gutter. In horizontal
-/// scroll mode the code is clipped to its column; in wrap mode it wraps.
+/// other side. Each column has its own line-number gutter, and long code
+/// soft-wraps within its column width.
 class _SplitDiff extends StatelessComponent {
   final List<DiffLine> lines;
   final CruxThemeData theme;
-
-  /// Whether long lines soft-wrap (true) or stay clipped for horizontal
-  /// scrolling (false).
-  final bool wrap;
 
   /// Digit width of the line-number gutter.
   final int gutterWidth;
@@ -698,7 +616,6 @@ class _SplitDiff extends StatelessComponent {
   const _SplitDiff({
     required this.lines,
     required this.theme,
-    required this.wrap,
     required this.gutterWidth,
     required this.leftSpans,
     required this.rightSpans,
@@ -780,7 +697,7 @@ class _SplitDiff extends StatelessComponent {
         horizontal: kContentHorizontalPadding,
       ),
       child: RichText(
-        softWrap: wrap,
+        softWrap: true,
         overflow: TextOverflow.clip,
         text: TextSpan(
           children: [
