@@ -10,8 +10,8 @@ import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 
 void main() {
   group('WireFamily', () {
-    test('has two variants', () {
-      expect(WireFamily.values, hasLength(2));
+    test('has three variants', () {
+      expect(WireFamily.values, hasLength(3));
       expect(WireFamily.values, containsAll(WireFamily.values));
     });
 
@@ -21,6 +21,7 @@ void main() {
         wireFamilyLabel(WireFamily.anthropicCompatible),
         'Anthropic-compatible',
       );
+      expect(wireFamilyLabel(WireFamily.responsesApi), 'Responses API');
     });
   });
 
@@ -211,10 +212,10 @@ void main() {
       },
     );
 
-    test('deepseek → DeepSeekProvider + openaiCompatible wire', () {
+    test('deepseek → DeepSeekProvider + responsesApi wire', () {
       final r = resolveProvider('deepseek');
       expect(r.provider, isA<DeepSeekProvider>());
-      expect(r.wire, WireFamily.openaiCompatible);
+      expect(r.wire, WireFamily.responsesApi);
     });
 
     test('unknown type throws ArgumentError listing known types', () {
@@ -946,7 +947,7 @@ context_size = 8192
       // Verify DeepSeek (custom `type` registered in resolveProvider())
       final deepseek = loader.providerByName('deepseek')!;
       expect(deepseek.type, 'deepseek');
-      expect(deepseek.wireFamily, WireFamily.openaiCompatible);
+      expect(deepseek.wireFamily, WireFamily.responsesApi);
       expect(deepseek.models, isNotEmpty);
 
       // Verify Local (uses the generic openai_compatible type)
@@ -970,7 +971,7 @@ context_size = 8192
         final deepseek = loader.providerByName('deepseek');
         if (deepseek == null) return; // not present in this checkout
         expect(deepseek.type, 'deepseek');
-        expect(deepseek.wireFamily, WireFamily.openaiCompatible);
+        expect(deepseek.wireFamily, WireFamily.responsesApi);
         expect(providerFor(deepseek), isA<DeepSeekProvider>());
       },
     );
