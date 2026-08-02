@@ -15,6 +15,7 @@
 
 import 'dart:io';
 
+import 'package:nocterm/nocterm.dart' show VoidCallback;
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -2166,6 +2167,91 @@ stream_lerp = false
       expect(toasts.first.message, contains('override'));
       expect(toasts.first.message, contains('default 0.6'));
       expect(toasts.first.mode, ToastMode.info);
+    });
+  });
+
+  group('CommandExecutor — /home', () {
+    late Directory tempDir;
+    late ProviderService providerService;
+    late SessionStore store;
+    late Session session;
+    late SessionRuntimeState runtime;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('crux_home_test_');
+      providerService = ProviderService(userProvidersDir: tempDir.path);
+      final db = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(db);
+      session = await store.create(
+        title: 'Test Session',
+        model: '',
+        projectPath: tempDir.path,
+      );
+      runtime = SessionRuntimeState(sessionId: session.id);
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    CommandContext buildContext({
+      VoidCallback? showHomeImpl,
+      void Function(String, {ToastMode? mode})? showToastImpl,
+    }) {
+      return CommandContext(
+        store: store,
+        providerService: providerService,
+        providerServiceReady: false,
+        webProviderRegistry: WebProviderRegistry(),
+        currentSession: session,
+        currentSessionId: session.id,
+        sessions: [session],
+        currentMessages: const <Message>[],
+        projectPath: tempDir.path,
+        refresh: () {},
+        showToast: showToastImpl ?? (message, {ToastMode? mode}) {},
+        switchSession: (_) async {},
+        initSessions: () async {},
+        createNewSession: () async {},
+        runtime: (id) => runtime,
+        persistThinkingLevel: (_) {},
+        persistChatDisplayMode: (_) {},
+        persistTemperature: (_) async {},
+        resolveAuxiliaryModel: () {},
+        sendTurn: ({String? text}) async {},
+        findLastUserMessage: () async => null,
+        deleteMessagesFrom: (_) async {},
+        sendBtwTurn: (_) async {},
+        clearBtwTurns: (_) {},
+        showHome: showHomeImpl,
+      );
+    }
+
+    test('invokes the showHome callback', () async {
+      var showHomeCalls = 0;
+      await CommandExecutor().execute(
+        '/home',
+        buildContext(showHomeImpl: () => showHomeCalls++),
+      );
+      expect(showHomeCalls, 1, reason: '/home should fire showHome once');
+    });
+
+    test('surfaces an error toast when showHome is not bound', () async {
+      String? lastToast;
+      ToastMode? lastMode;
+      await CommandExecutor().execute(
+        '/home',
+        buildContext(
+          showToastImpl: (message, {mode}) {
+            lastToast = message;
+            lastMode = mode;
+          },
+        ),
+      );
+      expect(lastToast, isNotNull);
+      expect(lastMode, ToastMode.error);
     });
   });
 

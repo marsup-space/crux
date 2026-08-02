@@ -22,6 +22,7 @@ class OverlayController {
   String? builtinProviderName;
   bool showSessionManager = false;
   bool showFullpane = false;
+  bool showHome = false;
 
   /// @-mention file browser state. The popover shows while
   /// [overlayMode] is [OverlayMode.atMention]; [atMentionQuery] is
@@ -84,6 +85,7 @@ class OverlayController {
     skillScrollOffset = 0;
     showSessionManager = false;
     showFullpane = false;
+    showHome = false;
   }
 
   int computeScrollOffset(

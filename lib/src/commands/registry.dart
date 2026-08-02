@@ -172,6 +172,15 @@ const List<SlashCommand> _baseCommands = [
     description: '帮助 (show the help sheet: commands, shortcuts, tips)',
     availableDuringResponse: true,
   ),
+  // Open the home-screen dashboard overlay. Available mid-stream
+  // because it only flips an overlay flag — the chat body keeps
+  // rendering live underneath; session-mutating *actions* inside
+  // home are separately guarded at the HomeContext.runCommand seam.
+  SlashCommand(
+    name: '/home',
+    description: 'Open the home screen dashboard',
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/theme',
     description: 'Change the UI theme',

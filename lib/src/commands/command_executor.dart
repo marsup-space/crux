@@ -36,6 +36,7 @@ import 'cmd_archive.dart';
 import 'cmd_unarchive.dart';
 import 'cmd_rename.dart';
 import 'cmd_quit.dart';
+import 'cmd_home.dart';
 
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
 
@@ -76,6 +77,7 @@ class CommandContext {
   final void Function(String text)? setInputText;
   final VoidCallback? quitApp;
   final VoidCallback? showFullpane;
+  final VoidCallback? showHome;
   final RecentProjectsStore? recentProjectsStore;
 
   /// Store for `shell_monitor_logs` (one row per aux-monitor event).
@@ -123,6 +125,7 @@ class CommandContext {
     this.setInputText,
     this.quitApp,
     this.showFullpane,
+    this.showHome,
     this.recentProjectsStore,
     this.appendLocalMessage,
     this.shellMonitorLogStore,
@@ -187,6 +190,8 @@ class CommandExecutor {
       case '/quit':
       case '/exit':
         await executeQuit(ctx);
+      case '/home':
+        await executeHome(ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':

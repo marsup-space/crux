@@ -46,6 +46,9 @@ import 'chat_turn_orchestrator.dart';
 import 'command_overlay.dart';
 import 'extra_info_panel.dart';
 import 'file_browser_overlay.dart';
+import 'home/home_layout_store.dart';
+import 'home/home_screen.dart';
+import 'home/home_widgets.dart';
 import 'skill_picker_overlay.dart';
 import 'overlay_controller.dart';
 import 'polling_coordinator.dart';
@@ -205,6 +208,22 @@ class ChatPanel extends StatefulComponent {
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
 
+  /// When true, the home screen opens automatically at the end of
+  /// [initState]. The real app passes true (unless the user opted out
+  /// via `--no-home` or `[home].show_on_launch`); tests leave it false
+  /// so the chat panel renders its normal first paint. This replaces
+  /// the earlier "constructed from a `bootState`" heuristic — tests
+  /// *do* pass a bootState, so provenance-sniffing was wrong.
+  final bool showHomeOnLaunch;
+
+  /// The `[home]` config.toml store. When non-null, edit-mode layout
+  /// changes persist; when null (tests), edit mode works but isn't saved.
+  final HomeLayoutStore? homeLayoutStore;
+
+  /// The persisted `[home].layout` (box order + spans) applied on open.
+  /// Null → the default layout.
+  final List<HomeLayoutEntry>? initialHomeLayout;
+
   const ChatPanel({
     super.key,
     required this.userProvidersDir,
@@ -214,6 +233,9 @@ class ChatPanel extends StatefulComponent {
     this.gitStatusService,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
+    this.showHomeOnLaunch = false,
+    this.homeLayoutStore,
+    this.initialHomeLayout,
   });
 
   @override
@@ -452,6 +474,9 @@ class _ChatPanelState extends State<ChatPanel> {
         _showToast(warning, mode: ToastMode.error);
       }
     });
+    if (component.showHomeOnLaunch) {
+      _openHome();
+    }
   }
 
   void _refresh() {
@@ -778,6 +803,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       quitApp: _quitHandler.quitAndPrintSummary,
       showFullpane: _openFullpane,
+      showHome: _openHome,
       recentProjectsStore: _recentProjectsStore,
       shellMonitorLogStore: _chatService.shellMonitorLogStore,
       appendLocalMessage: (markdown) async {
@@ -963,6 +989,93 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {
       _overlayController.showFullpane = true;
     });
+  }
+
+  /// Open the home screen. Home replaces the whole chat interface
+  /// (see the early return in [build]); clearing the sibling flags
+  /// keeps the swap one-way — no chat chrome survives underneath.
+  void _openHome() {
+    setState(() {
+      _overlayController.showHome = true;
+      _overlayController.showSessionManager = false;
+      _overlayController.showFullpane = false;
+    });
+  }
+
+  void _closeHome() {
+    setState(() {
+      _overlayController.showHome = false;
+    });
+  }
+
+  Component _buildHome() {
+    // Home is an independent full screen, not a modal Fullpane — no
+    // close button, no barrier, no margins. See HomeScreen.
+    return HomeScreen(
+      onExit: _closeHome,
+      context_: _buildHomeContext(),
+      initialLayout: component.initialHomeLayout,
+      onLayoutChanged: _persistHomeLayout,
+    );
+  }
+
+  /// Persist an edit-mode layout change to `[home].layout`. No-op when
+  /// there's no store (tests). Fire-and-forget: the write is atomic and
+  /// the in-memory layout is already applied, so a slow disk doesn't
+  /// block the grid.
+  void _persistHomeLayout(List<HomeLayoutEntry> layout) {
+    final store = component.homeLayoutStore;
+    if (store == null) return;
+    unawaited(
+      store.write(HomeLayoutConfig(layout: layout)).catchError((_) {
+        // A failed persist (read-only config dir, disk full) mustn't
+        // crash home — the in-memory layout is correct for this run.
+        return;
+      }),
+    );
+  }
+
+  /// True while the current session has a response in flight. The
+  /// mid-stream guard for every session-mutating home action reads this
+  /// (the cubit is the read-side SSoT for isResponding).
+  bool get _homeResponding {
+    final sessionId = _sessionController.currentSessionId;
+    return sessionId != null &&
+        _sessionController.chatTurnCubit.state
+            .sessionState(sessionId)
+            .isResponding;
+  }
+
+  /// The context handed to home's widgets. `runCommand` and
+  /// `switchSession` are guarded mid-stream; the service closures read
+  /// the panel's live in-memory state on each home build.
+  HomeContext _buildHomeContext() {
+    return HomeContext(
+      close: _closeHome,
+      seedInput: (text) {
+        _chatInputKey.currentState?.stashAndSetCommand(text);
+      },
+      gitStatusService: _gitStatusService,
+      sessions: () {
+        final merged = <Session>[
+          ..._sessionController.sessions,
+          ..._sessionController.chats,
+        ];
+        merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        return merged;
+      },
+      currentSessionId: () => _sessionController.currentSessionId,
+      switchSession: (id) {
+        if (_homeResponding) return false; // refused mid-stream
+        unawaited(_switchSession(id));
+        return true;
+      },
+      runCommand: (command) {
+        if (_homeResponding) return false; // refused mid-stream
+        unawaited(_executeCommand(command));
+        return true;
+      },
+    );
   }
 
   void _openToolDetail(ToolCallData toolCall, Message? pairedResult) {
@@ -1204,6 +1317,16 @@ class _ChatPanelState extends State<ChatPanel> {
         ],
         child: LayoutBuilder(
           builder: (context, constraints) {
+            // Home is an independent full screen, not an overlay: when
+            // it's open, the chat interface (history, toolbar, input,
+            // sidebar) is not built at all. Nothing else to lay out, no
+            // z-order, and the home pane's own Focusable is the only
+            // key consumer. `esc` (handled by Fullpane) or a home
+            // action flips the flag back and the chat rebuilds.
+            if (_overlayController.showHome) {
+              return _buildHome();
+            }
+
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
 
             final sessionId = _sessionController.currentSessionId;

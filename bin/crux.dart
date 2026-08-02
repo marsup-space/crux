@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
+import 'package:crux/src/components/home/home_layout_store.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/windows_vt.dart';
@@ -37,6 +38,7 @@ void main(List<String> args) async {
       stdout.writeln('  -h, --help       Show this help message');
       stdout.writeln('  -v, --version    Show version');
       stdout.writeln('      --doctor     Diagnose and fix issues');
+      stdout.writeln('      --no-home    Skip the home screen on launch');
       return;
     }
     if (arg == '--version' || arg == '-v') {
@@ -92,6 +94,15 @@ void main(List<String> args) async {
   final themeConfigFile = File(
     p.join(_resolveUserConfigDir().path, 'config.toml'),
   );
+
+  // Read the [home] section (same config.toml as the theme). The home
+  // screen opens on launch by default; `[home].show_on_launch = false`
+  // opts out persistently and `--no-home` opts out for this run, with
+  // the flag winning over config.
+  final homeLayoutStore = HomeLayoutStore(themeConfigFile);
+  final homeLayoutConfig = await homeLayoutStore.read();
+  final showHomeOnLaunch =
+      !args.contains('--no-home') && (homeLayoutConfig.showOnLaunch ?? true);
 
   // Start the loading work before rendering the main-buffer splash so
   // sessions warm up while the logo animation is visible.
@@ -173,6 +184,9 @@ void main(List<String> args) async {
       bootState: results.chatPanelBootState,
       gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
+      showHomeOnLaunch: showHomeOnLaunch,
+      homeLayoutStore: homeLayoutStore,
+      initialHomeLayout: homeLayoutConfig.layout,
       startupWarnings: [
         ...results.themeController.registry.loadErrors.entries.map(
           (entry) => 'Theme ${p.basename(entry.key)}: ${entry.value}',
@@ -566,6 +580,16 @@ class _CruxApp extends StatefulComponent {
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
+  final bool showHomeOnLaunch;
+
+  /// The `[home]` config.toml store, handed to [ChatPanel] so edit mode
+  /// can persist layout changes. Null when home shouldn't persist
+  /// (tests); edit mode then still works but isn't saved.
+  final HomeLayoutStore? homeLayoutStore;
+
+  /// The persisted `[home].layout` (box order + spans), applied when
+  /// home opens. Null → default layout.
+  final List<HomeLayoutEntry>? initialHomeLayout;
 
   const _CruxApp({
     required this.userProvidersDir,
@@ -575,6 +599,9 @@ class _CruxApp extends StatefulComponent {
     required this.gitStatusService,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
+    this.showHomeOnLaunch = false,
+    this.homeLayoutStore,
+    this.initialHomeLayout,
   });
 
   @override
@@ -638,6 +665,9 @@ class _CruxAppState extends State<_CruxApp> {
               gitStatusService: component.gitStatusService,
               recentProjectsStore: component.recentProjectsStore,
               startupWarnings: component.startupWarnings,
+              showHomeOnLaunch: component.showHomeOnLaunch,
+              homeLayoutStore: component.homeLayoutStore,
+              initialHomeLayout: component.initialHomeLayout,
             ),
           ),
         ),
