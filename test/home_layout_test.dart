@@ -354,10 +354,6 @@ void main() {
   });
 
   test('mouse click on a row runs that row, not the box/first item', () async {
-    // Regression: the whole-box opaque GestureDetector shadowed the
-    // per-row detectors, so a click fired the first item (or nothing)
-    // instead of the row under the cursor. Drop the opaque wrapper for
-    // item-list boxes so the rows' own taps win.
     final ran = <String>[];
     await testNocterm('row click', (tester) async {
       await tester.pumpComponent(
@@ -401,6 +397,39 @@ void main() {
     }, size: const Size(60, 16));
     expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
     expect(ran, isNot(contains('/new')), reason: 'must not fire the first item');
+  });
+
+  test('Ctrl+C on home calls quitApp (not swallowed)', () async {
+    // Regression: _handleKey swallows every key (return true) with no
+    // quit path, so Ctrl+C was trapped. Home now routes Ctrl+C to the
+    // quitApp callback (QuitHandler) the panel wires in.
+    var quitCalled = false;
+    await testNocterm('ctrl_c quits', (tester) async {
+      await tester.pumpComponent(
+        Container(
+          width: 60,
+          height: 16,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: HomeScreen(
+              onExit: () {},
+              widgets: [StubHomeWidget('alpha')],
+              context_: _ctx(),
+              quitApp: () => quitCalled = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(
+        KeyboardEvent(
+          logicalKey: LogicalKey.keyC,
+          modifiers: const ModifierKeys(ctrl: true),
+        ),
+      );
+      await tester.pump();
+    }, size: const Size(60, 16));
+    expect(quitCalled, isTrue, reason: 'Ctrl+C must call quitApp on home');
   });
 }
 

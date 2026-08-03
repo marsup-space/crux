@@ -51,6 +51,14 @@ class HomeContext {
   /// no provider is configured. Shown in the `workspace` box.
   final String? Function() activeModel;
 
+  /// Ask the home screen to rebuild. Item-list widgets call this after a
+  /// mouse hover mutates their selection (their selection lives on the
+  /// widget instance, which persists across builds — so without a
+  /// rebuild the moved highlight wouldn't repaint). Wired by home to its
+  /// `setState`; a no-op (default) in tests/previews so a hover never
+  /// crashes a bare pump.
+  final void Function() requestRebuild;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -61,9 +69,11 @@ class HomeContext {
     required this.switchSession,
     this.projectPath = '',
     this.activeModel = _noModel,
+    this.requestRebuild = _noop,
   });
 
   static String? _noModel() => null;
+  static void _noop() {}
 
   /// A no-op context for rendering the bare grid without a panel behind
   /// it (layout tests, previews). Every service is a stub: no sessions,
@@ -77,7 +87,8 @@ class HomeContext {
         currentSessionId = (() => null),
         switchSession = ((_) => false),
         projectPath = '',
-        activeModel = _noModel;
+        activeModel = _noModel,
+        requestRebuild = _noop;
 }
 
 /// One pluggable dashboard box.

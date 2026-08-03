@@ -1016,6 +1016,10 @@ class _ChatPanelState extends State<ChatPanel> {
       context_: _buildHomeContext(),
       initialLayout: component.initialHomeLayout,
       onLayoutChanged: _persistHomeLayout,
+      // Same exit path as `/quit` and the chat input's Ctrl+C, so the
+      // run summary + clean teardown fire regardless of where the user
+      // hits Ctrl+C.
+      quitApp: _quitHandler.quitAndPrintSummary,
     );
   }
 
@@ -1086,6 +1090,7 @@ class _ChatPanelState extends State<ChatPanel> {
         final model = _sessionController.currentSession.model;
         return model.isEmpty ? null : model;
       },
+      requestRebuild: _refresh,
     );
   }
 

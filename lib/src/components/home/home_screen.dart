@@ -52,6 +52,19 @@ class HomeScreen extends StatefulComponent {
   /// isn't saved).
   final void Function(List<HomeLayoutEntry> layout)? onLayoutChanged;
 
+  /// Quit the app cleanly (prints the run summary, tears down the
+  /// terminal). Wired by the chat panel to `QuitHandler
+  /// .quitAndPrintSummary` — the single exit path for the whole app,
+  /// same as `/quit` and the chat input's Ctrl+C handler. When null
+  /// (tests), Ctrl+C on home is a no-op instead of a hard `exit()`.
+  final VoidCallback? quitApp;
+
+  /// Quit immediately without summary output. Used as the Ctrl+C
+  /// fallback when no app-level handler is wired; matches nocterm's
+  /// default Ctrl+C semantics (exit now, no cleanup) so a missing
+  /// quit handler can never trap the user on the home screen.
+  final VoidCallback? quitNow;
+
   const HomeScreen({
     super.key,
     required this.onExit,
@@ -59,6 +72,8 @@ class HomeScreen extends StatefulComponent {
     this.context_,
     this.initialLayout,
     this.onLayoutChanged,
+    this.quitApp,
+    this.quitNow,
   });
 
   @override
@@ -501,6 +516,21 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _handleKey(KeyboardEvent event) {
     final rows = _packedRowsCache ?? const <_Row>[];
     final key = event.logicalKey;
+
+    // ── Ctrl+C — quit, in any mode ──
+    // The whole app has `CtrlCBehavior.disabled`, so nocterm itself
+    // won't exit on Ctrl+C. The chat input handles it for the chat
+    // screen; the home screen must handle it here too — otherwise Ctrl+C
+    // is swallowed by the `return true` at the bottom and the user is
+    // trapped. Routes through `quitApp` (QuitHandler → run summary +
+    // clean teardown), the same exit path as `/quit` and the chat's
+    // Ctrl+C. Falls back to `quitNow` (hard exit) when no handler is
+    // wired (defensive — production always wires one).
+    if (key == LogicalKey.keyC && event.isControlPressed) {
+      final quit = component.quitApp ?? component.quitNow;
+      if (quit != null) quit();
+      return true;
+    }
 
     // ── Edit-mode key scope ──
     // Distinct from navigation: arrows reorder, `-`/`=` resize, `x`

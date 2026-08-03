@@ -126,6 +126,12 @@ class QuickActionsHomeWidget extends HomeWidget {
             action: actions[i],
             selected: focused && i == _selectedIndex,
             theme: theme,
+            onHover: () {
+              if (_selectedIndex != i) {
+                _selectedIndex = i;
+                ctx.requestRebuild();
+              }
+            },
             onTap: () {
               _selectedIndex = i;
               _run(ctx, actions[i]);
@@ -139,18 +145,22 @@ class QuickActionsHomeWidget extends HomeWidget {
 /// One quick-action row: the command label and a dim hint. Highlighted
 /// (selection background) when it's the box's selected item and the box
 /// is focused. The row's own GestureDetector fires the action on click
-/// (per-item, not whole-box).
+/// (per-item, not whole-box), and a non-opaque MouseRegion moves the
+/// selection to this row on hover so a mouse user can highlight before
+/// clicking.
 class _ActionRow extends StatelessComponent {
   final QuickAction action;
   final bool selected;
   final CruxThemeData theme;
   final VoidCallback onTap;
+  final VoidCallback onHover;
 
   const _ActionRow({
     required this.action,
     required this.selected,
     required this.theme,
     required this.onTap,
+    required this.onHover,
   });
 
   @override
