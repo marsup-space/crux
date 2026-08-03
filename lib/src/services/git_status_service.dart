@@ -499,11 +499,18 @@ class GitStatusService extends ChangeNotifier {
   void start({bool refreshImmediately = true}) {
     if (_disposed || _isolate != null) return;
     _spawnIsolate().then((port) {
+      // Argument order must match the isolate's `case 'start'` handler
+      // in [_gitIsolateEntry]: [interval, path, refreshImmediately]. The
+      // handler reads message[2] as the path (String) and message[3] as
+      // the refresh-now flag (bool), so the path goes before the flag —
+      // the same order `refresh` uses. Sending the flag before the path
+      // made message[2] a bool and crashed the cast, killing the
+      // periodic-refresh timer.
       port.send([
         'start',
         _interval.inMilliseconds,
-        refreshImmediately,
         _pathProvider(),
+        refreshImmediately,
       ]);
     });
   }
