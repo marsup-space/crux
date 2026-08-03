@@ -431,6 +431,68 @@ void main() {
     }, size: const Size(60, 16));
     expect(quitCalled, isTrue, reason: 'Ctrl+C must call quitApp on home');
   });
+
+  test('Hovering a row moves the selection highlight', () async {
+    // Regression: per-row MouseRegions never receive hover under a
+    // wrapping box MouseRegion in nocterm (verified empirically), so
+    // hover-row selection is computed at the box level — the box's
+    // MouseRegion.onHover maps the cursor y to a content row and calls
+    // HomeWidget.selectItemAt.
+    await testNocterm('row hover', (tester) async {
+      final widget = QuickActionsHomeWidget(
+        seedInput: (_) {},
+        actions: const [
+          QuickAction('/new', 'a', '/new'),
+          QuickAction('/chat', 'b', '/chat'),
+          QuickAction('/model', 'c', '/model '),
+        ],
+      );
+      await tester.pumpComponent(
+        Container(
+          width: 60,
+          height: 16,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: HomeScreen(
+              onExit: () {},
+              widgets: [widget],
+              context_: HomeContext(
+                runCommand: (_) => true,
+                close: () {},
+                seedInput: (_) {},
+                gitStatusService: GitStatusService(),
+                sessions: () => const [],
+                currentSessionId: () => null,
+                switchSession: (_) => false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(widget.selectedIndex, 0);
+      // /chat row is at y=10 in this 60×16 layout (border y=8, rows 9-11).
+      await tester.hover(3, 10);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+      expect(
+        widget.selectedIndex,
+        1,
+        reason: 'hovering the /chat row selects it',
+      );
+      // Hover /new (y=9) and confirm the selection moves up.
+      await tester.hover(3, 9);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+      expect(
+        widget.selectedIndex,
+        0,
+        reason: 'hovering the /new row selects it',
+      );
+    }, size: const Size(60, 16));
+  });
 }
 
 /// A stub with a real item list, so ↑↓ in-box selection can be driven

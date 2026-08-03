@@ -51,14 +51,6 @@ class HomeContext {
   /// no provider is configured. Shown in the `workspace` box.
   final String? Function() activeModel;
 
-  /// Ask the home screen to rebuild. Item-list widgets call this after a
-  /// mouse hover mutates their selection (their selection lives on the
-  /// widget instance, which persists across builds — so without a
-  /// rebuild the moved highlight wouldn't repaint). Wired by home to its
-  /// `setState`; a no-op (default) in tests/previews so a hover never
-  /// crashes a bare pump.
-  final void Function() requestRebuild;
-
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -69,11 +61,9 @@ class HomeContext {
     required this.switchSession,
     this.projectPath = '',
     this.activeModel = _noModel,
-    this.requestRebuild = _noop,
   });
 
   static String? _noModel() => null;
-  static void _noop() {}
 
   /// A no-op context for rendering the bare grid without a panel behind
   /// it (layout tests, previews). Every service is a stub: no sessions,
@@ -87,8 +77,7 @@ class HomeContext {
         currentSessionId = (() => null),
         switchSession = ((_) => false),
         projectPath = '',
-        activeModel = _noModel,
-        requestRebuild = _noop;
+        activeModel = _noModel;
 }
 
 /// One pluggable dashboard box.
@@ -140,6 +129,13 @@ abstract class HomeWidget {
   /// Move the highlight by [delta] (+1/-1) within the item list, with
   /// wraparound. Only called when [itemCount] > 0.
   void moveSelection(int delta) {}
+
+  /// Move the highlight to the absolute item [index] (mouse hover). The
+  /// home screen's box-level hover computes the row under the cursor and
+  /// calls this. Returns `false` when [index] is out of range (hover over
+  /// the box border / padding), so the caller can ignore it. The widget
+  /// must only accept in-range indices.
+  bool selectItemAt(int index) => false;
 
   /// Reset the highlight to the first item. Called when the box gains
   /// focus so a revisited box starts predictable.

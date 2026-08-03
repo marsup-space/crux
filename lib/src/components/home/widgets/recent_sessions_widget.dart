@@ -73,6 +73,13 @@ class RecentSessionsHomeWidget extends HomeWidget {
   }
 
   @override
+  bool selectItemAt(int index) {
+    if (index < 0 || index >= itemCount) return false;
+    _selectedIndex = index;
+    return true;
+  }
+
+  @override
   void resetSelection() => _selectedIndex = 0;
 
   @override
@@ -118,12 +125,6 @@ class RecentSessionsHomeWidget extends HomeWidget {
             isCurrent: shown[i].id == currentId,
             selected: focused && i == _selectedIndex,
             theme: theme,
-            onHover: () {
-              if (_selectedIndex != i) {
-                _selectedIndex = i;
-                ctx.requestRebuild();
-              }
-            },
             onTap: () {
               _selectedIndex = i;
               if (onSwitch(shown[i].id)) ctx.close();
@@ -137,15 +138,16 @@ class RecentSessionsHomeWidget extends HomeWidget {
 /// One session row: a current-marker, the title (or a fallback), and a
 /// relative "how long ago" stamp. Highlighted when it's the box's
 /// selected item and the box is focused; its own GestureDetector
-/// switches to that session on click (per-row, not whole-box), and a
-/// non-opaque MouseRegion moves the selection to this row on hover.
+/// switches to that session on click (per-row, not whole-box). Mouse-
+/// hover selection is handled at the box level (home's box MouseRegion
+/// computes the row from the cursor y), because a per-row MouseRegion
+/// nested under the box region never receives hover in nocterm.
 class _SessionLine extends StatelessComponent {
   final Session session;
   final bool isCurrent;
   final bool selected;
   final CruxThemeData theme;
   final VoidCallback onTap;
-  final VoidCallback onHover;
 
   const _SessionLine({
     required this.session,
@@ -153,7 +155,6 @@ class _SessionLine extends StatelessComponent {
     required this.selected,
     required this.theme,
     required this.onTap,
-    required this.onHover,
   });
 
   @override
@@ -184,14 +185,14 @@ class _SessionLine extends StatelessComponent {
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
               ),
-            ),
-            Text(
-              _relative(session.updatedAt),
-              style: TextStyle(color: metaColor),
-            ),
-          ],
+              ),
+              Text(
+                _relative(session.updatedAt),
+                style: TextStyle(color: metaColor),
+              ),
+            ],
+          ),
         ),
-      ),
     );
   }
 

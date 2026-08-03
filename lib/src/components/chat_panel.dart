@@ -1090,7 +1090,6 @@ class _ChatPanelState extends State<ChatPanel> {
         final model = _sessionController.currentSession.model;
         return model.isEmpty ? null : model;
       },
-      requestRebuild: _refresh,
     );
   }
 

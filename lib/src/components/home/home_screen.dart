@@ -120,6 +120,11 @@ class _HomeScreenState extends State<HomeScreen> {
     '  ██████╗ ██║  ██║  █████╔╝ ██╔╝ ██╗',
   ];
 
+  /// Rows above the scroll viewport: container top padding (1) + logo
+  /// (5) + version row (1) + gap (1). The box hover handler uses this to
+  /// map the cursor's terminal y to a content row.
+  static const double _kAboveViewport = 1 + 5 + 1 + 1;
+
   final _scrollController = ScrollController();
 
   /// Index of the focused box in the flat placement list.
@@ -732,6 +737,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Flat index of each box, walking rows in order, to know which is
     // focused.
     var flatIndex = 0;
+    final rowOffsets = _rowOffsets(rows);
     final rowComponents = <Component>[];
     for (var r = 0; r < rows.length; r++) {
       final row = rows[r];
@@ -751,6 +757,7 @@ class _HomeScreenState extends State<HomeScreen> {
               row.height,
               index == _focusedIndex,
               index,
+              rowOffsets[r],
             ),
           ),
         );
@@ -779,6 +786,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// One bordered box: rounded border (active color when focused),
   /// title in the border, widget content inside, and click/hover
   /// handling. Stretched to the row height by the parent's `Row`.
+  ///
+  /// [scrollContentRow] is the box's y offset within the scroll viewport's
+  /// content (from [_rowOffsets]); the box MouseRegion's hover handler
+  /// uses it — plus the scroll offset and the fixed hero height above the
+  /// viewport — to map the cursor's terminal y to a row index.
   Component _buildBox(
     BuildContext context,
     CruxThemeData theme,
@@ -787,6 +799,7 @@ class _HomeScreenState extends State<HomeScreen> {
     int height,
     bool focused,
     int index,
+    double scrollContentRow,
   ) {
     final borderColor = focused ? theme.borderActive : theme.outline;
     final titleColor = focused ? theme.accent : theme.onSurfaceVariant;
@@ -817,12 +830,35 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     // Hover-focus lives on a non-opaque MouseRegion so it never blocks
-    // clicks from reaching the content.
+    // clicks from reaching the content. onHover additionally maps the
+    // cursor to an item row for item-list boxes (per-row MouseRegions
+    // never receive hover under a wrapping region in nocterm, so the
+    // row lookup happens here instead).
     final hoverable = MouseRegion(
       onEnter: (_) {
         if (_focusedIndex != index) {
           setState(() {
             _focusedIndex = index;
+            _notice = null;
+          });
+        }
+      },
+      onHover: (event) {
+        if (!hasItems) return;
+        // Terminal y of the box content's first row:
+        //   viewport top (hero) − scroll offset + box's scroll-content
+        //   row + 1 border row.
+        final firstContentY =
+            _kAboveViewport - _scrollController.offset + scrollContentRow + 1;
+        final row = (event.y - firstContentY).round();
+        if (row < 0 || row >= widget.itemCount) return;
+        var changed = widget.selectItemAt(row);
+        if (changed && _focusedIndex != index) {
+          _focusedIndex = index;
+          changed = true;
+        }
+        if (changed) {
+          setState(() {
             _notice = null;
           });
         }
