@@ -68,6 +68,24 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
   }
 
   @override
+  void deactivate() {
+    // The `mounted` check in [_onChanged] is not enough: in nocterm
+    // `mounted` is true while the element is merely *deactivated*
+    // (mid tree-swap, e.g. the home→chat full-screen swap), but
+    // `setState` asserts the element is *active*. Unsubscribing here
+    // guarantees no notification can reach this State while it's
+    // deactivated, so the assert can't trip on a late isolate event.
+    component.service.removeListener(_onChanged);
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    component.service.addListener(_onChanged);
+  }
+
+  @override
   void dispose() {
     component.service.removeListener(_onChanged);
     super.dispose();
