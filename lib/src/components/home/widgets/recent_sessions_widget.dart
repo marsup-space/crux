@@ -52,25 +52,56 @@ class RecentSessionsHomeWidget extends HomeWidget {
   @override
   int heightFor(int span) => _maxRows;
 
+  // ── Item selection ────────────────────────────────────────────────
+
+  int _selectedIndex = 0;
+
+  List<Session> get _shown => sessions().take(_maxRows).toList();
+
   @override
-  void Function()? activate(HomeContext ctx) {
-    final recent = _top();
-    if (recent == null) return null; // empty: passive box
+  int get itemCount => _shown.length;
+
+  @override
+  int get selectedIndex => _selectedIndex;
+
+  @override
+  void moveSelection(int delta) {
+    final n = itemCount;
+    if (n == 0) return;
+    _selectedIndex = (_selectedIndex + delta) % n;
+    if (_selectedIndex < 0) _selectedIndex += n;
+  }
+
+  @override
+  void resetSelection() => _selectedIndex = 0;
+
+  @override
+  void Function()? activateItem(HomeContext ctx, int index) {
+    final shown = _shown;
+    if (index < 0 || index >= shown.length) return null;
+    final session = shown[index];
     return () {
-      if (onSwitch(recent.id)) ctx.close();
+      if (onSwitch(session.id)) ctx.close();
     };
   }
 
-  Session? _top() {
-    final list = sessions();
-    return list.isEmpty ? null : list.first;
+  @override
+  void Function()? activate(HomeContext ctx) {
+    final n = itemCount;
+    if (n == 0) return null; // empty: passive box
+    return activateItem(ctx, _selectedIndex.clamp(0, n - 1));
   }
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) {
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) {
     final theme = CruxTheme.of(context);
-    final list = sessions();
-    if (list.isEmpty) {
+    final shown = _shown;
+    if (shown.isEmpty) {
       return Text(
         'no sessions yet — /new to start',
         style: TextStyle(color: theme.onSurfaceDim),
@@ -78,15 +109,19 @@ class RecentSessionsHomeWidget extends HomeWidget {
     }
 
     final currentId = currentSessionId();
-    final shown = list.take(_maxRows).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final s in shown)
+        for (var i = 0; i < shown.length; i++)
           _SessionLine(
-            session: s,
-            isCurrent: s.id == currentId,
+            session: shown[i],
+            isCurrent: shown[i].id == currentId,
+            selected: focused && i == _selectedIndex,
             theme: theme,
+            onTap: () {
+              _selectedIndex = i;
+              if (onSwitch(shown[i].id)) ctx.close();
+            },
           ),
       ],
     );
@@ -94,44 +129,60 @@ class RecentSessionsHomeWidget extends HomeWidget {
 }
 
 /// One session row: a current-marker, the title (or a fallback), and a
-/// relative "how long ago" stamp. The row is mouse-tappable via the box's
-/// own gesture handling; individual row taps land on the box's activate.
+/// relative "how long ago" stamp. Highlighted when it's the box's
+/// selected item and the box is focused; its own GestureDetector
+/// switches to that session on click (per-row, not whole-box).
 class _SessionLine extends StatelessComponent {
   final Session session;
   final bool isCurrent;
+  final bool selected;
   final CruxThemeData theme;
+  final VoidCallback onTap;
 
   const _SessionLine({
     required this.session,
     required this.isCurrent,
+    required this.selected,
     required this.theme,
+    required this.onTap,
   });
 
   @override
   Component build(BuildContext context) {
     final title = session.title.isEmpty ? session.displayId : session.title;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          isCurrent ? '▸ ' : '  ',
-          style: TextStyle(color: theme.accent),
-        ),
-        Expanded(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: isCurrent ? theme.text : theme.onSurfaceVariant,
-              fontWeight: isCurrent ? FontWeight.bold : null,
+    final titleColor = selected
+        ? theme.selectedText
+        : (isCurrent ? theme.text : theme.onSurfaceVariant);
+    final metaColor = selected ? theme.selectedText : theme.onSurfaceDim;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        color: selected ? theme.selection : null,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              isCurrent ? '▸ ' : '  ',
+              style: TextStyle(color: selected ? theme.selectedText : theme.accent),
             ),
-          ),
+            Expanded(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: isCurrent ? FontWeight.bold : null,
+                ),
+              ),
+            ),
+            Text(
+              _relative(session.updatedAt),
+              style: TextStyle(color: metaColor),
+            ),
+          ],
         ),
-        Text(
-          _relative(session.updatedAt),
-          style: TextStyle(color: theme.onSurfaceDim),
-        ),
-      ],
+      ),
     );
   }
 

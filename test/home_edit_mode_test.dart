@@ -290,5 +290,11 @@ class _ActionStub extends HomeWidget {
   void Function()? activate(HomeContext ctx) => onRun;
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) => Text(id);
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) =>
+      Text(id);
 }

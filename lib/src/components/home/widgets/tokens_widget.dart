@@ -39,7 +39,12 @@ class TokensHomeWidget extends HomeWidget {
   void Function()? activate(HomeContext ctx) => null; // passive
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) {
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) {
     final theme = CruxTheme.of(context);
     final snap = _snapshot();
 

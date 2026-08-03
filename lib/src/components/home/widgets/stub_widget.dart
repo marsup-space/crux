@@ -42,7 +42,12 @@ class StubHomeWidget extends HomeWidget {
   }
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) {
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) {
     final theme = CruxTheme.of(context);
     return Text(
       '$id · span $span',

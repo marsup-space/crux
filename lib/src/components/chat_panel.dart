@@ -1075,6 +1075,17 @@ class _ChatPanelState extends State<ChatPanel> {
         unawaited(_executeCommand(command));
         return true;
       },
+      projectPath: Directory.current.path,
+      activeModel: () {
+        // The current session's model composite key; empty means "no
+        // provider configured yet", which the workspace box turns into
+        // a setup hint. Guarded because a fresh panel with no sessions
+        // has no current session to read.
+        final sessionId = _sessionController.currentSessionId;
+        if (sessionId == null) return null;
+        final model = _sessionController.currentSession.model;
+        return model.isEmpty ? null : model;
+      },
     );
   }
 

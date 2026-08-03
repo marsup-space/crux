@@ -68,13 +68,36 @@ class QuickActionsHomeWidget extends HomeWidget {
   @override
   int heightFor(int span) => actions.length;
 
+  // ── Item selection ────────────────────────────────────────────────
+
+  int _selectedIndex = 0;
+
   @override
-  void Function()? activate(HomeContext ctx) {
-    // Primary action: the first action (/new), which is session-mutating
-    // and therefore guarded by runCommand. Home stays open on refusal so
-    // the footer notice explains why nothing happened.
-    return () => _run(ctx, actions.first);
+  int get itemCount => actions.length;
+
+  @override
+  int get selectedIndex => _selectedIndex;
+
+  @override
+  void moveSelection(int delta) {
+    _selectedIndex =
+        (_selectedIndex + delta) % actions.length;
+    if (_selectedIndex < 0) _selectedIndex += actions.length;
   }
+
+  @override
+  void resetSelection() => _selectedIndex = 0;
+
+  @override
+  void Function()? activateItem(HomeContext ctx, int index) {
+    if (index < 0 || index >= actions.length) return null;
+    final action = actions[index];
+    return () => _run(ctx, action);
+  }
+
+  @override
+  void Function()? activate(HomeContext ctx) =>
+      activateItem(ctx, _selectedIndex);
 
   void _run(HomeContext ctx, QuickAction action) {
     if (action.seed) {
@@ -88,34 +111,75 @@ class QuickActionsHomeWidget extends HomeWidget {
   }
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) {
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) {
     final theme = CruxTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final action in actions)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _run(ctx, action),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  action.label,
-                  style: TextStyle(
-                    color: theme.accent,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '  ${action.hint}',
-                  style: TextStyle(color: theme.onSurfaceDim),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+        for (var i = 0; i < actions.length; i++)
+          _ActionRow(
+            action: actions[i],
+            selected: focused && i == _selectedIndex,
+            theme: theme,
+            onTap: () {
+              _selectedIndex = i;
+              _run(ctx, actions[i]);
+            },
           ),
       ],
+    );
+  }
+}
+
+/// One quick-action row: the command label and a dim hint. Highlighted
+/// (selection background) when it's the box's selected item and the box
+/// is focused. The row's own GestureDetector fires the action on click
+/// (per-item, not whole-box).
+class _ActionRow extends StatelessComponent {
+  final QuickAction action;
+  final bool selected;
+  final CruxThemeData theme;
+  final VoidCallback onTap;
+
+  const _ActionRow({
+    required this.action,
+    required this.selected,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Component build(BuildContext context) {
+    final labelColor = selected ? theme.selectedText : theme.accent;
+    final hintColor = selected ? theme.selectedText : theme.onSurfaceDim;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        color: selected ? theme.selection : null,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              action.label,
+              style: TextStyle(
+                color: labelColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              '  ${action.hint}',
+              style: TextStyle(color: hintColor),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -209,6 +209,192 @@ void main() {
       expect(exited, isTrue, reason: 'esc should leave home');
     }, size: const Size(120, 30));
   });
+
+  test('up/down select items within a box, not other boxes', () async {
+    await testNocterm('in-box selection', (tester) async {
+      final list = _ItemStub('list', itemCount: 3);
+      await _pumpHome(
+        tester,
+        [list, StubHomeWidget('other', supportedSpans: const {1})],
+        const Size(120, 30),
+      );
+      // Focus starts on the list box, item 0.
+      expect(list.selectedIndex, 0);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowDown),
+      );
+      await tester.pump();
+      expect(list.selectedIndex, 1, reason: '↓ moves within the box');
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowDown),
+      );
+      await tester.pump();
+      expect(list.selectedIndex, 2);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowDown),
+      );
+      await tester.pump();
+      expect(list.selectedIndex, 0, reason: '↓ wraps within the box');
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.arrowUp));
+      await tester.pump();
+      expect(list.selectedIndex, 2, reason: '↑ wraps to the last item');
+    }, size: const Size(120, 30));
+  });
+
+  test('left/right switch boxes within a row and clamp at the ends', () async {
+    await testNocterm('row box nav', (tester) async {
+      // Three span-1 boxes side by side on one 4-column row. The
+      // container must be wide enough for 4 columns *after* HomeScreen's
+      // horizontal padding (2 cols each side): use 132 so the inner
+      // width clears the 120-column threshold.
+      final widgets = [
+        StubHomeWidget('a', supportedSpans: const {1}),
+        StubHomeWidget('b', supportedSpans: const {1}),
+        StubHomeWidget('c', supportedSpans: const {1}),
+      ];
+      await _pumpHome(tester, widgets, const Size(132, 30));
+      // The state type is private, so grab it via State<HomeScreen> and
+      // read the test getter through `dynamic`.
+      int focus() =>
+          (tester.findState<State<HomeScreen>>() as dynamic)
+              .focusedIndexForTest as int;
+      expect(focus(), 0);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowRight),
+      );
+      await tester.pump();
+      expect(focus(), 1);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowRight),
+      );
+      await tester.pump();
+      expect(focus(), 2);
+      // → on the last box in the row stays put (Tab is the row jump).
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowRight),
+      );
+      await tester.pump();
+      expect(focus(), 2, reason: '→ clamps at the row end');
+      // ← back to the start, and clamps there too.
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowLeft),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowLeft),
+      );
+      await tester.pump();
+      expect(focus(), 0);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowLeft),
+      );
+      await tester.pump();
+      expect(focus(), 0, reason: '← clamps at the row start');
+    }, size: const Size(132, 30));
+  });
+
+  test('tab jumps to the next row, shift+tab back', () async {
+    await testNocterm('tab row jump', (tester) async {
+      // Force two rows: a full-width box on row 1, two span-1 boxes on
+      // row 2. At 4 columns a span-4 box fills row 1 alone.
+      final widgets = [
+        StubHomeWidget('wide', supportedSpans: const {4}),
+        StubHomeWidget('x', supportedSpans: const {1}),
+        StubHomeWidget('y', supportedSpans: const {1}),
+      ];
+      await _pumpHome(tester, widgets, const Size(120, 30));
+      // The state type is private, so grab it via State<HomeScreen> and
+      // read the test getter through `dynamic`.
+      int focus() =>
+          (tester.findState<State<HomeScreen>>() as dynamic)
+              .focusedIndexForTest as int;
+      expect(focus(), 0, reason: 'start on the wide row-1 box');
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
+      await tester.pump();
+      expect(focus(), 1, reason: 'tab jumps down a row');
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
+      await tester.pump();
+      expect(focus(), 1, reason: 'tab clamps on the last row');
+      await tester.sendKeyEvent(
+        KeyboardEvent(
+          logicalKey: LogicalKey.tab,
+          modifiers: const ModifierKeys(shift: true),
+        ),
+      );
+      await tester.pump();
+      expect(focus(), 0, reason: 'shift+tab jumps back up a row');
+    }, size: const Size(120, 30));
+  });
+
+  test('up/down on a passive box fall through to row navigation', () async {
+    await testNocterm('passive vertical', (tester) async {
+      // A passive (no-item) box on row 1, another on row 2.
+      final widgets = [
+        StubHomeWidget('top', supportedSpans: const {4}, actionable: false),
+        StubHomeWidget('bottom', supportedSpans: const {4}, actionable: false),
+      ];
+      await _pumpHome(tester, widgets, const Size(120, 30));
+      // The state type is private, so grab it via State<HomeScreen> and
+      // read the test getter through `dynamic`.
+      int focus() =>
+          (tester.findState<State<HomeScreen>>() as dynamic)
+              .focusedIndexForTest as int;
+      expect(focus(), 0);
+      await tester.sendKeyEvent(
+        KeyboardEvent(logicalKey: LogicalKey.arrowDown),
+      );
+      await tester.pump();
+      expect(focus(), 1, reason: '↓ moves rows on a passive box');
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.arrowUp));
+      await tester.pump();
+      expect(focus(), 0);
+    }, size: const Size(120, 30));
+  });
+}
+
+/// A stub with a real item list, so ↑↓ in-box selection can be driven
+/// from tests. Renders its id; selection is tracked by the widget.
+class _ItemStub extends HomeWidget {
+  @override
+  final String id;
+
+  @override
+  final int itemCount;
+
+  int _selectedIndex = 0;
+
+  _ItemStub(this.id, {required this.itemCount});
+
+  @override
+  String get title => id;
+  @override
+  Set<int> get supportedSpans => const {1, 2};
+  @override
+  int heightFor(int span) => itemCount;
+
+  @override
+  int get selectedIndex => _selectedIndex;
+
+  @override
+  void moveSelection(int delta) {
+    _selectedIndex = (_selectedIndex + delta) % itemCount;
+    if (_selectedIndex < 0) _selectedIndex += itemCount;
+  }
+
+  @override
+  void resetSelection() => _selectedIndex = 0;
+
+  @override
+  void Function()? activate(HomeContext ctx) => null;
+
+  @override
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) =>
+      Text(id);
 }
 
 /// A stub whose primary action routes a fixed command through
@@ -232,6 +418,11 @@ class _CommandStub extends HomeWidget {
       () => ctx.runCommand(onRun);
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) =>
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) =>
       Text(id);
 }

@@ -43,6 +43,14 @@ class HomeContext {
   /// the widget keeps home open so the user sees the refusal.
   final bool Function(int sessionId) switchSession;
 
+  /// The workspace (project) directory the app was opened on. Feeds the
+  /// `workspace` box. Empty when unknown (tests/previews).
+  final String projectPath;
+
+  /// The active model's composite key (`provider/model`), or null when
+  /// no provider is configured. Shown in the `workspace` box.
+  final String? Function() activeModel;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -51,7 +59,11 @@ class HomeContext {
     required this.sessions,
     required this.currentSessionId,
     required this.switchSession,
+    this.projectPath = '',
+    this.activeModel = _noModel,
   });
+
+  static String? _noModel() => null;
 
   /// A no-op context for rendering the bare grid without a panel behind
   /// it (layout tests, previews). Every service is a stub: no sessions,
@@ -63,7 +75,9 @@ class HomeContext {
         gitStatusService = GitStatusService(),
         sessions = (() => const <Session>[]),
         currentSessionId = (() => null),
-        switchSession = ((_) => false);
+        switchSession = ((_) => false),
+        projectPath = '',
+        activeModel = _noModel;
 }
 
 /// One pluggable dashboard box.
@@ -91,14 +105,59 @@ abstract class HomeWidget {
   /// borders to match, so widgets must render at any height ≥ this.
   int heightFor(int span);
 
-  /// Primary action for `enter`/click. Return `null` for a passive box
-  /// (no-op on activation). Returning a callback marks the box
-  /// actionable (shown in the key legend / hover).
+  // ── Item selection ────────────────────────────────────────────────
+  //
+  // Boxes that present a list of selectable options (quick-actions,
+  // recent-sessions) expose them through these members so home can drive
+  // ↑↓ in-box selection, ←→ box switching, Tab row jumps, and Enter/click
+  // per item. Passive boxes (git, tokens, yesterday, workspace) keep the
+  // defaults and stay non-interactive.
+
+  /// How many selectable items the box currently shows. `0` (the
+  /// default) means the box has no items — home treats it as passive:
+  /// ↑↓ skip past it to the next row and Enter falls back to
+  /// [activate]. Recomputed on each build, so a box whose list grows or
+  /// empties stays correct.
+  int get itemCount => 0;
+
+  /// The currently-highlighted item, owned by the widget (it knows its
+  /// list). Home reads this to tell the widget which box is focused (via
+  /// [build]'s `focused` arg); the widget renders the highlight only when
+  /// focused.
+  int get selectedIndex => 0;
+
+  /// Move the highlight by [delta] (+1/-1) within the item list, with
+  /// wraparound. Only called when [itemCount] > 0.
+  void moveSelection(int delta) {}
+
+  /// Reset the highlight to the first item. Called when the box gains
+  /// focus so a revisited box starts predictable.
+  void resetSelection() {}
+
+  /// Activate item [index] (Enter or per-item click). Return `null` for
+  /// items that do nothing; the default routes to [activate] so legacy
+  /// single-action boxes keep working. When this returns `null` *and*
+  /// [itemCount] is 0, home's box-level Enter/click is a no-op.
+  void Function()? activateItem(HomeContext ctx, int index) =>
+      activate(ctx);
+
+  /// Primary action for the whole box (Enter/click when the box has no
+  /// selectable items). Return `null` for a passive box (no-op on
+  /// activation). Returning a callback marks the box actionable (shown in
+  /// the key legend / hover).
   void Function()? activate(HomeContext ctx);
 
   /// Render the box *content* (the border/title chrome is the grid's
-  /// job, not the widget's).
-  Component build(BuildContext context, HomeContext ctx, int span);
+  /// job, not the widget's). [focused] tells the widget whether its box
+  /// currently holds home's focus — item-based boxes render their
+  /// selection highlight only when focused so two boxes never show a
+  /// highlight at once.
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  });
 }
 
 /// The set of registered home widgets, keyed by [HomeWidget.id].

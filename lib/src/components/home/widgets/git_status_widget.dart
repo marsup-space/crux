@@ -36,7 +36,12 @@ class GitStatusHomeWidget extends HomeWidget {
   }
 
   @override
-  Component build(BuildContext context, HomeContext ctx, int span) {
+  Component build(
+    BuildContext context,
+    HomeContext ctx,
+    int span, {
+    bool focused = false,
+  }) {
     return _GitStatusHomeView(service: service);
   }
 }

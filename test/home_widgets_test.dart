@@ -7,6 +7,7 @@ import 'package:crux/src/components/home/widgets/git_status_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
+import 'package:crux/src/components/home/widgets/workspace_widget.dart';
 import 'package:crux/src/components/home/widgets/yesterday_widget.dart';
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/services/git_status_service.dart';
@@ -343,6 +344,132 @@ void main() {
       expect(seeded, '/project ');
       expect(ran, isFalse);
       expect(closed, isTrue);
+    });
+
+    test('moveSelection wraps within the action list', () {
+      final widget = QuickActionsHomeWidget(seedInput: (_) {});
+      expect(widget.itemCount, 4);
+      expect(widget.selectedIndex, 0);
+      widget.moveSelection(1);
+      expect(widget.selectedIndex, 1);
+      widget.moveSelection(-1);
+      widget.moveSelection(-1); // wraps to last
+      expect(widget.selectedIndex, 3);
+      widget.moveSelection(1); // wraps to first
+      expect(widget.selectedIndex, 0);
+    });
+
+    test('activateItem runs the chosen action, not always the first', () {
+      var ran = '';
+      final widget = QuickActionsHomeWidget(seedInput: (_) {});
+      final ctx = HomeContext(
+        runCommand: (c) {
+          ran = c;
+          return true;
+        },
+        close: () {},
+        seedInput: (_) {},
+        gitStatusService: GitStatusService(),
+        sessions: () => const [],
+        currentSessionId: () => null,
+        switchSession: (_) => false,
+      );
+      widget.activateItem(ctx, 1)!(); // /chat, not /new
+      expect(ran, '/chat');
+    });
+  });
+
+  group('recent-sessions item selection', () {
+    RecentSessionsHomeWidget threeSessions(List<Session> list) =>
+        RecentSessionsHomeWidget(
+          sessions: () => list,
+          currentSessionId: () => null,
+          onSwitch: (_) => true,
+        );
+
+    test('itemCount reflects the capped row count', () {
+      final now = DateTime.now();
+      final list = [
+        for (var i = 0; i < 8; i++) _session(i, 's$i', updatedAt: now),
+      ];
+      final widget = threeSessions(list);
+      expect(widget.itemCount, 5); // _maxRows caps at 5
+    });
+
+    test('activateItem switches to the chosen session', () {
+      var switchedTo = -1;
+      final now = DateTime.now();
+      final widget = RecentSessionsHomeWidget(
+        sessions: () => [
+          _session(1, 'a', updatedAt: now),
+          _session(2, 'b', updatedAt: now),
+          _session(3, 'c', updatedAt: now),
+        ],
+        currentSessionId: () => null,
+        onSwitch: (id) {
+          switchedTo = id;
+          return true;
+        },
+      );
+      final ctx = HomeContext(
+        runCommand: (_) => true,
+        close: () {},
+        seedInput: (_) {},
+        gitStatusService: GitStatusService(),
+        sessions: () => const [],
+        currentSessionId: () => null,
+        switchSession: (_) => false,
+      );
+      widget.activateItem(ctx, 2)!();
+      expect(switchedTo, 3);
+    });
+  });
+
+  group('workspace', () {
+    HomeContext wsCtx({String path = '/work/crux', String? model = 'k/k3'}) {
+      final now = DateTime.now();
+      return HomeContext(
+        runCommand: (_) => true,
+        close: () {},
+        seedInput: (_) {},
+        gitStatusService: GitStatusService(),
+        sessions: () => [
+          _session(1, 'a', updatedAt: now),
+          _session(2, 'b', updatedAt: now, kind: 'chat'),
+        ],
+        currentSessionId: () => 1,
+        switchSession: (_) => false,
+        projectPath: path,
+        activeModel: () => model,
+      );
+    }
+
+    test('renders dir, model, and workspace session count', () async {
+      await testNocterm('workspace render', (tester) async {
+        await _pump(tester, WorkspaceHomeWidget(), wsCtx());
+        expect(tester.terminalState.findText('crux'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('k/k3'), nocterm.isNotEmpty);
+        // Only the project session counts (the chat has empty
+        // projectPath → excluded).
+        expect(
+          tester.terminalState.findText('1 in this workspace'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('shows a setup hint when no model is configured', () async {
+      await testNocterm('workspace no model', (tester) async {
+        await _pump(tester, WorkspaceHomeWidget(), wsCtx(model: null));
+        expect(
+          tester.terminalState.findText('no model — /provider to connect'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('is passive (activate returns null)', () {
+      expect(WorkspaceHomeWidget().activate(_ctx()), isNull);
     });
   });
 }

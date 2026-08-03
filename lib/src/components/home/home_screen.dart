@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import 'package:meta/meta.dart';
 
 import '../../theme/crux_theme.dart';
 import '../../version.dart';
@@ -8,6 +9,7 @@ import 'widgets/git_status_widget.dart';
 import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
 import 'widgets/tokens_widget.dart';
+import 'widgets/workspace_widget.dart';
 import 'widgets/yesterday_widget.dart';
 
 /// The home screen — an independent full screen, not a modal overlay.
@@ -108,6 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Index of the focused box in the flat placement list.
   int _focusedIndex = 0;
 
+  /// Test-only view of the focused box index, so navigation tests can
+  /// assert focus without scraping the rendered border color.
+  @visibleForTesting
+  int get focusedIndexForTest => _focusedIndex;
+
   /// One-line notice shown when an action is refused (e.g. runCommand
   /// mid-stream) or an edit is rejected. Rendered in the footer; cleared
   /// on the next key.
@@ -134,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (component.widgets != null) return component.widgets!;
     final ctx = _ctx;
     return [
+      WorkspaceHomeWidget(),
       QuickActionsHomeWidget(seedInput: ctx.seedInput),
       GitStatusHomeWidget(ctx.gitStatusService),
       TokensHomeWidget(),
@@ -403,17 +411,39 @@ class _HomeScreenState extends State<HomeScreen> {
     return (0, 0);
   }
 
+  /// Move focus to box [newIndex], resetting the newly-focused box's
+  /// item selection so a revisited box starts on its first item.
   void _moveFocus(int newIndex, List<_Row> rows) {
     final count = _widgets.length;
     if (count == 0) return;
+    final clamped = newIndex.clamp(0, count - 1);
     setState(() {
-      _focusedIndex = newIndex.clamp(0, count - 1);
+      _focusedIndex = clamped;
       _notice = null;
     });
+    _widgets[clamped].resetSelection();
     _ensureFocusedVisible(rows);
   }
 
-  void _moveVertical(int direction, List<_Row> rows) {
+  /// Move focus within the current row by [delta] boxes (←→), clamped to
+  /// the row's ends. No wraparound: ← on the first box and → on the last
+  /// stay put (Tab is the row-to-row affordance).
+  void _moveHorizontal(int delta, List<_Row> rows) {
+    final (row, col) = _focusedCell(rows);
+    final cols = rows[row].widgets.length;
+    final targetCol = (col + delta).clamp(0, cols - 1);
+    if (targetCol == col) return;
+    var index = 0;
+    for (var r = 0; r < row; r++) {
+      index += rows[r].widgets.length;
+    }
+    _moveFocus(index + targetCol, rows);
+  }
+
+  /// Move focus to the same column in another row, keeping the column
+  /// position when possible (used by Tab / Shift+Tab and by ↑↓ falling
+  /// through a passive box). [direction] is +1 (down) / -1 (up).
+  void _moveRow(int direction, List<_Row> rows) {
     final (row, col) = _focusedCell(rows);
     final targetRow = (row + direction).clamp(0, rows.length - 1);
     if (targetRow == row) return;
@@ -428,6 +458,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _moveFocus(index + targetCol, rows);
   }
 
+  /// ↑↓ — select within the focused box when it has items; otherwise
+  /// (passive box) move to the next row. Edit mode uses this to reach a
+  /// box on another row, so it always moves rows there.
+  void _moveVertical(int direction, List<_Row> rows, {bool forceRow = false}) {
+    final widget = _widgets[_focusedIndex.clamp(0, _widgets.length - 1)];
+    if (!forceRow && widget.itemCount > 0) {
+      setState(() {
+        widget.moveSelection(direction);
+        _notice = null;
+      });
+      return;
+    }
+    _moveRow(direction, rows);
+  }
+
   void _ensureFocusedVisible(List<_Row> rows) {
     final (row, _) = _focusedCell(rows);
     final offsets = _rowOffsets(rows);
@@ -438,11 +483,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Enter — activate the focused box's selected item (item boxes) or
+  /// its whole-box action (passive boxes).
   void _activateFocused() {
     final widgets = _widgets;
     if (widgets.isEmpty) return;
     final widget = widgets[_focusedIndex.clamp(0, widgets.length - 1)];
-    final action = widget.activate(_ctx);
+    final action = widget.itemCount > 0
+        ? widget.activateItem(_ctx, widget.selectedIndex)
+        : widget.activate(_ctx);
     if (action == null) return; // passive box: no-op
     action();
   }
@@ -486,15 +535,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _editAdd();
         return true;
       }
-      // Up/down still move focus in edit mode (so you can reach a box
-      // on another row to edit it), but PgUp/PgDn/Home/End/enter are
-      // swallowed — you can't activate or leave while editing.
+      // Up/down still move focus between rows in edit mode (so you can
+      // reach a box on another row to edit it), but PgUp/PgDn/Home/End/
+      // enter are swallowed — you can't activate or leave while editing.
       if (key == LogicalKey.arrowUp) {
-        _moveVertical(-1, rows);
+        _moveVertical(-1, rows, forceRow: true);
         return true;
       }
       if (key == LogicalKey.arrowDown) {
-        _moveVertical(1, rows);
+        _moveVertical(1, rows, forceRow: true);
         return true;
       }
       return true; // swallow everything else while editing
@@ -509,20 +558,28 @@ class _HomeScreenState extends State<HomeScreen> {
       _toggleEdit();
       return true;
     }
+    // ←→ switch the focused box within its row.
     if (key == LogicalKey.arrowLeft) {
-      _moveFocus(_focusedIndex - 1, rows);
+      _moveHorizontal(-1, rows);
       return true;
     }
     if (key == LogicalKey.arrowRight) {
-      _moveFocus(_focusedIndex + 1, rows);
+      _moveHorizontal(1, rows);
       return true;
     }
+    // ↑↓ select items inside the focused box; on a passive box (no
+    // items) they fall through to row navigation.
     if (key == LogicalKey.arrowUp) {
       _moveVertical(-1, rows);
       return true;
     }
     if (key == LogicalKey.arrowDown) {
       _moveVertical(1, rows);
+      return true;
+    }
+    // Tab / Shift+Tab jump to the next / previous row, same column.
+    if (key == LogicalKey.tab) {
+      _moveRow(event.isShiftPressed ? -1 : 1, rows);
       return true;
     }
     if (key == LogicalKey.pageUp) {
@@ -625,7 +682,7 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             else
               Text(
-                '↑↓←→ move · enter open · e edit · esc chat',
+                '↑↓ select · ←→ box · tab row · enter open · e edit · esc chat',
                 style: TextStyle(color: theme.hintText),
               ),
           ],
@@ -703,7 +760,10 @@ class _HomeScreenState extends State<HomeScreen> {
   ) {
     final borderColor = focused ? theme.borderActive : theme.outline;
     final titleColor = focused ? theme.accent : theme.onSurfaceVariant;
-    final actionable = widget.activate(_ctx) != null;
+    // A box is actionable when it has selectable items (Enter/click act
+    // on one) or a whole-box action (passive-but-clickable, e.g. git).
+    final actionable =
+        widget.itemCount > 0 || widget.activate(_ctx) != null;
 
     return MouseRegion(
       onEnter: (_) {
@@ -718,7 +778,15 @@ class _HomeScreenState extends State<HomeScreen> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          setState(() => _focusedIndex = index);
+          setState(() {
+            _focusedIndex = index;
+            widget.resetSelection();
+          });
+          // Per-item clicks are handled by the item's own gesture inside
+          // the box content. This whole-box tap fires only when the click
+          // landed on non-item area (padding, or a passive box like git),
+          // so it routes to the box-level action — never double-firing an
+          // item that already handled its own tap.
           final action = widget.activate(_ctx);
           if (action != null) action();
         },
@@ -739,7 +807,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: widget.build(context, _ctx, span),
+          child: widget.build(context, _ctx, span, focused: focused),
         ),
       ),
     );
