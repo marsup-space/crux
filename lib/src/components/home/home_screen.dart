@@ -762,10 +762,33 @@ class _HomeScreenState extends State<HomeScreen> {
     final titleColor = focused ? theme.accent : theme.onSurfaceVariant;
     // A box is actionable when it has selectable items (Enter/click act
     // on one) or a whole-box action (passive-but-clickable, e.g. git).
-    final actionable =
-        widget.itemCount > 0 || widget.activate(_ctx) != null;
+    final hasItems = widget.itemCount > 0;
+    final boxAction = widget.activate(_ctx);
+    final actionable = hasItems || boxAction != null;
 
-    return MouseRegion(
+    final boxContent = Container(
+      height: height.toDouble(),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        border: BoxBorder.all(
+          color: borderColor,
+          style: BoxBorderStyle.rounded,
+        ),
+        title: BorderTitle(
+          text: actionable ? widget.title : '${widget.title} ·',
+          style: TextStyle(
+            color: titleColor,
+            fontWeight: focused ? FontWeight.bold : null,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: widget.build(context, _ctx, span, focused: focused),
+    );
+
+    // Hover-focus lives on a non-opaque MouseRegion so it never blocks
+    // clicks from reaching the content.
+    final hoverable = MouseRegion(
       onEnter: (_) {
         if (_focusedIndex != index) {
           setState(() {
@@ -775,41 +798,32 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       opaque: false,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          setState(() {
-            _focusedIndex = index;
-            widget.resetSelection();
-          });
-          // Per-item clicks are handled by the item's own gesture inside
-          // the box content. This whole-box tap fires only when the click
-          // landed on non-item area (padding, or a passive box like git),
-          // so it routes to the box-level action — never double-firing an
-          // item that already handled its own tap.
-          final action = widget.activate(_ctx);
-          if (action != null) action();
-        },
-        child: Container(
-          height: height.toDouble(),
-          decoration: BoxDecoration(
-            color: theme.surface,
-            border: BoxBorder.all(
-              color: borderColor,
-              style: BoxBorderStyle.rounded,
-            ),
-            title: BorderTitle(
-              text: actionable ? widget.title : '${widget.title} ·',
-              style: TextStyle(
-                color: titleColor,
-                fontWeight: focused ? FontWeight.bold : null,
-              ),
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: widget.build(context, _ctx, span, focused: focused),
-        ),
-      ),
+      child: boxContent,
+    );
+
+    // Only a passive / whole-action box (git, tokens, …) needs a
+    // box-level click routed to its action. An item-list box
+    // (quick-actions, recent-sessions) must NOT carry an opaque
+    // GestureDetector here: it would shadow the rows' own taps (the
+    // tap arena auto-accepts on pointer-up, and an opaque ancestor swallows
+    // the child hit), making mouse clicks either no-op or fire the wrong
+    // (focused) item. Hover-focus + the rows' own detectors suffice for
+    // item boxes; focus/selection is set by the row tap itself.
+    if (hasItems || boxAction == null) {
+      return hoverable;
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() {
+          _focusedIndex = index;
+          _notice = null;
+        });
+        final action = widget.activate(_ctx);
+        if (action != null) action();
+      },
+      child: hoverable,
     );
   }
 }

@@ -3,7 +3,9 @@ import 'package:test/test.dart';
 
 import 'package:crux/src/components/home/home_screen.dart';
 import 'package:crux/src/components/home/home_widgets.dart';
+import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/stub_widget.dart';
+import 'package:crux/src/services/git_status_service.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 
 HomeContext _ctx({bool Function(String)? runCommand}) {
@@ -349,6 +351,56 @@ void main() {
       await tester.pump();
       expect(focus(), 0);
     }, size: const Size(120, 30));
+  });
+
+  test('mouse click on a row runs that row, not the box/first item', () async {
+    // Regression: the whole-box opaque GestureDetector shadowed the
+    // per-row detectors, so a click fired the first item (or nothing)
+    // instead of the row under the cursor. Drop the opaque wrapper for
+    // item-list boxes so the rows' own taps win.
+    final ran = <String>[];
+    await testNocterm('row click', (tester) async {
+      await tester.pumpComponent(
+        Container(
+          width: 60,
+          height: 16,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: HomeScreen(
+              onExit: () {},
+              widgets: [
+                QuickActionsHomeWidget(
+                  seedInput: (_) {},
+                  actions: const [
+                    QuickAction('/new', 'a', '/new'),
+                    QuickAction('/chat', 'b', '/chat'),
+                    QuickAction('/model', 'c', '/model '),
+                  ],
+                ),
+              ],
+              context_: HomeContext(
+                runCommand: (c) {
+                  ran.add(c);
+                  return true;
+                },
+                close: () {},
+                seedInput: (_) {},
+                gitStatusService: GitStatusService(),
+                sessions: () => const [],
+                currentSessionId: () => null,
+                switchSession: (_) => false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      // Box border at y=8; action rows at y=9 (/new), 10 (/chat), 11.
+      await tester.tap(4, 10);
+      await tester.pump();
+    }, size: const Size(60, 16));
+    expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
+    expect(ran, isNot(contains('/new')), reason: 'must not fire the first item');
   });
 }
 
