@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
 import '../models/provider_config.dart';
@@ -6,6 +10,7 @@ import '../models/session.dart';
 import '../storage/message_store.dart';
 import '../tools/shell_monitor.dart';
 import '../tools/shell_risk.dart';
+import '../utils/user_data_directory.dart';
 import 'auxiliary_prompts.dart';
 import 'auxiliary_task_tracker.dart';
 import 'llm_client.dart';
@@ -208,11 +213,25 @@ class AuxiliaryService {
 
   // ── Yesterday summary (home screen) ──────────────────────────────
 
-  /// Cache for the last generated summary. Keyed by [_fingerprint] of
-  /// the yesterday-session set, so a home re-open on the same day with
-  /// unchanged sessions reuses the summary and never re-calls the LLM.
+  /// In-memory cache for the last generated summary. Backed by the
+  /// on-disk cache ([_readPersistedSummary] / [_persistSummary]) so a
+  /// same-day relaunch with an unchanged yesterday-set skips the LLM
+  /// call entirely. Keyed by date + [_fingerprint]; see [_cacheKey].
   String? _yesterdayCacheKey;
   String? _yesterdayCacheValue;
+
+  /// Path of the on-disk summary cache. Defaults to
+  /// `yesterday_summary.json` under the user-data dir; tests inject a
+  /// temp path via [debugOverrideCachePath]. Lazily resolved on use.
+  static String? _cacheFilePathForTesting;
+
+  /// Test-only: point the on-disk cache at a temp file.
+  static void debugOverrideCachePath(String path) =>
+      _cacheFilePathForTesting = path;
+
+  String get _cacheFilePath =>
+      _cacheFilePathForTesting ??
+      p.join(resolveUserDataDirectory(), 'yesterday_summary.json');
 
   /// Summarize what was worked on yesterday, for the home screen's
   /// Yesterday box. Single-round call (no tools), or `null` when no
@@ -246,8 +265,19 @@ class AuxiliaryService {
     if (yesterdays.isEmpty) return null;
 
     final fingerprint = _fingerprint(yesterdays);
-    if (fingerprint == _yesterdayCacheKey) {
+    final key = _cacheKey(todayStart, fingerprint);
+
+    // 1. In-memory hit.
+    if (key == _yesterdayCacheKey) {
       return _yesterdayCacheValue;
+    }
+    // 2. On-disk hit — a relaunch later the same day with the same
+    //    yesterday-set reads the file and skips the LLM call.
+    final persisted = _readPersistedSummary(key);
+    if (persisted != null) {
+      _yesterdayCacheKey = key;
+      _yesterdayCacheValue = persisted;
+      return persisted;
     }
 
     final digest = await _buildDigest(yesterdays, inWindow);
@@ -263,18 +293,36 @@ class AuxiliaryService {
     // Only cache a real result; a null (failure / no model) leaves the
     // cache untouched so the next open retries rather than sticking on
     // a stale failure.
-    _yesterdayCacheKey = fingerprint;
+    _yesterdayCacheKey = key;
     _yesterdayCacheValue = summary;
+    _persistSummary(key, summary);
     print('[yesterday] summarized ${yesterdays.length} sessions');
     return summary;
   }
 
-  /// The cache key: the ordered yesterday-session ids + their
-  /// `updatedAt`s. Any new session or new activity bumps it and forces
-  /// a regenerate; an unchanged set reuses the cache.
+  /// The cache key: the date (so a new day always regenerates, even if
+  /// the session set coincidentally matches) plus the ordered
+  /// yesterday-session ids + their `updatedAt`s. Any new session or new
+  /// activity bumps it and forces a regenerate; an unchanged set reuses
+  /// the cache.
+  String _cacheKey(DateTime todayStart, String fingerprint) =>
+      '${todayStart.toIso8601String().substring(0, 10)}|$fingerprint';
+
   String _fingerprint(List<Session> yesterdays) =>
       yesterdays.map((s) => '${s.id}@${s.updatedAt.millisecondsSinceEpoch}')
           .join(',');
+
+  /// Read the on-disk cache; returns the summary only when its key
+  /// matches [key] exactly (same day + same fingerprint). Delegates to
+  /// the top-level [readYesterdaySummaryCache] so the IO logic is
+  /// unit-testable.
+  String? _readPersistedSummary(String key) =>
+      readYesterdaySummaryCache(_cacheFilePath, key);
+
+  /// Atomically write the summary to the on-disk cache. Delegates to
+  /// [writeYesterdaySummaryCache].
+  void _persistSummary(String key, String summary) =>
+      writeYesterdaySummaryCache(_cacheFilePath, key, summary);
 
   /// Build the digest text for the LLM, or null if no session yields any
   /// yesterday content (e.g. sessions whose messages are all from before
@@ -598,6 +646,40 @@ String? buildYesterdayDigest(
 
   final result = buffer.toString().trim();
   return result.isEmpty ? null : result;
+}
+
+/// Read the persisted yesterday-summary cache at [path]; returns the
+/// summary only when its stored key matches [key] exactly (same day +
+/// same fingerprint). Any read/parse failure is a miss — the cache is an
+/// optimization, never a correctness dependency. Top-level and pure-IO
+/// so it's unit-testable without an LLM.
+String? readYesterdaySummaryCache(String path, String key) {
+  try {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    final json = jsonDecode(file.readAsStringSync());
+    if (json is! Map) return null;
+    if (json['key'] != key) return null;
+    final summary = json['summary'];
+    return summary is String && summary.isNotEmpty ? summary : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Atomically write the summary to the cache at [path] (temp + rename),
+/// mirroring the other TOML/JSON stores. A write failure is swallowed —
+/// the in-memory cache still serves the current run.
+void writeYesterdaySummaryCache(String path, String key, String summary) {
+  try {
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    final tmp = File('$path.tmp');
+    tmp.writeAsStringSync(jsonEncode({'key': key, 'summary': summary}));
+    tmp.renameSync(path);
+  } catch (_) {
+    // Non-fatal: the next run regenerates.
+  }
 }
 
 /// Parse the auxiliary model's raw reply for [assessShellProgress]

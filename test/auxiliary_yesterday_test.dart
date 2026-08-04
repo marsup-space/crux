@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:test/test.dart';
 
 import 'package:crux/src/models/message.dart';
@@ -139,6 +141,49 @@ void main() {
         inWindow,
       );
       expect(digest, contains('## #7'));
+    });
+  });
+
+  group('yesterday summary disk cache', () {
+    late Directory tmp;
+    late String path;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('yv_cache_test');
+      path = '${tmp.path}/yesterday_summary.json';
+    });
+    tearDown(() => tmp.deleteSync(recursive: true));
+
+    test('write then read round-trips when the key matches', () {
+      writeYesterdaySummaryCache(path, 'key-a', '- did a thing');
+      expect(readYesterdaySummaryCache(path, 'key-a'), '- did a thing');
+    });
+
+    test('read misses when the key differs (new day / new activity)', () {
+      writeYesterdaySummaryCache(path, 'key-a', '- did a thing');
+      expect(readYesterdaySummaryCache(path, 'key-b'), isNull);
+    });
+
+    test('read misses when the file does not exist', () {
+      expect(readYesterdaySummaryCache(path, 'key-a'), isNull);
+    });
+
+    test('read misses on corrupt JSON instead of throwing', () {
+      File(path).writeAsStringSync('not json {');
+      expect(readYesterdaySummaryCache(path, 'key-a'), isNull);
+    });
+
+    test('read misses when the stored summary is empty', () {
+      writeYesterdaySummaryCache(path, 'key-a', '');
+      // Empty summary is written but treated as a miss on read so the
+      // caller regenerates rather than caching a useless empty result.
+      expect(readYesterdaySummaryCache(path, 'key-a'), isNull);
+    });
+
+    test('a second write overwrites the first', () {
+      writeYesterdaySummaryCache(path, 'key-a', '- first');
+      writeYesterdaySummaryCache(path, 'key-a', '- second');
+      expect(readYesterdaySummaryCache(path, 'key-a'), '- second');
     });
   });
 }

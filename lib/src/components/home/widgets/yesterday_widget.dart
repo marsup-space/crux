@@ -140,11 +140,30 @@ class _YesterdayViewState extends State<_YesterdayView> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Each bullet is wrapped in a Row + Expanded so it gets a
+          // bounded width — a bare Text in a start-aligned Column is
+          // unbounded, so TextOverflow.ellipsis never engages and a
+          // long bullet overflows past the box border. (Same reason the
+          // workspace/quick-actions rows use Expanded.)
           for (final line in lines)
-            Text(
-              line,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: theme.onSurfaceVariant),
+            // softWrap: false + ellipsis forces a single line per bullet.
+            // The box is a fixed 4 rows tall and its content sits in a
+            // vertically-centering Column, which hands each child a
+            // 1-row height; a wrapping (multi-line) bullet would have
+            // its extra lines painted past the border because nocterm's
+            // Text.paint doesn't clip. Single-line ellipsis keeps the
+            // bullet inside the box and its height consistent.
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    line,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: theme.onSurfaceVariant),
+                  ),
+                ),
+              ],
             ),
         ],
       );
@@ -182,13 +201,21 @@ class _YesterdayViewState extends State<_YesterdayView> {
       ),
     ];
 
-    // Show a couple of the most recent titles as a memory jog.
+    // Show a couple of the most recent titles as a memory jog. Same
+    // width-bound need as the summary bullets — a bare Text here would
+    // overflow the border on a long title.
     for (final s in list.take(2)) {
       children.add(
-        Text(
-          '· ${s.title.isEmpty ? s.displayId : s.title}',
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: theme.onSurfaceDim),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '· ${s.title.isEmpty ? s.displayId : s.title}',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: theme.onSurfaceDim),
+              ),
+            ),
+          ],
         ),
       );
     }
