@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
 
 import '../../theme/crux_theme.dart';
 import '../../version.dart';
@@ -120,10 +121,19 @@ class _HomeScreenState extends State<HomeScreen> {
     '  ██████╗ ██║  ██║  █████╔╝ ██╔╝ ██╗',
   ];
 
-  /// Rows above the scroll viewport: container top padding (1) + logo
-  /// (5) + version row (1) + gap (1). The box hover handler uses this to
-  /// map the cursor's terminal y to a content row.
-  static const double _kAboveViewport = 1 + 5 + 1 + 1;
+  static const _weekdays = [
+    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+  ];
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// Rows above the scroll viewport: container top padding (1) + hero
+  /// block (5 logo rows; the info column shares them) + gap (1). The box
+  /// hover handler uses this to map the cursor's terminal y to a content
+  /// row.
+  static const double _kAboveViewport = 1 + 5 + 1;
 
   final _scrollController = ScrollController();
 
@@ -176,6 +186,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   HomeContext get _ctx =>
       component.context_ ?? HomeContext.minimal(close: component.onExit);
+
+  // ── Hero info lines ─────────────────────────────────────────────
+
+  static String _formatDate(DateTime d) =>
+      '${_weekdays[d.weekday - 1]} ${_months[d.month - 1]} ${d.day}';
+
+  /// Workspace fact for the hero: the project directory basename,
+  /// mirroring the workspace box's `dir` line but shorter.
+  String _workspaceLine() {
+    final path = _ctx.projectPath;
+    if (path.isEmpty) return '(no workspace)';
+    final base = p.basename(path);
+    return base.isEmpty ? path : base;
+  }
+
+  /// Branch fact for the hero — dimmed, and honest when there's no repo.
+  String _branchLine() {
+    final status = _ctx.gitStatusService.current;
+    if (!status.isRepo) return 'not a git repo';
+    final branch = status.branch.isEmpty ? '(no branch)' : status.branch;
+    return '⎇ $branch';
+  }
 
   @override
   void initState() {
@@ -662,25 +694,65 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Hero header ──
-            for (final line in _logo)
-              Text(line, style: TextStyle(color: theme.accent)),
+            // Logo on the left; an info column on the right fills the
+            // wide-screen dead space with the launch facts (version,
+            // date, workspace, branch) — the same "where am I" answer
+            // the dashboard below elaborates.
             Row(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'v$kCruxVersion',
-                  style: TextStyle(color: theme.onSurfaceDim),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final line in _logo)
+                      Text(line, style: TextStyle(color: theme.accent)),
+                  ],
                 ),
-                // Edit-mode marker: a hidden modal mode is a usability
-                // trap, so editing is announced right in the hero.
-                if (_editing)
-                  Text(
-                    '  [editing]',
-                    style: TextStyle(
-                      color: theme.warningColor,
-                      fontWeight: FontWeight.bold,
+                const SizedBox(width: 3),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'v$kCruxVersion',
+                          style: TextStyle(color: theme.onSurfaceDim),
+                        ),
+                        // Edit-mode marker: a hidden modal mode is a
+                        // usability trap, so editing is announced right
+                        // in the hero.
+                        if (_editing)
+                          Text(
+                            '  [editing]',
+                            style: TextStyle(
+                              color: theme.warningColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
+                    Text(
+                      _formatDate(DateTime.now()),
+                      style: TextStyle(color: theme.onSurfaceDim),
+                    ),
+                    // Workspace dir — omitted when the launch has no
+                    // project (e.g. tests), since the workspace box
+                    // already says "(unknown)" and an empty hero line
+                    // would just repeat it.
+                    if (_ctx.projectPath.isNotEmpty)
+                      Text(
+                        _workspaceLine(),
+                        style: TextStyle(color: theme.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    Text(
+                      _branchLine(),
+                      style: TextStyle(color: theme.onSurfaceDim),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 1),
@@ -807,7 +879,6 @@ class _HomeScreenState extends State<HomeScreen> {
     // on one) or a whole-box action (passive-but-clickable, e.g. git).
     final hasItems = widget.itemCount > 0;
     final boxAction = widget.activate(_ctx);
-    final actionable = hasItems || boxAction != null;
 
     final boxContent = Container(
       height: height.toDouble(),
@@ -818,7 +889,7 @@ class _HomeScreenState extends State<HomeScreen> {
           style: BoxBorderStyle.rounded,
         ),
         title: BorderTitle(
-          text: actionable ? widget.title : '${widget.title} ·',
+          text: widget.title,
           style: TextStyle(
             color: titleColor,
             fontWeight: focused ? FontWeight.bold : null,
@@ -826,7 +897,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: widget.build(context, _ctx, span, focused: focused),
+      // Passive boxes (git, tokens, yesterday, workspace) are short
+      // summaries — center their content vertically so a 1-line status
+      // doesn't hug the top of a stretched box with dead space below.
+      // Item-list boxes stay top-aligned: a list grows downward and its
+      // hover/click row math assumes content starts at the first row.
+      child: hasItems
+          ? widget.build(context, _ctx, span, focused: focused)
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [widget.build(context, _ctx, span, focused: focused)],
+            ),
     );
 
     // Hover-focus lives on a non-opaque MouseRegion so it never blocks

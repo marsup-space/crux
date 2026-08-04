@@ -50,7 +50,7 @@ class TokensHomeWidget extends HomeWidget {
 
     if (snap.isEmpty) {
       return Text(
-        'no LLM calls yet this run',
+        'no usage yet this run',
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }

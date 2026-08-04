@@ -391,8 +391,9 @@ void main() {
         ),
       );
       await tester.pump();
-      // Box border at y=8; action rows at y=9 (/new), 10 (/chat), 11.
-      await tester.tap(4, 10);
+      // Hero is 7 rows (1 padding + 5 logo + 1 gap), so the box border
+      // sits at y=7; action rows at y=8 (/new), 9 (/chat), 10.
+      await tester.tap(4, 9);
       await tester.pump();
     }, size: const Size(60, 16));
     expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
@@ -471,8 +472,8 @@ void main() {
       );
       await tester.pump();
       expect(widget.selectedIndex, 0);
-      // /chat row is at y=10 in this 60×16 layout (border y=8, rows 9-11).
-      await tester.hover(3, 10);
+      // /chat row is at y=9 in this 60×16 layout (border y=7, rows 8-10).
+      await tester.hover(3, 9);
       for (var i = 0; i < 4; i++) {
         await tester.pump();
       }
@@ -481,8 +482,8 @@ void main() {
         1,
         reason: 'hovering the /chat row selects it',
       );
-      // Hover /new (y=9) and confirm the selection moves up.
-      await tester.hover(3, 9);
+      // Hover /new (y=8) and confirm the selection moves up.
+      await tester.hover(3, 8);
       for (var i = 0; i < 4; i++) {
         await tester.pump();
       }

@@ -64,7 +64,7 @@ class YesterdayHomeWidget extends HomeWidget {
 
     if (list.isEmpty) {
       return Text(
-        'nothing active yesterday',
+        'nothing yesterday',
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }

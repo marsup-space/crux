@@ -107,7 +107,7 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
 
     if (!status.isRepo) {
       return Text(
-        'not a git repository',
+        'not a git repo',
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
