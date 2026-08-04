@@ -909,21 +909,29 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1),
-      // Passive boxes (git, tokens, workspace) are short summaries —
-      // center their content vertically so a 1-line status doesn't hug
-      // the top of a stretched box with dead space below. Item-list
-      // boxes stay top-aligned (their hover/click row math assumes
-      // content starts at row 0), and so do boxes that opt out via
-      // [HomeWidget.verticallyCenter] — a scrollable box like Yesterday
-      // must keep its content top-aligned for the scrollview's height
-      // constraint to hold.
-      child: hasItems || !widget.verticallyCenter
-          ? widget.build(context, _ctx, span, focused: focused)
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [widget.build(context, _ctx, span, focused: focused)],
-            ),
+      // EVERY box's content lives inside a scrollview: the scrollview's
+      // paint clips to the viewport, so no content can ever paint past
+      // the border — a too-tall box scrolls instead of overflowing, and
+      // the scrollbar thumb signals it. Passive boxes (git, tokens,
+      // workspace) still center their short summaries vertically inside
+      // the scroll area so a 1-line status doesn't hug the top of a
+      // stretched box. Item-list boxes stay top-aligned (their
+      // hover/click row math assumes content starts at row 0), and so
+      // do boxes that opt out via [HomeWidget.verticallyCenter] — a
+      // content list like Yesterday must keep top alignment for the
+      // scroll to read naturally.
+      child: _BoxScrollArea(
+        owner: widget,
+        child: hasItems || !widget.verticallyCenter
+            ? widget.build(context, _ctx, span, focused: focused)
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  widget.build(context, _ctx, span, focused: focused),
+                ],
+              ),
+      ),
     );
 
     // Hover-focus lives on a non-opaque MouseRegion so it never blocks
@@ -947,7 +955,11 @@ class _HomeScreenState extends State<HomeScreen> {
         //   row + 1 border row.
         final firstContentY =
             _kAboveViewport - _scrollController.offset + scrollContentRow + 1;
-        final row = (event.y - firstContentY).round();
+        // The box content is itself scrollable now — the cursor's
+        // viewport row maps to the absolute item index through the
+        // box's own scroll offset.
+        final row =
+            (event.y - firstContentY).round() + widget.boxScrollOffset;
         if (row < 0 || row >= widget.itemCount) return;
         var changed = widget.selectItemAt(row);
         if (changed && _focusedIndex != index) {
@@ -987,6 +999,80 @@ class _HomeScreenState extends State<HomeScreen> {
         if (action != null) action();
       },
       child: hoverable,
+    );
+  }
+}
+
+/// A box's scrollable content area. Wraps the widget's content in a
+/// `Scrollbar + SingleChildScrollView`: the scrollview's paint clips
+/// to the viewport, so content taller than the box scrolls instead of
+/// painting past the border, and the scrollbar thumb signals it. The
+/// current scroll offset is mirrored back to the owning widget via
+/// [HomeWidget.boxScrollOffset] so home's box-level hover math can
+/// translate a viewport row into an absolute item index.
+class _BoxScrollArea extends StatefulComponent {
+  final HomeWidget owner;
+  final Component child;
+
+  const _BoxScrollArea({required this.owner, required this.child});
+
+  @override
+  State<_BoxScrollArea> createState() => _BoxScrollAreaState();
+}
+
+class _BoxScrollAreaState extends State<_BoxScrollArea> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Mirror the scroll offset back to the owning widget so home's
+    // box-level hover math (viewport row → absolute item index) stays
+    // correct once the list is scrolled.
+    _controller.addListener(() {
+      component.owner.boxScrollOffset = _controller.offset.round();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Keep the selected item visible: when ↑↓ moves the selection
+        // past the last visible row, scroll so it stays in view. Only
+        // item boxes need this (passive boxes have no selection).
+        final owner = component.owner;
+        if (owner.itemCount > 0 && constraints.maxHeight.isFinite) {
+          final viewport = constraints.maxHeight.floor();
+          final selected = owner.selectedIndex;
+          var first = _controller.offset.round();
+          if (selected < first) {
+            first = selected;
+          } else if (selected > first + viewport - 1) {
+            first = selected - viewport + 1;
+          }
+          first = first.clamp(0, (owner.itemCount - viewport).clamp(0, owner.itemCount));
+          if (_controller.offset.round() != first) {
+            _controller.jumpTo(first.toDouble());
+          }
+        }
+        return Scrollbar(
+          controller: _controller,
+          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+          trackColor: theme.surfaceVariant.withOpacity(0.3),
+          child: SingleChildScrollView(
+            controller: _controller,
+            child: component.child,
+          ),
+        );
+      },
     );
   }
 }

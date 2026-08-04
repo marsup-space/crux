@@ -111,20 +111,12 @@ class _YesterdayViewState extends State<_YesterdayView> {
   /// Guards against kicking the call twice across rebuilds.
   bool _requested = false;
 
-  /// Scrolls the summary when it wraps past the box's content height.
-  final ScrollController _scrollController = ScrollController();
-
   @override
   void initState() {
     super.initState();
     _maybeRequest();
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   void _maybeRequest() {
     final summarize = component.summarize;
@@ -155,35 +147,26 @@ class _YesterdayViewState extends State<_YesterdayView> {
           .where((l) => l.isNotEmpty)
           .toList();
       // softWrap: true lets each bullet wrap to the box width (no
-      // ellipsis — the full text is the point). The Scrollbar +
-      // SingleChildScrollView give the wrapped block a bounded height
-      // (the box's fixed content area) so it scrolls on the mouse wheel
-      // when it outgrows the box instead of overflowing the border.
-      return Scrollbar(
-        controller: _scrollController,
-        thumbVisibility: true,
-        thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-        trackColor: theme.surfaceVariant.withOpacity(0.3),
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final line in lines)
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        line,
-                        softWrap: true,
-                        style: TextStyle(color: theme.onSurfaceVariant),
-                      ),
-                    ),
-                  ],
+      // ellipsis — the full text is the point). Scrolling is the box
+      // chrome's job (_BoxScrollArea wraps every box in a scrollview),
+      // so this stays a plain top-aligned column — a taller-than-box
+      // summary just scrolls.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in lines)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    line,
+                    softWrap: true,
+                    style: TextStyle(color: theme.onSurfaceVariant),
+                  ),
                 ),
-            ],
-          ),
-        ),
+              ],
+            ),
+        ],
       );
     }
 

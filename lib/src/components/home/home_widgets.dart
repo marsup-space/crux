@@ -134,6 +134,14 @@ abstract class HomeWidget {
   /// the content.
   bool get verticallyCenter => true;
 
+  /// The box content's current scroll offset (rows scrolled out of
+  /// view). Home's box chrome wraps every box in a scrollview; the
+  /// scroll area writes this so box-level hover can translate a
+  /// viewport row into an absolute item index. `0` when unscrolled —
+  /// which is always the case for truncated lists (quick-actions,
+  /// recent-sessions), so those hover calculations are unchanged.
+  int boxScrollOffset = 0;
+
   // ── Item selection ────────────────────────────────────────────────
   //
   // Boxes that present a list of selectable options (quick-actions,
