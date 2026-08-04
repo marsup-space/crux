@@ -36,7 +36,12 @@ enum FileMatchKind { file, directory }
 /// Recursive, cached, fuzzy file/directory searcher for a single
 /// project root.
 ///
-/// Performance characteristics for a 50k-file project:
+/// Index building and per-keystroke scoring run on a background
+/// worker isolate; the main (UI) isolate never walks the tree or
+/// scores paths. Performance characteristics for a 50k-file
+/// project (the times are worker-isolate costs — the UI thread
+/// only waits on the port callback that receives the finished
+/// result):
 ///
 /// | Op                              | Time       |
 /// |---------------------------------|------------|
@@ -47,8 +52,12 @@ enum FileMatchKind { file, directory }
 ///
 /// Indexing is async — [ready] exposes the in-flight future so the
 /// chat input can show a "Searching..." placeholder while the first
-/// walk runs. Subsequent searches are synchronous once the index is
-/// warm; per-keystroke work is purely in-memory.
+/// walk runs. When the worker finishes a build it ships one
+/// immutable snapshot back to the main isolate, so the synchronous
+/// [search] API (and the empty-query "first N files" path) keep
+/// working from a local mirror. Subsequent searches are
+/// synchronous once the index is warm; per-keystroke work is
+/// purely in-memory.
 ///
 /// Skip list: hidden files/dirs (`.git`, `.build`, etc.),
 /// `node_modules`, `target`, `build`, `dist`, `.dart_tool`, plus
@@ -110,55 +119,39 @@ class FileSearcher {
   /// initials are `fbm`).
   List<String>? _basenameInitials;
 
-  /// Composite gitignore matcher built from every `.gitignore`
-  /// found in the project tree. Only the in-process walker uses
-  /// this; ripgrep honors `.gitignore` natively so when ripgrep
-  /// builds the index the matcher stays null. Lazily populated
-  /// by [_loadGitignores] on the first in-process walk.
-  GitignoreMatcher? _gitignore;
-
-  /// True while [_buildIndex] is in flight. The chat input reads
+  /// True while the index build is in flight. The chat input reads
   /// this to show "Searching..." in the popover header.
   bool _isIndexing = false;
 
   /// The in-flight index build, or null if the index is ready
   /// (or hasn't been kicked off yet). [ready] awaits this so
-  /// search callers can synchronize on it.
+  /// search callers can synchronize on it. Cleared when the build
+  /// finishes so a later failure can be retried.
   Future<void>? _indexingFuture;
 
   /// Whether the last successful index used ripgrep or the
   /// in-process walker. Useful for diagnostics.
   bool _usedRipgrep = false;
 
-  /// Whether `rg` was found on $PATH at construction time. Cached
-  /// so we don't re-probe on every index rebuild.
-  bool? _ripgrepAvailableCache;
-
-  /// Long-lived worker isolate that owns the index snapshot and
-  /// runs the CPU-bound scoring loop off the UI thread. Lazily
-  /// spawned on the first non-empty query and reused for the
-  /// lifetime of this [FileSearcher]. Without this, scoring
-  /// 50k paths against the 9-tier table on every keystroke
-  /// blocks the UI thread for ~5-15ms — a perceptible freeze
-  /// for fast typists.
+  /// Long-lived worker isolate that owns the index — build *and*
+  /// search. Lazily spawned on the first [ensureIndex] /
+  /// [searchAsync] and reused for the lifetime of this
+  /// [FileSearcher]. The worker walks the tree, sorts it, and
+  /// pre-computes the parallel scoring arrays off the UI thread,
+  /// then ships one immutable snapshot back to the main isolate so
+  /// the synchronous [search] API keeps working from a local copy.
   _FileSearchWorker? _worker;
 
   /// Future that completes when [_worker]'s isolate is ready
-  /// to accept search requests. Cached so concurrent callers
-  /// share the same await point.
+  /// to accept requests. Cached so concurrent callers share the
+  /// same await point.
   Future<void>? _workerReady;
 
-  /// Monotonic version number for the local index. Bumped by
-  /// [_populateIndex] every time the index is rebuilt (initial
-  /// build or [invalidate]+rebuild). [searchAsync] compares this
-  /// against [_shippedIndexEpoch] to decide when the worker needs
-  /// a fresh snapshot.
-  int _localIndexEpoch = 0;
-
-  /// The last epoch we successfully shipped to the worker.
-  /// If [_localIndexEpoch] > [_shippedIndexEpoch] on the next
-  /// search, we resend the snapshot before issuing the search.
-  int _shippedIndexEpoch = -1;
+  /// Monotonic generation counter, bumped by [invalidate]. A build
+  /// started under an old generation discards its result when it
+  /// lands, so a `/project` switch mid-build can't populate a
+  /// stale index for the previous root.
+  int _generation = 0;
 
   FileSearcher({required this.rootPath, this.preferRipgrep = true});
 
@@ -185,6 +178,7 @@ class FileSearcher {
   /// the tree. The chat panel calls this when the user switches
   /// the project directory (`/project`).
   void invalidate() {
+    _generation++;
     _paths = null;
     _lower = null;
     _basenames = null;
@@ -192,6 +186,10 @@ class FileSearcher {
     _initials = null;
     _basenameInitials = null;
     _indexingFuture = null;
+    // Drop the worker's copy too. Fire-and-forget: the request is
+    // serialized in the worker ahead of any follow-up build, so
+    // ordering is safe even if the next [ensureIndex] races us.
+    _worker?.invalidate().catchError((_) {});
   }
 
   /// Stop the background worker isolate, if one was spawned.
@@ -202,7 +200,7 @@ class FileSearcher {
     _worker?.dispose();
     _worker = null;
     _workerReady = null;
-    _shippedIndexEpoch = -1;
+    _generation++;
   }
 
   /// Kick off indexing if it hasn't started yet (or if [invalidate]
@@ -211,79 +209,66 @@ class FileSearcher {
   /// microtask: it just creates a Future.value() if there's
   /// nothing to do.
   Future<void> ensureIndex() {
-    if (_indexingFuture != null) return _indexingFuture!;
+    final inFlight = _indexingFuture;
+    if (inFlight != null) return inFlight;
     if (_paths != null) {
       // Already built and not invalidated.
       return Future<void>.value();
     }
     _isIndexing = true;
-    _indexingFuture = _buildIndex();
-    _indexingFuture!.whenComplete(() {
-      _isIndexing = false;
-    });
-    return _indexingFuture!;
+    final future = _buildIndexRemote();
+    _indexingFuture = future;
+    // The build swallows errors itself (it resets the worker and
+    // lets a later call retry), but guard anyway so a fire-and-
+    // forget caller like `_showAtMention` can't produce an
+    // unhandled async error.
+    unawaited(
+      future.catchError((_) {}).whenComplete(() {
+        _isIndexing = false;
+        if (identical(_indexingFuture, future)) _indexingFuture = null;
+      }),
+    );
+    return future;
   }
 
-  /// Build the index. Tries ripgrep first, falls back to the
-  /// in-process walker. Both paths produce a sorted, pre-computed
-  /// parallel-array representation so search is purely in-memory.
-  Future<void> _buildIndex() async {
-    List<String>? paths;
-    if (preferRipgrep) {
-      paths = await _tryRipgrep();
-      _usedRipgrep = paths != null;
+  /// Build the index inside the worker isolate, then mirror the
+  /// finished snapshot back onto the main isolate.
+  ///
+  /// Walking the tree (ripgrep or the in-process fallback), the
+  /// sort, and every per-path pre-computation run off the UI
+  /// thread; the main isolate only receives the immutable result
+  /// via the port callback. This is what keeps the first `@` on a
+  /// big project from freezing the terminal.
+  Future<void> _buildIndexRemote() async {
+    final gen = _generation;
+    try {
+      await _ensureWorker();
+      final worker = _worker;
+      if (worker == null) return;
+      final snapshot = await worker.build(
+        rootPath,
+        preferRipgrep: preferRipgrep,
+      );
+      if (gen != _generation) return;
+      _applySnapshot(snapshot);
+    } catch (_) {
+      // Worker died or timed out — drop it so the next call
+      // respawns fresh. [ensureIndex] clears [_indexingFuture] on
+      // completion, so a later call simply retries the build.
+      _worker?.dispose();
+      _worker = null;
+      _workerReady = null;
     }
-    paths ??= _walkInProcess();
-    _populateIndex(paths);
   }
 
-  void _populateIndex(List<String> paths) {
-    paths.sort();
-    _paths = List<String>.unmodifiable(paths);
-    _lower = List<String>.unmodifiable(
-      paths.map((s) => s.toLowerCase()).toList(),
-    );
-    // Lowercased once at index time so [_score] doesn't need to
-    // re-allocate on every keystroke. We do this for the basename
-    // specifically because the @-mention UX expects case-insensitive
-    // matching (`@battlemode.cs` should find `Battlemode.cs`), but
-    // [p.basename] preserves the original case. Path comparisons are
-    // already case-insensitive via [_lower] below — this just extends
-    // the same property to basename comparisons.
-    _basenames = List<String>.unmodifiable(
-      paths.map((s) => p.basename(s).toLowerCase()).toList(),
-    );
-    // Directories in the index are marked by a trailing `/`
-    // (see [_walk] and `_ripgrepOutputToPaths` — both store
-    // directories with the trailing slash). `p.basename` is
-    // separator-agnostic, so the Windows `\` vs POSIX `/`
-    // distinction doesn't matter for the basename field.
-    _isDir = List<bool>.unmodifiable(
-      paths.map((s) => s.endsWith('/')).toList(),
-    );
-    // Initials for the basename only. We tokenize from the
-    // original-case basename (so camelCase boundaries are
-    // detectable) but emit lowercased initials so the per-
-    // keystroke comparison in [_score] is case-insensitive
-    // without re-allocating.
-    _basenameInitials = List<String>.unmodifiable(
-      paths.map((s) => _initialsForPath(p.basename(s))).toList(),
-    );
-    // Initials for the whole path. Tokenizes across `/`
-    // boundaries so e.g. `lib/src/file_searcher.dart` →
-    // `lsfsd`. Used by the path-initials tiers in [_score].
-    _initials = List<String>.unmodifiable(paths.map(_initialsForPath).toList());
-    _localIndexEpoch++;
-  }
-
-  /// Compute the lowercased initials string for a path from the
-  /// index. Strips a trailing separator (for directory entries
-  /// — see [_ripgrepOutputToPaths] / [_walk]) so `foo/bar/`
-  /// tokenizes the same as `foo/bar`. Delegates to the shared
-  /// [computeInitials] in `fuzzy_match.dart`.
-  static String _initialsForPath(String s) {
-    final cleaned = s.endsWith('/') ? s.substring(0, s.length - 1) : s;
-    return computeInitials(cleaned);
+  void _applySnapshot(_WorkerIndexSnapshot snapshot) {
+    _paths = snapshot.paths;
+    _lower = snapshot.lower;
+    _basenames = snapshot.basenames;
+    _initials = snapshot.initials;
+    _basenameInitials = snapshot.basenameInitials;
+    _isDir = snapshot.isDir;
+    _usedRipgrep = snapshot.usedRipgrep;
   }
 
   /// Fuzzy-search the indexed tree for [query]. Returns up to
@@ -337,16 +322,22 @@ class FileSearcher {
     return _scoredQueryResults(q, limit);
   }
 
-  /// Async variant of [search] that runs the scoring loop in a
+  /// Async variant of [search] that runs the scoring loop in the
   /// long-lived worker isolate. This keeps the UI isolate responsive
   /// while the user types into the @-mention file browser.
   ///
   /// The synchronous [search] method remains available for tests and
-  /// small callers. Both methods share the same index snapshot and
-  /// scoring implementation, so their result order is identical.
+  /// small callers. Both methods score the same snapshot with the
+  /// same implementation, so their result order is identical.
   Future<List<FileMatch>> searchAsync(String query, {int limit = 10}) async {
     final paths = _paths;
-    if (paths == null || paths.isEmpty) return const [];
+    if (paths == null || paths.isEmpty) {
+      // No local snapshot yet (first mention, or [invalidate] raced
+      // us). Make sure a build is running and wait for it — the
+      // popover's "Searching..." placeholder covers the wait.
+      await ensureIndex();
+      if (_paths == null) return const [];
+    }
 
     final q = query.trim();
     if (q.isEmpty) {
@@ -355,13 +346,15 @@ class FileSearcher {
 
     try {
       await _ensureWorker();
-      await _shipIndexToWorkerIfNeeded();
       final worker = _worker;
       if (worker == null) return _scoredQueryResults(q, limit);
-      return worker.search(q, limit: limit);
+      return await worker.search(q, limit: limit);
     } catch (_) {
-      // If isolate startup/message-passing fails for any reason,
-      // preserve behavior by falling back to the in-isolate scorer.
+      // Isolate died or timed out — drop it so the next call
+      // respawns fresh, and fall back to the in-isolate scorer.
+      _worker?.dispose();
+      _worker = null;
+      _workerReady = null;
       return _scoredQueryResults(q, limit);
     }
   }
@@ -383,36 +376,6 @@ class FileSearcher {
       },
     );
     return completer.future;
-  }
-
-  Future<void> _shipIndexToWorkerIfNeeded() async {
-    if (_shippedIndexEpoch == _localIndexEpoch) return;
-    final worker = _worker;
-    final paths = _paths;
-    final lower = _lower;
-    final basenames = _basenames;
-    final initials = _initials;
-    final basenameInitials = _basenameInitials;
-    final isDir = _isDir;
-    if (worker == null ||
-        paths == null ||
-        lower == null ||
-        basenames == null ||
-        initials == null ||
-        basenameInitials == null ||
-        isDir == null) {
-      return;
-    }
-    await worker.updateIndex(
-      epoch: _localIndexEpoch,
-      paths: paths,
-      lower: lower,
-      basenames: basenames,
-      initials: initials,
-      basenameInitials: basenameInitials,
-      isDir: isDir,
-    );
-    _shippedIndexEpoch = _localIndexEpoch;
   }
 
   List<FileMatch> _emptyQueryResults(int limit) {
@@ -678,259 +641,376 @@ class FileSearcher {
   // library doc for the rules (camelCase, snake_case, kebab-case,
   // dot, path separators) and the full tier table.
 
-  // ── ripgrep backend ────────────────────────────────────────────
-
-  Future<List<String>?> _tryRipgrep() async {
-    if (!await _isRipgrepAvailable()) return null;
-    try {
-      final result = await Process.run(_ripgrepPath!, const [
-        '--no-config',
-        '--files',
-        '--hidden',
-        '--glob=!.git/*',
-        '--glob=!node_modules/*',
-        '--glob=!target/*',
-        '--glob=!build/*',
-        '--glob=!dist/*',
-        '--glob=!out/*',
-        '--glob=!.dart_tool/*',
-        '--glob=!.idea/*',
-        '--glob=!.vscode/*',
-        '--glob=!.next/*',
-        '--glob=!.nuxt/*',
-        '--glob=!__pycache__/*',
-        '--glob=!.gradle/*',
-        '--glob=!Pods/*',
-        '--glob=!*.lock',
-        '.',
-      ], workingDirectory: rootPath);
-      if (result.exitCode != 0) return null;
-      return _ripgrepOutputToPaths(result.stdout as String);
-    } on ProcessException {
-      return null;
-    }
-  }
-
-  String? _ripgrepPath;
-
-  Future<bool> _isRipgrepAvailable() async {
-    final cached = _ripgrepAvailableCache;
-    if (cached != null) return cached;
-    try {
-      _ripgrepPath ??= await resolveBundledExecutable(
-        Platform.isWindows ? 'rg.exe' : 'rg',
-      );
-      final result = await Process.run(_ripgrepPath!, const ['--version']);
-      final ok = result.exitCode == 0;
-      _ripgrepAvailableCache = ok;
-      return ok;
-    } on ProcessException {
-      _ripgrepAvailableCache = false;
-      return false;
-    }
-  }
-
-  static List<String> _ripgrepOutputToPaths(String output) {
-    if (output.isEmpty) return const [];
-    // ripgrep always emits `/`-separated paths (POSIX style)
-    // regardless of the host platform. We keep that on disk so
-    // the index matches the in-process walker output, and only
-    // re-translate to native separators at display time.
-    const sep = '/';
-    // ripgrep prints paths relative to its CWD, one per line.
-    // For our use case, we append `/` for directories — but
-    // `rg --files` only emits files. We don't get directory
-    // entries from ripgrep, so the in-process fallback's
-    // directory coverage is *better* than ripgrep's. To
-    // compensate, we synthesize directory entries for the
-    // path prefixes of every file. This is cheap (one Set
-    // build, then a per-file `parent` lookup) and means the
-    // directory drill-in still works.
-    final fileLines = const LineSplitter().convert(output);
-    final dirs = <String>{};
-    final result = <String>[];
-    for (final line in fileLines) {
-      if (line.isEmpty) continue;
-      result.add(line);
-      // Add every ancestor directory to the dir set.
-      var i = line.lastIndexOf(sep);
-      while (i > 0) {
-        final parent = line.substring(0, i);
-        if (dirs.add('$parent$sep')) {
-          // Newly added — keep going.
-        } else {
-          // Already in set; shorter prefixes are guaranteed
-          // to be there too, so we can stop.
-          break;
-        }
-        i = line.lastIndexOf(sep, i - 1);
-      }
-    }
-    // If a file is at the root, its parent is empty — that's
-    // not a directory entry. Skip empty/root paths.
-    final nonEmpty = <String>[];
-    for (final d in dirs) {
-      if (d.length > sep.length) nonEmpty.add(d);
-    }
-    result.addAll(nonEmpty);
-    return result;
-  }
+  // ── ripgrep backend / in-process walker ───────────────────────
+  //
+  // Both index-build paths run inside the worker isolate (see the
+  // "Worker-side index build" section below); the main isolate
+  // never walks the tree or probes for ripgrep.
 
   // ── In-process walker fallback ────────────────────────────────
+  //
+  // Moved to the worker-side section below — see [_walkInProcessAt].
+}
 
-  List<String> _walkInProcess() {
-    final root = Directory(rootPath);
-    if (!root.existsSync()) return const [];
-    _gitignore ??= _loadGitignores(root);
-    final out = <String>[];
-    _walk(root, out, '');
-    return out;
+// ── Worker-side index build ─────────────────────────────────────
+//
+// Everything below runs inside the file-search worker isolate
+// (see [_fileSearchWorkerMain]). The main isolate's [FileSearcher]
+// delegates the whole build here — walk, sort, and per-path
+// pre-computation — so none of it can ever block the UI thread.
+
+/// Ripgrep path/availability caches. Only touched from the worker
+/// isolate, so no locking is needed.
+String? _workerRipgrepPath;
+bool? _workerRipgrepAvailable;
+
+/// Compute the lowercased initials string for a path from the
+/// index. Strips a trailing separator (for directory entries —
+/// see [_ripgrepOutputToPaths] / [_walkAt]) so `foo/bar/`
+/// tokenizes the same as `foo/bar`. Delegates to the shared
+/// [computeInitials] in `fuzzy_match.dart`.
+String _initialsForPath(String s) {
+  final cleaned = s.endsWith('/') ? s.substring(0, s.length - 1) : s;
+  return computeInitials(cleaned);
+}
+
+/// Build the full index for [rootPath]: walk the tree (ripgrep
+/// first, in-process fallback), sort, and pre-compute the parallel
+/// scoring arrays. Runs on the worker isolate, so none of it —
+/// including the multi-second in-process walk on huge trees —
+/// ever blocks the UI thread.
+Future<
+    ({
+      List<String> paths,
+      List<String> lower,
+      List<String> basenames,
+      List<String> initials,
+      List<String> basenameInitials,
+      List<bool> isDir,
+      bool usedRipgrep,
+    })> _buildWorkerIndex(String rootPath, bool preferRipgrep) async {
+  List<String>? paths;
+  var usedRipgrep = false;
+  if (preferRipgrep) {
+    paths = await _tryRipgrepAt(rootPath);
+    usedRipgrep = paths != null;
   }
+  paths ??= _walkInProcessAt(rootPath);
 
-  /// Walk the project tree and merge every `.gitignore` we find
-  /// into a single matcher. The matcher's [matches] check is
-  /// path-aware, so the walker can pass the in-progress relative
-  /// path to a directory entry and ask "is this directory
-  /// ignored before I descend into it?" — short-circuiting whole
-  /// subtrees like `build/` or `node_modules/` even if the user
-  /// didn't list them in the static skip set.
-  ///
-  /// We load *all* .gitignore files up front (in a single sweep
-  /// with bounded recursion) so the matcher's `directoryIgnores`
-  /// lookup is O(1) per dir during the main walk. The .gitignore
-  /// stack is implicit: a pattern without a `/` in it matches
-  /// at any depth; one with a `/` only matches at the level of
-  /// its containing file. [GitignoreMatcher.matches] handles the
-  /// "negation" rule (!foo) and the "anchored-to-root" rule
-  /// (`/foo` only at the project root) for us.
-  GitignoreMatcher _loadGitignores(Directory root) {
-    final matcher = GitignoreMatcher();
-    final out = <GitignoreSource>[];
-    _collectGitignores(root, '', out);
-    matcher.loadAll(out);
-    return matcher;
+  final sorted = List<String>.of(paths)..sort();
+  return (
+    paths: List<String>.unmodifiable(sorted),
+    lower: List<String>.unmodifiable(
+      sorted.map((s) => s.toLowerCase()).toList(),
+    ),
+    // Lowercased once at index time so [FileSearcher._score]
+    // doesn't need to re-allocate on every keystroke. We do this
+    // for the basename specifically because the @-mention UX
+    // expects case-insensitive matching (`@battlemode.cs` should
+    // find `Battlemode.cs`), but [p.basename] preserves the
+    // original case. Path comparisons are already case-insensitive
+    // via `lower` below — this just extends the same property to
+    // basename comparisons.
+    basenames: List<String>.unmodifiable(
+      sorted.map((s) => p.basename(s).toLowerCase()).toList(),
+    ),
+    // Directories in the index are marked by a trailing `/`
+    // (see [_walkAt] and [_ripgrepOutputToPaths] — both store
+    // directories with the trailing slash). `p.basename` is
+    // separator-agnostic, so the Windows `\` vs POSIX `/`
+    // distinction doesn't matter for the basename field.
+    isDir: List<bool>.unmodifiable(
+      sorted.map((s) => s.endsWith('/')).toList(),
+    ),
+    // Initials for the basename only. We tokenize from the
+    // original-case basename (so camelCase boundaries are
+    // detectable) but emit lowercased initials so the per-
+    // keystroke comparison in [FileSearcher._score] is
+    // case-insensitive without re-allocating.
+    basenameInitials: List<String>.unmodifiable(
+      sorted.map((s) => _initialsForPath(p.basename(s))).toList(),
+    ),
+    // Initials for the whole path. Tokenizes across `/`
+    // boundaries so e.g. `lib/src/file_searcher.dart` →
+    // `lsfsd`. Used by the path-initials tiers in
+    // [FileSearcher._score].
+    initials: List<String>.unmodifiable(sorted.map(_initialsForPath).toList()),
+    usedRipgrep: usedRipgrep,
+  );
+}
+
+Future<List<String>?> _tryRipgrepAt(String rootPath) async {
+  if (!await _isRipgrepAvailableAt()) return null;
+  try {
+    final result = await Process.run(_workerRipgrepPath!, const [
+      '--no-config',
+      '--files',
+      '--hidden',
+      '--glob=!.git/*',
+      '--glob=!node_modules/*',
+      '--glob=!target/*',
+      '--glob=!build/*',
+      '--glob=!dist/*',
+      '--glob=!out/*',
+      '--glob=!.dart_tool/*',
+      '--glob=!.idea/*',
+      '--glob=!.vscode/*',
+      '--glob=!.next/*',
+      '--glob=!.nuxt/*',
+      '--glob=!__pycache__/*',
+      '--glob=!.gradle/*',
+      '--glob=!Pods/*',
+      '--glob=!*.lock',
+      '.',
+    ], workingDirectory: rootPath);
+    if (result.exitCode != 0) return null;
+    return _ripgrepOutputToPaths(result.stdout as String);
+  } on ProcessException {
+    return null;
   }
+}
 
-  void _collectGitignores(
-    Directory dir,
-    String relPrefix,
-    List<GitignoreSource> out,
-  ) {
-    // Same /-normalization as [_walk] — keep the relPrefix
-    // consistent with the paths the walker will produce so the
-    // GitignoreMatcher's `src.dir` lookup matches.
-    const sep = '/';
-    try {
-      final gi = File(p.join(dir.path, '.gitignore'));
-      if (gi.existsSync()) {
-        try {
-          final lines = gi.readAsLinesSync();
-          out.add((
-            directory: relPrefix.isEmpty ? '.' : relPrefix,
-            lines: lines,
-          ));
-        } on FileSystemException {
-          // Unreadable .gitignore — skip.
-        }
-      }
-      for (final entry in dir.listSync(recursive: false, followLinks: false)) {
-        if (entry is! Directory) continue;
-        final name = p.basename(entry.path);
-        if (_shouldSkip(name)) continue;
-        final rel = relPrefix.isEmpty ? name : '$relPrefix$sep$name';
-        _collectGitignores(entry, rel, out);
-      }
-    } on FileSystemException {
-      // Permission denied / transient errors — skip.
-    }
-  }
-
-  void _walk(Directory dir, List<String> out, String prefix) {
-    // Always use POSIX `/` for the index, even on Windows. The
-    // platform's native separator is `\` on Windows; mixing that
-    // with the `/` ripgrep emits on every platform would make the
-    // in-process walker disagree with the ripgrep backend (and
-    // disagree with every gitignore pattern, which is POSIX-style
-    // by definition). The user-facing paths we display in the
-    // popover get re-rendered with `p.separator` so they look
-    // native on Windows.
-    const sep = '/';
-    try {
-      final entries = dir.listSync(recursive: false, followLinks: false);
-      entries.sort((a, b) => a.path.compareTo(b.path));
-      for (final entry in entries) {
-        final name = p.basename(entry.path);
-        if (_shouldSkip(name)) continue;
-        final rel = prefix.isEmpty ? name : '$prefix$sep$name';
-        // Honor .gitignore. A directory is skipped wholesale if
-        // it's ignored — no point descending. The check uses
-        // the bare path (no trailing separator) so a pattern
-        // like `build/` matches the directory `build`.
-        if (_gitignore != null && entry is Directory) {
-          if (_gitignore!.matches(rel, isDirectory: true)) continue;
-        }
-        if (entry is Directory) {
-          out.add('$rel$sep');
-          _walk(entry, out, rel);
-        } else if (entry is File) {
-          // Same check for files — a file matching an ignore
-          // pattern is dropped.
-          if (_gitignore != null &&
-              _gitignore!.matches(rel, isDirectory: false)) {
-            continue;
-          }
-          out.add(rel);
-        }
-      }
-    } on FileSystemException {
-      // Permission denied / transient errors — skip and continue.
-    }
-  }
-
-  static final Set<String> _skipDirs = {
-    '.git',
-    '.hg',
-    '.svn',
-    '.dart_tool',
-    '.idea',
-    '.vscode',
-    'node_modules',
-    'target',
-    'build',
-    'dist',
-    'out',
-    '.next',
-    '.nuxt',
-    '__pycache__',
-    '.pytest_cache',
-    '.mypy_cache',
-    '.gradle',
-    'Pods',
-    '.terraform',
-  };
-
-  static const Set<String> _skipFiles = {
-    'pubspec.lock',
-    'package-lock.json',
-    'yarn.lock',
-    'Cargo.lock',
-    'go.sum',
-    'poetry.lock',
-    '.DS_Store',
-    '.gitignore',
-    '.gitattributes',
-  };
-
-  bool _shouldSkip(String name) {
-    if (name.isEmpty) return true;
-    if (name.startsWith('.')) {
-      const keepHidden = {'.env', '.envrc', '.gitignore', '.gitattributes'};
-      return !keepHidden.contains(name);
-    }
-    if (_skipDirs.contains(name)) return true;
-    if (_skipFiles.contains(name)) return true;
+Future<bool> _isRipgrepAvailableAt() async {
+  final cached = _workerRipgrepAvailable;
+  if (cached != null) return cached;
+  try {
+    _workerRipgrepPath ??= await resolveBundledExecutable(
+      Platform.isWindows ? 'rg.exe' : 'rg',
+    );
+    final result = await Process.run(_workerRipgrepPath!, const ['--version']);
+    final ok = result.exitCode == 0;
+    _workerRipgrepAvailable = ok;
+    return ok;
+  } on ProcessException {
+    _workerRipgrepAvailable = false;
     return false;
   }
+}
+
+List<String> _ripgrepOutputToPaths(String output) {
+  if (output.isEmpty) return const [];
+  // ripgrep always emits `/`-separated paths (POSIX style)
+  // regardless of the host platform. We keep that on disk so
+  // the index matches the in-process walker output, and only
+  // re-translate to native separators at display time.
+  const sep = '/';
+  // ripgrep prints paths relative to its CWD, one per line.
+  // For our use case, we append `/` for directories — but
+  // `rg --files` only emits files. We don't get directory
+  // entries from ripgrep, so the in-process fallback's
+  // directory coverage is *better* than ripgrep's. To
+  // compensate, we synthesize directory entries for the
+  // path prefixes of every file. This is cheap (one Set
+  // build, then a per-file `parent` lookup) and means the
+  // directory drill-in still works.
+  final fileLines = const LineSplitter().convert(output);
+  final dirs = <String>{};
+  final result = <String>[];
+  for (final line in fileLines) {
+    if (line.isEmpty) continue;
+    result.add(line);
+    // Add every ancestor directory to the dir set.
+    var i = line.lastIndexOf(sep);
+    while (i > 0) {
+      final parent = line.substring(0, i);
+      if (dirs.add('$parent$sep')) {
+        // Newly added — keep going.
+      } else {
+        // Already in set; shorter prefixes are guaranteed
+        // to be there too, so we can stop.
+        break;
+      }
+      i = line.lastIndexOf(sep, i - 1);
+    }
+  }
+  // If a file is at the root, its parent is empty — that's
+  // not a directory entry. Skip empty/root paths.
+  final nonEmpty = <String>[];
+  for (final d in dirs) {
+    if (d.length > sep.length) nonEmpty.add(d);
+  }
+  result.addAll(nonEmpty);
+  return result;
+}
+
+List<String> _walkInProcessAt(String rootPath) {
+  final root = Directory(rootPath);
+  if (!root.existsSync()) return const [];
+  final gitignore = _loadGitignoresAt(root);
+  final out = <String>[];
+  _walkAt(root, out, '', gitignore);
+  return out;
+}
+
+/// Walk the project tree and merge every `.gitignore` we find
+/// into a single matcher. The matcher's [GitignoreMatcher.matches]
+/// check is path-aware, so the walker can pass the in-progress
+/// relative path to a directory entry and ask "is this directory
+/// ignored before I descend into it?" — short-circuiting whole
+/// subtrees like `build/` or `node_modules/` even if the user
+/// didn't list them in the static skip set.
+///
+/// We load *all* .gitignore files up front (in a single sweep
+/// with bounded recursion) so the matcher's `directoryIgnores`
+/// lookup is O(1) per dir during the main walk. The .gitignore
+/// stack is implicit: a pattern without a `/` in it matches
+/// at any depth; one with a `/` only matches at the level of
+/// its containing file. [GitignoreMatcher.matches] handles the
+/// "negation" rule (!foo) and the "anchored-to-root" rule
+/// (`/foo` only at the project root) for us.
+GitignoreMatcher _loadGitignoresAt(Directory root) {
+  final matcher = GitignoreMatcher();
+  final out = <GitignoreSource>[];
+  _collectGitignoresAt(root, '', out);
+  matcher.loadAll(out);
+  return matcher;
+}
+
+void _collectGitignoresAt(
+  Directory dir,
+  String relPrefix,
+  List<GitignoreSource> out,
+) {
+  // Same /-normalization as [_walkAt] — keep the relPrefix
+  // consistent with the paths the walker will produce so the
+  // GitignoreMatcher's `src.dir` lookup matches.
+  const sep = '/';
+  try {
+    final gi = File(p.join(dir.path, '.gitignore'));
+    if (gi.existsSync()) {
+      try {
+        final lines = gi.readAsLinesSync();
+        out.add((
+          directory: relPrefix.isEmpty ? '.' : relPrefix,
+          lines: lines,
+        ));
+      } on FileSystemException {
+        // Unreadable .gitignore — skip.
+      }
+    }
+    for (final entry in dir.listSync(recursive: false, followLinks: false)) {
+      if (entry is! Directory) continue;
+      final name = p.basename(entry.path);
+      if (_shouldSkip(name)) continue;
+      final rel = relPrefix.isEmpty ? name : '$relPrefix$sep$name';
+      _collectGitignoresAt(entry, rel, out);
+    }
+  } on FileSystemException {
+    // Permission denied / transient errors — skip.
+  }
+}
+
+void _walkAt(
+  Directory dir,
+  List<String> out,
+  String prefix,
+  GitignoreMatcher gitignore,
+) {
+  // Always use POSIX `/` for the index, even on Windows. The
+  // platform's native separator is `\` on Windows; mixing that
+  // with the `/` ripgrep emits on every platform would make the
+  // in-process walker disagree with the ripgrep backend (and
+  // disagree with every gitignore pattern, which is POSIX-style
+  // by definition). The user-facing paths we display in the
+  // popover get re-rendered with `p.separator` so they look
+  // native on Windows.
+  const sep = '/';
+  try {
+    final entries = dir.listSync(recursive: false, followLinks: false);
+    entries.sort((a, b) => a.path.compareTo(b.path));
+    for (final entry in entries) {
+      final name = p.basename(entry.path);
+      if (_shouldSkip(name)) continue;
+      final rel = prefix.isEmpty ? name : '$prefix$sep$name';
+      // Honor .gitignore. A directory is skipped wholesale if
+      // it's ignored — no point descending. The check uses
+      // the bare path (no trailing separator) so a pattern
+      // like `build/` matches the directory `build`.
+      if (entry is Directory && gitignore.matches(rel, isDirectory: true)) {
+        continue;
+      }
+      if (entry is Directory) {
+        out.add('$rel$sep');
+        _walkAt(entry, out, rel, gitignore);
+      } else if (entry is File) {
+        // Same check for files — a file matching an ignore
+        // pattern is dropped.
+        if (gitignore.matches(rel, isDirectory: false)) continue;
+        out.add(rel);
+      }
+    }
+  } on FileSystemException {
+    // Permission denied / transient errors — skip and continue.
+  }
+}
+
+final Set<String> _skipDirs = {
+  '.git',
+  '.hg',
+  '.svn',
+  '.dart_tool',
+  '.idea',
+  '.vscode',
+  'node_modules',
+  'target',
+  'build',
+  'dist',
+  'out',
+  '.next',
+  '.nuxt',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.gradle',
+  'Pods',
+  '.terraform',
+};
+
+const Set<String> _skipFiles = {
+  'pubspec.lock',
+  'package-lock.json',
+  'yarn.lock',
+  'Cargo.lock',
+  'go.sum',
+  'poetry.lock',
+  '.DS_Store',
+  '.gitignore',
+  '.gitattributes',
+};
+
+bool _shouldSkip(String name) {
+  if (name.isEmpty) return true;
+  if (name.startsWith('.')) {
+    const keepHidden = {'.env', '.envrc', '.gitignore', '.gitattributes'};
+    return !keepHidden.contains(name);
+  }
+  if (_skipDirs.contains(name)) return true;
+  if (_skipFiles.contains(name)) return true;
+  return false;
+}
+
+/// Immutable mirror of the worker's index snapshot, shipped back
+/// to the main isolate when a build completes. The main isolate
+/// keeps this so the synchronous [FileSearcher.search] (and the
+/// empty-query "first N files" path) work without a round-trip.
+class _WorkerIndexSnapshot {
+  final bool usedRipgrep;
+  final List<String> paths;
+  final List<String> lower;
+  final List<String> basenames;
+  final List<String> initials;
+  final List<String> basenameInitials;
+  final List<bool> isDir;
+
+  const _WorkerIndexSnapshot({
+    required this.usedRipgrep,
+    required this.paths,
+    required this.lower,
+    required this.basenames,
+    required this.initials,
+    required this.basenameInitials,
+    required this.isDir,
+  });
 }
 
 /// `LineSplitter` from `dart:convert` — re-imported here so the
@@ -1003,25 +1083,55 @@ class _FileSearchWorker {
     }
   }
 
-  Future<void> updateIndex({
-    required int epoch,
-    required List<String> paths,
-    required List<String> lower,
-    required List<String> basenames,
-    required List<String> initials,
-    required List<String> basenameInitials,
-    required List<bool> isDir,
+  /// Build (or rebuild) the index for [rootPath] inside the worker
+  /// and return the finished snapshot. The worker walks the tree,
+  /// sorts it, and pre-computes the scoring arrays; the only cost
+  /// on the main isolate is receiving the immutable result.
+  Future<_WorkerIndexSnapshot> build(
+    String rootPath, {
+    required bool preferRipgrep,
   }) async {
-    await _sendRequest([
-      'index',
-      epoch,
-      paths,
-      lower,
-      basenames,
-      initials,
-      basenameInitials,
-      isDir,
-    ]);
+    final raw = await _sendRequest(
+      ['build', rootPath, preferRipgrep],
+      // The build covers the tree walk (potentially seconds on a
+      // huge project) plus the snapshot ship-back, so give it a
+      // generous budget.
+      timeout: const Duration(minutes: 2),
+    );
+    if (raw is! List || raw.length != 7) {
+      throw StateError('file search worker: invalid build reply');
+    }
+    final usedRipgrep = raw[0];
+    final paths = raw[1];
+    final lower = raw[2];
+    final basenames = raw[3];
+    final initials = raw[4];
+    final basenameInitials = raw[5];
+    final isDir = raw[6];
+    if (usedRipgrep is! bool ||
+        paths is! List ||
+        lower is! List ||
+        basenames is! List ||
+        initials is! List ||
+        basenameInitials is! List ||
+        isDir is! List) {
+      throw StateError('file search worker: malformed build reply');
+    }
+    return _WorkerIndexSnapshot(
+      usedRipgrep: usedRipgrep,
+      paths: List<String>.from(paths),
+      lower: List<String>.from(lower),
+      basenames: List<String>.from(basenames),
+      initials: List<String>.from(initials),
+      basenameInitials: List<String>.from(basenameInitials),
+      isDir: List<bool>.from(isDir),
+    );
+  }
+
+  /// Tell the worker to drop its index snapshot. The worker
+  /// rebuilds on the next [build] request.
+  Future<void> invalidate() async {
+    await _sendRequest(['invalidate']);
   }
 
   Future<List<FileMatch>> search(String query, {required int limit}) async {
@@ -1045,12 +1155,21 @@ class _FileSearchWorker {
     return out;
   }
 
-  Future<Object?> _sendRequest(List<Object?> payload) {
+  Future<Object?> _sendRequest(
+    List<Object?> payload, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
     final id = _nextId++;
     final completer = Completer<Object?>();
     _pending[id] = completer;
     _sendPort.send([id, ...payload]);
-    return completer.future;
+    // Guard against a dead isolate leaving the caller hanging
+    // forever: on timeout we drop the pending completer and surface
+    // an error so the [FileSearcher] can dispose and respawn.
+    return completer.future.timeout(timeout, onTimeout: () {
+      _pending.remove(id);
+      throw StateError('file search worker timed out');
+    });
   }
 
   void _handleMessage(dynamic message) {
@@ -1087,18 +1206,24 @@ void _fileSearchWorkerMain(SendPort readyPort) {
   final port = ReceivePort();
   readyPort.send(port.sendPort);
 
+  // The index snapshot this worker currently owns. Built in
+  // response to a 'build' request, cleared by 'invalidate'.
   List<String> paths = const [];
   List<String> lower = const [];
   List<String> basenames = const [];
   List<String> initials = const [];
   List<String> basenameInitials = const [];
   List<bool> isDir = const [];
+  bool built = false;
 
-  port.listen((dynamic message) {
-    if (message is! List || message.length < 2) return;
-    final id = message[0];
-    final op = message[1];
-    if (id is! int || op is! String) return;
+  // Requests are serialized through this chain so a 'build'
+  // (async — it may run ripgrep) can't interleave with a 'search'
+  // that would read a half-built snapshot.
+  var chain = Future<void>.value();
+
+  Future<void> handle(dynamic message) async {
+    final id = message[0] as int;
+    final op = message[1] as String;
 
     if (op == 'shutdown') {
       port.close();
@@ -1106,20 +1231,43 @@ void _fileSearchWorkerMain(SendPort readyPort) {
     }
 
     try {
-      if (op == 'index') {
-        if (message.length != 9) {
-          throw StateError('invalid index payload');
-        }
-        paths = List<String>.from(message[3] as List);
-        lower = List<String>.from(message[4] as List);
-        basenames = List<String>.from(message[5] as List);
-        initials = List<String>.from(message[6] as List);
-        basenameInitials = List<String>.from(message[7] as List);
-        isDir = List<bool>.from(message[8] as List);
+      if (op == 'build') {
+        final rootPath = message[2] as String;
+        final preferRipgrep = message[3] as bool;
+        final snapshot = await _buildWorkerIndex(rootPath, preferRipgrep);
+        paths = snapshot.paths;
+        lower = snapshot.lower;
+        basenames = snapshot.basenames;
+        initials = snapshot.initials;
+        basenameInitials = snapshot.basenameInitials;
+        isDir = snapshot.isDir;
+        built = true;
+        readyPort.send([
+          id,
+          'ok',
+          [
+            snapshot.usedRipgrep,
+            paths,
+            lower,
+            basenames,
+            initials,
+            basenameInitials,
+            isDir,
+          ],
+        ]);
+      } else if (op == 'invalidate') {
+        paths = const [];
+        lower = const [];
+        basenames = const [];
+        initials = const [];
+        basenameInitials = const [];
+        isDir = const [];
+        built = false;
         readyPort.send([id, 'ok']);
       } else if (op == 'search') {
-        if (message.length != 4) {
-          throw StateError('invalid search payload');
+        if (!built) {
+          readyPort.send([id, 'ok', const []]);
+          return;
         }
         final q = message[2] as String;
         final limit = message[3] as int;
@@ -1140,6 +1288,12 @@ void _fileSearchWorkerMain(SendPort readyPort) {
     } catch (error) {
       readyPort.send([id, 'error', error.toString()]);
     }
+  }
+
+  port.listen((dynamic message) {
+    if (message is! List || message.length < 2) return;
+    if (message[0] is! int || message[1] is! String) return;
+    chain = chain.then((_) => handle(message)).catchError((_) {});
   });
 }
 
