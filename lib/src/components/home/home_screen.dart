@@ -3,12 +3,13 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../../theme/crux_theme.dart';
+import '../../services/skills/skill_discovery.dart';
 import '../../version.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
-import 'widgets/git_status_widget.dart';
 import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
+import 'widgets/skills_widget.dart';
 import 'widgets/tokens_widget.dart';
 import 'widgets/workspace_widget.dart';
 import 'widgets/yesterday_widget.dart';
@@ -155,6 +156,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// `[editing]` marker in the hero header.
   bool _editing = false;
 
+  /// Hot reload runs `reassemble`, not `initState`, so one-shot
+  /// initializations that read constructor inputs must be repeated
+  /// here — otherwise a reassembled screen keeps the pre-edit
+  /// placements and a removed/renamed box stays on screen.
+  @override
+  void reassemble() {
+    super.reassemble();
+    _allById = {for (final w in _defaultWidgets()) w.id: w};
+    _placements = _resolvePlacements();
+  }
+
   /// The ordered, span-tagged placements shown in the grid. Built once
   /// from the default order + [HomeScreen.initialLayout]; mutated by
   /// edit mode. The single source of truth for what's on screen and in
@@ -173,8 +185,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       WorkspaceHomeWidget(),
       QuickActionsHomeWidget(seedInput: ctx.seedInput),
-      GitStatusHomeWidget(ctx.gitStatusService),
       TokensHomeWidget(),
+      SkillsHomeWidget(skills: () => discoverSkills(cwd: _ctx.projectPath)),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,
         currentSessionId: ctx.currentSessionId,
@@ -897,12 +909,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1),
-      // Passive boxes (git, tokens, yesterday, workspace) are short
-      // summaries — center their content vertically so a 1-line status
-      // doesn't hug the top of a stretched box with dead space below.
-      // Item-list boxes stay top-aligned: a list grows downward and its
-      // hover/click row math assumes content starts at the first row.
-      child: hasItems
+      // Passive boxes (git, tokens, workspace) are short summaries —
+      // center their content vertically so a 1-line status doesn't hug
+      // the top of a stretched box with dead space below. Item-list
+      // boxes stay top-aligned (their hover/click row math assumes
+      // content starts at row 0), and so do boxes that opt out via
+      // [HomeWidget.verticallyCenter] — a scrollable box like Yesterday
+      // must keep its content top-aligned for the scrollview's height
+      // constraint to hold.
+      child: hasItems || !widget.verticallyCenter
           ? widget.build(context, _ctx, span, focused: focused)
           : Column(
               mainAxisAlignment: MainAxisAlignment.center,

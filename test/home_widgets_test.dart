@@ -8,11 +8,13 @@ import 'package:crux/src/components/home/home_widgets.dart';
 import 'package:crux/src/components/home/widgets/git_status_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
+import 'package:crux/src/components/home/widgets/skills_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
 import 'package:crux/src/components/home/widgets/workspace_widget.dart';
 import 'package:crux/src/components/home/widgets/yesterday_widget.dart';
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/services/git_status_service.dart';
+import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/utils/run_metrics.dart';
 
@@ -565,6 +567,123 @@ void main() {
 
     test('is passive (activate returns null)', () {
       expect(WorkspaceHomeWidget().activate(_ctx()), isNull);
+    });
+  });
+
+  group('skills', () {
+    SkillInfo skill(String name, [String desc = 'does things']) => SkillInfo(
+          name: name,
+          description: desc,
+          location: '/tmp/$name/SKILL.md',
+          baseDirectory: '/tmp/$name',
+          content: '# $name',
+        );
+
+    HomeContext skillCtx({void Function(SkillInfo)? showSkill}) =>
+        HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          showSkill: showSkill,
+        );
+
+    test('empty state when no skills are found', () async {
+      await testNocterm('skills empty', (tester) async {
+        final widget = SkillsHomeWidget(skills: () => const []);
+        await _pump(tester, widget, skillCtx());
+        expect(
+          tester.terminalState.findText('no skills found'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('renders every skill with its description', () async {
+      await testNocterm('skills render', (tester) async {
+        final widget = SkillsHomeWidget(
+          skills: () => [
+            skill('crux-release', 'release a version'),
+            skill('nocterm', 'debug the tui'),
+          ],
+        );
+        await _pump(tester, widget, skillCtx());
+        expect(tester.terminalState.findText('crux-release'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('nocterm'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('release a version'),
+            nocterm.isNotEmpty);
+      });
+    });
+
+    test('item interface covers every skill (scrollable, not truncated)',
+        () {
+      final widget = SkillsHomeWidget(
+        skills: () => [for (var i = 0; i < 20; i++) skill('skill-$i')],
+      );
+      // Unlike recent-sessions (truncated to _maxRows), all 20 are
+      // selectable — the list scrolls.
+      expect(widget.itemCount, 20);
+      widget.moveSelection(1);
+      expect(widget.selectedIndex, 1);
+      // Wraparound over the whole list.
+      widget.resetSelection();
+      widget.moveSelection(-1);
+      expect(widget.selectedIndex, 19);
+    });
+
+    test('activation calls showSkill with the tapped skill', () {
+      SkillInfo? opened;
+      final all = [skill('alpha'), skill('beta')];
+      final widget = SkillsHomeWidget(skills: () => all);
+      final action = widget.activateItem(
+        skillCtx(showSkill: (s) => opened = s),
+        1,
+      );
+      expect(action, isNotNull);
+      action!();
+      expect(opened?.name, 'beta');
+    });
+
+    test('activation is a no-op when no viewer is wired', () {
+      final widget = SkillsHomeWidget(skills: () => [skill('alpha')]);
+      expect(widget.activateItem(skillCtx(), 0), isNull);
+      // And the box is passive when the list is empty.
+      final empty = SkillsHomeWidget(skills: () => const []);
+      expect(empty.activate(skillCtx()), isNull);
+    });
+
+    test('selectItemAt translates a viewport row through the scroll offset',
+        () async {
+      await testNocterm('skills hover offset', (tester) async {
+        final widget = SkillsHomeWidget(
+          skills: () => [for (var i = 0; i < 12; i++) skill('skill-$i')],
+        );
+        // Move the selection past the viewport so the list scrolls, then
+        // build so the view mirrors its scroll offset back to the widget.
+        for (var i = 0; i < 8; i++) {
+          widget.moveSelection(1);
+        }
+        expect(widget.selectedIndex, 8);
+        await _pump(tester, widget, skillCtx());
+        for (var i = 0; i < 3; i++) {
+          await tester.pump();
+        }
+        // Viewport row 0 must map through the scroll offset to a valid
+        // absolute index (not crash / not out-of-range), and hovering it
+        // changes the selection from 8 to the hovered row.
+        expect(widget.selectItemAt(0), isTrue);
+        expect(widget.selectedIndex, isNot(8));
+        expect(widget.selectedIndex, greaterThanOrEqualTo(0));
+        expect(widget.selectedIndex, lessThan(12));
+      });
+    });
+
+    test('is not vertically centered (it scrolls)', () {
+      expect(SkillsHomeWidget(skills: () => const []).verticallyCenter,
+          isFalse);
     });
   });
 }

@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../models/session.dart';
 import '../../services/git_status_service.dart';
+import '../../services/skills/skill.dart';
 
 /// Live services handed to every home widget.
 ///
@@ -60,6 +61,11 @@ class HomeContext {
   /// (tests / previews) means "no summarizer", same fallback.
   final Future<String?> Function(List<Session> sessions)? summarizeYesterday;
 
+  /// Open a fullpane showing a skill's full SKILL.md content (the
+  /// `skills` box). Null (tests / previews) means "no viewer wired" —
+  /// the box's rows then do nothing on activation.
+  final void Function(SkillInfo skill)? showSkill;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -71,6 +77,7 @@ class HomeContext {
     this.projectPath = '',
     this.activeModel = _noModel,
     this.summarizeYesterday,
+    this.showSkill,
   });
 
   static String? _noModel() => null;
@@ -88,7 +95,8 @@ class HomeContext {
         switchSession = ((_) => false),
         projectPath = '',
         activeModel = _noModel,
-        summarizeYesterday = null;
+        summarizeYesterday = null,
+        showSkill = null;
 }
 
 /// One pluggable dashboard box.
@@ -115,6 +123,16 @@ abstract class HomeWidget {
   /// is the max of its boxes' values; shorter boxes stretch their
   /// borders to match, so widgets must render at any height ≥ this.
   int heightFor(int span);
+
+  /// Whether a passive box's short content should be vertically centered
+  /// in the box when it's stretched taller than the content. Defaults to
+  /// true (a 1-line git/tokens status looks better centered than hugging
+  /// the top of a tall box). Boxes whose content fills the box or manages
+  /// its own scrolling (e.g. the Yesterday summary, which wraps to many
+  /// lines and scrolls) return false to stay top-aligned — centering a
+  /// scrollable region would break its height constraint and mis-place
+  /// the content.
+  bool get verticallyCenter => true;
 
   // ── Item selection ────────────────────────────────────────────────
   //

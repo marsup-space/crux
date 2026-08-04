@@ -16,6 +16,7 @@ import '../services/git_status_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
+import '../services/skills/skill.dart';
 import '../services/tool_executor.dart';
 import '../services/web_provider_registry.dart';
 import '../services/providers/tinyfish_web_provider.dart';
@@ -61,6 +62,7 @@ import 'tool_detail_pane.dart';
 import 'vibe_box_data.dart';
 import 'vibe_diff_fullpane.dart';
 import 'ui/toast.dart';
+import 'ui/highlighted_markdown_text.dart';
 import 'ui/button.dart';
 import 'ui/fullpane.dart';
 import 'ui/layout_metrics.dart';
@@ -271,6 +273,9 @@ class _ChatPanelState extends State<ChatPanel> {
   late final GitStatusService _gitStatusService;
 
   ToolDetailData? _toolDetailData;
+  /// The skill whose SKILL.md the fullpane is showing (home `skills`
+  /// box). Null when the fullpane is showing something else.
+  SkillInfo? _skillFullpane;
   Message? _compactionFullpaneMessage;
   VibeDiffRequest? _vibeDiffRequest;
   bool _providerServiceReady = false;
@@ -939,6 +944,14 @@ class _ChatPanelState extends State<ChatPanel> {
     if (vibeDiff != null) {
       return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane);
     }
+    final skill = _skillFullpane;
+    if (skill != null) {
+      return Fullpane(
+        title: 'Skill — ${skill.name}',
+        onClose: _closeFullpane,
+        contentBuilder: (context) => _SkillFullpaneContent(skill: skill),
+      );
+    }
     final compactionMsg = _compactionFullpaneMessage;
     if (compactionMsg != null) {
       return Fullpane(
@@ -1095,6 +1108,8 @@ class _ChatPanelState extends State<ChatPanel> {
       // same one the `sessions` closure above builds.
       summarizeYesterday: (sessions) =>
           _chatService.summarizeYesterday(sessions),
+      // Skills box: tapping a skill opens its SKILL.md in a fullpane.
+      showSkill: _openSkillFullpane,
     );
   }
 
@@ -1115,6 +1130,7 @@ class _ChatPanelState extends State<ChatPanel> {
       _toolDetailData = null;
       _compactionFullpaneMessage = null;
       _vibeDiffRequest = null;
+      _skillFullpane = null;
     });
   }
 
@@ -1156,6 +1172,16 @@ class _ChatPanelState extends State<ChatPanel> {
   void _openCompactionFullpane(Message message) {
     setState(() {
       _compactionFullpaneMessage = message;
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  /// Open a read-only fullpane on a skill's SKILL.md (the home `skills`
+  /// box). Home stays open underneath — `esc` out of the pane lands
+  /// back on the dashboard.
+  void _openSkillFullpane(SkillInfo skill) {
+    setState(() {
+      _skillFullpane = skill;
       _overlayController.showFullpane = true;
     });
   }
@@ -1674,5 +1700,74 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
     });
+  }
+}
+
+/// Read-only viewer for a skill's SKILL.md body, shown in a `Fullpane`
+/// from the home `skills` box. The skill body is markdown, rendered
+/// verbatim with the shared highlighted-markdown component inside a
+/// scrollable viewport (mouse wheel + scrollbar). The description and
+/// location sit above the divider so a long body doesn't push the
+/// identity off screen.
+class _SkillFullpaneContent extends StatefulComponent {
+  final SkillInfo skill;
+
+  const _SkillFullpaneContent({required this.skill});
+
+  @override
+  State<_SkillFullpaneContent> createState() => _SkillFullpaneContentState();
+}
+
+class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    final skill = component.skill;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                skill.description,
+                style: TextStyle(color: theme.onSurfaceVariant),
+              ),
+              Text(
+                skill.location,
+                style: TextStyle(color: theme.onSurfaceDim),
+              ),
+            ],
+          ),
+        ),
+        Divider(color: theme.outline, height: 1),
+        Expanded(
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+            trackColor: theme.surfaceVariant.withOpacity(0.3),
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                child: HighlightedMarkdownText(skill.content),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
