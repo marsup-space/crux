@@ -22,9 +22,11 @@
 # ------
 # Per https://docs.bigmodel.cn/cn/coding-plan/latest-model and
 # the model-overview pages, the GLM Coding Plan is open to
-# all tiers (Lite / Pro / Max) and currently supports five
+# all tiers (Lite / Pro / Max) and currently supports six
 # flagship-tier text models:
 #
+#   * GLM-5.3      — 1M context, 128K out (PLACEHOLDER, not yet
+#                    released — specs cloned from 5.2; see below)
 #   * GLM-5.2      — 1M context, 128K out (newest flagship)
 #   * GLM-5.1      — 200K, 128K
 #   * GLM-5-Turbo  — 200K, 128K ("Lobster" long-task enhanced)
@@ -69,11 +71,33 @@
 type = "zhipu"
 endpoint_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 
+# === GLM-5.3 — PLACEHOLDER, not yet officially released ===
+# GLM-5.3 has NOT shipped as of 2026-08 (model page 404s;
+# Zhipu is still collecting community input on its direction).
+# This entry is a SPECULATIVE PLACEHOLDER cloned from GLM-5.2
+# (same 1M context / 128K out / thinking / reasoning / lerp)
+# so the ID exists ahead of launch. Once the official page
+# (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) goes
+# live, context_size / max_tokens / thinking_budget MUST be
+# rechecked against the published wire-format reference and
+# corrected here.
+[[models]]
+id = "glm-5.3"
+name = "GLM-5.3"
+context_size = 1048576
+image_support = false
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
 # === GLM-5.2 — latest flagship, 1M context ===
 # Per the GLM-5.2 model page
 # (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2),
-# this is the only Coding Plan model with a true 1M context
-# window. Claude Code users append `[1m]` (e.g. `glm-5.2[1m]`)
+# this was the first Coding Plan model to ship a true 1M
+# context window. Claude Code users append `[1m]` (e.g. `glm-5.2[1m]`)
 # to opt into 1M, but the underlying upstream ID is still
 # `glm-5.2`; on the OpenAI-compatible endpoint the API serves
 # 1M context automatically. Suffix handling is a Claude Code

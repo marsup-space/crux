@@ -41,8 +41,16 @@ class YesterdayHomeWidget extends HomeWidget {
   @override
   Set<int> get supportedSpans => const {1, 2};
 
+  /// Taller than the other boxes — the summary wraps to several lines
+  /// and the box scrolls, so it wants the room. 8 content rows (+2
+  /// border) is enough to show a multi-line summary with scroll afford.
   @override
-  int heightFor(int span) => 4;
+  int heightFor(int span) => 8;
+
+  /// The summary scrolls — centering it would break the scrollview's
+  /// height constraint and mis-place wrapped lines.
+  @override
+  bool get verticallyCenter => false;
 
   @override
   void Function()? activate(HomeContext ctx) => null; // passive
@@ -103,10 +111,19 @@ class _YesterdayViewState extends State<_YesterdayView> {
   /// Guards against kicking the call twice across rebuilds.
   bool _requested = false;
 
+  /// Scrolls the summary when it wraps past the box's content height.
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _maybeRequest();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _maybeRequest() {
@@ -129,7 +146,7 @@ class _YesterdayViewState extends State<_YesterdayView> {
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
 
-    // 1. Summary available → the bullets.
+    // 1. Summary available → the bullets, wrapped and scrollable.
     final summary = _summary;
     if (summary != null) {
       final lines = summary
@@ -137,35 +154,36 @@ class _YesterdayViewState extends State<_YesterdayView> {
           .map((l) => l.trim())
           .where((l) => l.isNotEmpty)
           .toList();
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Each bullet is wrapped in a Row + Expanded so it gets a
-          // bounded width — a bare Text in a start-aligned Column is
-          // unbounded, so TextOverflow.ellipsis never engages and a
-          // long bullet overflows past the box border. (Same reason the
-          // workspace/quick-actions rows use Expanded.)
-          for (final line in lines)
-            // softWrap: false + ellipsis forces a single line per bullet.
-            // The box is a fixed 4 rows tall and its content sits in a
-            // vertically-centering Column, which hands each child a
-            // 1-row height; a wrapping (multi-line) bullet would have
-            // its extra lines painted past the border because nocterm's
-            // Text.paint doesn't clip. Single-line ellipsis keeps the
-            // bullet inside the box and its height consistent.
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    line,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.onSurfaceVariant),
-                  ),
+      // softWrap: true lets each bullet wrap to the box width (no
+      // ellipsis — the full text is the point). The Scrollbar +
+      // SingleChildScrollView give the wrapped block a bounded height
+      // (the box's fixed content area) so it scrolls on the mouse wheel
+      // when it outgrows the box instead of overflowing the border.
+      return Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+        trackColor: theme.surfaceVariant.withOpacity(0.3),
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final line in lines)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        line,
+                        softWrap: true,
+                        style: TextStyle(color: theme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-        ],
+            ],
+          ),
+        ),
       );
     }
 
