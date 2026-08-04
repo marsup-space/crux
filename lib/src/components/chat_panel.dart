@@ -1090,6 +1090,11 @@ class _ChatPanelState extends State<ChatPanel> {
         final model = _sessionController.currentSession.model;
         return model.isEmpty ? null : model;
       },
+      // Yesterday box: single-round auxiliary summary of yesterday's
+      // work, cached by the service. The merged session list is the
+      // same one the `sessions` closure above builds.
+      summarizeYesterday: (sessions) =>
+          _chatService.summarizeYesterday(sessions),
     );
   }
 

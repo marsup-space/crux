@@ -4,13 +4,22 @@ import '../../../models/session.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
 
-/// The `yesterday` box — a passive summary of what you were doing
-/// yesterday.
+/// The `yesterday` box — an auxiliary-model summary of what you worked
+/// on yesterday.
 ///
-/// Data source: the same in-memory session/chat lists as
-/// `recent-sessions`, filtered to `updatedAt` falling within yesterday
-/// (local midnight-to-midnight). Purely informational — `activate`
-/// returns null.
+/// When [HomeContext.summarizeYesterday] is wired (the real panel), the
+/// box kicks off one single-round LLM call (no tools) on first build and
+/// shows the returned bullets. While the call is in flight it shows a
+/// "Summarizing…" line; if the call returns null (no auxiliary model,
+/// failure, or no yesterday activity) it falls back to the static
+/// yesterday-session list so the box is never empty. When the callback
+/// is null (tests / previews) only the static list renders.
+///
+/// The summary is cached by the service (keyed on the yesterday-session
+/// fingerprint), so re-opening home the same day doesn't re-call the
+/// model — the widget's own `_summary` field is just the local copy.
+///
+/// Passive box — `activate` returns null; there's no primary action.
 class YesterdayHomeWidget extends HomeWidget {
   /// Sessions + chats, merged by the caller.
   final List<Session> Function() sessions;
@@ -39,7 +48,7 @@ class YesterdayHomeWidget extends HomeWidget {
   void Function()? activate(HomeContext ctx) => null; // passive
 
   /// Sessions updated yesterday (local midnight-to-midnight before
-  /// today), most-recent first.
+  /// today), most-recent first. Used by the static fallback list.
   List<Session> _yesterdays() {
     final now = _now();
     final todayStart = DateTime(now.year, now.month, now.day);
@@ -59,8 +68,102 @@ class YesterdayHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
+    return _YesterdayView(
+      sessions: _yesterdays,
+      summarize: ctx.summarizeYesterday == null
+          ? null
+          : () => ctx.summarizeYesterday!(sessions()),
+    );
+  }
+}
+
+/// Stateful view so the async summary can land after first build.
+class _YesterdayView extends StatefulComponent {
+  final List<Session> Function() sessions;
+
+  /// Null when no summarizer is wired (tests) — only the fallback list
+  /// shows. Otherwise the single-round summary call.
+  final Future<String?> Function()? summarize;
+
+  const _YesterdayView({required this.sessions, this.summarize});
+
+  @override
+  State<_YesterdayView> createState() => _YesterdayViewState();
+}
+
+class _YesterdayViewState extends State<_YesterdayView> {
+  /// The fetched summary, or null while pending / after a null result.
+  String? _summary;
+
+  /// True once the summary call has settled (success or null), so the
+  /// view stops showing "Summarizing…" and either shows the bullets or
+  /// drops to the fallback list.
+  bool _settled = false;
+
+  /// Guards against kicking the call twice across rebuilds.
+  bool _requested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeRequest();
+  }
+
+  void _maybeRequest() {
+    final summarize = component.summarize;
+    if (summarize == null || _requested) {
+      _settled = true; // no summarizer → straight to the fallback list
+      return;
+    }
+    _requested = true;
+    summarize().then((result) {
+      if (!mounted) return;
+      setState(() {
+        _summary = result;
+        _settled = true;
+      });
+    });
+  }
+
+  @override
+  Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final list = _yesterdays();
+
+    // 1. Summary available → the bullets.
+    final summary = _summary;
+    if (summary != null) {
+      final lines = summary
+          .split(RegExp(r'\r\n|\r|\n'))
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in lines)
+            Text(
+              line,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.onSurfaceVariant),
+            ),
+        ],
+      );
+    }
+
+    // 2. Call still in flight → a one-line pending hint.
+    if (!_settled) {
+      return Text(
+        'summarizing yesterday…',
+        style: TextStyle(color: theme.onSurfaceDim),
+      );
+    }
+
+    // 3. Settled with no summary → the static fallback list.
+    return _buildFallback(theme);
+  }
+
+  Component _buildFallback(CruxThemeData theme) {
+    final list = component.sessions();
 
     if (list.isEmpty) {
       return Text(

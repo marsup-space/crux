@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:nocterm/nocterm.dart' as nocterm show isNotEmpty;
 import 'package:test/test.dart';
@@ -228,7 +230,7 @@ void main() {
         );
         await _pump(tester, widget, _ctx());
         expect(
-          tester.terminalState.findText('nothing active yesterday'),
+          tester.terminalState.findText('nothing yesterday'),
           nocterm.isNotEmpty,
         );
       });
@@ -260,6 +262,99 @@ void main() {
     test('is passive (activate returns null)', () {
       final widget = YesterdayHomeWidget(sessions: () => const []);
       expect(widget.activate(_ctx()), isNull);
+    });
+
+    test('renders the LLM summary when the summarizer returns one', () async {
+      await testNocterm('yesterday summary', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            _session(1, 'morning thing', updatedAt: DateTime(2024, 6, 14, 8)),
+          ],
+          now: () => now,
+        );
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          summarizeYesterday: (_) async =>
+              '- fixed the parser\n- shipped the home screen',
+        );
+        await _pump(tester, widget, ctx);
+        // Let the async summary land.
+        for (var i = 0; i < 4; i++) {
+          await tester.pump();
+        }
+        expect(
+          tester.terminalState.findText('- fixed the parser'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('- shipped the home screen'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('shows a pending hint while the summary is in flight', () async {
+      await testNocterm('yesterday pending', (tester) async {
+        final widget = YesterdayHomeWidget(sessions: () => const []);
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          // Never completes → stays in the pending state.
+          summarizeYesterday: (_) => Completer<String?>().future,
+        );
+        await _pump(tester, widget, ctx);
+        expect(
+          tester.terminalState.findText('summarizing yesterday…'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('falls back to the session list when the summarizer returns null', () async {
+      await testNocterm('yesterday null summary', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            _session(1, 'morning thing', updatedAt: DateTime(2024, 6, 14, 8)),
+          ],
+          now: () => now,
+        );
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          summarizeYesterday: (_) async => null,
+        );
+        await _pump(tester, widget, ctx);
+        for (var i = 0; i < 4; i++) {
+          await tester.pump();
+        }
+        // Null summary → static fallback list.
+        expect(
+          tester.terminalState.findText('1 session active'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('morning thing'),
+          nocterm.isNotEmpty,
+        );
+      });
     });
   });
 

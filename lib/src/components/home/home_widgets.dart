@@ -51,6 +51,15 @@ class HomeContext {
   /// no provider is configured. Shown in the `workspace` box.
   final String? Function() activeModel;
 
+  /// Summarize yesterday's work via the auxiliary model (single round,
+  /// no tools) for the `yesterday` box. [sessions] is the in-memory
+  /// merged session list; the implementation filters to the yesterday
+  /// window itself. Returns `null` when no auxiliary model is
+  /// configured, the call fails, or there was no yesterday activity —
+  /// the box then falls back to its static session list. Null callback
+  /// (tests / previews) means "no summarizer", same fallback.
+  final Future<String?> Function(List<Session> sessions)? summarizeYesterday;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -61,6 +70,7 @@ class HomeContext {
     required this.switchSession,
     this.projectPath = '',
     this.activeModel = _noModel,
+    this.summarizeYesterday,
   });
 
   static String? _noModel() => null;
@@ -77,7 +87,8 @@ class HomeContext {
         currentSessionId = (() => null),
         switchSession = ((_) => false),
         projectPath = '',
-        activeModel = _noModel;
+        activeModel = _noModel,
+        summarizeYesterday = null;
 }
 
 /// One pluggable dashboard box.

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import '../models/message.dart';
 import '../models/provider_config.dart';
+import '../models/session.dart';
 import '../storage/message_store.dart';
 import '../tools/shell_monitor.dart';
 import '../tools/shell_risk.dart';
@@ -202,6 +204,91 @@ class AuxiliaryService {
     if (tldr == null) return null;
     print('[tldr] generated: ${tldr.length} chars');
     return tldr;
+  }
+
+  // ── Yesterday summary (home screen) ──────────────────────────────
+
+  /// Cache for the last generated summary. Keyed by [_fingerprint] of
+  /// the yesterday-session set, so a home re-open on the same day with
+  /// unchanged sessions reuses the summary and never re-calls the LLM.
+  String? _yesterdayCacheKey;
+  String? _yesterdayCacheValue;
+
+  /// Summarize what was worked on yesterday, for the home screen's
+  /// Yesterday box. Single-round call (no tools), or `null` when no
+  /// auxiliary model is configured / the call fails / there was no
+  /// yesterday activity — callers fall back to a static session list.
+  ///
+  /// [sessions] are the already-in-memory session list (any of them
+  /// with `updatedAt` in the yesterday window is included). For each we
+  /// pull its messages, keep ONLY the yesterday slice, and take the
+  /// developer's own messages (whole — they're short) plus a truncated
+  /// agent reply for each. Tool calls, tool output, and reasoning are
+  /// dropped. The model is told (see [yesterdaySummarySystemPrompt])
+  /// that it's seeing asks + brief replies, not a full conversation.
+  ///
+  /// Cached by the yesterday-set fingerprint: identical inputs return
+  /// the cached summary without an LLM round.
+  Future<String?> summarizeYesterday(
+    List<Session> sessions, {
+    DateTime Function()? now,
+  }) async {
+    final nowValue = (now ?? DateTime.now)();
+    final todayStart = DateTime(nowValue.year, nowValue.month, nowValue.day);
+    final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+
+    bool inWindow(DateTime t) =>
+        !t.isBefore(yesterdayStart) && t.isBefore(todayStart);
+
+    final yesterdays = sessions.where((s) => inWindow(s.updatedAt)).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+    if (yesterdays.isEmpty) return null;
+
+    final fingerprint = _fingerprint(yesterdays);
+    if (fingerprint == _yesterdayCacheKey) {
+      return _yesterdayCacheValue;
+    }
+
+    final digest = await _buildDigest(yesterdays, inWindow);
+    if (digest == null) return null;
+
+    final summary = await _streamAuxiliaryCall(
+      systemPrompt: yesterdaySummarySystemPrompt,
+      userMessage: digest,
+      logTag: 'yesterday',
+    );
+    if (summary == null) return null;
+
+    // Only cache a real result; a null (failure / no model) leaves the
+    // cache untouched so the next open retries rather than sticking on
+    // a stale failure.
+    _yesterdayCacheKey = fingerprint;
+    _yesterdayCacheValue = summary;
+    print('[yesterday] summarized ${yesterdays.length} sessions');
+    return summary;
+  }
+
+  /// The cache key: the ordered yesterday-session ids + their
+  /// `updatedAt`s. Any new session or new activity bumps it and forces
+  /// a regenerate; an unchanged set reuses the cache.
+  String _fingerprint(List<Session> yesterdays) =>
+      yesterdays.map((s) => '${s.id}@${s.updatedAt.millisecondsSinceEpoch}')
+          .join(',');
+
+  /// Build the digest text for the LLM, or null if no session yields any
+  /// yesterday content (e.g. sessions whose messages are all from before
+  /// yesterday). Pulls each session's messages from the store and hands
+  /// them to [buildYesterdayDigest] for slicing + formatting.
+  Future<String?> _buildDigest(
+    List<Session> yesterdays,
+    bool Function(DateTime) inWindow,
+  ) async {
+    final perSession = <Session, List<Message>>{};
+    for (final session in yesterdays) {
+      perSession[session] = await _messageStore.getMessages(session.id);
+    }
+    return buildYesterdayDigest(perSession, inWindow);
   }
 
   /// Assess the risk of a shell command the agent is about to run
@@ -449,6 +536,69 @@ ShellRiskVerdict _parseShellRiskVerdict(String raw) {
 /// [AuxiliaryService.assessShellCommand] instead.
 ShellRiskVerdict parseShellRiskVerdictForTesting(String raw) =>
     _parseShellRiskVerdict(raw);
+
+/// Max chars of an agent reply kept per user ask. Long enough to convey
+/// the outcome, short enough that a busy day of sessions stays well
+/// inside the cheap model's context.
+const int _kReplyExcerptChars = 400;
+
+/// Slice each session's messages to the yesterday window and format the
+/// LLM digest. Pure and top-level so the filtering/truncation rules are
+/// unit-testable without a database or network (the service's private
+/// `_buildDigest` just pulls the messages and calls this).
+///
+/// [perSession] maps each yesterday-active session to its full message
+/// list (any order); [inWindow] decides whether a message's `createdAt`
+/// falls inside the yesterday slice. Only the developer's own messages
+/// (`user`, kept whole — they're short) and the agent's replies
+/// (`assistant`, truncated to [_kReplyExcerptChars]) are kept; tool
+/// calls, tool output, and reasoning are dropped, as is any activity
+/// outside the window. Returns null when no session yields any
+/// yesterday content.
+///
+/// Format per session (a trailing blank line separates sessions):
+///
+///   `## <title>`
+///   `user: <the ask, whole>`
+///   `agent: <the reply, truncated>`
+String? buildYesterdayDigest(
+  Map<Session, List<Message>> perSession,
+  bool Function(DateTime) inWindow,
+) {
+  final buffer = StringBuffer();
+  for (final entry in perSession.entries) {
+    final session = entry.key;
+    final slice = entry.value.where((m) => inWindow(m.createdAt));
+
+    final lines = <String>[];
+    for (final m in slice) {
+      if (m.role == 'user') {
+        final text = m.content.trim();
+        if (text.isNotEmpty) lines.add('user: $text');
+      } else if (m.role == 'assistant') {
+        final text = m.content.trim();
+        if (text.isEmpty) continue;
+        final excerpt = text.length > _kReplyExcerptChars
+            ? '${text.substring(0, _kReplyExcerptChars)}…'
+            : text;
+        lines.add('agent: $excerpt');
+      }
+      // tool / tool_call / system roles: dropped (see prompt).
+    }
+
+    if (lines.isEmpty) continue; // no yesterday content in this session
+    buffer.writeln(
+      '## ${session.title.isEmpty ? session.displayId : session.title}',
+    );
+    for (final line in lines) {
+      buffer.writeln(line);
+    }
+    buffer.writeln();
+  }
+
+  final result = buffer.toString().trim();
+  return result.isEmpty ? null : result;
+}
 
 /// Parse the auxiliary model's raw reply for [assessShellProgress]
 /// into a verdict. Same tolerant style as [_parseShellRiskVerdict]:

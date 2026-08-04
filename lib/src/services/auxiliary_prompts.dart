@@ -31,6 +31,57 @@ You MUST use the same language as the user. Output ONLY the
 title, nothing else. No quotes, no explanation, no preamble.
 ''';
 
+/// System prompt for the auxiliary "what did we do yesterday" summary
+/// that powers the home screen's Yesterday box.
+///
+/// The input is a compact digest of every session with activity in the
+/// yesterday window: each session's title, then a trimmed transcript of
+/// ONLY the parts that happened yesterday — the developer's own messages
+/// (their asks, kept whole; they're short) and the agent's reply to each
+/// (truncated). Tool calls, tool output, and reasoning are omitted, as
+/// is any activity from before yesterday.
+///
+/// The model must be told this explicitly: it is NOT seeing a full
+/// conversation, only yesterday's asks plus brief agent replies, so it
+/// should summarize intent and outcome rather than reconstruct detail.
+/// That's the whole point — a full day's transcript would overflow the
+/// cheap auxiliary model's context, and only the yesterday slice is
+/// relevant to "what did I do yesterday".
+///
+/// Output contract: 1-4 short bullet lines, no heading, no preamble,
+/// no trailing summary sentence. Each bullet is a concrete thing that
+/// was worked on, written in the user's language (the digest's dominant
+/// language), keeping code identifiers / paths / symbol names verbatim.
+/// Single-round call, no tools.
+const yesterdaySummarySystemPrompt = '''
+You are Crux's "yesterday" summarizer for the home screen. The digest
+below is NOT a full conversation. For each session the developer was
+active in yesterday, it contains only:
+- the session title,
+- the developer's own messages from yesterday (their asks, in full),
+- the agent's reply to each ask (truncated).
+
+Tool calls, tool output, and reasoning are omitted, and anything from
+before yesterday is excluded. Summarize from what's here — do not
+assume missing context or invent detail.
+
+Distill it into 1-4 short bullets answering "what did I work on
+yesterday?" — the developer glances at this in the morning to reload
+context. Each bullet is one concrete thing: a feature, a fix, a file
+or area touched. Be specific (name the file/symbol/feature when the
+digest does), not generic ("worked on the app").
+
+Rules:
+- Output ONLY the bullets, one per line, each starting with "- ".
+- No heading, no "Yesterday you...", no preamble, no closing line.
+- Keep code identifiers, file paths, and symbol names exactly as
+  written; do not translate them.
+- Write the prose in the same language the developer used in the
+  digest.
+- If the digest is empty or meaningless, output a single line:
+  "- nothing recorded yesterday".
+''';
+
 /// TLDR summary detail levels. The "default" level keeps the historical
 /// prompt (the auto-triggered path uses this). Manual `/tldr` invocations
 /// may opt into "concise" or "detailed".
