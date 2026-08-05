@@ -83,6 +83,79 @@ void main() {
       expect(resultContent.single['type'], 'tool_result');
     });
 
+    test('carries reasoning_content on assistant messages for the Responses '
+        'API wire (DeepSeek pass-back requirement)', () {
+      // Regression for the 400 "The reasoning_text in the thinking
+      // mode must be passed back to the API." For WireFamily
+      // .responsesApi the IR must keep the assistant's CoT so
+      // DeepSeekProvider.buildRequestBody can emit `reasoning` input
+      // items on tool-call rounds.
+      final messages = [
+        Message(
+          id: 1,
+          sessionId: 1,
+          role: 'ai',
+          content: 'final answer',
+          reasoningContent: 'private reasoning',
+        ),
+        Message(
+          id: 2,
+          sessionId: 1,
+          role: 'tool_call',
+          content: '',
+          reasoningContent: 'need a tool',
+          toolCalls: const [
+            ToolCallData(
+              callId: 'call_1',
+              name: 'read',
+              input: {'filePath': 'README.md'},
+            ),
+          ],
+        ),
+        Message(
+          id: 3,
+          sessionId: 1,
+          role: 'tool',
+          content: 'contents',
+          toolCallId: 'call_1',
+        ),
+      ];
+
+      final wireMessages = ChatService.buildApiMessages(
+        messages,
+        WireFamily.responsesApi,
+      );
+
+      // Plain assistant turn keeps its reasoning.
+      expect(wireMessages[0], {
+        'role': 'assistant',
+        'content': 'final answer',
+        'reasoning_content': 'private reasoning',
+      });
+      // Tool-call assistant turn keeps its reasoning alongside tool_calls.
+      final toolTurn = wireMessages[1];
+      expect(toolTurn['role'], 'assistant');
+      expect(toolTurn['reasoning_content'], 'need a tool');
+      expect(toolTurn['tool_calls'], hasLength(1));
+      // Tool result is a plain tool message, untouched.
+      expect(wireMessages[2], {
+        'role': 'tool',
+        'tool_call_id': 'call_1',
+        'content': 'contents',
+      });
+    });
+
+    test('omits reasoning_content for the Responses API wire when the turn '
+        'had no CoT', () {
+      final wireMessages = ChatService.buildApiMessages(
+        [
+          Message(id: 1, sessionId: 1, role: 'ai', content: 'plain answer'),
+        ],
+        WireFamily.responsesApi,
+      );
+      expect(wireMessages.single, {'role': 'assistant', 'content': 'plain answer'});
+    });
+
     test('renders compaction summaries as user context', () {
       final wireMessages = ChatService.buildApiMessages([
         Message(

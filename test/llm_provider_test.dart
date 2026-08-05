@@ -1146,18 +1146,21 @@ void main() {
   group('DeepSeekProvider.sanitizeMessages', () {
     final provider = DeepSeekProvider();
 
-    test('returns the original list reference when there are no orphans', () {
+    test('returns the original list reference when there are no orphans and '
+        'no reasoning backfill is needed', () {
       // The Responses-API sanitizer is a responses-shape analogue of
       // the OpenAI pairing repair: it walks the OpenAI-IR messages
       // (the storage shape the executor still uses for any
       // non-Anthropic wire family) and prunes orphan tool_calls /
       // tool messages. Well-formed history is a no-op: same list
-      // reference, no allocation.
+      // reference, no allocation. The assistant message already
+      // carries `reasoning_content`, so the backfill also fast-paths.
       final messages = [
         {'role': 'user', 'content': 'hi'},
         {
           'role': 'assistant',
           'content': 'calling read',
+          'reasoning_content': 'I need to read the file first',
           'tool_calls': [
             {
               'id': 'call_a',
@@ -1169,6 +1172,121 @@ void main() {
         {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'a contents'},
       ];
       expect(identical(provider.sanitizeMessages(messages), messages), isTrue);
+    });
+
+    test('backfills reasoning_content: "" on assistant messages that lack '
+        'the field', () {
+      // Regression for the "reasoning context must be passed back" 400
+      // from DeepSeek. History produced by a different provider (or by
+      // an older build of this one) can omit `reasoning_content` on
+      // assistant messages; DeepSeek's thinking mode requires the
+      // field to be present, so the sanitizer backfills it.
+      final messages = [
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'assistant', 'content': 'hello'}, // no reasoning_content
+        {'role': 'user', 'content': 'how are you?'},
+        {
+          'role': 'assistant',
+          'content': 'good',
+          // already backfilled, must be left alone
+          'reasoning_content': 'I was asked how I am',
+        },
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out, hasLength(4));
+      expect(
+        out[0]['reasoning_content'],
+        isNull,
+        reason: 'user messages are not touched',
+      );
+      expect(out[1]['role'], 'assistant');
+      expect(out[1]['content'], 'hello');
+      expect(
+        out[1]['reasoning_content'],
+        '',
+        reason: 'missing field is backfilled with empty string',
+      );
+      expect(
+        out[2]['reasoning_content'],
+        isNull,
+        reason: 'user messages are not touched',
+      );
+      expect(
+        out[3]['reasoning_content'],
+        'I was asked how I am',
+        reason: 'pre-existing value is preserved',
+      );
+    });
+
+    test('treats explicit null the same as a missing key', () {
+      // `m['reasoning_content'] == null` covers both the
+      // "key absent" case (Dart returns null for missing keys)
+      // and the "key present with null value" case. Both should
+      // be backfilled — otherwise a future refactor that
+      // explicitly nulls the field would silently regress this
+      // fix.
+      final messages = [
+        {'role': 'assistant', 'content': 'hello', 'reasoning_content': null},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out.single['reasoning_content'], '');
+    });
+
+    test('preserves tool_calls on assistant messages that get backfilled', () {
+      // The wire-format emitter for `tool_call`-role history
+      // messages produces a map with `role`, `content`, and
+      // `tool_calls` (OpenAI shape) — plus, since the reasoning
+      // pass-back fix, `reasoning_content` when the round had CoT.
+      // Sanitizing must not drop the `tool_calls` array, and the
+      // backfill must not clobber a real reasoning value.
+      final messages = [
+        {
+          'role': 'assistant',
+          'content': null,
+          'reasoning_content': 'I need to read that file',
+          'tool_calls': [
+            {
+              'id': 'call_1',
+              'type': 'function',
+              'function': {'name': 'read', 'arguments': '{"path": "/tmp/a"}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'file contents'},
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(out[0]['reasoning_content'], 'I need to read that file');
+      expect(out[0]['tool_calls'], hasLength(1));
+      expect(out[0]['tool_calls'][0]['id'], 'call_1');
+      expect(
+        out[1]['reasoning_content'],
+        isNull,
+        reason: 'tool messages are not assistant messages',
+      );
+    });
+
+    test('does not mutate the original message maps', () {
+      // Sanitizer must produce new map instances for the rows it
+      // modifies, otherwise downstream callers (e.g. cache-key
+      // computation, log diffing) that hold a reference to the
+      // pre-sanitize map would see surprising mutations across
+      // requests.
+      final originalAssistant = {'role': 'assistant', 'content': 'hello'};
+      final messages = [
+        {'role': 'user', 'content': 'hi'},
+        originalAssistant,
+      ];
+      final out = provider.sanitizeMessages(messages);
+      expect(
+        identical(out[1], originalAssistant),
+        isFalse,
+        reason: 'modified rows must be a fresh map',
+      );
+      expect(
+        originalAssistant.containsKey('reasoning_content'),
+        isFalse,
+        reason: 'original map must not be mutated in place',
+      );
     });
 
     test('drops orphan tool_calls whose tool results were never persisted', () {
@@ -1309,6 +1427,63 @@ void main() {
         {'role': 'user', 'content': 'hi'},
       ], thinkingMode: 'disabled');
       expect(body.containsKey('reasoning'), isFalse);
+    });
+
+    test('emits a reasoning input item for assistant messages carrying '
+        'reasoning_content (the pass-back requirement)', () {
+      // Regression for the 400 "The reasoning_text in the thinking
+      // mode must be passed back to the API." DeepSeek requires the
+      // assistant's CoT to be returned on tool-call rounds; in the
+      // Responses API that is a `{type: 'reasoning'}` input item
+      // placed before the assistant message item.
+      final body = provider.buildRequestBody('deepseek-v4-flash', [
+        {'role': 'user', 'content': 'read /tmp'},
+        {
+          'role': 'assistant',
+          'content': '',
+          'reasoning_content': 'I need to cat the file',
+          'tool_calls': [
+            {
+              'id': 'call_7',
+              'type': 'function',
+              'function': {'name': 'bash', 'arguments': '{"cmd":"cat /tmp"}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'call_7', 'content': 'file body'},
+        {'role': 'assistant', 'content': 'done'},
+      ]);
+      final input = body['input'] as List;
+      // user, reasoning, function_call, function_call_output, message
+      expect(input, hasLength(5));
+      expect(input[0], {'role': 'user', 'content': 'read /tmp'});
+      expect(input[1], {
+        'type': 'reasoning',
+        'content': 'I need to cat the file',
+      });
+      final fc = input[2] as Map<String, dynamic>;
+      expect(fc['type'], 'function_call');
+      expect(fc['call_id'], 'call_7');
+      final fco = input[3] as Map<String, dynamic>;
+      expect(fco['type'], 'function_call_output');
+      expect(fco['call_id'], 'call_7');
+      // The assistant message item follows the reasoning item.
+      expect(input[4], {'role': 'assistant', 'content': 'done'});
+    });
+
+    test('does not emit a reasoning item for empty reasoning_content', () {
+      // The sanitizer backfills `reasoning_content: ''` on messages
+      // from other providers, but an empty reasoning item on the wire
+      // is meaningless — the check is that REAL CoT is passed back.
+      final body = provider.buildRequestBody('deepseek-v4-flash', [
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'assistant', 'content': 'hello', 'reasoning_content': ''},
+      ]);
+      final input = body['input'] as List;
+      expect(input, [
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'assistant', 'content': 'hello'},
+      ]);
     });
   });
 

@@ -109,6 +109,15 @@ List<Map<String, dynamic>> buildApiMessages(
           result.add({
             'role': 'assistant',
             'content': m.content.isEmpty ? null : m.content,
+            // Responses API (DeepSeek): the assistant's chain-of-thought
+            // must be passed back on tool-call rounds or the API 400s
+            // ("The reasoning_text in the thinking mode must be passed
+            // back to the API"). Non-Anthropic wires keep the OpenAI-IR
+            // `reasoning_content` field for the provider's
+            // buildRequestBody to emit.
+            if (wireFamily == WireFamily.responsesApi &&
+                m.reasoningContent.isNotEmpty)
+              'reasoning_content': m.reasoningContent,
           });
         }
       case 'tool_call':
@@ -150,6 +159,12 @@ List<Map<String, dynamic>> buildApiMessages(
           result.add({
             'role': 'assistant',
             'content': m.content.isNotEmpty ? m.content : null,
+            // Same reasoning pass-back requirement as the `ai` role:
+            // tool-call rounds must carry the assistant's CoT for the
+            // Responses API (DeepSeek).
+            if (wireFamily == WireFamily.responsesApi &&
+                m.reasoningContent.isNotEmpty)
+              'reasoning_content': m.reasoningContent,
             'tool_calls': toolCalls,
           });
         }

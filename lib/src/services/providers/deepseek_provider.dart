@@ -132,6 +132,19 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
         continue;
       }
       if (role == 'assistant') {
+        // Reasoning pass-back: DeepSeek's thinking mode requires the
+        // assistant's chain-of-thought to be returned on subsequent
+        // requests whenever a prior turn performed a tool call —
+        // otherwise the API 400s with "The `reasoning_text` in the
+        // thinking mode must be passed back to the API." In the
+        // Responses API, reasoning is a dedicated input item
+        // (`{type: 'reasoning', content: '<plain text>'}`) that the
+        // server merges into the adjacent assistant message. Emit it
+        // *before* the message item, mirroring the output-item order.
+        final reasoning = m['reasoning_content'];
+        if (reasoning is String && reasoning.isNotEmpty) {
+          input.add({'type': 'reasoning', 'content': reasoning});
+        }
         // Assistant text → a message item.
         final content = m['content'];
         if (content is String && content.isNotEmpty) {
@@ -228,24 +241,60 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
   /// Sanitize the OpenAI-IR message list before it's converted to
   /// Responses input items in [buildRequestBody].
   ///
-  /// This is the Responses-API analogue of
-  /// [OpenAICompatibleProvider.sanitizeMessages]: it enforces the
-  /// tool_call ↔ tool result pairing invariant (function_call →
-  /// function_call_output pairing in Responses terms) so a
-  /// half-persisted multi-tool round doesn't surface as a 400.
+  /// Two repairs run, in order:
   ///
-  /// The repair walks the list once, identifies orphan `tool_call_id`s
-  /// — assistant tool calls with no matching `role:'tool'` reply,
-  /// and tool messages with no preceding announcing assistant — and
-  /// prunes them. User/system/assistant-text messages are untouched.
+  ///   1. **Tool-call pairing** (the Responses-API analogue of
+  ///      [OpenAICompatibleProvider.sanitizeMessages]): enforces the
+  ///      tool_call ↔ tool result pairing invariant (function_call →
+  ///      function_call_output in Responses terms) so a
+  ///      half-persisted multi-tool round doesn't surface as a 400.
   ///
-  /// Returns the original list reference unchanged when no orphans
-  /// are detected (the well-formed-history fast path is free).
+  ///   2. **`reasoning_content` backfill**: every `assistant` message
+  ///      that lacks the field gets `reasoning_content: ''`. DeepSeek's
+  ///      thinking mode requires the field to be present on assistant
+  ///      messages when the request is in thinking mode and a previous
+  ///      turn involved a tool call — history produced by a different
+  ///      provider (e.g. MiniMax's Anthropic wire, which serializes
+  ///      thinking as a `thinking` content block, not this field) or
+  ///      by an older build of this provider can be missing it, and
+  ///      the API rejects such requests with a 400 ("reasoning context
+  ///      must be passed back"). Empty strings satisfy the check for
+  ///      turns that didn't perform a tool call; turns that did carry
+  ///      real reasoning are preserved verbatim.
+  ///
+  /// Runs per-request (not per-turn), so it also catches the
+  /// `tool_call` assistant messages the agentic loop adds on rounds
+  /// 2+ — the exact spot DeepSeek's check is strictest about.
+  ///
+  /// Returns the original list reference when neither step changes
+  /// anything, so the well-formed-history fast path is free.
   @override
   List<Map<String, dynamic>> sanitizeMessages(
     List<Map<String, dynamic>> messages,
   ) {
-    return _enforceToolCallPairing(messages);
+    final paired = _enforceToolCallPairing(messages);
+    return _backfillReasoningContent(paired);
+  }
+
+  /// Backfill `reasoning_content: ''` on every `assistant` message
+  /// that lacks the field (missing key or explicit `null`).
+  ///
+  /// See the [sanitizeMessages] doc for why DeepSeek requires this.
+  /// `tool` / `user` / `system` messages pass through untouched.
+  static List<Map<String, dynamic>> _backfillReasoningContent(
+    List<Map<String, dynamic>> messages,
+  ) {
+    var modified = false;
+    final out = <Map<String, dynamic>>[];
+    for (final m in messages) {
+      if (m['role'] == 'assistant' && m['reasoning_content'] == null) {
+        out.add({...m, 'reasoning_content': ''});
+        modified = true;
+      } else {
+        out.add(m);
+      }
+    }
+    return modified ? out : messages;
   }
 
   static List<Map<String, dynamic>> _enforceToolCallPairing(

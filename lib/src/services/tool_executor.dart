@@ -147,6 +147,14 @@ class ToolExecutor {
     return {
       'role': 'assistant',
       'content': textContent.isNotEmpty ? textContent : null,
+      // Responses API (DeepSeek) requires the assistant's CoT to be
+      // passed back on tool-call rounds — without it the API 400s
+      // ("The reasoning_text in the thinking mode must be passed back
+      // to the API"). This is the in-agentic-loop message ChatService
+      // adds on rounds 2+, so it bypasses buildApiMessages; carry the
+      // reasoning here or the follow-up request dies on round 2.
+      if (wireFamily == WireFamily.responsesApi && reasoningContent.isNotEmpty)
+        'reasoning_content': reasoningContent,
       'tool_calls': toolCalls,
     };
   }
