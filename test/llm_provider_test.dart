@@ -1370,9 +1370,24 @@ void main() {
       expect(body.containsKey('messages'), isFalse);
       // input is the item list (system item NOT present — it was hoisted).
       expect(body['input'], [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'assistant', 'content': 'hello'},
-        {'role': 'user', 'content': 'bye'},
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'input_text', 'text': 'hi'},
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'output_text', 'text': 'hello'},
+          ],
+        },
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'input_text', 'text': 'bye'},
+          ],
+        },
       ]);
       // Reasoning effort is nested, not top-level.
       expect(body['reasoning'], {'effort': 'max'});
@@ -1410,7 +1425,12 @@ void main() {
       final input = body['input'] as List;
       // user, function_call, function_call_output
       expect(input, hasLength(3));
-      expect(input[0], {'role': 'user', 'content': 'read /tmp'});
+      expect(input[0], {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': 'read /tmp'},
+        ],
+      });
       final fc = input[1] as Map<String, dynamic>;
       expect(fc['type'], 'function_call');
       expect(fc['call_id'], 'call_7');
@@ -1456,10 +1476,17 @@ void main() {
       final input = body['input'] as List;
       // user, reasoning, function_call, function_call_output, message
       expect(input, hasLength(5));
-      expect(input[0], {'role': 'user', 'content': 'read /tmp'});
+      expect(input[0], {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': 'read /tmp'},
+        ],
+      });
       expect(input[1], {
         'type': 'reasoning',
-        'content': 'I need to cat the file',
+        'content': [
+          {'type': 'reasoning_text', 'text': 'I need to cat the file'},
+        ],
       });
       final fc = input[2] as Map<String, dynamic>;
       expect(fc['type'], 'function_call');
@@ -1468,7 +1495,12 @@ void main() {
       expect(fco['type'], 'function_call_output');
       expect(fco['call_id'], 'call_7');
       // The assistant message item follows the reasoning item.
-      expect(input[4], {'role': 'assistant', 'content': 'done'});
+      expect(input[4], {
+        'role': 'assistant',
+        'content': [
+          {'type': 'output_text', 'text': 'done'},
+        ],
+      });
     });
 
     test('does not emit a reasoning item for empty reasoning_content', () {
@@ -1481,8 +1513,18 @@ void main() {
       ]);
       final input = body['input'] as List;
       expect(input, [
-        {'role': 'user', 'content': 'hi'},
-        {'role': 'assistant', 'content': 'hello'},
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'input_text', 'text': 'hi'},
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'output_text', 'text': 'hello'},
+          ],
+        },
       ]);
     });
   });

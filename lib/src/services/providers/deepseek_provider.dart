@@ -138,17 +138,29 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
         // otherwise the API 400s with "The `reasoning_text` in the
         // thinking mode must be passed back to the API." In the
         // Responses API, reasoning is a dedicated input item
-        // (`{type: 'reasoning', content: '<plain text>'}`) that the
-        // server merges into the adjacent assistant message. Emit it
-        // *before* the message item, mirroring the output-item order.
+        // (`{type: 'reasoning', content: [{type: 'reasoning_text',
+        // text: '...'}]}`) that the server merges into the adjacent
+        // assistant message. Emit it *before* the message item,
+        // mirroring the output-item order.
         final reasoning = m['reasoning_content'];
         if (reasoning is String && reasoning.isNotEmpty) {
-          input.add({'type': 'reasoning', 'content': reasoning});
+          input.add({
+            'type': 'reasoning',
+            'content': [
+              {'type': 'reasoning_text', 'text': reasoning},
+            ],
+          });
         }
-        // Assistant text → a message item.
+        // Assistant text → a message item. The Responses API expects
+        // content as a list of typed parts, not a bare string.
         final content = m['content'];
         if (content is String && content.isNotEmpty) {
-          input.add({'role': 'assistant', 'content': content});
+          input.add({
+            'role': 'assistant',
+            'content': [
+              {'type': 'output_text', 'text': content},
+            ],
+          });
         }
         // Assistant tool_calls → function_call items (JSON-string args).
         final toolCalls = m['tool_calls'] as List?;
@@ -171,11 +183,17 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
         continue;
       }
       // user (and anything we didn't pattern-match) — pass content
-      // through as a message item, mirroring how the wire-format
-      // builder handles plain user turns.
+      // through as a message item. The Responses API expects content
+      // as a list of typed parts (`input_text` for user messages),
+      // not a bare string.
       final content = m['content'];
       if (content is String) {
-        input.add({'role': role ?? 'user', 'content': content});
+        input.add({
+          'role': role ?? 'user',
+          'content': [
+            {'type': 'input_text', 'text': content},
+          ],
+        });
       } else if (content is List) {
         // Multi-modal OpenAI content blocks. The DeepSeek Responses
         // API only accepts `input_text` / `output_text` parts for
@@ -186,7 +204,12 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
             .map((b) => b['text'] as String? ?? '')
             .join();
         if (text.isNotEmpty) {
-          input.add({'role': role ?? 'user', 'content': text});
+          input.add({
+            'role': role ?? 'user',
+            'content': [
+              {'type': 'input_text', 'text': text},
+            ],
+          });
         }
       }
     }

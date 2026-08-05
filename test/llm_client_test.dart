@@ -451,9 +451,19 @@ void main() {
       // 1 function_call_output = 5 items (system is NOT an input item).
       expect(input, hasLength(5));
       // user / list /tmp
-      expect(input[0], {'role': 'user', 'content': 'list /tmp'});
+      expect(input[0], {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': 'list /tmp'},
+        ],
+      });
       // assistant text 'ok'
-      expect(input[1], {'role': 'assistant', 'content': 'ok'});
+      expect(input[1], {
+        'role': 'assistant',
+        'content': [
+          {'type': 'output_text', 'text': 'ok'},
+        ],
+      });
       // function_call — JSON-string arguments, flat id/name
       final fc = input[2] as Map<String, dynamic>;
       expect(fc['type'], 'function_call');
@@ -466,7 +476,12 @@ void main() {
       expect(fco['call_id'], 'call_42');
       expect(fco['output'], 'file1\nfile2');
       // final user msg
-      expect(input[4], {'role': 'user', 'content': 'thanks'});
+      expect(input[4], {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': 'thanks'},
+        ],
+      });
     });
   });
 
