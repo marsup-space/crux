@@ -178,6 +178,50 @@ class MessageStore {
     return result;
   }
 
+  /// Total tokens (in + out) per local calendar day, for the home
+  /// screen's activity heatmap.
+  ///
+  /// Returns a map from `'YYYY-MM-DD'` (local time) to the summed token
+  /// count. Only AI/tool_call rows carry token counts, but summing all
+  /// rows is equivalent (other roles persist 0) and avoids a role
+  /// filter. [sinceDaysAgo] bounds the window (e.g. 371 for a year +
+  /// partial week); pass [projectPath] to scope to one workspace.
+  ///
+  /// `created_at` is stored as local epoch-ms, so
+  /// `date(created_at/1000, 'unixepoch', 'localtime')` buckets by the
+  /// user's own midnight — matching how the heatmap renders days.
+  Future<Map<String, int>> dailyTokenTotals({
+    required int sinceDaysAgo,
+    String? projectPath,
+  }) async {
+    final sinceMs = DateTime.now()
+        .subtract(Duration(days: sinceDaysAgo))
+        .millisecondsSinceEpoch;
+    final variables = <Variable<Object>>[Variable.withInt(sinceMs)];
+    var projectFilter = '';
+    if (projectPath != null) {
+      projectFilter = 'AND s.project_path = ?';
+      variables.add(Variable.withString(projectPath));
+    }
+    final rows = await _db
+        .customSelect(
+          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          'AS day, '
+          'SUM(m.tokens_in + m.tokens_out) AS total '
+          'FROM messages m '
+          'JOIN sessions s ON s.id = m.session_id '
+          'WHERE m.created_at >= ? $projectFilter '
+          'GROUP BY day',
+          variables: variables,
+          readsFrom: {_db.messages, _db.sessions},
+        )
+        .get();
+    return {
+      for (final row in rows)
+        row.read<String>('day'): row.read<int>('total'),
+    };
+  }
+
   /// Returns up to [limit] messages for [sessionId] in chronological
   /// order (oldest first).
   ///

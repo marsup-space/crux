@@ -131,6 +131,13 @@ Future<void> main(List<String> args) async {
         return null;
       },
       summarizeYesterday: aux.summarizeYesterday,
+      // Activity box: token-per-day heatmap over this workspace,
+      // scoped to the same project path the real panel uses.
+      dailyTokenTotals: ({required sinceDays}) =>
+          boot.store.messageStore.dailyTokenTotals(
+        sinceDaysAgo: sinceDays,
+        projectPath: Directory.current.path,
+      ),
     );
   } else {
     context = base.copyWithDev(
@@ -224,6 +231,8 @@ extension on HomeContext {
     String? Function()? activeModel,
     Future<String?> Function(List<Session>)? summarizeYesterday,
     void Function(SkillInfo)? showSkill,
+    Future<Map<String, int>> Function({required int sinceDays})?
+        dailyTokenTotals,
   }) {
     return HomeContext(
       runCommand: runCommand,
@@ -237,6 +246,7 @@ extension on HomeContext {
       activeModel: activeModel ?? this.activeModel,
       summarizeYesterday: summarizeYesterday ?? this.summarizeYesterday,
       showSkill: showSkill ?? this.showSkill,
+      dailyTokenTotals: dailyTokenTotals ?? this.dailyTokenTotals,
     );
   }
 }

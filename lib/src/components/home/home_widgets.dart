@@ -66,6 +66,13 @@ class HomeContext {
   /// the box's rows then do nothing on activation.
   final void Function(SkillInfo skill)? showSkill;
 
+  /// Fetch total tokens (in + out) per local calendar day for the
+  /// `activity` heatmap box. [sinceDays] bounds the lookback window.
+  /// Null (tests / previews) means "no store wired" — the box renders
+  /// an empty grid.
+  final Future<Map<String, int>> Function({required int sinceDays})?
+      dailyTokenTotals;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -78,6 +85,7 @@ class HomeContext {
     this.activeModel = _noModel,
     this.summarizeYesterday,
     this.showSkill,
+    this.dailyTokenTotals,
   });
 
   static String? _noModel() => null;
@@ -96,7 +104,8 @@ class HomeContext {
         projectPath = '',
         activeModel = _noModel,
         summarizeYesterday = null,
-        showSkill = null;
+        showSkill = null,
+        dailyTokenTotals = null;
 }
 
 /// One pluggable dashboard box.

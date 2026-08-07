@@ -7,6 +7,7 @@ import '../../services/skills/skill_discovery.dart';
 import '../../version.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
+import 'widgets/activity_widget.dart';
 import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
 import 'widgets/skills_widget.dart';
@@ -185,7 +186,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       WorkspaceHomeWidget(),
       QuickActionsHomeWidget(seedInput: ctx.seedInput),
+      // The three span-1 boxes sit together and fill one row.
       TokensHomeWidget(),
+      ActivityHomeWidget(),
       SkillsHomeWidget(skills: () => discoverSkills(cwd: _ctx.projectPath)),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,

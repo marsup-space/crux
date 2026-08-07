@@ -1204,6 +1204,15 @@ class _ChatPanelState extends State<ChatPanel> {
           _chatService.summarizeYesterday(sessions),
       // Skills box: tapping a skill opens its SKILL.md in a fullpane.
       showSkill: _openSkillFullpane,
+      // Activity box: token-per-day heatmap over this workspace's
+      // sessions. The store query is one SQL aggregate; the widget
+      // re-invokes it per open (no caching) because the data is cheap
+      // and always fresh.
+      dailyTokenTotals: ({required sinceDays}) => _store.messageStore
+          .dailyTokenTotals(
+            sinceDaysAgo: sinceDays,
+            projectPath: Directory.current.path,
+          ),
     );
   }
 
