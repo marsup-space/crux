@@ -4,7 +4,11 @@
 // VibeFileRow — hovering a row swaps its content in place for the two
 // action buttons `open` / `diff`; moving the mouse away restores the
 // file label. The swap must not reflow the box (the label row occupies
-// the same width as the action row).
+// the same width as the action row). When the segment's persisted
+// calls can't reconstruct the file's diff (see
+// hasReconstructableVibeFileDiff), the row's `diff` segment renders
+// disabled — dim and non-clickable — instead of opening the
+// fullpane's "(no reconstructable changes)" placeholder.
 //
 // VibeDiffFullpane — the selected file's diff renders side-by-side when
 // the pane is wide enough (≥ kMinSplitWidth) and unified otherwise, the
@@ -13,6 +17,7 @@
 import 'package:crux/src/components/ui/highlight_service.dart';
 import 'package:crux/src/components/vibe_box_data.dart';
 import 'package:crux/src/components/vibe_diff_fullpane.dart';
+import 'package:crux/src/components/vibe_file_diff.dart';
 import 'package:crux/src/components/vibe_file_row.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/theme/crux_theme.dart';
@@ -93,6 +98,173 @@ void main() {
         await tester.pump();
         expect(diffed, isTrue);
       });
+    });
+
+    test('diff action renders disabled when the callback is null', () async {
+      // Regression: the files box used to hand every row a live `diff`
+      // callback, so a file whose segment calls couldn't reconstruct a
+      // diff (e.g. a pre-feature segment with no recorded modCalls)
+      // opened the fullpane's "(no reconstructable changes)" dead end.
+      // The row must now render the segment dim and swallow the tap.
+      await testNocterm('file row diff disabled', (tester) async {
+        var opened = false;
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 40,
+              height: 3,
+              child: VibeFileRow(
+                name: 'foo.dart',
+                linesAdded: 3,
+                linesRemoved: 1,
+                onOpen: () => opened = true,
+                // Null: this file's diff is not reconstructable.
+                onDiff: null,
+              ),
+            ),
+          ),
+        );
+
+        await tester.hover(2, 0);
+        await tester.pump();
+        // Both segment labels still render — the disabled one is not
+        // hidden, just dim and inert.
+        final text = tester.terminalState.getText();
+        expect(text, contains('open'));
+        expect(text, contains('diff'));
+
+        // Tapping the disabled segment fires nothing.
+        final diffPos = tester.terminalState.findText('diff').first;
+        await tester.tap(diffPos.x, diffPos.y);
+        await tester.pump();
+        expect(opened, isFalse);
+
+        // The disabled segment renders in the theme's disabled color,
+        // not the hover/dim action colors.
+        final cell = tester.terminalState.getCellAt(diffPos.x, diffPos.y);
+        expect(cell?.style.color, CruxThemeData.draculaFallback.onSurfaceDim);
+      });
+    });
+  });
+
+  group('hasReconstructableVibeFileDiff', () {
+    ToolCallData editCall(
+      String filePath,
+      String oldString,
+      String newString,
+    ) => ToolCallData(
+      callId: 'c1',
+      name: 'edit',
+      input: {
+        'filePath': filePath,
+        'oldString': oldString,
+        'newString': newString,
+      },
+    );
+
+    test('false when the segment has no calls for the file', () {
+      // The pre-feature case: ModBoxData exists (paths + counts came
+      // from modSummaries) but the walker's modCalls list is empty.
+      expect(
+        hasReconstructableVibeFileDiff('lib/foo.dart', const []),
+        isFalse,
+      );
+    });
+
+    test('false when calls only touch other files', () {
+      expect(
+        hasReconstructableVibeFileDiff('lib/foo.dart', [
+          editCall('lib/bar.dart', 'a', 'b'),
+        ]),
+        isFalse,
+      );
+    });
+
+    test('false for a read-shaped edit payload (no old/new content)', () {
+      // Regression data from the bug report: an old `edit` row whose
+      // persisted input is a read call's args — filePath plus
+      // limit/offset, no oldString/newString. computeVibeFileDiff
+      // skips the empty pair and returns null, so the row must gate.
+      const call = ToolCallData(
+        callId: 'c1',
+        name: 'edit',
+        input: {
+          'filePath': 'lib/src/commands/command_executor.dart',
+          'limit': 5,
+          'offset': 301,
+        },
+      );
+      expect(
+        hasReconstructableVibeFileDiff(
+          'lib/src/commands/command_executor.dart',
+          const [call],
+        ),
+        isFalse,
+      );
+    });
+
+    test('false when old and new snapshots are identical', () {
+      expect(
+        hasReconstructableVibeFileDiff('lib/foo.dart', [
+          editCall('lib/foo.dart', 'same line', 'same line'),
+        ]),
+        isFalse,
+      );
+    });
+
+    test('true for a real edit, matched by basename or relative path', () {
+      final calls = [editCall('lib/foo.dart', 'old line', 'new line')];
+      expect(hasReconstructableVibeFileDiff('lib/foo.dart', calls), isTrue);
+      // The files box and the tool call can name the same file
+      // differently — absolute vs relative still matches (by
+      // normalized path, then by basename).
+      expect(
+        hasReconstructableVibeFileDiff('/repo/lib/foo.dart', calls),
+        isTrue,
+      );
+    });
+
+    test('false for a lone write (identical old/new snapshots)', () {
+      // A write seeds BOTH sides of the fold with its content — the
+      // reconstruction model has no pre-write snapshot, so the diff
+      // is all-context and computeVibeFileDiff returns null. The
+      // file's `+N` row still shows in the box (from modSummary), but
+      // `diff` must gate off rather than open the placeholder.
+      const call = ToolCallData(
+        callId: 'c1',
+        name: 'write',
+        input: {'filePath': 'docs/plan.md', 'content': '# Plan\n\nbody\n'},
+      );
+      expect(
+        hasReconstructableVibeFileDiff('docs/plan.md', const [call]),
+        isFalse,
+      );
+    });
+
+    test('true when an edit follows a write', () {
+      // The write resets the fold; the edit then contributes an
+      // old/new pair on top, so the snapshots diverge.
+      const calls = [
+        ToolCallData(
+          callId: 'c1',
+          name: 'write',
+          input: {'filePath': 'docs/plan.md', 'content': '# Plan\n\nbody\n'},
+        ),
+        ToolCallData(
+          callId: 'c2',
+          name: 'edit',
+          input: {
+            'filePath': 'docs/plan.md',
+            'oldString': 'body',
+            'newString': 'revised body',
+          },
+        ),
+      ];
+      expect(
+        hasReconstructableVibeFileDiff('docs/plan.md', calls),
+        isTrue,
+      );
     });
   });
 

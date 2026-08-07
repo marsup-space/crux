@@ -273,7 +273,7 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     bool showPath = true,
   }) {
     final calls = component.request.calls
-        .where((c) => _callTouchesPath(c, entry.path))
+        .where((c) => vibeToolCallTouchesPath(c, entry.path))
         .toList();
     final result = computeVibeFileDiff(
       VibeFileDiffInput(path: entry.path, calls: calls),
@@ -321,6 +321,11 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
           ),
         ),
         if (result == null || body == null)
+          // Normally unreachable from the files box: the segment
+          // bubble disables the `diff` action when
+          // hasReconstructableVibeFileDiff says no. This remains as
+          // the fallback for a file that turns unreconstructable
+          // after the fullpane is already open.
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: kContentHorizontalPadding,
@@ -835,16 +840,4 @@ class _SplitRow {
       isGap = true;
 }
 
-/// Whether a `write`/`edit` call targets [path]. The LLM names the same
-/// file with different path strings across calls (absolute vs relative,
-/// `./`-prefixed), so we normalize both sides and compare, falling back to
-/// a basename comparison — the files box's own dedup notion of "same
-/// file".
-bool _callTouchesPath(ToolCallData call, String path) {
-  final callPath = call.input['filePath'] as String? ?? '';
-  if (callPath.isEmpty) return false;
-  final a = p.normalize(callPath);
-  final b = p.normalize(path);
-  if (a == b) return true;
-  return p.basename(a) == p.basename(b);
-}
+

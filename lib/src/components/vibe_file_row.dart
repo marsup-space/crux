@@ -26,6 +26,10 @@ class VibeFileRow extends StatelessComponent {
   final VoidCallback? onOpen;
 
   /// Fired when the user activates `diff` (open the diff fullpane).
+  /// Null when the segment's persisted calls can't reconstruct this
+  /// file's diff — the `diff` segment renders dim and ignores taps
+  /// rather than opening the fullpane's "(no reconstructable
+  /// changes)" placeholder.
   final VoidCallback? onDiff;
 
   const VibeFileRow({

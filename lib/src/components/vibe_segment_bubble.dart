@@ -11,6 +11,7 @@ import 'ui/highlighted_markdown_text.dart';
 import 'lsp_state_glyph.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
+import 'vibe_file_diff.dart';
 import 'vibe_file_row.dart';
 
 /// Renders one [VibeSegment]: user line + three aggregated metadata
@@ -210,6 +211,18 @@ class VibeSegmentBubble extends StatelessComponent {
         final entry = i < mods.files.length ? mods.files[i] : null;
         final added = entry?.linesAdded ?? mods.linesAdded;
         final removed = entry?.linesRemoved ?? mods.linesRemoved;
+        // Gate `diff` on reconstructability: when the segment's
+        // persisted calls can't rebuild this file's before/after
+        // (segments persisted before the walker tracked mutating
+        // calls, or rows whose call args lack old/new content), the
+        // fullpane would only show its "(no reconstructable
+        // changes)" placeholder — disable the action instead of
+        // opening that dead end. The MultiButton renders a null
+        // callback as a dim, non-clickable segment.
+        final diffable = hasReconstructableVibeFileDiff(
+          path,
+          segment.modCalls,
+        );
         rows.add(
           VibeFileRow(
             key: ValueKey('vibe-file-$i-$path'),
@@ -217,7 +230,7 @@ class VibeSegmentBubble extends StatelessComponent {
             linesAdded: added,
             linesRemoved: removed,
             onOpen: onOpenFile == null ? null : () => onOpenFile!(path),
-            onDiff: onDiffFiles == null
+            onDiff: onDiffFiles == null || !diffable
                 ? null
                 : () => onDiffFiles!(i, mods, segment.modCalls),
           ),
@@ -268,7 +281,21 @@ class VibeSegmentBubble extends StatelessComponent {
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // `stretch` so the column — and therefore the user line, the
+      // boxes row, and the agent prose — fills the chat panel's
+      // cross-axis (the ListView's `crossAxisExtent`). With
+      // `start` (the default), the column shrink-wraps to the widest
+      // child: the boxes row sets the width (~60 cells of vibe box
+      // chrome), the `You:`/`Crux:` rows expand to that width, and
+      // the rest of the panel reads as empty space on the right.
+      // That makes the segment look like a left-aligned block on
+      // wide screens while the VibeTurnDivider alone spans the full
+      // width — a visual mismatch the user reads as "the divider
+      // breaks in vibe mode". Stretching the column aligns the
+      // user/agent prose with the divider and lets the boxes row
+      // sit flush against the left edge as a sub-element of a
+      // full-width segment.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // User line — only on the first segment of a user turn.
         // Mirrors the verbose `MessageBubble` layout:

@@ -63,6 +63,127 @@ VibeSegment _segmentWithoutThink({
 }
 
 void main() {
+  group('VibeSegmentBubble files box diff gating', () {
+    VibeSegment segmentWithMods(List<ToolCallData> modCalls) {
+      return VibeSegment(
+        userMessage: _userMsg('change foo'),
+        mods: const ModBoxData(
+          paths: ['lib/foo.dart'],
+          linesAdded: 1,
+          linesRemoved: 1,
+          overflowCount: 0,
+          files: [ModFileEntry('lib/foo.dart', 1, 1)],
+        ),
+        modCalls: modCalls,
+        prose: _aiMsg('Done.'),
+      );
+    }
+
+    Future<void> pumpAndHover(
+      VibeSegment segment,
+      bool Function() diffed,
+      void Function() onDiff,
+    ) async {
+      await testNocterm('files box diff gating', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 80,
+              height: 12,
+              child: VibeSegmentBubble(
+                segment: segment,
+                onDiffFiles: (_, _, _) => onDiff(),
+              ),
+            ),
+          ),
+        );
+        // The file row sits inside the files box; find it by name and
+        // hover to reveal the `open │ diff` segments.
+        final pos = tester.terminalState.findText('foo.dart').first;
+        await tester.hover(pos.x, pos.y);
+        await tester.pump();
+        expect(tester.terminalState.getText(), contains('diff'));
+        final diffPos = tester.terminalState.findText('diff').first;
+        await tester.tap(diffPos.x, diffPos.y);
+        await tester.pump();
+        expect(diffed(), isFalse);
+      });
+    }
+
+    test('diff action is disabled when the segment has no modCalls', () async {
+      // Regression: segments persisted before the walker tracked
+      // mutating calls have a files box (paths + counts) but an empty
+      // modCalls list. Their rows used to open the fullpane's
+      // "(no reconstructable changes)" placeholder; now the `diff`
+      // segment must render disabled and swallow the tap.
+      var diffed = false;
+      await pumpAndHover(segmentWithMods(const []), () => diffed, () {
+        diffed = true;
+      });
+    });
+
+    test('diff action is disabled for a read-shaped edit payload', () async {
+      // Regression data: an old `edit` row persisted with a read
+      // call's args (filePath + limit/offset, no oldString/newString)
+      // reconstructs nothing.
+      var diffed = false;
+      await pumpAndHover(
+        segmentWithMods(const [
+          ToolCallData(
+            callId: 'c1',
+            name: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'limit': 5,
+              'offset': 301,
+            },
+          ),
+        ]),
+        () => diffed,
+        () {
+          diffed = true;
+        },
+      );
+    });
+
+    test('diff action fires when the file reconstructs', () async {
+      await testNocterm('files box diff enabled', (tester) async {
+        var diffed = false;
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 80,
+              height: 12,
+              child: VibeSegmentBubble(
+                segment: segmentWithMods(const [
+                  ToolCallData(
+                    callId: 'c1',
+                    name: 'edit',
+                    input: {
+                      'filePath': 'lib/foo.dart',
+                      'oldString': 'old line',
+                      'newString': 'new line',
+                    },
+                  ),
+                ]),
+                onDiffFiles: (_, _, _) => diffed = true,
+              ),
+            ),
+          ),
+        );
+        final pos = tester.terminalState.findText('foo.dart').first;
+        await tester.hover(pos.x, pos.y);
+        await tester.pump();
+        final diffPos = tester.terminalState.findText('diff').first;
+        await tester.tap(diffPos.x, diffPos.y);
+        await tester.pump();
+        expect(diffed, isTrue);
+      });
+    });
+  });
+
   group('VibeSegmentBubble think box effort label', () {
     test('maps internal effort through reasoningPresets '
         '(`normal` → `adaptive` for MiniMax)', () async {

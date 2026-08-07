@@ -1,3 +1,5 @@
+import 'package:path/path.dart' as p;
+
 import '../models/message.dart';
 import 'tool_detail_utils.dart';
 
@@ -110,6 +112,45 @@ VibeFileDiffResult? computeVibeFileDiff(VibeFileDiffInput input) {
     oldLines: _splitLines(oldText),
     newLines: _splitLines(newText),
   );
+}
+
+/// Whether the segment's [allCalls] can reconstruct a meaningful diff for
+/// the file at [path] — i.e. [computeVibeFileDiff] would NOT return null
+/// for it.
+///
+/// The files box's per-file `diff` action uses this to disable itself when
+/// the answer is known to be no: segments persisted before the walker
+/// tracked mutating calls (empty `modCalls`), and rows whose persisted call
+/// args lack reconstructable content (e.g. an old `edit` row that stored a
+/// read-shaped payload — see the June-2026 `limit`/`offset` arg mixup that
+/// prompted this helper). Gating the action up front is better than
+/// opening the fullpane to its "(no reconstructable changes)" placeholder.
+bool hasReconstructableVibeFileDiff(
+  String path,
+  List<ToolCallData> allCalls,
+) {
+  final calls = allCalls
+      .where((c) => vibeToolCallTouchesPath(c, path))
+      .toList();
+  if (calls.isEmpty) return false;
+  return computeVibeFileDiff(VibeFileDiffInput(path: path, calls: calls)) !=
+      null;
+}
+
+/// Whether a `write`/`edit` call targets [path]. The LLM names the same
+/// file with different path strings across calls (absolute vs relative,
+/// `./`-prefixed), so we normalize both sides and compare, falling back to
+/// a basename comparison — the files box's own dedup notion of "same
+/// file". Shared by the diff fullpane's per-file filter and
+/// [hasReconstructableVibeFileDiff] so the row's gate always agrees with
+/// what the fullpane would show.
+bool vibeToolCallTouchesPath(ToolCallData call, String path) {
+  final callPath = call.input['filePath'] as String? ?? '';
+  if (callPath.isEmpty) return false;
+  final a = p.normalize(callPath);
+  final b = p.normalize(path);
+  if (a == b) return true;
+  return p.basename(a) == p.basename(b);
 }
 
 /// Split [text] into lines the same way the diff does — a single trailing
