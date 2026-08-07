@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
@@ -111,6 +113,84 @@ class ModBoxData {
   });
 }
 
+/// Aggregated progress-box data for one vibe segment — the persisted
+/// echo of a long-running bash call that reported progress signals.
+///
+/// Parsed from the `shellProgress` field the shell base stamps into
+/// `ToolResult.metadata` (and the chat executor persists into
+/// `messages.meta`). Renders as a compact single-row box on reload;
+/// the live bar is the streaming bubble's job.
+class ProgressBoxData {
+  /// Last phase word seen ("Downloading", "Installing", ...).
+  final String? phase;
+
+  /// Highest percent observed across the run, 0..100.
+  final double? peakPercent;
+
+  /// Wall-clock seconds the command ran (as measured by the tool).
+  final int durationSec;
+
+  /// Total stdout+stderr bytes produced.
+  final int bytes;
+
+  /// Process exit code; non-zero renders as a failure row.
+  final int exitCode;
+
+  const ProgressBoxData({
+    this.phase,
+    this.peakPercent,
+    this.durationSec = 0,
+    this.bytes = 0,
+    this.exitCode = 0,
+  });
+}
+
+/// Parse a [ProgressBoxData] out of a persisted `messages.meta` JSON
+/// blob. Null when the blob has no (or malformed) `shellProgress`.
+ProgressBoxData? progressFromMeta(String? meta) {
+  if (meta == null || meta.isEmpty) return null;
+  Map<String, dynamic>? root;
+  try {
+    final decoded = jsonDecode(meta);
+    if (decoded is Map) root = decoded.cast<String, dynamic>();
+  } catch (_) {
+    return null;
+  }
+  final raw = root?['shellProgress'];
+  if (raw is! Map) return null;
+  final m = raw.cast<String, dynamic>();
+  final phase = m['phase'];
+  final peak = _progressNum(m['peakPercent']);
+  final duration = _progressNum(m['durationSec'])?.round() ?? 0;
+  final bytes = _progressNum(m['bytes'])?.round() ?? 0;
+  final exitCode = _progressNum(m['exitCode'])?.round() ?? 0;
+  if (phase is! String && peak == null && duration <= 0) return null;
+  return ProgressBoxData(
+    phase: phase is String ? phase : null,
+    peakPercent: peak,
+    durationSec: duration,
+    bytes: bytes,
+    exitCode: exitCode,
+  );
+}
+
+double? _progressNum(dynamic v) => v is num ? v.toDouble() : null;
+
+/// Merge two segment progress summaries (several bash calls in one
+/// segment): longest duration, highest peak, summed bytes, last phase,
+/// any non-zero exit wins.
+ProgressBoxData mergeProgress(ProgressBoxData a, ProgressBoxData b) {
+  return ProgressBoxData(
+    phase: b.phase ?? a.phase,
+    peakPercent: (a.peakPercent ?? 0) >= (b.peakPercent ?? 0)
+        ? a.peakPercent
+        : b.peakPercent,
+    durationSec: a.durationSec > b.durationSec ? a.durationSec : b.durationSec,
+    bytes: a.bytes + b.bytes,
+    exitCode: (a.exitCode != 0) ? a.exitCode : b.exitCode,
+  );
+}
+
 /// One [VibeSegment] per prose boundary in the message list.
 ///
 /// Spec (see `docs/design-vibe-mode.md`, "Segmentation" section):
@@ -151,6 +231,7 @@ class VibeSegment {
   final ThinkBoxData? think;
   final ToolBoxData? tools;
   final ModBoxData? mods;
+  final ProgressBoxData? progress;
   final Message? prose;
   final bool showUserMessage;
 
@@ -166,6 +247,7 @@ class VibeSegment {
     this.think,
     this.tools,
     this.mods,
+    this.progress,
     this.prose,
     this.showUserMessage = true,
     this.modCalls = const [],
@@ -232,6 +314,9 @@ List<VibeSegment> walkSegments(
   // The segment's write/edit calls, in order, for the files box's diff
   // action. Accumulated alongside modPaths and reset on each emit.
   final modCalls = <ToolCallData>[];
+  // Merged progress summary for the progress box: at most one entry
+  // per segment, folded from every bash run that reported signals.
+  ProgressBoxData? progressAccum;
   // `true` once the current user turn has produced its first
   // emitted segment. The first segment carries the `you:` line;
   // siblings in the same turn render prose only. Reset on
@@ -276,6 +361,7 @@ List<VibeSegment> walkSegments(
           modLinesAdded,
           modLinesRemoved,
           modCalls,
+          progressAccum,
           null,
           showUserLine: !userLineShown,
         );
@@ -297,6 +383,7 @@ List<VibeSegment> walkSegments(
           const {},
           const [],
           null,
+          null,
           showUserLine: true,
         );
         // Continuation below the answer reuses this user anchor but
@@ -314,6 +401,7 @@ List<VibeSegment> walkSegments(
         modLinesAdded.clear();
         modLinesRemoved.clear();
         modCalls.clear();
+        progressAccum = null;
         lastWasToolResult = false;
         continue;
       }
@@ -335,6 +423,7 @@ List<VibeSegment> walkSegments(
         modLinesAdded,
         modLinesRemoved,
         modCalls,
+        progressAccum,
         null,
         showUserLine: !userLineShown,
       );
@@ -351,6 +440,7 @@ List<VibeSegment> walkSegments(
       modLinesAdded.clear();
       modLinesRemoved.clear();
       modCalls.clear();
+      progressAccum = null;
       lastWasToolResult = false;
       continue;
     }
@@ -426,6 +516,21 @@ List<VibeSegment> walkSegments(
             lspState: mergedState,
           );
           toolTotalTokens += callTokens;
+
+          // Accumulate progress-box data from the tool result's
+          // persisted `shellProgress` metadata — only bash runs that
+          // reported progress signals carry it (see
+          // `shell_progress_parser.dart`). Multiple runs in one
+          // segment fold into a single summary via mergeProgress.
+          final progressMeta = resultMsg?.meta;
+          if (progressMeta != null && progressMeta.isNotEmpty) {
+            final pb = progressFromMeta(progressMeta);
+            if (pb != null) {
+              progressAccum = progressAccum == null
+                  ? pb
+                  : mergeProgress(progressAccum, pb);
+            }
+          }
 
           // Accumulate file-modification data via the modSummary hook.
           // Dedupe by `p.basename`, NOT by the full path string:
@@ -517,6 +622,7 @@ List<VibeSegment> walkSegments(
           modLinesAdded,
           modLinesRemoved,
           modCalls,
+          progressAccum,
           msg,
           showUserLine: !userLineShown,
         );
@@ -536,6 +642,7 @@ List<VibeSegment> walkSegments(
         modLinesAdded.clear();
         modLinesRemoved.clear();
         modCalls.clear();
+        progressAccum = null;
         // Critically, do NOT clear `currentUser` here. The
         // spec doesn't say to, and the earlier implementation
         // did — that's what silently dropped a 2nd
@@ -566,6 +673,7 @@ List<VibeSegment> walkSegments(
     modLinesAdded,
     modLinesRemoved,
     modCalls,
+    progressAccum,
     null,
     showUserLine: !userLineShown,
   );
@@ -588,6 +696,9 @@ List<VibeSegment> walkSegments(
 /// `true` on the first emit of a user turn, `false` thereafter so
 /// the `you:` line appears only once per turn.
 ///
+/// [progress] is the segment's merged progress summary (bash runs
+/// that reported signals); null when none did.
+///
 /// Emit is suppressed when there's nothing visible — e.g. a
 /// flush at a user boundary where the previous turn already
 /// emitted everything. Without this guard the trailing flush
@@ -606,6 +717,7 @@ void _emitSegment(
   Map<String, int> modLinesAdded,
   Map<String, int> modLinesRemoved,
   List<ToolCallData> modCalls,
+  ProgressBoxData? progress,
   Message? closing, {
   required bool showUserLine,
 }) {
@@ -613,7 +725,8 @@ void _emitSegment(
 
   final entries = toolOrder.map((name) => toolEntries[name]!).toList();
   final hasThink = thinkDuration.inMilliseconds > 0 || thinkTokens > 0;
-  final hasBoxes = hasThink || entries.isNotEmpty || modPaths.isNotEmpty;
+  final hasBoxes =
+      hasThink || entries.isNotEmpty || modPaths.isNotEmpty || progress != null;
   final hasProse = closing != null;
 
   // Skip when the flush has nothing to show: no boxes, no
@@ -677,6 +790,7 @@ void _emitSegment(
             )
           : null,
       prose: closing,
+      progress: progress,
       modCalls: List.unmodifiable(modCalls),
     ),
   );

@@ -120,6 +120,20 @@ class VibeSegmentBubble extends StatelessComponent {
     return internal;
   }
 
+  static String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+  }
+
+  static String _fmtDuration(int secs) {
+    if (secs < 60) return '${secs}s';
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    if (m < 60) return '${m}m ${s}s';
+    return '${m ~/ 60}h ${m % 60}m';
+  }
+
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
@@ -223,6 +237,32 @@ class VibeSegmentBubble extends StatelessComponent {
           bodyRowComponents: rows,
           mutedColor: theme.success,
           activeColor: theme.warning,
+        ),
+      );
+    }
+
+    // Persisted progress box: the compact echo of a long-running bash
+    // call that reported progress signals. Green ✓ on success, warning
+    // ✗ on failure — same palette convention as the other boxes (muted
+    // color carries the state; the box is never "active" once persisted).
+    if (segment.progress != null) {
+      final p = segment.progress!;
+      final ok = p.exitCode == 0;
+      final phase = p.phase ?? 'bash';
+      final details = <String>[];
+      if (p.peakPercent != null) details.add('${p.peakPercent!.round()}%');
+      if (p.bytes > 0) details.add(_fmtBytes(p.bytes));
+      if (p.durationSec > 0) details.add(_fmtDuration(p.durationSec));
+      final row = ok
+          ? '✓ $phase${details.isEmpty ? '' : ' · ${details.join(' · ')}'}'
+          : '✗ $phase failed'
+                '${p.peakPercent != null ? ' at ${p.peakPercent!.round()}%' : ''}';
+      boxes.add(
+        VibeBox(
+          title: 'progress',
+          bodyRows: [row],
+          mutedColor: ok ? theme.success : theme.warning,
+          activeColor: theme.accent,
         ),
       );
     }

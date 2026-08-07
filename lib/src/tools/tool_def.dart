@@ -4,6 +4,7 @@ import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'shell_monitor.dart';
+import 'shell_progress_parser.dart';
 import 'shell_risk.dart';
 
 class AbortSignal {
@@ -83,6 +84,19 @@ class ToolContext {
   /// non-null — logging without a live monitor would be empty.
   final ShellMonitorLogSink? shellMonitorLogSink;
 
+  /// Optional sink for live bash-progress snapshots (see
+  /// `lib/src/services/shell_progress_registry.dart`). Injected by
+  /// the chat executor for every shell call; a null sink disables
+  /// the vibe progress box entirely (the shell base's default, so
+  /// tests and non-shell callers need no changes).
+  ///
+  /// Unlike [shellMonitorEvaluator], this is INDEPENDENT of the
+  /// auxiliary model: the shell base parses the command's own output
+  /// stream for progress signals (percent / bars / phase words) and
+  /// forwards normalized snapshots here, so the progress box works
+  /// with or without an aux model configured.
+  final ShellProgressSink? shellProgressSink;
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
@@ -93,6 +107,7 @@ class ToolContext {
     this.shellRiskEvaluator,
     this.shellMonitorEvaluator,
     this.shellMonitorLogSink,
+    this.shellProgressSink,
   });
 }
 

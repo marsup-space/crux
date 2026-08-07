@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
+import '../services/shell_progress_registry.dart';
 import '../theme/crux_theme.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
@@ -370,6 +371,56 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       );
     }
 
+    // ── Progress box (live long-running bash) ───────────────────
+    // Joins the think/tools/files row as a fourth box so the whole
+    // turn's state stays on one line of boxes. Each entry renders as
+    // multiple short body rows (bar+percent / phase / rate·ETA /
+    // elapsed) instead of one long packed line, plus the raw output
+    // line as dim evidence. Entries only render once they've run ≥2s,
+    // so a fast command that happened to mention "Downloading" never
+    // flashes a box. A base-segment summary (a previous round's bash
+    // whose box already closed) renders as a dim ✓/✗ row inside the
+    // box, matching how think/tools/files merge persisted tails.
+    final now = DateTime.now();
+    final liveProgress = ShellProgressRegistry.instance
+        .entriesFor(component.sessionId)
+        .where((e) => now.difference(e.startedAt).inSeconds >= 2)
+        .toList();
+    final baseProgress = component.baseSegment?.progress;
+    final progressRows = <Component>[];
+    for (final entry in liveProgress) {
+      final rowColor = entry.finished ? theme.onSurfaceVariant : theme.text;
+      for (final row in _liveProgressRows(entry, now)) {
+        progressRows.add(Text(row, style: TextStyle(color: rowColor)));
+      }
+      final raw = entry.progress.lastLine;
+      if (raw.isNotEmpty) {
+        final capped = raw.length <= 80 ? raw : raw.substring(0, 80);
+        progressRows.add(
+          Text(capped, style: TextStyle(color: theme.onSurfaceDim)),
+        );
+      }
+    }
+    if (baseProgress != null) {
+      progressRows.add(
+        Text(
+          _renderBaseProgressLine(baseProgress),
+          style: TextStyle(color: theme.onSurfaceVariant),
+        ),
+      );
+    }
+    if (progressRows.isNotEmpty) {
+      boxes.add(
+        VibeBox(
+          title: 'progress',
+          bodyRowComponents: progressRows,
+          active: liveProgress.any((e) => !e.finished),
+          mutedColor: theme.warning,
+          activeColor: theme.accent,
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -471,5 +522,84 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     // `oldString` / `content` / `intent` arrive.
     final m = RegExp(r'"filePath"\s*:\s*"([^"]*)"').firstMatch(json);
     return m?.group(1);
+  }
+
+  /// Render one live progress entry as its body rows — one fact per
+  /// line so the box stays narrow instead of packing the whole meter
+  /// into a single long string:
+  ///
+  ///   `[########----------] 68%`
+  ///   `Receiving objects`
+  ///   `12.4MB/s · ETA 1m`
+  ///   `3m 05s`
+  ///
+  /// The bar row is omitted when no percent was detected (phase-only
+  /// box); the rate/ETA row and the elapsed row are omitted when
+  /// their data is absent. The `✓` marker lands on the first row of
+  /// a finished entry.
+  List<String> _liveProgressRows(ShellProgressEntry entry, DateTime now) {
+    final p = entry.progress;
+    final rows = <String>[];
+    final percent = p.percent;
+    if (percent != null) {
+      final filled = (percent / 100 * 20).round().clamp(0, 20);
+      final bar =
+          '[${List.filled(filled, '#').join()}${List.filled(20 - filled, '-').join()}] ${percent.round()}%';
+      rows.add(entry.finished ? '✓ $bar' : bar);
+    }
+    final phase = p.phase;
+    if (phase != null) {
+      rows.add(percent == null && entry.finished ? '✓ $phase' : phase);
+    }
+    if (percent == null && p.phase == null) {
+      rows.add(entry.finished ? '✓ done' : 'running');
+    }
+    final stats = <String>[];
+    if (p.ratePerSec != null) stats.add(_formatRate(p.ratePerSec!));
+    if (p.eta != null) stats.add('ETA ${p.eta}');
+    if (stats.isNotEmpty) rows.add(stats.join(' · '));
+    final elapsed = now.difference(entry.startedAt);
+    if (elapsed.inSeconds > 0) rows.add(_formatElapsed(elapsed));
+    return rows;
+  }
+
+  /// Render the persisted (base-segment) progress summary as a dim
+  /// one-liner — the closed box of a previous round's bash.
+  String _renderBaseProgressLine(ProgressBoxData p) {
+    final phase = p.phase ?? 'bash';
+    final ok = p.exitCode == 0;
+    final details = <String>[];
+    if (p.peakPercent != null) details.add('${p.peakPercent!.round()}%');
+    if (p.bytes > 0) details.add(_formatBytes(p.bytes));
+    if (p.durationSec > 0) {
+      details.add(_formatElapsed(Duration(seconds: p.durationSec)));
+    }
+    if (ok) return '✓ $phase${details.isEmpty ? '' : ' · ${details.join(' · ')}'}';
+    return '✗ $phase failed';
+  }
+
+  static String _formatRate(double bytesPerSec) {
+    if (bytesPerSec >= 1024 * 1024) {
+      return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)}MB/s';
+    }
+    if (bytesPerSec >= 1024) {
+      return '${(bytesPerSec / 1024).toStringAsFixed(1)}KB/s';
+    }
+    return '${bytesPerSec.round()}B/s';
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+  }
+
+  static String _formatElapsed(Duration d) {
+    final totalSeconds = d.inSeconds;
+    if (totalSeconds < 60) return '${totalSeconds}s';
+    final m = d.inMinutes;
+    final s = totalSeconds % 60;
+    if (m < 60) return '${m}m ${s}s';
+    return '${d.inHours}h ${m % 60}m';
   }
 }

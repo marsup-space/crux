@@ -41,6 +41,7 @@ Message _toolResultMsg({
   String content = '',
   int tokensIn = 0,
   int tokensOut = 0,
+  String meta = '',
 }) => Message(
   id: id,
   sessionId: 1,
@@ -49,6 +50,7 @@ Message _toolResultMsg({
   toolCallId: toolCallId,
   tokensIn: tokensIn,
   tokensOut: tokensOut,
+  meta: meta,
 );
 
 void main() {
@@ -205,6 +207,109 @@ void main() {
       expect(tools.entries[0].callCount, 1);
       expect(tools.entries[1].name, 'grep');
       expect(tools.entries[1].callCount, 1);
+    });
+
+    test('bash progress meta lands in segment.progress', () {
+      final callId = 'call-p1';
+      final messages = [
+        _userMsg('install deps', id: 1),
+        _toolCallMsg(
+          id: 2,
+          toolCalls: [
+            ToolCallData(
+              callId: callId,
+              name: 'bash',
+              input: {'command': 'apt install'},
+            ),
+          ],
+        ),
+        _toolResultMsg(
+          id: 3,
+          toolCallId: callId,
+          content: '...output...',
+          meta:
+              '{"shellProgress":{"phase":"Downloading","peakPercent":45,'
+              '"durationSec":12,"bytes":1024,"exitCode":0}}',
+        ),
+        _aiMsg('Done.', id: 4),
+      ];
+      final segments = walkSegments(
+        messages,
+        {callId: messages[2]},
+        ToolRegistry(),
+      );
+
+      expect(segments.length, 1);
+      final progress = segments[0].progress;
+      expect(progress, isNotNull);
+      expect(progress!.phase, 'Downloading');
+      expect(progress.peakPercent, closeTo(45, 0.5));
+      expect(progress.durationSec, 12);
+      expect(progress.bytes, 1024);
+      expect(progress.exitCode, 0);
+    });
+
+    test('parallel bash runs merge into one progress box', () {
+      final c1 = 'call-m1';
+      final c2 = 'call-m2';
+      final messages = [
+        _userMsg('install', id: 1),
+        _toolCallMsg(
+          id: 2,
+          toolCalls: [
+            ToolCallData(callId: c1, name: 'bash', input: {'command': 'a'}),
+            ToolCallData(callId: c2, name: 'bash', input: {'command': 'b'}),
+          ],
+        ),
+        _toolResultMsg(
+          id: 3,
+          toolCallId: c1,
+          meta:
+              '{"shellProgress":{"phase":"Fetching","peakPercent":30,'
+              '"durationSec":5,"bytes":100,"exitCode":0}}',
+        ),
+        _toolResultMsg(
+          id: 4,
+          toolCallId: c2,
+          meta:
+              '{"shellProgress":{"phase":"Installing","peakPercent":70,'
+              '"durationSec":9,"bytes":200,"exitCode":0}}',
+        ),
+        _aiMsg('Done.', id: 5),
+      ];
+      final segments = walkSegments(
+        messages,
+        {c1: messages[2], c2: messages[3]},
+        ToolRegistry(),
+      );
+
+      final progress = segments[0].progress;
+      expect(progress, isNotNull);
+      expect(progress!.phase, 'Installing'); // last wins
+      expect(progress.peakPercent, closeTo(70, 0.5)); // highest
+      expect(progress.durationSec, 9); // longest
+      expect(progress.bytes, 300); // summed
+    });
+
+    test('bash run without progress meta produces no progress box', () {
+      final callId = 'call-np';
+      final messages = [
+        _userMsg('ls', id: 1),
+        _toolCallMsg(
+          id: 2,
+          toolCalls: [
+            ToolCallData(callId: callId, name: 'bash', input: {'command': 'ls'}),
+          ],
+        ),
+        _toolResultMsg(id: 3, toolCallId: callId, content: 'foo.txt'),
+        _aiMsg('Done.', id: 4),
+      ];
+      final segments = walkSegments(
+        messages,
+        {callId: messages[2]},
+        ToolRegistry(),
+      );
+      expect(segments[0].progress, isNull);
     });
 
     test('system-role messages are skipped entirely', () {
