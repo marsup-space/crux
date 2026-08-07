@@ -6,6 +6,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
 import 'package:crux/src/components/home/home_layout_store.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
+import 'package:crux/src/services/spec_widget_registry.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
@@ -184,6 +185,14 @@ void main(List<String> args) async {
       bootState: results.chatPanelBootState,
       gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
+      // Spec-widget registry keyed on the project this session opened:
+      // it scans `.crux/widgets/*.toml` (Phase B), so any session that
+      // writes a spec file into this project's `.crux/widgets/` shows
+      // up in this session's sidebar within ~2 s. The dev-harness
+      // widget is just the seeded default spec.
+      specWidgetRegistry: SpecWidgetRegistry(
+        projectPath: Directory.current.path,
+      )..start(),
       showHomeOnLaunch: showHomeOnLaunch,
       homeLayoutStore: homeLayoutStore,
       initialHomeLayout: homeLayoutConfig.layout,
@@ -579,6 +588,10 @@ class _CruxApp extends StatefulComponent {
   final ChatPanelBootState bootState;
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
+
+  /// Session-keyed spec-widget registry, forwarded to the sidebar via
+  /// [ChatPanel]. Disposed with this state.
+  final SpecWidgetRegistry specWidgetRegistry;
   final List<String> startupWarnings;
   final bool showHomeOnLaunch;
 
@@ -598,6 +611,7 @@ class _CruxApp extends StatefulComponent {
     required this.bootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
+    required this.specWidgetRegistry,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
     this.homeLayoutStore,
@@ -631,6 +645,7 @@ class _CruxAppState extends State<_CruxApp> {
     // its first frame) we still need to release the listener
     // subscriptions to avoid leaking the ChangeNotifier.
     component.recentProjectsStore.dispose();
+    component.specWidgetRegistry.dispose();
     super.dispose();
   }
 
@@ -663,6 +678,7 @@ class _CruxAppState extends State<_CruxApp> {
               themeController: component.themeController,
               bootState: component.bootState,
               gitStatusService: component.gitStatusService,
+              specWidgetRegistry: component.specWidgetRegistry,
               recentProjectsStore: component.recentProjectsStore,
               startupWarnings: component.startupWarnings,
               showHomeOnLaunch: component.showHomeOnLaunch,

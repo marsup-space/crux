@@ -3,6 +3,7 @@
 
 import 'dart:io';
 
+import 'package:crux/src/services/skills/built_in_skills.dart';
 import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/services/skills/skill_discovery.dart';
 import 'package:path/path.dart' as p;
@@ -27,6 +28,16 @@ String _writeSkill(
   return dir.path;
 }
 
+/// The built-in skills are prepended by `discoverSkills` and reserve
+/// their names; tests in this file assert on the file-discovered
+/// remainder.
+final _nBuiltIns = builtInSkills.length;
+final _builtInNames = builtInSkills.map((s) => s.name).toList();
+
+/// File-discovered skills (built-ins stripped).
+List<SkillInfo> fileSkills(List<SkillInfo> result) =>
+    result.sublist(_nBuiltIns);
+
 void main() {
   late Directory projectRoot;
   late Directory fakeHome;
@@ -45,18 +56,19 @@ void main() {
   });
 
   group('discoverSkills — empty', () {
-    test('returns an empty list when no skills exist anywhere', () {
+    test('returns only the built-ins when no file skills exist anywhere', () {
       final result = discoverSkills(
         cwd: projectRoot.path,
         homeOverride: fakeHome.path,
         userDataDirOverride: fakeUserData.path,
       );
-      expect(result, isEmpty);
+      expect(result, hasLength(_nBuiltIns));
+      expect(fileSkills(result), isEmpty);
     });
   });
 
-  group('discoverSkills — project walk', () {
-    test('finds a skill in the cwd\'s .crux/skills/', () {
+  group('discoverSkills — built-ins', () {
+    test('built-ins come first and are always present', () {
       _writeSkill(
         Directory(p.join(projectRoot.path, '.crux', 'skills')),
         folder: 'pr-review',
@@ -68,8 +80,58 @@ void main() {
         homeOverride: fakeHome.path,
         userDataDirOverride: fakeUserData.path,
       );
-      expect(result, hasLength(1));
-      expect(result.first.name, 'pr-review');
+      expect(result.length, _nBuiltIns + 1);
+      expect(result.take(_nBuiltIns).map((s) => s.name), _builtInNames);
+      expect(result.last.name, 'pr-review');
+    });
+
+    test('a user skill reusing a built-in name is shadowed', () {
+      _writeSkill(
+        Directory(p.join(projectRoot.path, '.crux', 'skills')),
+        folder: 'widget',
+        name: 'widget',
+        description: 'User override attempt.',
+      );
+      final result = discoverSkills(
+        cwd: projectRoot.path,
+        homeOverride: fakeHome.path,
+        userDataDirOverride: fakeUserData.path,
+      );
+      expect(result, hasLength(_nBuiltIns));
+      expect(result.first.name, 'widget');
+      expect(result.first.location, '(built-in)');
+    });
+
+    test('findSkillByName resolves a built-in', () {
+      final result = findSkillByName(
+        name: 'widget',
+        cwd: projectRoot.path,
+        homeOverride: fakeHome.path,
+        userDataDirOverride: fakeUserData.path,
+      );
+      expect(result, isA<SkillInfo>());
+      expect(result!.name, 'widget');
+      expect(result.content, contains('.crux/widgets/'));
+    });
+  });
+
+  group('discoverSkills — project walk', () {
+    test('finds a skill in the cwd\'s .crux/skills/', () {
+      _writeSkill(
+        Directory(p.join(projectRoot.path, '.crux', 'skills')),
+        folder: 'pr-review',
+        name: 'pr-review',
+        description: 'Reviews pull requests.',
+      );
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
+      );
+      expect(found, hasLength(1));
+      expect(found.first.name, 'pr-review');
     });
 
     test('also finds a skill under the singular .crux/skill/ alias', () {
@@ -79,13 +141,15 @@ void main() {
         name: 'debugging',
         description: 'Helps debug runtime errors.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.name, 'debugging');
+      expect(found, hasLength(1));
+      expect(found.first.name, 'debugging');
     });
 
     test('prefers the plural .crux/skills/ over the singular alias', () {
@@ -101,13 +165,15 @@ void main() {
         name: 'foo',
         description: 'From singular.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'From plural.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'From plural.');
     });
 
     test('finds project-committed skills in .claude/skills/ and '
@@ -149,13 +215,15 @@ void main() {
         name: 'shared',
         description: 'From global home.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'From project.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'From project.');
     });
   });
 
@@ -167,13 +235,15 @@ void main() {
         name: 'pr-review',
         description: 'From Claude.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'From Claude.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'From Claude.');
     });
 
     test('finds skills in ~/.agents/skills/', () {
@@ -183,12 +253,14 @@ void main() {
         name: 'security-audit',
         description: 'From open standard.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
+      expect(found, hasLength(1));
     });
 
     test('finds skills in the crux user-data dir', () {
@@ -198,13 +270,15 @@ void main() {
         name: 'crux-only',
         description: 'From crux data dir.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'From crux data dir.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'From crux data dir.');
     });
   });
 
@@ -222,13 +296,15 @@ void main() {
         name: 'pr-review',
         description: 'Global Claude.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'Project override.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'Project override.');
     });
 
     test('~/.claude/ shadows ~/.agents/ shadows crux data dir', () {
@@ -250,13 +326,15 @@ void main() {
         name: 'shared',
         description: 'From crux data.',
       );
-      final result = discoverSkills(
-        cwd: projectRoot.path,
-        homeOverride: fakeHome.path,
-        userDataDirOverride: fakeUserData.path,
+      final found = fileSkills(
+        discoverSkills(
+          cwd: projectRoot.path,
+          homeOverride: fakeHome.path,
+          userDataDirOverride: fakeUserData.path,
+        ),
       );
-      expect(result, hasLength(1));
-      expect(result.first.description, 'From claude.');
+      expect(found, hasLength(1));
+      expect(found.first.description, 'From claude.');
     });
   });
 
@@ -315,7 +393,7 @@ void main() {
         homeOverride: fakeHome.path,
         userDataDirOverride: fakeUserData.path,
       );
-      expect(result, isEmpty);
+      expect(fileSkills(result), isEmpty);
     });
   });
 

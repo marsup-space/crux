@@ -12,10 +12,12 @@
 /// block of the system prompt; the LLM pattern-matches it to decide
 /// whether to call the `skill` tool.
 ///
-/// [location] is the absolute path to the `SKILL.md` file on disk.
-/// [baseDirectory] is the parent folder (the skill's root). Sibling
+/// [location] is the absolute path to the `SKILL.md` file on disk,
+/// or the sentinel `(built-in)` for file-less built-in skills (see
+/// `built_in_skills.dart`). [baseDirectory] is the parent folder (the
+/// skill's root); for built-ins it is the same sentinel. Sibling
 /// files in this folder (e.g. `references/`, `scripts/`) are exposed
-/// to the LLM by the `skill` tool.
+/// to the LLM by the `skill` tool — built-ins have none.
 ///
 /// [content] is the full file body, frontmatter stripped.
 class SkillInfo {

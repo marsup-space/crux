@@ -112,15 +112,16 @@ void main() {
           'webfetch',
           'session',
           'skill',
+          'widgets',
         ]),
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 12);
+        expect(registry.all.length, 13);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 11);
+        expect(registry.all.length, 12);
       }
     });
   });

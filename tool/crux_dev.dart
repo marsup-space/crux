@@ -33,6 +33,9 @@
 //   service kick-offs belong in initState (as usual), not build.
 // - tool/ itself is NOT watched; editing this file means restarting.
 
+import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -136,22 +139,55 @@ Future<void> main(List<String> args) async {
     );
   }
 
-  await runApp(
-    _DevApp(
-      fakeSize: fakeSize,
-      child: CruxTheme(
-        data: CruxThemeData.draculaFallback,
-        child: HomeScreen(
-          onExit: () => shutdownApp(),
-          context_: context,
-          widgets: stubs ? _stubWidgets() : null,
-          // quitApp: null on purpose — home's Ctrl+C falls back to
-          // nocterm's default immediate exit, which is what a throwaway
-          // dev process wants. esc/q go through [onExit] → shutdownApp.
-        ),
+  // Control server must be reachable from HomeScreen's exit callbacks
+  // (esc, Ctrl+C) — `late final` so the callbacks can close over it
+  // even though it's constructed after the component tree.
+  late final _DevControlServer control;
+
+  final root = _DevApp(
+    fakeSize: fakeSize,
+    child: CruxTheme(
+      data: CruxThemeData.draculaFallback,
+      child: HomeScreen(
+        onExit: () {
+          control.deleteStateFileSync();
+          shutdownApp();
+        },
+        // Ctrl+C on home: same exit path as esc — delete the state
+        // file FIRST. shutdownApp → StdioBackend.requestExit → bare
+        // exit(0) kills the process before `main`'s post-runApp
+        // cleanup can run, so the file must go before the exit.
+        quitApp: () {
+          control.deleteStateFileSync();
+          shutdownApp();
+        },
+        context_: context,
+        widgets: stubs ? _stubWidgets() : null,
       ),
     ),
   );
+
+  control = _DevControlServer(
+    root: root,
+    stateFile: File('.dart_tool/crux_dev.json'),
+    logFile: File('.dart_tool/nocterm_hot_reload.log'),
+  );
+  await control.start();
+  stdout.writeln(
+    'crux dev control: http://127.0.0.1:${control.port} '
+    '(state: .dart_tool/crux_dev.json)',
+  );
+
+  await runApp(root);
+
+  // runApp returned = the app is shutting down (esc → shutdownApp, or
+  // a control-channel close). Drop the state file so the sidebar
+  // switches to "not running", then exit explicitly — lingering
+  // timers (git polling, heartbeat) would otherwise keep the process
+  // alive forever.
+  await control.close();
+  git.dispose();
+  exit(0);
 }
 
 /// The built-ins as the real home screen would create them, but with
@@ -228,5 +264,276 @@ class _DevApp extends StatelessComponent {
       );
     }
     return NoctermApp(title: 'Crux Dev — home', child: content);
+  }
+}
+
+/// Heartbeat state file + loopback HTTP control channel for the dev
+/// harness.
+///
+/// Writes `.dart_tool/crux_dev.json` every 5 s (atomically, via tmp +
+/// rename) so any reader — most notably the running Crux session's
+/// sidebar widget — can tell this harness is alive by heartbeat
+/// freshness alone, without touching process tables.
+///
+///   {
+///     "pid": 71225,
+///     "startedAt": "...", "heartbeatAt": "...",
+///     "controlPort": 54321,
+///     "lastReload": {"at": "...", "result": "succeeded", "path": "..."}
+///   }
+///
+/// HTTP endpoints (loopback only, random port):
+///   GET  /status   → same JSON as the state file, fresh
+///   POST /reload   → VM-service reloadSources (all libraries) + reassemble
+///   POST /remount  → re-attach the root component (initState re-runs)
+///   POST /close    → clean shutdown (shutdownApp)
+///
+/// The reload log is polled so auto-reloads (nocterm's file watcher)
+/// also land in `lastReload` — the state file stays the single source
+/// of truth for the reader.
+class _DevControlServer {
+  final Component root;
+  final File stateFile;
+  final File logFile;
+
+  HttpServer? _server;
+  Timer? _heartbeat;
+  Timer? _logPoll;
+  final DateTime _startedAt = DateTime.now();
+  int _lastLogLength = 0;
+  String? _lastChangePath;
+  Map<String, dynamic>? _lastReload;
+
+  int get port => _server?.port ?? 0;
+
+  _DevControlServer({
+    required this.root,
+    required this.stateFile,
+    required this.logFile,
+  });
+
+  Future<void> start() async {
+    try {
+      _lastLogLength = logFile.lengthSync();
+    } catch (_) {
+      _lastLogLength = 0;
+    }
+    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    _server!.listen(_handleRequest);
+    _heartbeat = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _writeState(),
+    );
+    _logPoll = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _pollReloadLog(),
+    );
+    _writeState();
+  }
+
+  Future<void> close() async {
+    _heartbeat?.cancel();
+    _heartbeat = null;
+    _logPoll?.cancel();
+    _logPoll = null;
+    try {
+      if (stateFile.existsSync()) stateFile.deleteSync();
+    } catch (_) {}
+    try {
+      await _server?.close(force: true);
+    } catch (_) {}
+    _server = null;
+  }
+
+  // ── State file ──────────────────────────────────────────────────
+
+  /// Delete the heartbeat state file synchronously. Must run on EVERY
+  /// exit path before `shutdownApp`: its `StdioBackend.requestExit`
+  /// is a bare `exit(0)` that kills the process before `main`'s
+  /// post-runApp cleanup can run. Without this, a stale file lingers
+  /// and the sidebar widget waits out the heartbeat timeout before
+  /// flipping to "not running".
+  void deleteStateFileSync() {
+    try {
+      if (stateFile.existsSync()) stateFile.deleteSync();
+    } catch (_) {}
+  }
+
+  Map<String, dynamic> _stateJson() => {
+        'pid': pid,
+        'startedAt': _startedAt.toUtc().toIso8601String(),
+        'heartbeatAt': DateTime.now().toUtc().toIso8601String(),
+        'controlPort': port,
+        'lastReload': _lastReload,
+      };
+
+  void _writeState() {
+    try {
+      final tmp = File('${stateFile.path}.tmp');
+      tmp.writeAsStringSync(jsonEncode(_stateJson()));
+      tmp.renameSync(stateFile.path);
+    } catch (e) {
+      // Best-effort: a read-only .dart_tool must not kill the harness.
+      stderr.writeln('crux dev: state write failed: $e');
+    }
+  }
+
+  // ── Reload log polling (auto-reloads) ───────────────────────────
+
+  void _pollReloadLog() {
+    int length;
+    try {
+      length = logFile.lengthSync();
+    } catch (_) {
+      return;
+    }
+    if (length <= _lastLogLength) return;
+    String tail;
+    try {
+      final raf = logFile.openSync();
+      try {
+        raf.setPositionSync(_lastLogLength);
+        tail = utf8.decode(raf.readSync(length - _lastLogLength));
+      } finally {
+        raf.closeSync();
+      }
+    } catch (_) {
+      return;
+    }
+    _lastLogLength = length;
+    for (final line in tail.split('\n')) {
+      final change = RegExp(r'Change detected: (.+)$').firstMatch(line);
+      if (change != null) {
+        _lastChangePath = change.group(1);
+        continue;
+      }
+      String? result;
+      if (line.contains('Hot reload succeeded')) {
+        result = 'succeeded';
+      } else if (line.contains('Hot reload partially succeeded')) {
+        result = 'partial';
+      } else if (line.contains('Hot reload FAILED')) {
+        result = 'failed';
+      }
+      if (result != null) {
+        _lastReload = {
+          'at': DateTime.now().toUtc().toIso8601String(),
+          'result': result,
+          'path': _lastChangePath,
+        };
+        _writeState();
+      }
+    }
+  }
+
+  // ── HTTP handlers ───────────────────────────────────────────────
+
+  Future<void> _handleRequest(HttpRequest req) async {
+    final res = req.response;
+    try {
+      final path = req.uri.path;
+      if (req.method == 'GET' && path == '/status') {
+        res.headers.contentType = ContentType.json;
+        res.write(jsonEncode(_stateJson()));
+      } else if (req.method == 'POST' && path == '/reload') {
+        final ok = await _vmReload();
+        _lastReload = {
+          'at': DateTime.now().toUtc().toIso8601String(),
+          'result': ok ? 'succeeded' : 'failed',
+          'path': _lastChangePath ?? 'manual',
+        };
+        _writeState();
+        res.write(ok ? 'ok' : 'failed');
+      } else if (req.method == 'POST' && path == '/remount') {
+        TerminalBinding.instance.attachRootComponent(root);
+        TerminalBinding.instance.scheduleFrame();
+        res.write('ok');
+      } else if (req.method == 'POST' && path == '/close') {
+        // Delete the state file HERE, not (only) in [close]: the
+        // shutdown path below calls StdioBackend.requestExit → bare
+        // exit(0), which kills the process before `main`'s post-runApp
+        // cleanup can run. The 50 ms delay before shutdownApp leaves
+        // no room for a heartbeat rewrite (next tick is 5 s away).
+        deleteStateFileSync();
+        res.write('ok');
+        // Let the response flush before the event loop unwinds.
+        unawaited(
+          Future<void>.delayed(
+            const Duration(milliseconds: 50),
+            () => shutdownApp(0),
+          ),
+        );
+      } else {
+        res.statusCode = 404;
+        res.write('not found');
+      }
+    } catch (e) {
+      res.statusCode = 500;
+      res.write('$e');
+    } finally {
+      await res.close();
+    }
+  }
+
+  // ── VM-service reload (the "r" in the sidebar) ───────────────────
+
+  /// Full reloadSources across every loaded library, then a manual
+  /// reassemble + frame. This is the same mechanism nocterm's own
+  /// file watcher uses; doing it on demand covers edits the watcher
+  /// can't see (tool/, providers/, …) and gives the user a manual
+  /// trigger after a failed auto-reload is fixed.
+  Future<bool> _vmReload() async {
+    try {
+      final info = await developer.Service.getInfo();
+      final wsUrl = info.serverWebSocketUri;
+      if (wsUrl == null) return false;
+      final ws = await WebSocket.connect(wsUrl.toString())
+          .timeout(const Duration(seconds: 5));
+      var id = 0;
+      final pending = <String, Completer<Map<String, dynamic>>>{};
+      ws.listen((raw) {
+        final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+        pending.remove(msg['id'])?.complete(msg);
+      });
+      Future<Map<String, dynamic>> call(
+        String method, [
+        Map<String, dynamic>? params,
+      ]) {
+        final myId = '${++id}';
+        final c = Completer<Map<String, dynamic>>();
+        pending[myId] = c;
+        ws.add(jsonEncode({
+          'jsonrpc': '2.0',
+          'id': myId,
+          'method': method,
+          'params': params ?? {},
+        }));
+        return c.future.timeout(const Duration(seconds: 10));
+      }
+
+      final vm = await call('getVM');
+      final isolateId =
+          (vm['result']?['isolates'] as List?)?[0]?['id'] as String?;
+      if (isolateId == null) return false;
+      final iso = await call('getIsolate', {'isolateId': isolateId});
+      final libs = (iso['result']?['libraries'] as List? ?? const [])
+          .map((l) => (l as Map)['id'])
+          .whereType<String>()
+          .toList();
+      final res = await call('reloadSources', {
+        'isolateId': isolateId,
+        'libraries': libs,
+        'pause': false,
+      });
+      await ws.close();
+      if (res['error'] != null) return false;
+      // Code is swapped; rebuild the tree + paint a frame. (Nocterm's
+      // own reload path does the same via its onAfterReload hook.)
+      TerminalBinding.instance.reassemble();
+      TerminalBinding.instance.scheduleFrame();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

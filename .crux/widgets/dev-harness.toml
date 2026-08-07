@@ -1,0 +1,57 @@
+# Dev-harness widget — the seeded default spec widget (Phase B).
+#
+# Shows whether the crux hot-reload harness (tool/crux_dev.dart) is
+# running for THIS project, what its last reload did, and exposes
+# reload / remount / close controls. The harness writes its heartbeat
+# state to .dart_tool/crux_dev.json; this spec just reads it.
+#
+# Schema docs: lib/src/services/spec_widget.dart.
+#
+# TOML gotcha: the fallback_* keys MUST stay above [[status.state_rules]]
+# — after an array-of-tables entry, bare keys belong to the LAST array
+# element, not to [status], so the parser would never read them.
+
+id = "dev-harness"
+title = "crux dev"
+label = "⟳ crux dev · {state}"
+refresh_ms = 2000
+
+[status]
+path = ".dart_tool/crux_dev.json"
+heartbeat_field = "heartbeatAt"
+stale_after_seconds = 15
+fallback_alive_text = "●"
+fallback_stale_text = "stale"
+fallback_absent_text = "not running"
+
+[[status.state_rules]]
+when = { field = "lastReload.result", equals = "succeeded" }
+text = "✓ {lastReload.at@HH:MM}"
+color = "normal"
+
+[[status.state_rules]]
+when = { field = "lastReload.result", equals = "failed" }
+text = "✗ reload failed"
+color = "error"
+
+# Start: shown only while the harness is NOT running (launch kind).
+# Opens a fresh terminal in the project root and runs the command.
+# `--live` matters: it loads the project's real sessions into the
+# workspace box (default mode uses HomeContext.minimal → always 0).
+[[actions]]
+label = "start"
+kind = "launch"
+command = "dart --enable-vm-service tool/crux_dev.dart home --live"
+
+# Control: shown only while the harness IS running (http kind).
+[[actions]]
+label = "reload"
+url = "http://127.0.0.1:{controlPort}/reload"
+
+[[actions]]
+label = "remount"
+url = "http://127.0.0.1:{controlPort}/remount"
+
+[[actions]]
+label = "close"
+url = "http://127.0.0.1:{controlPort}/close"

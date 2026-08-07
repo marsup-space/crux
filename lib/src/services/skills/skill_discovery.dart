@@ -29,6 +29,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+import 'built_in_skills.dart';
 import 'skill.dart';
 
 // =============================================================================
@@ -348,10 +349,11 @@ String _resolveCruxUserDataDir({String? home}) {
 /// `.agents/skills`). After the project walk, it always scans
 /// the three global roots.
 ///
-/// Returned order: project skills first (closer-to-cwd first),
-/// then global skills (in the global order above). Skill names
-/// are deduped by the first match — the same name appearing in a
-/// higher-priority location shadows the lower-priority copy.
+/// Returned order: built-in skills first (file-less, always present
+/// — see `built_in_skills.dart`), then project skills (closer-to-cwd
+/// first), then global skills (in the global order above). Skill
+/// names are deduped by the first match — a built-in name is
+/// reserved: any user skill reusing one is shadowed.
 ///
 /// [homeOverride], [userDataDirOverride], and [projectSkillsDirNamesOverride]
 /// exist purely to make the discovery logic testable without
@@ -362,8 +364,9 @@ List<SkillInfo> discoverSkills({
   String? userDataDirOverride,
   List<String>? projectSkillsDirNamesOverride,
 }) {
-  final seen = <String>{};
-  final result = <SkillInfo>[];
+  // --- 0. Built-ins: no files, always available, names reserved ---
+  final seen = <String>{for (final s in builtInSkills) s.name};
+  final result = <SkillInfo>[...builtInSkills];
 
   // --- 1. Project walk: cwd → worktree ---
   final projectDirs = projectSkillsDirNamesOverride ?? _projectSkillsDirNames;

@@ -41,6 +41,13 @@ CLAUDE.md
 # Local chat-input skill scaffold (used during development to test
 # the picker; not part of the shipped app).
 .crux/
+# ...but spec widgets (Phase B: `.crux/widgets/*.toml`) ARE source —
+# they ship with the repo so every session gets the seeded widgets.
+# Anchored to the repo root: a stray `.crux` cache deeper in the tree
+# (e.g. lib/src/services/.crux/semble_cache/) stays ignored.
+!/.crux/
+!/.crux/widgets/
+!/.crux/widgets/**
 
 # Semble semantic-search index cache (written by the search isolate
 # into <root>/.cache/semble; not source).

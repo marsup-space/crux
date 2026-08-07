@@ -13,6 +13,8 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
+import '../services/spec_widget.dart';
+import '../services/spec_widget_registry.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
@@ -207,6 +209,13 @@ class ChatPanel extends StatefulComponent {
   final ThemeController themeController;
   final ChatPanelBootState? bootState;
   final GitStatusService? gitStatusService;
+
+  /// Spec-widget registry for the current project, forwarded to the
+  /// side panel as [ExtraInfoPanel.specWidgets]. Null in tests — no
+  /// spec rows then. Listened to so spec files appearing/disappearing
+  /// (written by any session) refresh the panel live.
+  final SpecWidgetRegistry? specWidgetRegistry;
+
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
 
@@ -233,6 +242,7 @@ class ChatPanel extends StatefulComponent {
     required this.themeController,
     this.bootState,
     this.gitStatusService,
+    this.specWidgetRegistry,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
@@ -464,6 +474,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _recentProjectsStore = component.recentProjectsStore;
     _recentProjectsStore.addListener(_refresh);
     _recentProjectsStore.addListener(_refreshGitStatus);
+    component.specWidgetRegistry?.addListener(_refresh);
     if (bootState == null) {
       _initSessions();
       _providerService.initialize().then((_) {
@@ -641,6 +652,88 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
+  /// A `prompt`-kind spec-widget action (quick action) submits its
+  /// rendered template as a user message to the current session —
+  /// the same path as a typed message or a quick-reply tap, so all
+  /// the mid-stream guards apply identically.
+  void _handleSpecPromptAction(SpecAction action, String renderedPrompt) {
+    final text = renderedPrompt.trim();
+    if (text.isEmpty) return;
+    _chatInputKey.currentState?.submit(text);
+  }
+
+  /// A `shell`-kind spec-widget action runs its command in the
+  /// project root, toasts the outcome, and records it into the
+  /// session context so the agent sees what the user ran and how it
+  /// went — without starting a turn.
+  Future<void> _handleSpecShellAction(
+    SpecAction action,
+    String renderedCommand,
+  ) async {
+    final sessionId = _sessionController.currentSessionId;
+    final result = await runSpecShellAction(
+      action,
+      // The command is already rendered by the widget; pass an empty
+      // map so renderActionCommand returns it unchanged.
+      const {},
+      Directory.current.path,
+    );
+    if (!mounted) return;
+
+    final ok = result.ok;
+    _showToast(
+      ok
+          ? '✓ ${action.label} finished'
+          : '✗ ${action.label} failed (exit ${result.exitCode})',
+      mode: ok ? null : ToastMode.error,
+    );
+
+    if (sessionId != null) {
+      final buf = StringBuffer()
+        ..writeln(
+          '[Widget action] The user clicked `${action.label}` and ran '
+          '`$renderedCommand` in the project root.',
+        )
+        ..writeln('Exit code: ${result.exitCode}');
+      if (result.tail.isNotEmpty) {
+        buf.writeln('Output (tail):');
+        buf.writeln('```');
+        buf.writeln(result.tail);
+        buf.writeln('```');
+      }
+      await _store.messageStore.addMessage(
+        sessionId,
+        role: 'user',
+        content: buf.toString().trimRight(),
+      );
+      await _sessionController.loadMessages(sessionId);
+      _refresh();
+    }
+  }
+
+  /// Record any spec-widget interaction (http / launch / shell /
+  /// prompt click) into the session context as a lightweight note.
+  /// The note carries the action's OUTCOME for http / launch (the
+  /// widget awaits those before calling), so the agent sees not just
+  /// that the user clicked but whether it worked. Failures are
+  /// swallowed — recording must never break the UI action it
+  /// annotates.
+  Future<void> _recordSpecAction(String note) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
+    try {
+      await _store.messageStore.addMessage(
+        sessionId,
+        role: 'user',
+        content: '[Widget action] The user $note.',
+      );
+      await _sessionController.loadMessages(sessionId);
+      if (mounted) _refresh();
+    } catch (_) {
+      // Recording is best-effort; never surface.
+    }
+  }
+
   void _handleQuickReplyTap(QuickReply reply) {
     final input = _chatInputKey.currentState;
     if (input == null) return;
@@ -682,6 +775,7 @@ class _ChatPanelState extends State<ChatPanel> {
     FrameProfiler.instance.clearSnapshotProvider();
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);
+    component.specWidgetRegistry?.removeListener(_refresh);
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -1642,6 +1736,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onCreateChat: _sessionController.createChatSession,
                       onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
+                      specWidgets: component.specWidgetRegistry?.widgets,
                       onSessionTitleTap: () {
                         setState(() {
                           _overlayController.showSessionManager = true;
@@ -1651,6 +1746,9 @@ class _ChatPanelState extends State<ChatPanel> {
                       onSwitchProject: _switchProject,
                       sessionController: _sessionController,
                       onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
+                      onSpecPromptAction: _handleSpecPromptAction,
+                      onSpecShellAction: _handleSpecShellAction,
+                      onSpecAction: _recordSpecAction,
                     ),
                   ),
                 ],

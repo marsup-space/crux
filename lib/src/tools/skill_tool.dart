@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
+import '../services/skills/built_in_skills.dart';
 import '../services/skills/skill.dart';
 import '../services/skills/skill_discovery.dart';
 import 'tool_def.dart';
@@ -178,10 +179,12 @@ List<String> _sampleSiblings(SkillInfo skill) {
 
 /// Render the body in the opencode-compatible `<skill_content>` shape
 /// so any LLM trained on opencode/openclaude skill transcripts
-/// pattern-matches the structure.
+/// pattern-matches the structure. Built-in skills have no base
+/// directory — the "base directory" lines are omitted for them.
 String _renderSkillContent(SkillInfo skill, List<String> siblings) {
   final baseDir = skill.baseDirectory;
   final body = skill.content.trim();
+  final isBuiltIn = baseDir == kBuiltInSkillLocation;
 
   final lines = <String>[
     '<skill_content name="${skill.name}">',
@@ -189,9 +192,12 @@ String _renderSkillContent(SkillInfo skill, List<String> siblings) {
     '',
     body,
     '',
-    'Base directory for this skill: $baseDir',
-    'Relative paths in this skill (e.g., scripts/, reference/, assets/) '
-        'are relative to this base directory.',
+    if (!isBuiltIn) ...[
+      'Base directory for this skill: $baseDir',
+      'Relative paths in this skill (e.g., scripts/, reference/, assets/) '
+          'are relative to this base directory.',
+    ] else
+      'This skill is built into Crux — it has no files on disk.',
     if (siblings.isNotEmpty) ...[
       '',
       '<skill_files>',

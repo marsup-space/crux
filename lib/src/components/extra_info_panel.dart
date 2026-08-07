@@ -8,12 +8,14 @@ import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../services/git_status_service.dart';
+import '../services/spec_widget.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
 import 'git_status_widget.dart';
+import 'spec_sidebar_widget.dart';
 import 'session_controller.dart';
 import 'ui/auxiliary_model_button.dart';
 import 'ui/fps_counter.dart';
@@ -90,6 +92,12 @@ class ExtraInfoPanel extends StatefulComponent {
   /// instance here would orphan the timer (and leak it on dispose).
   final GitStatusService gitStatusService;
 
+  /// Spec-driven sidebar widgets for the current project (Phase B —
+  /// `.crux/widgets/*.toml`, discovered by [SpecWidgetRegistry]). Each
+  /// renders one row above the git status. Null in tests/contexts
+  /// where no spec widgets should appear.
+  final List<SpecWidget>? specWidgets;
+
   /// Session controller backing the [AuxiliaryModelButton] rendered
   /// just above the git status / project widgets. Optional so tests
   /// that don't exercise the button can omit it; when null the
@@ -99,6 +107,25 @@ class ExtraInfoPanel extends StatefulComponent {
   /// Called when the user clicks the auxiliary-model button. The
   /// chat panel wires this to `stashAndSetCommand('/auxiliary ')`.
   final VoidCallback? onAuxiliaryPressed;
+
+  /// Called when the user clicks a `prompt`-kind action segment on a
+  /// spec widget — the chat panel submits the rendered message to the
+  /// current session. Null in tests/contexts with no chat to submit
+  /// to; prompt segments are then hidden.
+  final void Function(SpecAction action, String renderedPrompt)?
+      onSpecPromptAction;
+
+  /// Called when the user clicks a `shell`-kind action segment — the
+  /// chat panel runs [renderedCommand] in the project root, toasts
+  /// the result, and records it into the session context. When null
+  /// the widget runs the command itself with no session record.
+  final Future<void> Function(SpecAction action, String renderedCommand)?
+      onSpecShellAction;
+
+  /// Called after ANY spec-widget action fires — a description of
+  /// what the user did and the outcome, recorded into the session
+  /// context so the agent can see the user's widget interactions.
+  final Future<void> Function(String note)? onSpecAction;
 
   const ExtraInfoPanel({
     required this.sessions,
@@ -110,11 +137,15 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onCreateChat,
     this.onCreateSession,
     required this.gitStatusService,
+    this.specWidgets,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
     this.sessionController,
     this.onAuxiliaryPressed,
+    this.onSpecPromptAction,
+    this.onSpecShellAction,
+    this.onSpecAction,
   });
 
   @override
@@ -607,6 +638,20 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     },
                   ),
                 ),
+                // Spec-driven sidebar widgets (Phase B): one boxed row
+                // per `.crux/widgets/*.toml` spec — status label +
+                // action segments. Written by any session, rendered by
+                // every session on the same project. Sits directly
+                // above the auxiliary-model button, grouped with the
+                // panel's workspace-level controls.
+                for (final spec in component.specWidgets ?? const <SpecWidget>[])
+                  SpecSidebarWidget(
+                    spec: spec,
+                    projectPath: Directory.current.path,
+                    onPromptAction: component.onSpecPromptAction,
+                    onShellAction: component.onSpecShellAction,
+                    onAction: component.onSpecAction,
+                  ),
                 // Auxiliary-model button, hosted by the side panel
                 // on wide terminals (on narrow terminals the chat
                 // toolbar renders it instead). Sits directly above
