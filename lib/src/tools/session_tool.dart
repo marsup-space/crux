@@ -78,7 +78,9 @@ class SessionTool extends ToolDef {
       'is required), '
       '`messages` (full messages from one session, paginated by id; '
       '`sessionId` is required), '
-      '`search` (regex across messages in one or more sessions, ripgrep-style). '
+      '`search` (regex across messages in one or more sessions, ripgrep-style; '
+      'the current session is excluded unless pinned via `sessionId` or '
+      '`includeCurrent: true`). '
       'Tool results (the `tool` role rows that record bash / read / edit output) '
       'are searchable like any other content. '
       'Search is bounded: by default it scans the 50 most-recent sessions so a '
@@ -130,9 +132,10 @@ class SessionTool extends ToolDef {
       'includeCurrent': {
         'type': 'boolean',
         'description':
-            'For `list`: include the current session (default false). The '
-            'agent already has the current conversation in context, so it is '
-            'hidden by default; set true to see it in the listing.',
+            'For `list` and `search`: include the current session (default '
+            'false). The agent already has the current conversation in '
+            'context, so it is hidden/excluded by default; set true to '
+            'include it. Ignored when `search` pins a `sessionId`.',
       },
       'project': {
         'type': 'string',
@@ -231,6 +234,7 @@ class SessionTool extends ToolDef {
         return _searchSessions(
           pattern: pattern,
           sessionId: sessionId,
+          includeCurrent: (args['includeCurrent'] as bool?) ?? false,
           caseInsensitive: (args['caseInsensitive'] as bool?) ?? false,
           headLimit: (args['headLimit'] as int?) ?? 50,
           maxSessions: (args['maxSessions'] as int?) ?? 50,
@@ -509,6 +513,7 @@ class SessionTool extends ToolDef {
   Future<ToolResult> _searchSessions({
     required String pattern,
     required int? sessionId,
+    required bool includeCurrent,
     required bool caseInsensitive,
     required int headLimit,
     required int maxSessions,
@@ -537,12 +542,20 @@ class SessionTool extends ToolDef {
       }
       sessionsToScan = [session];
     } else {
-      sessionsToScan = await _store.list(
+      // Consistent with `list`: the current session is excluded unless the
+      // caller explicitly asks for it via `includeCurrent` — the agent
+      // already has the current conversation in context. Over-fetch one
+      // row so excluding the current session doesn't shrink the scan
+      // below the requested `maxSessions`.
+      final listed = await _store.list(
         projectPath: ctx.workingDirectory,
         includeArchived: false,
-        limit: maxSessions,
+        limit: includeCurrent ? maxSessions : maxSessions + 1,
         offset: 0,
       );
+      sessionsToScan = includeCurrent
+          ? listed
+          : listed.where((s) => s.id != ctx.sessionId).toList();
     }
 
     if (sessionsToScan.isEmpty) {

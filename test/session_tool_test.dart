@@ -428,14 +428,38 @@ void main() {
 
   // ── action: search ────────────────────────────────────────────────
 
-  test('action=search finds matches across other sessions', () async {
+  test('action=search excludes the current session by default', () async {
     final result = await tool.execute({
       'action': 'search',
       'pattern': r'session tool',
       'maxSessions': 10,
     }, ctxOf(sessionB));
-    // The assistant message in B is the only place the literal
-    // substring "session tool" appears.
+    // The literal substring "session tool" appears only in B's own
+    // messages, so excluding the current session leaves no matches.
+    expect(result.output, contains('No matches'));
+    expect(result.metadata['totalMatches'], 0);
+    expect(result.metadata['sessionsScanned'], 1);
+  });
+
+  test('action=search pinned to the current session still works', () async {
+    final result = await tool.execute({
+      'action': 'search',
+      'pattern': r'session tool',
+      'sessionId': sessionB,
+    }, ctxOf(sessionB));
+    // Pinning a sessionId is an explicit ask, so searching the current
+    // session is allowed even though it is excluded from sweeps.
+    expect(result.output, contains('add the session tool now'));
+    expect(result.metadata['totalMatches'], greaterThanOrEqualTo(1));
+  });
+
+  test('action=search with includeCurrent=true scans it too', () async {
+    final result = await tool.execute({
+      'action': 'search',
+      'pattern': r'session tool',
+      'includeCurrent': true,
+      'maxSessions': 10,
+    }, ctxOf(sessionB));
     expect(result.output, contains('add the session tool now'));
     expect(result.metadata['totalMatches'], greaterThanOrEqualTo(1));
     expect(result.metadata['sessionsScanned'], 2);
