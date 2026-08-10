@@ -8,6 +8,114 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-10
+
+860f45f7
+
+### Features
+
+- **Home screen: customizable launch dashboard** (`ecfcf45`) — a
+  full-screen bento-grid dashboard shown on launch (opt out via
+  `[home].show_on_launch = false` or `--no-home`), re-openable via
+  `/home`. Responsive 4/2/1-column reflow with span packing, keyboard
+  nav and mouse support, an edit mode (`e`) to reorder/resize/hide
+  boxes persisted to `[home].layout` in config.toml, and a pluggable
+  HomeWidget registry. Ships with quick-actions, git-status, tokens,
+  recent-sessions, and yesterday boxes.
+- **Home: workspace box, item-level selection, two-level nav keys**
+  (`2286452`) — a new workspace box shows project dir, git branch,
+  active model, and session count. List boxes gain per-item click
+  targets and ↑↓ item selection; ←→ moves the focused box within its
+  row, Tab/Shift+Tab jumps rows, Enter activates the selection.
+- **Home: Activity box — token-per-day heatmap** (`4030c6d`) — a
+  terminal-native heatmap of token usage per day: Mon–Sun columns,
+  last 4 ISO weeks as rows, log-scale truecolor intensity against a
+  ceiling that ratchets up to the busiest day, per-week totals, and
+  a live legend.
+- **Home: yesterday box summarizes via auxiliary model** (`4a4773d`,
+  `45eaa7e`, `da2bc78`) — the Yesterday box replaces its static
+  session list with a one-round auxiliary-model digest of what was
+  worked on yesterday (developer asks + truncated replies only, so a
+  full day can't overflow the cheap model). Results persist to
+  `yesterday_summary.json` keyed by date + session fingerprint, so a
+  relaunch with an unchanged yesterday-set skips the LLM call; the
+  box is taller, soft-wraps, and scrolls.
+- **Home: scrollable skills box with fullpane skill viewer**
+  (`23483b1`) — a new box lists every discovered skill (project +
+  global); Enter/click opens the skill's SKILL.md in a read-only
+  highlighted-markdown fullpane, with esc returning to the dashboard.
+- **Home: every box content lives in a scrollview** (`0df8d1b`) —
+  the box chrome wraps all content in a Scrollbar +
+  SingleChildScrollView, making overflow structurally impossible;
+  ↑↓ selection keeps the selected item visible, mouse wheel scrolls,
+  and hover maps viewport rows through the scroll offset.
+- **Widgets: spec-driven sidebar widgets** (`d023a3e`) — drop a TOML
+  spec into `.crux/widgets/*.toml` and every Crux session on the
+  project renders a live status box within ~2 s, no rebuild. Label
+  templates support multi-line text, dotted JSON paths, timestamp
+  formatting, and heartbeat-driven liveness; action kinds cover
+  launch (new terminal), http (POST to a live service), shell
+  (project-root scripts), and prompt (submit a template to the
+  session). User clicks land in the session context with outcomes.
+  Ships with the hot-reload dev-harness control channel and seeded
+  `dev-harness.toml`, a `widgets` tool, and a built-in `widget`
+  skill.
+- **Vibe: live progress box for long-running bash** (`47fbb07`) —
+  progress signals (percent / bars / phase words / rate / ETA) are
+  parsed directly from shell output — no aux model, zero LLM cost —
+  and rendered as a live box alongside think/tools/files; a ≥2 s
+  gate prevents flashing, and the persisted segment renders a
+  compact ✓/✗ echo row.
+- **@mention: offload index build to a worker isolate** (`3a82bbe`) —
+  the worker now owns the file index end-to-end (tree walk, sort,
+  pre-computed scoring arrays, immutable snapshot), removing the
+  multi-hundred-ms UI freeze on the first `@` in big projects; a
+  generation guard discards stale builds, and request timeouts plus
+  dead-worker respawn keep a crashed isolate from hanging search.
+
+### Fixes
+
+- **DeepSeek: pass back assistant reasoning on tool-call rounds**
+  (`38f457c`, `5030a4a`) — thinking mode requires the chain-of-thought
+  returned on every post-tool-call request, and all content fields
+  must be typed parts arrays; the Responses-API switch dropped both,
+  causing 400s. Reasoning is now carried through buildApiMessages,
+  the in-loop tool-call formatter, and a sanitizeMessages backfill,
+  and all content emits as typed parts.
+- **Session search: exclude the current session from sweeps**
+  (`860f45f`) — the session tool's `search` scanned the N most-recent
+  sessions including the current one, contradicting its "OTHER
+  sessions" contract; it now skips the current session unless pinned
+  explicitly, over-fetching one row so the scan doesn't shrink.
+- **Vibe files: gate per-file diff action on reconstructability**
+  (`45e56a9`) — rows whose segments can't reconstruct a before/after
+  diff used to open a dead-end fullpane; the diff action now renders
+  dim and non-clickable when `hasReconstructableVibeFileDiff` fails,
+  using the same check the fullpane would.
+- **Home: Ctrl+C quits** (`188d554`) — home's key handler swallowed
+  every key with no quit path, trapping Ctrl+C (the app's
+  CtrlCBehavior is disabled on home); Ctrl+C now routes to the single
+  quit path used by /quit, in both normal and edit mode.
+- **Home: mouse clicks on item-list rows fire the clicked row**
+  (`144533e`) — the opaque whole-box GestureDetector shadowed row tap
+  detectors, so clicks no-op'd or ran the first item; item boxes now
+  rely on their rows' own detectors, with hover-focus on a non-opaque
+  MouseRegion.
+- **Home: hover selects the row under the cursor** (`b83a2f1`) —
+  per-row MouseRegions never received hover events under the wrapping
+  box region; hover-row selection moved to the box level, mapping the
+  cursor's terminal y through the scroll offset to an absolute item
+  index.
+- **Home: unsubscribe git-status listener on deactivate** (`c73a655`) —
+  a GitStatusService isolate event landing mid tree-swap tripped
+  setState's active-element assert intermittently; the listener now
+  unsubscribes in deactivate() and re-subscribes in activate().
+- **Git: correct start-message arg order in GitStatusService isolate**
+  (`041de5a`) — the start() message ordered its args differently than
+  the isolate handler read them, so the as-String cast on a bool
+  killed the isolate's immediate fetch and periodic timer; the sender
+  now matches the handler.
+
 ## [0.24.0] - 2026-08-01
 
 4bd1ab8
