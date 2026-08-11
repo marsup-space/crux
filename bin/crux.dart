@@ -8,6 +8,7 @@ import 'package:crux/src/components/home/home_layout_store.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/services/spec_widget_registry.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
+import 'package:crux/src/utils/clipboard_text.dart';
 import 'package:crux/src/utils/windows_vt.dart';
 import 'package:crux/src/utils/terminal_symbols.dart';
 import 'package:crux/src/version.dart';
@@ -140,6 +141,14 @@ void main(List<String> args) async {
   // summary in that case, which matches every other CLI
   // tool's behaviour.
   TerminalBinding.setCtrlCBehavior(CtrlCBehavior.disabled);
+
+  // Route Ctrl+V in any TextField to the real system clipboard. nocterm's
+  // own paste path only returns text copied *inside* this session (its
+  // internal buffer), because a terminal can't ask the OS for the clipboard
+  // portably. Crux knows how — via wl-paste/xclip/xsel on Linux, pbpaste on
+  // macOS, PowerShell on Windows — so install that reader here. Without it,
+  // Ctrl+V on a pure-Wayland/Linux box pastes nothing from other apps.
+  NoctermBinding.systemClipboardTextReader = ClipboardTextReader.readText;
 
   // Log seeder/theme warnings after the splash is done, so stderr lines
   // don't interleave with the logo frames.

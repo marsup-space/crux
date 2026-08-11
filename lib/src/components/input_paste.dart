@@ -85,8 +85,12 @@ class InputPaste {
       if (attached) return;
     }
 
-    final text =
-        await ClipboardTextReader.readText() ?? ClipboardManager.paste();
+    // Same source order as Ctrl+V: OSC 52 straight from the terminal (no
+    // external tool needed on Ghostty/WezTerm/kitty), then the OS tools
+    // (wl-paste/xclip/…), then the session-internal buffer. The button
+    // previously skipped OSC 52, so it failed on tool-less Wayland where
+    // Ctrl+V already worked.
+    final text = await _readClipboardText();
     if (text != null && text.isNotEmpty) {
       pasteText(text, sessionId);
       return;
@@ -96,6 +100,19 @@ class InputPaste {
       'Clipboard is empty or unavailable',
       mode: ToastMode.error,
     );
+  }
+
+  /// Resolve clipboard text using the same source order as Ctrl+V in a
+  /// TextField: OSC 52 from the terminal first, then OS tools, then the
+  /// internal session buffer.
+  Future<String?> _readClipboardText() async {
+    try {
+      final viaOsc = await TerminalBinding.readClipboardViaOsc52();
+      if (viaOsc != null && viaOsc.isNotEmpty) return viaOsc;
+    } catch (_) {
+      // Fall through to tool-based read.
+    }
+    return await ClipboardTextReader.readText() ?? ClipboardManager.paste();
   }
 
   void pasteText(String clipboardText, int? sessionId) {
