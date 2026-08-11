@@ -1,0 +1,49 @@
+# Live status of the ComfyUI queue + auto-suspend monitor
+# (driven by /tmp/comfy-sleep-monitor.py, which writes .crux/comfy-monitor-status.json).
+id = "comfy-monitor"
+label = "comfy · {state}"
+refresh_ms = 5000
+
+[status]
+path = ".crux/comfy-monitor-status.json"
+heartbeat_field = "heartbeatAt"
+stale_after_seconds = 90
+
+[[status.state_rules]]
+when = { field = "state", equals = "waiting" }
+text = "▶ {running} running · {pending} queued"
+color = "normal"
+
+[[status.state_rules]]
+when = { field = "state", equals = "suspended" }
+text = "✓ suspended — queue empty"
+color = "dim"
+
+[[status.state_rules]]
+when = { field = "state", equals = "idle" }
+text = "· queue empty at start — no sleep"
+color = "dim"
+
+[[status.state_rules]]
+when = { field = "state", equals = "cancelled" }
+text = "✗ cancelled"
+color = "warning"
+
+[[status.state_rules]]
+when = { field = "state", equals = "error" }
+text = "⚠ {error}"
+color = "error"
+
+fallback_alive_text = "● monitoring"
+fallback_stale_text = "stale"
+fallback_absent_text = "not running"
+
+[[actions]]
+label = "cancel"
+kind = "shell"
+command = "touch /tmp/comfy-sleep-monitor.cancel"
+
+[[actions]]
+label = "suspend"
+kind = "shell"
+command = "loginctl suspend"

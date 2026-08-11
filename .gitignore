@@ -49,6 +49,11 @@ CLAUDE.md
 !/.crux/widgets/
 !/.crux/widgets/**
 
+# Runtime heartbeat for the comfy-monitor widget (rewritten every few
+# seconds by /tmp/comfy-sleep-monitor.py; regenerated on demand — never
+# source). Only the widget spec under .crux/widgets/ ships.
+/.crux/comfy-monitor-status.json
+
 # Semble semantic-search index cache (written by the search isolate
 # into <root>/.cache/semble; not source).
 .cache/
