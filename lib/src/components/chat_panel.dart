@@ -1546,8 +1546,27 @@ class _ChatPanelState extends State<ChatPanel> {
             // z-order, and the home pane's own Focusable is the only
             // key consumer. `esc` (handled by Fullpane) or a home
             // action flips the flag back and the chat rebuilds.
+            //
+            // The root is ALWAYS a Stack (with home as its only child
+            // when no fullpane is open): a fullpane opened from home
+            // (the `my notes` box's `open`, the `skills` box) stacks on
+            // top, and — critically — the tree root type never changes
+            // between fullpane open/closed. ChatPanel.build runs inside
+            // a LayoutBuilder's layout pass; swapping the root from
+            // HomeScreen to Stack there would tear down and re-mount the
+            // whole home subtree mid-layout, and the new fullpane's
+            // focused Focusable stealing focus from the deactivating
+            // home Focusable trips nocterm's markNeedsBuild lifecycle
+            // assert. A stable Stack root keeps home's element alive.
             if (_overlayController.showHome) {
-              return _buildHome();
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(child: _buildHome()),
+                  if (_overlayController.showFullpane)
+                    Positioned.fill(child: _buildFullpane()),
+                ],
+              );
             }
 
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
