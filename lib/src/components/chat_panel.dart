@@ -13,6 +13,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
+import '../services/notes_service.dart';
 import '../services/spec_widget.dart';
 import '../services/spec_widget_registry.dart';
 import '../services/llm_client.dart';
@@ -52,6 +53,7 @@ import 'file_browser_overlay.dart';
 import 'home/home_layout_store.dart';
 import 'home/home_screen.dart';
 import 'home/home_widgets.dart';
+import 'notes_fullpane.dart';
 import 'skill_picker_overlay.dart';
 import 'overlay_controller.dart';
 import 'polling_coordinator.dart';
@@ -288,6 +290,17 @@ class _ChatPanelState extends State<ChatPanel> {
   SkillInfo? _skillFullpane;
   Message? _compactionFullpaneMessage;
   VibeDiffRequest? _vibeDiffRequest;
+
+  /// Whether the notes fullpane (the "my notes" editor) is showing.
+  /// Unlike the other fullpane payloads this carries no data — the
+  /// note is loaded from the DB by the pane itself via [_notesService].
+  bool _notesFullpaneOpen = false;
+
+  /// Backs the "my notes" feature: the per-project note plus the
+  /// status-file projection the sidebar widget reads. Bound to this
+  /// session's project, sharing the session store's DB connection.
+  late final NotesService _notesService;
+
   bool _providerServiceReady = false;
 
   final _toastKey = GlobalKey<ToastHubState>();
@@ -321,6 +334,18 @@ class _ChatPanelState extends State<ChatPanel> {
         );
     _store = bootState?.store ?? SessionStore(CruxDatabase());
     unawaited(_store.repairStaleContextTokens());
+    // Bound to the session's project (Directory.current), matching how
+    // spec widgets key on the project. The service writes the widget's
+    // status projection on init/save so the sidebar shows live todos.
+    _notesService = NotesService(
+      _store.notesStore,
+      projectPath: Directory.current.path,
+    );
+    // Write the widget's status projection up-front so the sidebar
+    // shows the live todo state from session start, not only after the
+    // notes fullpane is first opened. Fire-and-forget; the projection
+    // is a convenience and the DB is the source of truth.
+    unawaited(_notesService.init());
     final tracker = FileReadTracker(
       onRecordRead: (sessionId, normalizedPath, mtimeMs) {
         return _store.saveFileReadState(sessionId, normalizedPath, mtimeMs);
@@ -1034,6 +1059,12 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildFullpane() {
+    if (_notesFullpaneOpen) {
+      return NotesFullpane(
+        service: _notesService,
+        onClose: _closeFullpane,
+      );
+    }
     final vibeDiff = _vibeDiffRequest;
     if (vibeDiff != null) {
       return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane);
@@ -1234,7 +1265,46 @@ class _ChatPanelState extends State<ChatPanel> {
       _compactionFullpaneMessage = null;
       _vibeDiffRequest = null;
       _skillFullpane = null;
+      _notesFullpaneOpen = false;
     });
+  }
+
+  /// Open the "my notes" editor fullpane (the `notes` screen target of
+  /// the notes widget's `open` screen action).
+  void _openNotesFullpane() {
+    setState(() {
+      _notesFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  /// A `screen`-kind spec-widget action opens an in-process fullpane.
+  /// The action's `screen` names which one; unknown names toast rather
+  /// than failing silently. Pure UI — no session turn is started.
+  void _handleSpecScreenAction(SpecAction action) {
+    switch (action.screen) {
+      case 'notes':
+        _openNotesFullpane();
+      default:
+        _showToast(
+          'Unknown screen: ${action.screen}',
+          mode: ToastMode.error,
+        );
+    }
+  }
+
+  /// A todo row clicked on a spec widget: mark that todo done ([done]
+  /// true) or restore it ([done] false — the widget's undo click inside
+  /// its 10-second window) in its backing document (the notes feature).
+  /// The projection rewrite that follows updates the widget's row; the
+  /// item stays in the note, now checked (or back open). Fire-and-forget
+  /// — a failed write must never block the sidebar.
+  void _handleSpecTodoToggle(String text, int line, bool done) {
+    unawaited(
+      done
+          ? _notesService.markTodoDone(line)
+          : _notesService.markTodoOpen(line),
+    );
   }
 
   /// Reveal a vibe file row's file in the system file manager (Finder on
@@ -1757,6 +1827,8 @@ class _ChatPanelState extends State<ChatPanel> {
                       onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                       onSpecPromptAction: _handleSpecPromptAction,
                       onSpecShellAction: _handleSpecShellAction,
+                      onSpecScreenAction: _handleSpecScreenAction,
+                      onSpecTodoToggle: _handleSpecTodoToggle,
                       onSpecAction: _recordSpecAction,
                     ),
                   ),

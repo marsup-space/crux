@@ -469,4 +469,394 @@ void main() {
       });
     });
   });
+
+  group('SpecSidebarWidget — screen actions', () {
+    SpecWidget notesSpec() => SpecWidget(
+          id: 'my-notes',
+          title: 'my notes',
+          labelTemplate: '{display}',
+          refresh: const Duration(hours: 1),
+          statusPath: '.dart_tool/crux_dev.json',
+          // No heartbeatField → file presence = alive.
+          actions: const [
+            SpecAction(
+              label: 'open',
+              kind: SpecActionKind.screen,
+              screen: 'notes',
+            ),
+          ],
+        );
+
+    test('screen button is always visible (no hover) and fires '
+        'onScreenAction', () async {
+      SpecAction? opened;
+      await testNocterm('spec widget screen action', (tester) async {
+        // File exists → alive, so the todo label renders.
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({'display': 'no todos'}));
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (action) => opened = action,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // The open button is an always-visible Button (NOT a
+        // hover-reveal segment), so it's present at rest.
+        expect(tester.terminalState.containsText('open'), isTrue);
+
+        final seg = tester.terminalState.findText('open').first;
+        await tester.hover(seg.x + 2, seg.y);
+        await tester.pump();
+        await tester.tap(seg.x + 2, seg.y);
+        await tester.pump();
+
+        expect(opened, isNotNull);
+        expect(opened!.screen, 'notes');
+      });
+    });
+
+    test('screen button renders even when the status file is absent',
+        () async {
+      await testNocterm('spec widget screen when dead', (tester) async {
+        // No status file → absent, but screen actions still render. The
+        // label is the literal `{display}` placeholder (no data).
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Visible without any hover.
+        expect(tester.terminalState.containsText('open'), isTrue);
+      });
+    });
+
+    test('no onScreenAction callback → screen button hidden', () async {
+      await testNocterm('spec widget screen hidden', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({'display': 'no todos'}));
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                // No onScreenAction — e.g. a context with no fullpane host.
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(tester.terminalState.containsText('open'), isFalse);
+      });
+    });
+
+    test('a multi-line todo label renders each item once (no dup)',
+        () async {
+      await testNocterm('spec widget notes no dup', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '2 todos',
+          'todos': [
+            {'text': 'fix bug', 'line': 0},
+            {'text': 'write tests', 'line': 1},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 10,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final text = tester.terminalState.getText();
+        expect('☐ fix bug'.allMatches(text).length, 1);
+        expect('☐ write tests'.allMatches(text).length, 1);
+        expect('2 todos'.allMatches(text).length, 1);
+      });
+    });
+
+    test('count line and open button share one row (inline)', () async {
+      await testNocterm('spec widget notes inline', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({'display': '1 todo'}));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final count = tester.terminalState.findText('1 todo');
+        final open = tester.terminalState.findText('open');
+        expect(count, isNotEmpty);
+        expect(open, isNotEmpty);
+        // Same terminal row → inline, not stacked.
+        expect(count.first.y, open.first.y);
+      });
+    });
+
+    test('todo rows are clickable and fire onTodoToggle with text + line',
+        () async {
+      String? toggledText;
+      int? toggledLine;
+      bool? toggledDone;
+      await testNocterm('spec widget todo toggle', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '2 todos',
+          'todos': [
+            {'text': 'fix bug', 'line': 0},
+            {'text': 'write tests', 'line': 1},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 10,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (_) {},
+                onTodoToggle: (text, line, done) {
+                  toggledText = text;
+                  toggledLine = line;
+                  toggledDone = done;
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final row = tester.terminalState.findText('write tests').first;
+        await tester.hover(row.x + 2, row.y);
+        await tester.pump();
+        await tester.tap(row.x + 2, row.y);
+        await tester.pump();
+
+        expect(toggledText, 'write tests');
+        expect(toggledLine, 1);
+        expect(toggledDone, isTrue);
+        // The row now renders checked (☑), not open (☐).
+        expect(
+          tester.terminalState.containsText('☑ write tests'),
+          isTrue,
+          reason: 'checked row stays visible after click',
+        );
+      });
+    });
+
+    test('clicking a checked todo inside the window undoes it (done=false)',
+        () async {
+      final toggles = <bool>[];
+      await testNocterm('spec widget todo undo', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '1 todo',
+          'todos': [
+            {'text': 'fix bug', 'line': 0},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 10,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: notesSpec(),
+                projectPath: project.path,
+                onScreenAction: (_) {},
+                onTodoToggle: (_, _, done) => toggles.add(done),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Check it: row flips to ☑.
+        var row = tester.terminalState.findText('fix bug').first;
+        await tester.hover(row.x + 2, row.y);
+        await tester.pump();
+        await tester.tap(row.x + 2, row.y);
+        await tester.pump();
+        expect(tester.terminalState.containsText('☑ fix bug'), isTrue);
+
+        // Click again inside the window → undo.
+        row = tester.terminalState.findText('fix bug').first;
+        await tester.tap(row.x + 2, row.y);
+        await tester.pump();
+
+        expect(toggles, [true, false]);
+        expect(tester.terminalState.containsText('☐ fix bug'), isTrue);
+      });
+    });
+
+    test('a checked todo disappears after the undo TTL', () async {
+      // Short refresh so the widget re-reads the projection the host
+      // rewrites on click (the real app polls every 2s; the default
+      // notesSpec polls hourly).
+      final ttlSpec = SpecWidget(
+        id: 'my-notes',
+        title: 'my notes',
+        labelTemplate: '{display}',
+        refresh: const Duration(milliseconds: 40),
+        statusPath: '.dart_tool/crux_dev.json',
+        actions: const [
+          SpecAction(
+            label: 'open',
+            kind: SpecActionKind.screen,
+            screen: 'notes',
+          ),
+        ],
+      );
+      await testNocterm('spec widget todo ttl', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '1 todo',
+          'todos': [
+            {'text': 'fix bug', 'line': 0},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 10,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: ttlSpec,
+                projectPath: project.path,
+                onScreenAction: (_) {},
+                // Tiny TTL so the test doesn't wait 10 seconds.
+                todoCheckedTtl: const Duration(milliseconds: 80),
+                onTodoToggle: (_, _, done) {
+                  // Mirror the real host: marking done rewrites the
+                  // projection so the open `todos` list drops the row.
+                  if (done) {
+                    statusFile().writeAsStringSync(jsonEncode({
+                      'display': 'no todos',
+                      'todos': <Map<String, dynamic>>[],
+                    }));
+                  }
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final row = tester.terminalState.findText('fix bug').first;
+        await tester.hover(row.x + 2, row.y);
+        await tester.pump();
+        await tester.tap(row.x + 2, row.y);
+        await tester.pump();
+        expect(tester.terminalState.containsText('☑ fix bug'), isTrue);
+
+        // After the TTL the checked row expires.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        for (var i = 0; i < 8; i++) {
+          await tester.pump();
+        }
+        expect(
+          tester.terminalState.containsText('fix bug'),
+          isFalse,
+          reason: 'checked row expires after the undo TTL',
+        );
+      });
+    });
+
+    test('record=false actions do not fire onAction', () async {
+      final notes = <String>[];
+      final quietSpec = SpecWidget(
+        id: 'my-notes',
+        title: 'my notes',
+        labelTemplate: '{display}',
+        refresh: const Duration(hours: 1),
+        statusPath: '.dart_tool/crux_dev.json',
+        actions: const [
+          SpecAction(
+            label: 'open',
+            kind: SpecActionKind.screen,
+            screen: 'notes',
+            record: false,
+          ),
+        ],
+      );
+      await testNocterm('spec widget screen quiet', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({'display': '1 todo'}));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SpecSidebarWidget(
+                spec: quietSpec,
+                projectPath: project.path,
+                onScreenAction: (_) {},
+                onAction: (note) async => notes.add(note),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final seg = tester.terminalState.findText('open').first;
+        await tester.hover(seg.x + 2, seg.y);
+        await tester.pump();
+        await tester.tap(seg.x + 2, seg.y);
+        await tester.pump();
+
+        // No event recorded for a record=false action.
+        expect(notes, isEmpty);
+      });
+    });
+  });
 }

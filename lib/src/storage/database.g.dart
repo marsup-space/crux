@@ -4335,6 +4335,285 @@ class ShellMonitorLogsCompanion extends UpdateCompanion<ShellMonitorLog> {
   }
 }
 
+class $ProjectNotesTable extends ProjectNotes
+    with TableInfo<$ProjectNotesTable, ProjectNote> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ProjectNotesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _projectPathMeta = const VerificationMeta(
+    'projectPath',
+  );
+  @override
+  late final GeneratedColumn<String> projectPath = GeneratedColumn<String>(
+    'project_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [projectPath, content, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'project_notes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ProjectNote> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('project_path')) {
+      context.handle(
+        _projectPathMeta,
+        projectPath.isAcceptableOrUnknown(
+          data['project_path']!,
+          _projectPathMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_projectPathMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {projectPath};
+  @override
+  ProjectNote map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ProjectNote(
+      projectPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}project_path'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ProjectNotesTable createAlias(String alias) {
+    return $ProjectNotesTable(attachedDatabase, alias);
+  }
+}
+
+class ProjectNote extends DataClass implements Insertable<ProjectNote> {
+  /// The workspace root this note belongs to (Directory.current.path
+  /// of the owning session). Primary key — one note per project.
+  final String projectPath;
+
+  /// The raw markdown the user edits in the notes fullpane.
+  final String content;
+
+  /// Last write, millisecondsSinceEpoch. Drives the widget's
+  /// "updated HH:MM" display and the status-file projection.
+  final int updatedAt;
+  const ProjectNote({
+    required this.projectPath,
+    required this.content,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['project_path'] = Variable<String>(projectPath);
+    map['content'] = Variable<String>(content);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  ProjectNotesCompanion toCompanion(bool nullToAbsent) {
+    return ProjectNotesCompanion(
+      projectPath: Value(projectPath),
+      content: Value(content),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ProjectNote.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ProjectNote(
+      projectPath: serializer.fromJson<String>(json['projectPath']),
+      content: serializer.fromJson<String>(json['content']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'projectPath': serializer.toJson<String>(projectPath),
+      'content': serializer.toJson<String>(content),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  ProjectNote copyWith({
+    String? projectPath,
+    String? content,
+    int? updatedAt,
+  }) => ProjectNote(
+    projectPath: projectPath ?? this.projectPath,
+    content: content ?? this.content,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  ProjectNote copyWithCompanion(ProjectNotesCompanion data) {
+    return ProjectNote(
+      projectPath: data.projectPath.present
+          ? data.projectPath.value
+          : this.projectPath,
+      content: data.content.present ? data.content.value : this.content,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ProjectNote(')
+          ..write('projectPath: $projectPath, ')
+          ..write('content: $content, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(projectPath, content, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ProjectNote &&
+          other.projectPath == this.projectPath &&
+          other.content == this.content &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ProjectNotesCompanion extends UpdateCompanion<ProjectNote> {
+  final Value<String> projectPath;
+  final Value<String> content;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const ProjectNotesCompanion({
+    this.projectPath = const Value.absent(),
+    this.content = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ProjectNotesCompanion.insert({
+    required String projectPath,
+    this.content = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : projectPath = Value(projectPath),
+       updatedAt = Value(updatedAt);
+  static Insertable<ProjectNote> custom({
+    Expression<String>? projectPath,
+    Expression<String>? content,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (projectPath != null) 'project_path': projectPath,
+      if (content != null) 'content': content,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ProjectNotesCompanion copyWith({
+    Value<String>? projectPath,
+    Value<String>? content,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return ProjectNotesCompanion(
+      projectPath: projectPath ?? this.projectPath,
+      content: content ?? this.content,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (projectPath.present) {
+      map['project_path'] = Variable<String>(projectPath.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ProjectNotesCompanion(')
+          ..write('projectPath: $projectPath, ')
+          ..write('content: $content, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$CruxDatabase extends GeneratedDatabase {
   _$CruxDatabase(QueryExecutor e) : super(e);
   $CruxDatabaseManager get managers => $CruxDatabaseManager(this);
@@ -4346,6 +4625,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   late final $ShellMonitorLogsTable shellMonitorLogs = $ShellMonitorLogsTable(
     this,
   );
+  late final $ProjectNotesTable projectNotes = $ProjectNotesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4357,6 +4637,7 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
     fileReadState,
     fileLastWriter,
     shellMonitorLogs,
+    projectNotes,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -7708,6 +7989,170 @@ typedef $$ShellMonitorLogsTableProcessedTableManager =
       ShellMonitorLog,
       PrefetchHooks Function({bool sessionId})
     >;
+typedef $$ProjectNotesTableCreateCompanionBuilder =
+    ProjectNotesCompanion Function({
+      required String projectPath,
+      Value<String> content,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$ProjectNotesTableUpdateCompanionBuilder =
+    ProjectNotesCompanion Function({
+      Value<String> projectPath,
+      Value<String> content,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$ProjectNotesTableFilterComposer
+    extends Composer<_$CruxDatabase, $ProjectNotesTable> {
+  $$ProjectNotesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ProjectNotesTableOrderingComposer
+    extends Composer<_$CruxDatabase, $ProjectNotesTable> {
+  $$ProjectNotesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ProjectNotesTableAnnotationComposer
+    extends Composer<_$CruxDatabase, $ProjectNotesTable> {
+  $$ProjectNotesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ProjectNotesTableTableManager
+    extends
+        RootTableManager<
+          _$CruxDatabase,
+          $ProjectNotesTable,
+          ProjectNote,
+          $$ProjectNotesTableFilterComposer,
+          $$ProjectNotesTableOrderingComposer,
+          $$ProjectNotesTableAnnotationComposer,
+          $$ProjectNotesTableCreateCompanionBuilder,
+          $$ProjectNotesTableUpdateCompanionBuilder,
+          (
+            ProjectNote,
+            BaseReferences<_$CruxDatabase, $ProjectNotesTable, ProjectNote>,
+          ),
+          ProjectNote,
+          PrefetchHooks Function()
+        > {
+  $$ProjectNotesTableTableManager(_$CruxDatabase db, $ProjectNotesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ProjectNotesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ProjectNotesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ProjectNotesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> projectPath = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ProjectNotesCompanion(
+                projectPath: projectPath,
+                content: content,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String projectPath,
+                Value<String> content = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ProjectNotesCompanion.insert(
+                projectPath: projectPath,
+                content: content,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ProjectNotesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$CruxDatabase,
+      $ProjectNotesTable,
+      ProjectNote,
+      $$ProjectNotesTableFilterComposer,
+      $$ProjectNotesTableOrderingComposer,
+      $$ProjectNotesTableAnnotationComposer,
+      $$ProjectNotesTableCreateCompanionBuilder,
+      $$ProjectNotesTableUpdateCompanionBuilder,
+      (
+        ProjectNote,
+        BaseReferences<_$CruxDatabase, $ProjectNotesTable, ProjectNote>,
+      ),
+      ProjectNote,
+      PrefetchHooks Function()
+    >;
 
 class $CruxDatabaseManager {
   final _$CruxDatabase _db;
@@ -7724,4 +8169,6 @@ class $CruxDatabaseManager {
       $$FileLastWriterTableTableManager(_db, _db.fileLastWriter);
   $$ShellMonitorLogsTableTableManager get shellMonitorLogs =>
       $$ShellMonitorLogsTableTableManager(_db, _db.shellMonitorLogs);
+  $$ProjectNotesTableTableManager get projectNotes =>
+      $$ProjectNotesTableTableManager(_db, _db.projectNotes);
 }

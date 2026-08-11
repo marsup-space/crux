@@ -208,6 +208,67 @@ kind = "shell"
       expect(spec.actions, isEmpty);
     });
 
+    test('parses screen-kind actions', () {
+      final spec = _parseString('''
+id = "my-notes"
+label = "{display}"
+[status]
+path = "s.json"
+
+[[actions]]
+label = "open"
+kind = "screen"
+screen = "notes"
+''', name: 'my-notes')!;
+      expect(spec.actions, hasLength(1));
+      expect(spec.actions[0].kind, SpecActionKind.screen);
+      expect(spec.actions[0].screen, 'notes');
+      expect(spec.actions[0].url, isNull);
+    });
+
+    test('screen action without a screen is dropped', () {
+      final spec = _parseString('''
+id = "my-notes"
+label = "{display}"
+[status]
+path = "s.json"
+
+[[actions]]
+label = "open"
+kind = "screen"
+''', name: 'my-notes')!;
+      expect(spec.actions, isEmpty);
+    });
+
+    test('record defaults to true; record=false parses', () {
+      final loud = _parseString('''
+id = "my-notes"
+label = "{display}"
+[status]
+path = "s.json"
+
+[[actions]]
+label = "open"
+kind = "screen"
+screen = "notes"
+''', name: 'my-notes')!;
+      expect(loud.actions.single.record, isTrue);
+
+      final quiet = _parseString('''
+id = "my-notes"
+label = "{display}"
+[status]
+path = "s.json"
+
+[[actions]]
+label = "open"
+kind = "screen"
+screen = "notes"
+record = false
+''', name: 'my-notes')!;
+      expect(quiet.actions.single.record, isFalse);
+    });
+
     test('parses a multi-line label template', () {
       final spec = _parseString('''
 id = "dev-harness"

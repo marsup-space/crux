@@ -122,6 +122,19 @@ class ExtraInfoPanel extends StatefulComponent {
   final Future<void> Function(SpecAction action, String renderedCommand)?
       onSpecShellAction;
 
+  /// Called when the user clicks a `screen`-kind action segment — the
+  /// chat panel opens the named in-process fullpane (e.g. the notes
+  /// editor). Null in tests/contexts with no fullpane host.
+  final void Function(SpecAction action)? onSpecScreenAction;
+
+  /// Called when the user clicks a todo row on a spec widget (the
+  /// status JSON's `todos` array) — the chat panel marks that todo
+  /// done ([done] `true`) or restores it ([done] `false`, the undo
+  /// click inside the widget's undo window) in its backing document.
+  /// Null in tests/contexts with no host; todo rows then render as
+  /// plain text.
+  final void Function(String text, int line, bool done)? onSpecTodoToggle;
+
   /// Called after ANY spec-widget action fires — a description of
   /// what the user did and the outcome, recorded into the session
   /// context so the agent can see the user's widget interactions.
@@ -145,6 +158,8 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onAuxiliaryPressed,
     this.onSpecPromptAction,
     this.onSpecShellAction,
+    this.onSpecScreenAction,
+    this.onSpecTodoToggle,
     this.onSpecAction,
   });
 
@@ -650,6 +665,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     projectPath: Directory.current.path,
                     onPromptAction: component.onSpecPromptAction,
                     onShellAction: component.onSpecShellAction,
+                    onScreenAction: component.onSpecScreenAction,
+                    onTodoToggle: component.onSpecTodoToggle,
                     onAction: component.onSpecAction,
                   ),
                 // Auxiliary-model button, hosted by the side panel

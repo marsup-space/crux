@@ -44,6 +44,17 @@
 //   label = "reload"
 //   url = "http://127.0.0.1:{controlPort}/reload"
 //
+//   # A `screen` action opens an in-process Crux fullpane instead of
+//   # POSTing / launching / prompting. Rendered in any liveness state
+//   # (like `prompt`). The host maps `screen` to a fullpane.
+//   # `record = false` (optional) keeps the click out of the session
+//   # context — right for pure-UI actions that don't signal the agent.
+//   [[actions]]
+//   label = "open"
+//   kind = "screen"
+//   screen = "notes"
+//   record = false
+//
 // Template syntax (labels, rule texts, action URLs):
 //   {state}             → the computed state text
 //   {field}             → dotted path into the status JSON (e.g. lastReload.result)
@@ -107,6 +118,14 @@ enum SpecActionKind {
   /// surfaced as a toast / tool result. Meant for finite tasks, not
   /// long-lived services. Rendered regardless of liveness.
   shell,
+
+  /// Open an in-process Crux screen (a fullpane) identified by
+  /// [SpecAction.screen]. Unlike every other kind this is pure UI —
+  /// no HTTP, no subprocess, no chat message. The host resolves the
+  /// screen name (e.g. `notes`) to a fullpane and opens it. Rendered
+  /// regardless of liveness, like [SpecActionKind.prompt] — opening a
+  /// viewer/editor is always meaningful.
+  screen,
 }
 
 /// One action segment (`reload`, `close`, `start`, `review`, …).
@@ -128,12 +147,26 @@ class SpecAction {
   /// to the current session as a user message on click.
   final String? prompt;
 
+  /// Screen identifier for [SpecActionKind.screen] actions (e.g.
+  /// `notes`). The host maps this to a fullpane to open.
+  final String? screen;
+
+  /// Whether firing this action records an event into the session
+  /// context (via the renderer's `onAction` callback). Defaults to
+  /// `true` — the historical behaviour, where every widget click shows
+  /// up as a `[Widget action]` note the agent can see. Pure-UI actions
+  /// (e.g. `open`-ing the notes editor) are usually noise there, so
+  /// specs can set `record = false` to keep the click silent.
+  final bool record;
+
   const SpecAction({
     required this.label,
     this.url,
     this.kind = SpecActionKind.http,
     this.command,
     this.prompt,
+    this.screen,
+    this.record = true,
   });
 }
 
@@ -232,11 +265,14 @@ class SpecWidget {
           'launch' => SpecActionKind.launch,
           'prompt' => SpecActionKind.prompt,
           'shell' => SpecActionKind.shell,
+          'screen' => SpecActionKind.screen,
           _ => SpecActionKind.http,
         };
         final url = raw['url'] as String?;
         final command = raw['command'] as String?;
         final prompt = raw['prompt'] as String?;
+        final screen = raw['screen'] as String?;
+        final record = raw['record'] as bool? ?? true;
         if (kind == SpecActionKind.http && url == null) continue;
         if ((kind == SpecActionKind.launch || kind == SpecActionKind.shell) &&
             (command == null || command.trim().isEmpty)) {
@@ -246,6 +282,10 @@ class SpecWidget {
             (prompt == null || prompt.trim().isEmpty)) {
           continue;
         }
+        if (kind == SpecActionKind.screen &&
+            (screen == null || screen.trim().isEmpty)) {
+          continue;
+        }
         actions.add(
           SpecAction(
             label: aLabel,
@@ -253,6 +293,8 @@ class SpecWidget {
             kind: kind,
             command: command,
             prompt: prompt,
+            screen: screen,
+            record: record,
           ),
         );
       }

@@ -21,6 +21,7 @@ import 'package:path/path.dart' as p;
 
 import '../services/spec_widget.dart';
 import '../theme/crux_theme.dart';
+import 'ui/button.dart';
 import 'ui/multi_button.dart';
 
 class SpecSidebarWidget extends StatefulComponent {
@@ -42,6 +43,26 @@ class SpecSidebarWidget extends StatefulComponent {
   final Future<void> Function(SpecAction action, String renderedCommand)?
       onShellAction;
 
+  /// Called when the user clicks a [SpecActionKind.screen] segment —
+  /// the host opens the named in-process fullpane (e.g. the notes
+  /// editor). When null, screen segments are not rendered (tests /
+  /// contexts with no fullpane host).
+  final void Function(SpecAction action)? onScreenAction;
+
+  /// Called when the user clicks a todo row rendered from the status
+  /// JSON's `todos` array (each entry `{text, line}` — the todo's text
+  /// and its source line index in the note). [done] is `true` when the
+  /// row was clicked to mark it done, `false` when it was clicked again
+  /// inside the undo window to restore it. The host persists the change;
+  /// the row flips to checked locally ([todoCheckedTtl] later removes
+  /// it). When null, todo rows render as plain (non-clickable) text.
+  final void Function(String text, int line, bool done)? onTodoToggle;
+
+  /// How long a checked todo row stays visible in the widget before
+  /// disappearing, giving the user time to undo an accidental click.
+  /// Clicking the checked row again inside this window restores it.
+  final Duration todoCheckedTtl;
+
   /// Called after ANY action fires (http / launch / shell / prompt) —
   /// a human-readable description of what the user did AND how it
   /// went, for recording into the session context. Awaited: http and
@@ -57,6 +78,9 @@ class SpecSidebarWidget extends StatefulComponent {
     required this.projectPath,
     this.onPromptAction,
     this.onShellAction,
+    this.onScreenAction,
+    this.onTodoToggle,
+    this.todoCheckedTtl = const Duration(seconds: 10),
     this.onAction,
   });
 
@@ -69,6 +93,15 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
   SpecWidgetStatus? _status;
   bool _busy = false;
 
+  /// Line → text of todos the user just checked, still within their
+  /// [SpecSidebarWidget.todoCheckedTtl] undo window. Rendered as checked
+  /// rows even after the projection drops them, so an accidental click
+  /// is visible and reversible for a few seconds.
+  final Map<int, String> _checked = {};
+
+  /// Per-checked-line timers that expire the row after the TTL.
+  final Map<int, Timer> _checkedTimers = {};
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +113,10 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
   void dispose() {
     _timer?.cancel();
     _timer = null;
+    for (final t in _checkedTimers.values) {
+      t.cancel();
+    }
+    _checkedTimers.clear();
     super.dispose();
   }
 
@@ -115,11 +152,13 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
       }
     }
     final url = renderActionUrl(action, status.data);
-    await component.onAction?.call(
-      'clicked `${action.label}` on widget `${component.spec.id}` '
-      '(POST $url → ${ok ? 'succeeded' : 'FAILED — target unreachable '
-      'or non-200'})',
-    );
+    if (action.record) {
+      await component.onAction?.call(
+        'clicked `${action.label}` on widget `${component.spec.id}` '
+        '(POST $url → ${ok ? 'succeeded' : 'FAILED — target unreachable '
+        'or non-200'})',
+      );
+    }
   }
 
   Future<void> _runLaunch(SpecAction action) async {
@@ -127,21 +166,25 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
     // The harness heartbeat will flip the status to alive on the next
     // poll; refresh now so the label catches up promptly.
     if (mounted) _refresh();
-    await component.onAction?.call(
-      'clicked `${action.label}` on widget `${component.spec.id}` '
-      '(launch `${action.command}` in a new terminal → '
-      '${ok ? 'terminal opened' : 'FAILED — needs macOS + Ghostty'})',
-    );
+    if (action.record) {
+      await component.onAction?.call(
+        'clicked `${action.label}` on widget `${component.spec.id}` '
+        '(launch `${action.command}` in a new terminal → '
+        '${ok ? 'terminal opened' : 'FAILED — needs macOS + Ghostty'})',
+      );
+    }
   }
 
   Future<void> _runShell(SpecAction action) async {
     // The shell handler records its own rich result (exit code +
     // output tail); this note is just a tap marker. The inline
     // no-handler path has no session to record into anyway.
-    await component.onAction?.call(
-      'ran `${action.label}` on widget `${component.spec.id}` '
-      '(shell: `${action.command}`)',
-    );
+    if (action.record) {
+      await component.onAction?.call(
+        'ran `${action.label}` on widget `${component.spec.id}` '
+        '(shell: `${action.command}`)',
+      );
+    }
     final handler = component.onShellAction;
     if (handler != null) {
       final rendered = renderActionCommand(action, _status?.data ?? {});
@@ -214,6 +257,11 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
     final shellActions = component.spec.actions
         .where((a) => a.kind == SpecActionKind.shell)
         .toList();
+    final screenActions = component.onScreenAction == null
+        ? const <SpecAction>[]
+        : component.spec.actions
+            .where((a) => a.kind == SpecActionKind.screen)
+            .toList();
 
     MultiButtonSegment promptSegment(SpecAction action) =>
         MultiButtonSegment(
@@ -231,59 +279,193 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
           onPressed: () => unawaited(_runShell(action)),
         );
 
+    void fireScreen(SpecAction action) {
+      // Opening a screen is a pure-UI action; only record the tap when
+      // the spec asked for it (`record = true`, the default). The notes
+      // widget sets `record = false` so the click stays silent.
+      if (action.record) {
+        unawaited(
+          component.onAction?.call(
+            'clicked `${action.label}` on widget '
+            '`${component.spec.id}` (open screen `${action.screen}`)',
+          ),
+        );
+      }
+      component.onScreenAction?.call(action);
+    }
+
+    // Screen actions are pure UI entry points (open a fullpane), not
+    // controls on a running service. Rendering them as hover-reveal
+    // MultiButton segments would hide the label's content lines on
+    // hover and make the button undiscoverable at rest — so they get
+    // permanent, always-visible [Button]s instead. Service-control
+    // kinds (http/launch/prompt/shell) keep the hover-morph MultiButton.
+    final hasMorphActions = launchActions.isNotEmpty ||
+        controlActions.isNotEmpty ||
+        promptActions.isNotEmpty ||
+        shellActions.isNotEmpty;
+
+    // The label's first line feeds the MultiButton (when there are
+    // morph actions) so a single-line service widget renders exactly as
+    // before; continuation lines render below. When there are NO morph
+    // actions the label renders entirely as static text (the common
+    // case for a content widget like notes), so nothing is ever
+    // collapsed by a hover morph.
+    final labelLines = status?.labelLines ?? const <String>[];
+    final firstLine = labelLines.isEmpty ? label : labelLines.first;
+    final extraLines =
+        labelLines.length > 1 ? labelLines.sublist(1) : const <String>[];
+
     final Component inner;
     if (_busy) {
       inner = Text(label, style: TextStyle(color: color));
-    } else if (!alive) {
-      if (launchActions.isEmpty && promptActions.isEmpty && shellActions.isEmpty) {
-        // Dead service with no start affordance: plain label.
-        inner = Text(label, style: TextStyle(color: color));
-      } else {
-        inner = MultiButton(
-          label: label,
-          color: color,
-          hoverColor: theme.foreground,
-          segments: [
-            for (final action in launchActions)
-              MultiButtonSegment(
-                label: action.label,
-                onPressed: () => unawaited(_runLaunch(action)),
-              ),
-            for (final action in promptActions) promptSegment(action),
-            for (final action in shellActions) shellSegment(action),
-          ],
-        );
-      }
+    } else if (hasMorphActions) {
+      final segments = <MultiButtonSegment>[
+        if (!alive)
+          for (final action in launchActions)
+            MultiButtonSegment(
+              label: action.label,
+              onPressed: () => unawaited(_runLaunch(action)),
+            ),
+        if (alive)
+          for (final action in controlActions)
+            MultiButtonSegment(
+              label: action.label,
+              onPressed: () => unawaited(_runAction(action)),
+            ),
+        for (final action in promptActions) promptSegment(action),
+        for (final action in shellActions) shellSegment(action),
+      ];
+      inner = MultiButton(
+        label: firstLine,
+        color: color,
+        hoverColor: theme.foreground,
+        segments: segments,
+      );
     } else {
-      if (controlActions.isEmpty && promptActions.isEmpty && shellActions.isEmpty) {
-        inner = Text(label, style: TextStyle(color: color));
-      } else {
-        inner = MultiButton(
-          label: label,
-          color: color,
-          hoverColor: theme.foreground,
-          segments: [
-            for (final action in controlActions)
-              MultiButtonSegment(
-                label: action.label,
-                onPressed: () => unawaited(_runAction(action)),
-              ),
-            for (final action in promptActions) promptSegment(action),
-            for (final action in shellActions) shellSegment(action),
-          ],
-        );
-      }
+      // No morph actions: the label's first line is plain text. (Any
+      // continuation lines are appended below, next to the button row.)
+      inner = Text(firstLine, style: TextStyle(color: color));
     }
 
-    // The label may span several lines (spec templates can embed
-    // `\n`) — the box stacks one Text per line. The MultiButton row
-    // (actions + the label's FIRST line) stays at the top; any
-    // continuation lines render below it, inside the same bordered
-    // box. Single-line specs render exactly as before.
-    final labelLines = status?.labelLines ?? const <String>[];
-    final extraLines = labelLines.length > 1
-        ? labelLines.sublist(1)
-        : const <String>[];
+    // Always-visible screen-action buttons, one per `screen` action.
+    final screenButtons = <Component>[
+      for (final action in screenActions)
+        Padding(
+          padding: const EdgeInsets.only(right: 1),
+          child: Button(
+            label: action.label,
+            onPressed: () => fireScreen(action),
+            color: theme.accent,
+            hoverColor: theme.buttonTextHover,
+            bgColor: theme.surfaceVariant,
+            hoverBgColor: theme.buttonBackgroundHover,
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+          ),
+        ),
+    ];
+
+    // Clickable todo rows, driven by the status JSON's `todos` array
+    // (`[{text, line}]` — the todo's text and its source line index in
+    // the underlying document). When a toggle handler is wired, each
+    // open row is a [Button] that marks the todo done; the row flips to
+    // a checked state locally and stays visible for [todoCheckedTtl]
+    // (the undo window) even after the projection drops it. Clicking a
+    // checked row again restores it. Without a handler the rows render
+    // as plain text (tests / contexts with no host).
+    //
+    // Rows come from two sources merged by line: the projection's open
+    // todos, plus any rows still in the local undo window (which the
+    // projection has already dropped).
+    void markTodoDone(String text, int line) {
+      setState(() {
+        _checked[line] = text;
+      });
+      _checkedTimers[line]?.cancel();
+      _checkedTimers[line] = Timer(component.todoCheckedTtl, () {
+        if (!mounted) return;
+        setState(() {
+          _checked.remove(line);
+          _checkedTimers.remove(line);
+        });
+      });
+      component.onTodoToggle?.call(text, line, true);
+    }
+
+    void undoTodo(String text, int line) {
+      _checkedTimers.remove(line)?.cancel();
+      setState(() {
+        _checked.remove(line);
+      });
+      component.onTodoToggle?.call(text, line, false);
+    }
+
+    Component todoRow(String text, int line) {
+      final checked = _checked.containsKey(line);
+      final onToggle = component.onTodoToggle;
+      if (onToggle == null) {
+        return Text(
+          '${checked ? '☑' : '☐'} $text',
+          style: TextStyle(
+            color: checked ? theme.successColor : color,
+            decoration:
+                checked ? TextDecoration.lineThrough : TextDecoration.none,
+          ),
+        );
+      }
+      return Button(
+        label: '${checked ? '☑' : '☐'} $text',
+        onPressed: () =>
+            checked ? undoTodo(text, line) : markTodoDone(text, line),
+        color: checked ? theme.successColor : theme.onSurfaceVariant,
+        hoverColor: theme.accent,
+        bgColor: theme.surface,
+        hoverBgColor: theme.buttonBackgroundHover,
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+      );
+    }
+
+    final todoRows = <Component>[];
+    final renderedLines = <int>{};
+    final rawTodos = status?.data['todos'];
+    if (rawTodos is List) {
+      for (final raw in rawTodos) {
+        if (raw is! Map) continue;
+        final text = raw['text']?.toString() ?? '';
+        final line =
+            raw['line'] is num ? (raw['line'] as num).toInt() : -1;
+        if (text.isEmpty) continue;
+        renderedLines.add(line);
+        todoRows.add(todoRow(text, line));
+      }
+    }
+    // Undo-window rows the projection no longer lists (they were just
+    // marked done) stay visible as checked rows in their original
+    // position — preserving order relative to the remaining open todos.
+    for (final line in _checked.keys) {
+      if (renderedLines.contains(line)) continue;
+      final text = _checked[line] ?? '';
+      if (text.isEmpty) continue;
+      todoRows.add(todoRow(text, line));
+    }
+
+    // First row: with morph actions the MultiButton is the row; with a
+    // plain label the count text and any screen buttons share one line
+    // (e.g. `1 todo` … `open`), keeping the box compact.
+    final Component firstRow;
+    if (_busy || hasMorphActions) {
+      firstRow = inner;
+    } else if (screenButtons.isNotEmpty) {
+      firstRow = Row(
+        children: [
+          inner,
+          const Spacer(),
+          ...screenButtons,
+        ],
+      );
+    } else {
+      firstRow = inner;
+    }
 
     // Every spec widget renders as its own full-width bordered box
     // with the title inlined on the border (same chrome as the home
@@ -310,16 +492,17 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: extraLines.isEmpty
-              ? inner
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    inner,
-                    for (final line in extraLines)
-                      Text(line, style: TextStyle(color: color)),
-                  ],
-                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              firstRow,
+              ...todoRows,
+              for (final line in extraLines)
+                Text(line, style: TextStyle(color: color)),
+              if (hasMorphActions && screenButtons.isNotEmpty)
+                Row(children: screenButtons),
+            ],
+          ),
         );
       },
     );

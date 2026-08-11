@@ -20,6 +20,7 @@ part 'database.g.dart';
     FileReadState,
     FileLastWriter,
     ShellMonitorLogs,
+    ProjectNotes,
   ],
 )
 class CruxDatabase extends _$CruxDatabase {
@@ -126,8 +127,12 @@ class CruxDatabase extends _$CruxDatabase {
   ///         instance's "Chats" section. `NULL`/absent means a
   ///         regular workspace session. Nullable so the migration
   ///         is a bare ADD COLUMN with no backfill.
+  ///   v30 – added `project_notes` (one row per `project_path`),
+  ///         the per-project "my notes" markdown the sidebar widget
+  ///         edits and parses todos from. No FK to sessions — a note
+  ///         belongs to the project and survives session deletion.
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -448,6 +453,21 @@ CREATE TABLE IF NOT EXISTS shell_monitor_logs (
         if (hasKind.isEmpty) {
           await m.addColumn(sessions, sessions.kind);
         }
+      }
+      if (from < 30) {
+        // Add `project_notes` (see the v30 schema-history note).
+        // IF NOT EXISTS guards the "fresh install during development"
+        // trap: a dev build that created the table via onCreate
+        // without bumping user_version would otherwise abort startup
+        // with "table already exists". Mirrors the v28 rationale.
+        await m.database.customStatement('''
+CREATE TABLE IF NOT EXISTS project_notes (
+  project_path TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_path)
+)
+''');
       }
     },
   );

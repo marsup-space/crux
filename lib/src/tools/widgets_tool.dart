@@ -191,6 +191,8 @@ class WidgetsTool extends ToolDef {
           buf.writeln('    ${action.label}: launch → ${action.command}');
         case SpecActionKind.shell:
           buf.writeln('    ${action.label}: shell → ${action.command}');
+        case SpecActionKind.screen:
+          buf.writeln('    ${action.label}: screen → ${action.screen}');
         case SpecActionKind.http:
           buf.writeln('    ${action.label}: ${action.url}');
       }
@@ -252,6 +254,20 @@ class WidgetsTool extends ToolDef {
             'to the session. Act on it directly (or refine it first if '
             'the current task needs a variant).',
         metadata: {'widgets': 1, 'ok': true, 'prompt': rendered},
+      );
+    }
+
+    // Screen actions are pure UI — they open a fullpane in the running
+    // TUI. There's no in-process screen to open from a tool call, so
+    // report what the button would do rather than performing it.
+    if (action.kind == SpecActionKind.screen) {
+      return ToolResult(
+        title: 'widgets trigger ${spec.id}.$actionLabel',
+        output: '${spec.id}.$actionLabel is a `screen` action — clicking '
+            'it in the sidebar opens the `${action.screen}` fullpane in '
+            'the running Crux TUI. There is no agent-side effect to '
+            'trigger from here.',
+        metadata: {'widgets': 1, 'ok': false, 'screen': action.screen},
       );
     }
 

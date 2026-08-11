@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
 import 'message_store.dart';
+import 'notes_store.dart';
 import 'shell_monitor_log_store.dart';
 
 const _unset = Object();
@@ -45,6 +46,13 @@ class SessionStore implements SessionStoreAccessor {
   /// therefore its WAL / busy-timeout pragmas).
   ShellMonitorLogStore get shellMonitorLogStore =>
       _shellMonitorLogStore ??= ShellMonitorLogStore(_db);
+
+  NotesStore? _notesStore;
+
+  /// Lazily-created store for `project_notes` (the "my notes"
+  /// feature). Shares this [SessionStore]'s database connection, same
+  /// rationale as [shellMonitorLogStore].
+  NotesStore get notesStore => _notesStore ??= NotesStore(_db);
 
   /// Message store — set after construction to avoid a circular
   /// dependency. [MessageStore.sessionStore] points back here.

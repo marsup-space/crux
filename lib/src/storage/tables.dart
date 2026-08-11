@@ -149,6 +149,33 @@ class FileLastWriter extends Table {
   Set<Column> get primaryKey => {path};
 }
 
+/// One row per project holding the user's free-form "my notes"
+/// markdown. Keyed on [projectPath] (the workspace root) so every
+/// Crux session opened on the same project reads/writes the same
+/// note — project-specific, not session-specific. The note content
+/// is the source of truth for the "my notes" sidebar widget, which
+/// parses `- [ ]` todo items out of the markdown to show remaining
+/// work.
+///
+/// No foreign key to sessions: a note belongs to the project, not to
+/// any session, and must survive session deletion. See
+/// `notes_store.dart` and the `.crux/widgets/my-notes.toml` widget.
+class ProjectNotes extends Table {
+  /// The workspace root this note belongs to (Directory.current.path
+  /// of the owning session). Primary key — one note per project.
+  TextColumn get projectPath => text()();
+
+  /// The raw markdown the user edits in the notes fullpane.
+  TextColumn get content => text().withDefault(const Constant(''))();
+
+  /// Last write, millisecondsSinceEpoch. Drives the widget's
+  /// "updated HH:MM" display and the status-file projection.
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {projectPath};
+}
+
 class Parts extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get messageId =>

@@ -1,0 +1,38 @@
+# "my notes" widget — per-project scratch notes with a todo summary.
+#
+# Same architecture as the dev-harness widget: a process-side feature
+# (the notes fullpane) keeps its source of truth in the crux DB and
+# writes a tiny status projection to .dart_tool/my_notes.json; this
+# spec just reads that projection. The projection carries a pre-rendered
+# `display` string (open-todo count + "+N more" overflow) because spec
+# templates can't loop over arrays, plus a structured `todos` array
+# ({text, line}) so the renderer draws each open item as a clickable
+# row — clicking marks it done in the note, and the row disappears at
+# the next poll while the item stays in the note (checked).
+#
+# The note is edited in the `notes` fullpane, opened by the `open`
+# screen action below. Schema docs: lib/src/services/spec_widget.dart.
+
+id = "my-notes"
+title = "my notes"
+label = "{display}"
+refresh_ms = 2000
+
+[status]
+path = ".dart_tool/my_notes.json"
+# No heartbeat_field: file presence = alive. The notes service writes
+# the projection on session init and every save, so a present file
+# always reflects the DB. No state_rules — the label is the display
+# string verbatim.
+fallback_alive_text = "no notes yet"
+fallback_absent_text = "no notes yet — open to start"
+
+# Open the notes editor fullpane. `screen` actions are pure UI and
+# render in any liveness state, so the button is always available.
+# `record = false`: opening a screen is a UI action, not an agent
+# signal — keep the click out of the session context.
+[[actions]]
+label = "open"
+kind = "screen"
+screen = "notes"
+record = false
