@@ -1,7 +1,9 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../../models/session.dart';
+import '../../services/auxiliary_service.dart' show YesterdaySummary;
 import '../../services/git_status_service.dart';
+import '../../services/notes_service.dart';
 import '../../services/skills/skill.dart';
 
 /// Live services handed to every home widget.
@@ -52,14 +54,17 @@ class HomeContext {
   /// no provider is configured. Shown in the `workspace` box.
   final String? Function() activeModel;
 
-  /// Summarize yesterday's work via the auxiliary model (single round,
-  /// no tools) for the `yesterday` box. [sessions] is the in-memory
-  /// merged session list; the implementation filters to the yesterday
-  /// window itself. Returns `null` when no auxiliary model is
-  /// configured, the call fails, or there was no yesterday activity —
-  /// the box then falls back to its static session list. Null callback
-  /// (tests / previews) means "no summarizer", same fallback.
-  final Future<String?> Function(List<Session> sessions)? summarizeYesterday;
+  /// Summarize recent work via the auxiliary model (single round, no
+  /// tools) for the `yesterday` box. [sessions] is the in-memory merged
+  /// session list; the implementation walks back from yesterday (up to
+  /// [AuxiliaryService.maxLookbackDays] days) to the most recent day
+  /// with activity and returns the summary plus how many days back it
+  /// landed. Returns `null` when no auxiliary model is configured, the
+  /// call fails, or no day in the window had activity — the box then
+  /// falls back to its static session list. Null callback (tests /
+  /// previews) means "no summarizer", same fallback.
+  final Future<YesterdaySummary?> Function(List<Session> sessions)?
+      summarizeYesterday;
 
   /// Open a fullpane showing a skill's full SKILL.md content (the
   /// `skills` box). Null (tests / previews) means "no viewer wired" —
@@ -72,6 +77,30 @@ class HomeContext {
   /// an empty grid.
   final Future<Map<String, int>> Function({required int sinceDays})?
       dailyTokenTotals;
+
+  /// Whether any LLM provider has an API key configured. Feeds the
+  /// `setup` box's first checklist row. Defaults to `false` (tests /
+  /// previews render the full pending checklist).
+  final bool Function() hasProviderKey;
+
+  /// The configured auxiliary model's display name, or `null` when no
+  /// auxiliary model is set (or it was set to `none`). Feeds the
+  /// `setup` box's second row.
+  final String? Function() auxModelName;
+
+  /// Whether at least one search-capable web provider is configured.
+  /// Feeds the `setup` box's third row.
+  final bool Function() hasWebProvider;
+
+  /// The notes feature's service — reads/writes the per-project note and
+  /// the `.dart_tool/my_notes.json` projection the `my-notes` box renders.
+  /// Null in tests/previews where no notes feature exists; the box then
+  /// shows a "no notes" placeholder.
+  final NotesService? notesService;
+
+  /// Open the notes editor fullpane (the chat panel's `_openNotesFullpane`).
+  /// Null in tests/previews with no fullpane host.
+  final void Function()? openNotes;
 
   const HomeContext({
     required this.runCommand,
@@ -86,9 +115,16 @@ class HomeContext {
     this.summarizeYesterday,
     this.showSkill,
     this.dailyTokenTotals,
+    this.hasProviderKey = _false,
+    this.auxModelName = _nullString,
+    this.hasWebProvider = _false,
+    this.notesService,
+    this.openNotes,
   });
 
   static String? _noModel() => null;
+  static bool _false() => false;
+  static String? _nullString() => null;
 
   /// A no-op context for rendering the bare grid without a panel behind
   /// it (layout tests, previews). Every service is a stub: no sessions,
@@ -105,7 +141,12 @@ class HomeContext {
         activeModel = _noModel,
         summarizeYesterday = null,
         showSkill = null,
-        dailyTokenTotals = null;
+        dailyTokenTotals = null,
+        hasProviderKey = _false,
+        auxModelName = _nullString,
+        hasWebProvider = _false,
+        notesService = null,
+        openNotes = null;
 }
 
 /// One pluggable dashboard box.
@@ -142,6 +183,18 @@ abstract class HomeWidget {
   /// scrollable region would break its height constraint and mis-place
   /// the content.
   bool get verticallyCenter => true;
+
+  /// Whether the box shows at all right now. Defaults to true — every
+  /// box is always visible. Override to make a box conditional on live
+  /// state: the `quick-start` setup checklist returns false once every
+  /// item is done, so it drops out of the grid instead of taking up a
+  /// cell with an "all set" one-liner.
+  ///
+  /// Evaluated on each build; a hidden box stays in the placement list
+  /// (and the persisted layout) — it's only filtered out of the rendered
+  /// grid and keyboard navigation — so it reappears the moment the
+  /// condition flips back, in its original position.
+  bool visibleWhen(HomeContext ctx) => true;
 
   /// The box content's current scroll offset (rows scrolled out of
   /// view). Home's box chrome wraps every box in a scrollview; the
@@ -211,6 +264,42 @@ abstract class HomeWidget {
     int span, {
     bool focused = false,
   });
+
+  // ── Title buttons & change notification ──────────────────────────
+  //
+  // Home caches its widget list across builds (the widgets are stateful
+  // objects owned by home), so a widget that mutates its own state —
+  // e.g. the yesterday box's day navigation — needs a way to (a) tell
+  // home to rebuild and (b) hand home the title-row buttons to render.
+  // These two members provide that without making HomeWidget a
+  // nocterm Component.
+
+  /// Small buttons rendered on the box's title row, after the title
+  /// text (e.g. the yesterday box's `‹ ›` day navigation). Home lays
+  /// them out and wires the taps; a null/empty list renders nothing.
+  /// A button with a null [HomeTitleButton.onPressed] renders dimmed
+  /// (disabled). Recomputed on each build, so enabled/disabled tracks
+  /// the widget's state.
+  List<HomeTitleButton>? get titleButtons => null;
+
+  /// Rebuild notification. A stateful widget calls its listener when
+  /// its title/content/buttons changed and home should re-run `build`.
+  /// Home subscribes in `initState` (one listener per widget) and
+  /// routes it to `setState`. Widgets that never change after first
+  /// render (most) leave this null.
+  void Function()? onChanged;
+
+  /// Notify home (via [onChanged]) that this widget's state changed.
+  void notifyChanged() => onChanged?.call();
+}
+
+/// A small tappable button shown in a box's title row. [label] is the
+/// 1-2 char glyph (`‹`, `›`); [onPressed] is null when the action is
+/// unavailable (rendered dimmed, taps ignored).
+class HomeTitleButton {
+  final String label;
+  final void Function()? onPressed;
+  const HomeTitleButton({required this.label, required this.onPressed});
 }
 
 /// The set of registered home widgets, keyed by [HomeWidget.id].

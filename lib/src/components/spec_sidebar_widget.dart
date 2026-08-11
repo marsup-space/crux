@@ -22,6 +22,7 @@ import 'package:path/path.dart' as p;
 import '../services/spec_widget.dart';
 import '../theme/crux_theme.dart';
 import 'ui/button.dart';
+import 'ui/clickable_todo_list.dart';
 import 'ui/multi_button.dart';
 
 class SpecSidebarWidget extends StatefulComponent {
@@ -93,15 +94,6 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
   SpecWidgetStatus? _status;
   bool _busy = false;
 
-  /// Line → text of todos the user just checked, still within their
-  /// [SpecSidebarWidget.todoCheckedTtl] undo window. Rendered as checked
-  /// rows even after the projection drops them, so an accidental click
-  /// is visible and reversible for a few seconds.
-  final Map<int, String> _checked = {};
-
-  /// Per-checked-line timers that expire the row after the TTL.
-  final Map<int, Timer> _checkedTimers = {};
-
   @override
   void initState() {
     super.initState();
@@ -113,10 +105,6 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
   void dispose() {
     _timer?.cancel();
     _timer = null;
-    for (final t in _checkedTimers.values) {
-      t.cancel();
-    }
-    _checkedTimers.clear();
     super.dispose();
   }
 
@@ -367,66 +355,12 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
 
     // Clickable todo rows, driven by the status JSON's `todos` array
     // (`[{text, line}]` — the todo's text and its source line index in
-    // the underlying document). When a toggle handler is wired, each
-    // open row is a [Button] that marks the todo done; the row flips to
-    // a checked state locally and stays visible for [todoCheckedTtl]
-    // (the undo window) even after the projection drops it. Clicking a
-    // checked row again restores it. Without a handler the rows render
-    // as plain text (tests / contexts with no host).
-    //
-    // Rows come from two sources merged by line: the projection's open
-    // todos, plus any rows still in the local undo window (which the
-    // projection has already dropped).
-    void markTodoDone(String text, int line) {
-      setState(() {
-        _checked[line] = text;
-      });
-      _checkedTimers[line]?.cancel();
-      _checkedTimers[line] = Timer(component.todoCheckedTtl, () {
-        if (!mounted) return;
-        setState(() {
-          _checked.remove(line);
-          _checkedTimers.remove(line);
-        });
-      });
-      component.onTodoToggle?.call(text, line, true);
-    }
-
-    void undoTodo(String text, int line) {
-      _checkedTimers.remove(line)?.cancel();
-      setState(() {
-        _checked.remove(line);
-      });
-      component.onTodoToggle?.call(text, line, false);
-    }
-
-    Component todoRow(String text, int line) {
-      final checked = _checked.containsKey(line);
-      final onToggle = component.onTodoToggle;
-      if (onToggle == null) {
-        return Text(
-          '${checked ? '☑' : '☐'} $text',
-          style: TextStyle(
-            color: checked ? theme.successColor : color,
-            decoration:
-                checked ? TextDecoration.lineThrough : TextDecoration.none,
-          ),
-        );
-      }
-      return Button(
-        label: '${checked ? '☑' : '☐'} $text',
-        onPressed: () =>
-            checked ? undoTodo(text, line) : markTodoDone(text, line),
-        color: checked ? theme.successColor : theme.onSurfaceVariant,
-        hoverColor: theme.accent,
-        bgColor: theme.surface,
-        hoverBgColor: theme.buttonBackgroundHover,
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-      );
-    }
-
-    final todoRows = <Component>[];
-    final renderedLines = <int>{};
+    // the underlying document). Reuses the shared [ClickableTodoList]
+    // (identical interaction to the home dashboard box): clicking an
+    // open row marks it done (flips to checked locally, stays for
+    // [SpecSidebarWidget.todoCheckedTtl] as the undo window), clicking
+    // a checked row restores it.
+    final todos = <({String text, int line})>[];
     final rawTodos = status?.data['todos'];
     if (rawTodos is List) {
       for (final raw in rawTodos) {
@@ -435,19 +369,17 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
         final line =
             raw['line'] is num ? (raw['line'] as num).toInt() : -1;
         if (text.isEmpty) continue;
-        renderedLines.add(line);
-        todoRows.add(todoRow(text, line));
+        todos.add((text: text, line: line));
       }
     }
-    // Undo-window rows the projection no longer lists (they were just
-    // marked done) stay visible as checked rows in their original
-    // position — preserving order relative to the remaining open todos.
-    for (final line in _checked.keys) {
-      if (renderedLines.contains(line)) continue;
-      final text = _checked[line] ?? '';
-      if (text.isEmpty) continue;
-      todoRows.add(todoRow(text, line));
-    }
+    final todoRows = <Component>[
+      ClickableTodoList(
+        todos: todos,
+        onToggle: component.onTodoToggle,
+        undoWindow: component.todoCheckedTtl,
+        color: color,
+      ),
+    ];
 
     // First row: with morph actions the MultiButton is the row; with a
     // plain label the count text and any screen buttons share one line

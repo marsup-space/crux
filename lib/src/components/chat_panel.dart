@@ -1244,6 +1244,10 @@ class _ChatPanelState extends State<ChatPanel> {
             sinceDaysAgo: sinceDays,
             projectPath: Directory.current.path,
           ),
+      // My-notes box: same NotesService + editor fullpane as the sidebar
+      // spec widget — the box polls the same projection file.
+      notesService: _notesService,
+      openNotes: _openNotesFullpane,
     );
   }
 

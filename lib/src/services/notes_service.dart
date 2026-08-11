@@ -73,6 +73,33 @@ class NotesService {
   /// Load the current note content (no projection write).
   Future<String> load() => _store.loadContent(projectPath);
 
+  /// Read the open todos straight from the projection file (the same
+  /// `.dart_tool/my_notes.json` the sidebar widget polls) as
+  /// `(text, line)` records. Returns an empty list when the projection
+  /// is missing/corrupt — the caller (home box) falls back to a
+  /// placeholder. Synchronous file read so a widget can poll it cheaply.
+  List<({String text, int line})> loadProjectionTodos() {
+    try {
+      final file = File(p.join(projectPath, statusPath));
+      if (!file.existsSync()) return const [];
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map<String, dynamic>) return const [];
+      final raw = decoded['todos'];
+      if (raw is! List) return const [];
+      final out = <({String text, int line})>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final text = item['text']?.toString() ?? '';
+        final line = item['line'] is num ? (item['line'] as num).toInt() : -1;
+        if (text.isEmpty) continue;
+        out.add((text: text, line: line));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Render the multi-line widget label body for [summary]. Line 1 is
   /// the open count (just "N todo(s)" — the items themselves are the
   /// widget's clickable rows, not part of the label); a "+N more" line

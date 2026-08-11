@@ -12,6 +12,7 @@ import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
 import 'widgets/skills_widget.dart';
 import 'widgets/tokens_widget.dart';
+import 'widgets/notes_widget.dart';
 import 'widgets/workspace_widget.dart';
 import 'widgets/yesterday_widget.dart';
 
@@ -190,6 +191,10 @@ class _HomeScreenState extends State<HomeScreen> {
       TokensHomeWidget(),
       ActivityHomeWidget(),
       SkillsHomeWidget(skills: () => discoverSkills(cwd: _ctx.projectPath)),
+      NotesHomeWidget(
+        service: ctx.notesService,
+        openNotes: ctx.openNotes,
+      ),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,
         currentSessionId: ctx.currentSessionId,
