@@ -209,9 +209,10 @@ const List<SlashCommand> _baseCommands = [
     description:
         'Configure a web provider: /web-provider (list) | '
         '/web-provider <name> (status) | '
+        '/web-provider <name> <key> | '
         '/web-provider <name> key <key> | '
-        '/web-provider <name> key remove',
-    params: ['<name>', 'key <value>|remove'],
+        '/web-provider <name> remove',
+    params: ['<name>', '<value>|key <value>|remove'],
     suggestionsPerParam: [
       // First positional arg: provider id, autocompleted from
       // registered providers in the chat panel.
