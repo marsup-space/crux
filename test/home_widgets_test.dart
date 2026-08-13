@@ -9,6 +9,7 @@ import 'package:crux/src/components/home/home_widgets.dart';
 import 'package:crux/src/components/home/widgets/git_status_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
+import 'package:crux/src/components/home/widgets/setup_widget.dart';
 import 'package:crux/src/components/home/widgets/skills_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
 import 'package:crux/src/components/home/widgets/workspace_widget.dart';
@@ -961,6 +962,158 @@ void main() {
 
     test('is passive (activate returns null)', () {
       expect(WorkspaceHomeWidget().activate(_ctx()), isNull);
+    });
+  });
+
+  group('setup', () {
+    HomeContext setupCtx({
+      bool hasKey = false,
+      String? aux,
+      bool hasWeb = false,
+      String path = '',
+      void Function(String)? onSeed,
+      void Function()? onClose,
+    }) =>
+        HomeContext(
+          runCommand: (_) => true,
+          close: onClose ?? () {},
+          seedInput: onSeed ?? (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          projectPath: path,
+          hasProviderKey: () => hasKey,
+          auxModelName: () => aux,
+          hasWebProvider: () => hasWeb,
+        );
+
+    test('renders the pending checklist with command hints', () async {
+      await testNocterm('setup pending', (tester) async {
+        await _pump(tester, SetupHomeWidget(), setupCtx());
+        expect(
+          tester.terminalState.findText('provider key'),
+          nocterm.isNotEmpty,
+        );
+        expect(tester.terminalState.findText('aux model'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('web provider'),
+          nocterm.isNotEmpty,
+        );
+        expect(tester.terminalState.findText('workspace'), nocterm.isNotEmpty);
+        // Pending rows advertise the command they'll seed.
+        expect(tester.terminalState.findText('/provider'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('/auxiliary'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('/web-provider'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('done rows show their detail instead of the command hint', () async {
+      await testNocterm('setup partial', (tester) async {
+        await _pump(
+          tester,
+          SetupHomeWidget(),
+          setupCtx(hasKey: true, aux: 'glm-4.5-air', path: '/work/crux'),
+        );
+        // Done rows carry their detail.
+        expect(
+          tester.terminalState.findText('connected'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('glm-4.5-air'),
+          nocterm.isNotEmpty,
+        );
+        expect(tester.terminalState.findText('crux'), nocterm.isNotEmpty);
+        // The one pending row still shows its command hint.
+        expect(
+          tester.terminalState.findText('/web-provider'),
+          nocterm.isNotEmpty,
+        );
+        // And done rows no longer advertise theirs.
+        expect(tester.terminalState.findText('/provider'), isEmpty);
+        expect(tester.terminalState.findText('/auxiliary'), isEmpty);
+      });
+    });
+
+    test('is titled Quick Start and spans the full width', () {
+      final widget = SetupHomeWidget();
+      expect(widget.title, 'Quick Start');
+      expect(widget.supportedSpans, containsAll([1, 2, 4]));
+    });
+
+    test('hides (visibleWhen false) only when every row is done', () {
+      final widget = SetupHomeWidget();
+      // All four done → the box drops out of the grid entirely.
+      expect(
+        widget.visibleWhen(
+          setupCtx(hasKey: true, aux: 'glm', hasWeb: true, path: '/work/x'),
+        ),
+        isFalse,
+      );
+      // Any one pending row keeps it visible.
+      expect(
+        widget.visibleWhen(
+          setupCtx(hasKey: true, aux: 'glm', hasWeb: false, path: '/work/x'),
+        ),
+        isTrue,
+      );
+      expect(widget.visibleWhen(setupCtx()), isTrue);
+    });
+
+    test('activating a pending row seeds its command and closes', () {
+      var seeded = '';
+      var closed = false;
+      final widget = SetupHomeWidget();
+      final ctx = setupCtx(
+        onSeed: (t) => seeded = t,
+        onClose: () => closed = true,
+      );
+      // Row 0 (provider key) is pending.
+      widget.activateItem(ctx, 0)!();
+      expect(seeded, '/provider ');
+      expect(closed, isTrue);
+    });
+
+    test('activating a done row or the workspace row is a no-op', () {
+      var seeded = false;
+      final widget = SetupHomeWidget();
+      final ctx = setupCtx(
+        hasKey: true,
+        aux: 'glm',
+        path: '/work/crux',
+        onSeed: (_) => seeded = true,
+      );
+      // Row 0 is done → null.
+      expect(widget.activateItem(ctx, 0), isNull);
+      // Row 2 (web provider) is the only actionable one.
+      expect(widget.activateItem(ctx, 2), isNotNull);
+      // Row 3 (workspace) has no command even though it's done.
+      expect(widget.activateItem(ctx, 3), isNull);
+      expect(seeded, isFalse);
+    });
+
+    test('selection wraps across the four rows', () {
+      final widget = SetupHomeWidget();
+      expect(widget.itemCount, 4);
+      expect(widget.selectedIndex, 0);
+      widget.moveSelection(-1);
+      expect(widget.selectedIndex, 3);
+      widget.moveSelection(1);
+      expect(widget.selectedIndex, 0);
+    });
+
+    test('default context reports everything pending', () {
+      // HomeContext.minimal (tests/previews) renders the full checklist.
+      final items = SetupHomeWidget().itemsFor(_ctx());
+      expect(items, hasLength(4));
+      expect(items.where((i) => i.done), isEmpty);
     });
   });
 
