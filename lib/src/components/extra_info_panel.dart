@@ -674,11 +674,29 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 // toolbar renders it instead). Sits directly above
                 // the divider that isolates the bottom block;
                 // click dumps `/auxiliary ` into the chat input.
-                // The SizedBox stretches it to the full panel width
-                // (GlossyModelButton sizes to its label otherwise).
+                // Renders as its own full-width bordered box (same
+                // chrome as the spec widgets above), with `aux` as
+                // the border title. The border + horizontal padding
+                // eat 4 columns, so the button's width budget is
+                // trimmed accordingly to keep the label inside.
                 if (component.sessionController != null)
-                  SizedBox(
+                  Container(
                     width: constraints.maxWidth,
+                    decoration: BoxDecoration(
+                      color: CruxTheme.of(context).surface,
+                      border: BoxBorder.all(
+                        color: CruxTheme.of(context).outline,
+                        style: BoxBorderStyle.rounded,
+                      ),
+                      title: BorderTitle(
+                        text: 'aux',
+                        style: TextStyle(
+                          color: CruxTheme.of(context).onSurfaceVariant,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
                     child: Hinted(
                       hint:
                           'Auxiliary model\n'
@@ -687,8 +705,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                       child: AuxiliaryModelButton(
                         sessionController: component.sessionController!,
                         onPressed: component.onAuxiliaryPressed,
-                        showAuxLabel: true,
-                        maxWidth: constraints.maxWidth.toInt(),
+                        showAuxLabel: false,
+                        maxWidth: (constraints.maxWidth - 4).toInt(),
                       ),
                     ),
                   ),
