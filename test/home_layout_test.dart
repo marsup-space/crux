@@ -359,7 +359,7 @@ void main() {
       await tester.pumpComponent(
         Container(
           width: 60,
-          height: 16,
+          height: 24,
           child: CruxTheme(
             data: CruxThemeData.draculaFallback,
             child: HomeScreen(
@@ -395,7 +395,7 @@ void main() {
       // sits at y=7; action rows at y=8 (/new), 9 (/chat), 10.
       await tester.tap(4, 9);
       await tester.pump();
-    }, size: const Size(60, 16));
+    }, size: const Size(60, 24));
     expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
     expect(ran, isNot(contains('/new')), reason: 'must not fire the first item');
   });
@@ -409,7 +409,7 @@ void main() {
       await tester.pumpComponent(
         Container(
           width: 60,
-          height: 16,
+          height: 24,
           child: CruxTheme(
             data: CruxThemeData.draculaFallback,
             child: HomeScreen(
@@ -429,7 +429,7 @@ void main() {
         ),
       );
       await tester.pump();
-    }, size: const Size(60, 16));
+    }, size: const Size(60, 24));
     expect(quitCalled, isTrue, reason: 'Ctrl+C must call quitApp on home');
   });
 
@@ -451,7 +451,7 @@ void main() {
       await tester.pumpComponent(
         Container(
           width: 60,
-          height: 16,
+          height: 24,
           child: CruxTheme(
             data: CruxThemeData.draculaFallback,
             child: HomeScreen(
@@ -492,7 +492,51 @@ void main() {
         0,
         reason: 'hovering the /new row selects it',
       );
-    }, size: const Size(60, 16));
+    }, size: const Size(60, 24));
+  });
+
+  test('quick-chat input starts a new chat on Enter', () async {
+    await testNocterm('home quick chat', (tester) async {
+      String? started;
+      await tester.pumpComponent(
+        Container(
+          width: 80,
+          height: 24,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: HomeScreen(
+              onExit: () {},
+              widgets: [StubHomeWidget('alpha')],
+              context_: _ctx(),
+              onStartChat: (text) {
+                started = text;
+                return true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // The quick-chat field renders its prompt + placeholder.
+      expect(
+        tester.terminalState.findText('Start a new chat').isNotEmpty,
+        isTrue,
+        reason: 'the quick-chat field renders its placeholder',
+      );
+
+      await tester.enterText('hello chat');
+      await tester.pump();
+      expect(
+        tester.terminalState.findText('hello chat').isNotEmpty,
+        isTrue,
+        reason: 'typed text should appear in the quick-chat field',
+      );
+      await tester.sendEnter();
+      await tester.pump();
+
+      expect(started, 'hello chat');
+    }, size: const Size(80, 24));
   });
 }
 

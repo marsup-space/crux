@@ -78,16 +78,17 @@ void main() {
 
       // Home is an independent full screen — no modal chrome. No
       // close button from a Fullpane, and the chat interface is not
-      // built underneath (no input prompt).
+      // built underneath (the chat input's "paste" button is gone; the
+      // home quick-chat field has its own prompt, not the full input).
       expect(
         tester.terminalState.findText('✕ close').isEmpty,
         isTrue,
         reason: 'home must not show a Fullpane close button',
       );
       expect(
-        tester.terminalState.findText('> ').isEmpty,
+        tester.terminalState.findText('paste').isEmpty,
         isTrue,
-        reason: 'chat input prompt must not render while home is open',
+        reason: 'chat input must not render while home is open',
       );
       // Home's hero (version line) confirms the screen is up.
       expect(
@@ -102,7 +103,7 @@ void main() {
       );
       await tester.pump();
       expect(
-        tester.terminalState.findText('> ').isNotEmpty,
+        tester.terminalState.findText('paste').isNotEmpty,
         isTrue,
         reason: 'chat input returns after leaving home',
       );

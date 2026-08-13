@@ -1156,6 +1156,23 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
+  /// Start a new Chat-mode conversation with [text] as the first prompt
+  /// and leave home for the chat screen. Returns false when refused
+  /// mid-stream.
+  bool _startChat(String text) {
+    if (_homeResponding) return false;
+    unawaited(_startChatAsync(text));
+    return true;
+  }
+
+  Future<void> _startChatAsync(String text) async {
+    // Create a fresh workspace-free chat (kind='chat', minimal prompt)
+    // and switch to it, then send the prompt as its first message.
+    await _sessionController.createChatSession();
+    _turnOrchestrator.sendMessage(text: text, textController: textController);
+    _closeHome();
+  }
+
   Component _buildHome() {
     // Home is an independent full screen, not a modal Fullpane — no
     // close button, no barrier, no margins. See HomeScreen.
@@ -1168,6 +1185,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // run summary + clean teardown fire regardless of where the user
       // hits Ctrl+C.
       quitApp: _quitHandler.quitAndPrintSummary,
+      onStartChat: _startChat,
     );
   }
 

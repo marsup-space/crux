@@ -72,6 +72,12 @@ class HomeScreen extends StatefulComponent {
   /// quit handler can never trap the user on the home screen.
   final VoidCallback? quitNow;
 
+  /// Start a new Chat-mode conversation with [text] as the first prompt,
+  /// then leave home for the chat screen. Returns false if refused
+  /// mid-stream. Null (tests / previews) means "no starter wired" — the
+  /// quick-chat input then does nothing on submit.
+  final bool Function(String text)? onStartChat;
+
   const HomeScreen({
     super.key,
     required this.onExit,
@@ -81,6 +87,7 @@ class HomeScreen extends StatefulComponent {
     this.onLayoutChanged,
     this.quitApp,
     this.quitNow,
+    this.onStartChat,
   });
 
   @override
@@ -147,6 +154,9 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _kAboveViewport = 1 + 5 + 1;
 
   final _scrollController = ScrollController();
+
+  /// Controller for the quick-chat input at the bottom of home.
+  final TextEditingController _chatController = TextEditingController();
 
   /// Index of the focused box in the flat placement list.
   int _focusedIndex = 0;
@@ -321,6 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _chatController.dispose();
     super.dispose();
   }
 
@@ -743,6 +754,90 @@ class _HomeScreenState extends State<HomeScreen> {
   // screen.
   List<_Row>? _packedRowsCache;
 
+  // ── Quick-chat input ──────────────────────────────────────────────
+
+  Component _quickChatInput(CruxThemeData theme) {
+    // LayoutBuilder defers the field's mount to the layout phase, so its
+    // `focused: true` focus request runs AFTER the root Focusable's own
+    // request. Otherwise the root (an ancestor with `focused: true`)
+    // steals focus back once the field mounts and typing never lands
+    // here.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          decoration: BoxDecoration(
+            color: theme.surface,
+            border: BoxBorder.all(
+              color: theme.accent,
+              style: BoxBorderStyle.rounded,
+            ),
+            title: BorderTitle(
+              text: 'New chat',
+              style: TextStyle(
+                color: theme.accent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Text('> ', style: TextStyle(color: theme.onSurfaceDim)),
+              Expanded(
+                child: TextField(
+                  controller: _chatController,
+                  focused: true,
+                  maxLines: 1,
+                  style: TextStyle(color: theme.foreground),
+                  placeholder: 'Start a new chat…',
+                  onSubmitted: _submitChat,
+                  onKeyEvent: _chatKeyHandler,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _submitChat(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    final ok = component.onStartChat?.call(trimmed);
+    if (ok == null || !ok) return; // no starter wired, or refused mid-stream
+    _chatController.clear();
+  }
+
+  /// The quick-chat field keeps home's keyboard shortcuts working while
+  /// it's empty: arrows / Tab / PgUp / PgDn / Home / End / Enter / `e` /
+  /// `[` / `]` are delegated to [build]'s `_handleKey` for grid
+  /// navigation, edit mode, and box activation. Once the user has typed
+  /// something, the field owns the keyboard (typing, cursor, Enter to
+  /// submit).
+  bool _chatKeyHandler(KeyboardEvent event) {
+    if (_chatController.text.isNotEmpty) return false;
+    final key = event.logicalKey;
+    switch (key) {
+      case LogicalKey.arrowUp:
+      case LogicalKey.arrowDown:
+      case LogicalKey.arrowLeft:
+      case LogicalKey.arrowRight:
+      case LogicalKey.tab:
+      case LogicalKey.pageUp:
+      case LogicalKey.pageDown:
+      case LogicalKey.home:
+      case LogicalKey.end:
+      case LogicalKey.enter:
+      case LogicalKey.keyE:
+      case LogicalKey.bracketLeft:
+      case LogicalKey.bracketRight:
+        return _handleKey(event);
+      default:
+        return false;
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────
 
   @override
@@ -842,6 +937,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
+
+            // ── Quick-chat input ──
+            // A one-line field to start a fresh Chat conversation. Hidden
+            // during edit mode (edit mode owns the whole keyboard).
+            if (!_editing) _quickChatInput(theme),
+            const SizedBox(height: 1),
 
             // ── Key-hint footer ──
             if (_notice != null)
