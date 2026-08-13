@@ -1,22 +1,28 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../models/daily_usage_stats.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
 
-/// The `tokens` box — total tokens spent on a given day, with `‹ ›`
-/// title navigation to walk the calendar.
+/// The `today` box — a day's activity at a glance, with `‹ ›` title
+/// navigation to walk the calendar.
 ///
-/// Data source: [HomeContext.dailyTokenTotals] (one SQL aggregate over
+/// Data source: [HomeContext.dailyUsageStats] (one SQL aggregate over
 /// this workspace's messages, keyed by local calendar day). The box
 /// defaults to **today** (`0` days back); `‹` steps to the previous
 /// day, `›` steps back toward today, and the title names the day —
 /// "Today", "Yesterday", "2 days ago", …, or the `MM-DD` date beyond a
 /// week.
 ///
-/// The whole daily-totals map is fetched once (it's one cheap query)
-/// and cached on the widget, so stepping through days is instant. The
-/// same `‹ ›` title-button + `[`/`]`-key setup as the `yesterday` box
-/// drives navigation; home renders the buttons and keys for any widget
+/// Shows three per-day metrics:
+///   * **tokens** — total tokens (in + out) spent.
+///   * **turns** — conversation turns (`role: 'user'` messages).
+///   * **sessions** — distinct sessions with activity that day.
+///
+/// The whole daily-stats map is fetched once (one cheap query) and
+/// cached on the widget, so stepping through days is instant. The same
+/// `‹ ›` title-button + `[`/`]`-key setup as the `yesterday` box drives
+/// navigation; home renders the buttons and keys for any widget
 /// exposing [titleButtons].
 ///
 /// Passive box — `activate` returns null; there's no primary action.
@@ -26,11 +32,12 @@ class TokensHomeWidget extends HomeWidget {
 
   /// Injectable data source. Defaults to reading through the context;
   /// tests inject a fixed map.
-  final Future<Map<String, int>> Function(HomeContext ctx)? _loaderOverride;
+  final Future<Map<String, DailyUsageStats>> Function(HomeContext ctx)?
+      _loaderOverride;
 
   TokensHomeWidget({
     DateTime Function()? now,
-    Future<Map<String, int>> Function(HomeContext ctx)? loader,
+    Future<Map<String, DailyUsageStats>> Function(HomeContext ctx)? loader,
   })  : _now = now ?? DateTime.now,
         _loaderOverride = loader;
 
@@ -42,9 +49,9 @@ class TokensHomeWidget extends HomeWidget {
   /// so the box follows the current day again.
   int? _navigatedDay;
 
-  /// The fetched daily totals (`'yyyy-MM-dd'` → tokens), or null while
-  /// the query is in flight. Cached for the box's life.
-  Map<String, int>? _totals;
+  /// The fetched daily stats (`'yyyy-MM-dd'` → [DailyUsageStats]), or
+  /// null while the query is in flight. Cached for the box's life.
+  Map<String, DailyUsageStats>? _stats;
 
   /// True once the query has settled.
   bool _settled = false;
@@ -121,10 +128,10 @@ class TokensHomeWidget extends HomeWidget {
   @override
   void Function()? activate(HomeContext ctx) => null; // passive
 
-  Future<Map<String, int>> _load(HomeContext ctx) {
+  Future<Map<String, DailyUsageStats>> _load(HomeContext ctx) {
     final override = _loaderOverride;
     if (override != null) return override(ctx);
-    final fetch = ctx.dailyTokenTotals;
+    final fetch = ctx.dailyUsageStats;
     if (fetch == null) return Future.value(const {});
     // A year + a week so the box can walk back through any realistic
     // history; the query is a single cheap aggregate.
@@ -140,8 +147,8 @@ class TokensHomeWidget extends HomeWidget {
   }) {
     if (!_requested) {
       _requested = true;
-      _load(ctx).then((totals) {
-        _totals = totals;
+      _load(ctx).then((stats) {
+        _stats = stats;
         _settled = true;
         notifyChanged();
       });
@@ -151,27 +158,35 @@ class TokensHomeWidget extends HomeWidget {
 
     if (!_settled) {
       return Text(
-        'counting tokens…',
+        'loading…',
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
 
-    final tokens = _totals?[_dayKey] ?? 0;
-    final labelStyle = TextStyle(color: theme.onSurfaceDim);
-    final valueStyle = TextStyle(color: theme.onSurfaceVariant);
-
-    if (tokens == 0) {
+    final stats = _stats?[_dayKey];
+    if (stats == null || stats.isEmpty) {
       return Text(
-        'no tokens spent',
+        'no activity',
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _row(theme, 'tokens', _fmt(stats.tokens)),
+        _row(theme, 'turns', '${stats.turns}'),
+        _row(theme, 'sessions', '${stats.sessions}'),
+      ],
+    );
+  }
+
+  Component _row(CruxThemeData theme, String label, String value) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('tokens  ', style: labelStyle),
-        Text(_fmt(tokens), style: valueStyle),
+        Text('$label  ', style: TextStyle(color: theme.onSurfaceDim)),
+        Text(value, style: TextStyle(color: theme.onSurfaceVariant)),
       ],
     );
   }
@@ -182,4 +197,3 @@ class TokensHomeWidget extends HomeWidget {
         (m) => '${m[1]},',
       );
 }
-

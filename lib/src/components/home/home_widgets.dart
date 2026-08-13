@@ -1,10 +1,12 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../../models/session.dart';
+import '../../models/daily_usage_stats.dart';
 import '../../services/auxiliary_service.dart' show YesterdaySummary;
 import '../../services/git_status_service.dart';
 import '../../services/notes_service.dart';
 import '../../services/skills/skill.dart';
+import '../polling_coordinator.dart';
 
 /// Live services handed to every home widget.
 ///
@@ -78,6 +80,13 @@ class HomeContext {
   final Future<Map<String, int>> Function({required int sinceDays})?
       dailyTokenTotals;
 
+  /// Fetch per-local-day usage stats (tokens, turns, active-session
+  /// count) for the `today` box. [sinceDays] bounds the lookback window.
+  /// Null (tests / previews) means "no store wired" — the box renders
+  /// its empty state.
+  final Future<Map<String, DailyUsageStats>> Function({required int sinceDays})?
+      dailyUsageStats;
+
   /// Whether any LLM provider has an API key configured. Feeds the
   /// `setup` box's first checklist row. Defaults to `false` (tests /
   /// previews render the full pending checklist).
@@ -102,6 +111,13 @@ class HomeContext {
   /// Null in tests/previews with no fullpane host.
   final void Function()? openNotes;
 
+  /// All connected providers that expose a live usage surface (a coding
+  /// plan or a credit balance), in provider load order. Feeds the
+  /// `coding-plan` box, which shows one row per provider with the
+  /// provider name. Empty (tests / previews) means "no connected
+  /// providers".
+  final List<ConnectedProviderUsage> Function() connectedUsageProviders;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -115,16 +131,19 @@ class HomeContext {
     this.summarizeYesterday,
     this.showSkill,
     this.dailyTokenTotals,
+    this.dailyUsageStats,
     this.hasProviderKey = _false,
     this.auxModelName = _nullString,
     this.hasWebProvider = _false,
     this.notesService,
     this.openNotes,
+    this.connectedUsageProviders = _noConnectedUsage,
   });
 
   static String? _noModel() => null;
   static bool _false() => false;
   static String? _nullString() => null;
+  static List<ConnectedProviderUsage> _noConnectedUsage() => const [];
 
   /// A no-op context for rendering the bare grid without a panel behind
   /// it (layout tests, previews). Every service is a stub: no sessions,
@@ -142,11 +161,13 @@ class HomeContext {
         summarizeYesterday = null,
         showSkill = null,
         dailyTokenTotals = null,
+        dailyUsageStats = null,
         hasProviderKey = _false,
         auxModelName = _nullString,
         hasWebProvider = _false,
         notesService = null,
-        openNotes = null;
+        openNotes = null,
+        connectedUsageProviders = _noConnectedUsage;
 }
 
 /// One pluggable dashboard box.

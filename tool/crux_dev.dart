@@ -52,6 +52,7 @@ import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/components/home/widgets/stub_widget.dart';
 import 'package:crux/src/components/home/widgets/setup_widget.dart';
 import 'package:crux/src/services/auxiliary_service.dart';
+import 'package:crux/src/models/daily_usage_stats.dart';
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/services/git_status_service.dart';
 import 'package:crux/src/theme/crux_theme.dart';
@@ -222,6 +223,11 @@ Future<HomeContext> _homeContext(
     // scoped to the same project path the real panel uses.
     dailyTokenTotals: ({required sinceDays}) =>
         boot.store.messageStore.dailyTokenTotals(
+      sinceDaysAgo: sinceDays,
+      projectPath: Directory.current.path,
+    ),
+    dailyUsageStats: ({required sinceDays}) =>
+        boot.store.messageStore.dailyUsageStats(
       sinceDaysAgo: sinceDays,
       projectPath: Directory.current.path,
     ),
@@ -453,6 +459,7 @@ extension on HomeContext {
         summarizeYesterday: summarizeYesterday,
         showSkill: showSkill,
         dailyTokenTotals: dailyTokenTotals,
+        dailyUsageStats: dailyUsageStats,
         hasProviderKey: hasProviderKey,
         auxModelName: auxModelName,
         hasWebProvider: hasWebProvider,
@@ -485,6 +492,8 @@ extension on HomeContext {
     void Function(SkillInfo)? showSkill,
     Future<Map<String, int>> Function({required int sinceDays})?
         dailyTokenTotals,
+    Future<Map<String, DailyUsageStats>> Function({required int sinceDays})?
+        dailyUsageStats,
     bool Function()? hasProviderKey,
     String? Function()? auxModelName,
     bool Function()? hasWebProvider,
@@ -502,6 +511,7 @@ extension on HomeContext {
       summarizeYesterday: summarizeYesterday ?? this.summarizeYesterday,
       showSkill: showSkill ?? this.showSkill,
       dailyTokenTotals: dailyTokenTotals ?? this.dailyTokenTotals,
+      dailyUsageStats: dailyUsageStats ?? this.dailyUsageStats,
       hasProviderKey: hasProviderKey ?? this.hasProviderKey,
       auxModelName: auxModelName ?? this.auxModelName,
       hasWebProvider: hasWebProvider ?? this.hasWebProvider,

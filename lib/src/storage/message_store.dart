@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
+import '../models/daily_usage_stats.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/part.dart';
@@ -219,6 +220,57 @@ class MessageStore {
     return {
       for (final row in rows)
         row.read<String>('day'): row.read<int>('total'),
+    };
+  }
+
+  /// Per-local-day usage stats for the home screen's `today` box: total
+  /// tokens, conversation turns (`role: 'user'` messages), and the
+  /// number of distinct sessions that had activity that day.
+  ///
+  /// Returns a map from `'YYYY-MM-DD'` (local time) to a
+  /// [DailyUsageStats]. [sinceDaysAgo] bounds the window (e.g. 371 for a
+  /// year + partial week); pass [projectPath] to scope to one workspace
+  /// (chats have an empty `project_path`, so they drop out of a
+  /// project-scoped query — matching [dailyTokenTotals]).
+  ///
+  /// `created_at` is stored as local epoch-ms, so
+  /// `date(created_at/1000, 'unixepoch', 'localtime')` buckets by the
+  /// user's own midnight.
+  Future<Map<String, DailyUsageStats>> dailyUsageStats({
+    required int sinceDaysAgo,
+    String? projectPath,
+  }) async {
+    final sinceMs = DateTime.now()
+        .subtract(Duration(days: sinceDaysAgo))
+        .millisecondsSinceEpoch;
+    final variables = <Variable<Object>>[Variable.withInt(sinceMs)];
+    var projectFilter = '';
+    if (projectPath != null) {
+      projectFilter = 'AND s.project_path = ?';
+      variables.add(Variable.withString(projectPath));
+    }
+    final rows = await _db
+        .customSelect(
+          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          'AS day, '
+          'SUM(m.tokens_in + m.tokens_out) AS tokens, '
+          "SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) AS turns, "
+          'COUNT(DISTINCT m.session_id) AS sessions '
+          'FROM messages m '
+          'JOIN sessions s ON s.id = m.session_id '
+          'WHERE m.created_at >= ? $projectFilter '
+          'GROUP BY day',
+          variables: variables,
+          readsFrom: {_db.messages, _db.sessions},
+        )
+        .get();
+    return {
+      for (final row in rows)
+        row.read<String>('day'): DailyUsageStats(
+          tokens: row.read<int>('tokens'),
+          turns: row.read<int>('turns'),
+          sessions: row.read<int>('sessions'),
+        ),
     };
   }
 

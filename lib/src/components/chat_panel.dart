@@ -1254,10 +1254,21 @@ class _ChatPanelState extends State<ChatPanel> {
             sinceDaysAgo: sinceDays,
             projectPath: Directory.current.path,
           ),
+      // Today box: per-day tokens + turns + active-session count over
+      // this workspace, same aggregate shape as the activity heatmap.
+      dailyUsageStats: ({required sinceDays}) => _store.messageStore
+          .dailyUsageStats(
+            sinceDaysAgo: sinceDays,
+            projectPath: Directory.current.path,
+          ),
       // My-notes box: same NotesService + editor fullpane as the sidebar
       // spec widget — the box polls the same projection file.
       notesService: _notesService,
       openNotes: _openNotesFullpane,
+      // Coding-plan box: hand it every connected usage provider (not just
+      // the active session's provider). The closure reads `_polling` on
+      // each home build so the box tracks whatever is configured now.
+      connectedUsageProviders: () => _polling.connectedUsage,
     );
   }
 
@@ -1531,6 +1542,7 @@ class _ChatPanelState extends State<ChatPanel> {
   Component build(BuildContext context) {
     _polling.syncCodingPlanPolling();
     _polling.syncCreditBalancePolling();
+    _polling.syncAllProvidersUsage();
     _maybeRecomputeCompactEstimate();
 
     return FrameProfiler.instance.timed('chatPanel.build', () {

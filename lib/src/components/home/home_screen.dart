@@ -9,6 +9,7 @@ import '../ui/button.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
 import 'widgets/activity_widget.dart';
+import 'widgets/coding_plan_widget.dart';
 import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
 import 'widgets/skills_widget.dart';
@@ -194,8 +195,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       WorkspaceHomeWidget(),
       QuickActionsHomeWidget(seedInput: ctx.seedInput),
-      // The three span-1 boxes sit together and fill one row.
+      // Compact status boxes: tokens, live provider usage, and the
+      // activity heatmap.
       TokensHomeWidget(),
+      CodingPlanHomeWidget(),
       ActivityHomeWidget(),
       SkillsHomeWidget(skills: () => discoverSkills(cwd: _ctx.projectPath)),
       NotesHomeWidget(

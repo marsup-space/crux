@@ -253,4 +253,86 @@ void main() {
       expect(totals, isEmpty);
     });
   });
+
+  group('dailyUsageStats', () {
+    late SessionStore store;
+
+    setUp(() {
+      store = SessionStore(
+        CruxDatabase.forTesting(NativeDatabase.memory()),
+      );
+    });
+
+    tearDown(() async {
+      await store.database.close();
+    });
+
+    Future<void> addMessage({
+      required int sessionId,
+      required String role,
+      required DateTime when,
+      int tokensIn = 0,
+      int tokensOut = 0,
+    }) async {
+      await store.database
+          .into(store.database.messages)
+          .insert(
+            MessagesCompanion.insert(
+              sessionId: sessionId,
+              role: role,
+              createdAt: when.millisecondsSinceEpoch,
+              tokensIn: Value(tokensIn),
+              tokensOut: Value(tokensOut),
+            ),
+          );
+    }
+
+    test('counts tokens, turns, and distinct sessions per day', () async {
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+
+      final s1 = await store.create(title: 'a', projectPath: '/p');
+      final s2 = await store.create(title: 'b', projectPath: '/p');
+
+      // Session 1: a user turn followed by the assistant reply.
+      await addMessage(
+        sessionId: s1.id,
+        role: 'user',
+        when: todayStart.add(const Duration(hours: 9)),
+        tokensIn: 10,
+      );
+      await addMessage(
+        sessionId: s1.id,
+        role: 'ai',
+        when: todayStart.add(const Duration(hours: 9, minutes: 1)),
+        tokensIn: 20,
+        tokensOut: 15,
+      );
+      // Session 2: a second user turn, still today.
+      await addMessage(
+        sessionId: s2.id,
+        role: 'user',
+        when: todayStart.add(const Duration(hours: 10)),
+        tokensIn: 5,
+      );
+
+      final stats = await store.messageStore.dailyUsageStats(
+        sinceDaysAgo: 7,
+        projectPath: '/p',
+      );
+
+      String key(DateTime d) =>
+          '${d.year}-'
+          '${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
+
+      final todayStats = stats[key(todayStart)]!;
+      // (10 + 0) + (20 + 15) + (5 + 0) = 50.
+      expect(todayStats.tokens, 50);
+      // Two `role: 'user'` messages.
+      expect(todayStats.turns, 2);
+      // Two distinct sessions.
+      expect(todayStats.sessions, 2);
+    });
+  });
 }

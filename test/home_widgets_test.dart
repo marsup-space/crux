@@ -6,7 +6,9 @@ import 'package:test/test.dart';
 
 import 'package:crux/src/components/home/home_screen.dart';
 import 'package:crux/src/components/home/home_widgets.dart';
+import 'package:crux/src/components/polling_coordinator.dart';
 import 'package:crux/src/components/home/widgets/git_status_widget.dart';
+import 'package:crux/src/components/home/widgets/coding_plan_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
 import 'package:crux/src/components/home/widgets/setup_widget.dart';
@@ -17,7 +19,14 @@ import 'package:crux/src/components/home/widgets/yesterday_widget.dart';
 import 'package:crux/src/services/auxiliary_service.dart'
     show YesterdaySummary;
 import 'package:crux/src/models/session.dart';
+import 'package:crux/src/models/coding_plan_usage.dart';
+import 'package:crux/src/models/credit_balance.dart';
+import 'package:crux/src/models/daily_usage_stats.dart';
 import 'package:crux/src/services/git_status_service.dart';
+import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
+import 'package:crux/src/services/providers/coding_plan_provider.dart';
+import 'package:crux/src/services/providers/credit_balance_provider.dart';
+import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 
@@ -54,6 +63,63 @@ Session _session(
   return Session(id: id, title: title, kind: kind, updatedAt: updatedAt);
 }
 
+/// Test-only coding-plan provider with a deterministic snapshot (no HTTP).
+class _FakeCodingPlanProvider extends AnthropicCompatibleProvider
+    with CodingPlanProvider {
+  _FakeCodingPlanProvider({this.intervalPct = 88, this.weeklyPct = 55});
+
+  final int intervalPct;
+  final int weeklyPct;
+
+  @override
+  String get name => 'fake';
+
+  @override
+  Future<CodingPlanUsage> getCodingPlanUsage() async {
+    // Yield so a subscription registered right after `start*Polling`
+    // still observes the immediate tick's snapshot.
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    return CodingPlanUsage(
+      providerName: name,
+      modelName: 'general',
+      intervalRemainingPct: intervalPct,
+      weeklyRemainingPct: weeklyPct,
+      intervalRemains: const Duration(hours: 4, minutes: 32),
+      weeklyRemains: const Duration(days: 6, hours: 4),
+      fetchedAt: DateTime.now(),
+    );
+  }
+}
+
+/// Test-only credit-balance provider with a deterministic balance (no HTTP).
+class _FakeCreditBalanceProvider extends OpenAICompatibleProvider
+    with CreditBalanceProvider {
+  _FakeCreditBalanceProvider({this.totalBalance = '110.00'});
+
+  final String totalBalance;
+
+  @override
+  String get name => 'fake';
+
+  @override
+  Future<CreditBalance> getCreditBalance() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    return CreditBalance(
+      providerName: name,
+      isAvailable: true,
+      balanceInfos: [
+        BalanceInfo(
+          currency: 'CNY',
+          totalBalance: totalBalance,
+          grantedBalance: '80.00',
+          toppedUpBalance: '30.00',
+        ),
+      ],
+      fetchedAt: DateTime.now(),
+    );
+  }
+}
+
 void main() {
   group('tokens', () {
     /// `'yyyy-MM-dd'` for the day [daysAgo] before [now].
@@ -64,7 +130,7 @@ void main() {
           '${d.day.toString().padLeft(2, '0')}';
     }
 
-    test('empty state when no tokens spent today', () async {
+    test('empty state when no activity today', () async {
       await testNocterm('tokens empty', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
@@ -75,23 +141,31 @@ void main() {
         await tester.pump(); // let the loader land
         expect(widget.title, 'Today');
         expect(
-          tester.terminalState.findText('no tokens spent'),
+          tester.terminalState.findText('no activity'),
           nocterm.isNotEmpty,
         );
       });
     });
 
-    test('shows today\'s tokens by default', () async {
+    test('shows today\'s tokens, turns, and sessions by default', () async {
       await testNocterm('tokens today', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
           now: () => now,
-          loader: (_) async => {dayKey(now, 0): 12800},
+          loader: (_) async => {
+            dayKey(now, 0):
+                const DailyUsageStats(tokens: 12800, turns: 34, sessions: 3),
+          },
         );
         await _pump(tester, widget, _ctx());
         await tester.pump();
         expect(widget.title, 'Today');
         expect(tester.terminalState.findText('12,800'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('turns  34'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('sessions  3'),
+          nocterm.isNotEmpty,
+        );
       });
     });
 
@@ -101,9 +175,9 @@ void main() {
         final widget = TokensHomeWidget(
           now: () => now,
           loader: (_) async => {
-            dayKey(now, 0): 5000,
-            dayKey(now, 1): 12800,
-            dayKey(now, 3): 3400,
+            dayKey(now, 0): const DailyUsageStats(tokens: 5000),
+            dayKey(now, 1): const DailyUsageStats(tokens: 12800),
+            dayKey(now, 3): const DailyUsageStats(tokens: 3400),
           },
         );
         await _pump(tester, widget, _ctx());
@@ -125,7 +199,7 @@ void main() {
         expect(widget.daysAgo, 2);
         expect(widget.title, '2 days ago');
         expect(
-          tester.terminalState.findText('no tokens spent'),
+          tester.terminalState.findText('no activity'),
           nocterm.isNotEmpty,
         );
 
@@ -200,7 +274,10 @@ void main() {
 
         final widget = TokensHomeWidget(
           now: () => now,
-          loader: (_) async => {dayKey(0): 5000, dayKey(1): 12800},
+          loader: (_) async => {
+            dayKey(0): const DailyUsageStats(tokens: 5000),
+            dayKey(1): const DailyUsageStats(tokens: 12800),
+          },
         );
         final base = HomeContext.minimal(close: () {});
         final ctx = HomeContext(
@@ -962,6 +1039,100 @@ void main() {
 
     test('is passive (activate returns null)', () {
       expect(WorkspaceHomeWidget().activate(_ctx()), isNull);
+    });
+  });
+
+  group('coding-plan', () {
+    test('declares id, title, span, and height', () {
+      final widget = CodingPlanHomeWidget();
+      expect(widget.id, 'coding-plan');
+      expect(widget.title, 'Coding plan');
+      expect(widget.supportedSpans, {1});
+      expect(widget.heightFor(1), 4);
+      expect(widget.verticallyCenter, isFalse);
+    });
+
+    test('renders an empty state with no connected providers and is passive',
+        () async {
+      await testNocterm('coding-plan empty', (tester) async {
+        await _pump(tester, CodingPlanHomeWidget(), _ctx());
+        expect(
+          tester.terminalState.findText('no usage data'),
+          nocterm.isNotEmpty,
+        );
+        expect(CodingPlanHomeWidget().activate(_ctx()), isNull);
+      });
+    });
+
+    test('renders every connected provider with its name and usage', () async {
+      await testNocterm('coding-plan all providers', (tester) async {
+        final deepseek = _FakeCreditBalanceProvider(totalBalance: '110.00');
+        final kimi = _FakeCodingPlanProvider(intervalPct: 88, weeklyPct: 55);
+        final zhipu = _FakeCodingPlanProvider(intervalPct: 40, weeklyPct: 80);
+
+        deepseek.startCreditBalancePolling(apiKey: 'x');
+        kimi.startCodingPlanPolling(apiKey: 'x');
+        zhipu.startCodingPlanPolling(apiKey: 'x');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        deepseek.stopCreditBalancePolling();
+        kimi.stopCodingPlanPolling();
+        zhipu.stopCodingPlanPolling();
+
+        final entries = [
+          ConnectedProviderUsage(name: 'deepseek', creditBalance: deepseek),
+          ConnectedProviderUsage(name: 'kimi', codingPlan: kimi),
+          ConnectedProviderUsage(name: 'zhipu', codingPlan: zhipu),
+        ];
+        final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
+        await _pump(tester, widget, _ctx());
+
+        // DeepSeek → API credit (inline).
+        expect(tester.terminalState.findText('DeepSeek'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('credit'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('¥110.00'), nocterm.isNotEmpty);
+
+        // Kimi → 5h / 7d coding plan.
+        expect(tester.terminalState.findText('Kimi'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('5h'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('7d'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
+
+        // Zhipu → distinct values prove per-provider separation.
+        expect(tester.terminalState.findText('Zhipu'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('40%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('80%'), nocterm.isNotEmpty);
+
+        await deepseek.disposeCreditBalancePolling();
+        await kimi.disposeCodingPlanPolling();
+        await zhipu.disposeCodingPlanPolling();
+      });
+    });
+
+    test('shows a waiting state before the first snapshot', () async {
+      await testNocterm('coding-plan waiting', (tester) async {
+        final provider = _FakeCodingPlanProvider(); // no polling started
+        final entries = [
+          ConnectedProviderUsage(name: 'kimi', codingPlan: provider),
+        ];
+        final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
+        await _pump(tester, widget, _ctx());
+        expect(tester.terminalState.findText('Kimi'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('waiting'), nocterm.isNotEmpty);
+      });
+    });
+
+    test('activate refreshes every connected provider, else is passive', () {
+      final cp = _FakeCodingPlanProvider();
+      final cb = _FakeCreditBalanceProvider();
+      final entries = [
+        ConnectedProviderUsage(name: 'kimi', codingPlan: cp),
+        ConnectedProviderUsage(name: 'deepseek', creditBalance: cb),
+      ];
+      final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
+      expect(widget.activate(_ctx()), isNotNull);
+
+      expect(CodingPlanHomeWidget().activate(_ctx()), isNull);
     });
   });
 
