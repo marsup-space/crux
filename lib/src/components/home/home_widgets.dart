@@ -97,6 +97,14 @@ class HomeContext {
   /// `setup` box's second row.
   final String? Function() auxModelName;
 
+  /// The active UI theme's id (e.g. `"dracula"`). Feeds the `settings`
+  /// box. Null (tests / previews) means "unknown".
+  final String? Function() themeId;
+
+  /// The current session's chat display mode (`"verbose"` / `"vibe"`).
+  /// Feeds the `settings` box. Null when there's no current session.
+  final String? Function() viewMode;
+
   /// Whether at least one search-capable web provider is configured.
   /// Feeds the `setup` box's third row.
   final bool Function() hasWebProvider;
@@ -134,6 +142,8 @@ class HomeContext {
     this.dailyUsageStats,
     this.hasProviderKey = _false,
     this.auxModelName = _nullString,
+    this.themeId = _nullString,
+    this.viewMode = _nullString,
     this.hasWebProvider = _false,
     this.notesService,
     this.openNotes,
@@ -164,6 +174,8 @@ class HomeContext {
         dailyUsageStats = null,
         hasProviderKey = _false,
         auxModelName = _nullString,
+        themeId = _nullString,
+        viewMode = _nullString,
         hasWebProvider = _false,
         notesService = null,
         openNotes = null,

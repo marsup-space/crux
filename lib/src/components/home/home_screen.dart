@@ -12,6 +12,7 @@ import 'widgets/activity_widget.dart';
 import 'widgets/coding_plan_widget.dart';
 import 'widgets/quick_actions_widget.dart';
 import 'widgets/recent_sessions_widget.dart';
+import 'widgets/settings_widget.dart';
 import 'widgets/skills_widget.dart';
 import 'widgets/tokens_widget.dart';
 import 'widgets/notes_widget.dart';
@@ -195,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       WorkspaceHomeWidget(),
       QuickActionsHomeWidget(seedInput: ctx.seedInput),
+      SettingsHomeWidget(),
       // Compact status boxes: tokens, live provider usage, and the
       // activity heatmap.
       TokensHomeWidget(),

@@ -12,6 +12,7 @@ import 'package:crux/src/components/home/widgets/coding_plan_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
 import 'package:crux/src/components/home/widgets/setup_widget.dart';
+import 'package:crux/src/components/home/widgets/settings_widget.dart';
 import 'package:crux/src/components/home/widgets/skills_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
 import 'package:crux/src/components/home/widgets/workspace_widget.dart';
@@ -1133,6 +1134,91 @@ void main() {
       expect(widget.activate(_ctx()), isNotNull);
 
       expect(CodingPlanHomeWidget().activate(_ctx()), isNull);
+    });
+  });
+
+  group('settings', () {
+    HomeContext settingsCtx({
+      String? themeId = 'dracula',
+      String? aux,
+      String? viewMode = 'vibe',
+      void Function(String)? onSeed,
+      void Function()? onClose,
+    }) =>
+        HomeContext(
+          runCommand: (_) => true,
+          close: onClose ?? () {},
+          seedInput: onSeed ?? (_) {},
+          gitStatusService: GitStatusService(),
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+          themeId: () => themeId,
+          auxModelName: () => aux,
+          viewMode: () => viewMode,
+        );
+
+    test('declares id, title, span, and item count', () {
+      final widget = SettingsHomeWidget();
+      expect(widget.id, 'settings');
+      expect(widget.title, 'Settings');
+      expect(widget.supportedSpans, {1, 2});
+      expect(widget.heightFor(1), 4);
+      expect(widget.itemCount, 4);
+      expect(widget.verticallyCenter, isFalse);
+    });
+
+    test('renders every setting with its current value', () async {
+      await testNocterm('settings render', (tester) async {
+        await _pump(
+          tester,
+          SettingsHomeWidget(),
+          settingsCtx(aux: 'deepseek-v4-flash'),
+        );
+        expect(tester.terminalState.findText('theme'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('dracula'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('auxiliary'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('deepseek-v4-flash'),
+          nocterm.isNotEmpty,
+        );
+        expect(tester.terminalState.findText('view'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('vibe'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('language'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('en'), nocterm.isNotEmpty);
+      });
+    });
+
+    test('activating a row seeds its command and stays on home', () {
+      var seeded = '';
+      var closed = false;
+      final widget = SettingsHomeWidget();
+
+      final ctx = settingsCtx(
+        onSeed: (t) => seeded = t,
+        onClose: () => closed = true,
+      );
+
+      widget.activateItem(ctx, 0)!();
+      expect(seeded, '/theme ');
+      expect(closed, isFalse);
+
+      widget.activateItem(ctx, 1)!();
+      expect(seeded, '/auxiliary ');
+
+      widget.activateItem(ctx, 2)!();
+      expect(seeded, '/view ');
+
+      // None of the activations closed home.
+      expect(closed, isFalse);
+    });
+
+    test('the language row is read-only', () {
+      final widget = SettingsHomeWidget();
+      expect(widget.activateItem(settingsCtx(), 3), isNull);
     });
   });
 

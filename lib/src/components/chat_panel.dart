@@ -1238,6 +1238,19 @@ class _ChatPanelState extends State<ChatPanel> {
         final model = _sessionController.currentSession.model;
         return model.isEmpty ? null : model;
       },
+      // Settings box: the active theme id, the configured auxiliary
+      // model's short name, and the current session's chat display mode.
+      themeId: () => component.themeController.activeId,
+      auxModelName: () {
+        final aux = _providerService.auxiliaryModel;
+        if (aux == null || aux == 'none') return null;
+        return _sessionController.auxiliaryModelShortName;
+      },
+      viewMode: () {
+        final sessionId = _sessionController.currentSessionId;
+        if (sessionId == null) return null;
+        return _sessionController.runtime(sessionId).chatDisplayMode.name;
+      },
       // Yesterday box: single-round auxiliary summary of yesterday's
       // work, cached by the service. The merged session list is the
       // same one the `sessions` closure above builds.
