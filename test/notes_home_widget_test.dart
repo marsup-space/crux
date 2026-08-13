@@ -138,4 +138,38 @@ void main() {
       expect(tester.terminalState.containsText('no notes feature'), isTrue);
     });
   });
+
+  test('long todos wrap with a hanging indent', () async {
+    const long = 'alpha bravo charlie delta echo foxtrot golf hotel india '
+        'juliet kilo lima mike';
+    await service.save('- [ ] $long');
+    await testNocterm(
+      'notes home box wrap',
+      (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 30,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: Builder(
+                builder: (context) => NotesHomeWidget(
+                  service: service,
+                  openNotes: null,
+                ).build(context, ctx(), 1),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final text = tester.terminalState.getText();
+        // Checkbox flush-left with a single-space gutter.
+        expect(RegExp(r'(^|\n)☐ ').hasMatch(text), isTrue);
+        // Wrapped continuation lines are indented under the content column.
+        expect(RegExp(r'\n  \S').hasMatch(text), isTrue);
+      },
+      size: const Size(30, 12),
+    );
+  });
 }

@@ -1,6 +1,12 @@
 import 'dart:async';
 
 import 'package:nocterm/nocterm.dart';
+// TextLayoutEngine / UnicodeWidth are nocterm internals not re-exported
+// through the public barrel; used here to word-wrap long todo rows with a
+// hanging indent.
+// ignore_for_file: implementation_imports
+import 'package:nocterm/src/text/text_layout_engine.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
 
 import '../../theme/crux_theme.dart';
 import 'button.dart';
@@ -12,8 +18,9 @@ typedef TodoRowData = ({String text, int line});
 /// used by both the spec sidebar widget and the home dashboard box so
 /// the interaction is identical everywhere.
 ///
-/// Each open row renders as a `☐ text` [Button]; clicking it marks the
-/// todo done: the row flips to `☑ text` (struck-through, success color)
+/// Each open row renders as a flush-left `☐` marker followed by an
+/// indented ` text` [Button]; clicking it marks the todo done: the row
+/// flips to `☑ text` (struck-through, success color)
 /// *locally and immediately*, fires [onToggle] with `done: true`, and
 /// stays visible for [undoWindow] (default 10 s) so an accidental click
 /// can be reversed. Clicking a checked row inside the window restores
@@ -114,8 +121,8 @@ class _ClickableTodoListState extends State<ClickableTodoList> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final todo in rows)
-          _row(theme, baseColor, todo.text, todo.line),
+        for (var i = 0; i < rows.length; i++)
+          _row(theme, baseColor, rows[i].text, rows[i].line, i),
       ],
     );
   }
@@ -125,27 +132,87 @@ class _ClickableTodoListState extends State<ClickableTodoList> {
     Color baseColor,
     String text,
     int line,
+    int index,
   ) {
     final checked = _checked.containsKey(line);
     final onToggle = component.onToggle;
-    if (onToggle == null) {
-      return Text(
-        '${checked ? '☑' : '☐'} $text',
-        style: TextStyle(
-          color: checked ? theme.successColor : baseColor,
-          decoration:
-              checked ? TextDecoration.lineThrough : TextDecoration.none,
-        ),
-      );
-    }
-    return Button(
-      label: '${checked ? '☑' : '☐'} $text',
-      onPressed: () => checked ? _undo(text, line) : _markDone(text, line),
-      color: checked ? theme.successColor : baseColor,
-      hoverColor: theme.accent,
-      bgColor: theme.surface,
-      hoverBgColor: theme.buttonBackgroundHover,
-      padding: const EdgeInsets.symmetric(horizontal: 1),
+
+    // Alternating row background, matching the markdown table's zebra
+    // striping: even rows keep the box surface, odd rows tint with
+    // surfaceVariant. `withOpacity(0.5)` keeps it a subtle tint rather
+    // than a solid band (same treatment as the table cells).
+    final rowBackground = (index.isEven ? theme.surface : theme.surfaceVariant)
+        .withOpacity(0.5);
+
+    // Checkbox flush-left, then a single-space gutter. Wrapped continuation
+    // lines are indented to the same column so long todos stay aligned.
+    final marker = checked ? '☑' : '☐';
+    const gutter = ' ';
+    final prefix = '$marker$gutter';
+
+    return Container(
+      width: double.infinity,
+      color: rowBackground,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth.toInt()
+              : null;
+          final label = _hangingIndentLabel(prefix, text, maxWidth);
+
+          if (onToggle == null) {
+            return Text(
+              label,
+              softWrap: false,
+              style: TextStyle(
+                color: checked ? theme.successColor : baseColor,
+                decoration: checked
+                    ? TextDecoration.lineThrough
+                    : TextDecoration.none,
+              ),
+            );
+          }
+
+          return Button(
+            label: label,
+            onPressed: () =>
+                checked ? _undo(text, line) : _markDone(text, line),
+            color: checked ? theme.successColor : baseColor,
+            hoverColor: theme.accent,
+            // Transparent idle background so the row's alternating tint
+            // shows through; hover still paints the usual highlight.
+            bgColor: theme.surface.withAlpha(0),
+            hoverBgColor: theme.buttonBackgroundHover,
+            padding: EdgeInsets.zero,
+          );
+        },
+      ),
     );
+  }
+
+  /// Wraps [text] to [maxWidth] display columns with a hanging indent: the
+  /// first line carries [prefix] (`☐ ` / `☑ `), and every wrapped
+  /// continuation line is indented by the same width so it lines up under
+  /// the content column.
+  String _hangingIndentLabel(String prefix, String text, int? maxWidth) {
+    if (maxWidth == null) return '$prefix$text';
+
+    final prefixWidth = UnicodeWidth.stringWidth(prefix);
+    final contentWidth = maxWidth - prefixWidth;
+    if (contentWidth < 1) return '$prefix$text';
+
+    final layout = TextLayoutEngine.layout(
+      text,
+      TextLayoutConfig(softWrap: true, maxWidth: contentWidth),
+    );
+    final lines = layout.lines;
+    if (lines.length <= 1) return '$prefix$text';
+
+    final indent = ' ' * prefixWidth;
+    final buffer = StringBuffer('$prefix${lines.first}');
+    for (var i = 1; i < lines.length; i++) {
+      buffer.write('\n$indent${lines[i]}');
+    }
+    return buffer.toString();
   }
 }
