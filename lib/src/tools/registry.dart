@@ -9,6 +9,7 @@ import 'edit_tool.dart';
 import 'file_read_tracker.dart';
 import 'glob_tool.dart';
 import 'grep_tool.dart';
+import 'notes_tool.dart';
 import 'powershell_tool.dart';
 import 'find_similar_code_tool.dart';
 import 'read_tool.dart';
@@ -58,9 +59,10 @@ class ToolRegistry {
   /// in the background so subsequent edits are fast. Pass null to
   /// disable LSP feedback.
   ///
-  /// [sessionStore] powers the read-only `session` tool, which lets
-  /// the agent list sessions, page through messages, and search
-  /// across conversations without shelling out to sqlite3.
+  /// [sessionStore] powers the read-only `session` tool (list / page /
+  /// search past conversations) and the read-only `notes` tool (the
+  /// per-project "my notes" scratchpad), both without shelling out to
+  /// sqlite3.
   ///
   /// [webProviderRegistry] powers `webfetch` (routes through a
   /// configured provider when available, falls back to raw HTML
@@ -98,6 +100,7 @@ class ToolRegistry {
       register(BashTool());
     }
     register(SessionTool(store: sessionStore));
+    register(NotesTool(store: sessionStore));
     // `ask` is registered only when a [PendingAskCubit] is supplied —
     // i.e. in the real TUI. Tests and standalone tools that build a
     // registry without UI plumbing get no `ask` tool, so the model
