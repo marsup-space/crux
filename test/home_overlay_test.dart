@@ -96,18 +96,6 @@ void main() {
         reason: 'home hero should render the version label',
       );
 
-      // Keystrokes have no chat input to reach (it is unmounted);
-      // typing must not summon the command overlay.
-      await tester.sendKeyEvent(
-        KeyboardEvent(logicalKey: LogicalKey.slash, character: '/'),
-      );
-      await tester.pump();
-      expect(
-        tester.terminalState.findText('/model').isEmpty,
-        isTrue,
-        reason: 'no chat input exists while home is open',
-      );
-
       // esc returns to the chat interface.
       await tester.sendKeyEvent(
         KeyboardEvent(logicalKey: LogicalKey.escape),

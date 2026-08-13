@@ -47,6 +47,10 @@ class ChatInput extends StatefulComponent {
   final Future<void> Function() onCreateNewSession;
   final void Function(ImageAttachment image)? onAttachClipboardImage;
   final VoidCallback? onQuitRequest;
+
+  /// Open the home screen on a plain ESC press. Wired by the chat
+  /// panel; when null (tests), a plain ESC press is consumed as a no-op.
+  final VoidCallback? onOpenHome;
   final String projectPath;
   final RecentProjectsStore? recentProjectsStore;
 
@@ -70,6 +74,7 @@ class ChatInput extends StatefulComponent {
     required this.onCreateNewSession,
     this.onAttachClipboardImage,
     this.onQuitRequest,
+    this.onOpenHome,
     this.projectPath = '.',
     this.recentProjectsStore,
   });
@@ -124,6 +129,7 @@ class ChatInputState extends State<ChatInput> {
       sessionController: component.sessionController,
       turnOrchestrator: component.turnOrchestrator,
       onQuitRequest: component.onQuitRequest,
+      onOpenHome: component.onOpenHome,
       refresh: component.refresh,
       onStateChanged: _onControllerStateChanged,
       textController: component.textController,
@@ -569,9 +575,7 @@ class ChatInputState extends State<ChatInput> {
     final placeholder = isStreaming
         ? _keyHandler.ctrlCQuitHint
               ? 'Press Ctrl+C again to quit...'
-              : _keyHandler.escInterruptHint
-              ? 'Press ESC again to interrupt...'
-              : 'Enter message to queue, ESC×2 to interrupt, Ctrl+C×2 to quit'
+              : 'Enter message to queue — click the model button to interrupt, Ctrl+C×2 to quit'
         : wasInterrupted
         ? 'Response was interrupted. Type a new message...'
         : hasImages

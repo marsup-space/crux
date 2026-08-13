@@ -414,11 +414,21 @@ class _ChatToolbarState extends State<ChatToolbar> {
     final isSessionRunning =
         _sessionController.currentSession.status == SessionStatus.running;
 
+    // The model button has two modes. Idle: it invokes the `/model`
+    // picker. Running (streaming): the same button becomes the
+    // interrupt affordance — it already flashes while the agent is
+    // mid-response, so clicking it to stop the response reads as the
+    // natural "make it stop" target. `onModelPressed` (the panel's
+    // `_onModelButtonPressed`) branches on the running state.
     final modelButton = isSessionRunning
         ? GlossyModelButton(
             label: modelLabel,
+            // On hover while streaming, swap the model name for the
+            // "Interrupt" affordance so the user sees what a click does.
+            hoverLabel: 'Interrupt',
             isAnimating: true,
-            onPressed: null, // Not clickable during streaming
+            // Clickable during streaming — it interrupts the response.
+            onPressed: component.onModelPressed,
           )
         : Button(
             label: modelLabel,
@@ -466,7 +476,17 @@ class _ChatToolbarState extends State<ChatToolbar> {
         const spacer = kToolbarChipGap;
         const smallSpacer = kToolbarTightGap;
 
-        final modelW = UnicodeWidth.stringWidth(modelLabel) + btnPad;
+        // The streaming model button swaps to "Interrupt" on hover,
+        // which may be wider than the model name. Budget for the wider
+        // of the two so a short model label doesn't let the hover label
+        // overflow the reserved width and shift the rest of the row.
+        final modelLabelW = UnicodeWidth.stringWidth(modelLabel);
+        final interruptW = UnicodeWidth.stringWidth('Interrupt');
+        final modelW =
+            (isSessionRunning && interruptW > modelLabelW
+                    ? interruptW
+                    : modelLabelW) +
+            btnPad;
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
             ? UnicodeWidth.stringWidth(_kIconImage)
@@ -583,7 +603,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
               // 500 ms delay is what we want for toolbar buttons.
               Hinted(
                 hint: isSessionRunning
-                    ? 'Current model: $modelLabel\n(model cannot be changed while the agent is responding)'
+                    ? 'Interrupt\n(stop the response · $modelLabel)'
                     : 'Current model: $modelLabel\n(click to change)',
                 child: modelButton,
               ),

@@ -2336,7 +2336,7 @@ stream_lerp = false
       final sheet = info.single.content;
       expect(sheet, contains('/undo'));
       expect(sheet, contains('/provider'));
-      expect(sheet, contains('ESC'));
+      expect(sheet, contains('model button'));
       expect(sheet, contains('Ctrl+C'));
       expect(sheet, contains('Tab'));
       // Dropped commands must not be advertised.

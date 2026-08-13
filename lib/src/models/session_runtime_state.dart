@@ -116,7 +116,8 @@ class SessionRuntimeState implements SessionRuntimeSink {
   bool btwMode;
 
   /// True when the current (or most recent) streaming response was
-  /// interrupted by the user pressing ESC twice. The chat panel uses
+  /// interrupted by the user clicking the toolbar's model button while
+  /// it flashed mid-response. The chat panel uses
   /// this flag to (a) show an interruption indicator in the AI message,
   /// and (b) prepend a system message on the next user input so the
   /// LLM knows its previous response was cut off. Cleared when a new

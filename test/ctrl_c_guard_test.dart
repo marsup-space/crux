@@ -4,10 +4,11 @@ import 'package:nocterm/nocterm.dart';
 /// A test component that implements the Ctrl+C semantics, matching the
 /// same logic used in ChatInput:
 ///
-/// 1. Ctrl+C never cancels a streaming response — interrupting is
-///    ESC×2's job. While any session is running (including the
-///    currently streaming one), the first Ctrl+C arms the quit guard
-///    with a warning toast, and a quick second Ctrl+C quits.
+/// 1. Ctrl+C never cancels a streaming response — interrupting is the
+///    toolbar model button's job. While any session is running
+///    (including the currently streaming one), the first Ctrl+C arms
+///    the quit guard with a warning toast, and a quick second Ctrl+C
+///    quits.
 /// 2. When nothing is running, Ctrl+C quits immediately.
 ///
 /// `runningSessionIds` mirrors `SessionController.hasAnyRunningSession`

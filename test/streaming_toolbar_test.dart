@@ -1,7 +1,9 @@
 // Tests for streaming-related toolbar behaviors:
 //
-// Model button is not clickable during streaming. Auto-scroll and
-// tok/s ticker registration are covered in
+// The toolbar's model button has two modes: idle → opens the `/model`
+// picker, streaming → interrupts the in-flight response (the button
+// flashes while streaming, so clicking it to stop reads naturally).
+// Auto-scroll and tok/s ticker registration are covered in
 // test/ticker_registry_test.dart and the AutoScrollController
 // tests shipped upstream with nocterm.
 
@@ -59,6 +61,66 @@ void main() {
           tapCount,
           1,
           reason: 'Button with onPressed must invoke callback on tap',
+        );
+      }, size: const Size(40, 5));
+    });
+
+    test('fires onPressed while animating (the interrupt path)', () async {
+      await testNocterm('glossy-btn-interrupt', (tester) async {
+        var interruptCount = 0;
+
+        // Streaming mode: the button animates AND stays clickable —
+        // the tap is the interrupt gesture.
+        await tester.pumpComponent(
+          GlossyModelButton(
+            label: 'test/model',
+            isAnimating: true,
+            onPressed: () => interruptCount++,
+          ),
+        );
+
+        await tester.tap(2, 0);
+        await tester.pump();
+
+        expect(
+          interruptCount,
+          1,
+          reason: 'Streaming model button must fire onPressed (interrupt)',
+        );
+      }, size: const Size(40, 5));
+    });
+
+    test('swaps the label to the hoverLabel on hover while animating', () async {
+      await testNocterm('glossy-btn-hover-swap', (tester) async {
+        await tester.pumpComponent(
+          GlossyModelButton(
+            label: 'test/model',
+            hoverLabel: 'Interrupt',
+            isAnimating: true,
+            onPressed: () {},
+          ),
+        );
+
+        // Before hover: the base label is on screen, hover label is not.
+        expect(
+          tester.renderToString().contains('test/model'),
+          isTrue,
+          reason: 'base label should render before hover',
+        );
+        expect(
+          tester.renderToString().contains('Interrupt'),
+          isFalse,
+          reason: 'hover label should be hidden before hover',
+        );
+
+        // Hover over the button → the label swaps to the hover label.
+        await tester.hover(2, 0);
+        await tester.pump();
+
+        expect(
+          tester.renderToString().contains('Interrupt'),
+          isTrue,
+          reason: 'hovering should swap the label to Interrupt',
         );
       }, size: const Size(40, 5));
     });

@@ -5,6 +5,12 @@ import '../../utils/ticker_registry.dart';
 
 class GlossyModelButton extends StatefulComponent {
   final String label;
+
+  /// Label shown while the pointer hovers the button. When null the
+  /// button always shows [label]. Used by the streaming model button to
+  /// swap the model name for the "Interrupt" affordance on hover, so
+  /// the user can see what a click will do before committing.
+  final String? hoverLabel;
   final bool isAnimating;
   final VoidCallback? onPressed;
 
@@ -19,6 +25,7 @@ class GlossyModelButton extends StatefulComponent {
 
   const GlossyModelButton({
     required this.label,
+    this.hoverLabel,
     required this.isAnimating,
     this.onPressed,
     this.minWidth,
@@ -92,8 +99,11 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
             ? 60.0 / 1000.0
             : elapsed.inMicroseconds / Duration.microsecondsPerSecond;
         _phase += 25.0 * dt; // 25 cells/sec = matches original 1.5/60ms
-        final sweepEnd =
-            component.label.length + 2 + _bandWidth; // +2 for padding cells
+        // Sweep across the longer of the base/hover labels so the path
+        // length stays constant when the label swaps on hover.
+        final maxLabelLen =
+            max(component.label.length, component.hoverLabel?.length ?? 0);
+        final sweepEnd = maxLabelLen + 2 + _bandWidth; // +2 for padding cells
         if (_phase > sweepEnd) {
           _phase = -_bandWidth;
         }
@@ -134,6 +144,13 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     final baseFg = theme.onSurfaceVariant;
     final flashFg = theme.foreground;
 
+    // The label actually rendered: the hover label when the pointer is
+    // over the button and one is provided, else the base label. Applies
+    // to both the static and the animated branches so the streaming
+    // model button can swap to "Interrupt" on hover.
+    final effectiveLabel =
+        (_hovered && btn.hoverLabel != null) ? btn.hoverLabel! : btn.label;
+
     if (!btn.isAnimating && !_isFadingOut) {
       // Static mode with hover support
       final bgColor = _hovered ? theme.buttonBackgroundHover : baseBg;
@@ -141,10 +158,12 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
 
       // minWidth padding: trailing cells in the same background so
       // the padded area is visually part of the button (and, thanks
-      // to the opaque GestureDetector, part of its hit region).
-      final padCells = btn.minWidth == null
-          ? 0
-          : max(0, btn.minWidth! - btn.label.length - 2);
+      // to the opaque GestureDetector, part of its hit region). Padding
+      // is sized off the longer of the two labels so the button width
+      // doesn't jitter when the label swaps on hover.
+      final maxLabelLen = max(btn.label.length, effectiveLabel.length);
+      final padCells =
+          btn.minWidth == null ? 0 : max(0, btn.minWidth! - maxLabelLen - 2);
 
       return MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
@@ -159,7 +178,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
             child: Row(
               children: [
                 Text(
-                  btn.label,
+                  effectiveLabel,
                   style: TextStyle(
                     color: fg,
                     fontWeight: _hovered ? FontWeight.bold : null,
@@ -179,7 +198,12 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     // Pulse: brief periodic flash using sin² — peaks every 0.33s
     final pulseValue = pow(max(0.0, sin(_tickCount * 1.142)), 2.0).toDouble();
 
-    final labelLength = btn.label.length;
+    // Geometry (sweep end + right padding) is sized off the longer of
+    // the base/hover labels so the button's width and the sweep path
+    // stay constant when the label swaps on hover; only the characters
+    // change. Render the EFFECTIVE label's characters.
+    final labelLength = effectiveLabel.length;
+    final maxLabelLen = max(btn.label.length, effectiveLabel.length);
     final cells = <Component>[];
 
     // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1,
@@ -187,8 +211,8 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     // gradient covers the full requested width — trailing cells are
     // background-only, exactly like the two natural padding cells.
     final rightPadEnd = btn.minWidth == null
-        ? labelLength
-        : max(labelLength, btn.minWidth! - 1);
+        ? maxLabelLen
+        : max(maxLabelLen, btn.minWidth! - 1);
     for (int sweepPos = -1; sweepPos <= rightPadEnd; sweepPos++) {
       final distance = (sweepPos - _phase).abs();
       double sweepEase;
@@ -209,7 +233,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
 
         cells.add(
           Text(
-            btn.label[sweepPos],
+            effectiveLabel[sweepPos],
             style: TextStyle(
               color: fg,
               backgroundColor: bg,

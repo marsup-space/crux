@@ -74,6 +74,10 @@ class InputKeyHandler {
   final SessionController sessionController;
   final ChatTurnOrchestrator turnOrchestrator;
   final VoidCallback? onQuitRequest;
+
+  /// Open the home screen on a plain ESC press. Wired by the chat
+  /// panel; when null (tests), a plain ESC press is consumed as a no-op.
+  final VoidCallback? onOpenHome;
   final VoidCallback refresh;
   final void Function() onStateChanged;
   final TextEditingController textController;
@@ -85,8 +89,6 @@ class InputKeyHandler {
   final void Function(String?) setCommandStash;
 
   // Own state
-  DateTime? _lastEscPressTime;
-  bool _escInterruptHint = false;
   DateTime? _lastCtrlCPressTime;
   bool _ctrlCQuitHint = false;
 
@@ -94,6 +96,7 @@ class InputKeyHandler {
     required this.sessionController,
     required this.turnOrchestrator,
     required this.onQuitRequest,
+    this.onOpenHome,
     required this.refresh,
     required this.onStateChanged,
     required this.textController,
@@ -103,7 +106,6 @@ class InputKeyHandler {
     required this.setCommandStash,
   });
 
-  bool get escInterruptHint => _escInterruptHint;
   bool get ctrlCQuitHint => _ctrlCQuitHint;
 
   /// Map a logical key to its character, only for the '/' key.
@@ -115,8 +117,8 @@ class InputKeyHandler {
   bool handleKeyEvent(KeyboardEvent event) {
     // --- Ctrl+C: quit only ---
     //
-    // 1. Interrupting a streaming response is ESC×2's job — Ctrl+C
-    //    never cancels a response.
+    // 1. Interrupting a streaming response is the toolbar model
+    //    button's job — Ctrl+C never cancels a response.
     // 2. When any session is running (including a streaming one), the
     //    first Ctrl+C arms the quit guard with a toast; a quick second
     //    Ctrl+C (within 3s) quits.
@@ -139,7 +141,7 @@ class InputKeyHandler {
       }
 
       // Any session running — arm the double-press quit guard. The
-      // response keeps streaming; interrupting is ESC×2's job.
+      // response keeps streaming; interrupting is the model button's job.
       if (sessionController.hasAnyRunningSession) {
         _lastCtrlCPressTime = now;
         _ctrlCQuitHint = true;
@@ -422,32 +424,11 @@ class InputKeyHandler {
     }
 
     if (overlayController.overlayMode == OverlayMode.off) {
-      // Double-ESC interrupt logic.
+      // ESC no longer interrupts a streaming response — that's the
+      // toolbar model button's job now (it flashes while streaming and
+      // interrupts on click). A plain ESC in command mode restores the
+      // stashed text; otherwise it navigates to the home screen.
       if (event.logicalKey == LogicalKey.escape) {
-        final sessionId = sessionController.currentSessionId;
-        final isStreaming =
-            sessionId != null &&
-            sessionController.runtime(sessionId).isResponding;
-        if (isStreaming) {
-          final now = DateTime.now();
-          if (_lastEscPressTime != null &&
-              now.difference(_lastEscPressTime!).inMilliseconds < 1000) {
-            _lastEscPressTime = null;
-            _escInterruptHint = false;
-            turnOrchestrator.interruptResponse(textController: textController);
-          } else {
-            _lastEscPressTime = now;
-            _escInterruptHint = true;
-            Future.delayed(const Duration(seconds: 1), () {
-              if (_escInterruptHint) {
-                _escInterruptHint = false;
-                onStateChanged();
-              }
-            });
-            onStateChanged();
-          }
-          return true;
-        }
         // ESC while in command mode (no overlay): restore stashed text,
         // or clear the command text if there's no stash.
         if (inCommandMode) {
@@ -459,10 +440,8 @@ class InputKeyHandler {
           }
           return true;
         }
-        return false;
-      } else {
-        _lastEscPressTime = null;
-        _escInterruptHint = false;
+        onOpenHome?.call();
+        return true;
       }
 
       final isEnter =

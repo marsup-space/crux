@@ -946,7 +946,17 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
+  /// The toolbar's model button has two modes. When the current
+  /// session is mid-response, the button is the interrupt affordance
+  /// (it flashes while streaming, so clicking it to stop the response
+  /// reads naturally). Otherwise it seeds `/model ` to switch models.
   void _onModelButtonPressed() {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId != null &&
+        _sessionController.runtime(sessionId).isResponding) {
+      _turnOrchestrator.interruptResponse(textController: textController);
+      return;
+    }
     _chatInputKey.currentState?.stashAndSetCommand('/model ');
   }
 
@@ -1714,6 +1724,10 @@ class _ChatPanelState extends State<ChatPanel> {
                         onInitSessions: _initSessions,
                         onCreateNewSession: _createNewSession,
                         onQuitRequest: _quitHandler.quitAndPrintSummary,
+                        // Plain ESC in the input navigates to the home
+                        // screen. (Interrupting a stream is the model
+                        // button's job now, not ESC's.)
+                        onOpenHome: _openHome,
                         onAttachClipboardImage: (image) {
                           final sid = _sessionController.currentSessionId;
                           if (sid != null) {
