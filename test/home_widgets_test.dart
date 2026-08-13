@@ -4,6 +4,7 @@ import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:nocterm/nocterm.dart' as nocterm show isNotEmpty;
 import 'package:test/test.dart';
 
+import 'package:crux/src/components/home/home_screen.dart';
 import 'package:crux/src/components/home/home_widgets.dart';
 import 'package:crux/src/components/home/widgets/git_status_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
@@ -12,11 +13,12 @@ import 'package:crux/src/components/home/widgets/skills_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
 import 'package:crux/src/components/home/widgets/workspace_widget.dart';
 import 'package:crux/src/components/home/widgets/yesterday_widget.dart';
+import 'package:crux/src/services/auxiliary_service.dart'
+    show YesterdaySummary;
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/services/git_status_service.dart';
 import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/theme/crux_theme.dart';
-import 'package:crux/src/utils/run_metrics.dart';
 
 /// Renders a widget's content (no box chrome) at a fixed width inside a
 /// themed container, and returns the tester for text assertions.
@@ -53,45 +55,192 @@ Session _session(
 
 void main() {
   group('tokens', () {
-    test('empty state when no LLM calls this run', () async {
+    /// `'yyyy-MM-dd'` for the day [daysAgo] before [now].
+    String dayKey(DateTime now, int daysAgo) {
+      final d = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: daysAgo));
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
+    }
+
+    test('empty state when no tokens spent today', () async {
       await testNocterm('tokens empty', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
-          snapshot: () => const RunMetricsSnapshot(
-            duration: Duration.zero,
-            turnCount: 0,
-            totalTokensIn: 0,
-            totalTokensOut: 0,
-            cacheHitTokens: 0,
-            cacheMissTokens: 0,
-          ),
+          now: () => now,
+          loader: (_) async => const {},
         );
         await _pump(tester, widget, _ctx());
+        await tester.pump(); // let the loader land
+        expect(widget.title, 'Today');
         expect(
-          tester.terminalState.findText('no LLM calls yet this run'),
+          tester.terminalState.findText('no tokens spent'),
           nocterm.isNotEmpty,
         );
       });
     });
 
-    test('renders real token breakdown', () async {
-      await testNocterm('tokens data', (tester) async {
+    test('shows today\'s tokens by default', () async {
+      await testNocterm('tokens today', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
-          snapshot: () => const RunMetricsSnapshot(
-            duration: Duration(minutes: 3, seconds: 12),
-            turnCount: 7,
-            totalTokensIn: 12800,
-            totalTokensOut: 3400,
-            cacheHitTokens: 8000,
-            cacheMissTokens: 2000,
-          ),
+          now: () => now,
+          loader: (_) async => {dayKey(now, 0): 12800},
         );
         await _pump(tester, widget, _ctx());
-        expect(tester.terminalState.findText('7'), nocterm.isNotEmpty);
+        await tester.pump();
+        expect(widget.title, 'Today');
         expect(tester.terminalState.findText('12,800'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('3,400'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('3m 12s'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('80%'), nocterm.isNotEmpty);
       });
+    });
+
+    test('‹ navigates to previous days, › back toward today', () async {
+      await testNocterm('tokens navigate', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): 5000,
+            dayKey(now, 1): 12800,
+            dayKey(now, 3): 3400,
+          },
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        // Defaults to today.
+        expect(widget.title, 'Today');
+        expect(tester.terminalState.findText('5,000'), nocterm.isNotEmpty);
+
+        // ‹ → yesterday.
+        widget.goBack();
+        await tester.pump();
+        expect(widget.daysAgo, 1);
+        expect(widget.title, 'Yesterday');
+        expect(tester.terminalState.findText('12,800'), nocterm.isNotEmpty);
+
+        // ‹ → 2 days ago (no data → empty state).
+        widget.goBack();
+        await tester.pump();
+        expect(widget.daysAgo, 2);
+        expect(widget.title, '2 days ago');
+        expect(
+          tester.terminalState.findText('no tokens spent'),
+          nocterm.isNotEmpty,
+        );
+
+        // ‹ → 3 days ago.
+        widget.goBack();
+        await tester.pump();
+        expect(widget.title, '3 days ago');
+        expect(tester.terminalState.findText('3,400'), nocterm.isNotEmpty);
+
+        // › back toward today.
+        widget.goForward();
+        await tester.pump();
+        expect(widget.daysAgo, 2);
+        widget.goForward();
+        widget.goForward();
+        await tester.pump();
+        expect(widget.daysAgo, 0);
+        expect(widget.title, 'Today');
+        // › at today is a no-op.
+        widget.goForward();
+        expect(widget.daysAgo, 0);
+      });
+    });
+
+    test('title switches to MM-DD beyond a week', () async {
+      await testNocterm('tokens title date', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => const {},
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        for (var i = 0; i < 8; i++) {
+          widget.goBack();
+        }
+        await tester.pump();
+        expect(widget.daysAgo, 8);
+        // 8 days before 2024-06-15 is 2024-06-07.
+        expect(widget.title, '06-07');
+      });
+    });
+
+    test('‹ always enabled, › disabled at today', () async {
+      await testNocterm('tokens buttons', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => const {},
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        var buttons = widget.titleButtons!;
+        expect(buttons[0].onPressed, isNotNull); // ‹ always available
+        expect(buttons[1].onPressed, isNull); // › disabled at today
+
+        widget.goBack();
+        buttons = widget.titleButtons!;
+        expect(buttons[1].onPressed, isNotNull); // › enabled once back
+      });
+    });
+
+    test('[ ] keys navigate days on the home screen', () async {
+      await testNocterm('tokens keys', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        String dayKey(int d) {
+          final date = DateTime(now.year, now.month, now.day)
+              .subtract(Duration(days: d));
+          return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+              '${date.day.toString().padLeft(2, '0')}';
+        }
+
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {dayKey(0): 5000, dayKey(1): 12800},
+        );
+        final base = HomeContext.minimal(close: () {});
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: base.gitStatusService,
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+        );
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 24,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(); // loader
+        expect(widget.title, 'Today');
+
+        // `[` → yesterday.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.bracketLeft),
+        );
+        await tester.pump();
+        expect(widget.title, 'Yesterday');
+        expect(tester.terminalState.findText('12,800'), nocterm.isNotEmpty);
+
+        // `]` → back to today.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.bracketRight),
+        );
+        await tester.pump();
+        expect(widget.title, 'Today');
+        expect(tester.terminalState.findText('5,000'), nocterm.isNotEmpty);
+      }, size: const Size(80, 24));
     });
 
     test('is passive (activate returns null)', () {
@@ -220,13 +369,15 @@ void main() {
   });
 
   group('yesterday', () {
-    test('empty state when nothing was active yesterday', () async {
+    test('empty state when nothing was active in the last 7 days', () async {
       await testNocterm('yesterday empty', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = YesterdayHomeWidget(
           sessions: () => [
-            // Updated today → not yesterday.
+            // Updated today → outside the lookback window.
             _session(1, 'today work', updatedAt: DateTime(2024, 6, 15, 9)),
+            // 8 days ago → just past the window.
+            _session(2, 'old work', updatedAt: DateTime(2024, 6, 7, 9)),
           ],
           now: () => now,
         );
@@ -266,6 +417,247 @@ void main() {
       expect(widget.activate(_ctx()), isNull);
     });
 
+    test('title says "Yesterday" when yesterday had activity', () {
+      final now = DateTime(2024, 6, 15, 12);
+      final widget = YesterdayHomeWidget(
+        sessions: () => [
+          _session(1, 'work', updatedAt: DateTime(2024, 6, 14, 8)),
+        ],
+        now: () => now,
+      );
+      expect(widget.title, 'Yesterday');
+    });
+
+    test('falls back to an earlier day when yesterday was quiet', () async {
+      await testNocterm('yesterday lookback', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            // Nothing on 6/14 (yesterday); last activity 3 days ago.
+            _session(1, 'older thing', updatedAt: DateTime(2024, 6, 12, 8)),
+          ],
+          now: () => now,
+        );
+        await _pump(tester, widget, _ctx());
+        expect(widget.title, '3 days ago');
+        expect(
+          tester.terminalState.findText('1 session active'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('older thing'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('keeps the "Yesterday" title when nothing was active all week', () {
+      final widget = YesterdayHomeWidget(
+        sessions: () => const [],
+        now: () => DateTime(2024, 6, 15, 12),
+      );
+      expect(widget.title, 'Yesterday');
+    });
+
+    test('‹ navigates to the previous day, › back to the latest', () async {
+      await testNocterm('yesterday navigate', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            // Active yesterday, 2 days ago, and 3 days ago.
+            _session(1, 'yesterday work', updatedAt: DateTime(2024, 6, 14, 8)),
+            _session(2, 'two days ago work', updatedAt: DateTime(2024, 6, 13, 9)),
+            _session(3, 'three days ago work', updatedAt: DateTime(2024, 6, 12, 9)),
+          ],
+          now: () => now,
+        );
+        await _pump(tester, widget, _ctx());
+        // Opens on the most recent active day: yesterday.
+        expect(widget.title, 'Yesterday');
+        expect(widget.daysAgo, 1);
+
+        // ‹ → previous day (2 days ago).
+        widget.goBack();
+        await tester.pump();
+        expect(widget.daysAgo, 2);
+        expect(widget.title, '2 days ago');
+        expect(
+          tester.terminalState.findText('two days ago work'),
+          nocterm.isNotEmpty,
+        );
+
+        // ‹ again → 3 days ago.
+        widget.goBack();
+        await tester.pump();
+        expect(widget.daysAgo, 3);
+        expect(widget.title, '3 days ago');
+        expect(
+          tester.terminalState.findText('three days ago work'),
+          nocterm.isNotEmpty,
+        );
+
+        // › → back toward the latest (2 days ago).
+        widget.goLatest();
+        await tester.pump();
+        expect(widget.daysAgo, 2);
+        // › again → yesterday (the latest active day).
+        widget.goLatest();
+        await tester.pump();
+        expect(widget.daysAgo, 1);
+        expect(widget.title, 'Yesterday');
+        // › at the latest is a no-op.
+        widget.goLatest();
+        expect(widget.daysAgo, 1);
+      });
+    });
+
+    test('‹ is capped at the 7-day window edge', () async {
+      await testNocterm('yesterday navigate cap', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            _session(1, 'recent', updatedAt: DateTime(2024, 6, 14, 8)),
+          ],
+          now: () => now,
+        );
+        await _pump(tester, widget, _ctx());
+        for (var i = 0; i < 10; i++) {
+          widget.goBack();
+        }
+        await tester.pump();
+        expect(widget.daysAgo, 7); // clamped at the window edge
+        expect(widget.canGoBack, isFalse);
+        expect(widget.title, '7 days ago');
+      });
+    });
+
+    test('title buttons reflect navigation state', () async {
+      await testNocterm('yesterday title buttons', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            _session(1, 'yesterday work', updatedAt: DateTime(2024, 6, 14, 8)),
+          ],
+          now: () => now,
+        );
+        await _pump(tester, widget, _ctx());
+        var buttons = widget.titleButtons!;
+        expect(buttons, hasLength(2));
+        // At the latest active day: ‹ enabled, › disabled.
+        expect(buttons[0].onPressed, isNotNull);
+        expect(buttons[1].onPressed, isNull);
+
+        // After stepping back, both are enabled (› can return).
+        widget.goBack();
+        buttons = widget.titleButtons!;
+        expect(buttons[0].onPressed, isNotNull);
+        expect(buttons[1].onPressed, isNotNull);
+      });
+    });
+
+    test('no title buttons when nothing was active all week', () async {
+      await testNocterm('yesterday no buttons', (tester) async {
+        final widget = YesterdayHomeWidget(
+          sessions: () => const [],
+          now: () => DateTime(2024, 6, 15, 12),
+        );
+        await _pump(tester, widget, _ctx());
+        expect(widget.titleButtons, isNull);
+      });
+    });
+
+    test('title buttons render on the home screen and [ ] navigate', () async {
+      await testNocterm('yesterday home screen', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = YesterdayHomeWidget(
+          sessions: () => [
+            _session(1, 'yesterday work', updatedAt: DateTime(2024, 6, 14, 8)),
+            _session(2, 'older work', updatedAt: DateTime(2024, 6, 13, 9)),
+          ],
+          now: () => now,
+        );
+        final base = HomeContext.minimal(close: () {});
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: base.gitStatusService,
+          sessions: widget.sessions,
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+        );
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 24,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Opens on yesterday; the ‹ › buttons render next to the title.
+        expect(widget.title, 'Yesterday');
+        expect(
+          tester.terminalState.findText('‹').isNotEmpty,
+          isTrue,
+          reason: 'the ‹ button renders on the title row',
+        );
+        expect(tester.terminalState.findText('›').isNotEmpty, isTrue);
+
+        // Hovering ‹ highlights it (raised background via the shared
+        // Button component).
+        final back = tester.terminalState.findText('‹').first;
+        await tester.hover(back.x, back.y);
+        await tester.pump();
+        final hovered = tester.terminalState.getStyledText().where(
+          (s) => s.text.contains('‹') && s.style.backgroundColor != null,
+        );
+        expect(
+          hovered.isNotEmpty,
+          isTrue,
+          reason: 'hovering ‹ gives it a hover background',
+        );
+
+        // `[` → previous day (2 days ago); title + content follow.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.bracketLeft),
+        );
+        await tester.pump();
+        expect(widget.title, '2 days ago');
+        expect(
+          tester.terminalState.findText('older work').isNotEmpty,
+          isTrue,
+          reason: '[ navigates the box content to the previous day',
+        );
+
+        // `]` → back to the latest (yesterday).
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.bracketRight),
+        );
+        await tester.pump();
+        expect(widget.title, 'Yesterday');
+        expect(
+          tester.terminalState.findText('yesterday work').isNotEmpty,
+          isTrue,
+        );
+
+        // A mouse tap on the ‹ title button navigates a day back (the
+        // click path, as opposed to the [ key above). › is disabled at
+        // the latest day, so ‹ is the one to tap here.
+        final back2 = tester.terminalState.findText('‹').first;
+        await tester.tap(back2.x, back2.y);
+        await tester.pump();
+        expect(
+          widget.title,
+          '2 days ago',
+          reason: 'tapping the ‹ title button navigates a day back',
+        );
+      }, size: const Size(80, 24));
+    });
+
     test('renders the LLM summary when the summarizer returns one', () async {
       await testNocterm('yesterday summary', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
@@ -283,8 +675,10 @@ void main() {
           sessions: () => const [],
           currentSessionId: () => null,
           switchSession: (_) => false,
-          summarizeYesterday: (_) async =>
-              '- fixed the parser\n- shipped the home screen',
+          summarizeYesterday: (_) async => (
+            text: '- fixed the parser\n- shipped the home screen',
+            daysAgo: 1,
+          ),
         );
         await _pump(tester, widget, ctx);
         // Let the async summary land.
@@ -314,7 +708,7 @@ void main() {
           currentSessionId: () => null,
           switchSession: (_) => false,
           // Never completes → stays in the pending state.
-          summarizeYesterday: (_) => Completer<String?>().future,
+          summarizeYesterday: (_) => Completer<YesterdaySummary?>().future,
         );
         await _pump(tester, widget, ctx);
         expect(

@@ -63,6 +63,78 @@ void main() {
         expect(tester.terminalState.findText('less'), nocterm.isNotEmpty);
       });
     });
+
+    test('ceiling tracks the busiest day in the window', () async {
+      await testNocterm('activity ceiling', (tester) async {
+        final today = DateTime.now();
+        String key(DateTime d) =>
+            '${d.year}-'
+            '${d.month.toString().padLeft(2, '0')}-'
+            '${d.day.toString().padLeft(2, '0')}';
+        // Peak day of 6M (below the old 100M floor): the legend's
+        // ceiling endpoint must be 6M, not 100M.
+        await _pumpGrid(tester, {key(today): 6000000});
+        expect(tester.terminalState.findText('0→6M'), nocterm.isNotEmpty);
+      });
+    });
+
+    test('empty window falls back to the 100M default ceiling',
+        () async {
+      await testNocterm('activity ceiling empty', (tester) async {
+        await _pumpGrid(tester, const {});
+        expect(
+          tester.terminalState.findText('0→100M'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
+    test('days older than the rendered window do not raise the ceiling',
+        () async {
+      await testNocterm('activity ceiling window', (tester) async {
+        final today = DateTime.now();
+        String key(DateTime d) =>
+            '${d.year}-'
+            '${d.month.toString().padLeft(2, '0')}-'
+            '${d.day.toString().padLeft(2, '0')}';
+        // A 90M monster day five weeks back (fetched as headroom but
+        // scrolled off the 4-week grid) must not become the ceiling;
+        // the visible peak (today, 6M) defines it instead.
+        await _pumpGrid(tester, {
+          key(today.subtract(const Duration(days: 35))): 90000000,
+          key(today): 6000000,
+        });
+        expect(tester.terminalState.findText('0→6M'), nocterm.isNotEmpty);
+      });
+    });
+
+    test('week totals render with adaptive precision (<= 5 chars)',
+        () async {
+      await testNocterm('activity week totals', (tester) async {
+        final today = DateTime.now();
+        final monday =
+            today.subtract(Duration(days: today.weekday - 1));
+        String key(DateTime d) =>
+            '${d.year}-'
+            '${d.month.toString().padLeft(2, '0')}-'
+            '${d.day.toString().padLeft(2, '0')}';
+        // Current week Mon+Tue = 4510000 -> `4.51M`; last week Mon =
+        // 13100000 -> `13.1M`; two weeks back Mon = 130000000 ->
+        // `130M` (130.0M would be 6 chars); three weeks back Mon =
+        // 10000 -> `0.01M` (never a misleading `0M`).
+        await _pumpGrid(tester, {
+          key(monday): 4000000,
+          key(monday.add(const Duration(days: 1))): 510000,
+          key(monday.subtract(const Duration(days: 7))): 13100000,
+          key(monday.subtract(const Duration(days: 14))): 130000000,
+          key(monday.subtract(const Duration(days: 21))): 10000,
+        });
+        expect(tester.terminalState.findText('4.51M'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('13.1M'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('130M'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('0.01M'), nocterm.isNotEmpty);
+      });
+    });
   });
 
   group('dailyTokenTotals', () {

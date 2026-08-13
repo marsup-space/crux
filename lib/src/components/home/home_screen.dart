@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../../theme/crux_theme.dart';
 import '../../services/skills/skill_discovery.dart';
 import '../../version.dart';
+import '../ui/button.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
 import 'widgets/activity_widget.dart';
@@ -106,7 +107,12 @@ class _Row {
   int get height {
     var h = 0;
     for (var i = 0; i < widgets.length; i++) {
-      final wh = widgets[i].heightFor(spans[i]) + 2; // + border rows
+      // +2 for the border rows, +1 for the title-button row when the
+      // box has one (its title renders as a component row, not in the
+      // painted border).
+      final wh = widgets[i].heightFor(spans[i]) +
+          2 +
+          (widgets[i].hasTitleButtons ? 1 : 0);
       if (wh > h) h = wh;
     }
     return h;
@@ -167,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.reassemble();
     _allById = {for (final w in _defaultWidgets()) w.id: w};
     _placements = _resolvePlacements();
+    _wireWidgetListeners();
   }
 
   /// The ordered, span-tagged placements shown in the grid. Built once
@@ -234,6 +241,21 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _allById = {for (final w in _defaultWidgets()) w.id: w};
     _placements = _resolvePlacements();
+    _wireWidgetListeners();
+  }
+
+  /// Subscribe to each widget's change notification so a widget that
+  /// mutates its own state (day navigation, …) can ask home to re-run
+  /// `build` via [HomeWidget.notifyChanged]. Wired in `initState` and
+  /// `reassemble` because both rebuild `_allById` — with fresh widget
+  /// instances on the default path, the same instances on the
+  /// caller-supplied path.
+  void _wireWidgetListeners() {
+    for (final widget in _allById.values) {
+      widget.onChanged = () {
+        if (mounted) setState(() {});
+      };
+    }
   }
 
   /// Merge the persisted layout with the available widgets into the
@@ -654,6 +676,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _moveHorizontal(1, rows);
       return true;
     }
+    // `[` / `]` press the focused box's title buttons: `[` runs the
+    // first (‹ = back / older), `]` the last (› = forward / latest) —
+    // the keyboard twin of clicking the title-row buttons. No-op (but
+    // still consumed) when the focused box has no title buttons.
+    if (key == LogicalKey.bracketLeft || key == LogicalKey.bracketRight) {
+      final widgets = _widgets;
+      if (widgets.isNotEmpty) {
+        final widget = widgets[_focusedIndex.clamp(0, widgets.length - 1)];
+        final buttons = widget.titleButtons;
+        if (buttons != null && buttons.isNotEmpty) {
+          final action =
+              key == LogicalKey.bracketLeft ? buttons.first : buttons.last;
+          action.onPressed?.call();
+        }
+      }
+      return true;
+    }
     // ↑↓ select items inside the focused box; on a passive box (no
     // items) they fall through to row navigation.
     if (key == LogicalKey.arrowUp) {
@@ -900,6 +939,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final hasItems = widget.itemCount > 0;
     final boxAction = widget.activate(_ctx);
 
+    // A box with title buttons renders its title as a real component
+    // row: the buttons need hover + tap, which the painted border title
+    // can't host (it's painted into the border cells at paint time).
+    // The title row takes one content row — budgeted in `_Row.height` —
+    // and the border above it paints as a plain line.
+    final titleButtons = widget.titleButtons;
+    final hasTitleButtons = titleButtons != null && titleButtons.isNotEmpty;
+
     final boxContent = Container(
       height: height.toDouble(),
       decoration: BoxDecoration(
@@ -908,13 +955,15 @@ class _HomeScreenState extends State<HomeScreen> {
           color: borderColor,
           style: BoxBorderStyle.rounded,
         ),
-        title: BorderTitle(
-          text: widget.title,
-          style: TextStyle(
-            color: titleColor,
-            fontWeight: focused ? FontWeight.bold : null,
-          ),
-        ),
+        title: hasTitleButtons
+            ? null
+            : BorderTitle(
+                text: widget.title,
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: focused ? FontWeight.bold : null,
+                ),
+              ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1),
       // EVERY box's content lives inside a scrollview: the scrollview's
@@ -928,18 +977,23 @@ class _HomeScreenState extends State<HomeScreen> {
       // do boxes that opt out via [HomeWidget.verticallyCenter] — a
       // content list like Yesterday must keep top alignment for the
       // scroll to read naturally.
-      child: _BoxScrollArea(
-        owner: widget,
-        child: hasItems || !widget.verticallyCenter
-            ? widget.build(context, _ctx, span, focused: focused)
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  widget.build(context, _ctx, span, focused: focused),
-                ],
-              ),
-      ),
+      child: hasTitleButtons
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _titleRow(theme, widget, titleButtons, focused),
+                Expanded(
+                  child: _BoxScrollArea(
+                    owner: widget,
+                    child: _boxContent(context, widget, span, focused),
+                  ),
+                ),
+              ],
+            )
+          : _BoxScrollArea(
+              owner: widget,
+              child: _boxContent(context, widget, span, focused),
+            ),
     );
 
     // Hover-focus lives on a non-opaque MouseRegion so it never blocks
@@ -1007,6 +1061,70 @@ class _HomeScreenState extends State<HomeScreen> {
         if (action != null) action();
       },
       child: hoverable,
+    );
+  }
+
+  /// The widget's rendered content, vertically centered when the box is
+  /// passive and opts in ([HomeWidget.verticallyCenter]). Extracted so
+  /// the title-button and plain-border box chrome share one path.
+  Component _boxContent(
+    BuildContext context,
+    HomeWidget widget,
+    int span,
+    bool focused,
+  ) {
+    final hasItems = widget.itemCount > 0;
+    return hasItems || !widget.verticallyCenter
+        ? widget.build(context, _ctx, span, focused: focused)
+        : Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              widget.build(context, _ctx, span, focused: focused),
+            ],
+          );
+  }
+
+  /// The interactive title row for a box with [HomeWidget.titleButtons]:
+  /// the title text (styled like the painted border title) followed by
+  /// the buttons. Buttons render as the shared [Button] component —
+  /// hover raises their background, click fires [HomeTitleButton
+  /// .onPressed]. A button with a null callback renders as a dimmed,
+  /// inert label (taps ignored), matching the disabled look of the
+  /// painted title.
+  Component _titleRow(
+    CruxThemeData theme,
+    HomeWidget widget,
+    List<HomeTitleButton> buttons,
+    bool focused,
+  ) {
+    final titleColor = focused ? theme.accent : theme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.title,
+          style: TextStyle(
+            color: titleColor,
+            fontWeight: focused ? FontWeight.bold : null,
+          ),
+        ),
+        for (final button in buttons)
+          if (button.onPressed == null)
+            Text(
+              ' ${button.label} ',
+              style: TextStyle(color: theme.buttonTextDisabled),
+            )
+          else
+            Button(
+              label: button.label,
+              onPressed: button.onPressed,
+              color: theme.onSurfaceVariant,
+              hoverColor: theme.buttonTextHover,
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+            ),
+      ],
     );
   }
 }

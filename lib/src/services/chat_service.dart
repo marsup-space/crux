@@ -148,11 +148,12 @@ class ChatService {
     detail: detail,
   );
 
-  /// Summarize yesterday's work for the home screen's Yesterday box.
-  /// Single-round auxiliary call (no tools), cached by the
-  /// yesterday-session fingerprint. See [AuxiliaryService
-  /// .summarizeYesterday].
-  Future<String?> summarizeYesterday(List<Session> sessions) =>
+  /// Summarize recent work for the home screen's Yesterday box.
+  /// Single-round auxiliary call (no tools) over the most recent day
+  /// with activity (walking back up to
+  /// [AuxiliaryService.maxLookbackDays]), cached by the day-set
+  /// fingerprint. See [AuxiliaryService.summarizeYesterday].
+  Future<YesterdaySummary?> summarizeYesterday(List<Session> sessions) =>
       _auxiliaryService.summarizeYesterday(sessions);
 
   // ── Compaction ────────────────────────────────────────────────────

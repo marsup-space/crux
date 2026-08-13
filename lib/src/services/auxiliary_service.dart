@@ -213,12 +213,16 @@ class AuxiliaryService {
 
   // ── Yesterday summary (home screen) ──────────────────────────────
 
+  /// How many calendar days [summarizeYesterday] walks back looking for
+  /// activity, starting at yesterday (1) and ending here (7).
+  static const int maxLookbackDays = 7;
+
   /// In-memory cache for the last generated summary. Backed by the
   /// on-disk cache ([_readPersistedSummary] / [_persistSummary]) so a
-  /// same-day relaunch with an unchanged yesterday-set skips the LLM
+  /// same-day relaunch with the same day-set skips the LLM
   /// call entirely. Keyed by date + [_fingerprint]; see [_cacheKey].
   String? _yesterdayCacheKey;
-  String? _yesterdayCacheValue;
+  YesterdaySummary? _yesterdayCacheValue;
 
   /// Path of the on-disk summary cache. Defaults to
   /// `yesterday_summary.json` under the user-data dir; tests inject a
@@ -233,46 +237,62 @@ class AuxiliaryService {
       _cacheFilePathForTesting ??
       p.join(resolveUserDataDirectory(), 'yesterday_summary.json');
 
-  /// Summarize what was worked on yesterday, for the home screen's
-  /// Yesterday box. Single-round call (no tools), or `null` when no
-  /// auxiliary model is configured / the call fails / there was no
-  /// yesterday activity — callers fall back to a static session list.
+  /// Summarize what was worked on recently, for the home screen's
+  /// Yesterday box. Walks back from yesterday: if a day had no session
+  /// activity the previous day is tried, up to [maxLookbackDays] back.
+  /// Returns the summary plus how many days back it landed, or `null`
+  /// when no auxiliary model is configured / the call fails / no day in
+  /// the window had any activity — callers fall back to a static
+  /// session list.
   ///
   /// [sessions] are the already-in-memory session list (any of them
-  /// with `updatedAt` in the yesterday window is included). For each we
-  /// pull its messages, keep ONLY the yesterday slice, and take the
-  /// developer's own messages (whole — they're short) plus a truncated
-  /// agent reply for each. Tool calls, tool output, and reasoning are
-  /// dropped. The model is told (see [yesterdaySummarySystemPrompt])
-  /// that it's seeing asks + brief replies, not a full conversation.
+  /// with `updatedAt` in the resolved day's window is included). For
+  /// each we pull its messages, keep ONLY that day's slice, and take
+  /// the developer's own messages (whole — they're short) plus a
+  /// truncated agent reply for each. Tool calls, tool output, and
+  /// reasoning are dropped. The model is told (see
+  /// [yesterdaySummarySystemPromptFor]) that it's seeing asks + brief
+  /// replies, not a full conversation.
   ///
-  /// Cached by the yesterday-set fingerprint: identical inputs return
-  /// the cached summary without an LLM round.
-  Future<String?> summarizeYesterday(
+  /// Cached by the day-set fingerprint: identical inputs return the
+  /// cached summary without an LLM round.
+  Future<YesterdaySummary?> summarizeYesterday(
     List<Session> sessions, {
     DateTime Function()? now,
   }) async {
     final nowValue = (now ?? DateTime.now)();
     final todayStart = DateTime(nowValue.year, nowValue.month, nowValue.day);
-    final yesterdayStart = todayStart.subtract(const Duration(days: 1));
 
-    bool inWindow(DateTime t) =>
-        !t.isBefore(yesterdayStart) && t.isBefore(todayStart);
+    // Find the most recent day with any session activity, walking back
+    // from yesterday.
+    List<Session>? daySessions;
+    bool Function(DateTime)? inWindow;
+    var daysAgo = 0;
+    for (var d = 1; d <= maxLookbackDays; d++) {
+      final dayStart = todayStart.subtract(Duration(days: d));
+      final dayEnd = todayStart.subtract(Duration(days: d - 1));
+      bool window(DateTime t) => !t.isBefore(dayStart) && t.isBefore(dayEnd);
+      final hits = sessions.where((s) => window(s.updatedAt)).toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      if (hits.isNotEmpty) {
+        daySessions = hits;
+        inWindow = window;
+        daysAgo = d;
+        break;
+      }
+    }
+    if (daySessions == null) return null;
 
-    final yesterdays = sessions.where((s) => inWindow(s.updatedAt)).toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-    if (yesterdays.isEmpty) return null;
-
-    final fingerprint = _fingerprint(yesterdays);
-    final key = _cacheKey(todayStart, fingerprint);
+    final fingerprint = _fingerprint(daySessions);
+    final key = _cacheKey(todayStart, daysAgo, fingerprint);
 
     // 1. In-memory hit.
     if (key == _yesterdayCacheKey) {
-      return _yesterdayCacheValue;
+      final cached = _yesterdayCacheValue;
+      if (cached != null) return cached;
     }
     // 2. On-disk hit — a relaunch later the same day with the same
-    //    yesterday-set reads the file and skips the LLM call.
+    //    day-set reads the file and skips the LLM call.
     final persisted = _readPersistedSummary(key);
     if (persisted != null) {
       _yesterdayCacheKey = key;
@@ -280,11 +300,12 @@ class AuxiliaryService {
       return persisted;
     }
 
-    final digest = await _buildDigest(yesterdays, inWindow);
+    final digest = await _buildDigest(daySessions, inWindow!);
     if (digest == null) return null;
 
+    final dayLabel = yesterdayLabelForDaysAgo(daysAgo);
     final summary = await _streamAuxiliaryCall(
-      systemPrompt: yesterdaySummarySystemPrompt,
+      systemPrompt: yesterdaySummarySystemPromptFor(dayLabel),
       userMessage: digest,
       logTag: 'yesterday',
     );
@@ -293,47 +314,57 @@ class AuxiliaryService {
     // Only cache a real result; a null (failure / no model) leaves the
     // cache untouched so the next open retries rather than sticking on
     // a stale failure.
+    final result = (text: summary, daysAgo: daysAgo);
     _yesterdayCacheKey = key;
-    _yesterdayCacheValue = summary;
-    _persistSummary(key, summary);
-    print('[yesterday] summarized ${yesterdays.length} sessions');
-    return summary;
+    _yesterdayCacheValue = result;
+    _persistSummary(key, result);
+    print('[yesterday] summarized ${daySessions.length} sessions '
+        '($daysAgo day${daysAgo == 1 ? '' : 's'} ago)');
+    return result;
   }
 
-  /// The cache key: the date (so a new day always regenerates, even if
-  /// the session set coincidentally matches) plus the ordered
-  /// yesterday-session ids + their `updatedAt`s. Any new session or new
-  /// activity bumps it and forces a regenerate; an unchanged set reuses
-  /// the cache.
-  String _cacheKey(DateTime todayStart, String fingerprint) =>
-      '${todayStart.toIso8601String().substring(0, 10)}|$fingerprint';
+  /// The cache key: today's date (so a new day always regenerates, even
+  /// if the session set coincidentally matches) plus the resolved
+  /// lookback depth and the ordered day-session ids. A new session
+  /// entering the window bumps it and forces a regenerate; activity in
+  /// an already-listed session does NOT — a past day's content is
+  /// frozen, so once summarized it stays cached for the rest of today
+  /// and only regenerates on a new calendar day.
+  String _cacheKey(DateTime todayStart, int daysAgo, String fingerprint) =>
+      '${todayStart.toIso8601String().substring(0, 10)}|'
+      '$daysAgo|$fingerprint';
 
-  String _fingerprint(List<Session> yesterdays) =>
-      yesterdays.map((s) => '${s.id}@${s.updatedAt.millisecondsSinceEpoch}')
-          .join(',');
+  /// The fingerprint is just the ordered session ids in the day window —
+  /// deliberately NOT their `updatedAt`s. Yesterday's messages don't
+  /// change when a session is touched today, so keying on `updatedAt`
+  /// would invalidate the cache on every reply and re-call the model
+  /// all day. Keying on ids alone means the summary for a past day is
+  /// computed once and reused until the calendar day rolls over.
+  String _fingerprint(List<Session> daySessions) =>
+      daySessions.map((s) => '${s.id}').join(',');
 
   /// Read the on-disk cache; returns the summary only when its key
   /// matches [key] exactly (same day + same fingerprint). Delegates to
   /// the top-level [readYesterdaySummaryCache] so the IO logic is
   /// unit-testable.
-  String? _readPersistedSummary(String key) =>
+  YesterdaySummary? _readPersistedSummary(String key) =>
       readYesterdaySummaryCache(_cacheFilePath, key);
 
   /// Atomically write the summary to the on-disk cache. Delegates to
   /// [writeYesterdaySummaryCache].
-  void _persistSummary(String key, String summary) =>
+  void _persistSummary(String key, YesterdaySummary summary) =>
       writeYesterdaySummaryCache(_cacheFilePath, key, summary);
 
   /// Build the digest text for the LLM, or null if no session yields any
-  /// yesterday content (e.g. sessions whose messages are all from before
-  /// yesterday). Pulls each session's messages from the store and hands
+  /// content in the window (e.g. sessions whose messages are all from
+  /// other days). Pulls each session's messages from the store and hands
   /// them to [buildYesterdayDigest] for slicing + formatting.
   Future<String?> _buildDigest(
-    List<Session> yesterdays,
+    List<Session> daySessions,
     bool Function(DateTime) inWindow,
   ) async {
     final perSession = <Session, List<Message>>{};
-    for (final session in yesterdays) {
+    for (final session in daySessions) {
       perSession[session] = await _messageStore.getMessages(session.id);
     }
     return buildYesterdayDigest(perSession, inWindow);
@@ -590,6 +621,18 @@ ShellRiskVerdict parseShellRiskVerdictForTesting(String raw) =>
 /// inside the cheap model's context.
 const int _kReplyExcerptChars = 400;
 
+/// The result of [AuxiliaryService.summarizeYesterday]: the summary
+/// text plus how many calendar days back the summarized day is (1 =
+/// yesterday, 7 = a week ago). The home box titles itself from
+/// [daysAgo] (see [yesterdayLabelForDaysAgo]).
+typedef YesterdaySummary = ({String text, int daysAgo});
+
+/// Human-readable label for a lookback depth: `1` → "yesterday",
+/// anything else → "N days ago". Used for the home box title, the
+/// summarizer prompt, and the fallback strings so all three agree.
+String yesterdayLabelForDaysAgo(int daysAgo) =>
+    daysAgo == 1 ? 'yesterday' : '$daysAgo days ago';
+
 /// Slice each session's messages to the yesterday window and format the
 /// LLM digest. Pure and top-level so the filtering/truncation rules are
 /// unit-testable without a database or network (the service's private
@@ -650,10 +693,13 @@ String? buildYesterdayDigest(
 
 /// Read the persisted yesterday-summary cache at [path]; returns the
 /// summary only when its stored key matches [key] exactly (same day +
-/// same fingerprint). Any read/parse failure is a miss — the cache is an
-/// optimization, never a correctness dependency. Top-level and pure-IO
-/// so it's unit-testable without an LLM.
-String? readYesterdaySummaryCache(String path, String key) {
+/// same fingerprint). A missing/invalid `daysAgo` field (caches written
+/// before the lookback existed) is treated as `1` (yesterday) — the
+/// pre-lookback cache only ever held yesterday windows. Any read/parse
+/// failure is a miss — the cache is an optimization, never a
+/// correctness dependency. Top-level and pure-IO so it's unit-testable
+/// without an LLM.
+YesterdaySummary? readYesterdaySummaryCache(String path, String key) {
   try {
     final file = File(path);
     if (!file.existsSync()) return null;
@@ -661,7 +707,10 @@ String? readYesterdaySummaryCache(String path, String key) {
     if (json is! Map) return null;
     if (json['key'] != key) return null;
     final summary = json['summary'];
-    return summary is String && summary.isNotEmpty ? summary : null;
+    if (summary is! String || summary.isEmpty) return null;
+    final daysAgoRaw = json['daysAgo'];
+    final daysAgo = daysAgoRaw is int ? daysAgoRaw : 1;
+    return (text: summary, daysAgo: daysAgo);
   } catch (_) {
     return null;
   }
@@ -670,12 +719,20 @@ String? readYesterdaySummaryCache(String path, String key) {
 /// Atomically write the summary to the cache at [path] (temp + rename),
 /// mirroring the other TOML/JSON stores. A write failure is swallowed —
 /// the in-memory cache still serves the current run.
-void writeYesterdaySummaryCache(String path, String key, String summary) {
+void writeYesterdaySummaryCache(
+  String path,
+  String key,
+  YesterdaySummary summary,
+) {
   try {
     final file = File(path);
     file.parent.createSync(recursive: true);
     final tmp = File('$path.tmp');
-    tmp.writeAsStringSync(jsonEncode({'key': key, 'summary': summary}));
+    tmp.writeAsStringSync(jsonEncode({
+      'key': key,
+      'summary': summary.text,
+      'daysAgo': summary.daysAgo,
+    }));
     tmp.renameSync(path);
   } catch (_) {
     // Non-fatal: the next run regenerates.

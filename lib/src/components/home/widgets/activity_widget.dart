@@ -20,18 +20,21 @@ typedef DailyTokens = Map<String, int>;
 /// and short, so a compact 4×7 grid reads at a glance without
 /// scrolling. Each day is a 2-col block cell.
 ///
-/// Intensity: 5 levels (0 = empty … 4 = most). The scale is linear
-/// against a ceiling that defaults to [defaultCeiling] (100M tokens)
-/// but ratchets up to the busiest day in the window when one exceeds
-/// it — so the legend's "more" always means a real, current maximum.
+/// Intensity: continuous, **linear** against a ceiling equal to the
+/// busiest day in the window — so the legend's "more" always means a
+/// real, current maximum, and a half-peak day renders half as green.
+/// (A log scale was tried first: token usage can span orders of
+/// magnitude, but in practice a project's days cluster within one or
+/// two, and the log compression turned the whole grid uniform green.)
+/// An empty window falls back to [defaultCeiling] (100M tokens).
 ///
 /// Data comes from [HomeContext.dailyTokenTotals]; while the query is
 /// in flight the box shows a one-line hint, and when no store is wired
 /// (tests / previews) it renders an empty grid. Passive box —
 /// `activate` returns null.
 class ActivityHomeWidget extends HomeWidget {
-  /// The ceiling (tokens/day) that maps to the brightest cell, before
-  /// ratcheting up to the observed maximum. 100M per the design.
+  /// Fallback ceiling (tokens/day) when the window has no data at
+  /// all. With data, the ceiling is the busiest day in the window.
   static const defaultCeiling = 100000000;
 
   /// Weeks of history to render.
@@ -147,42 +150,51 @@ class _ActivityGrid extends StatelessComponent {
     return '${d.year}-$m-$day';
   }
 
-  /// The ceiling the brightest cell maps to: [ActivityHomeWidget.defaultCeiling]
-  /// normally, but the busiest day in the window when one exceeds it —
-  /// so "more" is always a real, current maximum rather than a cap the
-  /// data has already blown past.
-  int get _ceiling {
-    var max = ActivityHomeWidget.defaultCeiling;
-    for (final v in totals.values) {
-      if (v > max) max = v;
+  /// The ceiling the brightest cell maps to: the busiest day in the
+  /// **rendered window** ([since] through today), so "more" is always
+  /// a real, current maximum and every other day shades relative to
+  /// it. The query fetches a few days more than the grid renders
+  /// (whole-week headroom), and those extra days must NOT raise the
+  /// ceiling — otherwise a busy day that has already scrolled off the
+  /// grid would keep every visible cell pale. An empty window falls
+  /// back to [ActivityHomeWidget.defaultCeiling] so the legend still
+  /// has a sensible endpoint.
+  int _ceilingFor(DateTime since) {
+    var max = 0;
+    for (final e in totals.entries) {
+      final day = DateTime.parse(e.key);
+      if (day.isBefore(since)) continue;
+      if (e.value > max) max = e.value;
     }
-    return max;
+    return max > 0 ? max : ActivityHomeWidget.defaultCeiling;
   }
 
   /// Fraction of the ceiling a token count reaches (0.0 = no tokens,
-  /// 1.0 = at/above the ceiling). Log-scaled so a 5M day and a 5B day
-  /// don't collapse into the same shade — token usage spans orders of
-  /// magnitude, so linear buckets would lump every real day together.
+  /// 1.0 = at/above the ceiling). Linear: within one project the
+  /// day-to-day spread is usually one order of magnitude or two, and
+  /// there a log scale compresses every day into the dark-green end —
+  /// a 500k day renders at ~80% of a 14M ceiling, so the whole grid
+  /// reads as uniform green and no day stands out. Linear keeps the
+  /// color proportional to the actual work: a half-peak day is half
+  /// as green, and a rounding-error day honestly reads near-empty.
   static double intensityFor(int tokens, int ceiling) {
     if (tokens <= 0) return 0.0;
-    final c = math.max(ceiling, 2);
-    final t = math.log(tokens + 1) / math.log(c + 1);
-    return t.clamp(0.0, 1.0);
+    return (tokens / math.max(ceiling, 1)).clamp(0.0, 1.0);
   }
 
   /// Continuous color for a day. Truecolor terminals (the TUI emits
   /// 24-bit RGB) get a smooth background→success gradient — no fixed
   /// step palette, so every distinct token count gets its own shade.
+  /// Linear intensity means low-activity days sit very close to the
+  /// empty tint — intentional: they're meant to read as "nearly
+  /// nothing happened".
   Color _cellColor(double intensity) {
     if (intensity <= 0) {
       // Near-background: a hair above the box bg so empty cells read
       // as "a cell", not as missing paint.
       return Color.lerp(theme.background, theme.onSurfaceDim, 0.22)!;
     }
-    // Active days start at 0.25 toward the success hue (clearly above
-    // the empty tint) and ramp smoothly to the full hue at the ceiling.
-    final t = 0.25 + 0.75 * intensity;
-    return Color.lerp(theme.background, theme.success, t)!;
+    return Color.lerp(theme.background, theme.success, intensity)!;
   }
 
   /// Compact token count for the legend: `1.5M`, `100M`, `42k`.
@@ -198,8 +210,21 @@ class _ActivityGrid extends StatelessComponent {
     return '$n';
   }
 
-  /// Whole-megatoken total for a week row: `42M`, `3M`.
-  static String _fmtMegs(int n) => '${(n / 1000000).round()}M';
+  /// Week-row total in megatokens, at most 5 chars: the most precise
+  /// M-value that fits. `4.51M`, `13.1M`, `130M` (a `130.1M` would
+  /// be 6 chars, so the decimals drop), and tiny-but-nonzero weeks
+  /// show `0.01M` rather than rounding to a misleading `0M`.
+  static String _fmtMegs(int n) {
+    final m = n / 1000000;
+    for (final decimals in const [2, 1, 0]) {
+      final s = '${m.toStringAsFixed(decimals)}M';
+      if (s.length <= 5) return s;
+    }
+    // >= 10000M (10G): 5 chars can't hold the M value. Compress to G
+    // (`10000M` -> `10.0G`); a >= 10T week overflows 5 chars whatever
+    // we do, so don't truncate the number into a wrong one.
+    return '${(m / 1000).toStringAsFixed(1)}G';
+  }
 
   /// The Monday of the week [weeksBack] weeks before [today]'s week.
   /// Week starts on Monday (ISO convention).
@@ -224,7 +249,6 @@ class _ActivityGrid extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     final today = _today;
-    final ceiling = _ceiling;
     final labelStyle = TextStyle(color: theme.onSurfaceDim);
 
     // Oldest-first: the window is [ActivityHomeWidget.weeks] full
@@ -232,6 +256,10 @@ class _ActivityGrid extends StatelessComponent {
     // where the last row is the current week (days after today blank).
     final firstMonday =
         _weekStartMonday(today, ActivityHomeWidget.weeks - 1);
+
+    // Ceiling from the rendered window only — never from the fetched
+    // headroom days before it (see _ceilingFor).
+    final ceiling = _ceilingFor(firstMonday);
 
     // Header: weekday initials over the 7 day-columns, padded to the
     // cell width so each sits directly over its column. The leading

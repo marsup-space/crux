@@ -280,7 +280,13 @@ abstract class HomeWidget {
   /// A button with a null [HomeTitleButton.onPressed] renders dimmed
   /// (disabled). Recomputed on each build, so enabled/disabled tracks
   /// the widget's state.
-  List<HomeTitleButton>? get titleButtons => null;
+    List<HomeTitleButton>? get titleButtons => null;
+
+  /// Whether the box has title buttons to render ([titleButtons] is
+  /// non-empty). Home uses this to budget an extra title-row cell in
+  /// the box height and to pick between the painted border title and
+  /// the interactive component title row.
+  bool get hasTitleButtons => titleButtons != null && titleButtons!.isNotEmpty;
 
   /// Rebuild notification. A stateful widget calls its listener when
   /// its title/content/buttons changed and home should re-run `build`.

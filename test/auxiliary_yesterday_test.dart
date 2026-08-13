@@ -155,12 +155,31 @@ void main() {
     tearDown(() => tmp.deleteSync(recursive: true));
 
     test('write then read round-trips when the key matches', () {
-      writeYesterdaySummaryCache(path, 'key-a', '- did a thing');
-      expect(readYesterdaySummaryCache(path, 'key-a'), '- did a thing');
+      writeYesterdaySummaryCache(path, 'key-a', (text: '- did a thing', daysAgo: 1));
+      final hit = readYesterdaySummaryCache(path, 'key-a');
+      expect(hit, isNotNull);
+      expect(hit!.text, '- did a thing');
+      expect(hit.daysAgo, 1);
+    });
+
+    test('daysAgo survives the round-trip (lookback summaries)', () {
+      writeYesterdaySummaryCache(path, 'key-a', (text: '- older work', daysAgo: 3));
+      final hit = readYesterdaySummaryCache(path, 'key-a');
+      expect(hit!.text, '- older work');
+      expect(hit.daysAgo, 3);
+    });
+
+    test('a pre-lookback cache file (no daysAgo field) reads as yesterday', () {
+      File(path).writeAsStringSync(
+        '{"key": "key-a", "summary": "- legacy"}',
+      );
+      final hit = readYesterdaySummaryCache(path, 'key-a');
+      expect(hit!.text, '- legacy');
+      expect(hit.daysAgo, 1);
     });
 
     test('read misses when the key differs (new day / new activity)', () {
-      writeYesterdaySummaryCache(path, 'key-a', '- did a thing');
+      writeYesterdaySummaryCache(path, 'key-a', (text: '- did a thing', daysAgo: 1));
       expect(readYesterdaySummaryCache(path, 'key-b'), isNull);
     });
 
@@ -174,16 +193,18 @@ void main() {
     });
 
     test('read misses when the stored summary is empty', () {
-      writeYesterdaySummaryCache(path, 'key-a', '');
+      writeYesterdaySummaryCache(path, 'key-a', (text: '', daysAgo: 1));
       // Empty summary is written but treated as a miss on read so the
       // caller regenerates rather than caching a useless empty result.
       expect(readYesterdaySummaryCache(path, 'key-a'), isNull);
     });
 
     test('a second write overwrites the first', () {
-      writeYesterdaySummaryCache(path, 'key-a', '- first');
-      writeYesterdaySummaryCache(path, 'key-a', '- second');
-      expect(readYesterdaySummaryCache(path, 'key-a'), '- second');
+      writeYesterdaySummaryCache(path, 'key-a', (text: '- first', daysAgo: 1));
+      writeYesterdaySummaryCache(path, 'key-a', (text: '- second', daysAgo: 2));
+      final hit = readYesterdaySummaryCache(path, 'key-a');
+      expect(hit!.text, '- second');
+      expect(hit.daysAgo, 2);
     });
   });
 }
