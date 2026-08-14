@@ -96,6 +96,11 @@ class _CodingPlanHomeView extends StatefulComponent {
 class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
   final List<StreamSubscription<dynamic>> _subs = [];
 
+  /// Index of the provider row currently under the mouse, or null when
+  /// no row is hovered. Drives the hover countdown swap (see
+  /// [_codingPlanRow]).
+  int? _hoveredIndex;
+
   @override
   void initState() {
     super.initState();
@@ -146,6 +151,16 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     if (mounted) setState(() {});
   }
 
+  void _setHovered(int index) {
+    if (_hoveredIndex == index) return;
+    setState(() => _hoveredIndex = index);
+  }
+
+  void _clearHovered(int index) {
+    if (_hoveredIndex != index) return;
+    setState(() => _hoveredIndex = null);
+  }
+
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
@@ -167,18 +182,36 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     }
 
     final rows = <Component>[];
-    for (final entry in entries) {
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
       final codingPlan = entry.codingPlan;
       final creditBalance = entry.creditBalance;
+
+      final Component row;
       if (codingPlan != null) {
-        rows.add(
-          _codingPlanRow(theme, entry.name, codingPlan, maxNameWidth),
+        row = _codingPlanRow(
+          theme,
+          entry.name,
+          codingPlan,
+          maxNameWidth,
+          hovered: i == _hoveredIndex,
         );
       } else if (creditBalance != null) {
-        rows.add(
-          _creditRow(theme, entry.name, creditBalance, maxNameWidth),
-        );
+        row = _creditRow(theme, entry.name, creditBalance, maxNameWidth);
+      } else {
+        continue;
       }
+
+      // Per-row hover: hovering a coding-plan row swaps its percentage
+      // for the remaining-time countdown. Credit rows have no countdown,
+      // so the hover wiring is a harmless no-op for them.
+      rows.add(
+        MouseRegion(
+          onEnter: (_) => _setHovered(i),
+          onExit: (_) => _clearHovered(i),
+          child: row,
+        ),
+      );
     }
 
     return Column(
@@ -187,20 +220,34 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     );
   }
 
-  /// Inline coding-plan line: `<Name>  5h 88%  7d 55%`.
+  /// Inline coding-plan line: `<Name>  5h 88%  7d 55%`, or on hover
+  /// `<Name>  5h 4h 32m  7d 6d 4h` (the remaining-time countdown).
   Component _codingPlanRow(
     CruxThemeData theme,
     String name,
     CodingPlanProvider cp,
-    int nameWidth,
-  ) {
+    int nameWidth, {
+    required bool hovered,
+  }) {
     final usage = cp.latestCodingPlanUsage;
     final children = <Component>[_nameText(theme, name, nameWidth)];
     if (usage == null) {
       children.add(_waiting(theme));
     } else {
-      children.addAll(_window(theme, '5h', usage.intervalRemainingPct));
-      children.addAll(_window(theme, '7d', usage.weeklyRemainingPct));
+      children.addAll(_window(
+        theme,
+        '5h',
+        usage.intervalRemainingPct,
+        usage.formatIntervalRemains(),
+        hovered: hovered,
+      ));
+      children.addAll(_window(
+        theme,
+        '7d',
+        usage.weeklyRemainingPct,
+        usage.formatWeeklyRemains(),
+        hovered: hovered,
+      ));
     }
     return Row(mainAxisSize: MainAxisSize.min, children: children);
   }
@@ -246,14 +293,25 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     );
   }
 
-  /// One window's inline pieces: `  5h ` dim label + `88%` coloured value.
-  List<Component> _window(CruxThemeData theme, String label, int pct) {
+  /// One window's inline pieces: `  5h ` dim label + value. When the row
+  /// is hovered and the provider returned a countdown, the value swaps
+  /// from the coloured percentage to the dim remaining-time label
+  /// (e.g. `88%` → `4h 32m`), matching the toolbar's hover countdown.
+  List<Component> _window(
+    CruxThemeData theme,
+    String label,
+    int pct,
+    String? countdown, {
+    required bool hovered,
+  }) {
+    final text = hovered ? (countdown ?? '$pct%') : '$pct%';
+    final color = hovered ? theme.onSurfaceDim : _pctColor(theme, pct);
     return [
       Text('  $label ', style: TextStyle(color: theme.onSurfaceDim)),
       Text(
-        '$pct%',
+        text,
         style: TextStyle(
-          color: _pctColor(theme, pct),
+          color: color,
           fontWeight: FontWeight.bold,
         ),
       ),

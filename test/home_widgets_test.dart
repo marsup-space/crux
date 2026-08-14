@@ -1110,6 +1110,42 @@ void main() {
       });
     });
 
+    test('hovering a coding-plan row swaps percentages for the countdown',
+        () async {
+      await testNocterm('coding-plan hover countdown', (tester) async {
+        final kimi = _FakeCodingPlanProvider(intervalPct: 88, weeklyPct: 55);
+        kimi.startCodingPlanPolling(apiKey: 'x');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        kimi.stopCodingPlanPolling();
+
+        final entries = [
+          ConnectedProviderUsage(name: 'kimi', codingPlan: kimi),
+        ];
+        final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
+        await _pump(tester, widget, _ctx());
+
+        // Steady state shows percentages.
+        expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('4h 32m'), isEmpty);
+
+        // Hover the row → percentages swap to the remaining-time countdown.
+        await tester.hover(0, 0);
+        expect(tester.terminalState.findText('4h 32m'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('6d 4h'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('88%'), isEmpty);
+        expect(tester.terminalState.findText('55%'), isEmpty);
+
+        // Hover away → percentages come back.
+        await tester.hover(0, 5);
+        expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('4h 32m'), isEmpty);
+
+        await kimi.disposeCodingPlanPolling();
+      });
+    });
+
     test('shows a waiting state before the first snapshot', () async {
       await testNocterm('coding-plan waiting', (tester) async {
         final provider = _FakeCodingPlanProvider(); // no polling started
