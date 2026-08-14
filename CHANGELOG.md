@@ -6,7 +6,116 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [0.30.0] - 2026-08-14
+
+4f08887d
+
+### Features
+
+- **i18n: UI language switching via `/language`** (`8803861d`) — a new
+  `/language` command switches the whole UI between Chinese and
+  English, persisted per-project to the config store. Ship with an
+  en/zh string catalog (`lib/src/i18n/`) and a
+  `LocaleController` that repaints live without a restart.
+- **i18n: all UI chrome localizable through the string catalog**
+  (`4fb0dfa2`, `1eb4611d`, `4f08887d`) — home screen and all 12
+  widgets, command descriptions + toasts, chat input placeholder,
+  toolbar hints, context bar, sidebar buttons, session manager, tool
+  detail pane, fullpane titles, compaction feedback, git status,
+  vibe box titles, and the You:/Crux: message prefixes all resolve
+  through the catalog. Width-sensitive alignment uses nocterm's
+  `stringWidth()`/`padToWidth()`, so CJK and latin mix without
+  special-casing. A `/reply-language` command sets the language the
+  model uses in its replies (concurrent-session aware).
+- **Home: full-featured quick-chat input** (`2ecbde10`, `993c5f5e`) —
+  the home dashboard gains a one-line quick-chat field that starts a
+  fresh Chat-mode session with the typed prompt and leaves home for
+  the chat screen. The input reuses the chat input's full overlay
+  machinery: slash-command completion, @/#/$ mentions, and chip
+  styling, extracted into shared `InputOverlay`/`InputKeyHandler`/
+  `OverlayController` helpers with the popover in a shared widget.
+- **Home: settings box** (`849c079a`) — a dashboard box showing the
+  current theme id, auxiliary model, chat display mode, and
+  (read-only) language; activating a row seeds the matching slash
+  command into the chat input and stays on home.
+- **Home: usage boxes — coding-plan per provider + today stats**
+  (`035bc64e`) — a `coding-plan` box lists every connected provider's
+  live usage (5h/7d remaining for Kimi/Zhipu/MiniMax, API credit for
+  DeepSeek), polling all connected providers, not just the active
+  session's; the `today` box now shows tokens, conversation turns,
+  and active-session counts via a `MessageStore.dailyUsageStats`
+  aggregate.
+- **Home: Quick Start setup checklist** (`4a0a3bb7`) — a first-run
+  checklist (provider key, aux model, web provider, workspace)
+  computed live from the home context that ticks itself off as items
+  complete elsewhere; pending rows seed the matching command, and the
+  box hides itself once everything is set.
+- **Home: day navigation for tokens & yesterday boxes** (`1d3ff5d5`) —
+  the tokens box walks the calendar with ‹ › title buttons ([ ] keys
+  on the focused box); the yesterday box opens on the most recent day
+  with activity and navigates up to 7 days back, each day's summary
+  cached so stepping never re-calls the model.
+- **Home: coding-plan hover shows remaining-time countdown**
+  (`f66d12cb`) — hovering the coding-plan box's remaining window
+  shows the live countdown to its reset.
+- **Chat: click the model button to interrupt streaming**
+  (`178b5411`) — the toolbar's model button (which already flashes
+  while streaming) now interrupts the in-flight response on click,
+  replacing the ESC×2 gesture; idle, the same button opens the
+  /model picker. A plain ESC in the chat input now navigates home.
+- **Home: my-notes dashboard box** (`943553f6`) — a `my-notes` box
+  shares the sidebar widget's data and interactions: open-todo count
+  inline with an `open` button, and clickable todo rows that mark
+  done / restore via the shared `NotesService`.
+- **Notes: per-project my-notes widget with todo tracking**
+  (`30c5254a`) — a spec-driven "my notes" sidebar widget backed by a
+  per-project markdown note in the crux DB (`project_notes` table,
+  schema v30); the DB row is the source of truth and a
+  `.dart_tool/my_notes.json` projection drives the generic TOML
+  widget with open-todo count + clickable rows. Adds a `screen`
+  action kind that opens an in-process fullpane.
+- **Notes: read-only notes tool for the agent** (`4c9765e9`) — the
+  per-project scratchpad is exposed to the agent as a read-only tool
+  mirroring `SessionTool`: it reads the DB row live (full markdown,
+  not the lossy projection), reads the current project only, and
+  never writes.
+- **Widgets: comfy-monitor sidebar widget** (`992860c8`) — a
+  spec-driven widget showing live ComfyUI queue + auto-suspend state
+  (running/queued, suspended, idle, cancelled, error) refreshed every
+  5 s from `.crux/comfy-monitor-status.json`, with cancel + suspend
+  actions; the runtime heartbeat JSON is gitignored, only the spec
+  ships.
+- **Commands: `/web-provider` accepts a bare key** (`09ad090a`) —
+  `/web-provider <name> sk-...` works without the mandatory `key`
+  sub-action, mirroring `/provider <name> <key>`; `key`,
+  `remove`/`--remove`/`rm` keep working.
+- **Paste: system clipboard via OSC 52 + host reader** (`b0fe4921`) —
+  the paste button resolves clipboard text in the same source order
+  as Ctrl+V: OSC 52 from the terminal first, then OS tools
+  (wl-paste/xclip/pbpaste/...), then the session-internal buffer —
+  fixing Ctrl+V pasting nothing on pure-Wayland/Linux. Bumps the
+  nocterm submodule for OSC 52 read + `systemClipboardTextReader`.
+- **Providers: zhipu GLM-5.3 promoted from placeholder to released**
+  (`2f552124`) — GLM-5.3 is now live on the GLM Coding Plan
+  (Max/Pro/Lite); the speculative placeholder entry is retired and
+  doc references list the released model.
+- **Sidebar: box the aux button like the spec widgets** (`f96c50a5`) —
+  the auxiliary-model button in the sidebar renders in the same boxed
+  style as the spec-driven widgets.
+
+### Fixes
+
+- **Notes: flush-left checkbox, indented wrapped lines, zebra rows**
+  (`44247ad3`) — the checkbox sits flush-left with a single-space
+  gutter (shared by sidebar + home), long todos wrap with a hanging
+  indent so continuation lines stay aligned, and alternating row
+  backgrounds match the markdown table rendering.
+- **Home: fullpane opens on top of the home dashboard** (`b609dfd8`) —
+  opening a fullpane from home (my-notes `open`, skills box)
+  previously no-op'd because the home branch in `ChatPanel.build`
+  early-returned before the fullpane overlay check; the fix avoids a
+  nocterm markNeedsBuild lifecycle assert by not swapping the tree
+  root mid-layout.
 
 ## [0.25.0] - 2026-08-10
 
