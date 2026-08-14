@@ -1,3 +1,5 @@
+import '../i18n/strings.dart';
+
 /// Format a gap between agent turns as a human-readable label.
 ///
 /// Buckets:
@@ -15,15 +17,17 @@
 /// via integer division; the time delta is always non-negative at
 /// the call sites (last agent activity ≤ now), so we don't need to
 /// guard against negative durations here.
-String formatAgentTurnGap(Duration d) {
-  if (d.inMinutes < 1) return 'just now';
-  if (d.inMinutes < 60) return '${d.inMinutes} minutes ago';
+String formatAgentTurnGap(Duration d, {Strings strings = kEnglishStrings}) {
+  if (d.inMinutes < 1) return strings.t('chat.time.justNow');
+  if (d.inMinutes < 60) {
+    return strings.t('chat.time.minutesLongAgo', {'n': '${d.inMinutes}'});
+  }
 
   if (d.inHours < 24) {
     final h = d.inHours;
     final m = d.inMinutes % 60;
-    if (m == 0) return '$h hours ago';
-    return '$h hours $m minutes ago';
+    if (m == 0) return strings.t('chat.time.hoursLongAgo', {'n': '$h'});
+    return strings.t('chat.time.hoursMinutesAgo', {'h': '$h', 'm': '$m'});
   }
 
   // Multi-day: cumulative breakdown via [Duration.inDays] / `.inHours % 24`
@@ -37,6 +41,12 @@ String formatAgentTurnGap(Duration d) {
   final days = d.inDays;
   final hours = d.inHours % 24;
   final minutes = d.inMinutes % 60;
-  if (hours == 0 && minutes == 0) return '$days days ago';
-  return '$days days and $hours hours $minutes minutes ago';
+  if (hours == 0 && minutes == 0) {
+    return strings.t('chat.time.daysLongAgo', {'d': '$days'});
+  }
+  return strings.t('chat.time.daysHoursMinutesAgo', {
+    'd': '$days',
+    'h': '$hours',
+    'm': '$minutes',
+  });
 }

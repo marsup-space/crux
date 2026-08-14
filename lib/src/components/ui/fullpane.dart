@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
+import '../../i18n/strings.dart';
 import 'button.dart';
 import 'layout_metrics.dart';
 
@@ -34,6 +35,7 @@ class Fullpane extends StatefulComponent {
   final Component Function(BuildContext context) contentBuilder;
   final List<FullpaneShortcut> shortcuts;
   final KeyEventHandler? onKeyEvent;
+  final Strings strings;
 
   const Fullpane({
     required this.title,
@@ -41,6 +43,7 @@ class Fullpane extends StatefulComponent {
     required this.contentBuilder,
     this.shortcuts = const [],
     this.onKeyEvent,
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -118,7 +121,7 @@ class _FullpaneState extends State<Fullpane> {
                           ),
                           const Spacer(),
                           Button(
-                            label: '✕ close',
+                            label: '✕ ${component.strings.t('chat.notes.close')}',
                             onPressed: component.onClose,
                             color: CruxTheme.of(context).hintText,
                             hoverColor: CruxTheme.of(context).foreground,

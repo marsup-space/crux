@@ -116,6 +116,7 @@ class ChatInputState extends State<ChatInput> {
       projectPath: component.projectPath,
       refresh: component.refresh,
       onStateChanged: _onControllerStateChanged,
+      strings: component.strings,
     );
 
     _paste = InputPaste(
@@ -682,7 +683,7 @@ class ChatInputState extends State<ChatInput> {
             ),
           ),
           Button(
-            label: 'paste',
+            label: component.strings.t('chat.input.paste'),
             onPressed: () => _paste.pasteFromButton(sessionId),
             color: CruxTheme.of(context).onSurfaceDim,
             hoverColor: CruxTheme.of(context).buttonTextHover,

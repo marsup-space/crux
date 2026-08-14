@@ -15,6 +15,7 @@ import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../utils/frame_profiler.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/markdown_headings.dart';
 import '../utils/url_launcher.dart';
 import '../tools/registry.dart';
@@ -129,6 +130,7 @@ class ChatHistory extends StatefulComponent {
   /// otherwise interpret `/continue` as a literal user message
   /// and call the LLM with that string).
   final VoidCallback? onRetryContinue;
+  final Strings strings;
 
   const ChatHistory({
     super.key,
@@ -148,6 +150,7 @@ class ChatHistory extends StatefulComponent {
     this.onVibeOpenFile,
     this.onVibeDiffFiles,
     this.onRetryContinue,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -585,7 +588,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           if (clusterFirstUserMessageIds.contains(seg.userMessage.id)) {
             final gap = userMessageGaps[seg.userMessage.id];
             if (gap != null) {
-              items.add((ctx) => VibeTurnDivider(sinceLastTurn: gap));
+              items.add((ctx) => VibeTurnDivider(sinceLastTurn: gap, strings: component.strings));
             }
           }
           userItemIndices.add(items.length);
@@ -626,7 +629,7 @@ class _ChatHistoryState extends State<ChatHistory> {
               userMessage: seg.userMessage,
               showUserMessage: true,
             );
-            items.add((ctx) => VibeSegmentBubble(segment: userOnly));
+            items.add((ctx) => VibeSegmentBubble(segment: userOnly, strings: component.strings));
           }
         } else {
           // Capture the segment's item index + prose reference before
@@ -640,6 +643,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           items.add(
             (ctx) => VibeSegmentBubble(
               segment: seg,
+              strings: component.strings,
               onQuickReplyTap: component.onQuickReplyTap,
               enableQuickReplies: isLatestClosedAi,
               onSessionLinkTap: component.onSessionLinkTap,

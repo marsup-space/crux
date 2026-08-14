@@ -24,12 +24,12 @@ import 'ui/multi_button.dart';
 
 /// Time-based grouping for sessions in the sidebar.
 enum _SessionGroup {
-  pinned('Pinned'),
-  yesterday('Yesterday'),
-  threeDays('3 Days'),
-  archived('Archived'),
-  chats('Chats'),
-  chatsArchived('ChatsArchived');
+  pinned('chat.sessions.pinned'),
+  yesterday('chat.sessions.yesterday'),
+  threeDays('chat.sessions.threeDays'),
+  archived('chat.sessions.archived'),
+  chats('chat.sessions.chats'),
+  chatsArchived('chat.sessions.chatsArchived');
 
   const _SessionGroup(this.label);
   final String label;
@@ -618,7 +618,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     child: Row(
                       children: [
                         Text(
-                          'Sessions',
+                          component.strings.t('chat.sessions.sessions'),
                           style: TextStyle(
                             color: _titleHovered
                                 ? CruxTheme.of(context).wizardTextSelected
@@ -644,7 +644,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
               // the "Sessions" title row.
               if (component.onCreateSession != null)
                 _AddButton(
-                  hint: 'New session',
+                  hint: component.strings.t('chat.sessions.newSession'),
                   onPressed: component.onCreateSession!,
                 ),
             ],
@@ -707,6 +707,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                   SpecSidebarWidget(
                     spec: spec,
                     projectPath: Directory.current.path,
+                    strings: component.strings,
                     onPromptAction: component.onSpecPromptAction,
                     onShellAction: component.onSpecShellAction,
                     onScreenAction: component.onSpecScreenAction,
@@ -716,8 +717,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 // Auxiliary-model button, hosted by the side panel
                 // on wide terminals (on narrow terminals the chat
                 // toolbar renders it instead). Sits directly above
-                // the divider that isolates the bottom block;
-                // click dumps `/auxiliary ` into the chat input.
+                // the git/project widgets; click dumps `/auxiliary `
+                // into the chat input.
                 // Renders as its own full-width bordered box (same
                 // chrome as the spec widgets above), with `aux` as
                 // the border title. The border + horizontal padding
@@ -733,7 +734,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                         style: BoxBorderStyle.rounded,
                       ),
                       title: BorderTitle(
-                        text: 'aux',
+                        text: component.strings.t('chat.sidebar.aux'),
                         style: TextStyle(
                           color: CruxTheme.of(context).onSurfaceVariant,
                           fontWeight: FontWeight.bold,
@@ -742,10 +743,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 1),
                     child: Hinted(
-                      hint:
-                          'Auxiliary model\n'
-                          '(used for /tldr summaries and title '
-                          'generation — click to change)',
+                      hint: component.strings.t('chat.sidebar.auxHint'),
                       child: AuxiliaryModelButton(
                         sessionController: component.sessionController!,
                         onPressed: component.onAuxiliaryPressed,
@@ -754,13 +752,6 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                       ),
                     ),
                   ),
-                // Horizontal separator that visually isolates the
-                // bottom block (git status + project widget) from
-                // the scrolling session list. Without it the two
-                // sections blur into each other, especially when
-                // the list is short and the expanded session takes
-                // up the full panel height.
-                Divider(color: CruxTheme.of(context).outline, height: 1),
                 // Git status: file-level info (branch is also
                 // surfaced here, but the project widget below
                 // repeats it as part of `path:branch`). Now rendered
@@ -829,17 +820,16 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 1),
+                // FPS readout (debug-only). Rendered as a bordered widget
+                // at the very bottom — same chrome as the git / project /
+                // aux boxes — and collapses to nothing when debug is off.
+                // Because it's a child of this panel (which itself only
+                // mounts when the terminal is wide enough to show the side
+                // panel), it inherits the "panel hidden ⇒ counter hidden"
+                // behaviour for free.
+                const FpsCounter(),
               ],
             ),
-            // FPS readout (debug-only). Anchored to the bottom-right corner
-            // of the side panel; collapses to zero-size when debug mode is
-            // off, so it doesn't reserve any space in the normal layout.
-            // Because it's a child of this panel — which itself only mounts
-            // when the terminal is wide enough to show the side panel — it
-            // inherits the "panel hidden ⇒ counter hidden" behaviour for
-            // free.
-            Positioned(bottom: 0, right: 0, child: const FpsCounter()),
           ],
         );
       },
@@ -855,7 +845,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         child: Row(
           children: [
             Text(
-              '$count archived',
+              component.strings.t('chat.sessions.archivedCount', {'n': '$count'}),
               style: TextStyle(
                 color: CruxTheme.of(context).onSurfaceDim,
                 fontWeight: FontWeight.bold,
@@ -885,7 +875,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
               children: [
                 Expanded(
                   child: Text(
-                    'Chats',
+                    component.strings.t('chat.sessions.chats'),
                     style: TextStyle(
                       color: CruxTheme.of(context).onSurfaceDim,
                       fontWeight: FontWeight.bold,
@@ -896,7 +886,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 // header's own add button.
                 if (component.onCreateChat != null)
                   _AddButton(
-                    hint: 'New chat',
+                    hint: component.strings.t('chat.sessions.newChat'),
                     onPressed: component.onCreateChat!,
                   ),
               ],
@@ -912,7 +902,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         child: Row(
           children: [
             Text(
-              '$count archived',
+              component.strings.t('chat.sessions.archivedCount', {'n': '$count'}),
               style: TextStyle(
                 color: CruxTheme.of(context).onSurfaceDim,
                 fontWeight: FontWeight.bold,
@@ -929,7 +919,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
       child: Text(
-        group.label,
+        component.strings.t(group.label),
         style: TextStyle(
           color: CruxTheme.of(context).onSurfaceDim,
           fontWeight: FontWeight.bold,
@@ -986,7 +976,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
             if (panel.onTogglePin != null)
               _PinButton(
                 pinned: session.isPinned,
-                hint: session.isChat ? 'Pin chat' : 'Pin session',
+                hint: session.isChat
+                    ? component.strings.t('chat.sessions.pinChat')
+                    : component.strings.t('chat.sessions.pinSession'),
                 onPressed: () => panel.onTogglePin!(session.id),
               ),
           ],

@@ -11,6 +11,7 @@ library;
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/session_mention.dart';
 
 class SessionMentionOverlay extends StatelessComponent {
@@ -32,6 +33,7 @@ class SessionMentionOverlay extends StatelessComponent {
 
   final void Function(int)? onHover;
   final void Function(int)? onTap;
+  final Strings strings;
 
   const SessionMentionOverlay({
     super.key,
@@ -42,6 +44,7 @@ class SessionMentionOverlay extends StatelessComponent {
     required this.query,
     this.onHover,
     this.onTap,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -56,7 +59,7 @@ class SessionMentionOverlay extends StatelessComponent {
         child: Row(
           children: [
             Text(
-              'Sessions',
+              strings.t('chat.sessions.sessions'),
               style: TextStyle(
                 color: theme.wizardTitle,
                 fontWeight: FontWeight.bold,
@@ -76,7 +79,7 @@ class SessionMentionOverlay extends StatelessComponent {
             ] else ...[
               const SizedBox(width: 2),
               Text(
-                '(#-mention a session)',
+                strings.t('chat.sessions.mentionHint'),
                 style: TextStyle(color: theme.wizardTextDim),
               ),
             ],
@@ -92,7 +95,7 @@ class SessionMentionOverlay extends StatelessComponent {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Text(
-            'No matching sessions. Press Esc to dismiss.',
+            strings.t('chat.sessions.noMatch'),
             style: TextStyle(color: theme.wizardTextDim),
           ),
         ),
@@ -139,9 +142,9 @@ class SessionMentionOverlay extends StatelessComponent {
   ) {
     final idText = mention.session.displayId; // e.g. "#123"
     final title = mention.session.title.isEmpty
-        ? 'Untitled'
+        ? strings.t('chat.sessions.untitled')
         : mention.session.title;
-    final meta = describeRelativeTime(mention.session.updatedAt);
+    final meta = describeRelativeTime(mention.session.updatedAt, strings: strings);
 
     return Container(
       decoration: isSelected
@@ -181,7 +184,7 @@ class SessionMentionOverlay extends StatelessComponent {
           ),
           if (mention.isArchived) ...[
             Text(
-              ' archived ',
+              strings.t('chat.sessions.archivedTag'),
               style: TextStyle(color: theme.wizardTextDim),
             ),
           ],

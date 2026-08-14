@@ -11,6 +11,8 @@
 /// its own replies.
 library;
 
+import '../i18n/strings.dart';
+
 import '../models/session.dart';
 import 'fuzzy_match.dart';
 
@@ -270,14 +272,28 @@ bool _isDigit(String c) {
 
 /// Human-readable "how long ago" string for the popover metadata, e.g.
 /// `just now`, `5m ago`, `3h ago`, `3d ago`, `2w ago`, `4mo ago`.
-String describeRelativeTime(DateTime when, {DateTime? now}) {
+String describeRelativeTime(
+  DateTime when, {
+  DateTime? now,
+  Strings strings = kEnglishStrings,
+}) {
   final ref = now ?? DateTime.now();
   final diff = ref.difference(when);
-  if (diff.inSeconds < 60) return 'just now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays < 7) return '${diff.inDays}d ago';
-  if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
-  if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo ago';
-  return '${(diff.inDays / 365).floor()}y ago';
+  if (diff.inSeconds < 60) return strings.t('chat.time.justNow');
+  if (diff.inMinutes < 60) {
+    return strings.t('chat.time.minutesAgo', {'n': '${diff.inMinutes}'});
+  }
+  if (diff.inHours < 24) {
+    return strings.t('chat.time.hoursAgo', {'n': '${diff.inHours}'});
+  }
+  if (diff.inDays < 7) {
+    return strings.t('chat.time.daysAgo', {'n': '${diff.inDays}'});
+  }
+  if (diff.inDays < 30) {
+    return strings.t('chat.time.weeksAgo', {'n': '${(diff.inDays / 7).floor()}'});
+  }
+  if (diff.inDays < 365) {
+    return strings.t('chat.time.monthsAgo', {'n': '${(diff.inDays / 30).floor()}'});
+  }
+  return strings.t('chat.time.yearsAgo', {'n': '${(diff.inDays / 365).floor()}'});
 }

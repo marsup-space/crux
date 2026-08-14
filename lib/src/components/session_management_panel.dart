@@ -313,6 +313,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
             : 'chat.sessions.sessions',
       ),
       onClose: component.onDismiss,
+      strings: component.strings,
       shortcuts: shortcuts,
       onKeyEvent: _handleKeyEvent,
       contentBuilder: (context) {
@@ -546,6 +547,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     return Fullpane(
       title: component.strings.t('chat.sessions.renameTitle'),
       onClose: _cancelAction,
+      strings: component.strings,
       contentBuilder: (context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

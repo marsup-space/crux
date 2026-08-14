@@ -10,6 +10,7 @@ import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
 import '../services/skills/skill_discovery.dart';
 import '../services/web_provider_registry.dart';
+import '../i18n/strings.dart';
 import '../theme/theme_controller.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
@@ -36,6 +37,7 @@ class InputOverlay {
   final String projectPath;
   final VoidCallback refresh;
   final void Function() onStateChanged;
+  final Strings strings;
 
   // @-mention state
   final FileSearcher _fileSearcher;
@@ -58,7 +60,9 @@ class InputOverlay {
     required this.projectPath,
     required this.refresh,
     required this.onStateChanged,
-  }) : _fileSearcher = FileSearcher(rootPath: projectPath);
+    Strings strings = kEnglishStrings,
+  })  : strings = strings,
+        _fileSearcher = FileSearcher(rootPath: projectPath);
 
   void dispose() {
     _atMentionDebouncer?.cancel();
@@ -278,7 +282,7 @@ class InputOverlay {
           for (final entry in store.entries)
             CommandSuggestion(
               value: entry.path,
-              description: _describeRecentProject(entry, now),
+              description: _describeRecentProject(entry, now, strings),
             ),
         ];
       }
@@ -491,7 +495,11 @@ class InputOverlay {
     refresh();
   }
 
-  static String _describeRecentProject(RecentProject entry, DateTime now) {
+  static String _describeRecentProject(
+    RecentProject entry,
+    DateTime now,
+    Strings strings,
+  ) {
     final home =
         Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
     final displayPath =
@@ -503,16 +511,14 @@ class InputOverlay {
     final String? relative;
     if (entry.lastOpenedAt.millisecondsSinceEpoch == 0) {
       relative = null;
-    } else if (ageMs < 0) {
-      relative = 'just now';
     } else if (ageMs < 60 * 1000) {
-      relative = 'just now';
+      relative = strings.t('chat.time.justNow');
     } else if (ageMs < 60 * 60 * 1000) {
-      relative = '${ageMs ~/ (60 * 1000)}m ago';
+      relative = strings.t('chat.time.minutesAgo', {'n': '${ageMs ~/ (60 * 1000)}'});
     } else if (ageMs < 24 * 60 * 60 * 1000) {
-      relative = '${ageMs ~/ (60 * 60 * 1000)}h ago';
+      relative = strings.t('chat.time.hoursAgo', {'n': '${ageMs ~/ (60 * 60 * 1000)}'});
     } else if (ageMs < 7 * 24 * 60 * 60 * 1000) {
-      relative = '${ageMs ~/ (24 * 60 * 60 * 1000)}d ago';
+      relative = strings.t('chat.time.daysAgo', {'n': '${ageMs ~/ (24 * 60 * 60 * 1000)}'});
     } else {
       relative = null;
     }

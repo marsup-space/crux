@@ -4,7 +4,7 @@ import '../../commands/registry.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/ticker_registry.dart';
 
-/// A tiny FPS readout pinned to a corner of the side panel.
+/// A tiny FPS readout rendered at the bottom of the side panel.
 ///
 /// Only renders when debug mode is enabled (see [CommandRegistry.debugEnabled],
 /// toggled by the `/debug` slash command). The widget itself decides visibility
@@ -159,38 +159,50 @@ class _FpsCounterState extends State<FpsCounter> {
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
+    final showFps = CommandRegistry.instance.debugEnabled;
+    if (!showFps) {
+      // Debug off: collapse entirely. We're no longer a Stack child, so
+      // returning a plain [SizedBox.shrink] is safe — there is no
+      // [Positioned] parentData to lose, hence no StackFit.expand flash.
+      return const SizedBox.shrink();
+    }
+
     // Trim trailing ".0" so whole numbers don't show as "60.0".
     final fpsStr = _fps.toStringAsFixed(0);
     final targetFpsStr = _targetFps.toStringAsFixed(0);
     final maxFpsStr = _maxFps.toStringAsFixed(0);
-    final showFps = CommandRegistry.instance.debugEnabled;
 
-    // Always return the same root widget — a [Container] — and always
-    // pass a non-null decoration (even when hidden) so the render tree
-    // stays stable across debug on/off toggles.
-    //
-    // Without this, the hidden state returned [SizedBox.shrink] (no
-    // decoration, no padding render object) while the visible state
-    // returned a Container with a decorated border. Each toggle replaced
-    // the Stack's child render object and dropped the [Positioned]'s
-    // parentData on the new render object — the Stack then handed the
-    // replacement tight constraints under `StackFit.expand`, briefly
-    // turning the FPS counter into a full-screen box until the next
-    // layout re-applied the parentData. Mirrors the fix in [ToastHub].
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-      decoration: showFps
-          ? BoxDecoration(color: theme.buttonBackground)
-          // Empty decoration (no color, no border) keeps the DecoratedBox
-          // in the render tree with `borderInset == 0`, so the layout
-          // doesn't change between states. The decoration paints nothing.
-          : const BoxDecoration(),
-      child: showFps
-          ? Text(
-              'FPS: $fpsStr / $targetFpsStr t / $maxFpsStr max',
-              style: TextStyle(color: theme.onSurfaceVariant),
-            )
-          : const SizedBox.shrink(),
+    // Full-width bordered box, same chrome as the git / project / aux
+    // widgets above, so the debug readout sits at the very bottom as a
+    // matching widget instead of floating over the project box.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : null;
+        return Container(
+          width: width,
+          decoration: BoxDecoration(
+            color: theme.surface,
+            border: BoxBorder.all(
+              color: theme.outline,
+              style: BoxBorderStyle.rounded,
+            ),
+            title: BorderTitle(
+              text: 'fps',
+              style: TextStyle(
+                color: theme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Text(
+            'FPS: $fpsStr / $targetFpsStr t / $maxFpsStr max',
+            style: TextStyle(color: theme.onSurfaceVariant),
+          ),
+        );
+      },
     );
   }
 }

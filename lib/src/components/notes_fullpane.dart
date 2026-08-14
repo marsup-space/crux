@@ -4,6 +4,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../services/notes_service.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/todo_parser.dart';
 import 'ui/fullpane.dart';
@@ -32,12 +33,14 @@ class NotesFullpane extends StatefulComponent {
   /// Called after each successful save with the fresh todo summary —
   /// the host can toast or refresh. Optional (tests).
   final void Function(TodoSummary summary)? onSaved;
+  final Strings strings;
 
   const NotesFullpane({
     super.key,
     required this.service,
     required this.onClose,
     this.onSaved,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -155,17 +158,18 @@ class _NotesFullpaneState extends State<NotesFullpane> {
     final todos = parseTodos(_controller.text);
 
     return Fullpane(
-      title: 'my notes',
+      title: component.strings.t('chat.notes.title'),
       onClose: _requestClose,
+      strings: component.strings,
       shortcuts: [
         FullpaneShortcut(
-          label: 'save',
+          label: component.strings.t('chat.notes.save'),
           keyHint: '⌃S',
           matches: (e) => e.matches(LogicalKey.keyS, ctrl: true),
           onActivate: () => unawaited(_save()),
         ),
         FullpaneShortcut(
-          label: 'close',
+          label: component.strings.t('chat.notes.close'),
           keyHint: 'esc',
           matches: (e) => e.logicalKey == LogicalKey.escape,
           onActivate: _requestClose,
@@ -175,7 +179,7 @@ class _NotesFullpaneState extends State<NotesFullpane> {
         if (_loading) {
           return Center(
             child: Text(
-              'loading…',
+              component.strings.t('chat.notes.loading'),
               style: TextStyle(color: theme.onSurfaceDim),
             ),
           );
@@ -190,10 +194,9 @@ class _NotesFullpaneState extends State<NotesFullpane> {
                 children: [
                   Text(
                     todos.isEmpty
-                        ? 'no todos'
-                        : '◷ ${todos.openCount} open todo'
-                            '${todos.openCount == 1 ? '' : 's'}'
-                            ' · ${todos.done.length} done',
+                        ? component.strings.t('home.notes.noTodos')
+                        : '◷ ${component.strings.t(todos.openCount == 1 ? 'chat.notes.openTodo' : 'chat.notes.openTodos', {'n': '${todos.openCount}'})}'
+                            ' · ${component.strings.t('chat.notes.doneCount', {'n': '${todos.done.length}'})}',
                     style: TextStyle(
                       color: todos.openCount > 0
                           ? theme.warningColor
@@ -203,10 +206,10 @@ class _NotesFullpaneState extends State<NotesFullpane> {
                   const Spacer(),
                   Text(
                     _saving
-                        ? 'saving…'
+                        ? component.strings.t('chat.notes.saving')
                         : _dirty
-                            ? '● unsaved'
-                            : '✓ saved',
+                            ? component.strings.t('chat.notes.unsaved')
+                            : component.strings.t('chat.notes.saved'),
                     style: TextStyle(
                       color: _dirty && !_saving
                           ? theme.warningColor
@@ -227,7 +230,7 @@ class _NotesFullpaneState extends State<NotesFullpane> {
                   maxLines: null,
                   onChanged: _onChanged,
                   onKeyEvent: _handleEditKey,
-                  placeholder: '# my notes\n\n- [ ] a todo…',
+                  placeholder: component.strings.t('chat.notes.placeholder'),
                   wordBoundaryProvider: cjkWordBoundaryProvider,
                   style: TextStyle(color: theme.onSurface),
                 ),

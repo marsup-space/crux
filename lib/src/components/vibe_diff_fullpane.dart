@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/terminal_symbols.dart';
 import 'tool_detail_utils.dart';
 import 'ui/fullpane.dart';
@@ -72,10 +73,12 @@ const double kMinSplitWidth = 100;
 class VibeDiffFullpane extends StatefulComponent {
   final VibeDiffRequest request;
   final VoidCallback onClose;
+  final Strings strings;
 
   const VibeDiffFullpane({
     required this.request,
     required this.onClose,
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -134,25 +137,26 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     // we also show the position (n/N) so the prev/next shortcuts have a
     // visible anchor; for a single file the path alone is the title.
     final title = files.isEmpty
-        ? 'Diff'
+        ? component.strings.t('chat.vibe.diffTitle')
         : multiple
             ? '${files[_index].path}  ${_index + 1}/${files.length}'
             : files[_index].path;
     return Fullpane(
       title: title,
       onClose: component.onClose,
+      strings: component.strings,
       onKeyEvent: _handleKey,
       shortcuts: [
         if (multiple) ...[
           FullpaneShortcut(
-            label: 'prev file',
+            label: component.strings.t('chat.vibe.prevFile'),
             keyHint: '←',
             matches: (e) => e.logicalKey == LogicalKey.arrowLeft,
             onActivate: () =>
                 _selectFile((_index - 1).clamp(0, files.length - 1)),
           ),
           FullpaneShortcut(
-            label: 'next file',
+            label: component.strings.t('chat.vibe.nextFile'),
             keyHint: '→',
             matches: (e) => e.logicalKey == LogicalKey.arrowRight,
             onActivate: () =>
@@ -331,7 +335,7 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
               horizontal: kContentHorizontalPadding,
             ),
             child: Text(
-              '  (no reconstructable changes)',
+              '  ${component.strings.t('chat.vibe.noReconstructable')}',
               style: TextStyle(
                 color: theme.onSurfaceDim,
                 fontStyle: FontStyle.italic,

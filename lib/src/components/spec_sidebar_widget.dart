@@ -21,6 +21,7 @@ import 'package:path/path.dart' as p;
 
 import '../services/spec_widget.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import 'ui/button.dart';
 import 'ui/clickable_todo_list.dart';
 import 'ui/multi_button.dart';
@@ -72,6 +73,7 @@ class SpecSidebarWidget extends StatefulComponent {
   /// this only as a lightweight tap marker. When null, nothing is
   /// recorded.
   final Future<void> Function(String note)? onAction;
+  final Strings strings;
 
   const SpecSidebarWidget({
     super.key,
@@ -83,6 +85,7 @@ class SpecSidebarWidget extends StatefulComponent {
     this.onTodoToggle,
     this.todoCheckedTtl = const Duration(seconds: 10),
     this.onAction,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -253,7 +256,7 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
 
     MultiButtonSegment promptSegment(SpecAction action) =>
         MultiButtonSegment(
-          label: action.label,
+          label: component.strings.t(action.label),
           onPressed: () {
             final status = _status;
             final rendered = renderActionPrompt(action, status?.data ?? {});
@@ -263,7 +266,7 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
 
     MultiButtonSegment shellSegment(SpecAction action) =>
         MultiButtonSegment(
-          label: action.label,
+          label: component.strings.t(action.label),
           onPressed: () => unawaited(_runShell(action)),
         );
 
@@ -312,13 +315,13 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
         if (!alive)
           for (final action in launchActions)
             MultiButtonSegment(
-              label: action.label,
+          label: component.strings.t(action.label),
               onPressed: () => unawaited(_runLaunch(action)),
             ),
         if (alive)
           for (final action in controlActions)
             MultiButtonSegment(
-              label: action.label,
+          label: component.strings.t(action.label),
               onPressed: () => unawaited(_runAction(action)),
             ),
         for (final action in promptActions) promptSegment(action),
@@ -342,7 +345,7 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
         Padding(
           padding: const EdgeInsets.only(right: 1),
           child: Button(
-            label: action.label,
+          label: component.strings.t(action.label),
             onPressed: () => fireScreen(action),
             color: theme.accent,
             hoverColor: theme.buttonTextHover,
@@ -416,7 +419,7 @@ class _SpecSidebarWidgetState extends State<SpecSidebarWidget> {
               style: BoxBorderStyle.rounded,
             ),
             title: BorderTitle(
-              text: component.spec.title,
+              text: component.strings.t(component.spec.title),
               style: TextStyle(
                 color: theme.onSurfaceVariant,
                 fontWeight: FontWeight.bold,

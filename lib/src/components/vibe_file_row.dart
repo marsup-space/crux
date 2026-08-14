@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import 'ui/multi_button.dart';
 
 /// One interactive row in the vibe files box — the per-file multibutton.
@@ -31,6 +32,7 @@ class VibeFileRow extends StatelessComponent {
   /// rather than opening the fullpane's "(no reconstructable
   /// changes)" placeholder.
   final VoidCallback? onDiff;
+  final Strings strings;
 
   const VibeFileRow({
     required this.name,
@@ -38,6 +40,7 @@ class VibeFileRow extends StatelessComponent {
     required this.linesRemoved,
     this.onOpen,
     this.onDiff,
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -52,8 +55,8 @@ class VibeFileRow extends StatelessComponent {
     return MultiButton(
       label: '$name +$linesAdded -$linesRemoved',
       segments: [
-        MultiButtonSegment(label: 'open', onPressed: onOpen),
-        MultiButtonSegment(label: 'diff', onPressed: onDiff),
+        MultiButtonSegment(label: strings.t('chat.vibe.open'), onPressed: onOpen),
+        MultiButtonSegment(label: strings.t('chat.vibe.diff'), onPressed: onDiff),
       ],
       color: theme.text,
       hoverColor: theme.success,

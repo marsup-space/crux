@@ -1092,17 +1092,19 @@ class _ChatPanelState extends State<ChatPanel> {
       return NotesFullpane(
         service: _notesService,
         onClose: _closeFullpane,
+        strings: _strings,
       );
     }
     final vibeDiff = _vibeDiffRequest;
     if (vibeDiff != null) {
-      return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane);
+      return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane, strings: _strings);
     }
     final skill = _skillFullpane;
     if (skill != null) {
       return Fullpane(
         title: _strings.t('chat.fullpane.skill', {'name': skill.name}),
         onClose: _closeFullpane,
+        strings: _strings,
         contentBuilder: (context) => _SkillFullpaneContent(skill: skill),
       );
     }
@@ -1111,6 +1113,7 @@ class _ChatPanelState extends State<ChatPanel> {
       return Fullpane(
         title: _strings.t('chat.fullpane.compaction'),
         onClose: _closeFullpane,
+        strings: _strings,
         contentBuilder: (context) => CompactionFullpane(
           message: compactionMsg,
           key: const ValueKey('compaction-current'),
@@ -1131,6 +1134,7 @@ class _ChatPanelState extends State<ChatPanel> {
       return Fullpane(
         title: title,
         onClose: _closeFullpane,
+        strings: _strings,
         contentBuilder: (context) =>
             ToolDetailPane(data: data, key: ValueKey(data.toolCall.callId)),
       );
@@ -1138,6 +1142,7 @@ class _ChatPanelState extends State<ChatPanel> {
     return Fullpane(
       title: _strings.t('chat.fullpane.default'),
       onClose: _closeFullpane,
+      strings: _strings,
       contentBuilder: (context) => Center(
         child: Text(
           _strings.t('chat.fullpane.placeholder'),
@@ -1601,6 +1606,7 @@ class _ChatPanelState extends State<ChatPanel> {
               selectedIndex: overlay.selectedSessionMentionIndex,
               scrollOffset: overlay.sessionMentionScrollOffset,
               maxVisible: _maxVisibleItems,
+              strings: _strings,
               query: overlay.sessionMentionQuery,
               onHover: (i) =>
                   setState(() => overlay.onHoverSessionMention(i)),
@@ -1700,6 +1706,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         toolRegistry: _toolRegistry,
                         showToast: _showToast,
                         refresh: _refresh,
+                        strings: _strings,
                         onToolCallTap: _openToolDetail,
                         onSessionLinkTap: _handleSessionLinkTap,
                         onQuickReplyTap: _handleQuickReplyTap,
@@ -1729,8 +1736,8 @@ class _ChatPanelState extends State<ChatPanel> {
                           right: kScrollbarClearance,
                           child: Button(
                             label: rt.chatDisplayMode == ChatDisplayMode.vibe
-                                ? 'vibe'
-                                : 'verbose',
+                                ? _strings.t('chat.vibe.vibe')
+                                : _strings.t('chat.vibe.verbose'),
                             onPressed: () {
                               final newMode =
                                   rt.chatDisplayMode == ChatDisplayMode.vibe

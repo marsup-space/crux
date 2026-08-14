@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
@@ -94,6 +95,7 @@ class VibeSegmentBubble extends StatelessComponent {
   /// on how the same effort renders. When null/empty, the raw
   /// internal value is used (identity mapping).
   final List<ReasoningPreset> reasoningPresets;
+  final Strings strings;
 
   const VibeSegmentBubble({
     required this.segment,
@@ -104,6 +106,7 @@ class VibeSegmentBubble extends StatelessComponent {
     this.onOpenFile,
     this.onDiffFiles,
     this.reasoningPresets = const [],
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -229,6 +232,7 @@ class VibeSegmentBubble extends StatelessComponent {
             name: name.isEmpty ? path : name,
             linesAdded: added,
             linesRemoved: removed,
+            strings: strings,
             onOpen: onOpenFile == null ? null : () => onOpenFile!(path),
             onDiff: onDiffFiles == null || !diffable
                 ? null

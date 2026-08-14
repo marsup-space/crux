@@ -14,7 +14,7 @@
 # screen action below. Schema docs: lib/src/services/spec_widget.dart.
 
 id = "my-notes"
-title = "my notes"
+title = "chat.notes.title"
 label = "{display}"
 refresh_ms = 2000
 
@@ -32,7 +32,7 @@ fallback_absent_text = "no notes yet — open to start"
 # `record = false`: opening a screen is a UI action, not an agent
 # signal — keep the click out of the session context.
 [[actions]]
-label = "open"
+label = "chat.sidebar.open"
 kind = "screen"
 screen = "notes"
 record = false
