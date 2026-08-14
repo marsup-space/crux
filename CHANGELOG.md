@@ -6,6 +6,8 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [Unreleased]
+
 ## [0.30.0] - 2026-08-14
 
 4f08887d
