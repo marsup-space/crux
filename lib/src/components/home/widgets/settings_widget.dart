@@ -61,7 +61,21 @@ class SettingsHomeWidget extends HomeWidget {
       // Language switching is wired via `/language`; the row shows the
       // active locale and stays read-only (seed via `/language ` instead).
       _Setting(ctx.strings.t('home.settings.language'), ctx.localeId() ?? 'en', null),
+      // Reply-language switching is wired via `/reply-language`; the row
+      // shows the localized mode label and seeds the command on activate.
+      _Setting(
+        ctx.strings.t('home.settings.replyLanguage'),
+        _replyLanguageLabel(ctx),
+        '/reply-language ',
+      ),
     ];
+  }
+
+  /// Map the raw mode code to a localized label (e.g. `auto` → "Auto" /
+  /// "自动"), falling back to `follow` when no controller is wired.
+  String _replyLanguageLabel(HomeContext ctx) {
+    final id = ctx.replyLanguageId() ?? 'follow';
+    return ctx.strings.t('replylang.$id');
   }
 
   // ── Item selection ────────────────────────────────────────────────
@@ -69,7 +83,7 @@ class SettingsHomeWidget extends HomeWidget {
   int _selectedIndex = 0;
 
   @override
-  int get itemCount => 4;
+  int get itemCount => 5;
 
   @override
   int get selectedIndex => _selectedIndex;

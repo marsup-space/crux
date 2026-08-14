@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../models/session_runtime_state.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../tools/registry.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
@@ -62,6 +63,7 @@ class StreamingBubble extends StatefulComponent {
   /// streaming — the vibe segment bubble handles reasoning
   /// summarisation instead.
   final bool hideReasoning;
+  final Strings strings;
 
   const StreamingBubble({
     required this.streamingController,
@@ -70,6 +72,7 @@ class StreamingBubble extends StatefulComponent {
     this.streamingToolCalls = const [],
     this.toolRegistry,
     this.hideReasoning = false,
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -414,7 +417,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        ' Think: ',
+                        ' ${component.strings.t('chat.bubble.think')}: ',
                         style: TextStyle(
                           color: CruxTheme.of(context).thinkPrefix,
                           fontWeight: FontWeight.bold,

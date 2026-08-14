@@ -202,6 +202,22 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
+  // Switch the agent's reply-language policy: `follow` (reply in the
+  // configured UI language) or `auto` (match the user's input
+  // language). Only flips a key + rebuilds the cached system prompt;
+  // it never touches the in-flight stream, so it's available mid-turn.
+  SlashCommand(
+    name: '/reply-language',
+    description: 'cmd.replyLanguage.desc',
+    params: ['mode'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: 'follow', description: 'replylang.follow'),
+        CommandSuggestion(value: 'auto', description: 'replylang.auto'),
+      ],
+    ],
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/provider',
     description: 'cmd.provider.desc',

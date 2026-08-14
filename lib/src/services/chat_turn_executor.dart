@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 
 import '../components/tool_guard_bubble.dart';
+import '../i18n/reply_language.dart';
 import '../lsp/diagnostic.dart';
 import '../lsp/protocol.dart';
 import '../models/chat_types.dart';
@@ -97,6 +98,12 @@ class ChatTurnExecutor {
   final AuxiliaryService auxiliaryService;
   final SessionLeaseManager leaseManager;
 
+  /// Resolves the current reply-language policy at prompt-build time, so a
+  /// `/reply-language` or `/language` change made mid-run is picked up on
+  /// the next turn. Defaults to the fallback policy in tests / legacy
+  /// harnesses.
+  final ReplyLanguageProvider replyLanguage;
+
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
   /// (there are two executors — one per [ChatService] and one the
@@ -111,8 +118,11 @@ class ChatTurnExecutor {
     this.providerService,
     this.llmClient,
     this.toolExecutor,
-    this.leaseManager,
-  ) : auxiliaryService = AuxiliaryService(providerService, store.messageStore);
+    this.leaseManager, {
+    ReplyLanguageProvider? replyLanguage,
+  })  : auxiliaryService =
+            AuxiliaryService(providerService, store.messageStore),
+        replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback);
 
   /// Run a single chat turn for [sessionId].
   Future<void> sendMessage({
@@ -337,6 +347,7 @@ class ChatTurnExecutor {
                 provider: provider,
                 model: modelConfig,
                 sessionStarted: session.createdAt,
+                replyLanguage: replyLanguage(),
               )
             : buildSystemPrompt(
                 provider: provider,
@@ -344,6 +355,7 @@ class ChatTurnExecutor {
                 cwd: session.projectPath,
                 worktree: session.projectPath,
                 sessionStarted: session.createdAt,
+                replyLanguage: replyLanguage(),
               );
         session.systemPrompt = systemPrompt;
         await store.update(sessionId, systemPrompt: systemPrompt);

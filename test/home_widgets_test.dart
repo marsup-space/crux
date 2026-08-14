@@ -1200,7 +1200,7 @@ void main() {
       expect(widget.title, 'Settings');
       expect(widget.supportedSpans, {1, 2});
       expect(widget.heightFor(1), 4);
-      expect(widget.itemCount, 4);
+      expect(widget.itemCount, 5);
       expect(widget.verticallyCenter, isFalse);
     });
 
@@ -1225,6 +1225,14 @@ void main() {
         expect(tester.terminalState.findText('vibe'), nocterm.isNotEmpty);
         expect(tester.terminalState.findText('language'), nocterm.isNotEmpty);
         expect(tester.terminalState.findText('en'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('reply language'),
+          nocterm.isNotEmpty,
+        );
+        expect(
+          tester.terminalState.findText('Follow language'),
+          nocterm.isNotEmpty,
+        );
       });
     });
 
@@ -1247,6 +1255,9 @@ void main() {
 
       widget.activateItem(ctx, 2)!();
       expect(seeded, '/view ');
+
+      widget.activateItem(ctx, 4)!();
+      expect(seeded, '/reply-language ');
 
       // None of the activations closed home.
       expect(closed, isFalse);

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/skill_chip_parser.dart';
 import '../models/message.dart';
 import '../services/llm_provider.dart';
@@ -78,6 +79,8 @@ class MessageBubble extends StatelessComponent {
   /// every other role.
   final VoidCallback? onRetryContinue;
 
+  final Strings strings;
+
   const MessageBubble({
     required this.message,
     this.reasoningCollapsed = true,
@@ -91,6 +94,7 @@ class MessageBubble extends StatelessComponent {
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onRetryContinue,
+    this.strings = kEnglishStrings,
   });
 
   String _displayEffort(String effort) {
@@ -404,7 +408,7 @@ class MessageBubble extends StatelessComponent {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ' Think: ',
+                  ' ${strings.t('chat.bubble.think')}: ',
                   style: TextStyle(
                     color: CruxTheme.of(context).thinkPrefix,
                     fontWeight: FontWeight.bold,
@@ -431,7 +435,7 @@ class MessageBubble extends StatelessComponent {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    ' Think: ',
+                  ' ${strings.t('chat.bubble.think')}: ',
                     style: TextStyle(
                       color: CruxTheme.of(context).thinkPrefix,
                       fontWeight: FontWeight.bold,
@@ -566,8 +570,8 @@ class MessageBubble extends StatelessComponent {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                ' Think: ',
-                style: TextStyle(
+                  ' ${strings.t('chat.bubble.think')}: ',
+                  style: TextStyle(
                   color: CruxTheme.of(context).thinkPrefix,
                   fontWeight: FontWeight.bold,
                 ),
@@ -595,7 +599,7 @@ class MessageBubble extends StatelessComponent {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ' Think: ',
+                  ' ${strings.t('chat.bubble.think')}: ',
                   style: TextStyle(
                     color: CruxTheme.of(context).thinkPrefix,
                     fontWeight: FontWeight.bold,

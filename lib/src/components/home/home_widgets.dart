@@ -107,6 +107,10 @@ class HomeContext {
   /// box. Null (tests / previews) means "unknown".
   final String? Function() localeId;
 
+  /// The active reply-language mode code (`"follow"` / `"auto"`). Feeds
+  /// the `settings` box. Null (tests / previews) means "unknown".
+  final String? Function() replyLanguageId;
+
   /// A string lookup bound to the active UI language, for localizing home
   /// chrome (box titles, labels, hints). Falls back to English when
   /// [localeId] is null (tests / previews).
@@ -155,6 +159,7 @@ class HomeContext {
     this.auxModelName = _nullString,
     this.themeId = _nullString,
     this.localeId = _nullString,
+    this.replyLanguageId = _nullString,
     this.viewMode = _nullString,
     this.hasWebProvider = _false,
     this.notesService,
@@ -188,6 +193,7 @@ class HomeContext {
         auxModelName = _nullString,
         themeId = _nullString,
         localeId = _nullString,
+        replyLanguageId = _nullString,
         viewMode = _nullString,
         hasWebProvider = _false,
         notesService = null,

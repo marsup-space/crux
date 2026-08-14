@@ -29,6 +29,7 @@ import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
+import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
@@ -418,6 +419,8 @@ class _ChatPanelState extends State<ChatPanel> {
       _providerService,
       LlmClient(),
       toolExecutor,
+      replyLanguage: () => component.localeController?.replyLanguageSettings ??
+          ReplyLanguageSettings.fallback,
     );
     _webProviderChangesSub = _webProviderRegistry.changes.listen((_) {
       registry.registerWebTools(_webProviderRegistry);
@@ -936,6 +939,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       themeController: component.themeController,
       localeController: component.localeController,
+      rebuildSystemPrompt: _chatService.rebuildSystemPrompt,
       sendTurn: _turnOrchestrator.sendTurn,
       compactSession: _turnOrchestrator.compactCurrentSession,
       findLastUserMessage: _turnOrchestrator.findLastUserMessage,
@@ -1361,6 +1365,8 @@ class _ChatPanelState extends State<ChatPanel> {
       // model's short name, and the current session's chat display mode.
       themeId: () => component.themeController.activeId,
       localeId: () => component.localeController?.activeCode ?? 'en',
+      replyLanguageId: () =>
+          component.localeController?.replyLanguageCode ?? 'follow',
       auxModelName: () {
         final aux = _providerService.auxiliaryModel;
         if (aux == null || aux == 'none') return null;

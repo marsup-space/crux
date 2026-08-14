@@ -845,6 +845,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             // persisted when the turn has fully errored out — so
             // there's no stale-retry concern here.
             onRetryContinue: component.onRetryContinue,
+            strings: component.strings,
           );
         });
 
@@ -948,6 +949,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             onSessionLinkTap: component.onSessionLinkTap,
             onLinkTap: component.onLinkTap,
             reasoningPresets: reasoningPresets,
+            strings: component.strings,
           );
         });
       } else {
@@ -968,6 +970,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             toolRegistry: component.toolRegistry,
             runtimeState: rt,
             hideReasoning: isVibeMode,
+            strings: component.strings,
           );
         });
       }

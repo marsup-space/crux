@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../i18n/reply_language.dart';
 import '../models/chat_types.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
@@ -50,24 +51,39 @@ class ChatService {
   final AuxiliaryService _auxiliaryService;
   final SessionStore _store;
   final ProviderService _providerService;
+  final ReplyLanguageProvider _replyLanguage;
 
   /// Create a [ChatService] with the given dependencies.
+  ///
+  /// [replyLanguage] resolves the current reply-language policy at
+  /// prompt-build time, so `/reply-language` and `/language` changes made
+  /// mid-run are picked up on the next turn. Defaults to the fallback
+  /// policy in tests / legacy harnesses.
   ChatService(
     SessionStore store,
     ProviderService providerService,
     LlmClient llmClient,
-    ToolExecutor toolExecutor,
-  ) : _store = store,
-      _providerService = providerService,
-      _compaction = CompactionService(store, providerService),
-      _turnExecutor = ChatTurnExecutor(
-        store,
-        providerService,
-        llmClient,
-        toolExecutor,
-        SessionLeaseManager(),
-      ),
-      _auxiliaryService = AuxiliaryService(providerService, store.messageStore);
+    ToolExecutor toolExecutor, {
+    ReplyLanguageProvider? replyLanguage,
+  })  : _store = store,
+        _providerService = providerService,
+        _replyLanguage =
+            replyLanguage ?? (() => ReplyLanguageSettings.fallback),
+        _compaction = CompactionService(
+          store,
+          providerService,
+          replyLanguage: replyLanguage,
+        ),
+        _turnExecutor = ChatTurnExecutor(
+          store,
+          providerService,
+          llmClient,
+          toolExecutor,
+          SessionLeaseManager(),
+          replyLanguage: replyLanguage,
+        ),
+        _auxiliaryService =
+            AuxiliaryService(providerService, store.messageStore);
 
   // ── Session lease ─────────────────────────────────────────────────
 
@@ -109,6 +125,7 @@ class ChatService {
             provider: provider,
             model: model,
             sessionStarted: session.createdAt,
+            replyLanguage: _replyLanguage(),
           )
         : buildSystemPrompt(
             provider: provider,
@@ -116,6 +133,7 @@ class ChatService {
             cwd: session.projectPath,
             worktree: session.projectPath,
             sessionStarted: session.createdAt,
+            replyLanguage: _replyLanguage(),
           );
     if (built == session.systemPrompt) return;
     await _store.update(sessionId, systemPrompt: built);

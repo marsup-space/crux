@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../i18n/reply_language.dart';
 import '../models/chat_types.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -46,8 +47,13 @@ class _CompactionPreview {
 class CompactionService {
   final SessionStore _store;
   final ProviderService _providerService;
+  final ReplyLanguageProvider _replyLanguage;
 
-  CompactionService(this._store, this._providerService);
+  CompactionService(
+    this._store,
+    this._providerService, {
+    ReplyLanguageProvider? replyLanguage,
+  }) : _replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback);
 
   /// In-place chat-log compaction. Returns `null` when there's
   /// nothing compressible or when compacting would grow the context.
@@ -66,6 +72,7 @@ class CompactionService {
       session,
       _providerService,
       _store,
+      replyLanguage: _replyLanguage(),
     );
 
     final preview = _buildCompactionPreview(
@@ -137,6 +144,7 @@ class CompactionService {
       session,
       _providerService,
       _store,
+      replyLanguage: _replyLanguage(),
     );
 
     final preview = _buildCompactionPreview(

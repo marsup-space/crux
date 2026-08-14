@@ -7,6 +7,7 @@ import '../models/session_runtime_state.dart';
 import '../services/llm_provider.dart';
 import '../services/shell_progress_registry.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/token_estimate.dart';
@@ -70,6 +71,7 @@ class VibeStreamingBubble extends StatefulComponent {
   /// `adaptive` for MiniMax). If null, the raw internal value is
   /// used.
   final List<ReasoningPreset> reasoningPresets;
+  final Strings strings;
 
   const VibeStreamingBubble({
     required this.streamingController,
@@ -80,6 +82,7 @@ class VibeStreamingBubble extends StatefulComponent {
     this.onSessionLinkTap,
     this.onLinkTap,
     this.reasoningPresets = const [],
+    this.strings = kEnglishStrings,
     super.key,
   });
 
@@ -253,7 +256,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       }
       boxes.add(
         VibeBox(
-          title: 'think',
+          title: component.strings.t('chat.vibe.think'),
           bodyRows: rows,
           active: thinkActive,
           mutedColor: theme.thinkPrefix,
@@ -315,7 +318,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       }).toList();
       boxes.add(
         VibeBox(
-          title: 'tools',
+          title: component.strings.t('chat.vibe.tools'),
           bodyRowSpans: rowSpans,
           active:
               _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
@@ -362,7 +365,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       );
       boxes.add(
         VibeBox(
-          title: 'files',
+          title: component.strings.t('chat.vibe.files'),
           bodyRows: fileRows,
           active: filesActive,
           mutedColor: theme.success,
@@ -412,7 +415,7 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     if (progressRows.isNotEmpty) {
       boxes.add(
         VibeBox(
-          title: 'progress',
+          title: component.strings.t('chat.vibe.progress'),
           bodyRowComponents: progressRows,
           active: liveProgress.any((e) => !e.finished),
           mutedColor: theme.warning,

@@ -44,6 +44,17 @@ const Map<String, String> _en = {
   'lang.persistFailed':
       'Language switched to {lang}, but config could not be saved',
 
+  // ── /reply-language command ──
+  'replylang.unavailable': 'Reply-language service is unavailable',
+  'replylang.current':
+      'Current reply language: {mode}. Usage: /reply-language <follow|auto>',
+  'replylang.unknown': 'Unknown reply language "{mode}". Available: {list}',
+  'replylang.switched': 'Reply language switched to {mode}',
+  'replylang.persistFailed':
+      'Reply language switched to {mode}, but config could not be saved',
+  'replylang.follow': 'Follow language',
+  'replylang.auto': 'Auto',
+
   // ── Home screen chrome ──
   'home.editing': 'editing',
   'home.noWorkspace': '(no workspace)',
@@ -90,6 +101,7 @@ const Map<String, String> _en = {
   'home.settings.auxiliary': 'auxiliary',
   'home.settings.view': 'view',
   'home.settings.language': 'language',
+  'home.settings.replyLanguage': 'reply language',
 
   // ── Quick actions ──
   'home.qa.freshSession': 'start a fresh session',
@@ -196,6 +208,7 @@ const Map<String, String> _en = {
   'cmd.rename.desc': 'Rename the current session',
   'cmd.quit.desc': 'Exit Crux (prints a run summary)',
   'cmd.language.desc': 'Switch the UI language (en|zh)',
+  'cmd.replyLanguage.desc': 'Switch the reply language (follow|auto)',
 
   // ── Toast messages ──
   'toast.noSession': 'No active session',
@@ -324,6 +337,13 @@ const Map<String, String> _en = {
   'chat.vibe.diffTitle': 'Diff',
   'chat.vibe.noFilesChanged': 'No files changed in this segment.',
   'chat.vibe.noReconstructable': '(no reconstructable changes)',
+  'chat.vibe.think': 'think',
+  'chat.vibe.tools': 'tools',
+  'chat.vibe.files': 'files',
+  'chat.vibe.progress': 'progress',
+  'chat.bubble.you': 'You',
+  'chat.bubble.crux': 'Crux',
+  'chat.bubble.think': 'Think',
   'chat.vibe.vibe': 'vibe',
   'chat.vibe.verbose': 'verbose',
   'chat.notes.placeholder': '# my notes\n\n- [ ] a todo…',
@@ -449,6 +469,15 @@ const Map<String, String> _zh = {
   'lang.switched': '语言已切换为 {lang}',
   'lang.persistFailed': '语言已切换为 {lang}，但配置保存失败',
 
+  // ── /reply-language command ──
+  'replylang.unavailable': '回复语言服务不可用',
+  'replylang.current': '当前回复语言：{mode}。用法：/reply-language <follow|auto>',
+  'replylang.unknown': '未知回复语言 "{mode}"。可用：{list}',
+  'replylang.switched': '回复语言已切换为 {mode}',
+  'replylang.persistFailed': '回复语言已切换为 {mode}，但配置保存失败',
+  'replylang.follow': '跟随设置语言',
+  'replylang.auto': '自动',
+
   // ── Home screen chrome ──
   'home.editing': '编辑中',
   'home.noWorkspace': '(无工作区)',
@@ -494,6 +523,7 @@ const Map<String, String> _zh = {
   'home.settings.auxiliary': '辅助模型',
   'home.settings.view': '视图',
   'home.settings.language': '语言',
+  'home.settings.replyLanguage': '回复语言',
 
   // ── Quick actions ──
   'home.qa.freshSession': '开始新会话',
@@ -597,6 +627,7 @@ const Map<String, String> _zh = {
   'cmd.rename.desc': '重命名当前会话',
   'cmd.quit.desc': '退出 Crux（打印运行摘要）',
   'cmd.language.desc': '切换界面语言（en|zh）',
+  'cmd.replyLanguage.desc': '切换回复语言（follow|auto）',
 
   // ── Toast messages ──
   'toast.noSession': '没有活动会话',
@@ -714,6 +745,13 @@ const Map<String, String> _zh = {
   'chat.vibe.diffTitle': '差异',
   'chat.vibe.noFilesChanged': '该片段没有文件变更。',
   'chat.vibe.noReconstructable': '（无可重建的变更）',
+  'chat.vibe.think': '思考',
+  'chat.vibe.tools': '工具',
+  'chat.vibe.files': '文件',
+  'chat.vibe.progress': '进度',
+  'chat.bubble.you': '你',
+  'chat.bubble.crux': 'Crux',
+  'chat.bubble.think': '思考',
   'chat.vibe.vibe': '极简',
   'chat.vibe.verbose': '详细',
   'chat.notes.placeholder': '# 我的笔记\n\n- [ ] 待办事项…',

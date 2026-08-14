@@ -25,6 +25,7 @@ import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
 import 'cmd_language.dart';
+import 'cmd_reply_language.dart';
 import 'cmd_think.dart';
 import 'cmd_view.dart';
 import 'cmd_temperature.dart';
@@ -76,6 +77,12 @@ class CommandContext {
   /// The UI-language controller. Null in tests and legacy harnesses, in
   /// which case `/language` reports "unavailable" instead of failing.
   final LocaleController? localeController;
+
+  /// Rebuild the system prompt for a session. Used by `/reply-language` to
+  /// apply the reply-language change immediately (the prompt's language
+  /// section is cached on the session row). Null in tests / legacy
+  /// harnesses, in which case the change still applies to new sessions.
+  final Future<void> Function(int sessionId)? rebuildSystemPrompt;
 
   /// A string lookup bound to the active UI language, for localizing
   /// command feedback (toasts) and descriptions. Falls back to English
@@ -130,6 +137,7 @@ class CommandContext {
     this.triggerTldr,
     this.themeController,
     this.localeController,
+    this.rebuildSystemPrompt,
     required this.sendTurn,
     this.compactSession,
     required this.findLastUserMessage,
@@ -173,6 +181,8 @@ class CommandExecutor {
         await executeTheme(parts, ctx);
       case '/language':
         await executeLanguage(parts, ctx);
+      case '/reply-language':
+        await executeReplyLanguage(parts, ctx);
       case '/think':
         await executeThink(parts, ctx);
       case '/view':

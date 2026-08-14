@@ -164,7 +164,7 @@ class VibeSegmentBubble extends StatelessComponent {
       }
       boxes.add(
         VibeBox(
-          title: 'think',
+          title: strings.t('chat.vibe.think'),
           bodyRows: rows,
           mutedColor: theme.thinkPrefix,
           activeColor: theme.responsePrefix,
@@ -192,7 +192,7 @@ class VibeSegmentBubble extends StatelessComponent {
       }).toList();
       boxes.add(
         VibeBox(
-          title: 'tools',
+          title: strings.t('chat.vibe.tools'),
           bodyRowSpans: rowSpans,
           mutedColor: theme.toolPrefix,
           activeColor: theme.accent,
@@ -250,7 +250,7 @@ class VibeSegmentBubble extends StatelessComponent {
       }
       boxes.add(
         VibeBox(
-          title: 'files',
+          title: strings.t('chat.vibe.files'),
           bodyRowComponents: rows,
           mutedColor: theme.success,
           activeColor: theme.warning,
@@ -276,7 +276,7 @@ class VibeSegmentBubble extends StatelessComponent {
                 '${p.peakPercent != null ? ' at ${p.peakPercent!.round()}%' : ''}';
       boxes.add(
         VibeBox(
-          title: 'progress',
+          title: strings.t('chat.vibe.progress'),
           bodyRows: [row],
           mutedColor: ok ? theme.success : theme.warning,
           activeColor: theme.accent,

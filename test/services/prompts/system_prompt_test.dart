@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:crux/src/i18n/app_locale.dart';
+import 'package:crux/src/i18n/reply_language.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/prompts/system_prompt.dart';
 import 'package:path/path.dart' as p;
@@ -400,6 +402,52 @@ void main() {
       // Null / empty → nothing to judge (treated as "build anyway").
       expect(isStaleChatSystemPrompt(null), isFalse);
       expect(isStaleChatSystemPrompt(''), isFalse);
+    });
+  });
+
+  group('reply-language section', () {
+    test('auto mode keeps the match-user-language rule', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+        replyLanguage: const ReplyLanguageSettings(
+          mode: ReplyLanguageMode.auto,
+          locale: AppLocale.en,
+        ),
+      );
+      expect(out, contains("Match the user's language exactly"));
+    });
+
+    test('follow mode names the configured locale', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+        replyLanguage: const ReplyLanguageSettings(
+          mode: ReplyLanguageMode.follow,
+          locale: AppLocale.zh,
+        ),
+      );
+      expect(out, contains('Always reply in Chinese'));
+      expect(out, isNot(contains("Match the user's language")));
+    });
+
+    test('chat prompt follow mode names the configured locale', () {
+      final out = buildChatSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+        replyLanguage: const ReplyLanguageSettings(
+          mode: ReplyLanguageMode.follow,
+          locale: AppLocale.zh,
+        ),
+      );
+      expect(out, contains('Always reply in Chinese'));
     });
   });
 }

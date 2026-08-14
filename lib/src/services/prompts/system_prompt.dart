@@ -3,7 +3,7 @@
 /// Composes the five layers of the system prompt in the fixed
 /// order documented in `docs/design-system-prompt.md`:
 ///
-///     [1] kCruxSystemPrompt                       — universal, static
+///     [1] identity + language section               — universal
 ///     [2] provider/model system_prompt_addition   — per model, from TOML
 ///     [3] project notes (AGENTS.md|CLAUDE.md +
 ///                  crux-addition.md)              — per session
@@ -22,6 +22,8 @@
 /// message hits on every subsequent turn.
 library;
 
+import '../../i18n/app_locale.dart';
+import '../../i18n/reply_language.dart';
 import '../../models/provider_config.dart';
 import '../skills/skill_discovery.dart';
 import '../skills/skills_prompt.dart';
@@ -33,9 +35,10 @@ import 'project_notes_discovery.dart';
 /// This is the design-time source of truth rendered as a Dart
 /// constant. The matching `lib/src/services/prompts/system-prompt.md`
 /// is the design doc — keep them in sync.
-const String kCruxSystemPrompt = '''
-You are Crux, an interactive AI coding agent for the terminal.
+const String _kCruxIdentity =
+    'You are Crux, an interactive AI coding agent for the terminal.';
 
+const String _kCruxAutoLanguageSection = '''
 ## Language (hard rule)
 
 Match the user's language exactly. This is a hard rule, not a
@@ -52,7 +55,9 @@ or quoted source — those stay in their original form verbatim.
 Do NOT fall back to English on a short or ambiguous turn; mirror
 the user's language even for a one-word reply. Do NOT mix
 languages within a single response unless the user did.
+''';
 
+const String _kCruxPromptBody = '''
 ## Codebase exploration
 
 For coding tasks, always start with `semantic_search` to get
@@ -265,8 +270,43 @@ Tier 3 — General shell (no specific optimization)
   `bash`, `powershell`, `cmd`
   Git, build, test, install, process control — shell-native
   only. NEVER use Tier 3 for anything Tier 1 or Tier 2 already
-  cover. Tier 3 is a fallback, not a first choice.
+  cover.   Tier 3 is a fallback, not a first choice.
 ''';
+
+/// The English name of [locale], used inside the (always-English) system
+/// prompt to tell the model which language to reply in under `follow` mode.
+String _englishLocaleName(AppLocale locale) {
+  switch (locale) {
+    case AppLocale.en:
+      return 'English';
+    case AppLocale.zh:
+      return 'Chinese';
+  }
+}
+
+/// The layer-1 "Language" section for a full workspace session.
+String _languageSection(ReplyLanguageSettings settings) {
+  if (settings.mode == ReplyLanguageMode.auto) {
+    return _kCruxAutoLanguageSection;
+  }
+  final name = _englishLocaleName(settings.locale);
+  return '''
+## Language (hard rule)
+
+Always reply in $name. The user has configured the reply language to
+follow the UI language, which is set to $name, so use it for every
+reply regardless of the language the user writes in. Apply it to:
+
+- Your final prose reply (headings, explanations, summaries)
+- The `intent` argument on every tool call
+- Error messages and diagnostics you emit
+- Section titles, labels, and bullet text
+
+Do NOT translate code, identifiers, file paths, shell commands, or
+quoted source — those stay in their original form verbatim. Do NOT
+mix languages within a single response.
+''';
+}
 
 /// Build the full system prompt for a new session.
 ///
@@ -286,11 +326,17 @@ String buildSystemPrompt({
   required String cwd,
   required String worktree,
   required DateTime sessionStarted,
+  ReplyLanguageSettings replyLanguage = ReplyLanguageSettings.fallback,
 }) {
   final blocks = <String>[];
 
-  // Layer 1: universal, always present.
-  blocks.add(kCruxSystemPrompt);
+  // Layer 1: identity + language section + universal rules. The
+  // language section is parameterized by [replyLanguage].
+  blocks.add(
+    '$_kCruxIdentity\n\n'
+    '${_languageSection(replyLanguage)}\n\n'
+    '$_kCruxPromptBody',
+  );
 
   // Layer 2: provider/model tuning. Omit entirely if neither
   // provider nor model defines one. Per-model wins over per-provider.
@@ -335,10 +381,12 @@ String buildSystemPrompt({
 /// operating on a workspace, so the entire agent-harness framing is
 /// out of scope. Only identity and the language-mirroring rule
 /// survive (both are workspace-agnostic).
-const String kChatSystemPrompt = '''
+const String _kChatIdentity = '''
 You are Crux in Chat mode — a general-purpose AI assistant having a
 conversation, not tied to any code workspace.
+''';
 
+const String _kChatAutoLanguageSection = '''
 ## Language (hard rule)
 
 Match the user's language exactly. If the user writes Chinese, reply
@@ -347,6 +395,23 @@ code, identifiers, file paths, shell commands, or quoted source —
 those stay in their original form verbatim. Do NOT mix languages
 within a single response unless the user did.
 ''';
+
+/// The minimal "Language" section for a Chat-mode session.
+String _chatLanguageSection(ReplyLanguageSettings settings) {
+  if (settings.mode == ReplyLanguageMode.auto) {
+    return _kChatAutoLanguageSection;
+  }
+  final name = _englishLocaleName(settings.locale);
+  return '''
+## Language (hard rule)
+
+Always reply in $name. The user has configured the reply language to
+follow the UI language, which is set to $name. Do NOT translate code,
+identifiers, file paths, shell commands, or quoted source — those stay
+in their original form verbatim. Do NOT mix languages within a single
+response.
+''';
+}
 
 /// True when [cached] is a Chat-mode system prompt rendered before
 /// the workspace-free env meta existed — i.e. it still carries a
@@ -363,7 +428,7 @@ bool isStaleChatSystemPrompt(String? cached) {
 /// Build the minimal system prompt for a Chat-mode session.
 ///
 /// Composes only the workspace-agnostic layers:
-///   [1] kChatSystemPrompt                       — identity + language
+///   [1] identity + language section               — per reply-language mode
 ///   [2] provider/model system_prompt_addition   — per model, from TOML
 ///   [4] env meta (workspace-free)               — per session
 ///
@@ -378,11 +443,12 @@ String buildChatSystemPrompt({
   required ProviderConfig provider,
   required ModelConfig model,
   required DateTime sessionStarted,
+  ReplyLanguageSettings replyLanguage = ReplyLanguageSettings.fallback,
 }) {
   final blocks = <String>[];
 
-  // Layer 1: minimal chat identity, always present.
-  blocks.add(kChatSystemPrompt);
+  // Layer 1: minimal chat identity + language, always present.
+  blocks.add('$_kChatIdentity\n\n${_chatLanguageSection(replyLanguage)}');
 
   // Layer 2: provider/model tuning. Same rule as the full prompt.
   final addition = provider.effectiveSystemPromptAdditionFor(model);

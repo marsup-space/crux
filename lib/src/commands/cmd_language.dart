@@ -1,4 +1,5 @@
 import '../components/ui/toast.dart';
+import '../i18n/reply_language.dart';
 import 'command_executor.dart';
 
 /// The `/language` command — switch the UI language (`en` / `zh`).
@@ -47,4 +48,14 @@ Future<void> executeLanguage(List<String> parts, CommandContext ctx) async {
     strings.t('lang.switched', {'lang': label}),
     mode: ToastMode.status,
   );
+
+  // When the agent replies in the UI language (`follow` mode), the cached
+  // system prompt's language section still names the *old* locale — rebuild
+  // it so the switch takes effect on the next turn.
+  if (controller.replyLanguageMode == ReplyLanguageMode.follow) {
+    final sid = ctx.currentSessionId;
+    if (sid != null) {
+      await ctx.rebuildSystemPrompt?.call(sid);
+    }
+  }
 }

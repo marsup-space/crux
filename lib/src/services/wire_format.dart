@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:path/path.dart' as p;
 
+import '../i18n/reply_language.dart';
 import '../models/message.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
@@ -347,8 +348,9 @@ class ResolvedChatTarget {
   static Future<ResolvedChatTarget?> resolve(
     Session session,
     ProviderService providerService,
-    SessionStore store,
-  ) async {
+    SessionStore store, {
+    ReplyLanguageSettings replyLanguage = ReplyLanguageSettings.fallback,
+  }) async {
     final compositeKey = session.model;
     final slashIndex = compositeKey.indexOf('/');
     final providerName = slashIndex > 0
@@ -376,6 +378,7 @@ class ResolvedChatTarget {
               provider: provider,
               model: modelConfig,
               sessionStarted: session.createdAt,
+              replyLanguage: replyLanguage,
             )
           : buildSystemPrompt(
               provider: provider,
@@ -383,6 +386,7 @@ class ResolvedChatTarget {
               cwd: session.projectPath,
               worktree: session.projectPath,
               sessionStarted: session.createdAt,
+              replyLanguage: replyLanguage,
             );
       session.systemPrompt = systemPrompt;
       await store.update(session.id, systemPrompt: systemPrompt);

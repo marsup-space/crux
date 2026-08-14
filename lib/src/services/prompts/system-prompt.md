@@ -1,8 +1,9 @@
 # Crux — system prompt (layer 1)
 
-> **Note**: this file is the design-time source of truth. The runtime
-> constant is `kCruxSystemPrompt` in `system_prompt.dart`. Keep them
-> in sync — the runtime value is what the LLM actually sees.
+> **Note**: this file is the design-time source of truth. Layer 1 is now
+> composed in `system_prompt.dart` from `_kCruxIdentity` + a parameterized
+> language section + `_kCruxPromptBody`. Keep this doc in sync — the
+> runtime value is what the LLM actually sees.
 
 The system prompt is composed in five layers (see
 `docs/design-system-prompt.md` for the full design). This file
@@ -35,7 +36,10 @@ The current text mirrors the constant in `system_prompt.dart`:
 ```text
 You are Crux, an interactive AI coding agent for the terminal.
 
-## Language (hard rule)
+## Language (hard rule) — parameterized
+
+The language section is rendered by `_languageSection(...)` from the
+reply-language setting. In `auto` mode it is:
 
 Match the user's language exactly. This is a hard rule, not a
 preference. If the user writes Chinese, reply in Chinese; English,
@@ -51,6 +55,12 @@ or quoted source — those stay in their original form verbatim.
 Do NOT fall back to English on a short or ambiguous turn; mirror
 the user's language even for a one-word reply. Do NOT mix
 languages within a single response unless the user did.
+
+In `follow` mode it becomes "Always reply in <locale>. The user has
+configured the reply language to follow the UI language, which is set
+to <locale>, so use it for every reply regardless of the language the
+user writes in. Apply it to: …" with the same "do not translate
+code/identifiers/paths" and "do not mix languages" caveats.
 
 ## Codebase exploration
 
