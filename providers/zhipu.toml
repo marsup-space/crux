@@ -25,21 +25,20 @@
 # all tiers (Lite / Pro / Max) and currently supports six
 # flagship-tier text models:
 #
-#   * GLM-5.3      — 1M context, 128K out (PLACEHOLDER, not yet
-#                    released — specs cloned from 5.2; see below)
-#   * GLM-5.2      — 1M context, 128K out (newest flagship)
+#   * GLM-5.3      — 1M context, 128K out (newest flagship)
+#   * GLM-5.2      — 1M context, 128K out
 #   * GLM-5.1      — 200K, 128K
 #   * GLM-5-Turbo  — 200K, 128K ("Lobster" long-task enhanced)
 #   * GLM-4.7      — 200K, 128K (workhorse)
 #   * GLM-4.5-Air  — 128K, 96K  (budget)
 #
 # Model IDs on the wire are lowercase + dot-separated
-# (`glm-5.2`, `glm-4.5-air`) — every authoritative wire-format
-# reference uses lowercase, even though the marketing names
-# are mixed case. Crux passes the TOML `id` field through
-# verbatim, so the `id` here is the canonical ID.
+# (`glm-5.3`, `glm-5.2`, `glm-4.5-air`) — every authoritative
+# wire-format reference uses lowercase, even though the
+# marketing names are mixed case. Crux passes the TOML `id`
+# field through verbatim, so the `id` here is the canonical ID.
 #
-# All five models are text-only (no image input — the vision
+# All six models are text-only (no image input — the vision
 # models `GLM-5V-Turbo` / `GLM-4.6V` are a separate family not
 # part of the Coding Plan quota pool).
 #
@@ -71,16 +70,18 @@
 type = "zhipu"
 endpoint_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 
-# === GLM-5.3 — PLACEHOLDER, not yet officially released ===
-# GLM-5.3 has NOT shipped as of 2026-08 (model page 404s;
-# Zhipu is still collecting community input on its direction).
-# This entry is a SPECULATIVE PLACEHOLDER cloned from GLM-5.2
-# (same 1M context / 128K out / thinking / reasoning / lerp)
-# so the ID exists ahead of launch. Once the official page
-# (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) goes
-# live, context_size / max_tokens / thinking_budget MUST be
-# rechecked against the published wire-format reference and
-# corrected here.
+# === GLM-5.3 — newest flagship, 1M context ===
+# Per the GLM-5.3 model page
+# (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
+# GLM-5.3 is Zhipu's latest flagship, built on the *same base*
+# as GLM-5.2 (1M context / 128K out) with a far larger
+# long-horizon post-training scale. GLM Coding Plan has rolled
+# it out to all tiers (Max & Pro & Lite). Text-only with
+# thinking support; same wire format as GLM-5.2. Claude Code
+# users append `[1m]` (e.g. `glm-5.3[1m]`) to opt into 1M on
+# the Anthropic-compatible endpoint, but on the
+# OpenAI-compatible endpoint the API serves 1M context
+# automatically (same as GLM-5.2).
 [[models]]
 id = "glm-5.3"
 name = "GLM-5.3"
@@ -93,7 +94,7 @@ reasoning_effort = "max"
 temperature = 0
 stream_lerp = true
 
-# === GLM-5.2 — latest flagship, 1M context ===
+# === GLM-5.2 — previous flagship, 1M context ===
 # Per the GLM-5.2 model page
 # (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2),
 # this was the first Coding Plan model to ship a true 1M
@@ -114,7 +115,7 @@ reasoning_effort = "max"
 temperature = 0
 stream_lerp = true
 
-# === GLM-5.1 — previous flagship ===
+# === GLM-5.1 — earlier flagship ===
 # 200K context, 128K output. Per the GLM-5.1 model page, the
 # "Coding Plan 团队版 已上线 GLM-5.2" banner on the older doc
 # shows 5.2 as the newer tier; 5.1 remains in the model list
