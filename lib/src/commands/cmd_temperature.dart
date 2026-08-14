@@ -38,21 +38,24 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
     if (current == null) {
       ctx.showToast(
         modelDefault != null
-            ? 'Temperature: model default '
-                  '${formatSamplingValue(modelDefault)} '
-                  '(no override set)'
-            : 'Temperature: model default (no override set)',
+            ? ctx.strings.t('toast.tempDefaultWithValue', {
+                'value': formatSamplingValue(modelDefault),
+              })
+            : ctx.strings.t('toast.tempDefaultNoOverride'),
         mode: ToastMode.info,
       );
     } else {
       // With an override in effect, surface the model default too so
       // users can see what they're overriding from.
-      final suffix = modelDefault != null
-          ? ' (override; default '
-                '${formatSamplingValue(modelDefault)})'
-          : ' (override)';
       ctx.showToast(
-        'Temperature: ${formatSamplingValue(current)}$suffix',
+        modelDefault != null
+            ? ctx.strings.t('toast.tempOverride', {
+                'value': formatSamplingValue(current),
+                'default': formatSamplingValue(modelDefault),
+              })
+            : ctx.strings.t('toast.tempOverrideNoDefault', {
+                'value': formatSamplingValue(current),
+              }),
         mode: ToastMode.info,
       );
     }
@@ -63,7 +66,7 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
   final parsed = double.tryParse(raw);
   if (parsed == null || parsed.isNaN || parsed.isInfinite) {
     ctx.showToast(
-      'Invalid temperature: "$raw". Usage: /temperature <0.0–1.0>',
+      ctx.strings.t('toast.tempInvalid', {'raw': raw}),
       mode: ToastMode.error,
     );
     return;
@@ -92,14 +95,17 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
 
   if (wasClamped) {
     ctx.showToast(
-      'Temperature set to ${formatSamplingValue(clamped)} '
-      '(clamped from ${formatSamplingValue(parsed)}; range 0.0–1.0)',
+      ctx.strings.t('toast.tempClamped', {
+        'value': formatSamplingValue(clamped),
+        'raw': formatSamplingValue(parsed),
+      }),
       mode: ToastMode.info,
     );
   } else {
     ctx.showToast(
-      'Temperature set to ${formatSamplingValue(clamped)} '
-      '(override; will apply for the session)',
+      ctx.strings.t('toast.tempSet', {
+        'value': formatSamplingValue(clamped),
+      }),
       mode: ToastMode.info,
     );
   }

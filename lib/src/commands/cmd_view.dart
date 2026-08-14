@@ -19,7 +19,7 @@ Future<void> executeView(List<String> parts, CommandContext ctx) async {
     final current = rt.chatDisplayMode == ChatDisplayMode.vibe
         ? 'vibe'
         : 'verbose';
-    ctx.showToast('Display mode: $current', mode: ToastMode.info);
+    ctx.showToast(ctx.strings.t('toast.displayMode', {'mode': current}), mode: ToastMode.info);
     return;
   }
 
@@ -29,15 +29,15 @@ Future<void> executeView(List<String> parts, CommandContext ctx) async {
       rt.chatDisplayMode = ChatDisplayMode.verbose;
       ctx.persistChatDisplayMode(rt);
       ctx.refresh();
-      ctx.showToast('Display mode: verbose', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.displayMode', {'mode': 'verbose'}), mode: ToastMode.status);
     case 'vibe':
       rt.chatDisplayMode = ChatDisplayMode.vibe;
       ctx.persistChatDisplayMode(rt);
       ctx.refresh();
-      ctx.showToast('Display mode: vibe', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.displayMode', {'mode': 'vibe'}), mode: ToastMode.status);
     default:
       ctx.showToast(
-        'Unknown mode: "$mode". Usage: /view <verbose|vibe>',
+        ctx.strings.t('toast.viewUnknown', {'mode': mode}),
         mode: ToastMode.error,
       );
   }

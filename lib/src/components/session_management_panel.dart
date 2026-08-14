@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import '../i18n/strings.dart';
 import '../utils/terminal_symbols.dart';
 import 'ui/fullpane.dart';
 
@@ -15,6 +16,7 @@ class SessionManagementPanel extends StatefulComponent {
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
   final void Function(int sessionId) onSwitchSession;
   final VoidCallback onDismiss;
+  final Strings strings;
 
   const SessionManagementPanel({
     required this.sessions,
@@ -24,6 +26,7 @@ class SessionManagementPanel extends StatefulComponent {
     required this.onRenameSession,
     required this.onSwitchSession,
     required this.onDismiss,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -64,11 +67,11 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     final rows = <_Row>[];
     if (sessions.isNotEmpty) {
-      rows.add(const _HeaderRow('Sessions'));
+      rows.add(_HeaderRow(component.strings.t('chat.sessions.sessions')));
       rows.addAll(sessions.map(_SessionRow.new));
     }
     if (chats.isNotEmpty) {
-      rows.add(const _HeaderRow('Chats'));
+      rows.add(_HeaderRow(component.strings.t('chat.sessions.chats')));
       rows.addAll(chats.map(_SessionRow.new));
     }
     return rows;
@@ -288,7 +291,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
 
     final shortcuts = <FullpaneShortcut>[
       FullpaneShortcut(
-        label: 'delete',
+        label: component.strings.t('chat.sessions.delete'),
         keyHint: 'Ctrl+D',
         matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyD,
         onActivate: _mode == _PanelMode.confirmDelete
@@ -296,7 +299,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
             : _initiateDelete,
       ),
       FullpaneShortcut(
-        label: 'rename',
+        label: component.strings.t('chat.sessions.rename'),
         keyHint: 'Ctrl+R',
         matches: (e) => e.isControlPressed && e.logicalKey == LogicalKey.keyR,
         onActivate: _initiateRename,
@@ -304,7 +307,11 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     ];
 
     return Fullpane(
-      title: _mode == _PanelMode.confirmDelete ? 'Confirm Delete' : 'Sessions',
+      title: component.strings.t(
+        _mode == _PanelMode.confirmDelete
+            ? 'chat.sessions.confirmDelete'
+            : 'chat.sessions.sessions',
+      ),
       onClose: component.onDismiss,
       shortcuts: shortcuts,
       onKeyEvent: _handleKeyEvent,
@@ -312,7 +319,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         if (sorted.isEmpty) {
           return Center(
             child: Text(
-              'No sessions found.',
+              component.strings.t('chat.sessions.noSessions'),
               style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
             ),
           );
@@ -328,7 +335,9 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               child: Row(
                 children: [
                   Text(
-                    'Delete "${session.title}"? Ctrl+D to confirm, Esc to cancel',
+                    component.strings.t('chat.sessions.deleteConfirm', {
+                      'title': session.title,
+                    }),
                     style: TextStyle(
                       color: CruxTheme.of(context).deleteWarning,
                     ),
@@ -373,7 +382,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                 SizedBox(
                   width: 6,
                   child: Text(
-                    'St',
+                    component.strings.t('chat.sessions.status'),
                     style: TextStyle(
                       color: CruxTheme.of(context).onSurfaceVariant,
                       fontWeight: FontWeight.bold,
@@ -382,7 +391,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                 ),
                 Expanded(
                   child: Text(
-                    ' Title',
+                    component.strings.t('chat.sessions.title'),
                     style: TextStyle(
                       color: CruxTheme.of(context).onSurfaceVariant,
                       fontWeight: FontWeight.bold,
@@ -392,7 +401,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                 SizedBox(
                   width: 12,
                   child: Text(
-                    'Model',
+                    component.strings.t('chat.sessions.model'),
                     style: TextStyle(
                       color: CruxTheme.of(context).onSurfaceVariant,
                       fontWeight: FontWeight.bold,
@@ -535,20 +544,20 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     final session = sorted[_selectedIndex];
 
     return Fullpane(
-      title: 'Rename Session',
+      title: component.strings.t('chat.sessions.renameTitle'),
       onClose: _cancelAction,
       contentBuilder: (context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Current: ${session.title}',
+            component.strings.t('chat.sessions.current', {'title': session.title}),
             style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
           ),
           const SizedBox(height: 1),
           Row(
             children: [
               Text(
-                'New: ',
+                component.strings.t('chat.sessions.newName'),
                 style: TextStyle(color: CruxTheme.of(context).foreground),
               ),
               Expanded(
@@ -575,7 +584,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           ),
           const SizedBox(height: 1),
           Text(
-            'Enter to confirm, Esc to cancel',
+            component.strings.t('chat.sessions.confirmHint'),
             style: TextStyle(color: CruxTheme.of(context).hintText),
           ),
         ],

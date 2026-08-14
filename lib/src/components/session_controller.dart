@@ -361,6 +361,33 @@ class SessionController {
     return null;
   }
 
+  /// Load every session the `#` mention search can surface: the
+  /// in-memory non-archived workspace sessions + chats, plus archived
+  /// workspace sessions and archived chats from the store. Deduped by
+  /// id, with in-memory entries winning over store rows (so a title
+  /// just renamed, or a session just created, is the version shown).
+  Future<List<Session>> loadSessionMentionCandidates() async {
+    final byId = <int, Session>{};
+    for (final s in sessions) {
+      byId[s.id] = s;
+    }
+    for (final s in chats) {
+      byId[s.id] = s;
+    }
+    final archived = await _store.list(
+      projectPath: Directory.current.path,
+      includeArchived: true,
+    );
+    final archivedChats = await _store.listChats(includeArchived: true);
+    for (final s in archived) {
+      byId.putIfAbsent(s.id, () => s);
+    }
+    for (final s in archivedChats) {
+      byId.putIfAbsent(s.id, () => s);
+    }
+    return byId.values.toList();
+  }
+
   /// Centralized session-status setter. Single chokepoint for
   /// any code that wants to move a session to a new status, so
   /// the "active vs background" rule lives in exactly one place
@@ -1254,6 +1281,31 @@ class SessionController {
         currentSessionId: currentSessionId,
       );
     }
+    _refresh();
+  }
+
+  /// Pin or unpin [sessionId] (works for both workspace sessions and
+  /// chats). Updates the store, flips the in-memory [Session.pinnedAt]
+  /// so the sidebar re-derives its "Pinned" section, and mirrors the
+  /// change into the cubit. Pinned rows sort to the top and are exempt
+  /// from the auto-archive sweep.
+  Future<void> togglePin(int sessionId) async {
+    final session = findSession(sessionId);
+    if (session == null) return;
+    if (session.isPinned) {
+      session.pinnedAt = null;
+      await _store.unpinSession(sessionId);
+    } else {
+      session.pinnedAt = DateTime.now();
+      await _store.pinSession(sessionId);
+    }
+    cubit.replaceSessions(
+      sessions: sessions,
+      chats: chats,
+      archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
+      currentSessionId: currentSessionId,
+    );
     _refresh();
   }
 

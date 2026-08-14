@@ -59,6 +59,9 @@ class SetupHomeWidget extends HomeWidget {
   @override
   String get title => 'Quick Start';
 
+  @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.setup');
+
   /// Full-width: the box always takes the whole row ({1,2,4} covers the
   /// 1/2/4-column layouts; the packer clamps to the actual column
   /// count). It's the first-run to-do list — it should be unmissable,
@@ -79,29 +82,29 @@ class SetupHomeWidget extends HomeWidget {
     final auxName = ctx.auxModelName();
     return [
       SetupItem(
-        label: 'provider key',
+        label: ctx.strings.t('home.setup.providerKey'),
         done: ctx.hasProviderKey(),
-        detail: 'connected',
+        detail: ctx.strings.t('home.setup.connected'),
         seedText: '/provider ',
       ),
       SetupItem(
-        label: 'aux model',
+        label: ctx.strings.t('home.setup.auxModel'),
         done: auxName != null,
         detail: auxName ?? '',
         seedText: '/auxiliary ',
       ),
       SetupItem(
-        label: 'web provider',
+        label: ctx.strings.t('home.setup.webProvider'),
         done: ctx.hasWebProvider(),
-        detail: 'configured',
+        detail: ctx.strings.t('home.setup.configured'),
         seedText: '/web-provider ',
       ),
       SetupItem(
-        label: 'workspace',
+        label: ctx.strings.t('home.setup.workspace'),
         done: ctx.projectPath.isNotEmpty,
         detail: ctx.projectPath.isNotEmpty
             ? p.basename(ctx.projectPath)
-            : 'open crux in a project directory',
+            : ctx.strings.t('home.setup.openProject'),
       ),
     ];
   }

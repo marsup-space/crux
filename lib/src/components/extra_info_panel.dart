@@ -11,6 +11,7 @@ import '../services/git_status_service.dart';
 import '../services/spec_widget.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
+import '../i18n/strings.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
@@ -23,6 +24,7 @@ import 'ui/multi_button.dart';
 
 /// Time-based grouping for sessions in the sidebar.
 enum _SessionGroup {
+  pinned('Pinned'),
   yesterday('Yesterday'),
   threeDays('3 Days'),
   archived('Archived'),
@@ -56,6 +58,12 @@ class ExtraInfoPanel extends StatefulComponent {
   final List<Session> chats;
   final int currentSessionId;
   final void Function(int) onSwitchSession;
+
+  /// Invoked when the user clicks the pin/star affordance on a session
+  /// or chat row. Toggles [Session.pinnedAt]; null hides the affordance
+  /// (tests/contexts without a controller).
+  final void Function(int sessionId)? onTogglePin;
+
   final VoidCallback? onSessionTitleTap;
 
   /// Number of archived sessions (not included in [sessions]).
@@ -139,12 +147,14 @@ class ExtraInfoPanel extends StatefulComponent {
   /// what the user did and the outcome, recorded into the session
   /// context so the agent can see the user's widget interactions.
   final Future<void> Function(String note)? onSpecAction;
+  final Strings strings;
 
   const ExtraInfoPanel({
     required this.sessions,
     this.chats = const [],
     required this.currentSessionId,
     required this.onSwitchSession,
+    this.onTogglePin,
     required this.archivedCount,
     this.archivedChatCount = 0,
     this.onCreateChat,
@@ -161,6 +171,7 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onSpecScreenAction,
     this.onSpecTodoToggle,
     this.onSpecAction,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -220,13 +231,21 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     var hash = 0;
     for (final s in sessions) {
       //updatedAt.millisecondsSinceEpoch changes when a session is
-      // continued, which is exactly the signal we need.
-      hash ^= s.id ^ s.updatedAt.millisecondsSinceEpoch;
+      // continued, which is exactly the signal we need. pinnedAt is
+      // mixed in so pin/unpin re-derives the row list without touching
+      // updatedAt.
+      hash ^= s.id ^
+          s.updatedAt.millisecondsSinceEpoch ^
+          (s.pinnedAt?.millisecondsSinceEpoch ?? 0);
     }
     // Mix chats in with a distinct constant so a chat and a session
     // with the same id/updatedAt don't cancel out in the XOR.
     for (final s in chats) {
-      hash ^= (s.id ^ s.updatedAt.millisecondsSinceEpoch) * 0x9e3779b1;
+      hash ^=
+          (s.id ^
+              s.updatedAt.millisecondsSinceEpoch ^
+              (s.pinnedAt?.millisecondsSinceEpoch ?? 0)) *
+          0x9e3779b1;
     }
     return hash;
   }
@@ -235,10 +254,12 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// group headers where appropriate.
   ///
   /// Layout:
+  /// - "Pinned" header + pinned sessions/chats (sorted by pin time)
   /// - Today's sessions first, **no header label**
   /// - "Yesterday" header + yesterday's sessions
   /// - "3 Days" header + sessions from 2–3 days ago
   /// - "N archived /unarchive #id" hint
+  /// - "Chats" header + the same recency buckets for chats
   static List<Object> _buildRows(
     List<Session> sorted,
     int archivedCount,
@@ -250,12 +271,30 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
     final threeDaysAgo = todayStart.subtract(const Duration(days: 3));
 
-    // Bucket sessions into groups.
+    final rows = <Object>[];
+
+    // ── Pinned section ──────────────────────────────────────────
+    // Pinned workspace sessions and chats are mixed into one list at
+    // the very top, sorted by when they were pinned (newest first),
+    // and excluded from the recency buckets below.
+    final pinned = <Session>[
+      for (final s in sorted)
+        if (s.isPinned) s,
+      for (final s in sortedChats)
+        if (s.isPinned) s,
+    ]..sort((a, b) => b.pinnedAt!.compareTo(a.pinnedAt!));
+    if (pinned.isNotEmpty) {
+      rows.add(_SessionGroup.pinned);
+      rows.addAll(pinned);
+    }
+
+    // Bucket non-pinned sessions into recency groups.
     final today = <Session>[];
     final yesterday = <Session>[];
     final threeDays = <Session>[];
 
     for (final s in sorted) {
+      if (s.isPinned) continue;
       if (!s.updatedAt.isBefore(todayStart)) {
         today.add(s);
       } else if (!s.updatedAt.isBefore(yesterdayStart)) {
@@ -267,7 +306,6 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       // SessionController.initSessions; shouldn't appear here.
     }
 
-    final rows = <Object>[];
     // Today: no header, just the sessions.
     rows.addAll(today);
     if (yesterday.isNotEmpty) {
@@ -287,14 +325,19 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     // sessions list's recency grouping (today unlabeled, then
     // "Yesterday" / "3 Days") so the two sections read identically.
     // A chat running in another Crux instance is refused on tap by
-    // SessionController's lease check.
-    if (sortedChats.isNotEmpty || archivedChatCount > 0) {
+    // SessionController's lease check. Pinned chats are excluded here
+    // (they render in the "Pinned" section above).
+    final unpinnedChats = <Session>[
+      for (final s in sortedChats)
+        if (!s.isPinned) s,
+    ];
+    if (unpinnedChats.isNotEmpty || archivedChatCount > 0) {
       rows.add(_SessionGroup.chats);
 
       final chatsToday = <Session>[];
       final chatsYesterday = <Session>[];
       final chatsThreeDays = <Session>[];
-      for (final s in sortedChats) {
+      for (final s in unpinnedChats) {
         if (!s.updatedAt.isBefore(todayStart)) {
           chatsToday.add(s);
         } else if (!s.updatedAt.isBefore(yesterdayStart)) {
@@ -544,11 +587,12 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Scale the per-row title length with the panel's actual width:
-        // reserve 1 col for the status prefix and 1 for the leading space,
-        // then use the rest of the panel for the title itself so no width
-        // is wasted. Clamp so titles never get absurdly short or long at
-        // extreme widths.
-        final maxTitleLen = (constraints.maxWidth - 2)
+        // reserve 1 col for the status prefix, 1 for the leading space,
+        // 1 for the gap before the star, and 1 for the pin/star glyph,
+        // then use the rest of the panel for the title itself so no
+        // width is wasted. Clamp so titles never get absurdly short or
+        // long at extreme widths.
+        final maxTitleLen = (constraints.maxWidth - 4)
             .clamp(_maxTitleLenFloor, _maxTitleLenCeiling)
             .toInt();
 
@@ -719,27 +763,71 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                 Divider(color: CruxTheme.of(context).outline, height: 1),
                 // Git status: file-level info (branch is also
                 // surfaced here, but the project widget below
-                // repeats it as part of `path:branch`). The widget
-                // collapses to zero height outside a repo, so the
-                // layout stays tight.
-                GitStatusWidget(
-                  service: component.gitStatusService,
-                  onTap: () => component.gitStatusService.refresh(),
-                ),
-                MultiButton(
-                  label: projectLabel,
-                  color: CruxTheme.of(context).onSurfaceVariant,
-                  hoverColor: CruxTheme.of(context).foreground,
-                  segments: [
-                    MultiButtonSegment(
-                      label: 'open',
-                      onPressed: panel.onOpenProject,
+                // repeats it as part of `path:branch`). Now rendered
+                // in its own full-width bordered box — same chrome as
+                // the spec widgets and the aux button above — so the
+                // bottom block reads as a matched set. The box is
+                // omitted entirely outside a repo, keeping the old
+                // collapse behaviour (layout stays tight).
+                if (git.isRepo)
+                  Container(
+                    width: constraints.maxWidth,
+                    decoration: BoxDecoration(
+                      color: CruxTheme.of(context).surface,
+                      border: BoxBorder.all(
+                        color: CruxTheme.of(context).outline,
+                        style: BoxBorderStyle.rounded,
+                      ),
+                      title: BorderTitle(
+                        text: component.strings.t('chat.sidebar.git'),
+                        style: TextStyle(
+                          color: CruxTheme.of(context).onSurfaceVariant,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    MultiButtonSegment(
-                      label: 'switch',
-                      onPressed: panel.onSwitchProject,
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
+                    child: GitStatusWidget(
+                      service: component.gitStatusService,
+                      onTap: () => component.gitStatusService.refresh(),
+                      strings: component.strings,
                     ),
-                  ],
+                  ),
+                // Project directory: `path:branch ↑N ↓N` plus the
+                // `open` / `switch` actions. Wrapped in the same
+                // bordered box as the other bottom-block widgets.
+                Container(
+                  width: constraints.maxWidth,
+                  decoration: BoxDecoration(
+                    color: CruxTheme.of(context).surface,
+                    border: BoxBorder.all(
+                      color: CruxTheme.of(context).outline,
+                      style: BoxBorderStyle.rounded,
+                    ),
+                    title: BorderTitle(
+                      text: component.strings.t('chat.sidebar.project'),
+                      style: TextStyle(
+                        color: CruxTheme.of(context).onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: MultiButton(
+                    label: projectLabel,
+                    color: CruxTheme.of(context).onSurfaceVariant,
+                    hoverColor: CruxTheme.of(context).foreground,
+                    segments: [
+                      MultiButtonSegment(
+                        label: component.strings.t('chat.sidebar.open'),
+                        onPressed: panel.onOpenProject,
+                      ),
+                      MultiButtonSegment(
+                        label: component.strings.t('chat.sidebar.switch'),
+                        onPressed: panel.onSwitchProject,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 1),
               ],
@@ -866,28 +954,98 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       onEnter: (_) => setState(() => _hoveredIds.add(session.id)),
       onExit: (_) => setState(() => _hoveredIds.remove(session.id)),
       opaque: false,
+      child: Container(
+        decoration: BoxDecoration(color: _bgColor(isCurrent, isHovered)),
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => panel.onSwitchSession(session.id),
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    Text(
+                      prefix,
+                      style: TextStyle(
+                        color: _prefixColor(status, isCurrent),
+                        fontWeight: isCurrent ? FontWeight.bold : null,
+                      ),
+                    ),
+                    Text(
+                      ' $title',
+                      style: TextStyle(
+                        color: _titleColor(status, isCurrent, isHovered),
+                        fontWeight:
+                            isCurrent || isHovered ? FontWeight.bold : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (panel.onTogglePin != null)
+              _PinButton(
+                pinned: session.isPinned,
+                hint: session.isChat ? 'Pin chat' : 'Pin session',
+                onPressed: () => panel.onTogglePin!(session.id),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The small star affordance rendered at the right edge of each
+/// session/chat row. A filled ★ means pinned; a hollow ☆ means not.
+/// Clicking toggles the pin. Styled to match the panel's other glyph
+/// chrome — dim at rest, brightens on hover, and always bright when
+/// pinned so the state is legible without hovering.
+class _PinButton extends StatefulComponent {
+  final bool pinned;
+  final String hint;
+  final VoidCallback onPressed;
+
+  const _PinButton({
+    required this.pinned,
+    required this.hint,
+    required this.onPressed,
+  });
+
+  @override
+  State<_PinButton> createState() => _PinButtonState();
+}
+
+class _PinButtonState extends State<_PinButton> {
+  bool _hovered = false;
+
+  @override
+  Component build(BuildContext context) {
+    final pinned = component.pinned;
+    // `★` / `☆` (U+2605 / U+2606) are single-width in every common
+    // monospace terminal font; the ASCII fallbacks keep the glyph
+    // legible on legacy/7-bit terminals via terminalSymbol.
+    final glyph = terminalSymbol(pinned ? '★' : '☆', pinned ? '*' : 'o');
+    final color = pinned
+        ? CruxTheme.of(context).sessionPrefixActive
+        : _hovered
+        ? CruxTheme.of(context).buttonTextFocused
+        : CruxTheme.of(context).outline;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      opaque: false,
       child: GestureDetector(
-        onTap: () => panel.onSwitchSession(session.id),
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          decoration: BoxDecoration(color: _bgColor(isCurrent, isHovered)),
-          child: Row(
-            children: [
-              Text(
-                prefix,
-                style: TextStyle(
-                  color: _prefixColor(status, isCurrent),
-                  fontWeight: isCurrent ? FontWeight.bold : null,
-                ),
-              ),
-              Text(
-                ' $title',
-                style: TextStyle(
-                  color: _titleColor(status, isCurrent, isHovered),
-                  fontWeight: isCurrent || isHovered ? FontWeight.bold : null,
-                ),
-              ),
-            ],
+        onTap: component.onPressed,
+        child: Hinted(
+          hint: component.hint,
+          // Leading space separates the star from the truncated title
+          // so the glyph never sits flush against the last character.
+          child: Text(
+            ' $glyph',
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
           ),
         ),
       ),

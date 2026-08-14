@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../models/slash_command.dart';
 
@@ -9,6 +10,7 @@ class CommandOverlay extends StatelessComponent {
   final int maxVisible;
   final void Function(int)? onHover;
   final void Function(int)? onTap;
+  final Strings strings;
 
   const CommandOverlay({
     required this.commands,
@@ -17,6 +19,7 @@ class CommandOverlay extends StatelessComponent {
     required this.maxVisible,
     this.onHover,
     this.onTap,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -36,7 +39,7 @@ class CommandOverlay extends StatelessComponent {
         child: Row(
           children: [
             Text(
-              'Commands',
+              strings.t('cmd.overlay.title'),
               style: TextStyle(
                 color: CruxTheme.of(context).wizardTitle,
                 fontWeight: FontWeight.bold,
@@ -61,7 +64,7 @@ class CommandOverlay extends StatelessComponent {
           child: GestureDetector(
             onTap: () => onTap?.call(actualIndex),
             behavior: HitTestBehavior.opaque,
-            child: _buildCommandRow(cmd, isSelected, theme),
+                        child: _buildCommandRow(cmd, isSelected, theme),
           ),
         ),
       );
@@ -117,7 +120,7 @@ class CommandOverlay extends StatelessComponent {
           SizedBox(width: 1),
           Expanded(
             child: Text(
-              cmd.description,
+              strings.t(cmd.description),
               style: TextStyle(
                 color: isSelected
                     ? theme.wizardTextUnselected

@@ -3,17 +3,17 @@ import 'command_executor.dart';
 
 Future<void> executeContinue(CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
-    ctx.showToast('No active session', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.noSession'), mode: ToastMode.error);
     return;
   }
   final sessionId = ctx.currentSessionId!;
   final rt = ctx.runtime(sessionId);
   if (rt.isResponding) {
-    ctx.showToast('AI is already responding');
+    ctx.showToast(ctx.strings.t('toast.responding'));
     return;
   }
   if (ctx.currentMessages.isEmpty) {
-    ctx.showToast('Nothing to continue — session is empty');
+    ctx.showToast(ctx.strings.t('toast.nothingContinue'));
     return;
   }
   final lastRole = ctx.currentMessages.last.role;

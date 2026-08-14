@@ -3,8 +3,17 @@ import '../models/slash_command.dart';
 import '../services/skills/skill.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
+import '../utils/session_mention.dart';
 
-enum OverlayMode { off, command, parameter, wizard, atMention, skillPicker }
+enum OverlayMode {
+  off,
+  command,
+  parameter,
+  wizard,
+  atMention,
+  skillPicker,
+  sessionMention,
+}
 
 enum ProviderWizardSubcommand { builtin }
 
@@ -52,6 +61,48 @@ class OverlayController {
   int selectedSkillIndex = 0;
   int skillScrollOffset = 0;
 
+  /// Session-mention state. The popover shows while [overlayMode] is
+  /// [OverlayMode.sessionMention]; [sessionMentionQuery] is the text
+  /// after the `#` up to the cursor, and [filteredSessionMentions] is
+  /// the ranked result for it (archived sessions included, demoted).
+  String sessionMentionQuery = '';
+  int? sessionMentionHashOffset;
+  List<SessionMention> filteredSessionMentions = [];
+  int selectedSessionMentionIndex = 0;
+  int sessionMentionScrollOffset = 0;
+
+  /// Completed mention chips, recorded at insertion time so the chip
+  /// renderer can draw the exact inserted mention (including multi-word
+  /// titles/paths) without swallowing prose typed after it. Also backs
+  /// [isMentionClosed] so a completed mention doesn't re-open its
+  /// popover. Pruned as the text changes (see [pruneMentionChips]).
+  final List<MentionChip> _mentionChips = [];
+
+  /// The completed mention chips, in insertion order.
+  List<MentionChip> get mentionChips => List.unmodifiable(_mentionChips);
+
+  /// Record a completed chip whose trigger sits at [start] and whose
+  /// full chip text (trigger included) is [content].
+  void _recordMentionChip(int start, String content) {
+    _mentionChips.add(MentionChip(start: start, content: content));
+  }
+
+  /// True if the mention whose trigger sits at [offset] was completed
+  /// via selection (and should not re-open while typing after it).
+  bool isMentionClosed(int offset) =>
+      _mentionChips.any((c) => c.start == offset);
+
+  /// Drop completed chips whose content no longer sits at their
+  /// recorded offset in [text] — the mention was deleted or text
+  /// shifted before it.
+  void pruneMentionChips(String text) {
+    _mentionChips.removeWhere((chip) {
+      final end = chip.start + chip.content.length;
+      if (chip.start < 0 || end > text.length) return true;
+      return text.substring(chip.start, end) != chip.content;
+    });
+  }
+
   final int maxVisibleItems;
   final TextEditingController textController;
   final void Function(String) executeCommandCallback;
@@ -83,6 +134,11 @@ class OverlayController {
     filteredSkills = [];
     selectedSkillIndex = 0;
     skillScrollOffset = 0;
+    sessionMentionQuery = '';
+    sessionMentionHashOffset = null;
+    filteredSessionMentions = [];
+    selectedSessionMentionIndex = 0;
+    sessionMentionScrollOffset = 0;
     showSessionManager = false;
     showFullpane = false;
     showHome = false;
@@ -349,6 +405,8 @@ class OverlayController {
         atStart ?? findActiveMentionInText(text, cursor)?.atOffset;
     if (resolvedStart == null || resolvedStart < 0) return;
 
+    _recordMentionChip(resolvedStart, '@${selected.relativePath}');
+
     // Always append a trailing space — whether the user picked a
     // file or a directory — so the @-mention ends and they can
     // keep typing prose. To drill *into* a directory the chat
@@ -455,11 +513,101 @@ class OverlayController {
     // The query runs from the `$` to the cursor. The chip is
     // guaranteed to be unbroken here because the parser only
     // sets skillChipDollarOffset when it found an unbroken chip.
-    final insertion = '${r'$'}${selected.name} ';
+    final chipContent = '${r'$'}${selected.name}';
+    _recordMentionChip(resolvedDollar, chipContent);
+
+    final insertion = '$chipContent ';
     final newText = text.replaceRange(resolvedDollar, cursor, insertion);
     textController.text = newText;
     textController.selection = TextSelection.collapsed(
       offset: resolvedDollar + insertion.length,
+    );
+
+    setOverlayOff();
+  }
+
+  // ── Session mention (hash trigger) ─────────────────────────────
+  //
+  // The `#` popover mirrors the `@` file browser and `$` skill picker:
+  // arrow keys move the cursor, Enter / Tab inserts the selected
+  // session's `#<id>` token (replacing the `#<query>` fragment), and
+  // ESC dismisses. The inserted `#<id>` is the user-facing form; the
+  // submit pipeline rewrites it to `ses://<id>` for the LLM.
+
+  void moveSessionMentionSelectionUp() {
+    if (filteredSessionMentions.isEmpty) return;
+    selectedSessionMentionIndex = selectedSessionMentionIndex > 0
+        ? selectedSessionMentionIndex - 1
+        : filteredSessionMentions.length - 1;
+    sessionMentionScrollOffset = computeScrollOffset(
+      selectedSessionMentionIndex,
+      sessionMentionScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void moveSessionMentionSelectionDown() {
+    if (filteredSessionMentions.isEmpty) return;
+    selectedSessionMentionIndex =
+        selectedSessionMentionIndex < filteredSessionMentions.length - 1
+        ? selectedSessionMentionIndex + 1
+        : 0;
+    sessionMentionScrollOffset = computeScrollOffset(
+      selectedSessionMentionIndex,
+      sessionMentionScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void onHoverSessionMention(int index) {
+    selectedSessionMentionIndex = index;
+    sessionMentionScrollOffset = computeScrollOffset(
+      index,
+      sessionMentionScrollOffset,
+      maxVisibleItems,
+    );
+  }
+
+  void onScrollSessionMention(MouseEvent event) {
+    final maxOffset = filteredSessionMentions.length > maxVisibleItems
+        ? filteredSessionMentions.length - maxVisibleItems
+        : 0;
+    if (event.button == MouseButton.wheelUp && sessionMentionScrollOffset > 0) {
+      sessionMentionScrollOffset = (sessionMentionScrollOffset - maxVisibleItems)
+          .clamp(0, maxOffset);
+    } else if (event.button == MouseButton.wheelDown &&
+        sessionMentionScrollOffset < maxOffset) {
+      sessionMentionScrollOffset = (sessionMentionScrollOffset + maxVisibleItems)
+          .clamp(0, maxOffset);
+    }
+  }
+
+  /// Insert the currently-selected session as `#<id> `, replacing the
+  /// `#<query>` fragment. The trailing space dismisses the popover on
+  /// the next text change. If [hashOffset] is null, falls back to
+  /// [findActiveSessionMention] to locate the active `#`.
+  void insertSessionMention(int? hashOffset) {
+    if (filteredSessionMentions.isEmpty) return;
+    final selected = filteredSessionMentions[selectedSessionMentionIndex];
+    final text = textController.text;
+    final cursor = textController.selection.extentOffset;
+
+    final resolvedStart =
+        hashOffset ?? findActiveSessionMention(text, cursor)?.hashOffset;
+    if (resolvedStart == null || resolvedStart < 0) return;
+
+    final session = selected.session;
+    final title = session.title.trim();
+    final chipContent = title.isEmpty
+        ? '#${session.id}'
+        : '#${session.id}:$title';
+    _recordMentionChip(resolvedStart, chipContent);
+
+    final insertion = '$chipContent ';
+    final newText = text.replaceRange(resolvedStart, cursor, insertion);
+    textController.text = newText;
+    textController.selection = TextSelection.collapsed(
+      offset: resolvedStart + insertion.length,
     );
 
     setOverlayOff();

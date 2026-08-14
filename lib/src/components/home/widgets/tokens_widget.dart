@@ -92,6 +92,18 @@ class TokensHomeWidget extends HomeWidget {
         '${date.day.toString().padLeft(2, '0')}';
   }
 
+  @override
+  String titleFor(HomeContext ctx) {
+    final s = ctx.strings;
+    final d = _daysAgo;
+    if (d == 0) return s.t('home.day.today');
+    if (d == 1) return s.t('home.day.yesterday');
+    if (d <= 7) return s.t('home.day.daysAgo', {'n': '$d'});
+    final date = _todayStart.subtract(Duration(days: d));
+    return '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
   bool get _canGoBack => true; // calendar history is effectively unbounded
   bool get _canGoForward => _daysAgo > 0;
 
@@ -158,7 +170,7 @@ class TokensHomeWidget extends HomeWidget {
 
     if (!_settled) {
       return Text(
-        'loading…',
+        ctx.strings.t('home.tokens.loading'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -166,7 +178,7 @@ class TokensHomeWidget extends HomeWidget {
     final stats = _stats?[_dayKey];
     if (stats == null || stats.isEmpty) {
       return Text(
-        'no activity',
+        ctx.strings.t('home.tokens.noActivity'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -174,9 +186,9 @@ class TokensHomeWidget extends HomeWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _row(theme, 'tokens', _fmt(stats.tokens)),
-        _row(theme, 'turns', '${stats.turns}'),
-        _row(theme, 'sessions', '${stats.sessions}'),
+        _row(theme, ctx.strings.t('home.tokens.tokens'), _fmt(stats.tokens)),
+        _row(theme, ctx.strings.t('home.tokens.turns'), '${stats.turns}'),
+        _row(theme, ctx.strings.t('home.tokens.sessions'), '${stats.sessions}'),
       ],
     );
   }

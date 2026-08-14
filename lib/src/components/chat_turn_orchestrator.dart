@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -21,6 +22,7 @@ import '../tools/shell_base.dart';
 import '../tools/tool_def.dart';
 import '../utils/run_metrics.dart';
 import '../utils/skill_chip_substitution.dart';
+import '../utils/session_mention.dart';
 import '../utils/token_estimate.dart';
 import 'btw_turn_handler.dart';
 import 'session_controller.dart';
@@ -41,6 +43,7 @@ class ChatTurnOrchestrator {
   final ShowToastCallback _showToast;
   final void Function() _refresh;
   final FileReadTracker _tracker;
+  final Strings _strings;
 
   final GitStatusService _gitStatusService;
   final BtwTurnHandler _btwHandler;
@@ -52,6 +55,12 @@ class ChatTurnOrchestrator {
   /// the turn executor is parked on `await executeTool(...)` and can't
   /// reach its own cancel checks.
   final PendingAskCubit? _pendingAskCubit;
+
+  /// Provides the completed mention chips for the current input, so
+  /// [sendTurn] can rewrite `#<id>:<title>` chips to `ses://<id>`.
+  /// Null in tests / non-input paths (chips only exist when the user
+  /// picked a mention via the chat input's overlay).
+  final List<MentionChip> Function()? _mentionChipsProvider;
 
   final Map<int, bool> _btwCancelFlags = {};
   final Set<int> _interruptedSessions = {};
@@ -71,6 +80,8 @@ class ChatTurnOrchestrator {
     required this._gitStatusService,
     required this._tracker,
     this._pendingAskCubit,
+    this._mentionChipsProvider,
+    Strings strings = kEnglishStrings,
   }) : _store = store,
        _messageStore = store.messageStore,
        _chatService = chatService,
@@ -78,6 +89,7 @@ class ChatTurnOrchestrator {
        _sessionController = sessionController,
        _streamingController = streamingController,
        _showToast = showToast,
+       _strings = strings,
        _refresh = refresh,
        _btwHandler = BtwTurnHandler(
          sessionController: sessionController,
@@ -173,18 +185,25 @@ class ChatTurnOrchestrator {
     String? llmText;
     if (text != null && text.isNotEmpty) {
       final session = _sessionController.currentSession;
+      // Rewrite session-mention chips FIRST, on the raw text, so the
+      // recorded chip offsets still line up. Skill expansion below may
+      // strip leading `$` chars (shifting offsets) but never touches
+      // the `#`/`ses://` tokens, so doing the chip rewrite before it
+      // keeps multi-mention messages correct.
+      final chips = _mentionChipsProvider?.call() ?? const <MentionChip>[];
+      final mentionRewritten = rewriteSessionMentionsFromChips(text, chips);
       // Chat mode is workspace-free: don't discover or expand skills
       // (there's no project to attach them to, and the minimal prompt
       // never advertises a skill vocabulary). A bare chip-less pass
       // keeps the typed text as the LLM message.
       final expansion = session.isChat
           ? expandSkillChips(
-              input: text,
+              input: mentionRewritten,
               available: const [],
               alreadyLoaded: rt.loadedSkillNames,
             )
           : expandSkillChips(
-              input: text,
+              input: mentionRewritten,
               available: discoverSkills(cwd: session.projectPath),
               alreadyLoaded: rt.loadedSkillNames,
             );
@@ -255,7 +274,7 @@ class ChatTurnOrchestrator {
               rt.turnsSinceLastCompact = 0;
             } catch (e) {
               rt.turnsSinceLastCompact = 1;
-              _showToast('Compaction failed: $e', mode: ToastMode.error);
+              _showToast(_strings.t('chat.compact.failed', {'error': '$e'}), mode: ToastMode.error);
               _refresh();
               return;
             }
@@ -740,7 +759,7 @@ class ChatTurnOrchestrator {
       await _sessionController.loadMessages(sessionId);
       _refresh();
     } catch (e) {
-      _showToast('Compaction failed: $e', mode: ToastMode.error);
+      _showToast(_strings.t('chat.compact.failed', {'error': '$e'}), mode: ToastMode.error);
     }
   }
 

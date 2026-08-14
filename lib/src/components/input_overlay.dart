@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 
 import '../models/slash_command.dart';
+import '../models/session.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
@@ -13,6 +14,7 @@ import '../theme/theme_controller.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/file_searcher.dart';
 import '../utils/skill_chip_parser.dart';
+import '../utils/session_mention.dart';
 import '../commands/registry.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
@@ -40,6 +42,10 @@ class InputOverlay {
   Timer? _atMentionDebouncer;
   int _atMentionSearchSeq = 0;
 
+  // #-mention (session) state
+  Timer? _sessionMentionDebouncer;
+  int _sessionMentionSearchSeq = 0;
+
   InputOverlay({
     required this.overlayController,
     required this.sessionController,
@@ -56,6 +62,7 @@ class InputOverlay {
 
   void dispose() {
     _atMentionDebouncer?.cancel();
+    _sessionMentionDebouncer?.cancel();
     _fileSearcher.dispose();
   }
 
@@ -63,6 +70,7 @@ class InputOverlay {
   /// the current text and cursor position.
   void onTextChanged() {
     final text = textController.text;
+    overlayController.pruneMentionChips(text);
 
     // First, check for a `$` skill chip. The chip is the only
     // trigger that can be active at the same time as an at-mention
@@ -80,8 +88,18 @@ class InputOverlay {
 
     // Then check for an @-mention trigger.
     final mention = _findActiveMention();
-    if (mention != null) {
+    if (mention != null &&
+        !overlayController.isMentionClosed(mention.atOffset)) {
       _showAtMention(mention);
+      _maybeRefresh();
+      return;
+    }
+
+    // Then check for a #-mention (session) trigger.
+    final sessionMention = _findActiveSessionMention();
+    if (sessionMention != null &&
+        !overlayController.isMentionClosed(sessionMention.hashOffset)) {
+      _showSessionMention(sessionMention);
       _maybeRefresh();
       return;
     }
@@ -402,6 +420,69 @@ class InputOverlay {
 
     overlayController.filteredFiles = results;
     overlayController.isSearching = false;
+    refresh();
+  }
+
+  SessionMentionPosition? _findActiveSessionMention() {
+    return findActiveSessionMention(
+      textController.text,
+      textController.selection.extentOffset,
+    );
+  }
+
+  void _showSessionMention(SessionMentionPosition mention) {
+    final stayingOnSameHash =
+        overlayController.overlayMode == OverlayMode.sessionMention &&
+        overlayController.sessionMentionHashOffset == mention.hashOffset;
+    if (!stayingOnSameHash) {
+      overlayController.selectedSessionMentionIndex = 0;
+      overlayController.sessionMentionScrollOffset = 0;
+    }
+
+    overlayController.overlayMode = OverlayMode.sessionMention;
+    overlayController.sessionMentionHashOffset = mention.hashOffset;
+    overlayController.sessionMentionQuery = mention.query;
+
+    // Seed synchronously from the in-memory sessions/chats so the
+    // popover paints instantly; archived candidates arrive via the
+    // debounced async pass below.
+    final inMemory = <Session>[
+      ...sessionController.sessions,
+      ...sessionController.chats,
+    ];
+    overlayController.filteredSessionMentions = rankSessionMentions(
+      inMemory,
+      mention.query,
+    );
+
+    _sessionMentionDebouncer?.cancel();
+    final seq = ++_sessionMentionSearchSeq;
+    _sessionMentionDebouncer = Timer(const Duration(milliseconds: 40), () {
+      _runSessionMentionSearch(mention, seq);
+    });
+  }
+
+  Future<void> _runSessionMentionSearch(
+    SessionMentionPosition mention,
+    int seq,
+  ) async {
+    if (seq != _sessionMentionSearchSeq) return;
+    if (overlayController.overlayMode != OverlayMode.sessionMention) return;
+    if (overlayController.sessionMentionQuery != mention.query) return;
+
+    List<Session> candidates = const [];
+    try {
+      candidates = await sessionController.loadSessionMentionCandidates();
+    } catch (_) {}
+
+    if (seq != _sessionMentionSearchSeq) return;
+    if (overlayController.overlayMode != OverlayMode.sessionMention) return;
+    if (overlayController.sessionMentionQuery != mention.query) return;
+
+    overlayController.filteredSessionMentions = rankSessionMentions(
+      candidates,
+      mention.query,
+    );
     refresh();
   }
 

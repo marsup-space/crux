@@ -8,18 +8,18 @@ Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
     if (id != null) {
       final session = await ctx.store.getById(id);
       if (session == null) {
-        ctx.showToast('Session #$id not found', mode: ToastMode.error);
+        ctx.showToast(ctx.strings.t('toast.sessionNotFound', {'id': '$id'}), mode: ToastMode.error);
         return;
       }
       if (session.archivedAt == null) {
-        ctx.showToast('Session #$id is not archived');
+        ctx.showToast(ctx.strings.t('toast.notArchived', {'id': '$id'}));
         return;
       }
       await ctx.store.unarchiveSession(id);
       await ctx.initSessions();
-      ctx.showToast('Unarchived "${session.title}"', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.unarchived', {'title': session.title}), mode: ToastMode.status);
     } else {
-      ctx.showToast('Usage: /unarchive #<id>');
+      ctx.showToast(ctx.strings.t('toast.unarchiveUsage'));
     }
   } else {
     final archived = await ctx.store.list(
@@ -29,10 +29,10 @@ Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
     );
     final onlyArchived = archived.where((s) => s.archivedAt != null).toList();
     if (onlyArchived.isEmpty) {
-      ctx.showToast('No archived sessions');
+      ctx.showToast(ctx.strings.t('toast.noArchived'));
       return;
     }
-    final lines = <String>['Archived sessions:'];
+    final lines = <String>[ctx.strings.t('toast.archivedList')];
     for (final s in onlyArchived) {
       lines.add('  #${s.id} ${s.title}');
     }

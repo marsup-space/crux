@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../services/llm_provider.dart' show typeDisplayName;
 import '../../../services/providers/coding_plan_provider.dart';
 import '../../../services/providers/credit_balance_provider.dart';
 import '../../../theme/crux_theme.dart';
+import '../../../utils/text_width.dart';
 import '../../polling_coordinator.dart';
 import '../home_widgets.dart';
 
@@ -42,6 +44,9 @@ class CodingPlanHomeWidget extends HomeWidget {
   String get title => 'Coding plan';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.codingPlan');
+
+  @override
   Set<int> get supportedSpans => const {1};
 
   @override
@@ -74,7 +79,7 @@ class CodingPlanHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    return _CodingPlanHomeView(entries: _entries(ctx));
+    return _CodingPlanHomeView(entries: _entries(ctx), strings: ctx.strings);
   }
 }
 
@@ -86,8 +91,9 @@ class CodingPlanHomeWidget extends HomeWidget {
 /// inactive assert.
 class _CodingPlanHomeView extends StatefulComponent {
   final List<ConnectedProviderUsage> entries;
+  final Strings strings;
 
-  const _CodingPlanHomeView({required this.entries});
+  const _CodingPlanHomeView({required this.entries, required this.strings});
 
   @override
   State<_CodingPlanHomeView> createState() => _CodingPlanHomeViewState();
@@ -168,7 +174,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
 
     if (entries.isEmpty) {
       return Text(
-        'no usage data',
+        component.strings.t('home.cp.empty'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -177,7 +183,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     // columns line up vertically.
     var maxNameWidth = 0;
     for (final entry in entries) {
-      final w = typeDisplayName(entry.name).length;
+      final w = stringWidth(typeDisplayName(entry.name));
       if (w > maxNameWidth) maxNameWidth = w;
     }
 
@@ -236,14 +242,14 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     } else {
       children.addAll(_window(
         theme,
-        '5h',
+        component.strings.t('home.cp.window5h'),
         usage.intervalRemainingPct,
         usage.formatIntervalRemains(),
         hovered: hovered,
       ));
       children.addAll(_window(
         theme,
-        '7d',
+        component.strings.t('home.cp.window7d'),
         usage.weeklyRemainingPct,
         usage.formatWeeklyRemains(),
         hovered: hovered,
@@ -266,7 +272,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     } else {
       final color = balance.isAvailable ? theme.cyan : theme.warning;
       children.add(
-        Text('  credit ', style: TextStyle(color: theme.onSurfaceDim)),
+        Text('  ${component.strings.t('home.cp.credit')} ', style: TextStyle(color: theme.onSurfaceDim)),
       );
       children.add(
         Text(
@@ -285,7 +291,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
   /// padded to [width] so the metric column starts at a fixed position.
   Component _nameText(CruxThemeData theme, String name, int width) {
     return Text(
-      typeDisplayName(name).padRight(width),
+      padToWidth(typeDisplayName(name), width),
       style: TextStyle(
         color: theme.accent,
         fontWeight: FontWeight.bold,
@@ -319,7 +325,10 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
   }
 
   Component _waiting(CruxThemeData theme) {
-    return Text('  waiting…', style: TextStyle(color: theme.onSurfaceDim));
+    return Text(
+      '  ${component.strings.t('home.cp.waiting')}',
+      style: TextStyle(color: theme.onSurfaceDim),
+    );
   }
 
   /// Simple remaining-percentage colour: affluent cyan above half,

@@ -12,7 +12,9 @@ import '../storage/shell_monitor_log_store.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
+import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
+import '../i18n/strings.dart';
 import 'command_debug.dart';
 import 'cmd_model.dart';
 import 'cmd_auxiliary.dart';
@@ -74,6 +76,11 @@ class CommandContext {
   /// The UI-language controller. Null in tests and legacy harnesses, in
   /// which case `/language` reports "unavailable" instead of failing.
   final LocaleController? localeController;
+
+  /// A string lookup bound to the active UI language, for localizing
+  /// command feedback (toasts) and descriptions. Falls back to English
+  /// when no [localeController] is wired.
+  Strings get strings => Strings(AppLocale.fromCode(localeController?.activeCode));
   final Future<void> Function({String? text}) sendTurn;
   final Future<void> Function()? compactSession;
   final Future<Message?> Function() findLastUserMessage;
@@ -232,11 +239,14 @@ class CommandExecutor {
       default:
         if (command != null) {
           ctx.showToast(
-            '$commandName — not yet implemented',
+            ctx.strings.t('toast.notImplemented', {'cmd': commandName}),
             mode: ToastMode.error,
           );
         } else {
-          ctx.showToast('Unknown command: $commandName', mode: ToastMode.error);
+          ctx.showToast(
+            ctx.strings.t('toast.unknownCommand', {'cmd': commandName}),
+            mode: ToastMode.error,
+          );
         }
     }
   }

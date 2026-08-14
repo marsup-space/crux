@@ -3,18 +3,18 @@ import 'command_executor.dart';
 
 Future<void> executeRetry(CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
-    ctx.showToast('No active session', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.noSession'), mode: ToastMode.error);
     return;
   }
   final sessionId = ctx.currentSessionId!;
   final rt = ctx.runtime(sessionId);
   if (rt.isResponding) {
-    ctx.showToast('Cannot retry while AI is responding');
+    ctx.showToast(ctx.strings.t('toast.retryResponding'));
     return;
   }
   final lastUser = await ctx.findLastUserMessage();
   if (lastUser == null) {
-    ctx.showToast('Nothing to retry — no user message yet');
+    ctx.showToast(ctx.strings.t('toast.nothingRetry'));
     return;
   }
   await ctx.deleteMessagesFrom(lastUser.id);

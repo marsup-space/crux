@@ -43,30 +43,30 @@ Future<void> executeThink(List<String> parts, CommandContext ctx) async {
       rt.thinkingMode = 'disabled';
       rt.reasoningEffort = null;
       ctx.persistThinkingLevel(rt);
-      ctx.showToast('Thinking mode: off', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.thinkOff'), mode: ToastMode.status);
     case 'low':
       rt.thinkingMode = 'enabled';
       rt.reasoningEffort = 'low';
       ctx.persistThinkingLevel(rt);
-      ctx.showToast('Thinking mode: low', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.thinkLow'), mode: ToastMode.status);
     case 'normal':
       rt.thinkingMode = 'enabled';
       rt.reasoningEffort = 'normal';
       ctx.persistThinkingLevel(rt);
       ctx.showToast(
-        'Thinking mode: ${displayEffort('normal')}',
+        ctx.strings.t('toast.thinkNormal', {'label': displayEffort('normal')}),
         mode: ToastMode.status,
       );
     case 'high':
       rt.thinkingMode = 'enabled';
       rt.reasoningEffort = 'high';
       ctx.persistThinkingLevel(rt);
-      ctx.showToast('Thinking mode: high', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.thinkHigh'), mode: ToastMode.status);
     case 'max':
       rt.thinkingMode = 'enabled';
       rt.reasoningEffort = 'max';
       ctx.persistThinkingLevel(rt);
-      ctx.showToast('Thinking mode: max', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.thinkMax'), mode: ToastMode.status);
     default:
       final current = rt.thinkingMode == 'disabled'
           ? 'off'
@@ -75,6 +75,9 @@ Future<void> executeThink(List<String> parts, CommandContext ctx) async {
       final levels = levelLabels.isNotEmpty
           ? '<${levelLabels.join('|')}>'
           : '<off|low|normal|high|max>';
-      ctx.showToast('Usage: /think $levels (current: $current)');
+      ctx.showToast(ctx.strings.t('toast.thinkUsage', {
+        'levels': levels,
+        'current': current,
+      }));
   }
 }

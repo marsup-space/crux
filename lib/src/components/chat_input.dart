@@ -11,7 +11,9 @@ import '../theme/theme_controller.dart';
 import '../utils/cjk_word_boundary.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/skill_chip_parser.dart';
+import '../utils/session_mention.dart';
 import '../commands/registry.dart';
+import '../i18n/strings.dart';
 import 'chat_turn_orchestrator.dart';
 import 'input_keys.dart';
 import 'input_overlay.dart';
@@ -53,6 +55,7 @@ class ChatInput extends StatefulComponent {
   final VoidCallback? onOpenHome;
   final String projectPath;
   final RecentProjectsStore? recentProjectsStore;
+  final Strings strings;
 
   const ChatInput({
     super.key,
@@ -77,6 +80,7 @@ class ChatInput extends StatefulComponent {
     this.onOpenHome,
     this.projectPath = '.',
     this.recentProjectsStore,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -424,13 +428,15 @@ class ChatInputState extends State<ChatInput> {
   }
 
   /// Builds styled segments so that `$<skill-name>`, `[ image N ]`,
-  /// and `@<path>` tokens in the input render with a chip background.
+  /// `@<path>`, and `#<session>` tokens in the input render with a
+  /// chip background.
   ///
   /// Skill chips: any `$` followed by valid skill-name chars is
   /// treated as a chip (the `$` stays in the text for submit-time
   /// parsing but is styled invisible). At-mentions use the same
-  /// treatment — `@` is kept but invisible. Image markers use the
-  /// same chip style. Non-chip text uses [baseStyle].
+  /// treatment — `@` is kept but invisible. Session mentions do the
+  /// same with `#`. Image markers use the same chip style. Non-chip
+  /// text uses [baseStyle].
   List<StyledTextSegment>? _buildChipSegments(
     String text,
     CruxThemeData theme,
@@ -447,9 +453,45 @@ class ChatInputState extends State<ChatInput> {
       backgroundColor: theme.chipBackground,
     );
 
+    // Completed mentions — rendered from their recorded spans so a
+    // multi-word title/path stays one chip while prose typed after
+    // the mention is never swallowed into it.
+    final chips = component.overlayController.mentionChips;
+    final sortedChips = List<MentionChip>.from(chips)
+      ..sort((a, b) => a.start.compareTo(b.start));
+
+    MentionChip? chipAt(int pos) {
+      for (final c in sortedChips) {
+        if (c.start == pos) return c;
+        if (c.start > pos) break;
+      }
+      return null;
+    }
+
     final segments = <StyledTextSegment>[];
     var i = 0;
     while (i < text.length) {
+      final completedChip = chipAt(i);
+      if (completedChip != null) {
+        final end = completedChip.start + completedChip.content.length;
+        if (completedChip.start >= 0 &&
+            end <= text.length &&
+            text.substring(completedChip.start, end) ==
+                completedChip.content) {
+          final content = completedChip.content;
+          if (content.isNotEmpty) {
+            segments.add(StyledTextSegment(content[0], invisibleTrigger));
+            if (content.length > 1) {
+              segments.add(
+                StyledTextSegment(content.substring(1), chipStyle),
+              );
+            }
+          }
+          i = end;
+          continue;
+        }
+      }
+
       final ch = text[i];
 
       // Image marker: `[ image N ]`
@@ -476,11 +518,14 @@ class ChatInputState extends State<ChatInput> {
         continue;
       }
 
-      // At-mention: `@path` (not preceded by identifier char).
+      // At-mention: `@path` (not preceded by identifier char). The
+      // char directly after the `@` must be a non-space path char —
+      // `@ ` is a literal at-sign, not a file mention.
       if (ch == '@' &&
           (i == 0 || !_isIdentifierChar(text[i - 1])) &&
           i + 1 < text.length &&
-          _isPathChar(text[i + 1])) {
+          _isPathChar(text[i + 1]) &&
+          text[i + 1] != ' ') {
         var j = i + 1;
         while (j < text.length && _isPathChar(text[j])) {
           j++;
@@ -491,9 +536,27 @@ class ChatInputState extends State<ChatInput> {
         continue;
       }
 
+      // Session mention: `#<query>` (not preceded by identifier char).
+      // The char directly after the `#` must not be a space — `# ` is
+      // a literal hash, not a mention.
+      if (ch == '#' &&
+          (i == 0 || !_isIdentifierChar(text[i - 1])) &&
+          i + 1 < text.length &&
+          !isSessionMentionSpace(text[i + 1])) {
+        var j = i + 1;
+        while (j < text.length && !isSessionMentionTerminator(text[j])) {
+          j++;
+        }
+        segments.add(StyledTextSegment('#', invisibleTrigger));
+        segments.add(StyledTextSegment(text.substring(i + 1, j), chipStyle));
+        i = j;
+        continue;
+      }
+
       // Regular text — collect until the next chip/marker.
       var j = i + 1;
       while (j < text.length) {
+        if (chipAt(j) != null) break;
         if (text[j] == r'$' &&
             (j == 0 || !isSkillNameChar(text[j - 1])) &&
             j + 1 < text.length &&
@@ -503,7 +566,14 @@ class ChatInputState extends State<ChatInput> {
         if (text[j] == '@' &&
             (j == 0 || !_isIdentifierChar(text[j - 1])) &&
             j + 1 < text.length &&
-            _isPathChar(text[j + 1])) {
+            _isPathChar(text[j + 1]) &&
+            text[j + 1] != ' ') {
+          break;
+        }
+        if (text[j] == '#' &&
+            (j == 0 || !_isIdentifierChar(text[j - 1])) &&
+            j + 1 < text.length &&
+            !isSessionMentionSpace(text[j + 1])) {
           break;
         }
         if (text[j] == '[' && _imageMarkerPattern.hasMatch(text.substring(j))) {
@@ -574,13 +644,15 @@ class ChatInputState extends State<ChatInput> {
 
     final placeholder = isStreaming
         ? _keyHandler.ctrlCQuitHint
-              ? 'Press Ctrl+C again to quit...'
-              : 'Enter message to queue — click the model button to interrupt, Ctrl+C×2 to quit'
+              ? component.strings.t('chat.input.ctrlCQuit')
+              : component.strings.t('chat.input.queueHint')
         : wasInterrupted
-        ? 'Response was interrupted. Type a new message...'
+        ? component.strings.t('chat.input.interrupted')
         : hasImages
-        ? 'Type message to send with ${pendingImages.length} image(s)...'
-        : 'Type a message...';
+        ? component.strings.t('chat.input.placeholderImages', {
+            'n': '${pendingImages.length}',
+          })
+        : component.strings.t('chat.input.placeholder');
 
     return Container(
       padding: EdgeInsets.all(kInputPadding),

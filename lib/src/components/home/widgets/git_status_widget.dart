@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../services/git_status_service.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
@@ -25,6 +26,9 @@ class GitStatusHomeWidget extends HomeWidget {
   String get title => 'Git';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.git');
+
+  @override
   Set<int> get supportedSpans => const {1};
 
   @override
@@ -42,15 +46,16 @@ class GitStatusHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    return _GitStatusHomeView(service: service);
+    return _GitStatusHomeView(service: service, strings: ctx.strings);
   }
 }
 
 /// Stateful view so the widget rebuilds when the service notifies.
 class _GitStatusHomeView extends StatefulComponent {
   final GitStatusService service;
+  final Strings strings;
 
-  const _GitStatusHomeView({required this.service});
+  const _GitStatusHomeView({required this.service, required this.strings});
 
   @override
   State<_GitStatusHomeView> createState() => _GitStatusHomeViewState();
@@ -107,7 +112,7 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
 
     if (!status.isRepo) {
       return Text(
-        'not a git repo',
+        component.strings.t('home.notGitRepo'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -147,7 +152,7 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
       rows.add(counts);
     } else if (status.addedLines == 0 && status.deletedLines == 0) {
       // Clean tree: a single muted ✓ so the box isn't blank.
-      rows.add(Text('✓ clean', style: TextStyle(color: theme.onSurfaceDim)));
+      rows.add(Text('✓ ${component.strings.t('home.git.clean')}', style: TextStyle(color: theme.onSurfaceDim)));
     }
 
     return Column(
@@ -160,7 +165,7 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
     final children = <Component>[
       Text('⎇ ', style: TextStyle(color: theme.accent)),
       Text(
-        status.branch.isEmpty ? '(no branch)' : status.branch,
+        status.branch.isEmpty ? component.strings.t('home.noBranch') : status.branch,
         style: TextStyle(
           color: theme.onSurfaceVariant,
           fontWeight: FontWeight.bold,
@@ -195,10 +200,10 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
       );
     }
 
-    bucket('●', status.stagedFiles, 'staged', theme.accent);
-    bucket('~', status.modifiedFiles, 'modified', theme.warningColor);
-    bucket('?', status.untrackedFiles, 'untracked', theme.onSurfaceDim);
-    bucket('!', status.conflictedFiles, 'conflict', theme.errorColor);
+    bucket('●', status.stagedFiles, component.strings.t('home.git.staged'), theme.accent);
+    bucket('~', status.modifiedFiles, component.strings.t('home.git.modified'), theme.warningColor);
+    bucket('?', status.untrackedFiles, component.strings.t('home.git.untracked'), theme.onSurfaceDim);
+    bucket('!', status.conflictedFiles, component.strings.t('home.git.conflict'), theme.errorColor);
 
     if (parts.isEmpty) return null;
     return Row(mainAxisSize: MainAxisSize.min, children: parts);

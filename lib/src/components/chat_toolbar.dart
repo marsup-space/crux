@@ -13,6 +13,7 @@ import '../services/provider_service.dart';
 import '../services/providers/coding_plan_provider.dart';
 import '../services/providers/credit_balance_provider.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/sampling.dart';
 import 'coding_plan_usage_display.dart';
@@ -119,6 +120,7 @@ class ChatToolbar extends StatefulComponent {
   /// git status / project widgets; on narrow terminals it stays
   /// here in the toolbar.
   final bool auxButtonInSidePanel;
+  final Strings strings;
 
   const ChatToolbar({
     super.key,
@@ -140,6 +142,7 @@ class ChatToolbar extends StatefulComponent {
     this.onTemperaturePressed,
     this.debugMode = false,
     this.auxButtonInSidePanel = false,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -246,6 +249,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
       onTap: isSkip ? null : component.onCompactPressed,
       disabled: isSessionRunning,
       debugMode: component.debugMode,
+      strings: component.strings,
     );
   }
 
@@ -425,7 +429,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
             label: modelLabel,
             // On hover while streaming, swap the model name for the
             // "Interrupt" affordance so the user sees what a click does.
-            hoverLabel: 'Interrupt',
+            hoverLabel: component.strings.t('chat.toolbar.interrupt'),
             isAnimating: true,
             // Clickable during streaming — it interrupts the response.
             onPressed: component.onModelPressed,
@@ -481,7 +485,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // of the two so a short model label doesn't let the hover label
         // overflow the reserved width and shift the rest of the row.
         final modelLabelW = UnicodeWidth.stringWidth(modelLabel);
-        final interruptW = UnicodeWidth.stringWidth('Interrupt');
+        final interruptW = UnicodeWidth.stringWidth(component.strings.t('chat.toolbar.interrupt'));
         final modelW =
             (isSessionRunning && interruptW > modelLabelW
                     ? interruptW
@@ -603,13 +607,17 @@ class _ChatToolbarState extends State<ChatToolbar> {
               // 500 ms delay is what we want for toolbar buttons.
               Hinted(
                 hint: isSessionRunning
-                    ? 'Interrupt\n(stop the response · $modelLabel)'
-                    : 'Current model: $modelLabel\n(click to change)',
+                    ? component.strings.t('chat.toolbar.interruptHint', {
+                        'model': modelLabel,
+                      })
+                    : component.strings.t('chat.toolbar.currentModel', {
+                        'model': modelLabel,
+                      }),
                 child: modelButton,
               ),
               if (_modelSupportsImages(_sessionController.currentSession.model))
                 Hinted(
-                  hint: 'This model accepts image inputs',
+                  hint: component.strings.t('chat.toolbar.acceptsImages'),
                   child: Text(
                     _kIconImage,
                     style: TextStyle(
@@ -625,10 +633,9 @@ class _ChatToolbarState extends State<ChatToolbar> {
               ?temperatureChip,
               if (showThinking && nonNullRt != null)
                 Hinted(
-                  hint:
-                      'Thinking mode: '
-                      '${_displayEffort(nonNullRt.reasoningEffort ?? 'normal')}\n'
-                      '(click to cycle through effort levels)',
+                  hint: component.strings.t('chat.toolbar.thinkingHint', {
+                    'label': _displayEffort(nonNullRt.reasoningEffort ?? 'normal'),
+                  }),
                   child: Button(
                     label: thinkingLabel,
                     onPressed: () => component.onCycleThinking(nonNullRt),
@@ -668,9 +675,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 // landed earlier. Hover state (cache-hit %)
                 // is also handled locally in the widget.
                 Hinted(
-                  hint:
-                      'Generation throughput (tokens/sec) and '
-                      'time to first token',
+                  hint: component.strings.t('chat.toolbar.throughput'),
                   child: MetricsDisplay(
                     sessionController: _sessionController,
                     streamingController: _streamingController,
@@ -680,11 +685,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
               if (showCodingPlanUsage && component.codingPlanProvider != null)
                 // Coding-plan (Token Plan) usage readout.
                 Hinted(
-                  hint:
-                      'Coding-plan usage\n'
-                      '5h: short-window remaining\n'
-                      '1w: weekly remaining\n'
-                      'Click to refresh',
+                  hint: component.strings.t('chat.toolbar.codingPlanHint'),
                   child: CodingPlanUsageDisplay(
                     stream: component.codingPlanProvider!.codingPlanUsageStream,
                     initialUsage:
@@ -697,10 +698,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
                 // Credit balance readout. Hover for granted /
                 // topped-up breakdown.
                 Hinted(
-                  hint:
-                      'Credit balance\n'
-                      'Hover for granted / topped-up breakdown\n'
-                      'Click to refresh',
+                  hint: component.strings.t('chat.toolbar.creditHint'),
                   child: CreditBalanceDisplay(
                     stream:
                         component.creditBalanceProvider!.creditBalanceStream,
@@ -713,12 +711,12 @@ class _ChatToolbarState extends State<ChatToolbar> {
               if (showAux)
                 Hinted(
                   hint: isSessionRunning
-                      ? 'Auxiliary model: '
-                            '${_sessionController.auxiliaryModelShortName}\n'
-                            '(cannot be changed while the agent is responding)'
-                      : 'Auxiliary model: '
-                            '${_sessionController.auxiliaryModelShortName}\n'
-                            '(used for /tldr summaries and title generation)',
+                      ? component.strings.t('chat.toolbar.auxRunning', {
+                          'model': _sessionController.auxiliaryModelShortName,
+                        })
+                      : component.strings.t('chat.toolbar.auxIdle', {
+                          'model': _sessionController.auxiliaryModelShortName,
+                        }),
                   child: AuxiliaryModelButton(
                     sessionController: _sessionController,
                     onPressed: component.onAuxiliaryPressed,

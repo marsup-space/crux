@@ -131,8 +131,12 @@ class CruxDatabase extends _$CruxDatabase {
   ///         the per-project "my notes" markdown the sidebar widget
   ///         edits and parses todos from. No FK to sessions — a note
   ///         belongs to the project and survives session deletion.
+  ///   v31 – added `sessions.pinnedAt` (nullable INTEGER). Non-null
+  ///         marks a session (workspace or chat) as pinned: it renders
+  ///         at the top of the sidebar's "Pinned" section and is
+  ///         exempt from the 3-day auto-archive sweep.
   @override
-  int get schemaVersion => 30;
+  int get schemaVersion => 31;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -468,6 +472,22 @@ CREATE TABLE IF NOT EXISTS project_notes (
   PRIMARY KEY (project_path)
 )
 ''');
+      }
+      if (from < 31) {
+        // Add `sessions.pinnedAt` (see the v31 schema-history note).
+        // Idempotent guard mirrors the v26/v29 rationale: a dev build
+        // that created the column via onCreate without bumping
+        // user_version would otherwise abort startup with "duplicate
+        // column name".
+        final hasPinnedAt = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('sessions') "
+              "WHERE name = 'pinned_at' LIMIT 1",
+            )
+            .get();
+        if (hasPinnedAt.isEmpty) {
+          await m.addColumn(sessions, sessions.pinnedAt);
+        }
       }
     },
   );

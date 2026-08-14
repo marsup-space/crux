@@ -10,7 +10,7 @@ import 'command_executor.dart';
 Future<void> executeChat(CommandContext ctx) async {
   final createChat = ctx.createChatSession;
   if (createChat == null) {
-    ctx.showToast('/chat is not available here');
+    ctx.showToast(ctx.strings.t('toast.chatUnavailable'));
     return;
   }
   // If the current session is already a brand-new, untouched chat,
@@ -21,7 +21,7 @@ Future<void> executeChat(CommandContext ctx) async {
       ctx.currentMessages.isEmpty &&
       ctx.currentSession.title == 'New Chat';
   if (isCurrentEmptyChat) {
-    ctx.showToast('Already on a new chat');
+    ctx.showToast(ctx.strings.t('toast.alreadyNewChat'));
     return;
   }
   await createChat();

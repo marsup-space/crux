@@ -1,4 +1,5 @@
 import '../components/ui/toast.dart';
+import '../i18n/strings.dart';
 import '../services/web_service_provider.dart';
 import '../utils/terminal_symbols.dart';
 import 'command_executor.dart';
@@ -8,10 +9,10 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   if (parts.length == 1) {
     final providers = registry.allProviders;
     if (providers.isEmpty) {
-      ctx.showToast('No web providers registered.', mode: ToastMode.error);
+      ctx.showToast(ctx.strings.t('toast.webNoProviders'), mode: ToastMode.error);
       return;
     }
-    ctx.showToast(providers.map(_webProviderStatusLine).join('\n'));
+    ctx.showToast(providers.map((p) => _webProviderStatusLine(p, ctx.strings)).join('\n'));
     return;
   }
   final providerId = parts[1].trim();
@@ -19,15 +20,18 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   if (provider == null) {
     final known = registry.allProviders.map((p) => p.id).join(', ');
     ctx.showToast(
-      'Unknown web provider "$providerId".'
-      '${known.isEmpty ? '' : ' Known: $known.'}'
-      ' Usage: /web-provider <name> <key>|remove',
+      ctx.strings.t('toast.webUnknown', {
+        'id': providerId,
+        'known': known.isEmpty
+            ? ''
+            : ctx.strings.t('toast.webKnown', {'list': known}),
+      }),
       mode: ToastMode.error,
     );
     return;
   }
   if (parts.length == 2) {
-    ctx.showToast(_webProviderStatusLine(provider));
+    ctx.showToast(_webProviderStatusLine(provider, ctx.strings));
     return;
   }
   final action = parts[2].trim();
@@ -47,7 +51,7 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
     try {
       await registry.removeApiKey(providerId);
       ctx.showToast(
-        '${terminalSymbol('✓', '+')} Removed ${provider.displayName} API key.',
+        '${terminalSymbol('✓', '+')} ${ctx.strings.t('toast.webRemovedKey', {'name': provider.displayName})}',
         mode: ToastMode.status,
       );
     } on ArgumentError catch (e) {
@@ -57,7 +61,7 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   }
   if (valueArg.isEmpty) {
     ctx.showToast(
-      'Missing key value. Usage: /web-provider $providerId key <value>',
+      ctx.strings.t('toast.webMissingKey', {'id': providerId}),
       mode: ToastMode.error,
     );
     return;
@@ -65,7 +69,7 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   try {
     await registry.setApiKey(providerId, valueArg);
     ctx.showToast(
-      '${terminalSymbol('✓', '+')} Saved ${provider.displayName} API key.',
+      '${terminalSymbol('✓', '+')} ${ctx.strings.t('toast.webSavedKey', {'name': provider.displayName})}',
       mode: ToastMode.status,
     );
   } on ArgumentError catch (e) {
@@ -73,10 +77,10 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   }
 }
 
-String _webProviderStatusLine(WebServiceProvider p) {
+String _webProviderStatusLine(WebServiceProvider p, Strings s) {
   final caps = <String>[
     if (p.supportsSearch) 'search',
     if (p.supportsFetch) 'fetch',
   ].join('+');
-  return '${p.id}  [${p.displayName}]  capabilities=$caps  key=${p.isConfigured ? "set" : "missing"}';
+  return '${p.id}  [${p.displayName}]  capabilities=$caps  key=${p.isConfigured ? s.t('toast.keySet') : s.t('toast.keyMissing')}';
 }

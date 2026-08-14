@@ -1,4 +1,6 @@
 import '../components/ui/toast.dart';
+import '../i18n/app_locale.dart';
+import '../i18n/strings.dart';
 import 'command_executor.dart';
 import 'registry.dart';
 
@@ -19,7 +21,8 @@ const String localInfoRole = 'info';
 /// "three sources of truth" bug). When debug mode is enabled the
 /// `/d-*` set is included automatically via the registry's `all`
 /// getter.
-String buildHelpText() {
+String buildHelpText([Strings? strings]) {
+  final s = strings ?? const Strings(AppLocale.en);
   final buf = StringBuffer()
     ..writeln('**Crux Help · 帮助**')
     ..writeln()
@@ -35,7 +38,7 @@ String buildHelpText() {
     ..writeln();
   for (final cmd in CommandRegistry.instance.all) {
     final aliases = cmd.aliases.isEmpty ? '' : ' (${cmd.aliases.join(', ')})';
-    buf.writeln('- `${cmd.name}`$aliases — ${cmd.description}');
+    buf.writeln('- `${cmd.name}`$aliases — ${s.t(cmd.description)}');
   }
   buf
     ..writeln()
@@ -65,7 +68,7 @@ String buildHelpText() {
 /// session history and surfaces on the next load; a toast tells the
 /// user where it went.
 Future<void> executeHelp(CommandContext ctx) async {
-  final text = buildHelpText();
+  final text = buildHelpText(ctx.strings);
   final post = ctx.appendLocalMessage;
   if (post != null) {
     await post(text);
@@ -73,7 +76,7 @@ Future<void> executeHelp(CommandContext ctx) async {
   }
   final sessionId = ctx.currentSessionId;
   if (sessionId == null) {
-    ctx.showToast('No active session', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.noSession'), mode: ToastMode.error);
     return;
   }
   await ctx.store.messageStore.addMessage(
@@ -82,5 +85,5 @@ Future<void> executeHelp(CommandContext ctx) async {
     content: text,
   );
   ctx.refresh();
-  ctx.showToast('Help written to the chat history', mode: ToastMode.status);
+  ctx.showToast(ctx.strings.t('toast.helpWritten'), mode: ToastMode.status);
 }

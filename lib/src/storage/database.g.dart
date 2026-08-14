@@ -259,6 +259,17 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _pinnedAtMeta = const VerificationMeta(
+    'pinnedAt',
+  );
+  @override
+  late final GeneratedColumn<int> pinnedAt = GeneratedColumn<int>(
+    'pinned_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _systemPromptMeta = const VerificationMeta(
     'systemPrompt',
   );
@@ -295,6 +306,7 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     createdAt,
     updatedAt,
     archivedAt,
+    pinnedAt,
     systemPrompt,
   ];
   @override
@@ -466,6 +478,12 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         archivedAt.isAcceptableOrUnknown(data['archived_at']!, _archivedAtMeta),
       );
     }
+    if (data.containsKey('pinned_at')) {
+      context.handle(
+        _pinnedAtMeta,
+        pinnedAt.isAcceptableOrUnknown(data['pinned_at']!, _pinnedAtMeta),
+      );
+    }
     if (data.containsKey('system_prompt')) {
       context.handle(
         _systemPromptMeta,
@@ -578,6 +596,10 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.int,
         data['${effectivePrefix}archived_at'],
       ),
+      pinnedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pinned_at'],
+      ),
       systemPrompt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}system_prompt'],
@@ -642,6 +664,13 @@ class Session extends DataClass implements Insertable<Session> {
   final int updatedAt;
   final int? archivedAt;
 
+  /// When non-null, the session (workspace or chat) is pinned: it
+  /// renders at the top of the sidebar's "Pinned" section and is
+  /// exempt from the 3-day auto-archive sweep. Nullable so the
+  /// migration is a bare `ALTER TABLE ADD COLUMN` with no backfill;
+  /// existing rows read as `NULL` (unpinned).
+  final int? pinnedAt;
+
   /// The rendered system prompt — the joined content of all four
   /// layers, ready to be sent as a single `role: 'system'` message.
   /// Computed once at session start and re-attached verbatim on every
@@ -684,6 +713,7 @@ class Session extends DataClass implements Insertable<Session> {
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
+    this.pinnedAt,
     this.systemPrompt,
   });
   @override
@@ -730,6 +760,9 @@ class Session extends DataClass implements Insertable<Session> {
     if (!nullToAbsent || archivedAt != null) {
       map['archived_at'] = Variable<int>(archivedAt);
     }
+    if (!nullToAbsent || pinnedAt != null) {
+      map['pinned_at'] = Variable<int>(pinnedAt);
+    }
     if (!nullToAbsent || systemPrompt != null) {
       map['system_prompt'] = Variable<String>(systemPrompt);
     }
@@ -773,6 +806,9 @@ class Session extends DataClass implements Insertable<Session> {
       archivedAt: archivedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(archivedAt),
+      pinnedAt: pinnedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pinnedAt),
       systemPrompt: systemPrompt == null && nullToAbsent
           ? const Value.absent()
           : Value(systemPrompt),
@@ -814,6 +850,7 @@ class Session extends DataClass implements Insertable<Session> {
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
+      pinnedAt: serializer.fromJson<int?>(json['pinnedAt']),
       systemPrompt: serializer.fromJson<String?>(json['systemPrompt']),
     );
   }
@@ -846,6 +883,7 @@ class Session extends DataClass implements Insertable<Session> {
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
+      'pinnedAt': serializer.toJson<int?>(pinnedAt),
       'systemPrompt': serializer.toJson<String?>(systemPrompt),
     };
   }
@@ -874,6 +912,7 @@ class Session extends DataClass implements Insertable<Session> {
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
+    Value<int?> pinnedAt = const Value.absent(),
     Value<String?> systemPrompt = const Value.absent(),
   }) => Session(
     id: id ?? this.id,
@@ -907,6 +946,7 @@ class Session extends DataClass implements Insertable<Session> {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
+    pinnedAt: pinnedAt.present ? pinnedAt.value : this.pinnedAt,
     systemPrompt: systemPrompt.present ? systemPrompt.value : this.systemPrompt,
   );
   Session copyWithCompanion(SessionsCompanion data) {
@@ -952,6 +992,7 @@ class Session extends DataClass implements Insertable<Session> {
       archivedAt: data.archivedAt.present
           ? data.archivedAt.value
           : this.archivedAt,
+      pinnedAt: data.pinnedAt.present ? data.pinnedAt.value : this.pinnedAt,
       systemPrompt: data.systemPrompt.present
           ? data.systemPrompt.value
           : this.systemPrompt,
@@ -984,6 +1025,7 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
+          ..write('pinnedAt: $pinnedAt, ')
           ..write('systemPrompt: $systemPrompt')
           ..write(')'))
         .toString();
@@ -1014,6 +1056,7 @@ class Session extends DataClass implements Insertable<Session> {
     createdAt,
     updatedAt,
     archivedAt,
+    pinnedAt,
     systemPrompt,
   ]);
   @override
@@ -1043,6 +1086,7 @@ class Session extends DataClass implements Insertable<Session> {
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.archivedAt == this.archivedAt &&
+          other.pinnedAt == this.pinnedAt &&
           other.systemPrompt == this.systemPrompt);
 }
 
@@ -1070,6 +1114,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
+  final Value<int?> pinnedAt;
   final Value<String?> systemPrompt;
   const SessionsCompanion({
     this.id = const Value.absent(),
@@ -1095,6 +1140,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
+    this.pinnedAt = const Value.absent(),
     this.systemPrompt = const Value.absent(),
   });
   SessionsCompanion.insert({
@@ -1121,6 +1167,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
+    this.pinnedAt = const Value.absent(),
     this.systemPrompt = const Value.absent(),
   }) : status = Value(status),
        createdAt = Value(createdAt),
@@ -1149,6 +1196,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
+    Expression<int>? pinnedAt,
     Expression<String>? systemPrompt,
   }) {
     return RawValuesInsertable({
@@ -1178,6 +1226,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
+      if (pinnedAt != null) 'pinned_at': pinnedAt,
       if (systemPrompt != null) 'system_prompt': systemPrompt,
     });
   }
@@ -1206,6 +1255,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
+    Value<int?>? pinnedAt,
     Value<String?>? systemPrompt,
   }) {
     return SessionsCompanion(
@@ -1232,6 +1282,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
+      pinnedAt: pinnedAt ?? this.pinnedAt,
       systemPrompt: systemPrompt ?? this.systemPrompt,
     );
   }
@@ -1312,6 +1363,9 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (archivedAt.present) {
       map['archived_at'] = Variable<int>(archivedAt.value);
     }
+    if (pinnedAt.present) {
+      map['pinned_at'] = Variable<int>(pinnedAt.value);
+    }
     if (systemPrompt.present) {
       map['system_prompt'] = Variable<String>(systemPrompt.value);
     }
@@ -1344,6 +1398,7 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
+          ..write('pinnedAt: $pinnedAt, ')
           ..write('systemPrompt: $systemPrompt')
           ..write(')'))
         .toString();
@@ -4711,6 +4766,7 @@ typedef $$SessionsTableCreateCompanionBuilder =
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
+      Value<int?> pinnedAt,
       Value<String?> systemPrompt,
     });
 typedef $$SessionsTableUpdateCompanionBuilder =
@@ -4738,6 +4794,7 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
+      Value<int?> pinnedAt,
       Value<String?> systemPrompt,
     });
 
@@ -4969,6 +5026,11 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<int> get archivedAt => $composableBuilder(
     column: $table.archivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5227,6 +5289,11 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get systemPrompt => $composableBuilder(
     column: $table.systemPrompt,
     builder: (column) => ColumnOrderings(column),
@@ -5328,6 +5395,9 @@ class $$SessionsTableAnnotationComposer
     column: $table.archivedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get pinnedAt =>
+      $composableBuilder(column: $table.pinnedAt, builder: (column) => column);
 
   GeneratedColumn<String> get systemPrompt => $composableBuilder(
     column: $table.systemPrompt,
@@ -5517,6 +5587,7 @@ class $$SessionsTableTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
+                Value<int?> pinnedAt = const Value.absent(),
                 Value<String?> systemPrompt = const Value.absent(),
               }) => SessionsCompanion(
                 id: id,
@@ -5542,6 +5613,7 @@ class $$SessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
+                pinnedAt: pinnedAt,
                 systemPrompt: systemPrompt,
               ),
           createCompanionCallback:
@@ -5569,6 +5641,7 @@ class $$SessionsTableTableManager
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
+                Value<int?> pinnedAt = const Value.absent(),
                 Value<String?> systemPrompt = const Value.absent(),
               }) => SessionsCompanion.insert(
                 id: id,
@@ -5594,6 +5667,7 @@ class $$SessionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
+                pinnedAt: pinnedAt,
                 systemPrompt: systemPrompt,
               ),
           withReferenceMapper: (p0) => p0

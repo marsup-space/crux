@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../theme/crux_theme.dart';
+import '../../../utils/text_width.dart';
 import '../home_widgets.dart';
 
 /// One day's token total, keyed by local calendar day.
@@ -54,6 +56,9 @@ class ActivityHomeWidget extends HomeWidget {
   String get title => 'Activity';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.activity');
+
+  @override
   Set<int> get supportedSpans => const {1};
 
   /// 4 week rows + weekday header + legend.
@@ -79,15 +84,16 @@ class ActivityHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    return _ActivityView(loader: () => _load(ctx));
+    return _ActivityView(loader: () => _load(ctx), strings: ctx.strings);
   }
 }
 
 /// Stateful view so the async totals can land after first build.
 class _ActivityView extends StatefulComponent {
   final Future<DailyTokens> Function() loader;
+  final Strings strings;
 
-  const _ActivityView({required this.loader});
+  const _ActivityView({required this.loader, required this.strings});
 
   @override
   State<_ActivityView> createState() => _ActivityViewState();
@@ -121,11 +127,11 @@ class _ActivityViewState extends State<_ActivityView> {
     final theme = CruxTheme.of(context);
     if (!_settled) {
       return Text(
-        'counting tokens…',
+        component.strings.t('home.activity.counting'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
-    return _ActivityGrid(totals: _totals, theme: theme);
+    return _ActivityGrid(totals: _totals, theme: theme, strings: component.strings);
   }
 }
 
@@ -134,8 +140,13 @@ class _ActivityViewState extends State<_ActivityView> {
 class _ActivityGrid extends StatelessComponent {
   final DailyTokens totals;
   final CruxThemeData theme;
+  final Strings strings;
 
-  const _ActivityGrid({required this.totals, required this.theme});
+  const _ActivityGrid({
+    required this.totals,
+    required this.theme,
+    required this.strings,
+  });
 
   /// Local-midnight DateTime for today.
   DateTime get _today {
@@ -267,12 +278,12 @@ class _ActivityGrid extends StatelessComponent {
     final header = Row(
       children: [
         Text('     ', style: labelStyle), // week-number gutter
-        for (final d in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
-          Text(d.padRight(_cellWidth), style: labelStyle),
+        for (final d in strings.t('home.activity.weekdays').split(','))
+          Text(padToWidth(d, _cellWidth), style: labelStyle),
         // Right-aligned column header over the per-week totals.
         Expanded(
           child: Text(
-            'total',
+            strings.t('home.activity.total'),
             textAlign: TextAlign.right,
             style: labelStyle,
           ),
@@ -332,10 +343,10 @@ class _ActivityGrid extends StatelessComponent {
     // 1-col swatches keep it inside the span-1 width.
     final legend = Row(
       children: [
-        Text('less ', style: labelStyle),
+        Text(strings.t('home.activity.less'), style: labelStyle),
         for (var i = 0; i <= 4; i++)
           Text('█', style: TextStyle(color: _cellColor(i / 4))),
-        Text(' more  ', style: labelStyle),
+        Text(strings.t('home.activity.more'), style: labelStyle),
         Text('0→${_fmtTokens(ceiling)}', style: labelStyle),
       ],
     );

@@ -7,6 +7,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import '../services/chat_service.dart';
 import '../theme/crux_theme.dart';
+import '../i18n/strings.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
 import '../utils/ticker_registry.dart';
@@ -63,12 +64,14 @@ class ContextBar extends StatefulComponent {
   /// toolbar / context bar don't import the registry
   /// themselves.
   final bool debugMode;
+  final Strings strings;
 
   const ContextBar({
     super.key,
     required this.sessionController,
     required this.streamingController,
     required this.contextMaxTokens,
+    this.strings = kEnglishStrings,
     this.onTap,
     this.compactEstimate,
     this.disabled = false,
@@ -219,7 +222,7 @@ class ContextBarState extends State<ContextBar>
           debugMode: component.debugMode,
         );
       }
-      return 'Compact';
+      return component.strings.t('chat.context.compact');
     }
     return '${_fmtNum(displayTokens)} / ${_fmtCtx(maxTokens)}';
   }
@@ -358,13 +361,13 @@ class ContextBarState extends State<ContextBar>
         ? const <String>{}
         : component.sessionController.runtime(sessionId).loadedSkillNames;
     final skillsLine = names.isEmpty
-        ? 'Loaded skills : none'
-        : 'Loaded skills : ${(names.toList()..sort()).join(', ')}';
+        ? component.strings.t('chat.context.skillsNone')
+        : component.strings.t('chat.context.skills', {
+            'names': (names.toList()..sort()).join(', '),
+          });
     final usageBlock = component.disabled
-        ? 'Context window usage.\n'
-              'Compaction unavailable while the agent is responding.'
-        : 'Context window usage.\n'
-              'Click to compact the session history.';
+        ? component.strings.t('chat.context.compactUnavailable')
+        : component.strings.t('chat.context.compactAvailable');
     return '$usageBlock\n\n$skillsLine';
   }
 

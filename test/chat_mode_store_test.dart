@@ -134,4 +134,62 @@ void main() {
     final stillThere = await store.listChats();
     expect(stillThere.map((s) => s.id), contains(chat.id));
   });
+
+  test('pinSession persists pinnedAt; unpinSession clears it', () async {
+    final s = await createSession();
+    expect(s.isPinned, isFalse);
+
+    await store.pinSession(s.id);
+    final pinned = await store.getById(s.id);
+    expect(pinned!.isPinned, isTrue);
+    expect(pinned.pinnedAt, isNotNull);
+
+    await store.unpinSession(s.id);
+    final unpinned = await store.getById(s.id);
+    expect(unpinned!.isPinned, isFalse);
+    expect(unpinned.pinnedAt, isNull);
+  });
+
+  test('autoArchive skips pinned sessions and chats', () async {
+    final pinnedSession = await createSession();
+    final staleSession = await createSession();
+    final pinnedChat = await createChat();
+    final staleChat = await createChat();
+
+    await store.pinSession(pinnedSession.id);
+    await store.pinSession(pinnedChat.id);
+
+    final oldMs = DateTime.now()
+        .subtract(const Duration(days: 10))
+        .millisecondsSinceEpoch;
+    for (final id in [
+      pinnedSession.id,
+      staleSession.id,
+      pinnedChat.id,
+      staleChat.id,
+    ]) {
+      await db.customUpdate(
+        'UPDATE sessions SET updated_at = ? WHERE id = ?',
+        variables: [Variable.withInt(oldMs), Variable.withInt(id)],
+        updates: {db.sessions},
+      );
+    }
+
+    final sweptSessions = await store.autoArchive(
+      projectPath: '/proj',
+      olderThan: const Duration(days: 3),
+    );
+    final sweptChats = await store.autoArchiveChats(
+      olderThan: const Duration(days: 3),
+    );
+
+    expect(sweptSessions, 1); // only the unpinned stale session
+    expect(sweptChats, 1); // only the unpinned stale chat
+
+    final sessions = await store.list(projectPath: '/proj');
+    expect(sessions.map((s) => s.id), [pinnedSession.id]);
+
+    final chats = await store.listChats();
+    expect(chats.map((s) => s.id), [pinnedChat.id]);
+  });
 }

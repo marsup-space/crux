@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
+import '../../../i18n/strings.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
 
@@ -23,6 +24,9 @@ class WorkspaceHomeWidget extends HomeWidget {
   String get title => 'Workspace';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.workspace');
+
+  @override
   Set<int> get supportedSpans => const {1, 2};
 
   @override
@@ -41,19 +45,20 @@ class WorkspaceHomeWidget extends HomeWidget {
     final theme = CruxTheme.of(context);
     final labelStyle = TextStyle(color: theme.onSurfaceDim);
     final valueStyle = TextStyle(color: theme.onSurfaceVariant);
+    final s = ctx.strings;
 
     // Directory: show the basename (what the user calls the project),
     // falling back to the raw path when it's empty or just a separator.
-    final dir = _dirName(ctx.projectPath);
+    final dir = _dirName(ctx.projectPath, s);
 
     // Branch: from the live git service; empty when not a repo.
     final status = ctx.gitStatusService.current;
     final branch = status.isRepo
-        ? (status.branch.isEmpty ? '(no branch)' : status.branch)
-        : 'not a git repo';
+        ? (status.branch.isEmpty ? s.t('home.noBranch') : status.branch)
+        : s.t('home.notGitRepo');
 
     // Model: the active model's composite key, or a setup hint.
-    final model = ctx.activeModel() ?? 'no model — /provider to connect';
+    final model = ctx.activeModel() ?? s.t('home.ws.noModel');
 
     // Sessions: the workspace sessions only (chats are global), so the
     // count means "how much work lives in this directory".
@@ -63,14 +68,14 @@ class WorkspaceHomeWidget extends HomeWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _row(labelStyle, valueStyle, 'dir', dir),
-        _row(labelStyle, valueStyle, 'branch', branch),
-        _row(labelStyle, valueStyle, 'model', model),
+        _row(labelStyle, valueStyle, s.t('home.ws.dir'), dir),
+        _row(labelStyle, valueStyle, s.t('home.ws.branch'), branch),
+        _row(labelStyle, valueStyle, s.t('home.ws.model'), model),
         _row(
           labelStyle,
           valueStyle,
-          'sessions',
-          '$sessionCount in this workspace',
+          s.t('home.ws.sessions'),
+          s.t('home.ws.sessionsCount', {'n': '$sessionCount'}),
         ),
       ],
     );
@@ -93,8 +98,8 @@ class WorkspaceHomeWidget extends HomeWidget {
     );
   }
 
-  static String _dirName(String path) {
-    if (path.isEmpty) return '(unknown)';
+  static String _dirName(String path, Strings s) {
+    if (path.isEmpty) return s.t('home.ws.unknown');
     final base = p.basename(path);
     return base.isEmpty ? path : base;
   }

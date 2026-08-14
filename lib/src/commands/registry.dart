@@ -122,14 +122,14 @@ List<CommandSuggestion> filterSuggestions(
 const List<SlashCommand> _baseCommands = [
   SlashCommand(
     name: '/model',
-    description: 'Switch the AI model',
+    description: 'cmd.model.desc',
     params: ['provider/model'],
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/new',
-    description: 'Create a new session',
+    description: 'cmd.new.desc',
     availableDuringResponse: true,
   ),
   // Chat mode: a workspace-free conversation. The session gets the
@@ -140,12 +140,12 @@ const List<SlashCommand> _baseCommands = [
   // lease keeps one chat from being open in two instances at once.
   SlashCommand(
     name: '/chat',
-    description: 'Start a workspace-free chat (global, minimal prompt)',
+    description: 'cmd.chat.desc',
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/session',
-    description: 'Switch to a session',
+    description: 'cmd.session.desc',
     params: ['id'],
     suggestionsPerParam: [
       [
@@ -160,7 +160,7 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
-  SlashCommand(name: '/compact', description: 'Compact the context window'),
+  SlashCommand(name: '/compact', description: 'cmd.compact.desc'),
   // Print the help sheet into the chat history as a local info
   // message. The sheet is generated from this registry at call time
   // (see cmd_help.dart), so `/help` can never drift from what Tab
@@ -169,7 +169,7 @@ const List<SlashCommand> _baseCommands = [
   // implemented.
   SlashCommand(
     name: '/help',
-    description: '帮助 (show the help sheet: commands, shortcuts, tips)',
+    description: 'cmd.help.desc',
     availableDuringResponse: true,
   ),
   // Open the home-screen dashboard overlay. Available mid-stream
@@ -178,12 +178,12 @@ const List<SlashCommand> _baseCommands = [
   // home are separately guarded at the HomeContext.runCommand seam.
   SlashCommand(
     name: '/home',
-    description: 'Open the home screen dashboard',
+    description: 'cmd.home.desc',
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/theme',
-    description: 'Change the UI theme',
+    description: 'cmd.theme.desc',
     params: ['name'],
     availableDuringResponse: true,
   ),
@@ -192,7 +192,7 @@ const List<SlashCommand> _baseCommands = [
   // in-flight stream, and the chat body re-renders on the next frame.
   SlashCommand(
     name: '/language',
-    description: '切换界面语言 (switch the UI language: en|zh)',
+    description: 'cmd.language.desc',
     params: ['code'],
     suggestionsPerParam: [
       [
@@ -204,7 +204,7 @@ const List<SlashCommand> _baseCommands = [
   ),
   SlashCommand(
     name: '/provider',
-    description: 'Connect a provider (usage: /provider <name> [<key>|remove])',
+    description: 'cmd.provider.desc',
     params: ['name', 'key?'],
     suggestionsPerParam: [
       // First param: name (autocompleted from registered providers
@@ -221,12 +221,7 @@ const List<SlashCommand> _baseCommands = [
   // [WebServiceProvider.id] (see `services/providers/`).
   SlashCommand(
     name: '/web-provider',
-    description:
-        'Configure a web provider: /web-provider (list) | '
-        '/web-provider <name> (status) | '
-        '/web-provider <name> <key> | '
-        '/web-provider <name> key <key> | '
-        '/web-provider <name> remove',
+    description: 'cmd.webProvider.desc',
     params: ['<name>', '<value>|key <value>|remove'],
     suggestionsPerParam: [
       // First positional arg: provider id, autocompleted from
@@ -237,24 +232,24 @@ const List<SlashCommand> _baseCommands = [
   ),
   SlashCommand(
     name: '/think',
-    description: 'Toggle thinking mode (off|low|normal|adaptive|high|max)',
+    description: 'cmd.think.desc',
     params: ['effort'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'off', description: 'Disable thinking mode'),
-        CommandSuggestion(value: 'low', description: 'Low reasoning effort'),
+        CommandSuggestion(value: 'off', description: 'sug.think.off'),
+        CommandSuggestion(value: 'low', description: 'sug.think.low'),
         CommandSuggestion(
           value: 'normal',
-          description: 'Normal reasoning effort',
+          description: 'sug.think.normal',
         ),
         CommandSuggestion(
           value: 'adaptive',
-          description: 'Adaptive reasoning (minimax only)',
+          description: 'sug.think.adaptive',
         ),
-        CommandSuggestion(value: 'high', description: 'High reasoning effort'),
+        CommandSuggestion(value: 'high', description: 'sug.think.high'),
         CommandSuggestion(
           value: 'max',
-          description: 'Maximum reasoning effort',
+          description: 'sug.think.max',
         ),
       ],
     ],
@@ -266,17 +261,17 @@ const List<SlashCommand> _baseCommands = [
   // arg reports the current mode.
   SlashCommand(
     name: '/view',
-    description: 'Switch chat log display mode (verbose|vibe)',
+    description: 'cmd.view.desc',
     params: ['mode'],
     suggestionsPerParam: [
       [
         CommandSuggestion(
           value: 'verbose',
-          description: 'Show all detail (current default)',
+          description: 'sug.view.verbose',
         ),
         CommandSuggestion(
           value: 'vibe',
-          description: 'Aggregated metadata boxes (denser)',
+          description: 'sug.view.vibe',
         ),
       ],
     ],
@@ -294,57 +289,56 @@ const List<SlashCommand> _baseCommands = [
   // new value only takes effect on the *next* turn anyway.
   SlashCommand(
     name: '/temperature',
-    description:
-        'Override sampling temperature for the session (clamped 0.0–1.0)',
+    description: 'cmd.temperature.desc',
     params: ['value'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: '0.0', description: 'Fully deterministic'),
-        CommandSuggestion(value: '0.3', description: 'Mostly deterministic'),
-        CommandSuggestion(value: '0.7', description: 'Balanced'),
-        CommandSuggestion(value: '1.0', description: 'Maximum creativity'),
+        CommandSuggestion(value: '0.0', description: 'sug.temp.0.0'),
+        CommandSuggestion(value: '0.3', description: 'sug.temp.0.3'),
+        CommandSuggestion(value: '0.7', description: 'sug.temp.0.7'),
+        CommandSuggestion(value: '1.0', description: 'sug.temp.1.0'),
       ],
     ],
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/auxiliary',
-    description: 'Select the auxiliary model (for summaries, session names)',
+    description: 'cmd.auxiliary.desc',
     params: ['auxiliary model'],
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/tldr',
-    description: 'Generate TLDR for the last AI response',
+    description: 'cmd.tldr.desc',
     params: ['level'],
     suggestionsPerParam: [
       [
         CommandSuggestion(
           value: 'concise',
-          description: 'Fewer bullets, focus on the core message',
+          description: 'sug.tldr.concise',
         ),
         CommandSuggestion(
           value: 'default',
-          description: 'Balanced summary (default if no level is given)',
+          description: 'sug.tldr.default',
         ),
         CommandSuggestion(
           value: 'detailed',
-          description: 'Thorough summary covering every section',
+          description: 'sug.tldr.detailed',
         ),
       ],
     ],
   ),
   SlashCommand(
     name: '/project',
-    description: 'Switch to a different project directory',
+    description: 'cmd.project.desc',
     params: ['path'],
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/debug',
-    description: 'Toggle debug commands on/off',
+    description: 'cmd.debug.desc',
     availableDuringResponse: true,
   ),
   // Resubmit the current context so the LLM continues generating.
@@ -363,7 +357,7 @@ const List<SlashCommand> _baseCommands = [
   // satisfy the LLM APIs' role-alternation rule.
   SlashCommand(
     name: '/continue',
-    description: '继续生成 (resubmit context so the LLM keeps generating)',
+    description: 'cmd.continue.desc',
     aliases: ['/继续'],
   ),
   // Re-send the last user input, discarding whatever the previous
@@ -374,7 +368,7 @@ const List<SlashCommand> _baseCommands = [
   // "retry last request" affordance in chat UIs.
   SlashCommand(
     name: '/retry',
-    description: '重试 (re-send the last user input from scratch)',
+    description: 'cmd.retry.desc',
     aliases: ['/重试'],
   ),
   // Wipe the last round (the user prompt plus everything it
@@ -385,7 +379,7 @@ const List<SlashCommand> _baseCommands = [
   // overlay hides it too.
   SlashCommand(
     name: '/undo',
-    description: '撤销 (wipe the last round; restore prompt for editing)',
+    description: 'cmd.undo.desc',
     aliases: ['/撤销'],
   ),
   // Ephemeral side-question: ask the model a quick question without
@@ -398,17 +392,16 @@ const List<SlashCommand> _baseCommands = [
   // main model's in-flight stream.
   SlashCommand(
     name: '/btw',
-    description:
-        'Ephemeral side-question — not saved, discarded on next real turn',
+    description: 'cmd.btw.desc',
   ),
   SlashCommand(
     name: '/archive',
-    description: 'Archive the current session (hide from sidebar)',
+    description: 'cmd.archive.desc',
     availableDuringResponse: true,
   ),
   SlashCommand(
     name: '/unarchive',
-    description: 'Unarchive a session by id (restore to sidebar)',
+    description: 'cmd.unarchive.desc',
     params: ['id'],
     suggestionsPerParam: [[]],
     availableDuringResponse: true,
@@ -423,7 +416,7 @@ const List<SlashCommand> _baseCommands = [
   // the in-flight stream.
   SlashCommand(
     name: '/rename',
-    description: 'Rename the current session',
+    description: 'cmd.rename.desc',
     params: ['title'],
     aliases: ['/重命名'],
     availableDuringResponse: true,
@@ -440,7 +433,7 @@ const List<SlashCommand> _baseCommands = [
   // an alias for muscle-memory parity with other shells.
   SlashCommand(
     name: '/quit',
-    description: 'Exit Crux (prints a run summary)',
+    description: 'cmd.quit.desc',
     aliases: ['/exit'],
     availableDuringResponse: false,
   ),

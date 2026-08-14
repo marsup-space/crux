@@ -27,7 +27,9 @@ import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
+import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
+import '../i18n/strings.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
@@ -61,6 +63,7 @@ import 'polling_coordinator.dart';
 import 'quit_handler.dart';
 import 'session_controller.dart';
 import 'session_management_panel.dart';
+import 'session_mention_overlay.dart';
 import 'streaming_controller.dart';
 import 'suggestion_overlay.dart';
 import 'tool_detail_pane.dart';
@@ -328,6 +331,10 @@ class _ChatPanelState extends State<ChatPanel> {
 
   static int get _maxVisibleItems => 6;
 
+  /// Localized string lookup for the chat chrome (command overlay, etc.).
+  Strings get _strings =>
+      Strings(AppLocale.fromCode(component.localeController?.activeCode));
+
   @override
   void initState() {
     super.initState();
@@ -444,6 +451,8 @@ class _ChatPanelState extends State<ChatPanel> {
       gitStatusService: _gitStatusService,
       tracker: _tracker,
       pendingAskCubit: _pendingAskCubit,
+      mentionChipsProvider: () => _overlayController.mentionChips,
+      strings: _strings,
     );
     _polling = PollingCoordinator(
       providerService: _providerService,
@@ -986,7 +995,7 @@ class _ChatPanelState extends State<ChatPanel> {
   void _showCompactCounterproductiveToast(ChatLogCompactionEstimate? est) {
     if (est == null || est.preTokens <= 0) {
       _showToast(
-        'Compaction is not worth it — no history to compact.',
+        _strings.t('chat.compact.counterproductive'),
         mode: ToastMode.info,
       );
       return;
@@ -996,7 +1005,10 @@ class _ChatPanelState extends State<ChatPanel> {
     final saved = pre - post;
     final pct = (saved * 100 / pre).round();
     _showToast(
-      'Compaction would save only $pct% (≈${_fmtNum(saved)} tokens) — below the 5% threshold. Skipping.',
+      _strings.t('chat.compact.saveOnly', {
+        'pct': '$pct',
+        'tokens': _fmtNum(saved),
+      }),
       mode: ToastMode.info,
     );
   }
@@ -1089,7 +1101,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final skill = _skillFullpane;
     if (skill != null) {
       return Fullpane(
-        title: 'Skill — ${skill.name}',
+        title: _strings.t('chat.fullpane.skill', {'name': skill.name}),
         onClose: _closeFullpane,
         contentBuilder: (context) => _SkillFullpaneContent(skill: skill),
       );
@@ -1097,7 +1109,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final compactionMsg = _compactionFullpaneMessage;
     if (compactionMsg != null) {
       return Fullpane(
-        title: 'Compaction',
+        title: _strings.t('chat.fullpane.compaction'),
         onClose: _closeFullpane,
         contentBuilder: (context) => CompactionFullpane(
           message: compactionMsg,
@@ -1124,11 +1136,11 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
     return Fullpane(
-      title: 'Fullpane',
+      title: _strings.t('chat.fullpane.default'),
       onClose: _closeFullpane,
       contentBuilder: (context) => Center(
         child: Text(
-          'Fullpane placeholder content',
+          _strings.t('chat.fullpane.placeholder'),
           style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
         ),
       ),
@@ -1280,8 +1292,10 @@ class _ChatPanelState extends State<ChatPanel> {
       // Yesterday box: single-round auxiliary summary of yesterday's
       // work, cached by the service. The merged session list is the
       // same one the `sessions` closure above builds.
-      summarizeYesterday: (sessions) =>
-          _chatService.summarizeYesterday(sessions),
+      summarizeYesterday: (sessions) => _chatService.summarizeYesterday(
+        sessions,
+        language: component.localeController?.activeLocale.label,
+      ),
       // Skills box: tapping a skill opens its SKILL.md in a fullpane.
       showSkill: _openSkillFullpane,
       // Activity box: token-per-day heatmap over this workspace's
@@ -1428,6 +1442,7 @@ class _ChatPanelState extends State<ChatPanel> {
       sessions: _sessionController.sessions,
       chats: _sessionController.chats,
       currentSessionId: _sessionController.currentSessionId ?? 0,
+      strings: _strings,
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -1471,6 +1486,7 @@ class _ChatPanelState extends State<ChatPanel> {
               selectedIndex: overlay.selectedCommandIndex,
               scrollOffset: overlay.commandScrollOffset,
               maxVisible: _maxVisibleItems,
+              strings: _strings,
               onHover: (i) => setState(() => overlay.onHoverCommand(i)),
               onTap: (i) {
                 overlay.onTapCommand(i);
@@ -1502,6 +1518,7 @@ class _ChatPanelState extends State<ChatPanel> {
               scrollOffset: overlay.suggestionScrollOffset,
               maxVisible: _maxVisibleItems,
               headerLabel: paramLabel,
+              strings: _strings,
               onHover: (i) => setState(() => overlay.onHoverSuggestion(i)),
               onTap: (i) {
                 overlay.onTapSuggestion(i);
@@ -1562,6 +1579,35 @@ class _ChatPanelState extends State<ChatPanel> {
                 setState(() {
                   overlay.selectedSkillIndex = i;
                   overlay.insertSkillChip(null);
+                });
+              },
+            ),
+          ),
+        ),
+      );
+    } else if (overlay.overlayMode == OverlayMode.sessionMention) {
+      overlays.add(
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: MouseRegion(
+            onHover: (e) {
+              setState(() => overlay.onScrollSessionMention(e));
+            },
+            opaque: false,
+            child: SessionMentionOverlay(
+              mentions: overlay.filteredSessionMentions,
+              selectedIndex: overlay.selectedSessionMentionIndex,
+              scrollOffset: overlay.sessionMentionScrollOffset,
+              maxVisible: _maxVisibleItems,
+              query: overlay.sessionMentionQuery,
+              onHover: (i) =>
+                  setState(() => overlay.onHoverSessionMention(i)),
+              onTap: (i) {
+                setState(() {
+                  overlay.selectedSessionMentionIndex = i;
+                  overlay.insertSessionMention(null);
                 });
               },
             ),
@@ -1718,6 +1764,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                   onCycleThinking: _cycleThinkingLevel,
                   onTemperaturePressed: _onTemperatureChipPressed,
+                  strings: _strings,
                   compactEstimate: sessionId == null
                       ? null
                       : _compactEstimates[sessionId]?.estimate,
@@ -1757,6 +1804,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         scrollController: scrollController,
                         refresh: _refresh,
                         projectPath: Directory.current.path,
+                        strings: _strings,
                         recentProjectsStore: _recentProjectsStore,
                         onSendTurn: (text) {
                           final sid = _sessionController.currentSessionId;
@@ -1898,12 +1946,14 @@ class _ChatPanelState extends State<ChatPanel> {
                       currentSessionId:
                           _sessionController.currentSessionId ?? 0,
                       onSwitchSession: _switchSession,
+                      onTogglePin: _sessionController.togglePin,
                       archivedCount: _sessionController.archivedCount,
                       archivedChatCount: _sessionController.archivedChatCount,
                       onCreateChat: _sessionController.createChatSession,
                       onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
                       specWidgets: component.specWidgetRegistry?.widgets,
+                      strings: _strings,
                       onSessionTitleTap: () {
                         setState(() {
                           _overlayController.showSessionManager = true;

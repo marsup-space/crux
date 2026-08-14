@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../../../theme/crux_theme.dart';
+import '../../../utils/text_width.dart';
 import '../home_widgets.dart';
 
 /// One row in the settings box.
@@ -36,6 +37,9 @@ class SettingsHomeWidget extends HomeWidget {
   String get title => 'Settings';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.settings');
+
+  @override
   Set<int> get supportedSpans => const {1, 2};
 
   @override
@@ -47,12 +51,16 @@ class SettingsHomeWidget extends HomeWidget {
 
   List<_Setting> _items(HomeContext ctx) {
     return [
-      _Setting('theme', ctx.themeId() ?? '—', '/theme '),
-      _Setting('auxiliary', ctx.auxModelName() ?? 'none', '/auxiliary '),
-      _Setting('view', ctx.viewMode() ?? '—', '/view '),
+      _Setting(ctx.strings.t('home.settings.theme'), ctx.themeId() ?? '—', '/theme '),
+      _Setting(
+        ctx.strings.t('home.settings.auxiliary'),
+        ctx.auxModelName() ?? 'none',
+        '/auxiliary ',
+      ),
+      _Setting(ctx.strings.t('home.settings.view'), ctx.viewMode() ?? '—', '/view '),
       // Language switching is wired via `/language`; the row shows the
       // active locale and stays read-only (seed via `/language ` instead).
-      _Setting('language', ctx.localeId() ?? 'en', null),
+      _Setting(ctx.strings.t('home.settings.language'), ctx.localeId() ?? 'en', null),
     ];
   }
 
@@ -108,10 +116,12 @@ class SettingsHomeWidget extends HomeWidget {
     final theme = CruxTheme.of(context);
     final items = _items(ctx);
 
-    // Pad the label column so the values line up vertically.
+    // Pad the label column (in terminal *columns*, not code units) so the
+    // values line up vertically — width comes from nocterm's UnicodeWidth.
     var maxLabel = 0;
     for (final item in items) {
-      if (item.label.length > maxLabel) maxLabel = item.label.length;
+      final w = stringWidth(item.label);
+      if (w > maxLabel) maxLabel = w;
     }
 
     return Column(
@@ -167,7 +177,7 @@ class _SettingsRow extends StatelessComponent {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              item.label.padRight(labelWidth),
+              padToWidth(item.label, labelWidth),
               style: TextStyle(color: labelColor),
             ),
             Text(

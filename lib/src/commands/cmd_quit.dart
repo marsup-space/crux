@@ -6,13 +6,13 @@ Future<void> executeQuit(CommandContext ctx) async {
   final anyRunning = ctx.sessions.any((s) => s.status == SessionStatus.running);
   if (anyRunning) {
     ctx.showToast(
-      'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
+      ctx.strings.t('toast.quitRunning'),
       mode: ToastMode.error,
     );
     return;
   }
   if (ctx.quitApp == null) {
-    ctx.showToast('Quit unavailable (no TUI bound)', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.quitUnavailable'), mode: ToastMode.error);
     return;
   }
   ctx.quitApp!();

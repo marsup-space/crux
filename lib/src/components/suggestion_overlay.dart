@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../models/slash_command.dart';
 
@@ -10,6 +11,7 @@ class SuggestionOverlay extends StatelessComponent {
   final String headerLabel;
   final void Function(int)? onHover;
   final void Function(int)? onTap;
+  final Strings strings;
 
   const SuggestionOverlay({
     required this.suggestions,
@@ -19,6 +21,7 @@ class SuggestionOverlay extends StatelessComponent {
     required this.headerLabel,
     this.onHover,
     this.onTap,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -119,7 +122,7 @@ class SuggestionOverlay extends StatelessComponent {
           SizedBox(width: 1),
           Expanded(
             child: Text(
-              suggestion.description ?? '',
+              strings.t(suggestion.description ?? ''),
               style: TextStyle(
                 color: isSelected
                     ? theme.wizardTextUnselected

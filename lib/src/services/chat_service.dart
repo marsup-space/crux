@@ -153,8 +153,10 @@ class ChatService {
   /// with activity (walking back up to
   /// [AuxiliaryService.maxLookbackDays]), cached by the day-set
   /// fingerprint. See [AuxiliaryService.summarizeYesterday].
-  Future<YesterdaySummary?> summarizeYesterday(List<Session> sessions) =>
-      _auxiliaryService.summarizeYesterday(sessions);
+  Future<YesterdaySummary?> summarizeYesterday(
+    List<Session> sessions, {
+    String? language,
+  }) => _auxiliaryService.summarizeYesterday(sessions, language: language);
 
   // ── Compaction ────────────────────────────────────────────────────
 

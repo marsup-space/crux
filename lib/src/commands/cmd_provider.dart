@@ -8,7 +8,7 @@ Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
   if (name.isEmpty) {
     final names = ctx.providerService.providerNames();
     ctx.showToast(
-      'Providers: ${names.join(", ")}. Usage: /provider <name> [<key>|remove]',
+      ctx.strings.t('toast.providerList', {'names': names.join(', ')}),
     );
     return;
   }
@@ -16,9 +16,10 @@ Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
   if (provider == null) {
     final names = ctx.providerService.providerNames();
     ctx.showToast(
-      'Provider "$name" not found. Available: ${names.join(", ")}. '
-      'To add it, copy ~/.config/crux/providers/example.provider.toml '
-      'to ~/.config/crux/providers/$name.toml and edit it.',
+      ctx.strings.t('toast.providerNotFound', {
+        'name': name,
+        'names': names.join(', '),
+      }),
       mode: ToastMode.error,
     );
     return;
@@ -27,22 +28,27 @@ Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
     final hasKey = ctx.providerService.getApiKey(name) != null;
     final models = provider.models.map((m) => m.name).join(', ');
     ctx.showToast(
-      '$name  [${provider.type}]  endpoint=${provider.endpointUrl}  '
-      'key=${hasKey ? "set" : "missing"}  models=$models',
+      ctx.strings.t('toast.providerStatus', {
+        'name': name,
+        'type': provider.type,
+        'endpoint': provider.endpointUrl,
+        'key': ctx.strings.t(hasKey ? 'toast.keySet' : 'toast.keyMissing'),
+        'models': models,
+      }),
     );
     return;
   }
   if (arg == 'remove' || arg == '--remove' || arg == 'rm') {
     await ctx.providerService.removeApiKey(name);
     ctx.showToast(
-      '${terminalSymbol('✓', '+')} Removed API key for $name',
+      '${terminalSymbol('✓', '+')} ${ctx.strings.t('toast.removedKey', {'name': name})}',
       mode: ToastMode.status,
     );
     return;
   }
   await ctx.providerService.setApiKey(name, arg);
   ctx.showToast(
-    '${terminalSymbol('✓', '+')} Saved API key for $name',
+    '${terminalSymbol('✓', '+')} ${ctx.strings.t('toast.savedKey', {'name': name})}',
     mode: ToastMode.status,
   );
 }

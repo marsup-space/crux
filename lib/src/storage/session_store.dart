@@ -203,6 +203,24 @@ class SessionStore implements SessionStoreAccessor {
     );
   }
 
+  /// Pin a session (workspace or chat) to the top of the sidebar.
+  /// Sets [pinnedAt] to now and leaves [updatedAt] untouched, so
+  /// pinning does not re-order the recency buckets — pinned rows sort
+  /// by [pinnedAt], not [updatedAt].
+  Future<void> pinSession(int id) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+      db.SessionsCompanion(pinnedAt: Value(nowMs)),
+    );
+  }
+
+  /// Unpin a session, returning it to the normal recency-sorted list.
+  Future<void> unpinSession(int id) async {
+    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+      db.SessionsCompanion(pinnedAt: const Value(null)),
+    );
+  }
+
   /// Auto-archive all un-archived sessions for [projectPath] whose
   /// [updatedAt] is older than [olderThan]. Returns the number of
   /// sessions that were archived.
@@ -218,6 +236,7 @@ class SessionStore implements SessionStoreAccessor {
 
     final query = _db.update(_db.sessions)
       ..where((t) => t.archivedAt.isNull())
+      ..where((t) => t.pinnedAt.isNull())
       ..where((t) => t.updatedAt.isSmallerThanValue(cutoffMs));
 
     if (projectPath != null) {
@@ -243,6 +262,7 @@ class SessionStore implements SessionStoreAccessor {
     return (_db.update(_db.sessions)
           ..where((t) => t.kind.equals('chat'))
           ..where((t) => t.archivedAt.isNull())
+          ..where((t) => t.pinnedAt.isNull())
           ..where((t) => t.updatedAt.isSmallerThanValue(cutoffMs)))
         .write(
           db.SessionsCompanion(
@@ -719,6 +739,9 @@ WHERE status = ?
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
       archivedAt: row.archivedAt != null
           ? DateTime.fromMillisecondsSinceEpoch(row.archivedAt!)
+          : null,
+      pinnedAt: row.pinnedAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(row.pinnedAt!)
           : null,
       systemPrompt: row.systemPrompt,
     );

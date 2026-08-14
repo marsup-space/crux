@@ -56,10 +56,11 @@ title, nothing else. No quotes, no explanation, no preamble.
 ///
 /// Output contract: 1-4 short bullet lines, no heading, no preamble,
 /// no trailing summary sentence. Each bullet is a concrete thing that
-/// was worked on, written in the user's language (the digest's dominant
-/// language), keeping code identifiers / paths / symbol names verbatim.
+/// was worked on, written in [language] when one is supplied (the
+/// active UI language), else the digest's dominant language, keeping
+/// code identifiers / paths / symbol names verbatim.
 /// Single-round call, no tools.
-String yesterdaySummarySystemPromptFor(String dayLabel) => '''
+String yesterdaySummarySystemPromptFor(String dayLabel, {String? language}) => '''
 You are Crux's "recent work" summarizer for the home screen. The digest
 below is NOT a full conversation. For each session the developer was
 active in $dayLabel, it contains only:
@@ -82,8 +83,9 @@ Rules:
 - No heading, no "Yesterday you...", no preamble, no closing line.
 - Keep code identifiers, file paths, and symbol names exactly as
   written; do not translate them.
-- Write the prose in the same language the developer used in the
-  digest.
+- ${language == null || language.isEmpty
+        ? 'Write the prose in the same language the developer used in the digest.'
+        : 'Write the prose in $language.'}
 - If the digest is empty or meaningless, output a single line:
   "- nothing recorded $dayLabel".
 ''';

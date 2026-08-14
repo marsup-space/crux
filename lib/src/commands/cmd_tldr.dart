@@ -5,7 +5,7 @@ import 'command_executor.dart';
 
 Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
   if (ctx.currentSessionId == null) {
-    ctx.showToast('No active session', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.noSession'), mode: ToastMode.error);
     return;
   }
   final lastAi = ctx.currentMessages.lastWhere(
@@ -13,7 +13,7 @@ Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
     orElse: () => Message(id: -1, sessionId: 0, role: 'ai', content: ''),
   );
   if (lastAi.id <= 0 || lastAi.content.isEmpty) {
-    ctx.showToast('No AI response to summarize');
+    ctx.showToast(ctx.strings.t('toast.tldrNoResponse'));
     return;
   }
   final rawLevel = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
@@ -28,7 +28,7 @@ Future<void> executeTldr(List<String> parts, CommandContext ctx) async {
       detail = TldrDetail.detailed;
     default:
       ctx.showToast(
-        'Unknown /tldr level "$rawLevel". Use concise, default, or detailed.',
+        ctx.strings.t('toast.tldrUnknownLevel', {'level': rawLevel}),
       );
       return;
   }

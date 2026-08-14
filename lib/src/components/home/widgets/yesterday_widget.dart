@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../models/session.dart';
 import '../../../services/auxiliary_service.dart'
     show AuxiliaryService, YesterdaySummary, yesterdayLabelForDaysAgo;
@@ -83,6 +84,14 @@ class YesterdayHomeWidget extends HomeWidget {
   @override
   String get title {
     final label = yesterdayLabelForDaysAgo(_daysAgo);
+    return label[0].toUpperCase() + label.substring(1);
+  }
+
+  @override
+  String titleFor(HomeContext ctx) {
+    final label = _daysAgo == 1
+        ? ctx.strings.t('home.day.yesterday')
+        : ctx.strings.t('home.day.daysAgo', {'n': '$_daysAgo'});
     return label[0].toUpperCase() + label.substring(1);
   }
 
@@ -204,6 +213,7 @@ class YesterdayHomeWidget extends HomeWidget {
       daysAgo: daysAgo,
       summary: summary?.text,
       pending: pending,
+      strings: ctx.strings,
     );
   }
 }
@@ -226,17 +236,22 @@ class _YesterdayView extends StatelessComponent {
   /// True while the summary call for this day is in flight.
   final bool pending;
 
+  final Strings strings;
+
   const _YesterdayView({
     required this.sessions,
     required this.daysAgo,
     required this.summary,
     required this.pending,
+    required this.strings,
   });
 
   @override
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final dayLabel = yesterdayLabelForDaysAgo(daysAgo);
+    final dayLabel = daysAgo == 1
+        ? strings.t('home.day.yesterday')
+        : strings.t('home.day.daysAgo', {'n': '$daysAgo'});
 
     // 1. Summary available → the bullets, wrapped and scrollable.
     final summaryText = summary;
@@ -273,7 +288,7 @@ class _YesterdayView extends StatelessComponent {
     // 2. Call still in flight → a one-line pending hint.
     if (pending) {
       return Text(
-        'summarizing $dayLabel…',
+        strings.t('home.yesterday.summarizing', {'day': dayLabel}),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -285,14 +300,19 @@ class _YesterdayView extends StatelessComponent {
   Component _buildFallback(CruxThemeData theme, String dayLabel) {
     if (sessions.isEmpty) {
       return Text(
-        'nothing $dayLabel',
+        strings.t('home.yesterday.nothing', {'day': dayLabel}),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
 
     final children = <Component>[
       Text(
-        '${sessions.length} session${sessions.length == 1 ? '' : 's'} active',
+        strings.t(
+          sessions.length == 1
+              ? 'home.yesterday.sessionActive'
+              : 'home.yesterday.sessionsActive',
+          {'n': '${sessions.length}'},
+        ),
         style: TextStyle(
           color: theme.onSurfaceVariant,
           fontWeight: FontWeight.bold,

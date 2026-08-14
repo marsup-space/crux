@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import '../../services/skills/skill_discovery.dart';
 import '../../version.dart';
@@ -139,14 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
     '  ██████╗ ██║  ██║  █████╔╝ ██╔╝ ██╗',
   ];
 
-  static const _weekdays = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-  ];
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-
   /// Rows above the scroll viewport: container top padding (1) + hero
   /// block (5 logo rows; the info column shares them) + gap (1). The box
   /// hover handler uses this to map the cursor's terminal y to a content
@@ -231,14 +224,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Hero info lines ─────────────────────────────────────────────
 
-  static String _formatDate(DateTime d) =>
-      '${_weekdays[d.weekday - 1]} ${_months[d.month - 1]} ${d.day}';
+  static String _formatDate(DateTime d, Strings s) {
+    final weekdays = s.t('home.weekdays').split(',');
+    final months = s.t('home.months').split(',');
+    return s.t('home.date', {
+      'weekday': weekdays[d.weekday - 1],
+      'month': months[d.month - 1],
+      'day': '${d.day}',
+    });
+  }
 
   /// Workspace fact for the hero: the project directory basename,
   /// mirroring the workspace box's `dir` line but shorter.
   String _workspaceLine() {
     final path = _ctx.projectPath;
-    if (path.isEmpty) return '(no workspace)';
+    if (path.isEmpty) return _ctx.strings.t('home.noWorkspace');
     final base = p.basename(path);
     return base.isEmpty ? path : base;
   }
@@ -246,8 +246,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Branch fact for the hero — dimmed, and honest when there's no repo.
   String _branchLine() {
     final status = _ctx.gitStatusService.current;
-    if (!status.isRepo) return 'not a git repo';
-    final branch = status.branch.isEmpty ? '(no branch)' : status.branch;
+    if (!status.isRepo) return _ctx.strings.t('home.notGitRepo');
+    final branch = status.branch.isEmpty
+        ? _ctx.strings.t('home.noBranch')
+        : status.branch;
     return '⎇ $branch';
   }
 
@@ -373,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final placement = _placements[index];
     final spans = placement.widget.supportedSpans.toList()..sort();
     if (spans.length < 2) {
-      setState(() => _notice = 'this box has a fixed size');
+      setState(() => _notice = _ctx.strings.t('home.fixedSize'));
       return;
     }
     final current = spans.indexOf(placement.span);
@@ -390,7 +392,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _editHide() {
     if (_placements.isEmpty) return;
     if (_placements.length == 1) {
-      setState(() => _notice = 'keep at least one box');
+      setState(() => _notice = _ctx.strings.t('home.keepOne'));
       return;
     }
     final index = _focusedIndex.clamp(0, _placements.length - 1);
@@ -408,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _editAdd() {
     final hidden = _hiddenWidgets;
     if (hidden.isEmpty) {
-      setState(() => _notice = 'no hidden boxes');
+      setState(() => _notice = _ctx.strings.t('home.noHidden'));
       return;
     }
     final widget = hidden.first;
@@ -773,7 +775,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: BoxBorderStyle.rounded,
             ),
             title: BorderTitle(
-              text: 'New chat',
+              text: _ctx.strings.t('home.newChat'),
               style: TextStyle(
                 color: theme.accent,
                 fontWeight: FontWeight.bold,
@@ -789,7 +791,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   focused: true,
                   maxLines: 1,
                   style: TextStyle(color: theme.foreground),
-                  placeholder: 'Start a new chat…',
+                  placeholder: _ctx.strings.t('home.newChatPlaceholder'),
                   onSubmitted: _submitChat,
                   onKeyEvent: _chatKeyHandler,
                 ),
@@ -883,7 +885,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         // in the hero.
                         if (_editing)
                           Text(
-                            '  [editing]',
+                            '  [${_ctx.strings.t('home.editing')}]',
                             style: TextStyle(
                               color: theme.warningColor,
                               fontWeight: FontWeight.bold,
@@ -892,7 +894,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     Text(
-                      _formatDate(DateTime.now()),
+                      _formatDate(DateTime.now(), _ctx.strings),
                       style: TextStyle(color: theme.onSurfaceDim),
                     ),
                     // Workspace dir — omitted when the launch has no
@@ -949,12 +951,12 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(_notice!, style: TextStyle(color: theme.errorColor))
             else if (_editing)
               Text(
-                '←→ reorder · -/= resize · x hide · a add · e/esc done',
+                _ctx.strings.t('home.footerEdit'),
                 style: TextStyle(color: theme.warningColor),
               )
             else
               Text(
-                '↑↓ select · ←→ box · tab row · enter open · e edit · esc chat',
+                _ctx.strings.t('home.footerNav'),
                 style: TextStyle(color: theme.hintText),
               ),
           ],
@@ -1064,7 +1066,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: hasTitleButtons
             ? null
             : BorderTitle(
-                text: widget.title,
+                text: widget.titleFor(_ctx),
                 style: TextStyle(
                   color: titleColor,
                   fontWeight: focused ? FontWeight.bold : null,
@@ -1210,7 +1212,7 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          widget.title,
+          widget.titleFor(_ctx),
           style: TextStyle(
             color: titleColor,
             fontWeight: focused ? FontWeight.bold : null,

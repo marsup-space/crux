@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../models/session.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
@@ -42,6 +43,9 @@ class RecentSessionsHomeWidget extends HomeWidget {
 
   @override
   String get title => 'Recent';
+
+  @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.recent');
 
   @override
   Set<int> get supportedSpans => const {1, 2};
@@ -110,7 +114,7 @@ class RecentSessionsHomeWidget extends HomeWidget {
     final shown = _shown;
     if (shown.isEmpty) {
       return Text(
-        'no sessions yet — /new to start',
+        ctx.strings.t('home.recent.empty'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -125,6 +129,7 @@ class RecentSessionsHomeWidget extends HomeWidget {
             isCurrent: shown[i].id == currentId,
             selected: focused && i == _selectedIndex,
             theme: theme,
+            strings: ctx.strings,
             onTap: () {
               _selectedIndex = i;
               if (onSwitch(shown[i].id)) ctx.close();
@@ -147,6 +152,7 @@ class _SessionLine extends StatelessComponent {
   final bool isCurrent;
   final bool selected;
   final CruxThemeData theme;
+  final Strings strings;
   final VoidCallback onTap;
 
   const _SessionLine({
@@ -154,6 +160,7 @@ class _SessionLine extends StatelessComponent {
     required this.isCurrent,
     required this.selected,
     required this.theme,
+    required this.strings,
     required this.onTap,
   });
 
@@ -187,7 +194,7 @@ class _SessionLine extends StatelessComponent {
               ),
               ),
               Text(
-                _relative(session.updatedAt),
+                _relative(session.updatedAt, strings),
                 style: TextStyle(color: metaColor),
               ),
             ],
@@ -196,12 +203,18 @@ class _SessionLine extends StatelessComponent {
     );
   }
 
-  static String _relative(DateTime when) {
+  static String _relative(DateTime when, Strings strings) {
     final diff = DateTime.now().difference(when);
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m';
-    if (diff.inDays < 1) return '${diff.inHours}h';
-    if (diff.inDays < 30) return '${diff.inDays}d';
-    return '${(diff.inDays / 30).floor()}mo';
+    if (diff.inMinutes < 1) return strings.t('home.time.now');
+    if (diff.inHours < 1) {
+      return strings.t('home.time.minutes', {'n': '${diff.inMinutes}'});
+    }
+    if (diff.inDays < 1) {
+      return strings.t('home.time.hours', {'n': '${diff.inHours}'});
+    }
+    if (diff.inDays < 30) {
+      return strings.t('home.time.days', {'n': '${diff.inDays}'});
+    }
+    return strings.t('home.time.months', {'n': '${(diff.inDays / 30).floor()}'});
   }
 }

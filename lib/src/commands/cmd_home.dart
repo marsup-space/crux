@@ -10,7 +10,7 @@ import 'command_executor.dart';
 /// keeps rendering underneath the pane.
 Future<void> executeHome(CommandContext ctx) async {
   if (ctx.showHome == null) {
-    ctx.showToast('Home screen not available', mode: ToastMode.error);
+    ctx.showToast(ctx.strings.t('toast.homeUnavailable'), mode: ToastMode.error);
     return;
   }
   ctx.showHome!();

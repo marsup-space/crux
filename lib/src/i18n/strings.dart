@@ -31,18 +31,693 @@ const Map<AppLocale, Map<String, String>> _catalog = {
   AppLocale.zh: _zh,
 };
 
+/// English fallback used when a component has no locale wired (tests,
+/// previews, or a host that hasn't threaded a [LocaleController]).
+const Strings kEnglishStrings = Strings(AppLocale.en);
+
 const Map<String, String> _en = {
+  // ── /language command ──
   'lang.unavailable': 'Language service is unavailable',
   'lang.current': 'Current language: {lang}. Usage: /language <en|zh>',
   'lang.unknown': 'Unknown language "{lang}". Available: {list}',
   'lang.switched': 'Language switched to {lang}',
-  'lang.persistFailed': 'Language switched to {lang}, but config could not be saved',
+  'lang.persistFailed':
+      'Language switched to {lang}, but config could not be saved',
+
+  // ── Home screen chrome ──
+  'home.editing': 'editing',
+  'home.noWorkspace': '(no workspace)',
+  'home.notGitRepo': 'not a git repo',
+  'home.noBranch': '(no branch)',
+  'home.newChat': 'New chat',
+  'home.newChatPlaceholder': 'Start a new chat…',
+  'home.fixedSize': 'this box has a fixed size',
+  'home.keepOne': 'keep at least one box',
+  'home.noHidden': 'no hidden boxes',
+  'home.footerEdit': '←→ reorder · -/= resize · x hide · a add · e/esc done',
+  'home.footerNav':
+      '↑↓ select · ←→ box · tab row · enter open · e edit · esc chat',
+  'home.weekdays': 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+  'home.months': 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec',
+  'home.date': '{weekday} {month} {day}',
+
+  // ── Day labels ──
+  'home.day.today': 'Today',
+  'home.day.yesterday': 'Yesterday',
+  'home.day.daysAgo': '{n} days ago',
+
+  // ── Relative time ──
+  'home.time.now': 'now',
+  'home.time.minutes': '{n}m',
+  'home.time.hours': '{n}h',
+  'home.time.days': '{n}d',
+  'home.time.months': '{n}mo',
+
+  // ── Widget titles ──
+  'home.title.quickActions': 'Quick actions',
+  'home.title.recent': 'Recent',
+  'home.title.skills': 'Skills',
+  'home.title.workspace': 'Workspace',
+  'home.title.notes': 'my notes',
+  'home.title.activity': 'Activity',
+  'home.title.codingPlan': 'Coding plan',
+  'home.title.setup': 'Quick Start',
+  'home.title.settings': 'Settings',
+  'home.title.git': 'Git',
+
+  // ── Settings rows ──
+  'home.settings.theme': 'theme',
+  'home.settings.auxiliary': 'auxiliary',
+  'home.settings.view': 'view',
+  'home.settings.language': 'language',
+
+  // ── Quick actions ──
+  'home.qa.freshSession': 'start a fresh session',
+  'home.qa.chatSession': 'open a Chat-mode session',
+  'home.qa.resume': 'resume the last session',
+  'home.qa.switchProject': 'switch project…',
+
+  // ── Recent sessions ──
+  'home.recent.empty': 'no sessions yet — /new to start',
+
+  // ── Skills ──
+  'home.skills.empty': 'no skills found',
+
+  // ── Workspace ──
+  'home.ws.dir': 'dir',
+  'home.ws.branch': 'branch',
+  'home.ws.model': 'model',
+  'home.ws.sessions': 'sessions',
+  'home.ws.noModel': 'no model — /provider to connect',
+  'home.ws.sessionsCount': '{n} in this workspace',
+  'home.ws.unknown': '(unknown)',
+
+  // ── Notes ──
+  'home.notes.unavailable': 'no notes feature',
+  'home.notes.noTodos': 'no todos',
+  'home.notes.todo': '{n} todo',
+  'home.notes.todos': '{n} todos',
+  'home.notes.open': 'open',
+
+  // ── Activity ──
+  'home.activity.counting': 'counting tokens…',
+  'home.activity.total': 'total',
+  'home.activity.less': 'less ',
+  'home.activity.more': ' more  ',
+  'home.activity.weekdays': 'M,T,W,T,F,S,S',
+
+  // ── Tokens ──
+  'home.tokens.loading': 'loading…',
+  'home.tokens.noActivity': 'no activity',
+  'home.tokens.tokens': 'tokens',
+  'home.tokens.turns': 'turns',
+  'home.tokens.sessions': 'sessions',
+
+  // ── Yesterday ──
+  'home.yesterday.summarizing': 'summarizing {day}…',
+  'home.yesterday.nothing': 'nothing {day}',
+  'home.yesterday.sessionActive': '{n} session active',
+  'home.yesterday.sessionsActive': '{n} sessions active',
+
+  // ── Coding plan ──
+  'home.cp.empty': 'no usage data',
+  'home.cp.waiting': 'waiting…',
+  'home.cp.credit': 'credit',
+  'home.cp.window5h': '5h',
+  'home.cp.window7d': '7d',
+
+  // ── Setup ──
+  'home.setup.providerKey': 'provider key',
+  'home.setup.auxModel': 'aux model',
+  'home.setup.webProvider': 'web provider',
+  'home.setup.workspace': 'workspace',
+  'home.setup.connected': 'connected',
+  'home.setup.configured': 'configured',
+  'home.setup.openProject': 'open crux in a project directory',
+
+  // ── Git ──
+  'home.git.clean': 'clean',
+  'home.git.staged': 'staged',
+  'home.git.modified': 'modified',
+  'home.git.deleted': 'deleted',
+  'home.git.untracked': 'untracked',
+  'home.git.conflict': 'conflict',
+
+  // ── Command descriptions ──
+  'cmd.overlay.title': 'Commands',
+  'cmd.model.desc': 'Switch the AI model',
+  'cmd.new.desc': 'Create a new session',
+  'cmd.chat.desc': 'Start a workspace-free chat (global, minimal prompt)',
+  'cmd.session.desc': 'Switch to a session',
+  'cmd.compact.desc': 'Compact the context window',
+  'cmd.help.desc': 'Show the help sheet (commands, shortcuts, tips)',
+  'cmd.home.desc': 'Open the home screen dashboard',
+  'cmd.theme.desc': 'Change the UI theme',
+  'cmd.provider.desc': 'Connect a provider (usage: /provider <name> [<key>|remove])',
+  'cmd.webProvider.desc':
+      'Configure a web provider: /web-provider (list) | '
+          '/web-provider <name> (status) | /web-provider <name> <key> | '
+          '/web-provider <name> remove',
+  'cmd.think.desc': 'Toggle thinking mode (off|low|normal|adaptive|high|max)',
+  'cmd.view.desc': 'Switch chat log display mode (verbose|vibe)',
+  'cmd.temperature.desc':
+      'Override sampling temperature for the session (clamped 0.0–1.0)',
+  'cmd.auxiliary.desc': 'Select the auxiliary model (for summaries, session names)',
+  'cmd.tldr.desc': 'Generate TLDR for the last AI response',
+  'cmd.project.desc': 'Switch to a different project directory',
+  'cmd.debug.desc': 'Toggle debug commands on/off',
+  'cmd.continue.desc': 'Resubmit context so the LLM keeps generating',
+  'cmd.retry.desc': 'Re-send the last user input from scratch',
+  'cmd.undo.desc': 'Wipe the last round; restore prompt for editing',
+  'cmd.btw.desc':
+      'Ephemeral side-question — not saved, discarded on next real turn',
+  'cmd.archive.desc': 'Archive the current session (hide from sidebar)',
+  'cmd.unarchive.desc': 'Unarchive a session by id (restore to sidebar)',
+  'cmd.rename.desc': 'Rename the current session',
+  'cmd.quit.desc': 'Exit Crux (prints a run summary)',
+  'cmd.language.desc': 'Switch the UI language (en|zh)',
+
+  // ── Toast messages ──
+  'toast.noSession': 'No active session',
+  'toast.responding': 'AI is already responding',
+  'toast.unknownModel': 'Unknown model: {model}',
+  'toast.archived': 'Archived "{title}"',
+  'toast.auxDisabled': 'Auxiliary model disabled',
+  'toast.auxSet': 'Auxiliary model set to {model}',
+  'toast.auxUsage': 'Usage: /auxiliary <name>',
+  'toast.btwUsage': 'Usage: /btw <prompt>',
+  'toast.chatUnavailable': '/chat is not available here',
+  'toast.alreadyNewChat': 'Already on a new chat',
+  'toast.compactUnavailable': 'Compaction unavailable',
+  'toast.nothingContinue': 'Nothing to continue — session is empty',
+  'toast.helpWritten': 'Help written to the chat history',
+  'toast.homeUnavailable': 'Home screen not available',
+  'toast.modelSwitched': 'Model switched to {model}',
+  'toast.modelUsage': 'Usage: /model <name>',
+  'toast.alreadyNewSession': 'Already on a new session',
+  'toast.dirNotFound': 'Directory not found: {path}',
+  'toast.switchedProject': 'Switched to {path}',
+  'toast.projectUsage': 'Usage: /project <path> (current: {path})',
+  'toast.providerList':
+      'Providers: {names}. Usage: /provider <name> [<key>|remove]',
+  'toast.providerNotFound':
+      'Provider "{name}" not found. Available: {names}. To add it, copy '
+          '~/.config/crux/providers/example.provider.toml to '
+          '~/.config/crux/providers/{name}.toml and edit it.',
+  'toast.providerStatus':
+      '{name}  [{type}]  endpoint={endpoint}  key={key}  models={models}',
+  'toast.keySet': 'set',
+  'toast.keyMissing': 'missing',
+  'toast.removedKey': 'Removed API key for {name}',
+  'toast.savedKey': 'Saved API key for {name}',
+  'toast.quitRunning':
+      'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
+  'toast.quitUnavailable': 'Quit unavailable (no TUI bound)',
+  'toast.renameUsage': 'Usage: /rename <new title>',
+  'toast.titleUnchanged': 'Title unchanged',
+  'toast.renamed': 'Renamed "{old}" → "{new}"',
+  'toast.retryResponding': 'Cannot retry while AI is responding',
+  'toast.nothingRetry': 'Nothing to retry — no user message yet',
+  'toast.sessionUsage': 'Usage: /session #<id>',
+  'toast.tempDefaultNoOverride': 'Temperature: model default (no override set)',
+  'toast.tempDefaultWithValue':
+      'Temperature: model default {value} (no override set)',
+  'toast.tempOverride': 'Temperature: {value} (override; default {default})',
+  'toast.tempOverrideNoDefault': 'Temperature: {value} (override)',
+  'toast.tempInvalid':
+      'Invalid temperature: "{raw}". Usage: /temperature <0.0–1.0>',
+  'toast.tempClamped':
+      'Temperature set to {value} (clamped from {raw}; range 0.0–1.0)',
+  'toast.tempSet':
+      'Temperature set to {value} (override; will apply for the session)',
+  'toast.themeUnavailable': 'Theme service is unavailable',
+  'toast.themeCurrent': 'Current theme: {id}. Usage: /theme <name>',
+  'toast.themeUnknown': 'Unknown theme "{id}". Available: {list}',
+  'toast.themePersistFailed':
+      'Theme switched to {id}, but config could not be saved',
+  'toast.themeSwitched': 'Theme switched to {id}',
+  'toast.thinkOff': 'Thinking mode: off',
+  'toast.thinkLow': 'Thinking mode: low',
+  'toast.thinkNormal': 'Thinking mode: {label}',
+  'toast.thinkHigh': 'Thinking mode: high',
+  'toast.thinkMax': 'Thinking mode: max',
+  'toast.thinkUsage': 'Usage: /think {levels} (current: {current})',
+  'toast.tldrNoResponse': 'No AI response to summarize',
+  'toast.tldrUnknownLevel':
+      'Unknown /tldr level "{level}". Use concise, default, or detailed.',
+  'toast.sessionNotFound': 'Session #{id} not found',
+  'toast.notArchived': 'Session #{id} is not archived',
+  'toast.unarchived': 'Unarchived "{title}"',
+  'toast.unarchiveUsage': 'Usage: /unarchive #<id>',
+  'toast.noArchived': 'No archived sessions',
+  'toast.archivedList': 'Archived sessions:',
+  'toast.undoResponding': 'Cannot undo while AI is responding',
+  'toast.nothingUndo': 'Nothing to undo — no user message yet',
+  'toast.undone': 'Undone — edit the prompt and press Enter to resend',
+  'toast.displayMode': 'Display mode: {mode}',
+  'toast.viewUnknown': 'Unknown mode: "{mode}". Usage: /view <verbose|vibe>',
+  'toast.webNoProviders': 'No web providers registered.',
+  'toast.webUnknown':
+      'Unknown web provider "{id}".{known} Usage: /web-provider <name> <key>|remove',
+  'toast.webKnown': ' Known: {list}.',
+  'toast.webRemovedKey': 'Removed {name} API key.',
+  'toast.webSavedKey': 'Saved {name} API key.',
+  'toast.webMissingKey':
+      'Missing key value. Usage: /web-provider {id} key <value>',
+  'toast.unknownCommand': 'Unknown command: {cmd}',
+  'toast.notImplemented': '{cmd} — not yet implemented',
+
+  // ── Parameter suggestion descriptions ──
+  'sug.think.off': 'Disable thinking mode',
+  'sug.think.low': 'Low reasoning effort',
+  'sug.think.normal': 'Normal reasoning effort',
+  'sug.think.adaptive': 'Adaptive reasoning (minimax only)',
+  'sug.think.high': 'High reasoning effort',
+  'sug.think.max': 'Maximum reasoning effort',
+  'sug.view.verbose': 'Show all detail (current default)',
+  'sug.view.vibe': 'Aggregated metadata boxes (denser)',
+  'sug.temp.0.0': 'Fully deterministic',
+  'sug.temp.0.3': 'Mostly deterministic',
+  'sug.temp.0.7': 'Balanced',
+  'sug.temp.1.0': 'Maximum creativity',
+  'sug.tldr.concise': 'Fewer bullets, focus on the core message',
+  'sug.tldr.default': 'Balanced summary (default if no level is given)',
+  'sug.tldr.detailed': 'Thorough summary covering every section',
+
+  // ── Chat chrome ──
+  'chat.input.placeholder': 'Type a message...',
+  'chat.input.placeholderImages':
+      'Type message to send with {n} image(s)...',
+  'chat.input.ctrlCQuit': 'Press Ctrl+C again to quit...',
+  'chat.input.queueHint':
+      'Enter message to queue — click the model button to interrupt, Ctrl+C×2 to quit',
+  'chat.input.interrupted': 'Response was interrupted. Type a new message...',
+  'chat.toolbar.interrupt': 'Interrupt',
+  'chat.toolbar.interruptHint': 'Interrupt\n(stop the response · {model})',
+  'chat.toolbar.currentModel': 'Current model: {model}\n(click to change)',
+  'chat.toolbar.acceptsImages': 'This model accepts image inputs',
+  'chat.toolbar.thinkingMode': 'Thinking mode: {label}',
+  'chat.toolbar.thinkingHint':
+      'Thinking mode: {label}\n(click to cycle through effort levels)',
+  'chat.toolbar.throughput':
+      'Generation throughput (tokens/sec) and time to first token',
+  'chat.toolbar.codingPlanHint':
+      'Coding-plan usage\n5h: short-window remaining\n1w: weekly remaining\nClick to refresh',
+  'chat.toolbar.creditHint':
+      'Credit balance\nHover for granted / topped-up breakdown\nClick to refresh',
+  'chat.toolbar.auxRunning':
+      'Auxiliary model: {model}\n(cannot be changed while the agent is responding)',
+  'chat.toolbar.auxIdle':
+      'Auxiliary model: {model}\n(used for /tldr summaries and title generation)',
+  'chat.toolbar.clickRefresh': 'Click to refresh',
+  'chat.context.compact': 'Compact',
+  'chat.context.skillsNone': 'Loaded skills : none',
+  'chat.context.skills': 'Loaded skills : {names}',
+  'chat.context.compactUnavailable':
+      'Context window usage.\nCompaction unavailable while the agent is responding.',
+  'chat.context.compactAvailable':
+      'Context window usage.\nClick to compact the session history.',
+  'chat.sessions.sessions': 'Sessions',
+  'chat.sessions.chats': 'Chats',
+  'chat.sessions.delete': 'delete',
+  'chat.sessions.rename': 'rename',
+  'chat.sessions.confirmDelete': 'Confirm Delete',
+  'chat.sessions.noSessions': 'No sessions found.',
+  'chat.sessions.deleteConfirm':
+      'Delete "{title}"? Ctrl+D to confirm, Esc to cancel',
+  'chat.sessions.renameTitle': 'Rename Session',
+  'chat.sessions.current': 'Current: {title}',
+  'chat.sessions.newName': 'New: ',
+  'chat.sessions.confirmHint': 'Enter to confirm, Esc to cancel',
+  'chat.sessions.status': 'St',
+  'chat.sessions.model': 'Model',
+  'chat.sessions.title': ' Title',
+  'chat.sidebar.open': 'open',
+  'chat.sidebar.switch': 'switch',
+  'chat.sidebar.git': 'git',
+  'chat.sidebar.project': 'project',
+
+  // ── Tool detail pane ──
+  'chat.tool.pretty': 'Pretty',
+  'chat.tool.raw': 'Raw',
+  'chat.tool.changes': 'Changes',
+  'chat.tool.old': 'Old',
+  'chat.tool.new': 'New',
+  'chat.tool.arguments': 'Arguments',
+  'chat.tool.result': 'Result',
+  'chat.tool.empty': '(empty)',
+  'chat.tool.noOutput': '(no output)',
+  'chat.tool.noContent': '(no content)',
+  'chat.tool.noMatches': '(no matches)',
+  'chat.tool.noFiles': '(no files matched)',
+  'chat.tool.noArguments': '(no arguments)',
+  'chat.tool.noResult': '(no result yet)',
+  'chat.tool.noChanges': '(no changes)',
+  'chat.tool.andMore': '... and {n} more',
+  'chat.tool.inFile': 'in {path}',
+  'chat.tool.lsp': 'LSP · {n} {word}',
+  'chat.tool.error': 'error',
+  'chat.tool.errors': 'errors',
+
+  // ── Fullpane + compaction ──
+  'chat.fullpane.skill': 'Skill — {name}',
+  'chat.fullpane.compaction': 'Compaction',
+  'chat.fullpane.default': 'Fullpane',
+  'chat.fullpane.placeholder': 'Fullpane placeholder content',
+  'chat.compact.counterproductive':
+      'Compaction is not worth it — no history to compact.',
+  'chat.compact.saveOnly':
+      'Compaction would save only {pct}% (≈{tokens} tokens) — below the 5% threshold. Skipping.',
+  'chat.compact.failed': 'Compaction failed: {error}',
 };
 
 const Map<String, String> _zh = {
+  // ── /language command ──
   'lang.unavailable': '语言服务不可用',
   'lang.current': '当前语言：{lang}。用法：/language <en|zh>',
   'lang.unknown': '未知语言 "{lang}"。可用：{list}',
   'lang.switched': '语言已切换为 {lang}',
   'lang.persistFailed': '语言已切换为 {lang}，但配置保存失败',
+
+  // ── Home screen chrome ──
+  'home.editing': '编辑中',
+  'home.noWorkspace': '(无工作区)',
+  'home.notGitRepo': '非 git 仓库',
+  'home.noBranch': '(无分支)',
+  'home.newChat': '新对话',
+  'home.newChatPlaceholder': '开始新对话…',
+  'home.fixedSize': '该盒子尺寸固定',
+  'home.keepOne': '至少保留一个盒子',
+  'home.noHidden': '没有隐藏的盒子',
+  'home.footerEdit': '←→ 排序 · -/= 调整大小 · x 隐藏 · a 添加 · e/esc 完成',
+  'home.footerNav': '↑↓ 选择 · ←→ 切换盒子 · tab 换行 · enter 打开 · e 编辑 · esc 对话',
+  'home.weekdays': '周一,周二,周三,周四,周五,周六,周日',
+  'home.months': '1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月',
+  'home.date': '{month}{day}日 {weekday}',
+
+  // ── Day labels ──
+  'home.day.today': '今天',
+  'home.day.yesterday': '昨天',
+  'home.day.daysAgo': '{n} 天前',
+
+  // ── Relative time ──
+  'home.time.now': '刚刚',
+  'home.time.minutes': '{n}分钟',
+  'home.time.hours': '{n}小时',
+  'home.time.days': '{n}天',
+  'home.time.months': '{n}个月',
+
+  // ── Widget titles ──
+  'home.title.quickActions': '快捷操作',
+  'home.title.recent': '最近',
+  'home.title.skills': '技能',
+  'home.title.workspace': '工作区',
+  'home.title.notes': '我的笔记',
+  'home.title.activity': '活跃度',
+  'home.title.codingPlan': '用量计划',
+  'home.title.setup': '快速开始',
+  'home.title.settings': '设置',
+  'home.title.git': 'Git',
+
+  // ── Settings rows ──
+  'home.settings.theme': '主题',
+  'home.settings.auxiliary': '辅助模型',
+  'home.settings.view': '视图',
+  'home.settings.language': '语言',
+
+  // ── Quick actions ──
+  'home.qa.freshSession': '开始新会话',
+  'home.qa.chatSession': '打开聊天模式会话',
+  'home.qa.resume': '继续上一个会话',
+  'home.qa.switchProject': '切换项目…',
+
+  // ── Recent sessions ──
+  'home.recent.empty': '暂无会话 — 用 /new 开始',
+
+  // ── Skills ──
+  'home.skills.empty': '未找到技能',
+
+  // ── Workspace ──
+  'home.ws.dir': '目录',
+  'home.ws.branch': '分支',
+  'home.ws.model': '模型',
+  'home.ws.sessions': '会话',
+  'home.ws.noModel': '未配置模型 — 用 /provider 连接',
+  'home.ws.sessionsCount': '本工作区 {n} 个',
+  'home.ws.unknown': '(未知)',
+
+  // ── Notes ──
+  'home.notes.unavailable': '笔记功能不可用',
+  'home.notes.noTodos': '暂无待办',
+  'home.notes.todo': '{n} 个待办',
+  'home.notes.todos': '{n} 个待办',
+  'home.notes.open': '打开',
+
+  // ── Activity ──
+  'home.activity.counting': '统计 token…',
+  'home.activity.total': '总计',
+  'home.activity.less': '少 ',
+  'home.activity.more': ' 多  ',
+  'home.activity.weekdays': '一,二,三,四,五,六,日',
+
+  // ── Tokens ──
+  'home.tokens.loading': '加载中…',
+  'home.tokens.noActivity': '暂无活动',
+  'home.tokens.tokens': 'Token',
+  'home.tokens.turns': '轮次',
+  'home.tokens.sessions': '会话',
+
+  // ── Yesterday ──
+  'home.yesterday.summarizing': '正在总结 {day}…',
+  'home.yesterday.nothing': '{day} 无内容',
+  'home.yesterday.sessionActive': '{n} 个会话活跃',
+  'home.yesterday.sessionsActive': '{n} 个会话活跃',
+
+  // ── Coding plan ──
+  'home.cp.empty': '暂无用量数据',
+  'home.cp.waiting': '等待中…',
+  'home.cp.credit': '余额',
+  'home.cp.window5h': '5时',
+  'home.cp.window7d': '7天',
+
+  // ── Setup ──
+  'home.setup.providerKey': 'API 密钥',
+  'home.setup.auxModel': '辅助模型',
+  'home.setup.webProvider': '搜索服务',
+  'home.setup.workspace': '工作区',
+  'home.setup.connected': '已连接',
+  'home.setup.configured': '已配置',
+  'home.setup.openProject': '在项目目录中打开 crux',
+
+  // ── Git ──
+  'home.git.clean': '干净',
+  'home.git.staged': '已暂存',
+  'home.git.modified': '已修改',
+  'home.git.deleted': '已删除',
+  'home.git.untracked': '未跟踪',
+  'home.git.conflict': '冲突',
+
+  // ── Command descriptions ──
+  'cmd.overlay.title': '命令',
+  'cmd.model.desc': '切换 AI 模型',
+  'cmd.new.desc': '新建会话',
+  'cmd.chat.desc': '开启无工作区的对话（全局、精简提示词）',
+  'cmd.session.desc': '切换会话',
+  'cmd.compact.desc': '压缩上下文窗口',
+  'cmd.help.desc': '显示帮助（命令、快捷键、技巧）',
+  'cmd.home.desc': '打开主页仪表盘',
+  'cmd.theme.desc': '更换界面主题',
+  'cmd.provider.desc': '接入模型提供商（用法：/provider <name> [<key>|remove]）',
+  'cmd.webProvider.desc':
+      '配置搜索服务：/web-provider (list) | /web-provider <name> (status) | '
+          '/web-provider <name> <key> | /web-provider <name> remove',
+  'cmd.think.desc': '切换思考模式（off|low|normal|adaptive|high|max）',
+  'cmd.view.desc': '切换对话日志显示模式（verbose|vibe）',
+  'cmd.temperature.desc': '覆盖本次会话采样温度（限制 0.0–1.0）',
+  'cmd.auxiliary.desc': '选择辅助模型（用于摘要、会话命名）',
+  'cmd.tldr.desc': '为最后一条 AI 回复生成摘要',
+  'cmd.project.desc': '切换到其他项目目录',
+  'cmd.debug.desc': '开关调试命令',
+  'cmd.continue.desc': '继续生成（重新提交上下文让模型继续）',
+  'cmd.retry.desc': '重试（重新发送上一条输入）',
+  'cmd.undo.desc': '撤销（抹掉上一轮，恢复提示词供编辑）',
+  'cmd.btw.desc': '临时侧问——不保存，下一条真实消息即丢弃',
+  'cmd.archive.desc': '归档当前会话（从侧栏隐藏）',
+  'cmd.unarchive.desc': '按 id 取消归档会话（恢复到侧栏）',
+  'cmd.rename.desc': '重命名当前会话',
+  'cmd.quit.desc': '退出 Crux（打印运行摘要）',
+  'cmd.language.desc': '切换界面语言（en|zh）',
+
+  // ── Toast messages ──
+  'toast.noSession': '没有活动会话',
+  'toast.responding': 'AI 正在回复中',
+  'toast.unknownModel': '未知模型：{model}',
+  'toast.archived': '已归档 "{title}"',
+  'toast.auxDisabled': '辅助模型已禁用',
+  'toast.auxSet': '辅助模型已设为 {model}',
+  'toast.auxUsage': '用法：/auxiliary <name>',
+  'toast.btwUsage': '用法：/btw <prompt>',
+  'toast.chatUnavailable': '此处无法使用 /chat',
+  'toast.alreadyNewChat': '已经是新对话了',
+  'toast.compactUnavailable': '压缩功能不可用',
+  'toast.nothingContinue': '没有可继续的内容——会话为空',
+  'toast.helpWritten': '帮助已写入对话历史',
+  'toast.homeUnavailable': '主页不可用',
+  'toast.modelSwitched': '已切换到模型 {model}',
+  'toast.modelUsage': '用法：/model <name>',
+  'toast.alreadyNewSession': '已经是新会话了',
+  'toast.dirNotFound': '目录不存在：{path}',
+  'toast.switchedProject': '已切换到 {path}',
+  'toast.projectUsage': '用法：/project <path>（当前：{path}）',
+  'toast.providerList': '提供商：{names}。用法：/provider <name> [<key>|remove]',
+  'toast.providerNotFound':
+      '未找到提供商 "{name}"。可用：{names}。要添加它，请复制 '
+          '~/.config/crux/providers/example.provider.toml 到 '
+          '~/.config/crux/providers/{name}.toml 并编辑。',
+  'toast.providerStatus':
+      '{name}  [{type}]  endpoint={endpoint}  key={key}  models={models}',
+  'toast.keySet': '已设置',
+  'toast.keyMissing': '未设置',
+  'toast.removedKey': '已移除 {name} 的 API 密钥',
+  'toast.savedKey': '已保存 {name} 的 API 密钥',
+  'toast.quitRunning': '有会话正在运行——点击模型按钮中断，Ctrl+C×2 退出',
+  'toast.quitUnavailable': '无法退出（未绑定 TUI）',
+  'toast.renameUsage': '用法：/rename <新标题>',
+  'toast.titleUnchanged': '标题未变',
+  'toast.renamed': '已重命名 "{old}" → "{new}"',
+  'toast.retryResponding': 'AI 回复中无法重试',
+  'toast.nothingRetry': '无可重试的内容——还没有用户消息',
+  'toast.sessionUsage': '用法：/session #<id>',
+  'toast.tempDefaultNoOverride': '温度：模型默认（未覆盖）',
+  'toast.tempDefaultWithValue': '温度：模型默认 {value}（未覆盖）',
+  'toast.tempOverride': '温度：{value}（覆盖；默认 {default}）',
+  'toast.tempOverrideNoDefault': '温度：{value}（覆盖）',
+  'toast.tempInvalid': '无效温度："{raw}"。用法：/temperature <0.0–1.0>',
+  'toast.tempClamped': '温度已设为 {value}（从 {raw} 收窄；范围 0.0–1.0）',
+  'toast.tempSet': '温度已设为 {value}（覆盖；本次会话生效）',
+  'toast.themeUnavailable': '主题服务不可用',
+  'toast.themeCurrent': '当前主题：{id}。用法：/theme <name>',
+  'toast.themeUnknown': '未知主题 "{id}"。可用：{list}',
+  'toast.themePersistFailed': '主题已切换为 {id}，但配置保存失败',
+  'toast.themeSwitched': '主题已切换为 {id}',
+  'toast.thinkOff': '思考模式：关闭',
+  'toast.thinkLow': '思考模式：低',
+  'toast.thinkNormal': '思考模式：{label}',
+  'toast.thinkHigh': '思考模式：高',
+  'toast.thinkMax': '思考模式：最高',
+  'toast.thinkUsage': '用法：/think {levels}（当前：{current}）',
+  'toast.tldrNoResponse': '没有可总结的 AI 回复',
+  'toast.tldrUnknownLevel': '未知 /tldr 级别 "{level}"。请用 concise、default 或 detailed。',
+  'toast.sessionNotFound': '未找到会话 #{id}',
+  'toast.notArchived': '会话 #{id} 未归档',
+  'toast.unarchived': '已取消归档 "{title}"',
+  'toast.unarchiveUsage': '用法：/unarchive #<id>',
+  'toast.noArchived': '没有已归档的会话',
+  'toast.archivedList': '已归档会话：',
+  'toast.undoResponding': 'AI 回复中无法撤销',
+  'toast.nothingUndo': '无可撤销内容——还没有用户消息',
+  'toast.undone': '已撤销——编辑提示词后回车重新发送',
+  'toast.displayMode': '显示模式：{mode}',
+  'toast.viewUnknown': '未知模式："{mode}"。用法：/view <verbose|vibe>',
+  'toast.webNoProviders': '未注册任何搜索服务。',
+  'toast.webUnknown':
+      '未知搜索服务 "{id}"。{known} 用法：/web-provider <name> <key>|remove',
+  'toast.webKnown': ' 已知：{list}。',
+  'toast.webRemovedKey': '已移除 {name} 的 API 密钥。',
+  'toast.webSavedKey': '已保存 {name} 的 API 密钥。',
+  'toast.webMissingKey': '缺少密钥值。用法：/web-provider {id} key <value>',
+  'toast.unknownCommand': '未知命令：{cmd}',
+  'toast.notImplemented': '{cmd} — 尚未实现',
+
+  // ── Parameter suggestion descriptions ──
+  'sug.think.off': '关闭思考',
+  'sug.think.low': '低强度推理',
+  'sug.think.normal': '普通推理强度',
+  'sug.think.adaptive': '自适应推理（仅 minimax）',
+  'sug.think.high': '高强度推理',
+  'sug.think.max': '最大推理强度',
+  'sug.view.verbose': '显示全部细节（当前默认）',
+  'sug.view.vibe': '聚合元数据盒子（更紧凑）',
+  'sug.temp.0.0': '完全确定性',
+  'sug.temp.0.3': '基本确定性',
+  'sug.temp.0.7': '均衡',
+  'sug.temp.1.0': '最大创造性',
+  'sug.tldr.concise': '更少条目，聚焦核心信息',
+  'sug.tldr.default': '均衡摘要（默认）',
+  'sug.tldr.detailed': '详尽摘要，覆盖所有部分',
+
+  // ── Chat chrome ──
+  'chat.input.placeholder': '输入消息…',
+  'chat.input.placeholderImages': '输入消息，随 {n} 张图片发送…',
+  'chat.input.ctrlCQuit': '再按一次 Ctrl+C 退出…',
+  'chat.input.queueHint': '输入消息排队——点击模型按钮中断，Ctrl+C×2 退出',
+  'chat.input.interrupted': '回复已中断。输入新消息…',
+  'chat.toolbar.interrupt': '中断',
+  'chat.toolbar.interruptHint': '中断\n（停止回复 · {model}）',
+  'chat.toolbar.currentModel': '当前模型：{model}\n（点击切换）',
+  'chat.toolbar.acceptsImages': '该模型支持图片输入',
+  'chat.toolbar.thinkingMode': '思考模式：{label}',
+  'chat.toolbar.thinkingHint': '思考模式：{label}\n（点击循环切换强度）',
+  'chat.toolbar.throughput': '生成吞吐（token/秒）与首 token 延迟',
+  'chat.toolbar.codingPlanHint': '用量计划\n5时：短窗口剩余\n7天：每周剩余\n点击刷新',
+  'chat.toolbar.creditHint': '余额\n悬停查看赠额/充值明细\n点击刷新',
+  'chat.toolbar.auxRunning': '辅助模型：{model}\n（回复过程中无法更改）',
+  'chat.toolbar.auxIdle': '辅助模型：{model}\n（用于 /tldr 摘要和标题生成）',
+  'chat.toolbar.clickRefresh': '点击刷新',
+  'chat.context.compact': '压缩',
+  'chat.context.skillsNone': '已加载技能：无',
+  'chat.context.skills': '已加载技能：{names}',
+  'chat.context.compactUnavailable':
+      '上下文窗口占用。\n回复过程中无法压缩。',
+  'chat.context.compactAvailable':
+      '上下文窗口占用。\n点击压缩会话历史。',
+  'chat.sessions.sessions': '会话',
+  'chat.sessions.chats': '对话',
+  'chat.sessions.delete': '删除',
+  'chat.sessions.rename': '重命名',
+  'chat.sessions.confirmDelete': '确认删除',
+  'chat.sessions.noSessions': '未找到会话。',
+  'chat.sessions.deleteConfirm': '删除 "{title}"？Ctrl+D 确认，Esc 取消',
+  'chat.sessions.renameTitle': '重命名会话',
+  'chat.sessions.current': '当前：{title}',
+  'chat.sessions.newName': '新名称：',
+  'chat.sessions.confirmHint': '回车确认，Esc 取消',
+  'chat.sessions.status': '状态',
+  'chat.sessions.model': '模型',
+  'chat.sessions.title': ' 标题',
+  'chat.sidebar.open': '打开',
+  'chat.sidebar.switch': '切换',
+  'chat.sidebar.git': 'git',
+  'chat.sidebar.project': '项目',
+
+  // ── Tool detail pane ──
+  'chat.tool.pretty': '美观',
+  'chat.tool.raw': '原始',
+  'chat.tool.changes': '变更',
+  'chat.tool.old': '旧',
+  'chat.tool.new': '新',
+  'chat.tool.arguments': '参数',
+  'chat.tool.result': '结果',
+  'chat.tool.empty': '（空）',
+  'chat.tool.noOutput': '（无输出）',
+  'chat.tool.noContent': '（无内容）',
+  'chat.tool.noMatches': '（无匹配）',
+  'chat.tool.noFiles': '（无匹配文件）',
+  'chat.tool.noArguments': '（无参数）',
+  'chat.tool.noResult': '（尚无结果）',
+  'chat.tool.noChanges': '（无变更）',
+  'chat.tool.andMore': '… 还有 {n} 个',
+  'chat.tool.inFile': '在 {path} 中',
+  'chat.tool.lsp': 'LSP · {n} {word}',
+  'chat.tool.error': '错误',
+  'chat.tool.errors': '错误',
+
+  // ── Fullpane + compaction ──
+  'chat.fullpane.skill': '技能 — {name}',
+  'chat.fullpane.compaction': '压缩',
+  'chat.fullpane.default': '全屏面板',
+  'chat.fullpane.placeholder': '全屏面板占位内容',
+  'chat.compact.counterproductive': '无需压缩——没有可压缩的历史。',
+  'chat.compact.saveOnly': '压缩只能节省 {pct}%（约 {tokens} token）——低于 5% 阈值，跳过。',
+  'chat.compact.failed': '压缩失败：{error}',
 };

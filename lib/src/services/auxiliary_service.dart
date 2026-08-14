@@ -254,11 +254,18 @@ class AuxiliaryService {
   /// [yesterdaySummarySystemPromptFor]) that it's seeing asks + brief
   /// replies, not a full conversation.
   ///
+  /// [language] is the target output language for the summary prose
+  /// (the active UI language, e.g. "English" / "中文"). When null or
+  /// empty the model infers from the digest's dominant language. It is
+  /// folded into the cache key so switching the UI language
+  /// regenerates the summary in the new language.
+  ///
   /// Cached by the day-set fingerprint: identical inputs return the
   /// cached summary without an LLM round.
   Future<YesterdaySummary?> summarizeYesterday(
     List<Session> sessions, {
     DateTime Function()? now,
+    String? language,
   }) async {
     final nowValue = (now ?? DateTime.now)();
     final todayStart = DateTime(nowValue.year, nowValue.month, nowValue.day);
@@ -284,7 +291,7 @@ class AuxiliaryService {
     if (daySessions == null) return null;
 
     final fingerprint = _fingerprint(daySessions);
-    final key = _cacheKey(todayStart, daysAgo, fingerprint);
+    final key = _cacheKey(todayStart, daysAgo, fingerprint, language);
 
     // 1. In-memory hit.
     if (key == _yesterdayCacheKey) {
@@ -305,7 +312,8 @@ class AuxiliaryService {
 
     final dayLabel = yesterdayLabelForDaysAgo(daysAgo);
     final summary = await _streamAuxiliaryCall(
-      systemPrompt: yesterdaySummarySystemPromptFor(dayLabel),
+      systemPrompt: yesterdaySummarySystemPromptFor(dayLabel,
+          language: language),
       userMessage: digest,
       logTag: 'yesterday',
     );
@@ -330,9 +338,15 @@ class AuxiliaryService {
   /// an already-listed session does NOT — a past day's content is
   /// frozen, so once summarized it stays cached for the rest of today
   /// and only regenerates on a new calendar day.
-  String _cacheKey(DateTime todayStart, int daysAgo, String fingerprint) =>
+  String _cacheKey(
+    DateTime todayStart,
+    int daysAgo,
+    String fingerprint, [
+    String? language,
+  ]) =>
       '${todayStart.toIso8601String().substring(0, 10)}|'
-      '$daysAgo|$fingerprint';
+      '$daysAgo|$fingerprint'
+      '${language == null || language.isEmpty ? '' : '|$language'}';
 
   /// The fingerprint is just the ordered session ids in the day window —
   /// deliberately NOT their `updatedAt`s. Yesterday's messages don't

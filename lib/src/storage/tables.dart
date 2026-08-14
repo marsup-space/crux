@@ -53,6 +53,13 @@ class Sessions extends Table {
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();
 
+  /// When non-null, the session (workspace or chat) is pinned: it
+  /// renders at the top of the sidebar's "Pinned" section and is
+  /// exempt from the 3-day auto-archive sweep. Nullable so the
+  /// migration is a bare `ALTER TABLE ADD COLUMN` with no backfill;
+  /// existing rows read as `NULL` (unpinned).
+  IntColumn get pinnedAt => integer().nullable()();
+
   /// The rendered system prompt — the joined content of all four
   /// layers, ready to be sent as a single `role: 'system'` message.
   /// Computed once at session start and re-attached verbatim on every

@@ -37,6 +37,9 @@ class SkillsHomeWidget extends HomeWidget {
   String get title => 'Skills';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.skills');
+
+  @override
   Set<int> get supportedSpans => const {1, 2};
 
   /// Content height; the list scrolls inside the box when there are
@@ -112,7 +115,7 @@ class SkillsHomeWidget extends HomeWidget {
     final all = skills();
     if (all.isEmpty) {
       return Text(
-        'no skills found',
+        ctx.strings.t('home.skills.empty'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }

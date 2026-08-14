@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../services/notes_service.dart';
 import '../../../theme/crux_theme.dart';
 import '../../ui/button.dart';
@@ -34,6 +35,9 @@ class NotesHomeWidget extends HomeWidget {
   String get title => 'my notes';
 
   @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.notes');
+
+  @override
   Set<int> get supportedSpans => const {1, 2};
 
   /// 4 rows: count line + up to 3 todo rows. The list scrolls inside
@@ -60,6 +64,7 @@ class NotesHomeWidget extends HomeWidget {
     return _NotesHomeView(
       service: ctx.notesService,
       openNotes: ctx.openNotes,
+      strings: ctx.strings,
     );
   }
 }
@@ -70,8 +75,13 @@ class NotesHomeWidget extends HomeWidget {
 class _NotesHomeView extends StatefulComponent {
   final NotesService? service;
   final void Function()? openNotes;
+  final Strings strings;
 
-  const _NotesHomeView({required this.service, required this.openNotes});
+  const _NotesHomeView({
+    required this.service,
+    required this.openNotes,
+    required this.strings,
+  });
 
   @override
   State<_NotesHomeView> createState() => _NotesHomeViewState();
@@ -108,7 +118,7 @@ class _NotesHomeViewState extends State<_NotesHomeView> {
 
     if (service == null) {
       return Text(
-        'no notes feature',
+        component.strings.t('home.notes.unavailable'),
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
@@ -123,8 +133,11 @@ class _NotesHomeViewState extends State<_NotesHomeView> {
           children: [
             Text(
               todos.isEmpty
-                  ? 'no todos'
-                  : '${todos.length} todo${todos.length == 1 ? '' : 's'}',
+                  ? component.strings.t('home.notes.noTodos')
+                  : component.strings.t(
+                      todos.length == 1 ? 'home.notes.todo' : 'home.notes.todos',
+                      {'n': '${todos.length}'},
+                    ),
               style: TextStyle(
                 color: todos.isEmpty ? theme.onSurfaceDim : theme.onSurfaceVariant,
               ),
@@ -132,7 +145,7 @@ class _NotesHomeViewState extends State<_NotesHomeView> {
             const Spacer(),
             if (component.openNotes != null)
               Button(
-                label: 'open',
+                label: component.strings.t('home.notes.open'),
                 onPressed: component.openNotes,
                 color: theme.accent,
                 hoverColor: theme.buttonTextHover,

@@ -1,5 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../i18n/app_locale.dart';
+import '../../i18n/strings.dart';
 import '../../models/session.dart';
 import '../../models/daily_usage_stats.dart';
 import '../../services/auxiliary_service.dart' show YesterdaySummary;
@@ -105,6 +107,11 @@ class HomeContext {
   /// box. Null (tests / previews) means "unknown".
   final String? Function() localeId;
 
+  /// A string lookup bound to the active UI language, for localizing home
+  /// chrome (box titles, labels, hints). Falls back to English when
+  /// [localeId] is null (tests / previews).
+  Strings get strings => Strings(AppLocale.fromCode(localeId()));
+
   /// The current session's chat display mode (`"verbose"` / `"vibe"`).
   /// Feeds the `settings` box. Null when there's no current session.
   final String? Function() viewMode;
@@ -202,6 +209,11 @@ abstract class HomeWidget {
 
   /// Box chrome title, rendered in the border.
   String get title;
+
+  /// The box's title localized for [ctx]'s active language. Defaults to
+  /// [title] (English) — widgets override it when their title should
+  /// follow the locale (most do; `Git` and a few proper nouns stay put).
+  String titleFor(HomeContext ctx) => title;
 
   /// Column spans this widget can render at, e.g. `{1, 2}`. The layout
   /// engine assigns the largest span that fits the current column

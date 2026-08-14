@@ -9,15 +9,15 @@ Future<void> executeProject(List<String> parts, CommandContext ctx) async {
     final target = p.normalize(p.absolute(expanded));
     final dir = Directory(target);
     if (!dir.existsSync()) {
-      ctx.showToast('Directory not found: $target', mode: ToastMode.error);
+      ctx.showToast(ctx.strings.t('toast.dirNotFound', {'path': target}), mode: ToastMode.error);
     } else {
       Directory.current = dir;
       await ctx.recentProjectsStore?.add(target);
       await ctx.initSessions();
-      ctx.showToast('Switched to $target', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.switchedProject', {'path': target}), mode: ToastMode.status);
     }
   } else {
-    ctx.showToast('Usage: /project <path> (current: ${ctx.projectPath})');
+    ctx.showToast(ctx.strings.t('toast.projectUsage', {'path': ctx.projectPath}));
   }
 }
 

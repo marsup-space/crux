@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../services/git_status_service.dart';
 import '../theme/crux_theme.dart';
 import '../utils/terminal_symbols.dart';
@@ -43,12 +44,14 @@ class GitStatusWidget extends StatefulComponent {
   /// matches the project [MultiButton] below it. Default `true`
   /// because that's what the side panel wants.
   final bool compact;
+  final Strings strings;
 
   const GitStatusWidget({
     super.key,
     required this.service,
     this.onTap,
     this.compact = true,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -97,6 +100,7 @@ class _GitStatusWidgetState extends State<GitStatusWidget> {
       status: status,
       onTap: component.onTap,
       compact: component.compact,
+      strings: component.strings,
     );
   }
 }
@@ -109,11 +113,13 @@ class _GitStatusView extends StatelessComponent {
   final GitStatus status;
   final VoidCallback? onTap;
   final bool compact;
+  final Strings strings;
 
   const _GitStatusView({
     required this.status,
     required this.onTap,
     required this.compact,
+    required this.strings,
   });
 
   @override
@@ -241,14 +247,14 @@ class _GitStatusView extends StatelessComponent {
       '!',
       '!',
       status.conflictedFiles,
-      'conflict',
+      strings.t('home.git.conflict'),
       theme.errorColor,
       bold: true,
     );
-    add('●', '+', status.stagedFiles, 'staged', theme.successColor);
-    add('~', '~', status.modifiedFiles, 'modified', theme.warningColor);
-    add('D', 'D', status.deletedFiles, 'deleted', theme.errorColor);
-    add('?', '?', status.untrackedFiles, 'untracked', theme.hintText);
+    add('●', '+', status.stagedFiles, strings.t('home.git.staged'), theme.successColor);
+    add('~', '~', status.modifiedFiles, strings.t('home.git.modified'), theme.warningColor);
+    add('D', 'D', status.deletedFiles, strings.t('home.git.deleted'), theme.errorColor);
+    add('?', '?', status.untrackedFiles, strings.t('home.git.untracked'), theme.hintText);
 
     if (parts.isEmpty) return null;
 
@@ -270,7 +276,7 @@ class _GitStatusView extends StatelessComponent {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1),
       child: Text(
-        '${terminalSymbol('✓', '+')} clean',
+        '${terminalSymbol('✓', '+')} ${strings.t('home.git.clean')}',
         style: TextStyle(color: theme.hintText),
       ),
     );

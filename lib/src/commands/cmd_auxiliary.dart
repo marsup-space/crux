@@ -7,16 +7,16 @@ Future<void> executeAuxiliary(List<String> parts, CommandContext ctx) async {
     if (modelKey == 'none') {
       await ctx.providerService.setAuxiliaryModel('none');
       ctx.resolveAuxiliaryModel();
-      ctx.showToast('Auxiliary model disabled', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.auxDisabled'), mode: ToastMode.status);
     } else if (ctx.providerServiceReady &&
         ctx.providerService.modelByCompositeKey(modelKey) == null) {
-      ctx.showToast('Unknown model: $modelKey', mode: ToastMode.error);
+      ctx.showToast(ctx.strings.t('toast.unknownModel', {'model': modelKey}), mode: ToastMode.error);
     } else {
       await ctx.providerService.setAuxiliaryModel(modelKey);
       ctx.resolveAuxiliaryModel();
-      ctx.showToast('Auxiliary model set to $modelKey', mode: ToastMode.status);
+      ctx.showToast(ctx.strings.t('toast.auxSet', {'model': modelKey}), mode: ToastMode.status);
     }
   } else {
-    ctx.showToast('Usage: /auxiliary <name>');
+    ctx.showToast(ctx.strings.t('toast.auxUsage'));
   }
 }

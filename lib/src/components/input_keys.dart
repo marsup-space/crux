@@ -3,6 +3,7 @@ import 'package:nocterm/nocterm.dart';
 import '../commands/registry.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/skill_chip_parser.dart';
+import '../utils/session_mention.dart';
 import 'overlay_controller.dart';
 import 'session_controller.dart';
 import 'chat_turn_orchestrator.dart';
@@ -701,6 +702,49 @@ class InputKeyHandler {
           textController.selection.extentOffset,
         );
         overlayController.insertSkillChip(chip?.dollarOffset);
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.escape) {
+        overlayController.setOverlayOff();
+        refresh();
+        return true;
+      }
+      return false;
+    }
+
+    if (overlayController.overlayMode == OverlayMode.sessionMention) {
+      if (overlayController.filteredSessionMentions.isEmpty) {
+        if (event.logicalKey == LogicalKey.escape) {
+          overlayController.setOverlayOff();
+          refresh();
+          return true;
+        }
+        if (event.logicalKey == LogicalKey.enter) {
+          overlayController.setOverlayOff();
+          refresh();
+          return true;
+        }
+        return false;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        overlayController.moveSessionMentionSelectionUp();
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        overlayController.moveSessionMentionSelectionDown();
+        refresh();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.tab ||
+          event.logicalKey == LogicalKey.enter) {
+        final mention = findActiveSessionMention(
+          textController.text,
+          textController.selection.extentOffset,
+        );
+        overlayController.insertSessionMention(mention?.hashOffset);
         refresh();
         return true;
       }

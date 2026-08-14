@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../i18n/strings.dart';
 import '../../../theme/crux_theme.dart';
 import '../home_widgets.dart';
 
@@ -49,11 +50,15 @@ class QuickActionsHomeWidget extends HomeWidget {
     List<QuickAction>? actions,
   }) : actions = actions ?? _defaultActions;
 
+  // Hints are catalog keys (`home.qa.*`), resolved at render via the
+  // active locale's `Strings`. A raw English hint injected by tests (or a
+  // caller-supplied action) passes through `Strings.t` unchanged, while
+  // the defaults localize.
   static const _defaultActions = [
-    QuickAction('/new', 'start a fresh session', '/new'),
-    QuickAction('/chat', 'open a Chat-mode session', '/chat'),
-    QuickAction('continue', 'resume the last session', 'continue'),
-    QuickAction('/project', 'switch project…', '/project ', seed: true),
+    QuickAction('/new', 'home.qa.freshSession', '/new'),
+    QuickAction('/chat', 'home.qa.chatSession', '/chat'),
+    QuickAction('continue', 'home.qa.resume', 'continue'),
+    QuickAction('/project', 'home.qa.switchProject', '/project ', seed: true),
   ];
 
   @override
@@ -61,6 +66,9 @@ class QuickActionsHomeWidget extends HomeWidget {
 
   @override
   String get title => 'Quick actions';
+
+  @override
+  String titleFor(HomeContext ctx) => ctx.strings.t('home.title.quickActions');
 
   @override
   Set<int> get supportedSpans => const {1, 2};
@@ -133,6 +141,7 @@ class QuickActionsHomeWidget extends HomeWidget {
             action: actions[i],
             selected: focused && i == _selectedIndex,
             theme: theme,
+            strings: ctx.strings,
             onTap: () {
               _selectedIndex = i;
               _run(ctx, actions[i]);
@@ -154,12 +163,14 @@ class _ActionRow extends StatelessComponent {
   final QuickAction action;
   final bool selected;
   final CruxThemeData theme;
+  final Strings strings;
   final VoidCallback onTap;
 
   const _ActionRow({
     required this.action,
     required this.selected,
     required this.theme,
+    required this.strings,
     required this.onTap,
   });
 
@@ -183,7 +194,7 @@ class _ActionRow extends StatelessComponent {
                 ),
               ),
               Text(
-                '  ${action.hint}',
+                '  ${strings.t(action.hint)}',
                 style: TextStyle(color: hintColor),
                 overflow: TextOverflow.ellipsis,
               ),

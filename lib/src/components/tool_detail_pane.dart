@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';
+import '../i18n/strings.dart';
 import '../lsp/diagnostic.dart' show errorDiagnostics, extractLspPayload;
 import '../lsp/protocol.dart' show LspDiagnostic;
 import '../models/message.dart';
@@ -33,8 +34,9 @@ class ToolDetailData {
 /// and Raw (full input + output).
 class ToolDetailPane extends StatefulComponent {
   final ToolDetailData data;
+  final Strings strings;
 
-  const ToolDetailPane({required this.data, super.key});
+  const ToolDetailPane({required this.data, this.strings = kEnglishStrings, super.key});
 
   @override
   State<ToolDetailPane> createState() => _ToolDetailPaneState();
@@ -123,9 +125,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _buildTabBar(CruxThemeData theme) {
     return Row(
       children: [
-        _buildTab('Pretty', 0, theme),
+        _buildTab(component.strings.t('chat.tool.pretty'), 0, theme),
         _tabSep(theme),
-        _buildTab('Raw', 1, theme),
+        _buildTab(component.strings.t('chat.tool.raw'), 1, theme),
         const Spacer(),
         _buildQuickMetrics(theme),
       ],
@@ -283,7 +285,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         : extractLspPayload(result.content);
 
     if (lsp.visible.isEmpty) {
-      children.add(dimText('  (empty)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.empty')}', theme));
     } else {
       children.add(
         Expanded(child: _scrollableCodeBlock(lsp.visible, language, theme)),
@@ -328,12 +330,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final hasEditInputs =
         tc.input.containsKey('oldString') || tc.input.containsKey('newString');
     if (hasEditInputs) {
-      children.add(_sectionHeading('Changes', theme));
+      children.add(_sectionHeading(component.strings.t('chat.tool.changes'), theme));
       children.add(_buildDiffBlock(oldStr, newStr, theme));
     } else {
-      children.add(_sectionHeading('Old', theme, color: theme.error));
+      children.add(_sectionHeading(component.strings.t('chat.tool.old'), theme, color: theme.error));
       if (oldStr.isEmpty) {
-        children.add(dimText('  (empty)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.empty')}', theme));
       } else {
         children.add(
           Container(
@@ -344,9 +346,9 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
       }
 
       children.add(Divider(color: theme.dividerDim, height: 1));
-      children.add(_sectionHeading('New', theme, color: theme.success));
+      children.add(_sectionHeading(component.strings.t('chat.tool.new'), theme, color: theme.success));
       if (newStr.isEmpty) {
-        children.add(dimText('  (empty)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.empty')}', theme));
       } else {
         children.add(
           Container(
@@ -455,7 +457,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         Expanded(child: _scrollableCodeBlock(displayOutput, '', theme)),
       );
     } else {
-      children.add(dimText('  (no output)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noOutput')}', theme));
     }
 
     return Column(
@@ -484,7 +486,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         Expanded(child: _scrollableCodeBlock(output, language, theme)),
       );
     } else {
-      children.add(dimText('  (no content)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noContent')}', theme));
     }
 
     return Column(
@@ -566,7 +568,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (output.isNotEmpty) {
       children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
-      children.add(dimText('  (no matches)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noMatches')}', theme));
     }
 
     return Column(
@@ -637,7 +639,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     if (output.isNotEmpty) {
       children.add(Expanded(child: _scrollableCodeBlock(output, '', theme)));
     } else {
-      children.add(dimText('  (no files matched)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noFiles')}', theme));
     }
 
     return Column(
@@ -729,7 +731,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
         ),
       );
     } else {
-      children.add(dimText('  (no content)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noContent')}', theme));
     }
 
     return Column(
@@ -798,10 +800,10 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     }
 
     children.add(Divider(color: theme.dividerDim, height: 1));
-    children.add(_sectionHeading('Arguments', theme));
+    children.add(_sectionHeading(component.strings.t('chat.tool.arguments'), theme));
 
     if (tc.input.isEmpty) {
-      children.add(dimText('(no arguments)', theme));
+      children.add(dimText(component.strings.t('chat.tool.noArguments'), theme));
     } else {
       for (final entry in tc.input.entries) {
         children.add(_buildArgBlock(entry.key, entry.value, theme));
@@ -812,7 +814,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final result = component.data.pairedResult;
     if (result != null && result.content.isNotEmpty) {
       children.add(Divider(color: theme.dividerDim, height: 1));
-      children.add(_sectionHeading('Result', theme));
+      children.add(_sectionHeading(component.strings.t('chat.tool.result'), theme));
       children.add(
         Container(
           padding: const EdgeInsets.only(left: 1),
@@ -916,12 +918,12 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           ),
         );
       } else {
-        children.add(dimText('  (empty)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.empty')}', theme));
       }
     } else {
       children.add(Divider(color: theme.divider, height: 1));
       children.add(_sectionLabel('Output', theme));
-      children.add(dimText('  (no result yet)', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.noResult')}', theme));
     }
 
     return Scrollbar(
@@ -994,7 +996,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
   Component _buildDiffBlock(String oldStr, String newStr, CruxThemeData theme) {
     final lines = computeLineDiff(oldStr, newStr);
     if (lines.isEmpty) {
-      return dimText('  (no changes)', theme);
+      return dimText('  ${component.strings.t('chat.tool.noChanges')}', theme);
     }
     final gapGlyph = terminalSymbol('⋮', '|');
     return Column(
@@ -1132,24 +1134,26 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     final errors = errorDiagnostics(diagnostics);
     final shown = errors.take(20).toList();
     final more = errors.length - shown.length;
-    final word = errors.length == 1 ? 'error' : 'errors';
+    final word = component.strings.t(
+      errors.length == 1 ? 'chat.tool.error' : 'chat.tool.errors',
+    );
 
     final children = <Component>[];
     children.add(
       _sectionHeading(
-        'LSP · ${errors.length} $word',
+        component.strings.t('chat.tool.lsp', {'n': '${errors.length}', 'word': word}),
         theme,
         color: theme.error,
       ),
     );
     if (filePath.isNotEmpty) {
-      children.add(dimText('  in $filePath', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.inFile', {'path': filePath})}', theme));
     }
     for (final d in shown) {
       children.add(_lspErrorRow(d, theme));
     }
     if (more > 0) {
-      children.add(dimText('  ... and $more more', theme));
+      children.add(dimText('  ${component.strings.t('chat.tool.andMore', {'n': '$more'})}', theme));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

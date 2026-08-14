@@ -7,9 +7,8 @@ Future<void> executeSession(List<String> parts, CommandContext ctx) async {
     if (id != null) {
       await ctx.switchSession(id);
     } else {
-      ctx.showToast('Usage: /session #<id>');
+      ctx.showToast(ctx.strings.t('toast.sessionUsage'));
     }
   } else {
-    ctx.showToast('Usage: /session #<id>');
-  }
+      ctx.showToast(ctx.strings.t('toast.sessionUsage')); }
 }

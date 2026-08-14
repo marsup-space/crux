@@ -46,9 +46,18 @@ class Session {
   /// section rather than the project-scoped "Sessions" list.
   bool get isChat => kind == 'chat';
 
+  /// True when the session is pinned to the top of the sidebar's
+  /// "Pinned" section.
+  bool get isPinned => pinnedAt != null;
+
   final DateTime createdAt;
   DateTime updatedAt;
   DateTime? archivedAt;
+
+  /// Non-null when the session is pinned to the top of the sidebar.
+  /// Pinned sessions render in a dedicated "Pinned" section and are
+  /// skipped by the auto-archive sweep, so they never age out.
+  DateTime? pinnedAt;
 
   /// The rendered system prompt — the joined content of all four
   /// layers, ready to be sent as a single `role: 'system'` message.
@@ -82,6 +91,7 @@ class Session {
     DateTime? createdAt,
     DateTime? updatedAt,
     this.archivedAt,
+    this.pinnedAt,
     this.systemPrompt,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
