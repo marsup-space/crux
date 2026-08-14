@@ -27,6 +27,7 @@ import '../storage/database.dart' hide Session, Message, Part;
 import '../storage/session_store.dart';
 import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
+import '../i18n/locale_controller.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
@@ -209,6 +210,10 @@ class ChatPanel extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+
+  /// The UI-language controller. Null in tests (like `homeLayoutStore`) —
+  /// then the settings box shows `en` and `/language` reports unavailable.
+  final LocaleController? localeController;
   final ChatPanelBootState? bootState;
   final GitStatusService? gitStatusService;
 
@@ -242,6 +247,7 @@ class ChatPanel extends StatefulComponent {
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    this.localeController,
     this.bootState,
     this.gitStatusService,
     this.specWidgetRegistry,
@@ -915,6 +921,7 @@ class _ChatPanelState extends State<ChatPanel> {
         );
       },
       themeController: component.themeController,
+      localeController: component.localeController,
       sendTurn: _turnOrchestrator.sendTurn,
       compactSession: _turnOrchestrator.compactCurrentSession,
       findLastUserMessage: _turnOrchestrator.findLastUserMessage,
@@ -1259,6 +1266,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Settings box: the active theme id, the configured auxiliary
       // model's short name, and the current session's chat display mode.
       themeId: () => component.themeController.activeId,
+      localeId: () => component.localeController?.activeCode ?? 'en',
       auxModelName: () {
         final aux = _providerService.auxiliaryModel;
         if (aux == null || aux == 'none') return null;

@@ -101,6 +101,10 @@ class HomeContext {
   /// box. Null (tests / previews) means "unknown".
   final String? Function() themeId;
 
+  /// The active UI language code (`"en"` / `"zh"`). Feeds the `settings`
+  /// box. Null (tests / previews) means "unknown".
+  final String? Function() localeId;
+
   /// The current session's chat display mode (`"verbose"` / `"vibe"`).
   /// Feeds the `settings` box. Null when there's no current session.
   final String? Function() viewMode;
@@ -143,6 +147,7 @@ class HomeContext {
     this.hasProviderKey = _false,
     this.auxModelName = _nullString,
     this.themeId = _nullString,
+    this.localeId = _nullString,
     this.viewMode = _nullString,
     this.hasWebProvider = _false,
     this.notesService,
@@ -175,6 +180,7 @@ class HomeContext {
         hasProviderKey = _false,
         auxModelName = _nullString,
         themeId = _nullString,
+        localeId = _nullString,
         viewMode = _nullString,
         hasWebProvider = _false,
         notesService = null,

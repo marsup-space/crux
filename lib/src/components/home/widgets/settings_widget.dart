@@ -22,8 +22,9 @@ class _Setting {
 /// Rows are informational: each shows `label  value`. Activating a row
 /// seeds the matching slash command into the chat input (so the user can
 /// finish the command there after `esc`) but stays on home — no abrupt
-/// jump to chat. The `language` row is read-only — it renders the fixed
-/// locale (`en`) because language switching isn't wired up yet.
+/// jump to chat. The `language` row is read-only — it renders the active
+/// locale code (`en`/`zh`, read from `HomeContext.localeId`; falls back to
+/// `en` when no locale controller is wired).
 ///
 /// The box uses the same selectable-item chrome as quick-actions: ↑↓
 /// moves the highlight, Enter/click activates the focused row.
@@ -49,9 +50,9 @@ class SettingsHomeWidget extends HomeWidget {
       _Setting('theme', ctx.themeId() ?? '—', '/theme '),
       _Setting('auxiliary', ctx.auxModelName() ?? 'none', '/auxiliary '),
       _Setting('view', ctx.viewMode() ?? '—', '/view '),
-      // Language switching isn't implemented yet — shown read-only so the
-      // row is honest about the current (fixed) locale.
-      _Setting('language', 'en', null),
+      // Language switching is wired via `/language`; the row shows the
+      // active locale and stays read-only (seed via `/language ` instead).
+      _Setting('language', ctx.localeId() ?? 'en', null),
     ];
   }
 

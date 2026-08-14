@@ -5,6 +5,8 @@ import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
 import 'package:crux/src/components/home/home_layout_store.dart';
+import 'package:crux/src/i18n/locale_config_store.dart';
+import 'package:crux/src/i18n/locale_controller.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/services/spec_widget_registry.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
@@ -162,6 +164,9 @@ void main(List<String> args) async {
   if (results.themeController.startupWarning case final warning?) {
     stderr.writeln('  theme warning: $warning');
   }
+  if (results.localeController.startupWarning case final warning?) {
+    stderr.writeln('  language warning: $warning');
+  }
 
   // Wire uncaught errors to the toast hub so the user sees them as
   // red error toasts rather than silent failures. The hub's static
@@ -191,6 +196,7 @@ void main(List<String> args) async {
       userProvidersDir: userDir.path,
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
       themeController: results.themeController,
+      localeController: results.localeController,
       bootState: results.chatPanelBootState,
       gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
@@ -211,6 +217,8 @@ void main(List<String> args) async {
         ),
         if (results.themeController.startupWarning != null)
           results.themeController.startupWarning!,
+        if (results.localeController.startupWarning != null)
+          results.localeController.startupWarning!,
         // First-run onboarding: without any usable API key the
         // model can't respond at all, so say so once at startup
         // instead of letting the first message fail. Goes through
@@ -351,6 +359,7 @@ Future<RecentProjectsStore> _loadAndRecordCurrentProject() async {
 class _LoadingResults {
   final List<SeedResult> providerSeedResults;
   final ThemeController themeController;
+  final LocaleController localeController;
   final ChatPanelBootState chatPanelBootState;
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
@@ -358,6 +367,7 @@ class _LoadingResults {
   const _LoadingResults({
     required this.providerSeedResults,
     required this.themeController,
+    required this.localeController,
     required this.chatPanelBootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
@@ -394,6 +404,9 @@ Future<_LoadingResults> _doLoading(
     // the terminal's light/dark profile from launch to launch.
     defaultThemeId: defaultThemeIdForEnvironment(Platform.environment),
   );
+  final localeController = await LocaleController.create(
+    configStore: LocaleConfigStore(themeConfigFile),
+  );
   await HighlightService.initialize();
   await gitStatusFuture;
   gitStatusService.start(refreshImmediately: false);
@@ -401,6 +414,7 @@ Future<_LoadingResults> _doLoading(
   return _LoadingResults(
     providerSeedResults: providerSeedResults,
     themeController: themeController,
+    localeController: localeController,
     chatPanelBootState: chatPanelBootState,
     gitStatusService: gitStatusService,
     recentProjectsStore: recentProjectsStore,
@@ -594,6 +608,7 @@ class _CruxApp extends StatefulComponent {
   final String userProvidersDir;
   final String? builtInProvidersDir;
   final ThemeController themeController;
+  final LocaleController localeController;
   final ChatPanelBootState bootState;
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
@@ -617,6 +632,7 @@ class _CruxApp extends StatefulComponent {
     required this.userProvidersDir,
     this.builtInProvidersDir,
     required this.themeController,
+    required this.localeController,
     required this.bootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
@@ -636,6 +652,7 @@ class _CruxAppState extends State<_CruxApp> {
   void initState() {
     super.initState();
     component.themeController.addListener(_handleThemeChanged);
+    component.localeController.addListener(_handleLocaleChanged);
     // Override nocterm's default 30fps to 60fps for smoother animations
     // (streaming text, status indicators, context bar, etc.).
     SchedulerBinding.instance.targetFrameDuration = const Duration(
@@ -644,11 +661,14 @@ class _CruxAppState extends State<_CruxApp> {
   }
 
   void _handleThemeChanged() => setState(() {});
+  void _handleLocaleChanged() => setState(() {});
 
   @override
   void dispose() {
     component.themeController.removeListener(_handleThemeChanged);
     component.themeController.dispose();
+    component.localeController.removeListener(_handleLocaleChanged);
+    component.localeController.dispose();
     // The chat panel already disposed this store, but be defensive:
     // if the panel never mounted (e.g. the app bailed out before
     // its first frame) we still need to release the listener
@@ -685,6 +705,7 @@ class _CruxAppState extends State<_CruxApp> {
               userProvidersDir: component.userProvidersDir,
               builtInProvidersDir: component.builtInProvidersDir,
               themeController: component.themeController,
+              localeController: component.localeController,
               bootState: component.bootState,
               gitStatusService: component.gitStatusService,
               specWidgetRegistry: component.specWidgetRegistry,

@@ -187,6 +187,21 @@ const List<SlashCommand> _baseCommands = [
     params: ['name'],
     availableDuringResponse: true,
   ),
+  // Switch the UI language. `availableDuringResponse: true` because it
+  // only flips the catalog + persists a key — it never touches the
+  // in-flight stream, and the chat body re-renders on the next frame.
+  SlashCommand(
+    name: '/language',
+    description: '切换界面语言 (switch the UI language: en|zh)',
+    params: ['code'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: 'en', description: 'English'),
+        CommandSuggestion(value: 'zh', description: '中文'),
+      ],
+    ],
+    availableDuringResponse: true,
+  ),
   SlashCommand(
     name: '/provider',
     description: 'Connect a provider (usage: /provider <name> [<key>|remove])',

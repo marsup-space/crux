@@ -12,6 +12,7 @@ import '../storage/shell_monitor_log_store.dart';
 import '../commands/registry.dart';
 import '../components/ui/toast.dart';
 import '../theme/theme_controller.dart';
+import '../i18n/locale_controller.dart';
 import 'command_debug.dart';
 import 'cmd_model.dart';
 import 'cmd_auxiliary.dart';
@@ -21,6 +22,7 @@ import 'cmd_chat.dart';
 import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
+import 'cmd_language.dart';
 import 'cmd_think.dart';
 import 'cmd_view.dart';
 import 'cmd_temperature.dart';
@@ -68,6 +70,10 @@ class CommandContext {
   final void Function() resolveAuxiliaryModel;
   final void Function(int, Message, TldrDetail, String?)? triggerTldr;
   final ThemeController? themeController;
+
+  /// The UI-language controller. Null in tests and legacy harnesses, in
+  /// which case `/language` reports "unavailable" instead of failing.
+  final LocaleController? localeController;
   final Future<void> Function({String? text}) sendTurn;
   final Future<void> Function()? compactSession;
   final Future<Message?> Function() findLastUserMessage;
@@ -116,6 +122,7 @@ class CommandContext {
     required this.resolveAuxiliaryModel,
     this.triggerTldr,
     this.themeController,
+    this.localeController,
     required this.sendTurn,
     this.compactSession,
     required this.findLastUserMessage,
@@ -157,6 +164,8 @@ class CommandExecutor {
         await executeWebProvider(parts, ctx);
       case '/theme':
         await executeTheme(parts, ctx);
+      case '/language':
+        await executeLanguage(parts, ctx);
       case '/think':
         await executeThink(parts, ctx);
       case '/view':
