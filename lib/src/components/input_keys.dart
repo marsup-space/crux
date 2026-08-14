@@ -83,7 +83,7 @@ class InputKeyHandler {
   final void Function() onStateChanged;
   final TextEditingController textController;
   final OverlayController overlayController;
-  final AutoScrollController scrollController;
+  final AutoScrollController? scrollController;
 
   // Shared state accessor (owned by ChatInputState)
   final String? Function() getCommandStash;
@@ -102,7 +102,7 @@ class InputKeyHandler {
     required this.onStateChanged,
     required this.textController,
     required this.overlayController,
-    required this.scrollController,
+    this.scrollController,
     required this.getCommandStash,
     required this.setCommandStash,
   });
@@ -485,27 +485,29 @@ class InputKeyHandler {
         return true;
       }
       if (event.logicalKey == LogicalKey.pageUp) {
-        scrollController.pageUp();
+        scrollController?.pageUp();
         return true;
       }
       if (event.logicalKey == LogicalKey.pageDown) {
-        scrollController.pageDown();
+        scrollController?.pageDown();
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowUp && event.isControlPressed) {
-        scrollController.scrollUp(scrollController.viewportDimension / 2);
+        scrollController?.scrollUp((scrollController?.viewportDimension ?? 0) / 2);
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown && event.isControlPressed) {
-        scrollController.scrollDown(scrollController.viewportDimension / 2);
+        scrollController?.scrollDown(
+          (scrollController?.viewportDimension ?? 0) / 2,
+        );
         return true;
       }
       if (event.logicalKey == LogicalKey.home && event.isControlPressed) {
-        scrollController.scrollToStart();
+        scrollController?.scrollToStart();
         return true;
       }
       if (event.logicalKey == LogicalKey.end && event.isControlPressed) {
-        scrollController.scrollToBottom();
+        scrollController?.scrollToBottom();
         return true;
       }
       return false;

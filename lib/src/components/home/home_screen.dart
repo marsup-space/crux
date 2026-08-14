@@ -7,6 +7,11 @@ import '../../theme/crux_theme.dart';
 import '../../services/skills/skill_discovery.dart';
 import '../../version.dart';
 import '../ui/button.dart';
+import '../input_chips.dart';
+import '../input_keys.dart';
+import '../input_overlay.dart';
+import '../input_overlay_popover.dart';
+import '../overlay_controller.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
 import 'widgets/activity_widget.dart';
@@ -79,6 +84,24 @@ class HomeScreen extends StatefulComponent {
   /// quick-chat input then does nothing on submit.
   final bool Function(String text)? onStartChat;
 
+  /// Shared overlay state for the full-featured quick-chat input. When
+  /// null (tests / previews), the input is a plain starter field.
+  final OverlayController? overlayController;
+
+  /// Shared text buffer backing the quick-chat input. When null, home
+  /// falls back to its own local controller.
+  final TextEditingController? inputController;
+
+  /// Trigger detection (@ / # / $ / slash) for the quick-chat input.
+  final InputOverlay? inputOverlay;
+
+  /// Key handling (overlay navigation, command mode, submit) for the
+  /// quick-chat input.
+  final InputKeyHandler? inputKeyHandler;
+
+  /// Max visible rows in the overlay popover.
+  final int maxVisibleItems;
+
   const HomeScreen({
     super.key,
     required this.onExit,
@@ -89,6 +112,11 @@ class HomeScreen extends StatefulComponent {
     this.quitApp,
     this.quitNow,
     this.onStartChat,
+    this.overlayController,
+    this.inputController,
+    this.inputOverlay,
+    this.inputKeyHandler,
+    this.maxVisibleItems = 6,
   });
 
   @override
@@ -758,12 +786,43 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Quick-chat input ──────────────────────────────────────────────
 
+  bool get _hasFullInput =>
+      component.overlayController != null &&
+      component.inputController != null &&
+      component.inputOverlay != null &&
+      component.inputKeyHandler != null;
+
+  /// The overlay popover (slash command / @ / # / $ completion) shown
+  /// just above the quick-chat input while a trigger is active.
+  List<Component> _popover() {
+    if (!_hasFullInput) return const [];
+    final popover = buildOverlayPopover(
+      overlay: component.overlayController!,
+      maxVisible: component.maxVisibleItems,
+      strings: _ctx.strings,
+      refresh: () {
+        if (mounted) setState(() {});
+      },
+    );
+    if (popover == null) return const [];
+    return [popover, const SizedBox(height: 1)];
+  }
+
   Component _quickChatInput(CruxThemeData theme) {
     // LayoutBuilder defers the field's mount to the layout phase, so its
     // `focused: true` focus request runs AFTER the root Focusable's own
     // request. Otherwise the root (an ancestor with `focused: true`)
     // steals focus back once the field mounts and typing never lands
     // here.
+    final controller = component.inputController ?? _chatController;
+    final styleSegments = _hasFullInput
+        ? buildInputChipSegments(
+            text: controller.text,
+            mentionChips: component.overlayController!.mentionChips,
+            theme: theme,
+            baseStyle: TextStyle(color: theme.foreground),
+          )
+        : null;
     return LayoutBuilder(
       builder: (context, constraints) {
         return Container(
@@ -787,11 +846,12 @@ class _HomeScreenState extends State<HomeScreen> {
               Text('> ', style: TextStyle(color: theme.onSurfaceDim)),
               Expanded(
                 child: TextField(
-                  controller: _chatController,
+                  controller: controller,
                   focused: true,
                   maxLines: 1,
                   style: TextStyle(color: theme.foreground),
                   placeholder: _ctx.strings.t('home.newChatPlaceholder'),
+                  styleSegments: styleSegments,
                   onSubmitted: _submitChat,
                   onKeyEvent: _chatKeyHandler,
                 ),
@@ -817,7 +877,38 @@ class _HomeScreenState extends State<HomeScreen> {
   /// navigation, edit mode, and box activation. Once the user has typed
   /// something, the field owns the keyboard (typing, cursor, Enter to
   /// submit).
+  ///
+  /// With the full-featured input wired, empty-field nav keys still go to
+  /// the grid; every other key goes to [InputKeyHandler] (overlay
+  /// navigation, command mode, chip backspace, Enter to submit).
   bool _chatKeyHandler(KeyboardEvent event) {
+    final keyHandler = component.inputKeyHandler;
+    final controller = component.inputController;
+    if (keyHandler != null && controller != null) {
+      if (controller.text.isEmpty) {
+        final key = event.logicalKey;
+        switch (key) {
+          case LogicalKey.arrowUp:
+          case LogicalKey.arrowDown:
+          case LogicalKey.arrowLeft:
+          case LogicalKey.arrowRight:
+          case LogicalKey.tab:
+          case LogicalKey.pageUp:
+          case LogicalKey.pageDown:
+          case LogicalKey.home:
+          case LogicalKey.end:
+          case LogicalKey.enter:
+          case LogicalKey.keyE:
+          case LogicalKey.bracketLeft:
+          case LogicalKey.bracketRight:
+            return _handleKey(event);
+          default:
+            break;
+        }
+      }
+      return keyHandler.handleKeyEvent(event);
+    }
+
     if (_chatController.text.isNotEmpty) return false;
     final key = event.logicalKey;
     switch (key) {
@@ -939,6 +1030,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
+
+            // ── Overlay popover (slash command / @ / # / $ completion) ──
+            if (!_editing) ..._popover(),
 
             // ── Quick-chat input ──
             // A one-line field to start a fresh Chat conversation. Hidden

@@ -50,22 +50,20 @@ import 'session_cubit.dart';
 import 'streaming_cubit.dart';
 import 'context_bar.dart';
 import 'chat_turn_orchestrator.dart';
-import 'command_overlay.dart';
 import 'extra_info_panel.dart';
-import 'file_browser_overlay.dart';
 import 'home/home_layout_store.dart';
 import 'home/home_screen.dart';
 import 'home/home_widgets.dart';
+import 'input_keys.dart';
+import 'input_overlay.dart';
+import 'input_overlay_popover.dart';
 import 'notes_fullpane.dart';
-import 'skill_picker_overlay.dart';
 import 'overlay_controller.dart';
 import 'polling_coordinator.dart';
 import 'quit_handler.dart';
 import 'session_controller.dart';
 import 'session_management_panel.dart';
-import 'session_mention_overlay.dart';
 import 'streaming_controller.dart';
-import 'suggestion_overlay.dart';
 import 'tool_detail_pane.dart';
 import 'vibe_box_data.dart';
 import 'vibe_diff_fullpane.dart';
@@ -316,6 +314,13 @@ class _ChatPanelState extends State<ChatPanel> {
   final _chatInputKey = GlobalKey<ChatInputState>();
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
+
+  // Home quick-chat input machinery — built lazily when home opens and
+  // disposed when it closes, so the home input gets the same command /
+  // @-mention / #-mention / $skill handling as the chat input.
+  InputOverlay? _homeInputOverlay;
+  InputKeyHandler? _homeInputKeyHandler;
+  String? _homeCommandStash;
 
   // Sidebar show threshold and width growth — see
   // [kSidebarShowThreshold] / [kSidebarWidthMin] / [kSidebarWidthMax]
@@ -1175,6 +1180,11 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _closeHome() {
+    textController.removeListener(_onHomeInputChanged);
+    _homeInputOverlay?.dispose();
+    _homeInputOverlay = null;
+    _homeInputKeyHandler = null;
+    _homeCommandStash = null;
     setState(() {
       _overlayController.showHome = false;
     });
@@ -1197,7 +1207,69 @@ class _ChatPanelState extends State<ChatPanel> {
     _closeHome();
   }
 
+  /// Lazily build the home quick-chat input's overlay + key-handler
+  /// machinery, reusing the shared [OverlayController] and [textController]
+  /// so the home input has the same `/` command, `@` file, `#` session,
+  /// and `$` skill handling as the chat input.
+  void _ensureHomeInput() {
+    if (_homeInputOverlay != null && _homeInputKeyHandler != null) return;
+    _homeInputOverlay = InputOverlay(
+      overlayController: _overlayController,
+      sessionController: _sessionController,
+      providerService: _providerService,
+      providerServiceReady: _providerServiceReady,
+      webProviderRegistry: _webProviderRegistry,
+      themeController: component.themeController,
+      recentProjectsStore: _recentProjectsStore,
+      textController: textController,
+      projectPath: Directory.current.path,
+      refresh: _refresh,
+      onStateChanged: _refresh,
+      strings: _strings,
+    );
+    _homeInputKeyHandler = InputKeyHandler(
+      sessionController: _sessionController,
+      turnOrchestrator: _turnOrchestrator,
+      onQuitRequest: _quitHandler.quitAndPrintSummary,
+      // A plain ESC on home returns to the chat screen (the chat input's
+      // `onOpenHome` semantic is "leave the current screen").
+      onOpenHome: _closeHome,
+      refresh: _refresh,
+      onStateChanged: _refresh,
+      textController: textController,
+      overlayController: _overlayController,
+      scrollController: null,
+      getCommandStash: () => _homeCommandStash,
+      setCommandStash: (v) => _homeCommandStash = v,
+    );
+    _homeInputKeyHandler!.onSendMessage = _submitHomeInput;
+    textController.addListener(_onHomeInputChanged);
+  }
+
+  void _onHomeInputChanged() {
+    _homeInputOverlay?.onTextChanged();
+  }
+
+  /// Home quick-chat submit: a leading `/` that resolves to a command
+  /// executes it; anything else starts a fresh Chat conversation.
+  void _submitHomeInput() {
+    final text = textController.text.trim();
+    if (text.isEmpty) return;
+    if (text.startsWith('/')) {
+      final cmd = findCommand(text.split(' ').first);
+      if (cmd != null) {
+        textController.clear();
+        unawaited(_executeCommand(text));
+        return;
+      }
+    }
+    if (_startChat(text)) {
+      textController.clear();
+    }
+  }
+
   Component _buildHome() {
+    _ensureHomeInput();
     // Home is an independent full screen, not a modal Fullpane — no
     // close button, no barrier, no margins. See HomeScreen.
     return HomeScreen(
@@ -1210,6 +1282,11 @@ class _ChatPanelState extends State<ChatPanel> {
       // hits Ctrl+C.
       quitApp: _quitHandler.quitAndPrintSummary,
       onStartChat: _startChat,
+      overlayController: _overlayController,
+      inputController: textController,
+      inputOverlay: _homeInputOverlay,
+      inputKeyHandler: _homeInputKeyHandler,
+      maxVisibleItems: _maxVisibleItems,
     );
   }
 
@@ -1471,154 +1548,16 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   List<Component> _buildOverlays() {
-    final overlay = _overlayController;
     final overlays = <Component>[];
-
-    if (overlay.overlayMode == OverlayMode.command &&
-        overlay.filteredCommands.isNotEmpty) {
+    final popover = buildOverlayPopover(
+      overlay: _overlayController,
+      maxVisible: _maxVisibleItems,
+      strings: _strings,
+      refresh: _refresh,
+    );
+    if (popover != null) {
       overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollCommand(e));
-            },
-            opaque: false,
-            child: CommandOverlay(
-              commands: overlay.filteredCommands,
-              selectedIndex: overlay.selectedCommandIndex,
-              scrollOffset: overlay.commandScrollOffset,
-              maxVisible: _maxVisibleItems,
-              strings: _strings,
-              onHover: (i) => setState(() => overlay.onHoverCommand(i)),
-              onTap: (i) {
-                overlay.onTapCommand(i);
-                setState(() {});
-              },
-            ),
-          ),
-        ),
-      );
-    } else if (overlay.overlayMode == OverlayMode.parameter &&
-        overlay.filteredSuggestions.isNotEmpty) {
-      final paramLabel =
-          overlay.currentParamIndex < overlay.activeCommand!.params.length
-          ? overlay.activeCommand!.params[overlay.currentParamIndex]
-          : 'value';
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollSuggestion(e));
-            },
-            opaque: false,
-            child: SuggestionOverlay(
-              suggestions: overlay.filteredSuggestions,
-              selectedIndex: overlay.selectedSuggestionIndex,
-              scrollOffset: overlay.suggestionScrollOffset,
-              maxVisible: _maxVisibleItems,
-              headerLabel: paramLabel,
-              strings: _strings,
-              onHover: (i) => setState(() => overlay.onHoverSuggestion(i)),
-              onTap: (i) {
-                overlay.onTapSuggestion(i);
-                setState(() {});
-              },
-            ),
-          ),
-        ),
-      );
-    } else if (overlay.overlayMode == OverlayMode.atMention) {
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollFile(e));
-            },
-            opaque: false,
-            child: FileBrowserOverlay(
-              files: overlay.filteredFiles,
-              selectedIndex: overlay.selectedFileIndex,
-              scrollOffset: overlay.fileScrollOffset,
-              maxVisible: _maxVisibleItems,
-              query: overlay.atMentionQuery,
-              isSearching: overlay.isSearching,
-              onHover: (i) => setState(() => overlay.onHoverFile(i)),
-              onTap: (i) {
-                setState(() {
-                  overlay.selectedFileIndex = i;
-                  overlay.insertAtMention(null);
-                });
-              },
-            ),
-          ),
-        ),
-      );
-    } else if (overlay.overlayMode == OverlayMode.skillPicker) {
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollSkill(e));
-            },
-            opaque: false,
-            child: SkillPickerOverlay(
-              skills: overlay.filteredSkills,
-              selectedIndex: overlay.selectedSkillIndex,
-              scrollOffset: overlay.skillScrollOffset,
-              maxVisible: _maxVisibleItems,
-              query: overlay.skillChipQuery,
-              onHover: (i) => setState(() => overlay.onHoverSkill(i)),
-              onTap: (i) {
-                setState(() {
-                  overlay.selectedSkillIndex = i;
-                  overlay.insertSkillChip(null);
-                });
-              },
-            ),
-          ),
-        ),
-      );
-    } else if (overlay.overlayMode == OverlayMode.sessionMention) {
-      overlays.add(
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: MouseRegion(
-            onHover: (e) {
-              setState(() => overlay.onScrollSessionMention(e));
-            },
-            opaque: false,
-            child: SessionMentionOverlay(
-              mentions: overlay.filteredSessionMentions,
-              selectedIndex: overlay.selectedSessionMentionIndex,
-              scrollOffset: overlay.sessionMentionScrollOffset,
-              maxVisible: _maxVisibleItems,
-              strings: _strings,
-              query: overlay.sessionMentionQuery,
-              onHover: (i) =>
-                  setState(() => overlay.onHoverSessionMention(i)),
-              onTap: (i) {
-                setState(() {
-                  overlay.selectedSessionMentionIndex = i;
-                  overlay.insertSessionMention(null);
-                });
-              },
-            ),
-          ),
-        ),
+        Positioned(bottom: 0, left: 0, right: 0, child: popover),
       );
     }
 

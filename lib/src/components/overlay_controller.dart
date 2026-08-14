@@ -113,6 +113,14 @@ class OverlayController {
     required this.executeCommandCallback,
   });
 
+  /// Dismiss the input overlay popover (command palette, parameter
+  /// suggestions, @-mention file browser, skill picker, session mention).
+  ///
+  /// This does NOT touch the screen-level flags — `showSessionManager`,
+  /// `showFullpane`, and `showHome` are owned by their own open/close
+  /// methods. Clearing them here would, e.g., close the home screen the
+  /// instant the home quick-chat input calls [setOverlayOff] on a plain
+  /// text edit (backspace to empty, etc.).
   void setOverlayOff() {
     overlayMode = OverlayMode.off;
     filteredCommands = [];
@@ -139,9 +147,6 @@ class OverlayController {
     filteredSessionMentions = [];
     selectedSessionMentionIndex = 0;
     sessionMentionScrollOffset = 0;
-    showSessionManager = false;
-    showFullpane = false;
-    showHome = false;
   }
 
   int computeScrollOffset(
