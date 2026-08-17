@@ -104,6 +104,12 @@ class ChatTurnExecutor {
   /// harnesses.
   final ReplyLanguageProvider replyLanguage;
 
+  /// Called when a write/edit tool call mutated the plan-mode document
+  /// (§5 P4). `(oldContent, newContent)` are the before/after file
+  /// contents. Null in tests; wired by the chat panel to
+  /// `PlanModeController.onAgentEdit`.
+  void Function(String oldContent, String newContent)? onPlanDocMutated;
+
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
   /// (there are two executors — one per [ChatService] and one the
@@ -359,6 +365,48 @@ class ChatTurnExecutor {
               );
         session.systemPrompt = systemPrompt;
         await store.update(sessionId, systemPrompt: systemPrompt);
+      }
+    }
+
+    // Plan mode (P6): while active, append the plan-mode operating
+    // instructions to the resolved system prompt. This is per-turn, not
+    // persisted — it layers on top of whatever prompt is cached and
+    // disappears automatically when plan mode exits (planDocPath → null),
+    // so no rebuild is needed on enter/exit. The text branches on the
+    // approved gate: not-approved restricts edits to the plan doc;
+    // approved lifts the guards so the agent can implement the plan.
+    final planDocPath = runtime.planDocPath;
+    if (planDocPath != null && planDocPath.isNotEmpty) {
+      // Applies in both sub-states: the doc stays a plan (prose, not
+      // implementations) even after approval.
+      const noCodeInPlan =
+          'The plan doc is prose — steps, decisions, and references — '
+          'not implementations. Describe changes in words and point at '
+          'code by file:line or symbol (e.g. `edit_tool.dart:214`, '
+          '`checkStreamingGuard`) rather than pasting functions or '
+          'snippets; code belongs in the codebase once the plan is '
+          'approved.';
+      if (runtime.planApproved) {
+        systemPrompt = '${systemPrompt ?? ''}\n\n'
+            '# Plan mode (approved)\n\n'
+            'Plan mode is active and the plan doc at `$planDocPath` is the '
+            'agreed plan; it stays visible in the left pane. The user has '
+            'approved it, so `edit`/`write`/`shell` now operate on the whole '
+            'codebase to *implement* the plan. Keep edits aligned with the '
+            'plan. The user can unapprove at any time (returning to '
+            'plan-only editing), after which only the plan doc is editable '
+            'again. $noCodeInPlan';
+      } else {
+        systemPrompt = '${systemPrompt ?? ''}\n\n'
+            '# Plan mode\n\n'
+            'You are in plan mode. You may only edit `$planDocPath`; all '
+            'other files are read-only. Use `read`/`grep`/`semantic_search` '
+            'freely to research. Propose changes to the plan doc via `edit` '
+            'or `write`; the user reviews and approves each one. Mutating '
+            'shell commands that target files other than the plan doc are '
+            'blocked. If a turn\'s `<plan-context>` includes `reverted_to`, '
+            're-read the plan doc before editing — your memory of its '
+            'contents is stale. $noCodeInPlan';
       }
     }
 
@@ -806,6 +854,7 @@ class ChatTurnExecutor {
                   toolUse,
                   toolExecutor: toolExecutor,
                   workingDirectory: session.projectPath,
+                  sessionRuntime: runtime,
                 );
                 if (guardAbort != null) {
                   pendingGuardAbort = guardAbort;
@@ -1155,6 +1204,24 @@ class ChatTurnExecutor {
           onAbortSignal?.call(abortSignal);
         }
 
+        // Plan-mode edit flash (§5 P4): pre-mutation content of the plan
+        // doc for write/edit calls that target it. Keyed by callId; the
+        // post-dispatch loop diffs old → new and notifies the controller.
+        final planPathForFlash = runtime.planDocPath;
+        final planOldContentByCallId = <String, String>{};
+        if (planPathForFlash != null) {
+          for (final call in toolCalls) {
+            if (precomputedCallResults.containsKey(call.callId)) continue;
+            if (call.name != 'edit' && call.name != 'write') continue;
+            final raw = call.input['filePath'] as String? ?? '';
+            if (resolvePath(raw, session.projectPath) == planPathForFlash) {
+              final f = File(planPathForFlash);
+              planOldContentByCallId[call.callId] =
+                  f.existsSync() ? f.readAsStringSync() : '';
+            }
+          }
+        }
+
         final toolResultEntries = await Future.wait([
           for (final call in toolCalls)
             if (!precomputedCallResults.containsKey(call.callId))
@@ -1259,6 +1326,29 @@ class ChatTurnExecutor {
 
         for (final entry in toolResultEntries) {
           callResults[entry.key] = entry.value;
+        }
+
+        // Plan-mode edit flash (§5 P4): diff the pre-captured plan content
+        // against the post-mutation file and notify the controller. Only
+        // fires for calls that actually mutated the plan (not guard
+        // rejections / errors).
+        if (planOldContentByCallId.isNotEmpty) {
+          final planPath = runtime.planDocPath;
+          if (planPath != null) {
+            for (final call in toolCalls) {
+              final oldContent = planOldContentByCallId[call.callId];
+              if (oldContent == null) continue;
+              final result = callResults[call.callId];
+              if (result == null) continue;
+              if (result.title == 'Error') continue;
+              if (result.metadata['guardTriggered'] == true) continue;
+              final f = File(planPath);
+              if (!f.existsSync()) continue;
+              final newContent = f.readAsStringSync();
+              if (newContent == oldContent) continue;
+              onPlanDocMutated?.call(oldContent, newContent);
+            }
+          }
         }
 
         // ── semantic_search preference hint ──────────────────────
@@ -2003,6 +2093,7 @@ class _StreamingGuardAccumulator {
     ToolUseChunk chunk, {
     required ToolExecutor toolExecutor,
     required String workingDirectory,
+    SessionRuntimeState? sessionRuntime,
   }) async {
     final acc = _byIndex.putIfAbsent(chunk.index, _StreamingToolAccum.new);
     if (chunk.callId.isNotEmpty) acc.callId = chunk.callId;
@@ -2057,6 +2148,7 @@ class _StreamingGuardAccumulator {
       final guard = await toolExecutor.checkWriteGuard(
         filePath: filePath,
         workingDirectory: workingDirectory,
+        sessionRuntime: sessionRuntime,
       );
       if (guard == null) return null;
       return pendingAbort = _PendingStreamingGuardAbort(
@@ -2083,6 +2175,7 @@ class _StreamingGuardAccumulator {
       filePath: filePath,
       oldString: oldString,
       workingDirectory: workingDirectory,
+      sessionRuntime: sessionRuntime,
     );
     if (guard == null) return null;
     return pendingAbort = _PendingStreamingGuardAbort(

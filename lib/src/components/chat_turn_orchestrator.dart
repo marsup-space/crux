@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 
 import '../i18n/strings.dart';
+import '../models/plan_selection.dart';
+import '../services/plan_mode_controller.dart';
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/session.dart';
@@ -49,6 +51,11 @@ class ChatTurnOrchestrator {
   final BtwTurnHandler _btwHandler;
   final TldrHandler _tldrHandler;
 
+  /// The per-session plan-mode controller, read to inject the
+  /// `<plan-context>` block into the LLM-bound text (§5 P3d). Null in
+  /// tests; then no plan block is emitted.
+  final PlanModeController? planModeController;
+
   /// When non-null, an in-flight `ask` tool call holds a completer that
   /// blocks the turn. Interrupting the turn must resolve that completer
   /// (with the dismiss sentinel) or [AskTool.execute] hangs forever —
@@ -81,6 +88,7 @@ class ChatTurnOrchestrator {
     required this._tracker,
     this._pendingAskCubit,
     this._mentionChipsProvider,
+    this.planModeController,
     Strings strings = kEnglishStrings,
   }) : _store = store,
        _messageStore = store.messageStore,
@@ -168,6 +176,60 @@ class ChatTurnOrchestrator {
     await sendTurn(text: trimmed, images: images);
   }
 
+  /// Build the `<plan-context>` block appended to the LLM-bound user
+  /// text while plan mode is active (design doc §5 P3d). Returns null
+  /// when plan mode is off. The visible bubble never shows this; only
+  /// the LLM sees it.
+  String? _buildPlanContextBlock(int sessionId) {
+    final controller = planModeController;
+    if (controller == null || !controller.active) return null;
+
+    final buf = StringBuffer('<plan-context>\n');
+    buf.writeln('plan_path: ${controller.planDocPath}');
+    buf.writeln(
+      'mode: ${controller.viewMode == PlanViewMode.follow ? 'follow' : 'free'}',
+    );
+    buf.writeln('viewing_version: ${controller.viewingVersion}');
+    buf.writeln('head_version: ${controller.headVersion}');
+    // Record the approved gate state on every turn so the context
+    // reflects whether the edit/write/shell guards are currently armed.
+    buf.writeln('approved: ${controller.approved}');
+
+    final viewport = controller.viewportSourceLines();
+    if (viewport != null) {
+      buf.writeln('viewport_lines: ${viewport.$1}..${viewport.$2}');
+    }
+
+    // A revert is a real mutation (§9.3): tell the agent to re-read the
+    // plan before editing, then clear the pending event so it fires
+    // exactly once.
+    final revert = controller.pendingRevert;
+    if (revert != null) {
+      buf.writeln('reverted_to: ${revert.toVersion}');
+      buf.writeln(
+        'note: the plan was reverted to v${revert.toVersion} — re-read '
+        'the plan before editing (your next edit must match the '
+        'reverted content).',
+      );
+      controller.clearPendingRevert();
+    }
+
+    final selection = controller.selection;
+    if (selection != null && selection.text.isNotEmpty) {
+      buf.writeln('selection:');
+      buf.writeln('  from_version: ${selection.fromVersion}');
+      buf.writeln('  lines: ${selection.startLine}..${selection.endLine}');
+      buf.writeln('  cols: ${selection.startCol}..${selection.endCol}');
+      buf.writeln('  text: |-');
+      for (final line in selection.text.split('\n')) {
+        buf.writeln('    $line');
+      }
+    }
+
+    buf.write('</plan-context>');
+    return buf.toString();
+  }
+
   Future<void> sendTurn({
     String? text,
     List<ImageAttachment> images = const [],
@@ -217,6 +279,16 @@ class ChatTurnOrchestrator {
       // set; the union is what the hint renders.
       if (expansion.includedSkills.isNotEmpty) {
         rt.loadedSkillNames.addAll(expansion.includedSkills);
+      }
+
+      // Plan-mode context injection (design doc §5 P3d): when plan
+      // mode is active, every user message carries a structured
+      // <plan-context> block describing the plan path, view mode,
+      // viewport line range, current selection, and any pending
+      // revert — the LLM reads it, the visible bubble never shows it.
+      final planBlock = _buildPlanContextBlock(sessionId);
+      if (planBlock != null) {
+        llmText = '$llmText\n\n$planBlock';
       }
     }
 

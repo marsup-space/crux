@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../lsp/manager.dart' show LspManager;
+import '../models/session_runtime_state.dart';
 import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
@@ -182,10 +183,23 @@ class WriteTool extends ToolDef with IntentionalTool {
   Future<GuardResult?> checkStreamingGuard({
     required String filePath,
     required String workingDirectory,
+    SessionRuntimeState? sessionRuntime,
   }) async {
+    final resolved = resolvePath(filePath, workingDirectory);
+    final planPath = sessionRuntime?.planDocPath;
+    final planApproved = sessionRuntime?.planApproved ?? false;
+    if (planPath != null && !planApproved && resolved != planPath) {
+      return GuardResult(
+        header:
+            '[GUARD] Plan mode: only $planPath can be written while plan '
+            'mode is active. Other files are read-only. Use read / grep / '
+            'semantic_search to research, then edit the plan doc.',
+        content: '',
+        reason: 'planMode',
+      );
+    }
     final t = tracker;
     if (t == null) return null;
-    final resolved = resolvePath(filePath, workingDirectory);
     return t.checkWriteGuard(resolved);
   }
 
@@ -231,6 +245,18 @@ class WriteTool extends ToolDef with IntentionalTool {
   }) async {
     if (ctx.abort.isAborted) {
       return ToolResult.error('Tool aborted');
+    }
+    final planPath = ctx.sessionRuntime?.planDocPath;
+    final planApproved = ctx.sessionRuntime?.planApproved ?? false;
+    if (planPath != null && !planApproved && resolved != planPath) {
+      return ToolResult(
+        title: 'Write file: $resolved',
+        output:
+            '[GUARD] Plan mode: only $planPath can be written while plan '
+            'mode is active. Other files are read-only. Use read / grep / '
+            'semantic_search to research, then edit the plan doc.',
+        metadata: {'guardTriggered': true, 'guardKind': 'planMode'},
+      );
     }
     final file = File(resolved);
 

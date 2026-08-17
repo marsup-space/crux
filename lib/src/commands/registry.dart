@@ -293,6 +293,17 @@ const List<SlashCommand> _baseCommands = [
     ],
     availableDuringResponse: true,
   ),
+  // Enter or leave plan mode: split the chat surface into a plan doc
+  // pane (left) and the vibe view (right). `/plan` with no argument
+  // opens `<projectPath>/PLAN.md`; while active it exits (toggle).
+  // Available during a response because it only flips pane state — the
+  // plan-mode guards take effect on the *next* tool call.
+  SlashCommand(
+    name: '/plan',
+    description: 'cmd.plan.desc',
+    params: ['name?'],
+    availableDuringResponse: true,
+  ),
   // Override the LLM sampling temperature for the rest of the
   // session. Input is clamped to [0.0, 1.0] regardless of what is
   // typed — the underlying APIs accept up to 2.0, but Crux

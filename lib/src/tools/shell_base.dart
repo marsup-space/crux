@@ -648,6 +648,29 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     // detector entirely so users who find the reminder noisy can
     // opt out without code changes.
     final runtime = ctx.sessionRuntime;
+    // ── Plan-mode shell guard ─────────────────────────────────────
+    // Best-effort, documented as heuristic (not a sandbox): while plan
+    // mode is active, mutating shell commands that target non-plan
+    // files are rejected outright. Runs BEFORE the fallback guard so a
+    // plan-mode block doesn't consume the drift streak.
+    final planDocPath = runtime?.planDocPath;
+    final planApproved = runtime?.planApproved ?? false;
+    if (planDocPath != null && !planApproved && !_shellGuardDisabled()) {
+      final planViolation = detectPlanModeShellViolation(
+        command,
+        planDocPath: planDocPath,
+        workingDirectory: ctx.workingDirectory,
+        isWindows: Platform.isWindows,
+      );
+      if (planViolation != null) {
+        return ToolResult(
+          title: 'Error',
+          output: planViolation,
+          metadata: {'shellGuard': true, 'shellGuardKind': 'planMode'},
+        );
+      }
+    }
+
     final currentStreak = runtime?.consecutiveShellViolations ?? 0;
     final ShellGuardVerdict? verdict;
     if (_shellGuardDisabled()) {

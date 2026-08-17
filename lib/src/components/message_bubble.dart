@@ -152,7 +152,13 @@ class MessageBubble extends StatelessComponent {
   /// user actually typed.
   Component _buildUserMessageContent(BuildContext context) {
     final theme = CruxTheme.of(context);
-    final content = stripSkillBodies(message.content);
+    // Strip the LLM-only `<plan-context>` block from the raw persisted
+    // content. Verbose mode is the debugging surface for LLM
+    // actions/context, so instead of echoing the block it leaves a
+    // plain dim one-line marker recording that context was sent; the
+    // full block stays inspectable via `/d-*` debug output.
+    final planStrip = stripPlanContext(stripSkillBodies(message.content));
+    final content = planStrip.text;
 
     // Prefix for images.
     final imagePrefix = message.images.isNotEmpty
@@ -262,7 +268,20 @@ class MessageBubble extends StatelessComponent {
       );
     }
 
-    return RichText(text: TextSpan(children: spans), softWrap: true);
+    final richText = RichText(text: TextSpan(children: spans), softWrap: true);
+    if (!planStrip.stripped) return richText;
+    // A `<plan-context>` block was stripped — leave a plain dim marker
+    // so the log records that context was attached without echoing it.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        richText,
+        Text(
+          strings.t('plan.context.attached'),
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      ],
+    );
   }
 
   static bool _isIdentifierChar(String c) {

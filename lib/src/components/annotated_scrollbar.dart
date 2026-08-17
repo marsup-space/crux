@@ -40,7 +40,21 @@ class ScrollbarMarker {
   int get hashCode => Object.hash(itemIndex, color, label);
 }
 
-class AnnotatedScrollbar extends StatefulComponent {
+/// The shared base of the annotated scrollbars (chat history and plan
+/// doc pane). Owns everything about the scrollbar EXCEPT how a
+/// [ScrollbarMarker] maps to a scroll-content offset — that single
+/// resolution is left to subclasses via [markerContentOffset].
+///
+/// Marker positioning is ListView-specific in the chat case (the
+/// resolver queries `ScrollController.getItemIndexOffsetAndExtent`,
+/// which hard-casts the attached render object to `RenderListViewport`)
+/// and flat-row-based in the plan case (the pane scrolls a
+/// `SingleChildScrollView` over one `RichText`, so a marker's
+/// `itemIndex` IS the flat rendered row). Everything else — thumb/track
+/// paint, marker glyph paint + dimming + hover states, hit-testing,
+/// tooltip anchoring, and the custom mouse-capture semantics — is
+/// position-agnostic and lives here, shared.
+abstract class AnnotatedScrollbar extends StatefulComponent {
   const AnnotatedScrollbar({
     super.key,
     required this.child,
@@ -50,6 +64,7 @@ class AnnotatedScrollbar extends StatefulComponent {
     this.trackColor,
     this.thumbColor,
     this.markers = const [],
+    this.onMarkerTap,
   });
 
   final Component child;
@@ -59,6 +74,18 @@ class AnnotatedScrollbar extends StatefulComponent {
   final Color? trackColor;
   final Color? thumbColor;
   final List<ScrollbarMarker> markers;
+
+  /// Called when the user clicks a marker to jump to it. A marker jump
+  /// is a user scroll — the plan pane wires this to its follow/free
+  /// state machine (dropping to FREE) so it stays honest. Null for the
+  /// chat history (which has no follow/free mode).
+  final void Function()? onMarkerTap;
+
+  /// Resolve [marker]'s offset in scroll-content coordinates. Returns
+  /// null when the marker has no position (the base skips painting it).
+  /// [marker.itemIndex] is the resolver key — the chat interprets it as
+  /// a ListView item index, the plan pane as a flat rendered row.
+  double? markerContentOffset(ScrollbarMarker marker);
 
   @override
   State<AnnotatedScrollbar> createState() => _AnnotatedScrollbarState();
@@ -224,11 +251,15 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar>
   void _jumpToMarker(int markerIndex) {
     final ctrl = _controller;
     if (ctrl == null) return;
-    final itemIndex = component.markers[markerIndex].itemIndex;
+    final marker = component.markers[markerIndex];
+    // A marker jump is a user scroll — let the consumer drop any
+    // follow/auto-scroll mode BEFORE the jump so the state machine
+    // records the user-initiated transition.
+    component.onMarkerTap?.call();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      final info = ctrl.getItemIndexOffsetAndExtent(itemIndex);
-      if (info != null) {
-        ctrl.jumpTo(info.$1);
+      final offset = component.markerContentOffset(marker);
+      if (offset != null) {
+        ctrl.jumpTo(offset);
       }
     });
   }
@@ -253,6 +284,7 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar>
         trackColor: component.trackColor,
         thumbColor: component.thumbColor,
         markers: component.markers,
+        markerContentOffset: component.markerContentOffset,
         hoveredMarkerIndex: _hoveredMarkerIndex,
         isScrollbarHovered: _isHovered,
         child: component.child,
@@ -271,6 +303,7 @@ class _AnnotatedScrollbarRenderObjectWidget
     this.trackColor,
     this.thumbColor,
     required this.markers,
+    required this.markerContentOffset,
     required this.hoveredMarkerIndex,
     required this.isScrollbarHovered,
     required super.child,
@@ -282,6 +315,7 @@ class _AnnotatedScrollbarRenderObjectWidget
   final Color? trackColor;
   final Color? thumbColor;
   final List<ScrollbarMarker> markers;
+  final double? Function(ScrollbarMarker) markerContentOffset;
   final int? hoveredMarkerIndex;
   final bool isScrollbarHovered;
 
@@ -295,6 +329,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       trackColor: trackColor ?? theme.surface,
       thumbColor: thumbColor ?? theme.onSurface,
       markers: markers,
+      markerContentOffset: markerContentOffset,
       hoveredMarkerIndex: hoveredMarkerIndex,
       isScrollbarHovered: isScrollbarHovered,
     );
@@ -313,6 +348,7 @@ class _AnnotatedScrollbarRenderObjectWidget
       ..trackColor = trackColor ?? theme.surface
       ..thumbColor = thumbColor ?? theme.onSurface
       ..markers = markers
+      ..markerContentOffset = markerContentOffset
       ..hoveredMarkerIndex = hoveredMarkerIndex
       ..isScrollbarHovered = isScrollbarHovered;
   }
@@ -326,6 +362,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     required super.trackColor,
     required super.thumbColor,
     this._markers = const [],
+    required this.markerContentOffset,
     this._hoveredMarkerIndex,
     this._isScrollbarHovered = false,
   });
@@ -340,6 +377,11 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     _markers = value;
     markNeedsPaint();
   }
+
+  /// Resolves a marker's offset in scroll-content coordinates. Supplied
+  /// by the owning [AnnotatedScrollbar] subclass — the only piece that
+  /// varies per consumer (ListView item index vs flat rendered row).
+  double? Function(ScrollbarMarker) markerContentOffset;
 
   int? _hoveredMarkerIndex;
   int? get hoveredMarkerIndex => _hoveredMarkerIndex;
@@ -617,9 +659,8 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     final occupiedY = <int, (int, double)>{};
     for (var i = 0; i < _markers.length; i++) {
       final marker = _markers[i];
-      final info = ctrl.getItemIndexOffsetAndExtent(marker.itemIndex);
-      if (info == null) continue;
-      final (itemOffset, _) = info;
+      final itemOffset = markerContentOffset(marker);
+      if (itemOffset == null) continue;
       final fraction = (itemOffset / totalExtent).clamp(0.0, 1.0);
       final markerY = trackStart + fraction * trackHeight;
       final yInt = markerY.round();
@@ -657,4 +698,29 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
   // needs is [getMarkerTooltipGlobalPosition] above, which the
   // [_AnnotatedScrollbarState] uses to position the hint next to the
   // marker.
+}
+
+/// The chat history's annotated scrollbar. Resolves marker positions
+/// through the `RenderListViewport` attached to the scroll controller —
+/// a marker's `itemIndex` is the ListView item index, and its offset is
+/// whatever the viewport reports for that item. Behavior identical to
+/// the original [AnnotatedScrollbar] before the base was made abstract.
+class ChatScrollbar extends AnnotatedScrollbar {
+  const ChatScrollbar({
+    super.key,
+    required super.child,
+    super.controller,
+    super.thumbVisibility,
+    super.thickness,
+    super.trackColor,
+    super.thumbColor,
+    super.markers,
+    super.onMarkerTap,
+  });
+
+  @override
+  double? markerContentOffset(ScrollbarMarker marker) {
+    final info = controller?.getItemIndexOffsetAndExtent(marker.itemIndex);
+    return info?.$1;
+  }
 }

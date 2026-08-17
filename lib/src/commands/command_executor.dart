@@ -4,6 +4,7 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/auxiliary_prompts.dart';
+import '../services/plan_mode_controller.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/web_provider_registry.dart';
@@ -21,6 +22,7 @@ import 'cmd_auxiliary.dart';
 import 'cmd_session.dart';
 import 'cmd_new.dart';
 import 'cmd_chat.dart';
+import 'cmd_plan.dart';
 import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
@@ -113,6 +115,11 @@ class CommandContext {
   /// persisting through [SessionStore.messageStore] directly.
   final Future<void> Function(String markdown)? appendLocalMessage;
 
+  /// The per-session plan-mode controller, so `/plan` can enter/exit
+  /// plan mode. Null in tests and legacy harnesses (the command then
+  /// reports unavailable).
+  final PlanModeController? planModeController;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -151,6 +158,7 @@ class CommandContext {
     this.recentProjectsStore,
     this.appendLocalMessage,
     this.shellMonitorLogStore,
+    this.planModeController,
   });
 }
 
@@ -187,6 +195,8 @@ class CommandExecutor {
         await executeThink(parts, ctx);
       case '/view':
         await executeView(parts, ctx);
+      case '/plan':
+        await executePlan(parts, ctx);
       case '/temperature':
         await executeTemperature(parts, ctx);
       case '/tldr':

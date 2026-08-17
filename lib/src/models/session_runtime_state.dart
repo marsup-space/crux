@@ -228,6 +228,31 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// (on app launch or when a new chat starts a fresh runtime).
   int semanticSearchHintLastThreshold;
 
+  /// Absolute path of the plan-mode document while plan mode is active,
+  /// `null` otherwise. Written by `PlanModeController` on enter/exit;
+  /// read by the edit / write / shell plan-mode guards (design doc
+  /// §5 P6): when non-null, file-mutating tools may only target this
+  /// path, and the shell guard additionally blocks mutating commands
+  /// aimed at other files.
+  ///
+  /// In-memory only — plan mode is a UI/session state, and a fresh app
+  /// launch starts with plan mode off.
+  String? planDocPath;
+
+  /// Whether the active plan has been approved. While approved, the
+  /// plan doc stays visible (and [planDocPath] stays non-null so the
+  /// pane and the per-turn prompt block stay live), but the edit /
+  /// write / shell plan-mode guards are lifted so the agent can edit
+  /// the whole codebase to *implement* the plan. Unapproving re-arms
+  /// the guards immediately.
+  ///
+  /// This is a SEPARATE flag from [planDocPath] on purpose: nulling
+  /// [planDocPath] to lift the guards would also collapse the pane and
+  /// drop the prompt block, which is the opposite of "keep the doc
+  /// visible while editing". In-memory only — a fresh launch starts
+  /// unapproved (guards armed) whenever plan mode is re-entered.
+  bool planApproved = false;
+
   /// The set of skill names currently "loaded" into this session's
   /// active context. A skill is added in two ways:
   ///

@@ -852,3 +852,174 @@ String _ordinalFor(int streak) {
       return '${streak}th';
   }
 }
+
+// =============================================================================
+// Plan-mode shell guard (design doc §5 P6)
+// =============================================================================
+
+/// POSIX verbs that mutate files. Conservative on purpose — this guard
+/// is heuristic / best-effort, not a sandbox (design doc §9 non-goal).
+const _posixMutatingVerbs = <String>{
+  'sed', 'tee', 'mv', 'cp', 'rm', 'rmdir', 'mkdir', 'touch', 'ln',
+  'dd', 'truncate', 'chmod', 'chown', 'patch', 'install', 'rsync',
+  'shred', 'unlink', 'rename',
+};
+
+/// Windows / PowerShell mutating verbs and cmdlets.
+const _winMutatingVerbs = <String>{
+  'del', 'erase', 'ren', 'rename', 'move', 'copy', 'xcopy', 'robocopy',
+  'md', 'mkdir', 'rd', 'rmdir', 'type',
+  'Set-Content', 'Add-Content', 'Out-File', 'Copy-Item', 'Move-Item',
+  'Remove-Item', 'New-Item', 'Rename-Item', 'Clear-Content',
+};
+
+/// Detect a mutating shell command that targets a file other than the
+/// plan doc while plan mode is active. Returns the rejection body (ready
+/// to become the tool call's `output`) or null when the command is
+/// allowed.
+///
+/// Kept as a SEPARATE function from [detectShellGuard] so plan-mode
+/// policy doesn't tangle with the fallback-streak logic (§5 P6).
+///
+/// Allowed (returns null):
+///   * Pure inspection verbs (`cat`, `grep`, `ls`, …) — research is
+///     encouraged during planning.
+///   * Mutating verbs whose every path argument resolves to
+///     [planDocPath] (e.g. `sed -i` on the plan itself).
+///   * Commands with no obvious path argument (e.g. `git status`,
+///     `make`, process control) — shell-native work continues.
+String? detectPlanModeShellViolation(
+  String command, {
+  required String planDocPath,
+  required String workingDirectory,
+  required bool isWindows,
+}) {
+  if (command.trim().isEmpty) return null;
+
+  final segments = _splitSegments(command);
+  final mutatingVerbs = isWindows ? _winMutatingVerbs : _posixMutatingVerbs;
+
+  for (final seg in segments) {
+    final trimmed = seg.trim();
+    if (trimmed.isEmpty) continue;
+
+    // Output redirects (`>`, `>>`) anywhere in the segment are a
+    // mutation attempt; check the redirect TARGET.
+    final redirect = _redirectTarget(trimmed);
+    if (redirect != null &&
+        !_isPlanPath(redirect, planDocPath, workingDirectory)) {
+      return _planModeRejection(command, planDocPath, redirect);
+    }
+
+    final verb = _firstVerb(trimmed);
+    if (verb == null) continue;
+    if (_shellScriptVerbs.contains(verb)) continue;
+
+    if (mutatingVerbs.contains(verb)) {
+      // sed's `-i` is the in-place edit flag; the file is the next
+      // non-flag arg. Other verbs take path args directly.
+      final target = _firstPathArg(trimmed, verb);
+      if (target != null &&
+          !_isPlanPath(target, planDocPath, workingDirectory)) {
+        return _planModeRejection(command, planDocPath, target);
+      }
+    }
+  }
+  return null;
+}
+
+/// Extract the target of a `>` or `>>` redirect in [segment], or null.
+/// Quote-aware-ish: skips `>` inside quotes (good enough for the
+/// heuristic).
+String? _redirectTarget(String segment) {
+  var inSingle = false;
+  var inDouble = false;
+  for (var i = 0; i < segment.length; i++) {
+    final ch = segment[i];
+    if (inSingle) {
+      if (ch == "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch == '"') inDouble = false;
+      continue;
+    }
+    if (ch == "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch == '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch == '>') {
+      var j = i + 1;
+      if (j < segment.length && segment[j] == '>') j++; // `>>`
+      if (j < segment.length && segment[j] == '&') return null; // `>&2`
+      while (j < segment.length && segment[j] == ' ') {
+        j++;
+      }
+      final rest = segment.substring(j).trim();
+      if (rest.isEmpty) return null;
+      return rest.split(RegExp(r'\s+')).first;
+    }
+  }
+  return null;
+}
+
+/// First non-flag argument after [verb] in [segment].
+String? _firstPathArg(String segment, String verb) {
+  final tokens = segment.trim().split(RegExp(r'\s+'));
+  var pastVerb = false;
+  for (final tok in tokens) {
+    if (!pastVerb) {
+      if (tok.endsWith(verb) || tok == verb) pastVerb = true;
+      continue;
+    }
+    if (tok.startsWith('-')) continue; // flags
+    if (_isEnvAssignment(tok)) continue;
+    return tok;
+  }
+  return null;
+}
+
+/// Whether [candidate] resolves (relative to [workingDirectory]) to
+/// [planDocPath]. Pure string normalization — no filesystem access.
+bool _isPlanPath(String candidate, String planDocPath, String workingDirectory) {
+  var c = candidate.trim();
+  if (c.startsWith('"') && c.endsWith('"') && c.length >= 2) {
+    c = c.substring(1, c.length - 1);
+  }
+  if (c.startsWith("'") && c.endsWith("'") && c.length >= 2) {
+    c = c.substring(1, c.length - 1);
+  }
+  final abs = c.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(c)
+      ? c
+      : '$workingDirectory${c.startsWith('./') ? '' : '/'}$c';
+  return _normalizePath(abs) == _normalizePath(planDocPath);
+}
+
+String _normalizePath(String path) {
+  var p = path.replaceAll(r'\', '/');
+  final parts = <String>[];
+  for (final seg in p.split('/')) {
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (parts.isNotEmpty && parts.last != '..') parts.removeLast();
+      continue;
+    }
+    parts.add(seg);
+  }
+  return parts.join('/');
+}
+
+String _planModeRejection(String command, String planDocPath, String target) {
+  return 'This shell call was BLOCKED. Plan mode is active: only '
+      '$planDocPath can be mutated. Other files are read-only during '
+      'planning.\n'
+      '• detected: mutating shell command targeting "$target"\n'
+      '• use read / grep / semantic_search to research, then edit the '
+      'plan doc instead.\n'
+      '\n'
+      'Your command was:\n  ${command.trim()}';
+}

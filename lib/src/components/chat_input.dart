@@ -56,6 +56,11 @@ class ChatInput extends StatefulComponent {
   final RecentProjectsStore? recentProjectsStore;
   final Strings strings;
 
+  /// Basename of the currently-active plan doc, or null when plan mode
+  /// is off. Wired by the chat panel to the [PlanModeController] so the
+  /// `/plan` autocomplete can flag the active plan.
+  final String? Function()? activePlanName;
+
   const ChatInput({
     super.key,
     required this.textController,
@@ -79,6 +84,7 @@ class ChatInput extends StatefulComponent {
     this.onOpenHome,
     this.projectPath = '.',
     this.recentProjectsStore,
+    this.activePlanName,
     this.strings = kEnglishStrings,
   });
 
@@ -113,6 +119,7 @@ class ChatInputState extends State<ChatInput> {
       recentProjectsStore: component.recentProjectsStore,
       textController: component.textController,
       projectPath: component.projectPath,
+      activePlanName: component.activePlanName,
       refresh: component.refresh,
       onStateChanged: _onControllerStateChanged,
       strings: component.strings,

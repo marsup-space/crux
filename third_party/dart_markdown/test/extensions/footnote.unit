@@ -1,0 +1,42 @@
+>>> Multiple footnotes links to the same footnote reference, only the first one is valid
+Foo[^1] bar[^1]
+
+[^1]: biz
+<<<
+<p>Foo<sup id="fnref:1" class="footnote"><a href="#fn:1">1</a></sup> bar[^1]</p>
+<ol class="footnotes">
+<li id="fn:1">biz<a class="footnote-reverse" href="#fnref:1">↩</a></li>
+</ol>
+>>> The left bracket preceded by an exclamation
+Foo![^1]
+
+[^1]: bar
+<<<
+<p>Foo!<sup id="fnref:1" class="footnote"><a href="#fn:1">1</a></sup></p>
+<ol class="footnotes">
+<li id="fn:1">bar<a class="footnote-reverse" href="#fnref:1">↩</a></li>
+</ol>
+>>> A footnote does not have to follow a text directly
+[^1]Foo
+
+[^1]: bar
+<<<
+<p><sup id="fnref:1" class="footnote"><a href="#fn:1">1</a></sup>Foo</p>
+<ol class="footnotes">
+<li id="fn:1">bar<a class="footnote-reverse" href="#fnref:1">↩</a></li>
+</ol>
+>>> Whitespace is not allowed between the two sets of brackets
+[^ note]Foo
+
+[^ note]: bar
+<<<
+<p><a href="bar">^ note</a>Foo</p>
+>>> A footnote can not find a reference is kept as plain text
+Foo[^1][^2]
+
+[^1]: bar
+<<<
+<p>Foo<sup id="fnref:1" class="footnote"><a href="#fn:1">1</a></sup>[^2]</p>
+<ol class="footnotes">
+<li id="fn:1">bar<a class="footnote-reverse" href="#fnref:1">↩</a></li>
+</ol>

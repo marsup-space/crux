@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/provider_config.dart';
+import '../models/session_runtime_state.dart';
 import '../tools/edit_tool.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
@@ -45,12 +46,14 @@ class ToolExecutor {
   Future<GuardResult?> checkWriteGuard({
     required String filePath,
     required String workingDirectory,
+    SessionRuntimeState? sessionRuntime,
   }) async {
     final tool = _registry.lookup('write');
     if (tool is! WriteTool) return null;
     return tool.checkStreamingGuard(
       filePath: filePath,
       workingDirectory: workingDirectory,
+      sessionRuntime: sessionRuntime,
     );
   }
 
@@ -58,6 +61,7 @@ class ToolExecutor {
     required String filePath,
     required String oldString,
     required String workingDirectory,
+    SessionRuntimeState? sessionRuntime,
   }) async {
     final tool = _registry.lookup('edit');
     if (tool is! EditTool) return null;
@@ -65,6 +69,7 @@ class ToolExecutor {
       filePath: filePath,
       oldString: oldString,
       workingDirectory: workingDirectory,
+      sessionRuntime: sessionRuntime,
     );
   }
 

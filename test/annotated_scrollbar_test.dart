@@ -7,11 +7,84 @@ import 'package:crux/src/components/annotated_scrollbar.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
 
+/// A stub [AnnotatedScrollbar] whose marker offsets come from a plain
+/// map (row → offset), proving the base class paints markers at
+/// whatever offset the subclass resolves and jumps there on click —
+/// independent of any `RenderListViewport`.
+class _StubScrollbar extends AnnotatedScrollbar {
+  final Map<int, double> offsets;
+
+  const _StubScrollbar({
+    required super.child,
+    super.controller,
+    super.thumbVisibility,
+    super.markers,
+    required this.offsets,
+  });
+
+  @override
+  double? markerContentOffset(ScrollbarMarker marker) =>
+      offsets[marker.itemIndex];
+}
+
 void main() {
   // Reset the [HintController] singleton between tests so a stale
   // hint from a previous test never leaks into the next one.
   setUp(() => HintController.instance.hide());
   tearDown(() => HintController.instance.hide());
+
+  test('base class paints markers at the subclass-resolved offsets', () async {
+    await testNocterm('stub resolver paints + jumps', (tester) async {
+      final controller = ScrollController();
+
+      await tester.pumpComponent(
+        Container(
+          width: 20,
+          height: 10,
+          child: _StubScrollbar(
+            controller: controller,
+            thumbVisibility: true,
+            // Marker keyed on itemIndex 5 → content offset 40.0, which
+            // is 40% of the 100-row content → mid-track.
+            offsets: const {5: 40.0},
+            markers: const [
+              ScrollbarMarker(
+                itemIndex: 5,
+                color: Color(0xFF50FA7B),
+                label: 'stub',
+              ),
+            ],
+            child: SingleChildScrollView(
+              controller: controller,
+              child: const Text('x\n' * 100),
+            ),
+          ),
+        ),
+      );
+
+      // The marker should render on the track.
+      int? markerRow;
+      for (var y = 0; y < 10; y++) {
+        if (tester.terminalState.getCellAt(19, y)?.char == '◆') {
+          markerRow = y;
+          break;
+        }
+      }
+      expect(markerRow, isNotNull, reason: 'marker should paint at the resolved offset');
+
+      // Click it — the base should jump the controller to the resolved
+      // offset (40.0, clamped to maxScrollExtent).
+      expect(controller.offset, 0.0);
+      await tester.sendMouseEvent(
+        MouseEvent(button: MouseButton.left, x: 19, y: markerRow!, pressed: true),
+      );
+      await tester.pump();
+      // The jump target is markerContentOffset → 40.0, clamped to the
+      // viewport's maxScrollExtent (content 100 rows − viewport 8 rows
+      // of track content = 92 max).
+      expect(controller.offset, greaterThan(0.0));
+    }, size: const Size(20, 10));
+  });
 
   test('thumb is at least two lines tall for long content', () async {
     await testNocterm('annotated scrollbar minimum thumb height', (
@@ -23,7 +96,7 @@ void main() {
         Container(
           width: 20,
           height: 10,
-          child: AnnotatedScrollbar(
+          child: ChatScrollbar(
             controller: controller,
             thumbVisibility: true,
             child: ListView.builder(
@@ -66,7 +139,7 @@ void main() {
               width: 20,
               height: 10,
               child: HintOverlay(
-                child: AnnotatedScrollbar(
+                child: ChatScrollbar(
                   controller: controller,
                   thumbVisibility: true,
                   markers: const [
@@ -140,7 +213,7 @@ void main() {
         Container(
           width: 20,
           height: 10,
-          child: AnnotatedScrollbar(
+          child: ChatScrollbar(
             controller: controller,
             thumbVisibility: true,
             child: ListView.builder(
@@ -198,7 +271,7 @@ void main() {
           width: 20,
           height: 10,
           child: HintOverlay(
-            child: AnnotatedScrollbar(
+            child: ChatScrollbar(
               controller: controller,
               thumbVisibility: true,
               markers: const [
@@ -252,7 +325,7 @@ void main() {
           height: 20,
           padding: const EdgeInsets.all(3),
           child: HintOverlay(
-            child: AnnotatedScrollbar(
+            child: ChatScrollbar(
               controller: controller,
               thumbVisibility: true,
               markers: const [
@@ -339,7 +412,7 @@ void main() {
           width: 30,
           height: 10,
           child: HintOverlay(
-            child: AnnotatedScrollbar(
+            child: ChatScrollbar(
               controller: controller,
               thumbVisibility: true,
               markers: const [

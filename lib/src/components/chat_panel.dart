@@ -8,6 +8,8 @@ import '../commands/registry.dart';
 import '../lsp/actors/registry.dart';
 import '../lsp/manager.dart';
 import '../models/image_attachment.dart';
+import '../services/plan_mode_controller.dart';
+import 'plan_doc_pane.dart';
 import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
@@ -309,6 +311,11 @@ class _ChatPanelState extends State<ChatPanel> {
   /// session's project, sharing the session store's DB connection.
   late final NotesService _notesService;
 
+  /// Per-session owner of all plan-mode state (design doc §4). The pane
+  /// ([PlanDocPane]) is a dumb renderer of it; `/plan` and the
+  /// `ask_plan_mode` tool drive it.
+  late final PlanModeController _planModeController;
+
   bool _providerServiceReady = false;
 
   final _toastKey = GlobalKey<ToastHubState>();
@@ -404,6 +411,12 @@ class _ChatPanelState extends State<ChatPanel> {
       ..register(TinyFishWebProvider());
     unawaited(_webProviderRegistry.initialize());
 
+    _planModeController = PlanModeController(
+      runtimeFor: () {
+        final sid = _sessionController.currentSessionId;
+        return sid == null ? null : _sessionController.runtime(sid);
+      },
+    );
     final registry = ToolRegistry();
     registry.registerDefaults(
       tracker,
@@ -411,6 +424,7 @@ class _ChatPanelState extends State<ChatPanel> {
       webProviderRegistry: _webProviderRegistry,
       lsp: _lspManager,
       pendingAskCubit: _pendingAskCubit,
+      planModeController: _planModeController,
     );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
@@ -447,6 +461,12 @@ class _ChatPanelState extends State<ChatPanel> {
       refresh: _refresh,
     );
     _commandExecutor = CommandExecutor();
+    _planModeController.addListener(_refresh);
+    _chatService.onPlanDocMutated = (oldContent, newContent) {
+      _planModeController.onAgentEdit(oldContent, newContent);
+    };
+    final bootSid = _sessionController.currentSessionId;
+    if (bootSid != null) _planModeController.attachSession(bootSid);
     _turnOrchestrator = ChatTurnOrchestrator(
       store: _store,
       chatService: _chatService,
@@ -460,6 +480,7 @@ class _ChatPanelState extends State<ChatPanel> {
       tracker: _tracker,
       pendingAskCubit: _pendingAskCubit,
       mentionChipsProvider: () => _overlayController.mentionChips,
+      planModeController: _planModeController,
       strings: _strings,
     );
     _polling = PollingCoordinator(
@@ -667,6 +688,7 @@ class _ChatPanelState extends State<ChatPanel> {
         setState(() {});
       },
     );
+    _planModeController.attachSession(id);
     if (!mounted) return;
     final savedState = await fileReadStateFuture;
     if (!mounted) return;
@@ -827,12 +849,25 @@ class _ChatPanelState extends State<ChatPanel> {
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
+    _planModeController.dispose();
     unawaited(_lspManager.shutdown());
     _polling.dispose();
     _gitStatusService.dispose();
     scrollController.dispose();
     textController.dispose();
     super.dispose();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot-reload rule (project note): fields computed in initState from
+    // constructor inputs or default lists are stale after reload unless
+    // mirrored here. The plan controller's derived state (parse results,
+    // version log) is re-keyed on the current session so a reload that
+    // changed the pane's structure doesn't render stale plan content.
+    final sid = _sessionController.currentSessionId;
+    if (sid != null) _planModeController.attachSession(sid);
   }
 
   Map<String, dynamic> _profilerSnapshot() {
@@ -955,6 +990,7 @@ class _ChatPanelState extends State<ChatPanel> {
       showHome: _openHome,
       recentProjectsStore: _recentProjectsStore,
       shellMonitorLogStore: _chatService.shellMonitorLogStore,
+      planModeController: _planModeController,
       appendLocalMessage: (markdown) async {
         final sessionId = _sessionController.currentSessionId;
         if (sessionId == null) return;
@@ -1758,6 +1794,13 @@ class _ChatPanelState extends State<ChatPanel> {
                         projectPath: Directory.current.path,
                         strings: _strings,
                         recentProjectsStore: _recentProjectsStore,
+                        activePlanName: () {
+                          final path = _planModeController.planDocPath;
+                          if (!_planModeController.active || path == null) {
+                            return null;
+                          }
+                          return path.split(RegExp(r'[/\\]')).last;
+                        },
                         onSendTurn: (text) {
                           final sid = _sessionController.currentSessionId;
                           final images = sid != null
@@ -1882,8 +1925,28 @@ class _ChatPanelState extends State<ChatPanel> {
                           0.3 * (constraints.maxWidth - kSidebarShowThreshold))
                       .clamp(kSidebarWidthMin, kSidebarWidthMax);
 
+              final planActive = _planModeController.active;
+              final planPaneWidth = planActive
+                  ? (constraints.maxWidth / 2)
+                      .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
+                  : 0.0;
+
               final body = Row(
                 children: [
+                  if (planActive) ...[
+                    SizedBox(
+                      width: planPaneWidth,
+                      child: PlanDocPane(
+                        controller: _planModeController,
+                        strings: _strings,
+                      ),
+                    ),
+                    VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: CruxTheme.of(context).divider,
+                    ),
+                  ],
                   Expanded(child: mainContent),
                   VerticalDivider(
                     width: 1,
@@ -1960,6 +2023,31 @@ class _ChatPanelState extends State<ChatPanel> {
                 children: [
                   Positioned.fill(child: mainContent),
                   Positioned.fill(child: _buildSessionManager()),
+                ],
+              );
+            }
+
+            // Narrow terminal: no info sidebar, but plan mode can still
+            // split the pane (the collapse order drops ExtraInfoPanel
+            // first — §9.6).
+            if (_planModeController.active) {
+              final planPaneWidth = (constraints.maxWidth / 2)
+                  .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth);
+              return Row(
+                children: [
+                  SizedBox(
+                    width: planPaneWidth,
+                    child: PlanDocPane(
+                      controller: _planModeController,
+                      strings: _strings,
+                    ),
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: CruxTheme.of(context).divider,
+                  ),
+                  Expanded(child: mainContent),
                 ],
               );
             }

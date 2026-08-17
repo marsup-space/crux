@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import '../services/web_provider_registry.dart';
+import '../services/plan_mode_controller.dart';
 import '../storage/session_store.dart';
+import 'ask_plan_mode_tool.dart';
 import 'ask_tool.dart';
 import 'bash_tool.dart';
 import 'cmd_tool.dart';
@@ -76,6 +78,7 @@ class ToolRegistry {
     required WebProviderRegistry webProviderRegistry,
     dynamic lsp,
     PendingAskCubit? pendingAskCubit,
+    PlanModeController? planModeController,
   }) {
     // Tool registration order = order the LLM sees in the API tools list.
     // Tier 1 first so the model's first scan of the list lands on the
@@ -107,6 +110,12 @@ class ToolRegistry {
     // falls back to `ask://` inline tokens (which need no UI at all).
     if (pendingAskCubit != null) {
       register(AskTool(pendingAskCubit: pendingAskCubit));
+    }
+    // `ask_plan_mode` is registered only when a plan-mode controller is
+    // supplied (the real TUI). The tool is the agent's way to *propose*
+    // entering/exiting plan mode; the actual flip stays user-driven.
+    if (planModeController != null) {
+      register(AskPlanModeTool(planModeController: planModeController));
     }
   }
 

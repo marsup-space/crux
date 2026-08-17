@@ -19,9 +19,13 @@ include: package:lints/recommended.yaml
 #   rules:
 #     - camel_case_types
 
-# analyzer:
-#   exclude:
-#     - path/to/excluded/files/**
+analyzer:
+  exclude:
+    # Vendored packages ship with their own dev tooling that depends on
+    # packages we don't vendor (e.g. package:html). Don't analyze those.
+    - third_party/**/tool/**
+    - third_party/**/test/**
+    - third_party/**/example/**
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

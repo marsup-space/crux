@@ -85,6 +85,15 @@ class ChatService {
         _auxiliaryService =
             AuxiliaryService(providerService, store.messageStore);
 
+  /// Called when a write/edit tool call mutated the plan-mode document
+  /// (§5 P4). Forwarded to the turn executor; wired by the chat panel
+  /// to `PlanModeController.onAgentEdit`.
+  void Function(String oldContent, String newContent)? get onPlanDocMutated =>
+      _turnExecutor.onPlanDocMutated;
+  set onPlanDocMutated(
+          void Function(String oldContent, String newContent)? value) =>
+      _turnExecutor.onPlanDocMutated = value;
+
   // ── Session lease ─────────────────────────────────────────────────
 
   /// Store for `shell_monitor_logs` (one row per aux-monitor event).

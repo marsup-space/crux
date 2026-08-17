@@ -592,11 +592,12 @@ class _ChatHistoryState extends State<ChatHistory> {
             }
           }
           userItemIndices.add(items.length);
-          // Strip appended skill bodies so the jump-bar label shows
-          // only what the user typed (mirrors the bubble renderers).
-          final text = stripSkillBodies(
-            seg.userMessage.content,
-          ).replaceAll('\n', ' ').trim();
+          // Strip appended skill bodies + the LLM-only plan-context
+          // block so the jump-bar label shows only what the user typed
+          // (mirrors the bubble renderers).
+          final text = stripPlanContext(
+            stripSkillBodies(seg.userMessage.content),
+          ).text.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
         final isLatestClosedAi = identical(seg, latestClosedAiSegment);
@@ -769,7 +770,12 @@ class _ChatHistoryState extends State<ChatHistory> {
 
         if (msg.role == 'user') {
           userItemIndices.add(items.length);
-          final text = msg.content.replaceAll('\n', ' ').trim();
+          // Strip skill bodies + the LLM-only plan-context block so the
+          // jump-bar label shows only what the user typed.
+          final text = stripPlanContext(stripSkillBodies(msg.content))
+              .text
+              .replaceAll('\n', ' ')
+              .trim();
           userItemLabels.add(text);
         }
 
@@ -1009,7 +1015,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           ClipboardManager.copy(text);
         }
       },
-      child: AnnotatedScrollbar(
+      child: ChatScrollbar(
         controller: component.scrollController,
         thumbVisibility: true,
         markers: markers,

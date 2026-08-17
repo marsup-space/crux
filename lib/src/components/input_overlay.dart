@@ -39,6 +39,12 @@ class InputOverlay {
   final void Function() onStateChanged;
   final Strings strings;
 
+  /// Basename (e.g. `test run.md`) of the currently-active plan doc, or
+  /// null when plan mode is off. Used by the `/plan` autocomplete branch
+  /// to flag the active plan among the suggestions. Optional so tests
+  /// and the home quick-chat input don't need a plan controller.
+  final String? Function()? activePlanName;
+
   // @-mention state
   final FileSearcher _fileSearcher;
   Timer? _atMentionDebouncer;
@@ -60,6 +66,7 @@ class InputOverlay {
     required this.projectPath,
     required this.refresh,
     required this.onStateChanged,
+    this.activePlanName,
     Strings strings = kEnglishStrings,
   })  : strings = strings,
         _fileSearcher = FileSearcher(rootPath: projectPath);
@@ -150,6 +157,7 @@ class InputOverlay {
         commandName != '/provider' &&
         commandName != '/web-provider' &&
         commandName != '/theme' &&
+        commandName != '/plan' &&
         commandName != '/project') {
       overlayController.setOverlayOff();
       _maybeRefresh();
@@ -183,6 +191,7 @@ class InputOverlay {
         !(commandName == '/provider' && paramIndex == 0) &&
         !(commandName == '/web-provider' && paramIndex == 0) &&
         !(commandName == '/theme' && paramIndex == 0) &&
+        !(commandName == '/plan' && paramIndex == 0) &&
         !(commandName == '/project' && paramIndex == 0)) {
       overlayController.setOverlayOff();
       _maybeRefresh();
@@ -286,6 +295,44 @@ class InputOverlay {
             ),
         ];
       }
+    } else if (commandName == '/plan' && paramIndex == 0) {
+      // List the existing plan docs in the project root (non-recursive —
+      // that's where `PlanModeController.enter` resolves names). Each
+      // value is the file name with the `.md` suffix stripped so the
+      // command receives the bare plan name. The active plan is flagged
+      // so re-entering it is obvious. A fresh name simply gets no match
+      // (the fuzzy filter drops it), which is correct — `enter` creates it.
+      final active = activePlanName?.call();
+      final dir = Directory(projectPath);
+      final found = <CommandSuggestion>[];
+      if (dir.existsSync()) {
+        for (final entity in dir.listSync(followLinks: false)) {
+          if (entity is! File) continue;
+          final base = entity.uri.pathSegments.isNotEmpty
+              ? entity.uri.pathSegments.last
+              : entity.path.split('/').last;
+          if (!base.endsWith('.md')) continue;
+          if (base.startsWith('.')) continue;
+          final name = base.substring(0, base.length - '.md'.length);
+          if (name.isEmpty) continue;
+          found.add(
+            CommandSuggestion(
+              value: name,
+              description: base == active
+                  ? strings.t('cmd.plan.sug.active')
+                  : strings.t('cmd.plan.sug.existing'),
+            ),
+          );
+        }
+      }
+      // Surface the active plan first, then the rest alphabetically.
+      found.sort((a, b) {
+        final aActive = a.description == strings.t('cmd.plan.sug.active');
+        final bActive = b.description == strings.t('cmd.plan.sug.active');
+        if (aActive != bActive) return aActive ? -1 : 1;
+        return a.value.compareTo(b.value);
+      });
+      suggestions = found;
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }

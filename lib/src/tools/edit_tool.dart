@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../lsp/manager.dart' show LspManager;
+import '../models/session_runtime_state.dart';
 import '../utils/file_metadata.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'file_lock.dart';
@@ -214,10 +215,23 @@ class EditTool extends ToolDef with IntentionalTool {
     required String filePath,
     required String oldString,
     required String workingDirectory,
+    SessionRuntimeState? sessionRuntime,
   }) async {
+    final resolved = resolvePath(filePath, workingDirectory);
+    final planPath = sessionRuntime?.planDocPath;
+    final planApproved = sessionRuntime?.planApproved ?? false;
+    if (planPath != null && !planApproved && resolved != planPath) {
+      return GuardResult(
+        header:
+            '[GUARD] Plan mode: only $planPath can be edited while plan '
+            'mode is active. Other files are read-only. Use read / grep / '
+            'semantic_search to research, then edit the plan doc.',
+        content: '',
+        reason: 'planMode',
+      );
+    }
     if (oldString.isEmpty) return null;
 
-    final resolved = resolvePath(filePath, workingDirectory);
     final t = tracker;
     if (t != null) {
       final writeGuard = await t.checkWriteGuard(resolved);
@@ -309,6 +323,18 @@ class EditTool extends ToolDef with IntentionalTool {
   }) async {
     if (ctx.abort.isAborted) {
       return ToolResult.error('Tool aborted');
+    }
+    final planPath = ctx.sessionRuntime?.planDocPath;
+    final planApproved = ctx.sessionRuntime?.planApproved ?? false;
+    if (planPath != null && !planApproved && resolved != planPath) {
+      return ToolResult(
+        title: 'Read-before-write guard triggered',
+        output:
+            '[GUARD] Plan mode: only $planPath can be edited while plan '
+            'mode is active. Other files are read-only. Use read / grep / '
+            'semantic_search to research, then edit the plan doc.',
+        metadata: {'guardTriggered': true, 'guardKind': 'planMode'},
+      );
     }
     if (tracker != null) {
       final guard = await tracker!.checkWriteGuard(resolved);
