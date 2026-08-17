@@ -88,8 +88,8 @@ void main() {
     test('a user skill reusing a built-in name is shadowed', () {
       _writeSkill(
         Directory(p.join(projectRoot.path, '.crux', 'skills')),
-        folder: 'widget',
-        name: 'widget',
+        folder: 'plugin',
+        name: 'plugin',
         description: 'User override attempt.',
       );
       final result = discoverSkills(
@@ -98,20 +98,20 @@ void main() {
         userDataDirOverride: fakeUserData.path,
       );
       expect(result, hasLength(_nBuiltIns));
-      expect(result.first.name, 'widget');
+      expect(result.first.name, 'plugin');
       expect(result.first.location, '(built-in)');
     });
 
     test('findSkillByName resolves a built-in', () {
       final result = findSkillByName(
-        name: 'widget',
+        name: 'plugin',
         cwd: projectRoot.path,
         homeOverride: fakeHome.path,
         userDataDirOverride: fakeUserData.path,
       );
       expect(result, isA<SkillInfo>());
-      expect(result!.name, 'widget');
-      expect(result.content, contains('.crux/widgets/'));
+      expect(result!.name, 'plugin');
+      expect(result.content, contains('.crux/plugins/'));
     });
   });
 

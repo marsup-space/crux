@@ -1,17 +1,18 @@
-# Dev-harness widget — the seeded default spec widget (Phase B).
+# Dev-harness plugin — the seeded default spec plugin.
 #
 # Shows whether the crux hot-reload harness (tool/crux_dev.dart) is
 # running for THIS project, what its last reload did, and exposes
-# reload / remount / close controls. The harness writes its heartbeat
-# state to .dart_tool/crux_dev.json; this spec just reads it.
+# start / reload / remount / close controls. The harness writes its
+# heartbeat state to .dart_tool/crux_dev.json; this spec just reads it.
 #
-# Schema docs: lib/src/services/spec_widget.dart.
+# Schema docs: lib/src/services/plugin.dart.
 #
 # TOML gotcha: the fallback_* keys MUST stay above [[status.state_rules]]
 # — after an array-of-tables entry, bare keys belong to the LAST array
 # element, not to [status], so the parser would never read them.
 
 id = "dev-harness"
+placement = "sidebar"
 title = "crux dev"
 label = "⟳ crux dev · {state}"
 refresh_ms = 2000

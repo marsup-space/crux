@@ -8,6 +8,35 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Plugins: widget system renamed + placement (sidebar / home /
+  both) + global plugins** — the spec-widget system is renamed to
+  **plugins** with three new capabilities. (1) **Placement**: a
+  spec's new `placement` key (`sidebar` — default, `home`, `both`)
+  renders it on the side panel, the home dashboard grid, or both;
+  home boxes are first-class grid citizens (reorder / resize /
+  hide in edit mode; `Enter` fires the first available action) and
+  share the exact content renderer + wiring with the sidebar row,
+  so a plugin behaves identically wherever placed. (2) **Global
+  plugins**: `~/.crux/plugins/*.toml` works in every project —
+  the spec lives in the user's home but status paths and commands
+  resolve against the current project. (3) **Fit-the-need
+  prompting**: the built-in `plugin` skill (renamed from `widget`)
+  and the system prompt now lead with the two jobs a plugin exists
+  for — STATUS that answers a question the user actually asks,
+  and ACTIONS that turn a repeated command into one click — plus
+  hard rules against the common failure mode (generic labels,
+  decorative buttons, unasked-for dashboards): restate the need in
+  one sentence before writing, labels must answer the user's
+  question, every button earns its place, propose before
+  surprising. Renames throughout: `.crux/plugins/` (legacy
+  `.crux/widgets/` still scanned), `plugins` tool (was `widgets`),
+  `plugin` skill (was `widget`), `PluginRegistry`/`Plugin`/
+  `PluginContent`/`PluginSidebarBox`/`PluginHomeWidget` Dart
+  types; seeds moved to `.crux/plugins/dev-harness.toml` +
+  `my-notes.toml`.
+
 ### Fixes
 
 - **i18n: auxiliary title generation follows the reply-language

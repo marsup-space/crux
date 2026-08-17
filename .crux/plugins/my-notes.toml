@@ -1,6 +1,6 @@
-# "my notes" widget — per-project scratch notes with a todo summary.
+# "my notes" plugin — per-project scratch notes with a todo summary.
 #
-# Same architecture as the dev-harness widget: a process-side feature
+# Same architecture as the dev-harness plugin: a process-side feature
 # (the notes fullpane) keeps its source of truth in the crux DB and
 # writes a tiny status projection to .dart_tool/my_notes.json; this
 # spec just reads that projection. The projection carries a pre-rendered
@@ -11,9 +11,10 @@
 # the next poll while the item stays in the note (checked).
 #
 # The note is edited in the `notes` fullpane, opened by the `open`
-# screen action below. Schema docs: lib/src/services/spec_widget.dart.
+# screen action below. Schema docs: lib/src/services/plugin.dart.
 
 id = "my-notes"
+placement = "sidebar"
 title = "chat.notes.title"
 label = "{display}"
 refresh_ms = 2000

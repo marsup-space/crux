@@ -16,8 +16,9 @@ import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
 import '../services/notes_service.dart';
-import '../services/spec_widget.dart';
-import '../services/spec_widget_registry.dart';
+import '../services/plugin.dart';
+import '../services/plugin_registry.dart';
+import '../components/plugin_content.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
@@ -153,7 +154,11 @@ Future<ChatPanelBootState> loadChatPanelBootState({
   Future<Session> createStartupSession() {
     final model = resolvedProviderService.resolveDefaultModel() ?? '';
     return resolvedStore.create(
-      title: 'New Session',
+      // Empty title = untitled; the display layer renders a
+      // locale-aware placeholder. Never persist a literal like
+      // "New Session" — it would freeze one language into the DB
+      // and collide with users who rename a session to that text.
+      title: '',
       model: model,
       projectPath: resolvedProjectPath,
     );
@@ -221,11 +226,11 @@ class ChatPanel extends StatefulComponent {
   final ChatPanelBootState? bootState;
   final GitStatusService? gitStatusService;
 
-  /// Spec-widget registry for the current project, forwarded to the
-  /// side panel as [ExtraInfoPanel.specWidgets]. Null in tests — no
-  /// spec rows then. Listened to so spec files appearing/disappearing
-  /// (written by any session) refresh the panel live.
-  final SpecWidgetRegistry? specWidgetRegistry;
+  /// Plugin registry for the current project, forwarded to the side
+  /// panel and the home grid. Null in tests — no plugin rows/boxes
+  /// then. Listened to so spec files appearing/disappearing (written
+  /// by any session, project or global) refresh the surfaces live.
+  final PluginRegistry? pluginRegistry;
 
   final RecentProjectsStore recentProjectsStore;
   final List<String> startupWarnings;
@@ -254,7 +259,7 @@ class ChatPanel extends StatefulComponent {
     this.localeController,
     this.bootState,
     this.gitStatusService,
-    this.specWidgetRegistry,
+    this.pluginRegistry,
     required this.recentProjectsStore,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
@@ -494,7 +499,10 @@ class _ChatPanelState extends State<ChatPanel> {
       // the coding-plan / credit-balance polling timers.
       isProviderServiceReady: () => _providerServiceReady,
     );
-    _quitHandler = QuitHandler(themeController: component.themeController);
+    _quitHandler = QuitHandler(
+      themeController: component.themeController,
+      stringsProvider: () => _strings,
+    );
 
     if (bootState != null) {
       _providerServiceReady = true;
@@ -543,7 +551,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _recentProjectsStore = component.recentProjectsStore;
     _recentProjectsStore.addListener(_refresh);
     _recentProjectsStore.addListener(_refreshGitStatus);
-    component.specWidgetRegistry?.addListener(_refresh);
+    component.pluginRegistry?.addListener(_refresh);
     if (bootState == null) {
       _initSessions();
       _providerService.initialize().then((_) {
@@ -712,7 +720,11 @@ class _ChatPanelState extends State<ChatPanel> {
   Future<void> _handleSessionLinkTap(int sessionId) async {
     final current = _sessionController.currentSessionId;
     if (current == sessionId) return;
-    final error = await _sessionController.switchSession(sessionId);
+    // Link-aware switch: if the target was archived (easy to hit —
+    // sessions auto-archive after 3 idle days), it is unarchived and
+    // pulled back into the sidebar before switching, so old links
+    // keep working instead of erroring.
+    final error = await _sessionController.openSessionFromLink(sessionId);
     if (!mounted) return;
     if (error != null) {
       _showToast(error, mode: ToastMode.error);
@@ -722,28 +734,28 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {});
   }
 
-  /// A `prompt`-kind spec-widget action (quick action) submits its
+  /// A `prompt`-kind plugin action (quick action) submits its
   /// rendered template as a user message to the current session —
   /// the same path as a typed message or a quick-reply tap, so all
   /// the mid-stream guards apply identically.
-  void _handleSpecPromptAction(SpecAction action, String renderedPrompt) {
+  void _handlePluginPromptAction(PluginAction action, String renderedPrompt) {
     final text = renderedPrompt.trim();
     if (text.isEmpty) return;
     _chatInputKey.currentState?.submit(text);
   }
 
-  /// A `shell`-kind spec-widget action runs its command in the
-  /// project root, toasts the outcome, and records it into the
-  /// session context so the agent sees what the user ran and how it
-  /// went — without starting a turn.
-  Future<void> _handleSpecShellAction(
-    SpecAction action,
+  /// A `shell`-kind plugin action runs its command in the project
+  /// root, toasts the outcome, and records it into the session
+  /// context so the agent sees what the user ran and how it went —
+  /// without starting a turn.
+  Future<void> _handlePluginShellAction(
+    PluginAction action,
     String renderedCommand,
   ) async {
     final sessionId = _sessionController.currentSessionId;
-    final result = await runSpecShellAction(
+    final result = await runPluginShellAction(
       action,
-      // The command is already rendered by the widget; pass an empty
+      // The command is already rendered by the plugin; pass an empty
       // map so renderActionCommand returns it unchanged.
       const {},
       Directory.current.path,
@@ -761,7 +773,7 @@ class _ChatPanelState extends State<ChatPanel> {
     if (sessionId != null) {
       final buf = StringBuffer()
         ..writeln(
-          '[Widget action] The user clicked `${action.label}` and ran '
+          '[Plugin action] The user clicked `${action.label}` and ran '
           '`$renderedCommand` in the project root.',
         )
         ..writeln('Exit code: ${result.exitCode}');
@@ -781,21 +793,20 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
-  /// Record any spec-widget interaction (http / launch / shell /
-  /// prompt click) into the session context as a lightweight note.
-  /// The note carries the action's OUTCOME for http / launch (the
-  /// widget awaits those before calling), so the agent sees not just
-  /// that the user clicked but whether it worked. Failures are
-  /// swallowed — recording must never break the UI action it
-  /// annotates.
-  Future<void> _recordSpecAction(String note) async {
+  /// Record any plugin interaction (http / launch / shell / prompt
+  /// click) into the session context as a lightweight note. The note
+  /// carries the action's OUTCOME for http / launch (the renderers
+  /// await those before calling), so the agent sees not just that
+  /// the user clicked but whether it worked. Failures are swallowed
+  /// — recording must never break the UI action it annotates.
+  Future<void> _recordPluginAction(String note) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
     try {
       await _store.messageStore.addMessage(
         sessionId,
         role: 'user',
-        content: '[Widget action] The user $note.',
+        content: '[Plugin action] The user $note.',
       );
       await _sessionController.loadMessages(sessionId);
       if (mounted) _refresh();
@@ -845,7 +856,7 @@ class _ChatPanelState extends State<ChatPanel> {
     FrameProfiler.instance.clearSnapshotProvider();
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);
-    component.specWidgetRegistry?.removeListener(_refresh);
+    component.pluginRegistry?.removeListener(_refresh);
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -906,7 +917,8 @@ class _ChatPanelState extends State<ChatPanel> {
   Future<void> _createNewSession() async {
     final model = _providerService.resolveDefaultModel() ?? '';
     final session = await _store.create(
-      title: 'New Session',
+      // Empty title = untitled (see createStartupSession).
+      title: '',
       model: model,
       projectPath: Directory.current.path,
     );
@@ -1251,8 +1263,24 @@ class _ChatPanelState extends State<ChatPanel> {
   /// machinery, reusing the shared [OverlayController] and [textController]
   /// so the home input has the same `/` command, `@` file, `#` session,
   /// and `$` skill handling as the chat input.
+  ///
+  static void _noopHomeQuickChatRebuild() {}
+
+  /// The quick-chat area's LOCAL rebuild callback, not the panel-wide
+  /// `_refresh`: typing must only repaint the input row + its popover.
+  /// The old wiring rebuilt the whole home grid (~10 boxes, ~26ms of
+  /// layout) on every keystroke. Swapped in by the quick-chat area when
+  /// it mounts; a no-op while home is closed.
+  VoidCallback _homeQuickChatRebuild = _noopHomeQuickChatRebuild;
+
   void _ensureHomeInput() {
     if (_homeInputOverlay != null && _homeInputKeyHandler != null) return;
+    // Panel-level refresh for the home input: the quick-chat area
+    // registers its setState here when it mounts (see
+    // [HomeScreen.onQuickChatAreaMounted]), so this forwarding method
+    // always targets whatever subtree is currently the input row. While
+    // home is closed it's a no-op dummy.
+    void localRefresh() => _homeQuickChatRebuild();
     _homeInputOverlay = InputOverlay(
       overlayController: _overlayController,
       sessionController: _sessionController,
@@ -1263,8 +1291,8 @@ class _ChatPanelState extends State<ChatPanel> {
       recentProjectsStore: _recentProjectsStore,
       textController: textController,
       projectPath: Directory.current.path,
-      refresh: _refresh,
-      onStateChanged: _refresh,
+      refresh: localRefresh,
+      onStateChanged: localRefresh,
       strings: _strings,
     );
     _homeInputKeyHandler = InputKeyHandler(
@@ -1274,8 +1302,8 @@ class _ChatPanelState extends State<ChatPanel> {
       // A plain ESC on home returns to the chat screen (the chat input's
       // `onOpenHome` semantic is "leave the current screen").
       onOpenHome: _closeHome,
-      refresh: _refresh,
-      onStateChanged: _refresh,
+      refresh: localRefresh,
+      onStateChanged: localRefresh,
       textController: textController,
       overlayController: _overlayController,
       scrollController: null,
@@ -1327,6 +1355,10 @@ class _ChatPanelState extends State<ChatPanel> {
       inputOverlay: _homeInputOverlay,
       inputKeyHandler: _homeInputKeyHandler,
       maxVisibleItems: _maxVisibleItems,
+      // The quick-chat area hands us its local setState so typing (and
+      // popover navigation) rebuilds only the input row, not the grid.
+      onQuickChatAreaMounted: (rebuild) =>
+          _homeQuickChatRebuild = rebuild,
     );
   }
 
@@ -1446,6 +1478,13 @@ class _ChatPanelState extends State<ChatPanel> {
       // the active session's provider). The closure reads `_polling` on
       // each home build so the box tracks whatever is configured now.
       connectedUsageProviders: () => _polling.connectedUsage,
+      // Spec-driven plugin boxes (`placement = home/both`): the live
+      // registry scan, read on each home build so rescans hot-swap
+      // boxes; the host wires the panel's shared action handlers.
+      plugins: component.pluginRegistry == null
+          ? null
+          : () => component.pluginRegistry!.homePlugins,
+      pluginHost: _pluginHost,
     );
   }
 
@@ -1480,10 +1519,10 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
-  /// A `screen`-kind spec-widget action opens an in-process fullpane.
-  /// The action's `screen` names which one; unknown names toast rather
+  /// A `screen`-kind plugin action opens an in-process fullpane. The
+  /// action's `screen` names which one; unknown names toast rather
   /// than failing silently. Pure UI — no session turn is started.
-  void _handleSpecScreenAction(SpecAction action) {
+  void _handlePluginScreenAction(PluginAction action) {
     switch (action.screen) {
       case 'notes':
         _openNotesFullpane();
@@ -1495,19 +1534,32 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
-  /// A todo row clicked on a spec widget: mark that todo done ([done]
-  /// true) or restore it ([done] false — the widget's undo click inside
-  /// its 10-second window) in its backing document (the notes feature).
-  /// The projection rewrite that follows updates the widget's row; the
-  /// item stays in the note, now checked (or back open). Fire-and-forget
+  /// A todo row clicked on a plugin: mark that todo done ([done]
+  /// true) or restore it ([done] false — the undo click inside the
+  /// 10-second window) in its backing document (the notes feature).
+  /// The projection rewrite that follows updates the row; the item
+  /// stays in the note, now checked (or back open). Fire-and-forget
   /// — a failed write must never block the sidebar.
-  void _handleSpecTodoToggle(String text, int line, bool done) {
+  void _handlePluginTodoToggle(String text, int line, bool done) {
     unawaited(
       done
           ? _notesService.markTodoDone(line)
           : _notesService.markTodoOpen(line),
     );
   }
+
+  /// The plugin wiring handed to BOTH renderers (sidebar rows and
+  /// home boxes) — one [PluginHost] so a plugin behaves identically
+  /// wherever it's placed. Deferred rebuild on each call reads the
+  /// panel's live session state.
+  PluginHost _pluginHost() => PluginHost(
+        onPromptAction: _handlePluginPromptAction,
+        onShellAction: _handlePluginShellAction,
+        onScreenAction: _handlePluginScreenAction,
+        onTodoToggle: _handlePluginTodoToggle,
+        onAction: _recordPluginAction,
+        projectPath: Directory.current.path,
+      );
 
   /// Reveal a vibe file row's file in the system file manager (Finder on
   /// macOS, Explorer on Windows, the default manager on Linux). Wired to
@@ -1665,6 +1717,21 @@ class _ChatPanelState extends State<ChatPanel> {
 
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
 
+            // Plan-mode horizontal split (§9.6 collapse order): with the
+            // plan pane up, the info sidebar drops first when the three
+            // panes would starve chat (< kPlanChatPaneMinWidth), and the
+            // plan pane never grows wider than the chat pane.
+            final bareSidebarWidth = showInfoPanel
+                ? (kSidebarWidthMin +
+                        0.3 * (constraints.maxWidth - kSidebarShowThreshold))
+                    .clamp(kSidebarWidthMin, kSidebarWidthMax)
+                : null;
+            final layout = resolvePlanSplit(
+              constraints.maxWidth,
+              planActive: _planModeController.active,
+              sidebarWidth: bareSidebarWidth,
+            );
+
             final sessionId = _sessionController.currentSessionId;
             final rt = sessionId != null
                 ? _sessionController.runtime(sessionId)
@@ -1760,8 +1827,9 @@ class _ChatPanelState extends State<ChatPanel> {
                   // When the side panel is visible the auxiliary
                   // button lives there (above the git status /
                   // project widgets); only render it in the toolbar
-                  // on narrow terminals.
-                  auxButtonInSidePanel: showInfoPanel,
+                  // on narrow terminals — or when plan mode's
+                  // collapse order dropped the sidebar.
+                  auxButtonInSidePanel: layout.showSidebar,
                 ),
                 Divider(color: CruxTheme.of(context).divider, height: 1),
                 // The input region is swappable: when the agent has an
@@ -1919,16 +1987,12 @@ class _ChatPanelState extends State<ChatPanel> {
               ],
             );
 
-            if (showInfoPanel) {
-              final panelWidth =
-                  (kSidebarWidthMin +
-                          0.3 * (constraints.maxWidth - kSidebarShowThreshold))
-                      .clamp(kSidebarWidthMin, kSidebarWidthMax);
+            if (layout.showSidebar) {
+              final panelWidth = layout.sidebarWidth;
 
               final planActive = _planModeController.active;
               final planPaneWidth = planActive
-                  ? (constraints.maxWidth / 2)
-                      .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
+                  ? layout.planPaneWidth
                   : 0.0;
 
               final body = Row(
@@ -1967,7 +2031,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onCreateChat: _sessionController.createChatSession,
                       onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
-                      specWidgets: component.specWidgetRegistry?.widgets,
+                      plugins: component.pluginRegistry?.sidebarPlugins,
                       strings: _strings,
                       onSessionTitleTap: () {
                         setState(() {
@@ -1978,11 +2042,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onSwitchProject: _switchProject,
                       sessionController: _sessionController,
                       onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
-                      onSpecPromptAction: _handleSpecPromptAction,
-                      onSpecShellAction: _handleSpecShellAction,
-                      onSpecScreenAction: _handleSpecScreenAction,
-                      onSpecTodoToggle: _handleSpecTodoToggle,
-                      onSpecAction: _recordSpecAction,
+                      pluginHost: _pluginHost(),
                     ),
                   ),
                 ],
@@ -2030,13 +2090,11 @@ class _ChatPanelState extends State<ChatPanel> {
             // Narrow terminal: no info sidebar, but plan mode can still
             // split the pane (the collapse order drops ExtraInfoPanel
             // first — §9.6).
-            if (_planModeController.active) {
-              final planPaneWidth = (constraints.maxWidth / 2)
-                  .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth);
+            if (layout.planPaneWidth > 0) {
               return Row(
                 children: [
                   SizedBox(
-                    width: planPaneWidth,
+                    width: layout.planPaneWidth,
                     child: PlanDocPane(
                       controller: _planModeController,
                       strings: _strings,

@@ -54,7 +54,7 @@ class NotesService {
   NotesService(this._store, {required this.projectPath});
 
   /// Path of the status projection the widget polls, relative to
-  /// [projectPath]. Kept in sync with `.crux/widgets/my-notes.toml`.
+  /// [projectPath]. Kept in sync with the `.crux/plugins/my-notes.toml` plugin.
   static const statusPath = '.dart_tool/my_notes.json';
 
   /// How many open todo items the projection (and therefore the

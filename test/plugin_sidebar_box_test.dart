@@ -7,13 +7,15 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:test/test.dart';
 
-import 'package:crux/src/components/spec_sidebar_widget.dart';
-import 'package:crux/src/services/spec_widget.dart';
+import 'package:crux/src/components/plugin_content.dart'
+    show PluginHost;
+import 'package:crux/src/components/plugin_sidebar_box.dart';
+import 'package:crux/src/services/plugin.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 
 /// A spec whose status file lives in [project] and whose actions point
 /// at a port read from the status JSON (mirrors dev-harness.toml).
-SpecWidget _spec({Duration refresh = const Duration(hours: 1)}) => SpecWidget(
+Plugin _spec({Duration refresh = const Duration(hours: 1)}) => Plugin(
       id: 'dev-harness',
       labelTemplate: '⟳ crux dev · {state}',
       refresh: refresh,
@@ -21,28 +23,28 @@ SpecWidget _spec({Duration refresh = const Duration(hours: 1)}) => SpecWidget(
       heartbeatField: 'heartbeatAt',
       staleAfter: const Duration(seconds: 15),
       stateRules: const [
-        SpecStateRule(
+        PluginStateRule(
           field: 'lastReload.result',
           equals: 'succeeded',
           text: '✓ {lastReload.at@HH:MM}',
         ),
-        SpecStateRule(
+        PluginStateRule(
           field: 'lastReload.result',
           equals: 'failed',
           text: '✗ reload failed',
-          color: SpecStateColor.error,
+          color: PluginStateColor.error,
         ),
       ],
       actions: const [
         // Launch actions: shown only while the service is dead.
-        SpecAction(
+        PluginAction(
           label: 'start',
-          kind: SpecActionKind.launch,
+          kind: PluginActionKind.launch,
           command: 'dart tool/crux_dev.dart home',
         ),
         // http actions: shown only while the service is alive.
-        SpecAction(label: 'reload', url: 'http://127.0.0.1:{controlPort}/reload'),
-        SpecAction(label: 'close', url: 'http://127.0.0.1:{controlPort}/close'),
+        PluginAction(label: 'reload', url: 'http://127.0.0.1:{controlPort}/reload'),
+        PluginAction(label: 'close', url: 'http://127.0.0.1:{controlPort}/close'),
       ],
     );
 
@@ -50,7 +52,7 @@ void main() {
   late Directory project;
 
   setUp(() {
-    project = Directory.systemTemp.createTempSync('spec_widget_render_');
+    project = Directory.systemTemp.createTempSync('plugin_box_render_');
   });
 
   tearDown(() {
@@ -80,17 +82,19 @@ void main() {
     }));
   }
 
-  Future<void> pump(dynamic tester, {SpecWidget? spec}) async {
+  Future<void> pump(dynamic tester, {Plugin? spec}) async {
     await tester.pumpComponent(
       Container(
         width: 80,
         height: 8,
         child: CruxTheme(
           data: CruxThemeData.draculaFallback,
-          child: SpecSidebarWidget(
-            spec: spec ?? _spec(),
-            projectPath: project.path,
-          ),
+          child: PluginSidebarBox(
+  plugin: spec ?? _spec(),
+  host: PluginHost(
+    projectPath: project.path
+  ),
+),
         ),
       ),
     );
@@ -107,9 +111,9 @@ void main() {
     }
   }
 
-  group('SpecSidebarWidget — label states', () {
+  group('PluginSidebarBox — label states', () {
     test('renders the spec title inline on the box border', () async {
-      await testNocterm('spec widget title', (tester) async {
+      await testNocterm('plugin box title', (tester) async {
         writeStatus(heartbeat: DateTime.now());
         // title defaults to the spec id ('dev-harness') — the border
         // chrome must show it on screen alongside the status label.
@@ -159,7 +163,7 @@ void main() {
     });
   });
 
-  group('SpecSidebarWidget — action segments', () {
+  group('PluginSidebarBox — action segments', () {
     test('alive harness exposes reload/close on hover', () async {
       await testNocterm('spec widget segments', (tester) async {
         writeStatus(heartbeat: DateTime.now(), controlPort: 1);
@@ -254,11 +258,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: _spec(),
-                projectPath: project.path,
-                onAction: (note) async => notes.add(note),
-              ),
+              child: PluginSidebarBox(
+  plugin: _spec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onAction: (note) async => notes.add(note)
+  ),
+),
             ),
           ),
         );
@@ -287,7 +293,7 @@ void main() {
       await probe.close();
       final notes = <String>[];
 
-      await testNocterm('spec widget action note fail', (tester) async {
+      await testNocterm('plugin action note fail', (tester) async {
         writeStatus(heartbeat: DateTime.now(), controlPort: port);
         await tester.pumpComponent(
           Container(
@@ -295,11 +301,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: _spec(),
-                projectPath: project.path,
-                onAction: (note) async => notes.add(note),
-              ),
+              child: PluginSidebarBox(
+  plugin: _spec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onAction: (note) async => notes.add(note)
+  ),
+),
             ),
           ),
         );
@@ -339,17 +347,17 @@ void main() {
     });
   });
 
-  group('SpecSidebarWidget — quick (prompt) actions', () {
-    SpecWidget promptSpec() => SpecWidget(
+  group('PluginSidebarBox — quick (prompt) actions', () {
+    Plugin promptSpec() => Plugin(
           id: 'dev-harness',
           labelTemplate: '⟳ crux dev · {state}',
           refresh: const Duration(hours: 1),
           statusPath: '.dart_tool/crux_dev.json',
           heartbeatField: 'heartbeatAt',
           actions: const [
-            SpecAction(
+            PluginAction(
               label: 'review',
-              kind: SpecActionKind.prompt,
+              kind: PluginActionKind.prompt,
               prompt: 'Review port {controlPort} config.',
             ),
           ],
@@ -365,11 +373,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: promptSpec(),
-                projectPath: project.path,
-                onPromptAction: (action, rendered) => submitted = rendered,
-              ),
+              child: PluginSidebarBox(
+  plugin: promptSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onPromptAction: (action, rendered) => submitted = rendered
+  ),
+),
             ),
           ),
         );
@@ -392,11 +402,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: promptSpec(),
-                projectPath: project.path,
-                onPromptAction: (_, __) {},
-              ),
+              child: PluginSidebarBox(
+  plugin: promptSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onPromptAction: (_, __) {}
+  ),
+),
             ),
           ),
         );
@@ -415,11 +427,12 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: promptSpec(),
-                projectPath: project.path,
-                // No onPromptAction — e.g. a context with no chat.
-              ),
+              child: PluginSidebarBox(
+  plugin: promptSpec(),
+  host: PluginHost(
+    projectPath: project.path
+  ),
+),
             ),
           ),
         );
@@ -430,10 +443,10 @@ void main() {
     });
   });
 
-  group('SpecSidebarWidget — multi-line labels', () {
+  group('PluginSidebarBox — multi-line labels', () {
     test('a multi-line label renders each line as its own row', () async {
       await testNocterm('spec widget multiline', (tester) async {
-        final monitor = SpecWidget(
+        final monitor = Plugin(
           id: 'gold',
           title: 'gold',
           labelTemplate: 'XAU {price}/oz\n{arrow} {delta} today',
@@ -455,10 +468,12 @@ void main() {
             height: 10,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: monitor,
-                projectPath: project.path,
-              ),
+              child: PluginSidebarBox(
+  plugin: monitor,
+  host: PluginHost(
+    projectPath: project.path
+  ),
+),
             ),
           ),
         );
@@ -470,8 +485,8 @@ void main() {
     });
   });
 
-  group('SpecSidebarWidget — screen actions', () {
-    SpecWidget notesSpec() => SpecWidget(
+  group('PluginSidebarBox — screen actions', () {
+    Plugin notesSpec() => Plugin(
           id: 'my-notes',
           title: 'my notes',
           labelTemplate: '{display}',
@@ -479,9 +494,9 @@ void main() {
           statusPath: '.dart_tool/crux_dev.json',
           // No heartbeatField → file presence = alive.
           actions: const [
-            SpecAction(
+            PluginAction(
               label: 'open',
-              kind: SpecActionKind.screen,
+              kind: PluginActionKind.screen,
               screen: 'notes',
             ),
           ],
@@ -489,7 +504,7 @@ void main() {
 
     test('screen button is always visible (no hover) and fires '
         'onScreenAction', () async {
-      SpecAction? opened;
+      PluginAction? opened;
       await testNocterm('spec widget screen action', (tester) async {
         // File exists → alive, so the todo label renders.
         writeStatus(controlPort: 1);
@@ -500,11 +515,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (action) => opened = action,
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (action) => opened = action
+  ),
+),
             ),
           ),
         );
@@ -536,11 +553,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (_) {},
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {}
+  ),
+),
             ),
           ),
         );
@@ -561,11 +580,12 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                // No onScreenAction — e.g. a context with no fullpane host.
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path
+  ),
+),
             ),
           ),
         );
@@ -592,11 +612,13 @@ void main() {
             height: 10,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (_) {},
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {}
+  ),
+),
             ),
           ),
         );
@@ -619,11 +641,13 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (_) {},
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {}
+  ),
+),
             ),
           ),
         );
@@ -658,16 +682,18 @@ void main() {
             height: 10,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (_) {},
-                onTodoToggle: (text, line, done) {
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {},
+onTodoToggle: (text, line, done) {
                   toggledText = text;
                   toggledLine = line;
                   toggledDone = done;
-                },
-              ),
+                }
+  ),
+),
             ),
           ),
         );
@@ -708,12 +734,14 @@ void main() {
             height: 10,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: notesSpec(),
-                projectPath: project.path,
-                onScreenAction: (_) {},
-                onTodoToggle: (_, _, done) => toggles.add(done),
-              ),
+              child: PluginSidebarBox(
+  plugin: notesSpec(),
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {},
+onTodoToggle: (_, _, done) => toggles.add(done)
+  ),
+),
             ),
           ),
         );
@@ -741,16 +769,16 @@ void main() {
       // Short refresh so the widget re-reads the projection the host
       // rewrites on click (the real app polls every 2s; the default
       // notesSpec polls hourly).
-      final ttlSpec = SpecWidget(
+      final ttlSpec = Plugin(
         id: 'my-notes',
         title: 'my notes',
         labelTemplate: '{display}',
         refresh: const Duration(milliseconds: 40),
         statusPath: '.dart_tool/crux_dev.json',
         actions: const [
-          SpecAction(
+          PluginAction(
             label: 'open',
-            kind: SpecActionKind.screen,
+            kind: PluginActionKind.screen,
             screen: 'notes',
           ),
         ],
@@ -769,13 +797,12 @@ void main() {
             height: 10,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: ttlSpec,
-                projectPath: project.path,
-                onScreenAction: (_) {},
-                // Tiny TTL so the test doesn't wait 10 seconds.
-                todoCheckedTtl: const Duration(milliseconds: 80),
-                onTodoToggle: (_, _, done) {
+              child: PluginSidebarBox(
+  plugin: ttlSpec,
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {},
+onTodoToggle: (_, _, done) {
                   // Mirror the real host: marking done rewrites the
                   // projection so the open `todos` list drops the row.
                   if (done) {
@@ -784,8 +811,10 @@ void main() {
                       'todos': <Map<String, dynamic>>[],
                     }));
                   }
-                },
-              ),
+                }
+  ),
+  todoCheckedTtl: const Duration(milliseconds: 100),
+),
             ),
           ),
         );
@@ -813,16 +842,16 @@ void main() {
 
     test('record=false actions do not fire onAction', () async {
       final notes = <String>[];
-      final quietSpec = SpecWidget(
+      final quietSpec = Plugin(
         id: 'my-notes',
         title: 'my notes',
         labelTemplate: '{display}',
         refresh: const Duration(hours: 1),
         statusPath: '.dart_tool/crux_dev.json',
         actions: const [
-          SpecAction(
+          PluginAction(
             label: 'open',
-            kind: SpecActionKind.screen,
+            kind: PluginActionKind.screen,
             screen: 'notes',
             record: false,
           ),
@@ -837,12 +866,14 @@ void main() {
             height: 8,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: SpecSidebarWidget(
-                spec: quietSpec,
-                projectPath: project.path,
-                onScreenAction: (_) {},
-                onAction: (note) async => notes.add(note),
-              ),
+              child: PluginSidebarBox(
+  plugin: quietSpec,
+  host: PluginHost(
+    projectPath: project.path,
+    onScreenAction: (_) {},
+onAction: (note) async => notes.add(note)
+  ),
+),
             ),
           ),
         );

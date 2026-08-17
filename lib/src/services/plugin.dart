@@ -1,64 +1,60 @@
-// Spec-driven sidebar widgets (Phase B).
+// Spec-driven plugins (renamed and extended from "spec widgets").
 //
-// A "spec widget" is a small TOML file in `<project>/.crux/widgets/`
-// declaring how one row in the right-hand side panel renders: where its
-// status comes from, how the status text is computed, and which actions
-// it exposes. Any session — any agent, any human — can drop a spec file
-// into that directory and every Crux session opened on the same project
-// picks it up on its next scan (~2 s). No rebuild, no restart: the
-// filesystem is the bus, and the widget set is keyed on the project,
-// so "session ↔ config hook" falls out of `Directory.current` for free.
+// A "plugin" is a small TOML file declaring how one live surface renders:
+// where its status comes from, how the status text is computed, which
+// actions it exposes, and WHERE it shows — the side panel ("sidebar"),
+// the home dashboard grid ("home"), or both. Any session — any agent,
+// any human — can drop a spec file into a scanned directory and every
+// Crux session picks it up on the next scan (~2 s). No rebuild, no
+// restart: the filesystem is the bus.
 //
-// Schema (see .crux/widgets/dev-harness.toml for a live example):
+// Scanned directories (in precedence order; later entries only fill
+// ids not seen yet):
+//
+//   <project>/.crux/plugins/    the canonical location (new)
+//   <project>/.crux/widgets/    legacy (pre-rename) project specs
+//   ~/.crux/plugins/            global plugins, available in EVERY project
+//   ~/.crux/widgets/            legacy global specs
+//
+// A plugin's two jobs:
+//   1. STATUS — answer, at a glance, a question the user actually asks
+//      ("is it still running?", "what's the price now?", "did the last
+//      build pass?").
+//   2. ACTIONS — turn something the user does repeatedly into one click
+//      (start/stop/reload a service, run tests, submit a prompt).
+//
+// Schema (see .crux/plugins/dev-harness.toml for a live example):
 //
 //   id = "dev-harness"                  # must match the file name
+//   placement = "sidebar"               # sidebar | home | both
+//   title = "crux dev"                  # box title, defaults to id
 //   label = "⟳ crux dev · {state}"      # label template (see below)
 //   refresh_ms = 2000                   # status poll interval
 //
 //   [status]
-//   path = ".dart_tool/crux_dev.json"   # status source, relative to the project root
-//   heartbeat_field = "heartbeatAt"     # optional: JSON field used for liveness
-//   stale_after_seconds = 15            # heartbeat older than this ⇒ stale
+//   path = ".dart_tool/crux_dev.json"   # status source (relative to the
+//   #                                   PROJECT root, even for global
+//   #                                   plugins in ~/.crux/...)
+//   heartbeat_field = "heartbeatAt"     # optional liveness field
+//   stale_after_seconds = 15            # heartbeat older ⇒ stale
 //
-//   # State text: rules match top-down against the status JSON; the
-//   # first hit wins. Missing field ⇒ no match. Rule/fallback texts
-//   # are templates too (see below).
-//   [[status.state_rules]]
+//   [[status.state_rules]]              # top-down, first hit wins
 //   when = { field = "lastReload.result", equals = "succeeded" }
 //   text = "✓ {lastReload.at@HH:MM}"
-//   color = "normal"                    # optional: normal|warning|error|dim
-//
-//   [[status.state_rules]]
-//   when = { field = "lastReload.result", equals = "failed" }
-//   text = "✗ reload failed"
-//   color = "error"
+//   color = "normal"                    # normal|warning|error|dim
 //
 //   fallback_alive_text = "●"           # alive, no rule matched
-//   fallback_stale_text = "stale"       # heartbeat expired (warning color)
-//   fallback_absent_text = "not running"# status file missing (dim color)
+//   fallback_stale_text = "stale"       # heartbeat expired
+//   fallback_absent_text = "not running"# status file missing
 //
-//   # Actions become MultiButton segments; only rendered while alive.
-//   # URLs are templates over the status JSON, so a random control
-//   # port read from the state file plugs straight into the URL.
-//   [[actions]]
+//   [[actions]]                         # become clickable buttons
 //   label = "reload"
-//   url = "http://127.0.0.1:{controlPort}/reload"
+//   url = "http://127.0.0.1:{controlPort}/reload"   # kind = http
 //
-//   # A `screen` action opens an in-process Crux fullpane instead of
-//   # POSTing / launching / prompting. Rendered in any liveness state
-//   # (like `prompt`). The host maps `screen` to a fullpane.
-//   # `record = false` (optional) keeps the click out of the session
-//   # context — right for pure-UI actions that don't signal the agent.
-//   [[actions]]
-//   label = "open"
-//   kind = "screen"
-//   screen = "notes"
-//   record = false
-//
-// Template syntax (labels, rule texts, action URLs):
+// Template syntax (labels, rule texts, action URLs/commands/prompts):
 //   {state}             → the computed state text
-//   {field}             → dotted path into the status JSON (e.g. lastReload.result)
-//   {field@HH:MM}       → ISO-8601 timestamp field formatted as local HH:MM
+//   {field}             → dotted path into the status JSON
+//   {field@HH:MM}       → ISO-8601 timestamp formatted as local HH:MM
 //
 // Unknown/missing fields render as the literal placeholder (visible =
 // debuggable; a spec that references a wrong field name shows it).
@@ -74,95 +70,80 @@ import 'package:toml/toml.dart';
 
 /// Rule-matched state text color hints. The renderer maps these onto
 /// theme colors; unknown values fall back to the default.
-enum SpecStateColor { normal, warning, error, dim }
+enum PluginStateColor { normal, warning, error, dim }
 
 /// One `when`/`text` state rule.
-class SpecStateRule {
+class PluginStateRule {
   final String field;
   final String equals;
   final String text;
-  final SpecStateColor color;
+  final PluginStateColor color;
 
-  const SpecStateRule({
+  const PluginStateRule({
     required this.field,
     required this.equals,
     required this.text,
-    this.color = SpecStateColor.normal,
+    this.color = PluginStateColor.normal,
   });
 }
 
 /// What an action does when invoked.
-enum SpecActionKind {
-  /// HTTP POST to the action's URL template (requires [SpecAction.url]).
+enum PluginActionKind {
+  /// HTTP POST to the action's URL template (requires
+  /// [PluginAction.url]). Rendered only while the plugin is alive.
   http,
 
   /// Launch a local command in a terminal (requires
-  /// [SpecAction.command]). Rendered only while the widget is NOT
+  /// [PluginAction.command]). Rendered only while the plugin is NOT
   /// alive — it's the "start it" affordance for a dead service.
   launch,
 
-  /// Submit [SpecAction.prompt] as a user message to the current chat
-  /// session — the "quick action". Frequent prompts and complex
-  /// multi-step rituals become a one-click button on the widget box.
-  /// The prompt is a template over the status JSON (same syntax as
-  /// labels, no `{state}`), so the message can embed live values.
-  /// Rendered regardless of liveness (as long as the status file
-  /// parses); the agent side executes it like any typed message.
+  /// Submit [PluginAction.prompt] as a user message to the current chat
+  /// session — the "quick action". Rendered regardless of liveness.
   prompt,
 
-  /// Run [SpecAction.command] in the project root and report the
+  /// Run [PluginAction.command] in the project root and report the
   /// result — the user-runnable quick action: run tests, lint, a
-  /// release script, any multi-step shell workflow. Unlike
-  /// [SpecActionKind.launch] it does NOT open a terminal; the command
-  /// runs to completion in the background and its tail output is
-  /// surfaced as a toast / tool result. Meant for finite tasks, not
-  /// long-lived services. Rendered regardless of liveness.
+  /// release script. Runs to completion; tail output surfaces as a
+  /// toast / tool result. Rendered regardless of liveness.
   shell,
 
   /// Open an in-process Crux screen (a fullpane) identified by
-  /// [SpecAction.screen]. Unlike every other kind this is pure UI —
-  /// no HTTP, no subprocess, no chat message. The host resolves the
-  /// screen name (e.g. `notes`) to a fullpane and opens it. Rendered
-  /// regardless of liveness, like [SpecActionKind.prompt] — opening a
-  /// viewer/editor is always meaningful.
+  /// [PluginAction.screen] (e.g. `notes`). Pure UI. Rendered
+  /// regardless of liveness.
   screen,
 }
 
-/// One action segment (`reload`, `close`, `start`, `review`, …).
-class SpecAction {
+/// One action button (`reload`, `close`, `start`, `review`, ...).
+class PluginAction {
   final String label;
 
-  /// URL template for [SpecActionKind.http] actions.
+  /// URL template for [PluginActionKind.http] actions.
   final String? url;
 
-  final SpecActionKind kind;
+  final PluginActionKind kind;
 
-  /// Shell command for [SpecActionKind.launch] and
-  /// [SpecActionKind.shell] actions. `launch` runs it in a fresh
+  /// Shell command for [PluginActionKind.launch] and
+  /// [PluginActionKind.shell] actions. `launch` runs it in a fresh
   /// terminal window; `shell` runs it in the project root with output
-  /// captured. The command is a template over the status JSON.
+  /// captured.
   final String? command;
 
-  /// Message template for [SpecActionKind.prompt] actions, submitted
-  /// to the current session as a user message on click.
+  /// Message template for [PluginActionKind.prompt] actions.
   final String? prompt;
 
-  /// Screen identifier for [SpecActionKind.screen] actions (e.g.
-  /// `notes`). The host maps this to a fullpane to open.
+  /// Screen identifier for [PluginActionKind.screen] actions.
   final String? screen;
 
   /// Whether firing this action records an event into the session
-  /// context (via the renderer's `onAction` callback). Defaults to
-  /// `true` — the historical behaviour, where every widget click shows
-  /// up as a `[Widget action]` note the agent can see. Pure-UI actions
-  /// (e.g. `open`-ing the notes editor) are usually noise there, so
-  /// specs can set `record = false` to keep the click silent.
+  /// context. Defaults to `true`; pure-UI actions can set
+  /// `record = false`.
   final bool record;
 
-  const SpecAction({
+  const PluginAction({
     required this.label,
     this.url,
-    this.kind = SpecActionKind.http,
+    this.kind = PluginActionKind.http,
     this.command,
     this.prompt,
     this.screen,
@@ -170,31 +151,55 @@ class SpecAction {
   });
 }
 
-/// A parsed spec widget.
-class SpecWidget {
+/// Where a plugin renders:
+/// - [sidebar]: the right-hand side panel (the historical location —
+///   the default, so pre-`placement` specs keep working unchanged).
+/// - [home]: a box in the home dashboard grid.
+/// - [both]: sidebar row AND home box.
+enum PluginPlacement { sidebar, home, both }
+
+/// A parsed plugin spec.
+class Plugin {
   final String id;
 
-  /// Short title rendered inline on the box border (like the home
-  /// grid's box chrome). Defaults to [id].
+  /// Box title, rendered on the border. May be an i18n catalog key
+  /// (e.g. `chat.notes.title`) — the host resolves it via `Strings.t`.
   final String title;
+
+  /// Where this plugin renders (sidebar / home / both). Defaults to
+  /// [PluginPlacement.sidebar] — the pre-rename behaviour, so legacy
+  /// specs parse identically.
+  final PluginPlacement placement;
 
   final String labelTemplate;
   final Duration refresh;
   final String statusPath;
   final String? heartbeatField;
   final Duration staleAfter;
-  final List<SpecStateRule> stateRules;
+  final List<PluginStateRule> stateRules;
   final String aliveText;
   final String staleText;
   final String absentText;
-  final List<SpecAction> actions;
 
-  const SpecWidget({
+  /// The plugin's action buttons. See [PluginAction].
+  final List<PluginAction> actions;
+
+  /// True when the spec file lives under a global root (`~/.crux/...`)
+  /// rather than the project's `.crux/`. Global plugins resolve their
+  /// status file and shell/launch commands against the *project* root,
+  /// so one global spec monitors the same relative path in every
+  /// project. Set by the registry from the file's location, never from
+  /// the TOML.
+  final bool isGlobal;
+
+  const Plugin({
     required this.id,
     required this.labelTemplate,
     required this.refresh,
     required this.statusPath,
     String? title,
+    this.placement = PluginPlacement.sidebar,
+    this.isGlobal = false,
     this.heartbeatField,
     this.staleAfter = const Duration(seconds: 15),
     this.stateRules = const [],
@@ -204,10 +209,18 @@ class SpecWidget {
     this.actions = const [],
   }) : title = title ?? id;
 
+  bool get showsOnSidebar =>
+      placement == PluginPlacement.sidebar ||
+      placement == PluginPlacement.both;
+
+  bool get showsOnHome =>
+      placement == PluginPlacement.home ||
+      placement == PluginPlacement.both;
+
   /// Parse a spec file. Returns null when the file is unreadable or
   /// malformed, or the `id` doesn't match the file name — the caller
-  /// (registry) skips such files and surfaces a warning.
-  static SpecWidget? parse(File file) {
+  /// (registry/tool) skips such files and surfaces a warning.
+  static Plugin? parse(File file, {bool isGlobal = false}) {
     final String content;
     try {
       content = file.readAsStringSync();
@@ -232,7 +245,13 @@ class SpecWidget {
     final statusPath = status['path'] as String?;
     if (statusPath == null || statusPath.trim().isEmpty) return null;
 
-    final rules = <SpecStateRule>[];
+    final placement = switch (map['placement'] as String?) {
+      'home' => PluginPlacement.home,
+      'both' => PluginPlacement.both,
+      _ => PluginPlacement.sidebar,
+    };
+
+    final rules = <PluginStateRule>[];
     final rawRules = status['state_rules'];
     if (rawRules is List) {
       for (final raw in rawRules) {
@@ -244,7 +263,7 @@ class SpecWidget {
         final text = raw['text'] as String?;
         if (field == null || equals == null || text == null) continue;
         rules.add(
-          SpecStateRule(
+          PluginStateRule(
             field: field,
             equals: equals,
             text: text,
@@ -254,7 +273,7 @@ class SpecWidget {
       }
     }
 
-    final actions = <SpecAction>[];
+    final actions = <PluginAction>[];
     final rawActions = map['actions'];
     if (rawActions is List) {
       for (final raw in rawActions) {
@@ -262,32 +281,33 @@ class SpecWidget {
         final aLabel = raw['label'] as String?;
         if (aLabel == null) continue;
         final kind = switch (raw['kind'] as String?) {
-          'launch' => SpecActionKind.launch,
-          'prompt' => SpecActionKind.prompt,
-          'shell' => SpecActionKind.shell,
-          'screen' => SpecActionKind.screen,
-          _ => SpecActionKind.http,
+          'launch' => PluginActionKind.launch,
+          'prompt' => PluginActionKind.prompt,
+          'shell' => PluginActionKind.shell,
+          'screen' => PluginActionKind.screen,
+          _ => PluginActionKind.http,
         };
         final url = raw['url'] as String?;
         final command = raw['command'] as String?;
         final prompt = raw['prompt'] as String?;
         final screen = raw['screen'] as String?;
         final record = raw['record'] as bool? ?? true;
-        if (kind == SpecActionKind.http && url == null) continue;
-        if ((kind == SpecActionKind.launch || kind == SpecActionKind.shell) &&
+        if (kind == PluginActionKind.http && url == null) continue;
+        if ((kind == PluginActionKind.launch ||
+                kind == PluginActionKind.shell) &&
             (command == null || command.trim().isEmpty)) {
           continue;
         }
-        if (kind == SpecActionKind.prompt &&
+        if (kind == PluginActionKind.prompt &&
             (prompt == null || prompt.trim().isEmpty)) {
           continue;
         }
-        if (kind == SpecActionKind.screen &&
+        if (kind == PluginActionKind.screen &&
             (screen == null || screen.trim().isEmpty)) {
           continue;
         }
         actions.add(
-          SpecAction(
+          PluginAction(
             label: aLabel,
             url: url,
             kind: kind,
@@ -300,10 +320,12 @@ class SpecWidget {
       }
     }
 
-    return SpecWidget(
+    return Plugin(
       id: id,
       title: map['title'] as String?,
       labelTemplate: label,
+      placement: placement,
+      isGlobal: isGlobal,
       refresh: Duration(
         milliseconds: (map['refresh_ms'] as num?)?.toInt() ?? 2000,
       ),
@@ -320,26 +342,26 @@ class SpecWidget {
     );
   }
 
-  static SpecStateColor _parseColor(String? raw) {
+  static PluginStateColor _parseColor(String? raw) {
     switch (raw) {
       case 'warning':
-        return SpecStateColor.warning;
+        return PluginStateColor.warning;
       case 'error':
-        return SpecStateColor.error;
+        return PluginStateColor.error;
       case 'dim':
-        return SpecStateColor.dim;
+        return PluginStateColor.dim;
       default:
-        return SpecStateColor.normal;
+        return PluginStateColor.normal;
     }
   }
 }
 
-/// Liveness of a spec widget's status source.
-enum SpecAlive { absent, stale, alive }
+/// Liveness of a plugin's status source.
+enum PluginAlive { absent, stale, alive }
 
-/// A computed status snapshot for one spec widget.
-class SpecWidgetStatus {
-  final SpecAlive alive;
+/// A computed status snapshot for one plugin.
+class PluginStatus {
+  final PluginAlive alive;
 
   /// The parsed status JSON (empty map when the file is missing or
   /// unparseable).
@@ -349,13 +371,10 @@ class SpecWidgetStatus {
   final String stateText;
 
   /// The rendered label (template fully substituted). May contain
-  /// `\n` — a spec can render several lines of content, e.g. a gold
-  /// monitor showing spot / change / updated-at on separate rows.
+  /// `\n` — a plugin can render several lines of content.
   final String label;
 
   /// [label] split on `\n`, empty/whitespace-only lines dropped.
-  /// The renderer lays out one [Text] per line. For a single-line
-  /// label this is `[label]` — backward compatible.
   List<String> get labelLines => label
       .split('\n')
       .map((l) => l.trimRight())
@@ -363,9 +382,9 @@ class SpecWidgetStatus {
       .toList(growable: false);
 
   /// Display color for the label.
-  final SpecStateColor color;
+  final PluginStateColor color;
 
-  const SpecWidgetStatus({
+  const PluginStatus({
     required this.alive,
     required this.data,
     required this.stateText,
@@ -374,11 +393,11 @@ class SpecWidgetStatus {
   });
 }
 
-/// Read + evaluate a spec's status source. Pure: takes the status file
+/// Read + evaluate a plugin's status source. Pure: takes the status file
 /// (path resolved by the caller against the project root) and returns a
 /// snapshot, so it is fully headless-testable.
-SpecWidgetStatus evaluateSpecStatus(
-  SpecWidget spec,
+PluginStatus evaluatePluginStatus(
+  Plugin plugin,
   File statusFile,
   DateTime now,
 ) {
@@ -395,71 +414,72 @@ SpecWidgetStatus evaluateSpecStatus(
     data = {};
   }
 
-  final alive = _computeAlive(spec, data, fileExists, now);
+  final alive = _computeAlive(plugin, data, fileExists, now);
   switch (alive) {
-    case SpecAlive.absent:
-      return SpecWidgetStatus(
+    case PluginAlive.absent:
+      return PluginStatus(
         alive: alive,
         data: data,
-        stateText: spec.absentText,
-        label: renderTemplate(spec.labelTemplate, data, spec.absentText),
-        color: SpecStateColor.dim,
+        stateText: plugin.absentText,
+        label: renderTemplate(plugin.labelTemplate, data, plugin.absentText),
+        color: PluginStateColor.dim,
       );
-    case SpecAlive.stale:
-      return SpecWidgetStatus(
+    case PluginAlive.stale:
+      return PluginStatus(
         alive: alive,
         data: data,
-        stateText: spec.staleText,
-        label: renderTemplate(spec.labelTemplate, data, spec.staleText),
-        color: SpecStateColor.warning,
+        stateText: plugin.staleText,
+        label: renderTemplate(plugin.labelTemplate, data, plugin.staleText),
+        color: PluginStateColor.warning,
       );
-    case SpecAlive.alive:
+    case PluginAlive.alive:
       // Top-down rule match; first hit wins.
-      for (final rule in spec.stateRules) {
+      for (final rule in plugin.stateRules) {
         final value = _dig(data, rule.field);
         if (value != null && value.toString() == rule.equals) {
           final stateText = renderTemplate(rule.text, data, rule.text);
-          return SpecWidgetStatus(
+          return PluginStatus(
             alive: alive,
             data: data,
             stateText: stateText,
-            label: renderTemplate(spec.labelTemplate, data, stateText),
+            label: renderTemplate(plugin.labelTemplate, data, stateText),
             color: rule.color,
           );
         }
       }
-      return SpecWidgetStatus(
+      return PluginStatus(
         alive: alive,
         data: data,
-        stateText: spec.aliveText,
-        label: renderTemplate(spec.labelTemplate, data, spec.aliveText),
-        color: SpecStateColor.normal,
+        stateText: plugin.aliveText,
+        label: renderTemplate(plugin.labelTemplate, data, plugin.aliveText),
+        color: PluginStateColor.normal,
       );
   }
 }
 
 /// Substitute a URL template for an action (same syntax as labels; no
-/// `{state}` — actions only read the status JSON). Only valid for
-/// [SpecActionKind.http] actions.
-String renderActionUrl(SpecAction action, Map<String, dynamic> data) =>
+/// `{state}` — actions only read the status JSON).
+String renderActionUrl(PluginAction action, Map<String, dynamic> data) =>
     renderTemplate(action.url ?? '', data, '');
 
-/// Substitute a prompt template for a [SpecActionKind.prompt] action
-/// against the status JSON (same syntax as [renderActionUrl]). The
-/// rendered text is what gets submitted to the chat session.
-String renderActionPrompt(SpecAction action, Map<String, dynamic> data) =>
+/// Substitute a prompt template for a [PluginActionKind.prompt] action
+/// against the status JSON. The rendered text is what gets submitted to
+/// the chat session.
+String renderActionPrompt(PluginAction action, Map<String, dynamic> data) =>
     renderTemplate(action.prompt ?? '', data, '');
 
-/// Execute a spec action: substitute the URL template from the status
-/// JSON and POST it. Returns true on HTTP 200. Shared by the sidebar
-/// renderer and the `widgets` tool so both see identical action
-/// semantics. Errors (unreachable harness, malformed URL, launch-only
-/// action) return false.
-Future<bool> sendSpecAction(
-  SpecAction action,
+/// Execute an http action: substitute the URL template from the status
+/// JSON and POST it. Returns true on HTTP 200. Shared by the renderers
+/// and the `plugins` tool so both see identical action semantics.
+/// Errors (unreachable service, malformed URL, wrong kind) return
+/// false.
+Future<bool> sendPluginAction(
+  PluginAction action,
   Map<String, dynamic> data,
 ) async {
-  if (action.kind != SpecActionKind.http || action.url == null) return false;
+  if (action.kind != PluginActionKind.http || action.url == null) {
+    return false;
+  }
   final url = renderActionUrl(action, data);
   final parsed = Uri.tryParse(url);
   if (parsed == null || !parsed.isAbsolute) return false;
@@ -481,15 +501,18 @@ Future<bool> sendSpecAction(
   }
 }
 
-/// Launch a [SpecActionKind.launch] action: open a fresh terminal
+/// Launch a [PluginActionKind.launch] action: open a fresh terminal
 /// window in the project root and run the command. Shared by the
-/// renderer and the `widgets` tool.
+/// renderers and the `plugins` tool.
 ///
-/// Platform support (Phase B): macOS + Ghostty only — the window is
-/// opened via `open -na Ghostty`. Other platforms return false and the
-/// UI renders the start segment disabled / the tool reports failure.
-Future<bool> launchSpecAction(SpecAction action, String projectPath) async {
-  if (action.kind != SpecActionKind.launch) return false;
+/// Platform support: macOS + Ghostty only — other platforms return
+/// false and the UI renders the start segment disabled / the tool
+/// reports failure.
+Future<bool> launchPluginAction(
+  PluginAction action,
+  String projectPath,
+) async {
+  if (action.kind != PluginActionKind.launch) return false;
   final command = action.command;
   if (command == null || command.trim().isEmpty) return false;
   if (!Platform.isMacOS) return false;
@@ -510,19 +533,17 @@ Future<bool> launchSpecAction(SpecAction action, String projectPath) async {
   }
 }
 
-/// Substitute a shell-command template for a [SpecActionKind.shell]
-/// or [SpecActionKind.launch] action against the status JSON (same
-/// syntax as [renderActionUrl]).
-String renderActionCommand(SpecAction action, Map<String, dynamic> data) =>
+/// Substitute a shell-command template for a [PluginActionKind.shell]
+/// or [PluginActionKind.launch] action against the status JSON.
+String renderActionCommand(PluginAction action, Map<String, dynamic> data) =>
     renderTemplate(action.command ?? '', data, '');
 
-/// Outcome of running a [SpecActionKind.shell] action.
+/// Outcome of running a [PluginActionKind.shell] action.
 class ShellActionResult {
   final int exitCode;
 
-  /// Combined stdout+stderr, trimmed to the trailing [maxChars]
-  /// characters — enough for a toast / tool result without flooding
-  /// the context.
+  /// Combined stdout+stderr, trimmed to the trailing characters —
+  /// enough for a toast / tool result without flooding the context.
   final String tail;
 
   const ShellActionResult({required this.exitCode, required this.tail});
@@ -530,31 +551,30 @@ class ShellActionResult {
   bool get ok => exitCode == 0;
 }
 
-/// Run a [SpecActionKind.shell] action: execute the rendered command
+/// Run a [PluginActionKind.shell] action: execute the rendered command
 /// in the project root, capture combined output, and return the exit
-/// code plus a bounded tail. Shared by the sidebar renderer and the
-/// `widgets` tool so both see identical semantics.
+/// code plus a bounded tail. Shared by the renderers and the `plugins`
+/// tool so both see identical semantics.
 ///
 /// The command runs via the platform shell (`/bin/sh -c` on POSIX,
-/// `cmd /c` on Windows) so pipes, `&&`, and globs work as the user
-/// expects. A generous timeout bounds runaway scripts; a timed-out
-/// process is killed and reported with exit code -1.
-Future<ShellActionResult> runSpecShellAction(
-  SpecAction action,
+/// `cmd /c` on Windows). A generous timeout bounds runaway scripts; a
+/// timed-out process is killed and reported with exit code -1.
+Future<ShellActionResult> runPluginShellAction(
+  PluginAction action,
   Map<String, dynamic> data,
-  String projectPath, {
+  String projectRoot, {
   Duration timeout = const Duration(minutes: 10),
   int maxTailChars = 2000,
 }) async {
   final command = renderActionCommand(action, data).trim();
-  if (action.kind != SpecActionKind.shell || command.isEmpty) {
+  if (action.kind != PluginActionKind.shell || command.isEmpty) {
     return const ShellActionResult(exitCode: -1, tail: '(no command)');
   }
   try {
     final proc = await Process.start(
       Platform.isWindows ? 'cmd' : '/bin/sh',
       Platform.isWindows ? ['/c', command] : ['-c', command],
-      workingDirectory: projectPath,
+      workingDirectory: projectRoot,
     );
     final out = StringBuffer();
     final subOut = proc.stdout
@@ -587,24 +607,24 @@ Future<ShellActionResult> runSpecShellAction(
   }
 }
 
-SpecAlive _computeAlive(
-  SpecWidget spec,
+PluginAlive _computeAlive(
+  Plugin plugin,
   Map<String, dynamic> data,
   bool fileExists,
   DateTime now,
 ) {
-  final heartbeatField = spec.heartbeatField;
+  final heartbeatField = plugin.heartbeatField;
   if (heartbeatField == null) {
     // No liveness declared: file presence is the liveness.
-    return fileExists ? SpecAlive.alive : SpecAlive.absent;
+    return fileExists ? PluginAlive.alive : PluginAlive.absent;
   }
   final raw = _dig(data, heartbeatField);
-  if (raw == null) return SpecAlive.absent;
+  if (raw == null) return PluginAlive.absent;
   final heartbeat = DateTime.tryParse(raw.toString());
-  if (heartbeat == null) return SpecAlive.absent;
-  return now.difference(heartbeat) <= spec.staleAfter
-      ? SpecAlive.alive
-      : SpecAlive.stale;
+  if (heartbeat == null) return PluginAlive.absent;
+  return now.difference(heartbeat) <= plugin.staleAfter
+      ? PluginAlive.alive
+      : PluginAlive.stale;
 }
 
 /// Substitute `{state}`, `{field}` and `{field@HH:MM}` placeholders.
@@ -612,8 +632,8 @@ SpecAlive _computeAlive(
 /// typos are visible instead of silently blank.
 ///
 /// The template may be multi-line (embed `\n` in the TOML string);
-/// [SpecWidgetStatus.labelLines] splits the rendered result into
-/// per-row content for the renderer.
+/// [PluginStatus.labelLines] splits the rendered result into per-row
+/// content for the renderers.
 String renderTemplate(
   String template,
   Map<String, dynamic> data,

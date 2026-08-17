@@ -7,7 +7,9 @@ import '../../models/daily_usage_stats.dart';
 import '../../services/auxiliary_service.dart' show YesterdaySummary;
 import '../../services/git_status_service.dart';
 import '../../services/notes_service.dart';
+import '../../services/plugin.dart';
 import '../../services/skills/skill.dart';
+import '../plugin_content.dart';
 import '../polling_coordinator.dart';
 
 /// Live services handed to every home widget.
@@ -141,6 +143,19 @@ class HomeContext {
   /// providers".
   final List<ConnectedProviderUsage> Function() connectedUsageProviders;
 
+  /// The project's `placement = home/both` plugins, from the live
+  /// registry scan — one grid box per entry (see PluginHomeWidget).
+  /// Read on each home build so registry rescans hot-swap boxes. Null
+  /// (tests / previews) → no plugin boxes.
+  final List<Plugin> Function()? plugins;
+
+  /// The wiring handed to plugin boxes on the home grid (prompt /
+  /// shell / screen / todo / record handlers + project root). Deferred
+  /// so the closures re-read the panel's live state. Null (tests /
+  /// previews) → plugin boxes render but their prompt/screen actions
+  /// hide.
+  final PluginHost Function()? pluginHost;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -165,6 +180,8 @@ class HomeContext {
     this.notesService,
     this.openNotes,
     this.connectedUsageProviders = _noConnectedUsage,
+    this.plugins,
+    this.pluginHost,
   });
 
   static String? _noModel() => null;
@@ -198,7 +215,9 @@ class HomeContext {
         hasWebProvider = _false,
         notesService = null,
         openNotes = null,
-        connectedUsageProviders = _noConnectedUsage;
+        connectedUsageProviders = _noConnectedUsage,
+        plugins = null,
+        pluginHost = null;
 }
 
 /// One pluggable dashboard box.
@@ -230,6 +249,21 @@ abstract class HomeWidget {
   /// is the max of its boxes' values; shorter boxes stretch their
   /// borders to match, so widgets must render at any height ≥ this.
   int heightFor(int span);
+
+  /// Minimum *content* width in terminal columns the box needs to read
+  /// correctly — the width inside the border and horizontal padding
+  /// (the grid subtracts 4: border 2 + padding 2). `0` (the default)
+  /// means the box copes with any width.
+  ///
+  /// The layout engine never assigns a cell whose content width is
+  /// below this: the box wraps onto a fresh row to get a wider cell,
+  /// and when even a full-width cell is too narrow the box is left out
+  /// of the rendered grid entirely (it stays in the placement list and
+  /// the persisted layout, so it reappears the moment the window
+  /// widens). Grid-width content (the `activity` heatmap's fixed 7-day
+  /// grid) uses this to avoid rendering as a squeezed, unreadable
+  /// smear in a narrow cell.
+  int get minColumnWidth => 0;
 
   /// Whether a passive box's short content should be vertically centered
   /// in the box when it's stretched taller than the content. Defaults to

@@ -43,17 +43,26 @@ CLAUDE.md
 # Local chat-input skill scaffold (used during development to test
 # the picker; not part of the shipped app).
 .crux/
-# ...but spec widgets (Phase B: `.crux/widgets/*.toml`) ARE source —
-# they ship with the repo so every session gets the seeded widgets.
+# ...but spec plugins (`.crux/plugins/*.toml`) ARE source — they ship
+# with the repo so every session gets the seeded plugins. The legacy
+# `.crux/widgets/` directory stays whitelisted too: specs there are
+# still scanned (compat) and migrate to plugins/ over time.
 # Anchored to the repo root: a stray `.crux` cache deeper in the tree
 # (e.g. lib/src/services/.crux/semble_cache/) stays ignored.
 !/.crux/
+!/.crux/plugins/
+!/.crux/plugins/**
 !/.crux/widgets/
 !/.crux/widgets/**
 
-# Runtime heartbeat for the comfy-monitor widget (rewritten every few
+# Per-machine plan-doc version history (`.crux/plans/<sessionId>/…`,
+# written by PlanDocStore). Not source; also anchors the autocomplete
+# heuristic — see `listKnownPlanNames`.
+/.crux/plans/
+
+# Runtime heartbeat for the comfy-monitor plugin (rewritten every few
 # seconds by /tmp/comfy-sleep-monitor.py; regenerated on demand — never
-# source). Only the widget spec under .crux/widgets/ ships.
+# source). Only the plugin spec under .crux/plugins/ ships.
 /.crux/comfy-monitor-status.json
 
 # Semble semantic-search index cache (written by the search isolate

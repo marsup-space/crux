@@ -1,4 +1,4 @@
-// Tests for the widgets tool (Phase B): list / inspect / trigger
+// Tests for the plugins tool (Phase B): list / inspect / trigger
 // against real spec files and a real loopback HTTP server.
 
 import 'dart:convert';
@@ -6,12 +6,12 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-import 'package:crux/src/tools/widgets_tool.dart';
+import 'package:crux/src/tools/plugins_tool.dart';
 import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
   late Directory project;
-  late WidgetsTool tool;
+  late PluginsTool tool;
 
   ToolContext ctxOf() => ToolContext(
         sessionId: 1,
@@ -21,8 +21,8 @@ void main() {
       );
 
   setUp(() {
-    project = Directory.systemTemp.createTempSync('spec_tool_test_');
-    tool = WidgetsTool();
+    project = Directory.systemTemp.createTempSync('plugin_tool_test_');
+    tool = PluginsTool();
   });
 
   tearDown(() {
@@ -32,7 +32,7 @@ void main() {
   });
 
   void writeSpec(String id, {String statusPath = 's.json'}) {
-    final dir = Directory('${project.path}/.crux/widgets');
+    final dir = Directory('${project.path}/.crux/plugins');
     dir.createSync(recursive: true);
     File('${dir.path}/$id.toml').writeAsStringSync('''
 id = "$id"
@@ -78,7 +78,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
     }));
   }
 
-  group('widgets tool — list', () {
+  group('plugins tool — list', () {
     test('lists widgets with live status and actions', () async {
       writeSpec('dev-harness');
       writeStatus(
@@ -93,7 +93,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
       expect(result.output, contains('alive'));
       expect(result.output, contains('✓'));
       expect(result.output, contains('reload'));
-      expect(result.metadata['widgets'], 1);
+      expect(result.metadata['plugins'], 1);
     });
 
     test('empty project reports none', () async {
@@ -102,7 +102,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
     });
 
     test('invalid spec files are skipped', () async {
-      final dir = Directory('${project.path}/.crux/widgets');
+      final dir = Directory('${project.path}/.crux/plugins');
       dir.createSync(recursive: true);
       File('${dir.path}/broken.toml').writeAsStringSync(
         'id = "mismatch"\nlabel = "x"\n',
@@ -114,7 +114,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
     });
   });
 
-  group('widgets tool — inspect', () {
+  group('plugins tool — inspect', () {
     test('shows full status JSON and actions', () async {
       writeSpec('dev-harness');
       writeStatus(heartbeat: DateTime.now(), controlPort: 1234);
@@ -143,7 +143,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
     });
   });
 
-  group('widgets tool — trigger', () {
+  group('plugins tool — trigger', () {
     test('fires the action via HTTP POST and reports ok', () async {
       final hits = <String>[];
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -209,7 +209,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
 
     test('launch actions run the launcher without a liveness gate', () async {
       final launched = <String>[];
-      final fakeTool = WidgetsTool(
+      final fakeTool = PluginsTool(
         launchFn: (action, projectPath) async {
           launched.add('${action.command} @ $projectPath');
           return true;
@@ -229,7 +229,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
     });
 
     test('launch action failure is reported', () async {
-      final fakeTool = WidgetsTool(
+      final fakeTool = PluginsTool(
         launchFn: (action, projectPath) async => false,
       );
       writeSpec('dev-harness');
@@ -248,7 +248,7 @@ url = "http://127.0.0.1:{controlPort}/reload"
 
     test('prompt action returns the rendered quick-action message', () async {
       // Rewrite the spec with a prompt action.
-      final dir = Directory('${project.path}/.crux/widgets')
+      final dir = Directory('${project.path}/.crux/plugins')
         ..createSync(recursive: true);
       File('${dir.path}/dev-harness.toml').writeAsStringSync('''
 id = "dev-harness"
@@ -274,7 +274,7 @@ prompt = "Review the config on port {controlPort}."
     });
 
     test('shell action runs the command and reports exit + tail', () async {
-      final dir = Directory('${project.path}/.crux/widgets')
+      final dir = Directory('${project.path}/.crux/plugins')
         ..createSync(recursive: true);
       File('${dir.path}/dev-harness.toml').writeAsStringSync('''
 id = "dev-harness"

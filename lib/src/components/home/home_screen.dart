@@ -24,6 +24,7 @@ import 'widgets/tokens_widget.dart';
 import 'widgets/notes_widget.dart';
 import 'widgets/workspace_widget.dart';
 import 'widgets/yesterday_widget.dart';
+import 'plugin_home_widget.dart';
 
 /// The home screen — an independent full screen, not a modal overlay.
 ///
@@ -102,6 +103,14 @@ class HomeScreen extends StatefulComponent {
   /// Max visible rows in the overlay popover.
   final int maxVisibleItems;
 
+  /// Wired by the chat panel so the quick-chat area can register its
+  /// local rebuild callback. Typing in the field must only rebuild the
+  /// input row (+ its popover), never the whole home grid — the panel
+  /// points the InputOverlay/InputKeyHandler `refresh` at this widget
+  /// instead of its own panel-wide setState, which used to rebuild all
+  /// ~10 boxes (~26ms) on every keystroke. Null in tests/previews.
+  final void Function(VoidCallback rebuild)? onQuickChatAreaMounted;
+
   const HomeScreen({
     super.key,
     required this.onExit,
@@ -117,6 +126,7 @@ class HomeScreen extends StatefulComponent {
     this.inputOverlay,
     this.inputKeyHandler,
     this.maxVisibleItems = 6,
+    this.onQuickChatAreaMounted,
   });
 
   @override
@@ -219,6 +229,32 @@ class _HomeScreenState extends State<HomeScreen> {
   /// visible placements and the hidden ones available for re-add.
   late Map<String, HomeWidget> _allById;
 
+  /// Signature of the last plugin list folded into [_allById] (the
+  /// comma-joined plugin ids). The registry rescans every ~2 s on its
+  /// own timer; the home screen notices set changes here, in build,
+  /// and rebuilds the widget map + placements so plugin boxes hot-swap
+  /// without re-entering home. (Writing layout fields during build is
+  /// this file's existing pattern — see `_packedRowsCache`.)
+  String? _lastPluginSignature;
+
+  void _syncPluginBoxes() {
+    final plugins = _ctx.plugins?.call();
+    if (plugins == null) return; // no plugin wiring: nothing to sync
+    // The registry also fires placement-affecting edits (a spec's span
+    // list can't change without a new file, so ids suffice as the
+    // signature).
+    final signature = plugins.map((p) => p.id).join(',');
+    if (signature == _lastPluginSignature) return;
+    _lastPluginSignature = signature;
+    // _defaultWidgets() already folds in the FRESH plugin list; a
+    // user-edited placement order survives via _resolvePlacements
+    // (persisted ids still resolve; vanished ids drop out; new ids
+    // append at the end).
+    _allById = {for (final w in _defaultWidgets()) w.id: w};
+    _placements = _resolvePlacements();
+    _wireWidgetListeners();
+  }
+
   /// The default widgets for this screen (the five built-ins, or the
   /// caller-supplied list). Order is the default layout order.
   List<HomeWidget> _defaultWidgets() {
@@ -244,6 +280,16 @@ class _HomeScreenState extends State<HomeScreen> {
         onSwitch: ctx.switchSession,
       ),
       YesterdayHomeWidget(sessions: ctx.sessions),
+      // Spec-driven plugin boxes (`placement = home/both`): appended
+      // after the built-ins so user plugins land at the grid's end
+      // (editable/reorderable like every other box). Built fresh on
+      // each _defaultWidgets() pass — re-running in initState and
+      // reassemble — so registry rescans hot-swap boxes. But the grid
+      // caches _allById across builds, so ALSO refresh below whenever
+      // the plugin list changes (see didUpdateComponent-less path in
+      // build via _syncPluginBoxes).
+      if (ctx.plugins != null && ctx.pluginHost != null)
+        ...PluginHomeWidgets.build(ctx.plugins!(), ctx.pluginHost!),
     ];
   }
 
@@ -345,9 +391,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return best;
   }
-
-  List<HomeWidget> get _widgets =>
-      [for (final p in _placements) p.widget];
 
   /// Current layout as persistable entries (order + span).
   List<HomeLayoutEntry> _layoutEntries() =>
@@ -488,37 +531,100 @@ class _HomeScreenState extends State<HomeScreen> {
     return chosen;
   }
 
-  /// Pack placements row-by-row into [columns] columns. Each box prefers
-  /// its chosen [ _Placement.span] (clamped to the column count and to
-  /// what the widget supports), degrading gracefully to fit the
-  /// *remaining* space in the current row rather than overflowing it. It
-  /// wraps to a fresh row only when even the box's smallest span doesn't
-  /// fit the remaining space.
-  List<_Row> _packRows(List<_Placement> placements, int columns) {
+  /// The smallest cell width (terminal columns, border+padding
+  /// included) a *flexible* box tolerates while sharing a row. Below
+  /// this a flexible box would rather wrap onto its own row than
+  /// render as a sliver — a list box squeezed under ~2 characters
+  /// wide shows nothing useful.
+  static const _minFlexCellWidth = 12;
+
+  /// Pack placements row-by-row across a grid [gridWidth] terminal
+  /// columns wide.
+  ///
+  /// Boxes are either **rigid** (a positive [HomeWidget.minColumnWidth])
+  /// or **flexible** (zero). A rigid box always renders at exactly its
+  /// minimum content width and never shrinks, degrades, or drops out;
+  /// flexible boxes share whatever width is left on the row. Packing
+  /// is a pixel-aware greedy fill:
+  ///
+  /// * A rigid box joins the current row when its fixed cell width
+  ///   still leaves every flexible box on the row at least
+  ///   [_minFlexCellWidth]; otherwise it wraps onto a fresh row.
+  /// * A flexible box joins the current row while it would get at
+  ///   least [_minFlexCellWidth] after the row's rigid boxes are paid
+  ///   for; otherwise it wraps.
+  ///
+  /// [columns] still sets the *flexible* boxes' span arithmetic (a
+  /// span-2 flexible box takes twice the width of a span-1 one), and
+  /// [HomeWidget.supportedSpans] still caps how wide a flexible box
+  /// grows; neither constrains a rigid box's fixed width.
+  List<_Row> _packRows(
+    List<_Placement> placements,
+    int columns,
+    int gridWidth,
+  ) {
     final rows = <_Row>[];
     var rowWidgets = <HomeWidget>[];
     var rowSpans = <int>[];
-    var used = 0;
+    var usedSpan = 0; // flexible span committed to the current row
+    var rigidCells = 0; // rigid boxes on the current row
+    var rigidPixels = 0; // pixels the rigid cells consume
+
+    int flexiblePixels() => gridWidth - rigidPixels;
+
+    // Pixels a flexible box would get if it joined the current row
+    // now (sharing the post-rigid width by span).
+    int prospectiveFlexWidth(int addedSpan) {
+      final flexBoxes = rowWidgets.length - rigidCells + 1;
+      final totalSpan = usedSpan + addedSpan;
+      if (flexBoxes <= 0 || totalSpan <= 0) return 0;
+      // Approximate an even per-span share of the flexible pixels.
+      return flexiblePixels() * addedSpan ~/ totalSpan;
+    }
+
     for (final p in placements) {
       final w = p.widget;
-      // The box's preferred span: its chosen span, but never wider than
-      // the layout allows or than the widget supports.
-      var span = spanFor(w, columns, preferred: p.span);
-      final minSpan = w.supportedSpans.reduce((a, b) => a < b ? a : b);
-      // Wrap only when the box can't fit the remaining space even at its
-      // smallest span; otherwise degrade the span to fit.
-      if (used + span > columns && used + minSpan > columns && rowWidgets.isNotEmpty) {
+      final minContent = w.minColumnWidth;
+      final isRigid = minContent > 0;
+      final cellWidth = isRigid ? minContent + 4 : 0;
+      final span = spanFor(w, columns, preferred: p.span);
+
+      // Would adding this box overflow the row's span budget, leave
+      // the row over-wide, or starve a flexible box? Then wrap first.
+      //
+      // The span budget keeps a full-span flexible box (e.g. span 4 in
+      // 4 columns) on a row of its own instead of sharing it with
+      // neighbors, matching the bento-grid intuition that a wider span
+      // claims more of the row.
+      final newRigidPixels = rigidPixels + cellWidth;
+      final overSpan = usedSpan + span > columns;
+      final overWide = newRigidPixels > gridWidth;
+      final starved = !isRigid &&
+          rowWidgets.isNotEmpty &&
+          prospectiveFlexWidth(span) < _minFlexCellWidth;
+      final rigidStarvesFlex = isRigid &&
+          (rowWidgets.length - rigidCells) > 0 &&
+          (gridWidth - newRigidPixels) <
+              _minFlexCellWidth * (rowWidgets.length - rigidCells);
+
+      if (rowWidgets.isNotEmpty &&
+          (overSpan || overWide || starved || rigidStarvesFlex)) {
         rows.add(_Row(rowWidgets, rowSpans));
         rowWidgets = <HomeWidget>[];
         rowSpans = <int>[];
-        used = 0;
-        span = spanFor(w, columns, preferred: p.span);
-      } else if (used + span > columns) {
-        span = columns - used; // degrade to fill the remaining space
+        usedSpan = 0;
+        rigidCells = 0;
+        rigidPixels = 0;
       }
+
       rowWidgets.add(w);
-      rowSpans.add(span);
-      used += span;
+      rowSpans.add(isRigid ? 0 : span); // rigid cells don't consume span
+      if (isRigid) {
+        rigidCells++;
+        rigidPixels += cellWidth;
+      } else {
+        usedSpan += span;
+      }
     }
     if (rowWidgets.isNotEmpty) rows.add(_Row(rowWidgets, rowSpans));
     return rows;
@@ -554,14 +660,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Move focus to box [newIndex], resetting the newly-focused box's
   /// item selection so a revisited box starts on its first item.
   void _moveFocus(int newIndex, List<_Row> rows) {
-    final count = _widgets.length;
+    final count = _visibleWidgets.length;
     if (count == 0) return;
     final clamped = newIndex.clamp(0, count - 1);
     setState(() {
       _focusedIndex = clamped;
       _notice = null;
     });
-    _widgets[clamped].resetSelection();
+    _visibleWidgets[clamped].resetSelection();
     _ensureFocusedVisible(rows);
   }
 
@@ -602,7 +708,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// (passive box) move to the next row. Edit mode uses this to reach a
   /// box on another row, so it always moves rows there.
   void _moveVertical(int direction, List<_Row> rows, {bool forceRow = false}) {
-    final widget = _widgets[_focusedIndex.clamp(0, _widgets.length - 1)];
+    final visible = _visibleWidgets;
+    if (visible.isEmpty) return;
+    final widget = visible[_focusedIndex.clamp(0, visible.length - 1)];
     if (!forceRow && widget.itemCount > 0) {
       setState(() {
         widget.moveSelection(direction);
@@ -626,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Enter — activate the focused box's selected item (item boxes) or
   /// its whole-box action (passive boxes).
   void _activateFocused() {
-    final widgets = _widgets;
+    final widgets = _visibleWidgets;
     if (widgets.isEmpty) return;
     final widget = widgets[_focusedIndex.clamp(0, widgets.length - 1)];
     final action = widget.itemCount > 0
@@ -727,7 +835,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // the keyboard twin of clicking the title-row buttons. No-op (but
     // still consumed) when the focused box has no title buttons.
     if (key == LogicalKey.bracketLeft || key == LogicalKey.bracketRight) {
-      final widgets = _widgets;
+      final widgets = _visibleWidgets;
       if (widgets.isNotEmpty) {
         final widget = widgets[_focusedIndex.clamp(0, widgets.length - 1)];
         final buttons = widget.titleButtons;
@@ -784,6 +892,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // screen.
   List<_Row>? _packedRowsCache;
 
+  /// The widgets actually on screen, derived from the packed rows each
+  /// build. Differs from `_widgets` (the placement list) when a box is
+  /// dropped because the window is too narrow for its
+  /// [HomeWidget.minColumnWidth]: focus and activation walk this list
+  /// so a hidden box is unreachable.
+  List<HomeWidget> _visibleWidgets = const [];
+
   // ── Quick-chat input ──────────────────────────────────────────────
 
   bool get _hasFullInput =>
@@ -792,74 +907,23 @@ class _HomeScreenState extends State<HomeScreen> {
       component.inputOverlay != null &&
       component.inputKeyHandler != null;
 
-  /// The overlay popover (slash command / @ / # / $ completion) shown
-  /// just above the quick-chat input while a trigger is active.
-  List<Component> _popover() {
-    if (!_hasFullInput) return const [];
-    final popover = buildOverlayPopover(
-      overlay: component.overlayController!,
-      maxVisible: component.maxVisibleItems,
+  Component _quickChatArea(CruxThemeData theme) {
+    // The full input path re-airs its own rebuilds through the local
+    // state below (see _QuickChatArea); the fallback field keeps
+    // home's setState (it's one Text + the local controller, cheap).
+    return _QuickChatArea(
+      hasFullInput: _hasFullInput,
+      overlayController: component.overlayController,
+      inputController: component.inputController,
+      inputOverlay: component.inputOverlay,
+      inputKeyHandler: component.inputKeyHandler,
+      maxVisibleItems: component.maxVisibleItems,
+      fallbackController: _chatController,
       strings: _ctx.strings,
-      refresh: () {
-        if (mounted) setState(() {});
-      },
-    );
-    if (popover == null) return const [];
-    return [popover, const SizedBox(height: 1)];
-  }
-
-  Component _quickChatInput(CruxThemeData theme) {
-    // LayoutBuilder defers the field's mount to the layout phase, so its
-    // `focused: true` focus request runs AFTER the root Focusable's own
-    // request. Otherwise the root (an ancestor with `focused: true`)
-    // steals focus back once the field mounts and typing never lands
-    // here.
-    final controller = component.inputController ?? _chatController;
-    final styleSegments = _hasFullInput
-        ? buildInputChipSegments(
-            text: controller.text,
-            mentionChips: component.overlayController!.mentionChips,
-            theme: theme,
-            baseStyle: TextStyle(color: theme.foreground),
-          )
-        : null;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          decoration: BoxDecoration(
-            color: theme.surface,
-            border: BoxBorder.all(
-              color: theme.accent,
-              style: BoxBorderStyle.rounded,
-            ),
-            title: BorderTitle(
-              text: _ctx.strings.t('home.newChat'),
-              style: TextStyle(
-                color: theme.accent,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Text('> ', style: TextStyle(color: theme.onSurfaceDim)),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  focused: true,
-                  maxLines: 1,
-                  style: TextStyle(color: theme.foreground),
-                  placeholder: _ctx.strings.t('home.newChatPlaceholder'),
-                  styleSegments: styleSegments,
-                  onSubmitted: _submitChat,
-                  onKeyEvent: _chatKeyHandler,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      onSubmit: _submitChat,
+      onKey: _handleKey,
+      onMounted: component.onQuickChatAreaMounted,
+      theme: theme,
     );
   }
 
@@ -871,70 +935,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _chatController.clear();
   }
 
-  /// The quick-chat field keeps home's keyboard shortcuts working while
-  /// it's empty: arrows / Tab / PgUp / PgDn / Home / End / Enter / `e` /
-  /// `[` / `]` are delegated to [build]'s `_handleKey` for grid
-  /// navigation, edit mode, and box activation. Once the user has typed
-  /// something, the field owns the keyboard (typing, cursor, Enter to
-  /// submit).
-  ///
-  /// With the full-featured input wired, empty-field nav keys still go to
-  /// the grid; every other key goes to [InputKeyHandler] (overlay
-  /// navigation, command mode, chip backspace, Enter to submit).
-  bool _chatKeyHandler(KeyboardEvent event) {
-    final keyHandler = component.inputKeyHandler;
-    final controller = component.inputController;
-    if (keyHandler != null && controller != null) {
-      if (controller.text.isEmpty) {
-        final key = event.logicalKey;
-        switch (key) {
-          case LogicalKey.arrowUp:
-          case LogicalKey.arrowDown:
-          case LogicalKey.arrowLeft:
-          case LogicalKey.arrowRight:
-          case LogicalKey.tab:
-          case LogicalKey.pageUp:
-          case LogicalKey.pageDown:
-          case LogicalKey.home:
-          case LogicalKey.end:
-          case LogicalKey.enter:
-          case LogicalKey.keyE:
-          case LogicalKey.bracketLeft:
-          case LogicalKey.bracketRight:
-            return _handleKey(event);
-          default:
-            break;
-        }
-      }
-      return keyHandler.handleKeyEvent(event);
-    }
-
-    if (_chatController.text.isNotEmpty) return false;
-    final key = event.logicalKey;
-    switch (key) {
-      case LogicalKey.arrowUp:
-      case LogicalKey.arrowDown:
-      case LogicalKey.arrowLeft:
-      case LogicalKey.arrowRight:
-      case LogicalKey.tab:
-      case LogicalKey.pageUp:
-      case LogicalKey.pageDown:
-      case LogicalKey.home:
-      case LogicalKey.end:
-      case LogicalKey.enter:
-      case LogicalKey.keyE:
-      case LogicalKey.bracketLeft:
-      case LogicalKey.bracketRight:
-        return _handleKey(event);
-      default:
-        return false;
-    }
-  }
-
   // ── Build ─────────────────────────────────────────────────────────
 
   @override
   Component build(BuildContext context) {
+    _syncPluginBoxes();
     final theme = CruxTheme.of(context);
     return Focusable(
       focused: true,
@@ -1017,12 +1022,24 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? constraints.maxWidth.floor()
                       : 120;
                   final columns = columnsForWidth(width);
-                  final rows = _packRows(_placements, columns);
+                  final rows = _packRows(_placements, columns, width);
                   _packedRowsCache = rows;
+                  // Visible widgets come from the packed rows, not the
+                  // placement list: a box dropped for lack of width is
+                  // out of rendering AND keyboard navigation.
+                  _visibleWidgets = [
+                    for (final row in rows) ...row.widgets,
+                  ];
+                  // The focused box may have just dropped out (window
+                  // narrowed past its min width) — clamp the index so
+                  // navigation never points at a hidden box.
+                  if (_focusedIndex >= _visibleWidgets.length) {
+                    _focusedIndex =
+                        (_visibleWidgets.length - 1).clamp(0, 1 << 30);
+                  }
                   return _buildGrid(
                     context,
                     theme,
-                    _widgets,
                     rows,
                     width,
                     columns,
@@ -1031,13 +1048,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // ── Overlay popover (slash command / @ / # / $ completion) ──
-            if (!_editing) ..._popover(),
-
-            // ── Quick-chat input ──
-            // A one-line field to start a fresh Chat conversation. Hidden
-            // during edit mode (edit mode owns the whole keyboard).
-            if (!_editing) _quickChatInput(theme),
+            // ── Quick-chat input (+ overlay popover) ──
+            // A one-line field to start a fresh Chat conversation, with
+            // the slash / @ / # / $ popover stacked above it. One
+            // self-contained component that rebuilds ITSELF on typing —
+            // a keystroke never re-lays-out the whole dashboards grid.
+            // Hidden during edit mode (edit mode owns the keyboard).
+            if (!_editing) _quickChatArea(theme),
             const SizedBox(height: 1),
 
             // ── Key-hint footer ──
@@ -1062,7 +1079,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Component _buildGrid(
     BuildContext context,
     CruxThemeData theme,
-    List<HomeWidget> widgets,
     List<_Row> rows,
     int width,
     int columns,
@@ -1075,25 +1091,53 @@ class _HomeScreenState extends State<HomeScreen> {
     for (var r = 0; r < rows.length; r++) {
       final row = rows[r];
       final cells = <Component>[];
+      // Rigid boxes (a positive minColumnWidth) take a fixed pixel
+      // width and never shrink; the flexible boxes split what's left
+      // by their span. First pass: total flexible span and the pixels
+      // the rigid cells consume (minColumnWidth is a *content* width;
+      // the cell adds border 2 + horizontal padding 2).
+      var flexSpan = 0;
+      var rigidPixels = 0;
+      for (var c = 0; c < row.widgets.length; c++) {
+        final w = row.widgets[c];
+        if (w.minColumnWidth > 0) {
+          rigidPixels += w.minColumnWidth + 4;
+        } else {
+          flexSpan += row.spans[c];
+        }
+      }
+      final flexPixels = (width - rigidPixels).clamp(0, width);
       for (var c = 0; c < row.widgets.length; c++) {
         final index = flatIndex++;
         final widget = row.widgets[c];
         final span = row.spans[c];
-        cells.add(
-          Expanded(
-            flex: span,
-            child: _buildBox(
-              context,
-              theme,
-              widget,
-              span,
-              row.height,
-              index == _focusedIndex,
-              index,
-              rowOffsets[r],
-            ),
-          ),
+        final box = _buildBox(
+          context,
+          theme,
+          widget,
+          span,
+          row.height,
+          index == _focusedIndex,
+          index,
+          rowOffsets[r],
         );
+        if (widget.minColumnWidth > 0) {
+          // Rigid box: a fixed cell width it never shrinks below.
+          cells.add(
+            SizedBox(
+              width: (widget.minColumnWidth + 4).toDouble(),
+              child: box,
+            ),
+          );
+        } else {
+          // Flexible box: its span's share of the pixels left over.
+          cells.add(
+            SizedBox(
+              width: flexSpan > 0 ? (flexPixels * span / flexSpan) : 0,
+              child: box,
+            ),
+          );
+        }
       }
       rowComponents.add(
         Container(
@@ -1327,6 +1371,226 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 1),
             ),
       ],
+    );
+  }
+}
+
+/// The quick-chat input area: the overlay popover (slash / @ / # / $
+/// completion) stacked above the one-line "start a new chat" field.
+///
+/// Self-contained statefulness: everything that changes while typing —
+/// the text, the cursor, the popover rows — is repainted by THIS
+/// component's own setState, never by the home screen's. This is a
+/// performance boundary, not a style choice: home's build re-runs
+/// every box widget (~10 boxes, worst case ~26ms of layout on a single
+/// rebuild) and a keystroke used to trigger exactly that through the
+/// panel-wide `_refresh` callback. Key events that belong to the grid
+/// (navigation while the field is empty) bounce back out via [onKey]
+/// to `_HomeScreenState._handleKey`, which re-renders the grid as
+/// before.
+class _QuickChatArea extends StatefulComponent {
+  /// Whether the full-featured input is wired (controller / overlay /
+  /// key handler from the chat panel). False in tests/previews → the
+  /// plain local-controller field renders.
+  final bool hasFullInput;
+
+  final OverlayController? overlayController;
+  final TextEditingController? inputController;
+  final InputOverlay? inputOverlay;
+  final InputKeyHandler? inputKeyHandler;
+  final int maxVisibleItems;
+
+  /// Home's local controller — used when [inputController] is null.
+  final TextEditingController fallbackController;
+
+  final Strings strings;
+
+  /// Submit on Enter (full path submits via [inputKeyHandler]; this
+  /// covers the fallback field's own `onSubmitted`).
+  final void Function(String text) onSubmit;
+
+  /// Grid key handler for empty-field navigation keys.
+  final bool Function(KeyboardEvent event) onKey;
+
+  /// Rebuild hook for the chat panel: the panel swaps the
+  /// InputOverlay/InputKeyHandler `refresh` to this component's local
+  /// setState, so typing rebuilds only this subtree. Cleared on
+  /// unmount.
+  final void Function(VoidCallback rebuild)? onMounted;
+
+  final CruxThemeData theme;
+
+  const _QuickChatArea({
+    required this.hasFullInput,
+    required this.overlayController,
+    required this.inputController,
+    required this.inputOverlay,
+    required this.inputKeyHandler,
+    required this.maxVisibleItems,
+    required this.fallbackController,
+    required this.strings,
+    required this.onSubmit,
+    required this.onKey,
+    required this.onMounted,
+    required this.theme,
+  });
+
+  @override
+  State<_QuickChatArea> createState() => _QuickChatAreaState();
+}
+
+class _QuickChatAreaState extends State<_QuickChatArea> {
+  void _localRebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    component.onMounted?.call(_localRebuild);
+  }
+
+  @override
+  void dispose() {
+    component.onMounted?.call(() {});
+    super.dispose();
+  }
+
+  /// The quick-chat field keeps home's keyboard shortcuts working while
+  /// it's empty: arrows / Tab / PgUp / PgDn / Home / End / Enter / `e` /
+  /// `[` / `]` are delegated to the grid's key handler for navigation,
+  /// edit mode, and box activation. Once the user has typed something,
+  /// the field owns the keyboard (typing, cursor, Enter to submit).
+  ///
+  /// With the full-featured input wired, empty-field nav keys still go
+  /// to the grid; every other key goes to the [InputKeyHandler] (overlay
+  /// navigation, command mode, chip backspace, Enter to submit).
+  bool _keyHandler(KeyboardEvent event) {
+    final keyHandler = component.inputKeyHandler;
+    final controller = component.inputController;
+    if (keyHandler != null && controller != null) {
+      if (controller.text.isEmpty) {
+        final key = event.logicalKey;
+        switch (key) {
+          case LogicalKey.arrowUp:
+          case LogicalKey.arrowDown:
+          case LogicalKey.arrowLeft:
+          case LogicalKey.arrowRight:
+          case LogicalKey.tab:
+          case LogicalKey.pageUp:
+          case LogicalKey.pageDown:
+          case LogicalKey.home:
+          case LogicalKey.end:
+          case LogicalKey.enter:
+          case LogicalKey.keyE:
+          case LogicalKey.bracketLeft:
+          case LogicalKey.bracketRight:
+            return component.onKey(event);
+          default:
+            break;
+        }
+      }
+      return keyHandler.handleKeyEvent(event);
+    }
+
+    if (component.fallbackController.text.isNotEmpty) return false;
+    final key = event.logicalKey;
+    switch (key) {
+      case LogicalKey.arrowUp:
+      case LogicalKey.arrowDown:
+      case LogicalKey.arrowLeft:
+      case LogicalKey.arrowRight:
+      case LogicalKey.tab:
+      case LogicalKey.pageUp:
+      case LogicalKey.pageDown:
+      case LogicalKey.home:
+      case LogicalKey.end:
+      case LogicalKey.enter:
+      case LogicalKey.keyE:
+      case LogicalKey.bracketLeft:
+      case LogicalKey.bracketRight:
+        return component.onKey(event);
+      default:
+        return false;
+    }
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final theme = component.theme;
+    final controller =
+        component.inputController ?? component.fallbackController;
+    final styleSegments = component.hasFullInput
+        ? buildInputChipSegments(
+            text: controller.text,
+            mentionChips: component.overlayController!.mentionChips,
+            theme: theme,
+            baseStyle: TextStyle(color: theme.foreground),
+          )
+        : null;
+
+    final children = <Component>[
+      LayoutBuilder(
+        builder: (context, constraints) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              color: theme.surface,
+              border: BoxBorder.all(
+                color: theme.accent,
+                style: BoxBorderStyle.rounded,
+              ),
+              title: BorderTitle(
+                text: component.strings.t('home.newChat'),
+                style: TextStyle(
+                  color: theme.accent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text('> ', style: TextStyle(color: theme.onSurfaceDim)),
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    focused: true,
+                    maxLines: 1,
+                    style: TextStyle(color: theme.foreground),
+                    placeholder: component.strings.t('home.newChatPlaceholder'),
+                    styleSegments: styleSegments,
+                    onSubmitted: component.onSubmit,
+                    onKeyEvent: _keyHandler,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ];
+
+    // Popover above the field (bottom-up column: field first, popover
+    // unshifts above it via the parent Column ordering — matches the
+    // old `[..._popover(), field]` order by rebuilding the column with
+    // the popover as a leading child when active).
+    if (component.hasFullInput) {
+      final popover = buildOverlayPopover(
+        overlay: component.overlayController!,
+        maxVisible: component.maxVisibleItems,
+        strings: component.strings,
+        refresh: _localRebuild,
+      );
+      if (popover != null) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [popover, const SizedBox(height: 1), ...children],
+        );
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
     );
   }
 }

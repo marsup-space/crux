@@ -8,7 +8,8 @@ import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import '../services/git_status_service.dart';
-import '../services/spec_widget.dart';
+import '../services/plugin.dart';
+import '../services/plugin_registry.dart';
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../i18n/strings.dart';
@@ -16,7 +17,8 @@ import '../utils/frame_profiler.dart';
 import '../utils/ticker_registry.dart';
 import '../utils/terminal_symbols.dart';
 import 'git_status_widget.dart';
-import 'spec_sidebar_widget.dart';
+import 'plugin_sidebar_box.dart';
+import 'plugin_content.dart';
 import 'session_controller.dart';
 import 'ui/auxiliary_model_button.dart';
 import 'ui/fps_counter.dart';
@@ -100,11 +102,11 @@ class ExtraInfoPanel extends StatefulComponent {
   /// instance here would orphan the timer (and leak it on dispose).
   final GitStatusService gitStatusService;
 
-  /// Spec-driven sidebar widgets for the current project (Phase B —
-  /// `.crux/widgets/*.toml`, discovered by [SpecWidgetRegistry]). Each
-  /// renders one row above the git status. Null in tests/contexts
-  /// where no spec widgets should appear.
-  final List<SpecWidget>? specWidgets;
+  /// Spec-driven plugins for the current project (sidebar placement —
+  /// `.crux/plugins/*.toml` + global `~/.crux/plugins/`, discovered by
+  /// [PluginRegistry]). Each renders one boxed row above the git
+  /// status. Null in tests/contexts where no plugins should appear.
+  final List<Plugin>? plugins;
 
   /// Session controller backing the [AuxiliaryModelButton] rendered
   /// just above the git status / project widgets. Optional so tests
@@ -116,37 +118,11 @@ class ExtraInfoPanel extends StatefulComponent {
   /// chat panel wires this to `stashAndSetCommand('/auxiliary ')`.
   final VoidCallback? onAuxiliaryPressed;
 
-  /// Called when the user clicks a `prompt`-kind action segment on a
-  /// spec widget — the chat panel submits the rendered message to the
-  /// current session. Null in tests/contexts with no chat to submit
-  /// to; prompt segments are then hidden.
-  final void Function(SpecAction action, String renderedPrompt)?
-      onSpecPromptAction;
-
-  /// Called when the user clicks a `shell`-kind action segment — the
-  /// chat panel runs [renderedCommand] in the project root, toasts
-  /// the result, and records it into the session context. When null
-  /// the widget runs the command itself with no session record.
-  final Future<void> Function(SpecAction action, String renderedCommand)?
-      onSpecShellAction;
-
-  /// Called when the user clicks a `screen`-kind action segment — the
-  /// chat panel opens the named in-process fullpane (e.g. the notes
-  /// editor). Null in tests/contexts with no fullpane host.
-  final void Function(SpecAction action)? onSpecScreenAction;
-
-  /// Called when the user clicks a todo row on a spec widget (the
-  /// status JSON's `todos` array) — the chat panel marks that todo
-  /// done ([done] `true`) or restores it ([done] `false`, the undo
-  /// click inside the widget's undo window) in its backing document.
-  /// Null in tests/contexts with no host; todo rows then render as
-  /// plain text.
-  final void Function(String text, int line, bool done)? onSpecTodoToggle;
-
-  /// Called after ANY spec-widget action fires — a description of
-  /// what the user did and the outcome, recorded into the session
-  /// context so the agent can see the user's widget interactions.
-  final Future<void> Function(String note)? onSpecAction;
+  /// Wiring handed to plugin boxes/rows (prompt/shell/screen/todo
+  /// handlers + session recording), shared by the sidebar and home
+  /// renderers. Null in tests/contexts with no host; those action
+  /// kinds then hide.
+  final PluginHost? pluginHost;
   final Strings strings;
 
   const ExtraInfoPanel({
@@ -160,17 +136,13 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onCreateChat,
     this.onCreateSession,
     required this.gitStatusService,
-    this.specWidgets,
+    this.plugins,
     this.onSessionTitleTap,
     this.onOpenProject,
     this.onSwitchProject,
     this.sessionController,
     this.onAuxiliaryPressed,
-    this.onSpecPromptAction,
-    this.onSpecShellAction,
-    this.onSpecScreenAction,
-    this.onSpecTodoToggle,
-    this.onSpecAction,
+    this.pluginHost,
     this.strings = kEnglishStrings,
   });
 
@@ -697,22 +669,20 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                     },
                   ),
                 ),
-                // Spec-driven sidebar widgets (Phase B): one boxed row
-                // per `.crux/widgets/*.toml` spec — status label +
-                // action segments. Written by any session, rendered by
-                // every session on the same project. Sits directly
-                // above the auxiliary-model button, grouped with the
-                // panel's workspace-level controls.
-                for (final spec in component.specWidgets ?? const <SpecWidget>[])
-                  SpecSidebarWidget(
-                    spec: spec,
-                    projectPath: Directory.current.path,
+                // Spec-driven plugins (sidebar placement): one boxed row
+                // per `.crux/plugins/*.toml` (or legacy/global) spec —
+                // status label + action segments. Written by any
+                // session, rendered by every session on the same
+                // project. Sits directly above the auxiliary-model
+                // button, grouped with the panel's workspace-level
+                // controls.
+                for (final plugin in component.plugins ??
+                    const <Plugin>[])
+                  PluginSidebarBox(
+                    plugin: plugin,
+                    host: component.pluginHost ??
+                        PluginHost(projectPath: Directory.current.path),
                     strings: component.strings,
-                    onPromptAction: component.onSpecPromptAction,
-                    onShellAction: component.onSpecShellAction,
-                    onScreenAction: component.onSpecScreenAction,
-                    onTodoToggle: component.onSpecTodoToggle,
-                    onAction: component.onSpecAction,
                   ),
                 // Auxiliary-model button, hosted by the side panel
                 // on wide terminals (on narrow terminals the chat
@@ -938,7 +908,16 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     final isHovered = _hoveredIds.contains(session.id);
     final status = session.status;
     final prefix = _statusPrefix(status);
-    final title = _truncateByWidth(session.title, maxTitleLen);
+    // Untitled sessions render a locale-aware placeholder instead of
+    // the persisted (empty) title — empty title IS the untitled state.
+    final title = _truncateByWidth(
+      session.isUntitled
+          ? component.strings.t(
+              session.isChat ? 'chat.newPlaceholder' : 'session.newPlaceholder',
+            )
+          : session.title,
+      maxTitleLen,
+    );
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIds.add(session.id)),

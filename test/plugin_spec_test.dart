@@ -6,8 +6,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-import 'package:crux/src/services/spec_widget.dart';
-import 'package:crux/src/services/spec_widget_registry.dart';
+import 'package:crux/src/services/plugin.dart';
+import 'package:crux/src/services/plugin_registry.dart';
 
 const _devHarnessSpec = '''
 id = "dev-harness"
@@ -42,19 +42,19 @@ label = "close"
 url = "http://127.0.0.1:{controlPort}/close"
 ''';
 
-SpecWidget? _parseString(String content, {String name = 'dev-harness'}) {
-  final dir = Directory.systemTemp.createTempSync('spec_widget_test_');
+Plugin? _parseString(String content, {String name = 'dev-harness'}) {
+  final dir = Directory.systemTemp.createTempSync('plugin_spec_test_');
   addTearDown(() {
     try {
       dir.deleteSync(recursive: true);
     } catch (_) {}
   });
   final file = File('${dir.path}/$name.toml')..writeAsStringSync(content);
-  return SpecWidget.parse(file);
+  return Plugin.parse(file);
 }
 
 void main() {
-  group('SpecWidget.parse', () {
+  group('Plugin.parse', () {
     test('parses the full dev-harness spec', () {
       final spec = _parseString(_devHarnessSpec)!;
 
@@ -69,7 +69,7 @@ void main() {
       expect(spec.stateRules[0].field, 'lastReload.result');
       expect(spec.stateRules[0].equals, 'succeeded');
       expect(spec.stateRules[0].text, '✓ {lastReload.at@HH:MM}');
-      expect(spec.stateRules[1].color, SpecStateColor.error);
+      expect(spec.stateRules[1].color, PluginStateColor.error);
       expect(spec.aliveText, '●');
       expect(spec.staleText, 'stale');
       expect(spec.absentText, 'not running');
@@ -120,11 +120,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
 ''')!;
 
       expect(spec.actions, hasLength(2));
-      expect(spec.actions[0].kind, SpecActionKind.launch);
+      expect(spec.actions[0].kind, PluginActionKind.launch);
       expect(spec.actions[0].command, 'dart --enable-vm-service '
           'tool/crux_dev.dart home');
       expect(spec.actions[0].url, isNull);
-      expect(spec.actions[1].kind, SpecActionKind.http);
+      expect(spec.actions[1].kind, PluginActionKind.http);
       expect(spec.actions[1].url, isNotNull);
     });
 
@@ -156,7 +156,7 @@ prompt = "Review my uncommitted changes and report by severity."
 ''')!;
 
       expect(spec.actions, hasLength(1));
-      expect(spec.actions[0].kind, SpecActionKind.prompt);
+      expect(spec.actions[0].kind, PluginActionKind.prompt);
       expect(
         spec.actions[0].prompt,
         'Review my uncommitted changes and report by severity.',
@@ -190,7 +190,7 @@ kind = "shell"
 command = "dart test"
 ''')!;
       expect(spec.actions, hasLength(1));
-      expect(spec.actions[0].kind, SpecActionKind.shell);
+      expect(spec.actions[0].kind, PluginActionKind.shell);
       expect(spec.actions[0].command, 'dart test');
     });
 
@@ -221,7 +221,7 @@ kind = "screen"
 screen = "notes"
 ''', name: 'my-notes')!;
       expect(spec.actions, hasLength(1));
-      expect(spec.actions[0].kind, SpecActionKind.screen);
+      expect(spec.actions[0].kind, PluginActionKind.screen);
       expect(spec.actions[0].screen, 'notes');
       expect(spec.actions[0].url, isNull);
     });
@@ -284,7 +284,7 @@ path = "s.json"
     });
   });
 
-  group('evaluateSpecStatus', () {
+  group('evaluatePluginStatus', () {
     late Directory tmp;
     late File statusFile;
 
@@ -299,7 +299,7 @@ path = "s.json"
       } catch (_) {}
     });
 
-    SpecWidget spec({bool heartbeat = true}) => SpecWidget(
+    Plugin spec({bool heartbeat = true}) => Plugin(
           id: 'dev-harness',
           labelTemplate: '⟳ crux dev · {state}',
           refresh: const Duration(seconds: 2),
@@ -307,20 +307,20 @@ path = "s.json"
           heartbeatField: heartbeat ? 'heartbeatAt' : null,
           staleAfter: const Duration(seconds: 15),
           stateRules: [
-            const SpecStateRule(
+            const PluginStateRule(
               field: 'lastReload.result',
               equals: 'succeeded',
               text: '✓ {lastReload.at@HH:MM}',
             ),
-            const SpecStateRule(
+            const PluginStateRule(
               field: 'lastReload.result',
               equals: 'failed',
               text: '✗ reload failed',
-              color: SpecStateColor.error,
+              color: PluginStateColor.error,
             ),
           ],
           actions: const [
-            SpecAction(label: 'reload', url: 'http://x/{controlPort}/r'),
+            PluginAction(label: 'reload', url: 'http://x/{controlPort}/r'),
           ],
         );
 
@@ -343,11 +343,11 @@ path = "s.json"
         statusFile.writeAsStringSync(jsonEncode(d));
 
     test('absent when the status file is missing', () {
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.absent);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.absent);
       expect(s.stateText, 'not running');
       expect(s.label, '⟳ crux dev · not running');
-      expect(s.color, SpecStateColor.dim);
+      expect(s.color, PluginStateColor.dim);
     });
 
     test('alive + rule hit renders the rule text with time', () {
@@ -357,8 +357,8 @@ path = "s.json"
           reloadResult: 'succeeded',
         ),
       );
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.alive);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.alive);
       // Regex: local HH:MM of the fixture's UTC timestamp.
       expect(s.label, matches(RegExp(r'^⟳ crux dev · ✓ \d{2}:\d{2}$')));
     });
@@ -370,16 +370,16 @@ path = "s.json"
           reloadResult: 'failed',
         ),
       );
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.alive);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.alive);
       expect(s.label, '⟳ crux dev · ✗ reload failed');
-      expect(s.color, SpecStateColor.error);
+      expect(s.color, PluginStateColor.error);
     });
 
     test('alive without reload uses the fallback', () {
       write(data(heartbeat: DateTime.now()));
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.alive);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.alive);
       expect(s.label, '⟳ crux dev · ●');
     });
 
@@ -387,35 +387,35 @@ path = "s.json"
       write(
         data(heartbeat: DateTime.now().subtract(const Duration(minutes: 5))),
       );
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.stale);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.stale);
       expect(s.label, '⟳ crux dev · stale');
-      expect(s.color, SpecStateColor.warning);
+      expect(s.color, PluginStateColor.warning);
     });
 
     test('no heartbeat field: file presence is liveness', () {
       final noHeartbeat = spec(heartbeat: false);
       write({'a': 1});
       expect(
-        evaluateSpecStatus(noHeartbeat, statusFile, DateTime.now()).alive,
-        SpecAlive.alive,
+        evaluatePluginStatus(noHeartbeat, statusFile, DateTime.now()).alive,
+        PluginAlive.alive,
       );
       expect(
-        evaluateSpecStatus(noHeartbeat, File('${tmp.path}/nope.json'),
+        evaluatePluginStatus(noHeartbeat, File('${tmp.path}/nope.json'),
                 DateTime.now())
             .alive,
-        SpecAlive.absent,
+        PluginAlive.absent,
       );
     });
 
     test('corrupt JSON renders as absent', () {
       statusFile.writeAsStringSync('not json{{');
-      final s = evaluateSpecStatus(spec(), statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.absent);
+      final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.absent);
     });
 
     test('multi-line label template renders per-line content', () {
-      final monitor = SpecWidget(
+      final monitor = Plugin(
         id: 'gold',
         labelTemplate: 'XAU {price}/oz\n{arrow} {delta} today',
         refresh: const Duration(minutes: 1),
@@ -423,20 +423,20 @@ path = "s.json"
         // No heartbeatField → file presence = alive.
       );
       write({'price': 2411.5, 'delta': '+0.8%', 'arrow': '▲'});
-      final s = evaluateSpecStatus(monitor, statusFile, DateTime.now());
-      expect(s.alive, SpecAlive.alive);
+      final s = evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.alive);
       expect(s.labelLines, ['XAU 2411.5/oz', '▲ +0.8% today']);
     });
 
     test('labelLines drops blank lines and trims trailing space', () {
-      final w = SpecWidget(
+      final w = Plugin(
         id: 'x',
         labelTemplate: 'a  \n\n  \nb',
         refresh: const Duration(seconds: 1),
         statusPath: 'status.json',
       );
       write({'k': 1});
-      final s = evaluateSpecStatus(w, statusFile, DateTime.now());
+      final s = evaluatePluginStatus(w, statusFile, DateTime.now());
       expect(s.labelLines, ['a', 'b']);
     });
   });
@@ -472,7 +472,7 @@ path = "s.json"
     });
 
     test('renderActionUrl substitutes status fields', () {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 'r',
         url: 'http://127.0.0.1:{controlPort}/reload',
       );
@@ -483,9 +483,9 @@ path = "s.json"
     });
 
     test('renderActionPrompt substitutes status fields', () {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 'triage',
-        kind: SpecActionKind.prompt,
+        kind: PluginActionKind.prompt,
         prompt: 'The {service} on :{port} is failing — triage it.',
       );
       expect(
@@ -495,9 +495,9 @@ path = "s.json"
     });
 
     test('renderActionCommand substitutes status fields', () {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 'test',
-        kind: SpecActionKind.shell,
+        kind: PluginActionKind.shell,
         command: 'dart test --name {focus}',
       );
       expect(
@@ -507,15 +507,15 @@ path = "s.json"
     });
   });
 
-  group('runSpecShellAction', () {
+  group('runPluginShellAction', () {
     test('runs a command and captures the exit code + output tail',
         () async {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 'hello',
-        kind: SpecActionKind.shell,
+        kind: PluginActionKind.shell,
         command: 'echo hello-from-widget',
       );
-      final result = await runSpecShellAction(
+      final result = await runPluginShellAction(
         action,
         const {},
         Directory.systemTemp.path,
@@ -526,12 +526,12 @@ path = "s.json"
     });
 
     test('non-zero exit is reported, not thrown', () async {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 'fail',
-        kind: SpecActionKind.shell,
+        kind: PluginActionKind.shell,
         command: 'echo oops && exit 3',
       );
-      final result = await runSpecShellAction(
+      final result = await runPluginShellAction(
         action,
         const {},
         Directory.systemTemp.path,
@@ -543,12 +543,12 @@ path = "s.json"
 
     test('renders the command template against the status data',
         () async {
-      final action = SpecAction(
+      final action = PluginAction(
         label: 't',
-        kind: SpecActionKind.shell,
+        kind: PluginActionKind.shell,
         command: 'echo {marker}',
       );
-      final result = await runSpecShellAction(
+      final result = await runPluginShellAction(
         action,
         const {'marker': 'templated-value'},
         Directory.systemTemp.path,
@@ -557,7 +557,7 @@ path = "s.json"
     });
   });
 
-  group('SpecWidgetRegistry', () {
+  group('PluginRegistry', () {
     late Directory project;
 
     setUp(() {
@@ -571,7 +571,7 @@ path = "s.json"
     });
 
     File writeSpec(String name, String content) {
-      final dir = Directory('${project.path}/.crux/widgets');
+      final dir = Directory('${project.path}/.crux/plugins');
       dir.createSync(recursive: true);
       final file = File('${dir.path}/$name.toml');
       file.writeAsStringSync(content);
@@ -586,46 +586,46 @@ path = "s.json"
             '[status]\n'
             'path = "s.json"\n',
       );
-      final registry = SpecWidgetRegistry(projectPath: project.path);
+      final registry = PluginRegistry(projectPath: project.path);
       registry.scan();
 
-      expect(registry.widgets, hasLength(1));
-      expect(registry.widgets.first.id, 'dev-harness');
+      expect(registry.plugins, hasLength(1));
+      expect(registry.plugins.first.id, 'dev-harness');
       registry.dispose();
     });
 
     test('picks up new specs on a later scan; drops deleted ones', () {
-      final registry = SpecWidgetRegistry(projectPath: project.path);
+      final registry = PluginRegistry(projectPath: project.path);
       registry.scan();
-      expect(registry.widgets, isEmpty);
+      expect(registry.plugins, isEmpty);
 
       writeSpec(
         'a',
         'id = "a"\nlabel = "A · {state}"\n[status]\npath = "s.json"\n',
       );
       registry.scan();
-      expect(registry.widgets.map((w) => w.id), contains('a'));
+      expect(registry.plugins.map((w) => w.id), contains('a'));
 
       writeSpec(
         'b',
         'id = "b"\nlabel = "B · {state}"\n[status]\npath = "s.json"\n',
       );
       registry.scan();
-      expect(registry.widgets.map((w) => w.id), containsAll(['a', 'b']));
+      expect(registry.plugins.map((w) => w.id), containsAll(['a', 'b']));
 
-      File('${project.path}/.crux/widgets/a.toml').deleteSync();
+      File('${project.path}/.crux/plugins/a.toml').deleteSync();
       registry.scan();
-      expect(registry.widgets.map((w) => w.id), ['b']);
+      expect(registry.plugins.map((w) => w.id), ['b']);
 
       registry.dispose();
     });
 
     test('invalid specs are skipped and reported as warnings', () {
       writeSpec('broken', 'id = "mismatch"\nlabel = "x"\n[status]\n');
-      final registry = SpecWidgetRegistry(projectPath: project.path);
+      final registry = PluginRegistry(projectPath: project.path);
       registry.scan();
 
-      expect(registry.widgets, isEmpty);
+      expect(registry.plugins, isEmpty);
       expect(registry.lastWarnings, hasLength(1));
       expect(registry.lastWarnings.first, contains('broken'));
       registry.dispose();
@@ -636,7 +636,7 @@ path = "s.json"
         'a',
         'id = "a"\nlabel = "A · {state}"\n[status]\npath = "s.json"\n',
       );
-      final registry = SpecWidgetRegistry(projectPath: project.path);
+      final registry = PluginRegistry(projectPath: project.path);
       var notifications = 0;
       registry.addListener(() => notifications++);
 
@@ -655,12 +655,12 @@ path = "s.json"
       );
       // Polling effectively disabled: only the file watcher can pick
       // up the rewrite below.
-      final registry = SpecWidgetRegistry(
+      final registry = PluginRegistry(
         projectPath: project.path,
         scanInterval: const Duration(hours: 1),
       );
       registry.start();
-      expect(registry.widgets.single.labelTemplate, contains('A'));
+      expect(registry.plugins.single.labelTemplate, contains('A'));
 
       // Rewrite the spec — the watcher should re-scan (debounced).
       writeSpec(
@@ -668,8 +668,96 @@ path = "s.json"
         'id = "a"\nlabel = "B · {state}"\n[status]\npath = "s.json"\n',
       );
       await Future<void>.delayed(const Duration(milliseconds: 1500));
-      expect(registry.widgets.single.labelTemplate, contains('B'));
+      expect(registry.plugins.single.labelTemplate, contains('B'));
 
+      registry.dispose();
+    });
+
+    test('placement parses: sidebar default, home, both', () {
+      writeSpec(
+        'p-default',
+        'id = "p-default"\nlabel = "x {state}"\n[status]\npath = "s.json"\n',
+      );
+      writeSpec(
+        'p-home',
+        'id = "p-home"\nplacement = "home"\nlabel = "x {state}"\n'
+            '[status]\npath = "s.json"\n',
+      );
+      writeSpec(
+        'p-both',
+        'id = "p-both"\nplacement = "both"\nlabel = "x {state}"\n'
+            '[status]\npath = "s.json"\n',
+      );
+      final registry = PluginRegistry(projectPath: project.path);
+      registry.scan();
+      final byId = {for (final p in registry.plugins) p.id: p};
+      expect(byId['p-default']!.placement, PluginPlacement.sidebar);
+      expect(byId['p-home']!.placement, PluginPlacement.home);
+      expect(byId['p-both']!.placement, PluginPlacement.both);
+      // Placement filters drive the two surfaces.
+      expect(
+        registry.sidebarPlugins.map((p) => p.id),
+        containsAll(['p-default', 'p-both']),
+      );
+      expect(registry.sidebarPlugins.map((p) => p.id), isNot(contains('p-home')));
+      expect(
+        registry.homePlugins.map((p) => p.id),
+        containsAll(['p-home', 'p-both']),
+      );
+      expect(
+          registry.homePlugins.map((p) => p.id), isNot(contains('p-default')));
+      registry.dispose();
+    });
+
+    test('legacy .crux/widgets/ specs are still scanned', () {
+      final dir = Directory('${project.path}/.crux/widgets')
+        ..createSync(recursive: true);
+      File('${dir.path}/legacy.toml').writeAsStringSync(
+        'id = "legacy"\nlabel = "old {state}"\n[status]\npath = "s.json"\n',
+      );
+      final registry = PluginRegistry(projectPath: project.path);
+      registry.scan();
+      expect(registry.plugins.map((p) => p.id), ['legacy']);
+      registry.dispose();
+    });
+
+    test('plugins/ wins over a legacy widgets/ spec with the same id', () {
+      writeSpec(
+        'dup',
+        'id = "dup"\nlabel = "new {state}"\n[status]\npath = "s.json"\n',
+      );
+      final dir = Directory('${project.path}/.crux/widgets')
+        ..createSync(recursive: true);
+      File('${dir.path}/dup.toml').writeAsStringSync(
+        'id = "dup"\nlabel = "old {state}"\n[status]\npath = "s.json"\n',
+      );
+      final registry = PluginRegistry(projectPath: project.path);
+      registry.scan();
+      expect(registry.plugins.single.labelTemplate, contains('new'));
+      registry.dispose();
+    });
+
+    test('global ~/.crux/plugins/ specs are scanned and flagged isGlobal',
+        () {
+      final home = Directory.systemTemp.createTempSync('plugin_home_test_');
+      addTearDown(() {
+        try {
+          home.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final globalDir = Directory('${home.path}/.crux/plugins')
+        ..createSync(recursive: true);
+      File('${globalDir.path}/globaltool.toml').writeAsStringSync(
+        'id = "globaltool"\nlabel = "g {state}"\n[status]\npath = "s.json"\n',
+      );
+
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
+      registry.scan();
+      expect(registry.plugins.map((p) => p.id), ['globaltool']);
+      expect(registry.plugins.single.isGlobal, isTrue);
       registry.dispose();
     });
   });

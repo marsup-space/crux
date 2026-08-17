@@ -8,7 +8,7 @@ import 'package:crux/src/components/home/home_layout_store.dart';
 import 'package:crux/src/i18n/locale_config_store.dart';
 import 'package:crux/src/i18n/locale_controller.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
-import 'package:crux/src/services/spec_widget_registry.dart';
+import 'package:crux/src/services/plugin_registry.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/clipboard_text.dart';
 import 'package:crux/src/utils/windows_vt.dart';
@@ -200,12 +200,12 @@ void main(List<String> args) async {
       bootState: results.chatPanelBootState,
       gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
-      // Spec-widget registry keyed on the project this session opened:
-      // it scans `.crux/widgets/*.toml` (Phase B), so any session that
-      // writes a spec file into this project's `.crux/widgets/` shows
-      // up in this session's sidebar within ~2 s. The dev-harness
-      // widget is just the seeded default spec.
-      specWidgetRegistry: SpecWidgetRegistry(
+      // Plugin registry keyed on the project this session opened: it
+      // scans `.crux/plugins/` (+ legacy `.crux/widgets/` + the global
+      // `~/.crux/plugins/` roots), so any session that writes a spec
+      // shows up in this session's sidebar/home within ~2 s. The
+      // dev-harness plugin is just the seeded default spec.
+      pluginRegistry: PluginRegistry(
         projectPath: Directory.current.path,
       )..start(),
       showHomeOnLaunch: showHomeOnLaunch,
@@ -613,9 +613,9 @@ class _CruxApp extends StatefulComponent {
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
 
-  /// Session-keyed spec-widget registry, forwarded to the sidebar via
-  /// [ChatPanel]. Disposed with this state.
-  final SpecWidgetRegistry specWidgetRegistry;
+  /// Session-keyed plugin registry, forwarded to the sidebar and home
+  /// via [ChatPanel]. Disposed with this state.
+  final PluginRegistry pluginRegistry;
   final List<String> startupWarnings;
   final bool showHomeOnLaunch;
 
@@ -636,7 +636,7 @@ class _CruxApp extends StatefulComponent {
     required this.bootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
-    required this.specWidgetRegistry,
+    required this.pluginRegistry,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
     this.homeLayoutStore,
@@ -674,7 +674,7 @@ class _CruxAppState extends State<_CruxApp> {
     // its first frame) we still need to release the listener
     // subscriptions to avoid leaking the ChangeNotifier.
     component.recentProjectsStore.dispose();
-    component.specWidgetRegistry.dispose();
+    component.pluginRegistry.dispose();
     super.dispose();
   }
 
@@ -708,7 +708,7 @@ class _CruxAppState extends State<_CruxApp> {
               localeController: component.localeController,
               bootState: component.bootState,
               gitStatusService: component.gitStatusService,
-              specWidgetRegistry: component.specWidgetRegistry,
+              pluginRegistry: component.pluginRegistry,
               recentProjectsStore: component.recentProjectsStore,
               startupWarnings: component.startupWarnings,
               showHomeOnLaunch: component.showHomeOnLaunch,

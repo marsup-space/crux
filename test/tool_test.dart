@@ -113,7 +113,7 @@ void main() {
           'session',
           'notes',
           'skill',
-          'widgets',
+          'plugins',
         ]),
       );
       if (Platform.isWindows) {

@@ -40,8 +40,10 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import 'terminal_symbols.dart';
+import 'text_width.dart';
 
 /// Immutable snapshot of the run metrics. Returned by
 /// [RunMetrics.getSnapshot] and consumed by the summary
@@ -145,12 +147,28 @@ class RunMetrics {
   /// [formatStyledSummary] falls back to plain output.
   CruxThemeData? _lastKnownTheme;
 
+  /// The most recent locale the chat panel saw at exit time.
+  /// Stashed alongside [_lastKnownTheme] for the same reason:
+  /// `bin/crux.dart`'s post-`runApp` fallback path renders the
+  /// summary after the `LocaleController` is gone, so the
+  /// strings must be captured earlier. `null` falls back to
+  /// English (existing behavior).
+  Strings? _lastKnownStrings;
+
   /// Set the most recent theme. Called by the chat panel
   /// right before [formatStyledSummary] so the post-`runApp`
   /// fallback path can read it back. See [_lastKnownTheme]
   /// for the full rationale.
   void setLastKnownTheme(CruxThemeData theme) {
     _lastKnownTheme = theme;
+  }
+
+  /// Set the most recent localized-strings instance. Mirrors
+  /// [setLastKnownTheme]: the quit path and the post-`runApp`
+  /// fallback both render the summary after their owners are
+  /// disposed, so the locale is stashed on the aggregator.
+  void setLastKnownStrings(Strings strings) {
+    _lastKnownStrings = strings;
   }
 
   RunMetrics._();
@@ -259,10 +277,13 @@ class RunMetrics {
     RunMetricsSnapshot? snapshot,
     String indent = '',
     bool useAscii = false,
+    Strings? strings,
   }) {
+    final effectiveStrings = strings ?? _lastKnownStrings;
     final cells = _buildSummaryGrid(
       snapshot ?? getSnapshot(),
       useAscii: useAscii,
+      strings: effectiveStrings,
     );
     return _renderSummaryPlain(cells, indent: indent);
   }
@@ -292,11 +313,14 @@ class RunMetrics {
     CruxThemeData? theme,
     String indent = '',
     bool useAscii = false,
+    Strings? strings,
   }) {
     final effectiveTheme = theme ?? _lastKnownTheme;
+    final effectiveStrings = strings ?? _lastKnownStrings;
     final cells = _buildSummaryGrid(
       snapshot ?? getSnapshot(),
       useAscii: useAscii,
+      strings: effectiveStrings,
     );
     if (effectiveTheme == null) {
       // No theme stashed yet (very-early-boot `--doctor` or
@@ -347,7 +371,9 @@ class RunMetrics {
   static List<List<_SummaryCell>> _buildSummaryGrid(
     RunMetricsSnapshot snap, {
     bool useAscii = false,
+    Strings? strings,
   }) {
+    final s = strings ?? kEnglishStrings;
     final rich = !useAscii && supportsRichTerminalSymbols();
     final topLeft = rich ? '╭' : '+';
     final topRight = rich ? '╮' : '+';
@@ -357,8 +383,8 @@ class RunMetrics {
     final vertical = rich ? '│' : '|';
 
     const boxWidth = 45;
-    final titleText = ' Crux Run Summary ';
-    final topDashCount = boxWidth - 3 - titleText.length;
+    final titleText = ' ${s.t('summary.title')} ';
+    final topDashCount = boxWidth - 3 - stringWidth(titleText);
     final bottomDashCount = boxWidth - 2;
 
     List<_SummaryCell> topRow() {
@@ -366,7 +392,7 @@ class RunMetrics {
       return <_SummaryCell>[
         _SummaryCell(topLeft, _SummaryCellKind.border),
         _SummaryCell(horizontal, _SummaryCellKind.border),
-        for (final c in titleText.codeUnits)
+        for (final c in titleText.runes)
           _SummaryCell(String.fromCharCode(c), _SummaryCellKind.title),
         for (var i = 0; i < topDashCount; i++)
           _SummaryCell(horizontal, _SummaryCellKind.border),
@@ -390,17 +416,21 @@ class RunMetrics {
       _SummaryCellKind valueKind,
     ) {
       // │  <label>...<value>  │
-      final pad = boxWidth - 2 - 4 - label.length - value.length;
+      final pad = boxWidth -
+          2 -
+          4 -
+          stringWidth(label) -
+          stringWidth(value);
       final padding = pad < 1 ? 1 : pad;
       return <_SummaryCell>[
         _SummaryCell(vertical, _SummaryCellKind.border),
         _SummaryCell(' ', _SummaryCellKind.border),
         _SummaryCell(' ', _SummaryCellKind.border),
-        for (final c in label.codeUnits)
+        for (final c in label.runes)
           _SummaryCell(String.fromCharCode(c), _SummaryCellKind.label),
         for (var i = 0; i < padding; i++)
           _SummaryCell(' ', _SummaryCellKind.border),
-        for (final c in value.codeUnits)
+        for (final c in value.runes)
           _SummaryCell(String.fromCharCode(c), valueKind),
         _SummaryCell(' ', _SummaryCellKind.border),
         _SummaryCell(' ', _SummaryCellKind.border),
@@ -418,41 +448,45 @@ class RunMetrics {
       // can dim it.
       rows.add(
         contentRow(
-          'Duration:',
+          s.t('summary.duration'),
           _formatDuration(snap.duration),
           _SummaryCellKind.value,
         ),
       );
-      rows.add(contentRow('Turns:', '0', _SummaryCellKind.value));
+      rows.add(contentRow(s.t('summary.turns'), '0', _SummaryCellKind.value));
       rows.add(
         contentRow(
-          'Status:',
-          'no LLM calls this run',
+          s.t('summary.status'),
+          s.t('summary.noLlmCalls'),
           _SummaryCellKind.valueMuted,
         ),
       );
     } else {
       rows.add(
         contentRow(
-          'Duration:',
+          s.t('summary.duration'),
           _formatDuration(snap.duration),
           _SummaryCellKind.value,
         ),
       );
       rows.add(
-        contentRow('Turns:', snap.turnCount.toString(), _SummaryCellKind.value),
-      );
-      rows.add(
         contentRow(
-          'Tokens in:',
-          '${_formatTokenCount(snap.totalTokensIn)}  '
-              '${_formatCacheSuffix(snap)}',
+          s.t('summary.turns'),
+          snap.turnCount.toString(),
           _SummaryCellKind.value,
         ),
       );
       rows.add(
         contentRow(
-          'Tokens out:',
+          s.t('summary.tokensIn'),
+          '${_formatTokenCount(snap.totalTokensIn)}  '
+              '${_formatCacheSuffix(snap, s)}',
+          _SummaryCellKind.value,
+        ),
+      );
+      rows.add(
+        contentRow(
+          s.t('summary.tokensOut'),
           _formatTokenCount(snap.totalTokensOut),
           _SummaryCellKind.value,
         ),
@@ -562,10 +596,15 @@ class RunMetrics {
   /// to avoid giving cache stats their own line — a turn
   /// with 0 tokens is a turn with 0 cache, so a separate
   /// row would always read 0 in degenerate cases.
-  static String _formatCacheSuffix(RunMetricsSnapshot snap) {
+  static String _formatCacheSuffix(
+    RunMetricsSnapshot snap,
+    Strings strings,
+  ) {
     final pct = snap.cacheHitPct;
-    if (pct == null) return '(cache —)';
-    return '(cache ${pct.toStringAsFixed(1)}%)';
+    if (pct == null) return strings.t('summary.cacheSuffixNone');
+    return strings.t('summary.cacheSuffix', {
+      'pct': pct.toStringAsFixed(1),
+    });
   }
 
   /// `5m 23s`, `1h 12m 5s`, `42s`, `2h 0m`. Skips
