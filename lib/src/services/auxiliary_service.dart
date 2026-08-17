@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
+import '../i18n/reply_language.dart';
 import '../storage/message_store.dart';
 import '../tools/shell_monitor.dart';
 import '../tools/shell_risk.dart';
@@ -24,9 +25,20 @@ import 'provider_service.dart';
 class AuxiliaryService {
   final ProviderService _providerService;
   final MessageStore _messageStore;
+
+  /// Live read of the reply-language policy, so title generation
+  /// honors `/reply-language` and `/language` switches made after
+  /// this service was constructed. Null in tests / legacy harnesses →
+  /// the historical behaviour (title matches the user's language).
+  final ReplyLanguageProvider? replyLanguage;
+
   final LlmClient _client = LlmClient();
 
-  AuxiliaryService(this._providerService, this._messageStore);
+  AuxiliaryService(
+    this._providerService,
+    this._messageStore, {
+    this.replyLanguage,
+  });
 
   /// Resolve the auxiliary model's provider, api key, and model id.
   /// Returns null if no auxiliary model is configured or if the
@@ -149,8 +161,18 @@ class AuxiliaryService {
       userText = userMessage.content;
     }
 
+    // Resolve the title's target language from the live reply-language
+    // policy: `follow` → the configured UI locale's label; `auto` or
+    // no policy wired → null, meaning "match the user's language"
+    // (the historical behaviour).
+    final settings = replyLanguage?.call();
+    final titleLanguage =
+        settings?.mode == ReplyLanguageMode.follow
+        ? settings?.locale.label
+        : null;
+
     final title = await _streamAuxiliaryCall(
-      systemPrompt: titleSystemPrompt,
+      systemPrompt: titleSystemPromptFor(language: titleLanguage),
       userMessage: userText,
       logTag: 'auxiliary',
       maxLength: 80,

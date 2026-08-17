@@ -14,9 +14,14 @@
 /// the rule: title by the subject the user is asking about,
 /// not by the model's answer.
 ///
-/// The same-language rule mirrors the main agent's universal
-/// layer (see `kCruxSystemPrompt`).
-const titleSystemPrompt = '''
+/// [language] mirrors the main agent's language policy (see
+/// `_languageSection` in `system_prompt.dart`): in `follow`
+/// mode the UI locale's label is passed so the title lands in
+/// the configured language regardless of what language the
+/// user typed in; in `auto` mode (or when no policy is wired)
+/// it is null and the title matches the user's language — the
+/// historical behaviour.
+String titleSystemPromptFor({String? language}) => '''
 You are Crux's title-generation helper. Your only purpose is to
 turn a user message into a short, stable session title (3-7
 words) that identifies what the session is about.
@@ -27,9 +32,20 @@ message is a meta question or greeting, title the session by
 the subject the user is asking about, not by the model's
 answer.
 
-You MUST use the same language as the user. Output ONLY the
+${language == null || language.isEmpty
+    ? 'You MUST use the same language as the user.'
+    : 'You MUST write the title in $language — the user has '
+        'configured the reply language to follow the UI language, '
+        'which is set to $language, so use it regardless of the '
+        'language the user typed in.'}
+Output ONLY the
 title, nothing else. No quotes, no explanation, no preamble.
 ''';
+
+/// Backwards-compatible alias — the historical `auto`-behaviour
+/// prompt (title matches the user's language). Kept so existing
+/// importers of the constant keep working.
+final String titleSystemPrompt = titleSystemPromptFor();
 
 /// System prompt for the auxiliary "what did we work on" summary that
 /// powers the home screen's Yesterday box.

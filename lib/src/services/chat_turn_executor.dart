@@ -126,8 +126,11 @@ class ChatTurnExecutor {
     this.toolExecutor,
     this.leaseManager, {
     ReplyLanguageProvider? replyLanguage,
-  })  : auxiliaryService =
-            AuxiliaryService(providerService, store.messageStore),
+  })  : auxiliaryService = AuxiliaryService(
+            providerService,
+            store.messageStore,
+            replyLanguage: replyLanguage,
+          ),
         replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback);
 
   /// Run a single chat turn for [sessionId].

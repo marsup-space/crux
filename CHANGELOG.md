@@ -8,6 +8,21 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Fixes
+
+- **i18n: auxiliary title generation follows the reply-language
+  setting** — the auxiliary model's session-title prompt used to
+  hardcode "use the same language as the user", so with
+  `/reply-language follow` + `/language zh` a session titled from an
+  English first message landed in English even though the main agent
+  replies in Chinese. `AuxiliaryService` now receives the live
+  `ReplyLanguageProvider` via constructor injection (threaded from
+  `ChatService` and `ChatTurnExecutor`) and resolves the policy at
+  call time: `follow` injects the UI locale's label into
+  `titleSystemPromptFor(...)`, `auto` keeps the historical
+  match-the-user behaviour. `titleSystemPrompt` remains as a
+  backwards-compatible alias.
+
 ## [0.30.0] - 2026-08-14
 
 4f08887d

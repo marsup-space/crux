@@ -82,8 +82,11 @@ class ChatService {
           SessionLeaseManager(),
           replyLanguage: replyLanguage,
         ),
-        _auxiliaryService =
-            AuxiliaryService(providerService, store.messageStore);
+        _auxiliaryService = AuxiliaryService(
+          providerService,
+          store.messageStore,
+          replyLanguage: replyLanguage,
+        );
 
   /// Called when a write/edit tool call mutated the plan-mode document
   /// (§5 P4). Forwarded to the turn executor; wired by the chat panel
