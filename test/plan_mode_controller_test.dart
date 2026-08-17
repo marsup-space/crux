@@ -53,6 +53,56 @@ void main() {
       expect(runtime.planDocPath, isNull);
     });
 
+    test('exit clears both planDocPath and planApproved (plan item D)', () {
+      final runtime = SessionRuntimeState(sessionId: 7);
+      final c = PlanModeController(runtimeFor: () => runtime);
+      addTearDown(c.dispose);
+
+      c.enter(tmp.path);
+      c.approve();
+      expect(runtime.planApproved, isTrue);
+      expect(runtime.planDocPath, isNotNull);
+
+      c.exit();
+      expect(runtime.planDocPath, isNull);
+      expect(runtime.planApproved, isFalse,
+          reason: '/plan exit clears both planDocPath and planApproved');
+    });
+
+    test('approve/unapprove flip the mirrored runtime flag', () {
+      final runtime = SessionRuntimeState(sessionId: 7);
+      final c = PlanModeController(runtimeFor: () => runtime);
+      addTearDown(c.dispose);
+
+      c.enter(tmp.path);
+      expect(runtime.planApproved, isFalse,
+          reason: 'guards armed on fresh enter');
+
+      c.approve();
+      expect(c.approved, isTrue);
+      expect(runtime.planApproved, isTrue,
+          reason: 'the edit/write/shell guards read this field');
+
+      c.unapprove();
+      expect(c.approved, isFalse);
+      expect(runtime.planApproved, isFalse);
+    });
+
+    test('approve is a no-op when inactive or already approved', () {
+      controller.approve();
+      expect(controller.approved, isFalse, reason: 'inactive → no-op');
+
+      controller.enter(tmp.path);
+      controller.approve();
+      expect(controller.approved, isTrue);
+      controller.approve();
+      expect(controller.approved, isTrue);
+      // unapprove is likewise idempotent
+      controller.unapprove();
+      controller.unapprove();
+      expect(controller.approved, isFalse);
+    });
+
     test('enter initializes the version log at v1', () {
       controller.enter(tmp.path);
       expect(controller.headVersion, 1);

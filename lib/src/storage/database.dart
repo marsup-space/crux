@@ -135,8 +135,16 @@ class CruxDatabase extends _$CruxDatabase {
   ///         marks a session (workspace or chat) as pinned: it renders
   ///         at the top of the sidebar's "Pinned" section and is
   ///         exempt from the 3-day auto-archive sweep.
+  ///   v32 – data migration: untitled sessions no longer persist a
+  ///         literal "New Session"/"New Chat" title. Rows still
+  ///         carrying those literals are reset to `''` (empty =
+  ///         untitled; the display layer renders a locale-aware
+  ///         placeholder). Sessions the user deliberately renamed to
+  ///         exactly that text are indistinguishable and also reset —
+  ///         acceptable: the next LLM title generation will re-title
+  ///         them from content anyway.
   @override
-  int get schemaVersion => 31;
+  int get schemaVersion => 32;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -488,6 +496,14 @@ CREATE TABLE IF NOT EXISTS project_notes (
         if (hasPinnedAt.isEmpty) {
           await m.addColumn(sessions, sessions.pinnedAt);
         }
+      }
+      if (from < 32) {
+        // Reset persisted placeholder titles to '' (empty = untitled).
+        // See the v32 schema-history note for the rationale.
+        await m.database.customStatement(
+          "UPDATE sessions SET title = '' "
+          "WHERE title IN ('New Session', 'New Chat')",
+        );
       }
     },
   );

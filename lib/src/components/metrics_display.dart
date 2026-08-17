@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../utils/ticker_registry.dart';
 import 'session_controller.dart';
@@ -32,11 +33,16 @@ class MetricsDisplay extends StatefulComponent {
   final StreamingController streamingController;
   final int? currentSessionId;
 
+  /// Locale-aware strings for the cache-hit hover label.
+  /// Defaults to English when no locale is wired (tests, previews).
+  final Strings strings;
+
   const MetricsDisplay({
     super.key,
     required this.sessionController,
     required this.streamingController,
     this.currentSessionId,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -121,7 +127,9 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
         .sessionState(sessionId)
         .cacheHitPct;
     if (pct != null) {
-      return 'cache ${pct.toStringAsFixed(3)}%';
+      return component.strings.t('chat.toolbar.cacheHit', {
+        'pct': pct.toStringAsFixed(3),
+      });
     }
     return '—';
   }

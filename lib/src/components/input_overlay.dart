@@ -6,6 +6,7 @@ import 'package:nocterm/nocterm.dart';
 import '../models/slash_command.dart';
 import '../models/session.dart';
 import '../services/provider_service.dart';
+import '../services/plan_doc_store.dart';
 import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
 import '../services/skills/skill_discovery.dart';
@@ -296,15 +297,21 @@ class InputOverlay {
         ];
       }
     } else if (commandName == '/plan' && paramIndex == 0) {
-      // List the existing plan docs in the project root (non-recursive —
-      // that's where `PlanModeController.enter` resolves names). Each
-      // value is the file name with the `.md` suffix stripped so the
-      // command receives the bare plan name. The active plan is flagged
-      // so re-entering it is obvious. A fresh name simply gets no match
-      // (the fuzzy filter drops it), which is correct — `enter` creates it.
+      // Union heuristic — only docs that *look like* plans are listed:
+      //   (a) the name carries "plan" (case-insensitive: PLAN.md,
+      //       refactor-plan.md), or
+      //   (b) the doc has version history under `.crux/plans/`
+      //       (i.e. it was entered in plan mode on this machine —
+      //       `listKnownPlanNames`).
+      // README/CHANGELOG/CLAUDE-style docs match neither and drop out.
+      // A fresh name simply gets no match (the fuzzy filter drops
+      // it), which is correct — `enter` creates it — and the command
+      // still accepts any name, listed or not.
       final active = activePlanName?.call();
+      final known = listKnownPlanNames(projectPath);
       final dir = Directory(projectPath);
       final found = <CommandSuggestion>[];
+      CommandSuggestion? activeSuggestion;
       if (dir.existsSync()) {
         for (final entity in dir.listSync(followLinks: false)) {
           if (entity is! File) continue;
@@ -315,24 +322,43 @@ class InputOverlay {
           if (base.startsWith('.')) continue;
           final name = base.substring(0, base.length - '.md'.length);
           if (name.isEmpty) continue;
-          found.add(
-            CommandSuggestion(
-              value: name,
-              description: base == active
-                  ? strings.t('cmd.plan.sug.active')
-                  : strings.t('cmd.plan.sug.existing'),
-            ),
+          final isKnown = known.containsKey(base);
+          if (!isKnown && !isPlanNameHeuristic(base)) continue;
+          final suggestion = CommandSuggestion(
+            value: name,
+            description: base == active
+                ? strings.t('cmd.plan.sug.active')
+                : (isKnown
+                    ? strings.t('cmd.plan.sug.recent')
+                    : strings.t('cmd.plan.sug.byName')),
           );
+          if (base == active) {
+            activeSuggestion = suggestion;
+          } else {
+            found.add(suggestion);
+          }
         }
       }
-      // Surface the active plan first, then the rest alphabetically.
+      // Active plan first, then by recency (docs with plan history —
+      // newest first), then alphabetically. Suggestions without a
+      // timestamp (heuristic-only) sort after docs that were actually
+      // used.
+      final usedAt = <CommandSuggestion, DateTime?>{};
+      for (final s in found) {
+        usedAt[s] = known['${s.value}.md'];
+      }
       found.sort((a, b) {
-        final aActive = a.description == strings.t('cmd.plan.sug.active');
-        final bActive = b.description == strings.t('cmd.plan.sug.active');
-        if (aActive != bActive) return aActive ? -1 : 1;
+        final ta = usedAt[a];
+        final tb = usedAt[b];
+        if (ta != null && tb != null) return tb.compareTo(ta);
+        if (ta != null) return -1;
+        if (tb != null) return 1;
         return a.value.compareTo(b.value);
       });
-      suggestions = found;
+      suggestions = [
+        ?activeSuggestion,
+        ...found,
+      ];
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }

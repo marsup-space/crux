@@ -11,6 +11,12 @@ import 'command_executor.dart';
 /// Creates the plan file with a skeleton (`# Plan\n\n`) when absent.
 /// Strings → `cmd.plan.*`.
 ///
+/// Autocomplete (`input_overlay.dart`, `/plan` + param 0) only lists
+/// plans that either carry "plan" in the file name (case-insensitive)
+/// or have version history under `.crux/plans/` — see
+/// `listKnownPlanNames`. The command itself still accepts any name;
+/// an unlisted one simply creates the doc on enter.
+///
 /// `availableDuringResponse: true` in the registry because entering /
 /// leaving plan mode only flips pane state — it never touches the
 /// in-flight stream (the plan-mode guards take effect on the *next*

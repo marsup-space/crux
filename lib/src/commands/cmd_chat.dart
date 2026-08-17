@@ -16,10 +16,11 @@ Future<void> executeChat(CommandContext ctx) async {
   // If the current session is already a brand-new, untouched chat,
   // don't stack another one — mirror /new's "Already on a new
   // session" guard so repeated /chat taps don't spam empty chats.
+  // Empty title = untitled (never compare placeholder literals).
   final isCurrentEmptyChat =
       ctx.currentSession.isChat &&
       ctx.currentMessages.isEmpty &&
-      ctx.currentSession.title == 'New Chat';
+      ctx.currentSession.isUntitled;
   if (isCurrentEmptyChat) {
     ctx.showToast(ctx.strings.t('toast.alreadyNewChat'));
     return;

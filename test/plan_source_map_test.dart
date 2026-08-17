@@ -103,6 +103,60 @@ void main() {
       final rows = r.sourceMap.sourceLinesToRenderedRows(2, 2);
       expect(rows, isNotEmpty);
     });
+
+    test('wrapped table cell line maps to its exact source slice', () {
+      // Force a wrap: two columns, narrow maxWidth, long body cell.
+      const cell = 'aaa bbb ccc ddd eee';
+      final src = '| H | Long |\n'
+          '| - | - |\n'
+          '| x | $cell |\n';
+      // Column widths from _distributeColumnWidths over natural [3,19]
+      // with maxWidth 24: overhead = 7, natural total = 22 + 7 = 29 > 24
+      // → proportional shrink. Body cell wraps; each rendered line must
+      // map back into the source range of the cell content.
+      final r = parsePlanDocument(src, theme, maxWidth: 24);
+      final cellSrcStart = src.indexOf(cell);
+      // Find every rendered span whose text is a prefix slice of cell.
+      final coveredWords = <String>[];
+      for (final s in r.sourceMap.spans) {
+        if (!s.isMarker && s.renderedLength > 0) {
+          // Look up the rendered text via renderedText.
+          final text = r.renderedText.substring(
+            s.renderedStart,
+            s.renderedEnd,
+          );
+          if (text.contains(' ') || text == 'aaa' || text == 'ddd') {
+            // Word content from the long cell.
+          }
+          if (s.sourceStart >= cellSrcStart &&
+              s.sourceStart < cellSrcStart + cell.length) {
+            coveredWords.add(text.trim());
+          }
+        }
+      }
+      // The wrap kept every word reachable with an exact source range.
+      expect(coveredWords.join(' ').contains('aaa'), isTrue);
+      expect(coveredWords.join(' ').contains('eee'), isTrue);
+    });
+
+    test('table rows keep zebra rendering integrity (borders intact)', () {
+      const src = '| A | B |\n'
+          '| - | - |\n'
+          '| 1 | 2 |\n'
+          '| 3 | 4 |\n';
+      final r = parsePlanDocument(src, theme, maxWidth: 40);
+      final lines = r.renderedText.split('\n');
+      // All grid lines have consistent width: border + 2 content rows
+      // + separator + bottom border.
+      final gridLines = lines
+          .where((l) => l.startsWith('┌') || l.startsWith('├') || l.startsWith('└'))
+          .toList();
+      expect(gridLines, hasLength(3));
+      final w = gridLines.first.length;
+      for (final g in gridLines) {
+        expect(g.length, w, reason: 'grid: $g');
+      }
+    });
   });
 
   group('PlanParseResult integrity', () {

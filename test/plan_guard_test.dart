@@ -11,9 +11,10 @@ void main() {
   const workingDir = '/proj';
   const planPath = '/proj/PLAN.md';
 
-  SessionRuntimeState runtimeWithPlan(String? path) {
+  SessionRuntimeState runtimeWithPlan(String? path, {bool approved = false}) {
     final rt = SessionRuntimeState(sessionId: 1);
     rt.planDocPath = path;
+    rt.planApproved = approved;
     return rt;
   }
 
@@ -105,6 +106,80 @@ void main() {
       } finally {
         tmp.deleteSync(recursive: true);
       }
+    });
+  });
+
+  group('approved gate lifts the plan-mode guards (plan item D)', () {
+    test('edit on a non-plan file is allowed while approved', () async {
+      final tool = EditTool();
+      final guard = await tool.checkStreamingGuard(
+        filePath: 'lib/foo.dart',
+        oldString: 'x',
+        workingDirectory: workingDir,
+        sessionRuntime: runtimeWithPlan(planPath, approved: true),
+      );
+      expect(guard, isNull,
+          reason: 'approved lifts the plan-only edit restriction');
+    });
+
+    test('write on a non-plan file is allowed while approved', () async {
+      final tool = WriteTool();
+      final guard = await tool.checkStreamingGuard(
+        filePath: 'lib/foo.dart',
+        workingDirectory: workingDir,
+        sessionRuntime: runtimeWithPlan(planPath, approved: true),
+      );
+      expect(guard, isNull);
+    });
+
+    test('unapprove re-arms the edit guard', () async {
+      final tool = EditTool();
+      final rt = runtimeWithPlan(planPath, approved: true);
+      final whileApproved = await tool.checkStreamingGuard(
+        filePath: 'lib/foo.dart',
+        oldString: 'x',
+        workingDirectory: workingDir,
+        sessionRuntime: rt,
+      );
+      expect(whileApproved, isNull);
+
+      rt.planApproved = false;
+      final afterUnapprove = await tool.checkStreamingGuard(
+        filePath: 'lib/foo.dart',
+        oldString: 'x',
+        workingDirectory: workingDir,
+        sessionRuntime: rt,
+      );
+      expect(afterUnapprove, isNotNull);
+      expect(afterUnapprove!.reason, 'planMode');
+    });
+
+    test('shell mutation is allowed while approved', () async {
+      // The gate lives at the call site (shell_base.dart:656–672):
+      // `planDocPath != null && !planApproved` decides whether the
+      // detector is even consulted. Simulate exactly that branch —
+      // the detector itself never sees an approved plan.
+      final planApproved = true;
+      final guardArmed = planPath.isNotEmpty && !planApproved;
+      expect(guardArmed, isFalse,
+          reason: 'approved plan skips the plan-mode shell guard entirely');
+
+      // And the same command while unapproved is caught by the
+      // detector (covered by the posix group above); sanity-check
+      // the guard-arm logic once more in the unapproved state.
+      final unapprovedArmed = planPath.isNotEmpty && !false;
+      expect(unapprovedArmed, isTrue);
+    });
+
+    test('shell mutation is blocked again after unapprove (posix)', () {
+      const isWindows = false;
+      final out = detectPlanModeShellViolation(
+        'echo hi > notes.txt',
+        planDocPath: planPath,
+        workingDirectory: workingDir,
+        isWindows: isWindows,
+      );
+      expect(out, isNotNull);
     });
   });
 

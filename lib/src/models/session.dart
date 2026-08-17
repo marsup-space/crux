@@ -98,6 +98,22 @@ class Session {
 
   String get displayId => '#$id';
 
+  /// True when the session has no user- or LLM-assigned title.
+  /// An empty title IS the "untitled" state: creation paths
+  /// persist `''` and the display layer renders a locale-aware
+  /// placeholder ("New Session" / "新会话") instead of storing a
+  /// literal. Never compare `title` against a placeholder
+  /// string — a user might legitimately rename a session to
+  /// exactly that text.
+  bool get isUntitled => title.isEmpty;
+
+  /// The title to render, substituting [placeholder] when
+  /// [isUntitled]. Placeholder text is locale-aware and must
+  /// come from the caller (UI strings catalog), because the
+  /// model layer has no locale of its own.
+  String displayTitle(String placeholder) =>
+      title.isEmpty ? placeholder : title;
+
   @override
   String toString() {
     return 'Session($displayId: $title, status: $status)';

@@ -56,7 +56,7 @@ void main() {
             ],
             child: SingleChildScrollView(
               controller: controller,
-              child: const Text('x\n' * 100),
+              child: Text('x\n' * 100),
             ),
           ),
         ),
@@ -73,11 +73,18 @@ void main() {
       expect(markerRow, isNotNull, reason: 'marker should paint at the resolved offset');
 
       // Click it — the base should jump the controller to the resolved
-      // offset (40.0, clamped to maxScrollExtent).
+      // offset (40.0, clamped to maxScrollExtent). The realistic
+      // sequence: unpressed hover first (seeds `_isLeftButtonDown=false`
+      // via onHintEnter), then press + release — the MouseTracker parks
+      // the first press and only dispatches it once the release arrives
+      // (see mouse_tracker.dart: _pendingPress), so a bare pressed
+      // event never reaches onHintHover.
       expect(controller.offset, 0.0);
-      await tester.sendMouseEvent(
-        MouseEvent(button: MouseButton.left, x: 19, y: markerRow!, pressed: true),
-      );
+      final my = markerRow!;
+      const mx = 19;
+      await tester.hover(mx, my);
+      await tester.press(mx, my);
+      await tester.release(mx, my);
       await tester.pump();
       // The jump target is markerContentOffset → 40.0, clamped to the
       // viewport's maxScrollExtent (content 100 rows − viewport 8 rows

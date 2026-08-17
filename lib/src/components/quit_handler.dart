@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../i18n/strings.dart';
 import '../theme/theme_controller.dart';
 import '../utils/run_metrics.dart';
 
@@ -10,7 +11,22 @@ import '../utils/run_metrics.dart';
 class QuitHandler {
   final ThemeController themeController;
 
-  QuitHandler({required this.themeController});
+  /// Resolves the locale-aware strings at quit time rather than
+  /// construction time — the panel constructs this handler in
+  /// `initState`, before the `LocaleController` may be wired, and
+  /// the user can switch languages in either direction afterwards.
+  /// The resolved strings are stashed on [RunMetrics] so the
+  /// `bin/crux.dart` post-`runApp` fallback path renders the
+  /// summary in the same language the user was reading, even
+  /// though the `LocaleController` is already gone by then.
+  final Strings Function() stringsProvider;
+
+  QuitHandler({
+    required this.themeController,
+    this.stringsProvider = kEnglishStringsFn,
+  });
+
+  Strings get strings => stringsProvider();
 
   /// Single exit path used by both `/quit` and the Ctrl+C handler.
   ///
@@ -21,6 +37,7 @@ class QuitHandler {
   /// runs before `runApp()`'s `runEventLoop` can notice `_shouldExit`.
   void quitAndPrintSummary() {
     RunMetrics.instance.setLastKnownTheme(themeController.activeTheme);
+    RunMetrics.instance.setLastKnownStrings(strings);
 
     // Step 2: alt-screen copy. Best-effort.
     try {

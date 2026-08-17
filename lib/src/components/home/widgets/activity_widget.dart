@@ -65,6 +65,15 @@ class ActivityHomeWidget extends HomeWidget {
   @override
   int heightFor(int span) => 6;
 
+  /// The heatmap is a fixed-width grid: a 5-col week gutter plus 7 ×
+  /// 3-col day cells (26), and the per-week `total` column needs ~8
+  /// more to render in full. The box holds this width and never
+  /// shrinks — narrower, the grid and labels collide into an
+  /// unreadable smear — so the layout keeps it rigid and lets the
+  /// other boxes on its row give way instead.
+  @override
+  int get minColumnWidth => 34;
+
   @override
   void Function()? activate(HomeContext ctx) => null; // passive
 

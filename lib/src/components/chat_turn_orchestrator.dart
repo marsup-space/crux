@@ -682,8 +682,8 @@ class ChatTurnOrchestrator {
                   .copyWith(cacheHitPct: rt.cacheHitPct),
             );
             _refresh();
-            final currentTitle = _sessionController.currentSession.title;
-            if (currentTitle == 'New Session' || currentTitle == 'New Chat') {
+            final currentSession = _sessionController.currentSession;
+            if (currentSession.isUntitled) {
               _sessionController.generateTitle(sessionId);
             }
             final lastAiMsg = msgs.lastWhere(
@@ -1087,8 +1087,7 @@ class ChatTurnOrchestrator {
   }
 
   void _maybeKickOffTitleEarly(int sessionId, String userContent) {
-    final title = _sessionController.currentSession.title;
-    if (title != 'New Session' && title != 'New Chat') return;
+    if (!_sessionController.currentSession.isUntitled) return;
     if (_shouldDeferTitleToAfterResponse()) return;
     _sessionController.generateTitle(sessionId, userContent: userContent);
   }

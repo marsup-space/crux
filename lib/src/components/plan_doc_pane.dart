@@ -20,6 +20,84 @@ const double kPlanPaneMinWidth = 30;
 /// Maximum width (columns) the plan pane grows to.
 const double kPlanPaneMaxWidth = 80;
 
+/// Chat-pane floor (columns) while plan mode is active: below this the
+/// info sidebar drops first (§9.6 collapse order) rather than letting
+/// three panes starve the chat area. 56 keeps the chat side comfortable
+/// (toolbar + bubbles + input), which puts the sidebar's survival line
+/// at ≈158 terminal columns — plan mode hides it decidedly earlier than
+/// the bare ≥100-col rule.
+const double kPlanChatPaneMinWidth = 56;
+
+/// Resolved horizontal split of the chat panel row — see
+/// [resolvePlanSplit].
+class PlanSplitLayout {
+  const PlanSplitLayout({
+    required this.showSidebar,
+    required this.sidebarWidth,
+    required this.planPaneWidth,
+  });
+
+  /// Whether the right-hand info sidebar renders at all.
+  final bool showSidebar;
+
+  /// The sidebar's width in columns; `0` when [showSidebar] is false.
+  final double sidebarWidth;
+
+  /// The plan pane's width in columns; `0` when plan mode is inactive.
+  final double planPaneWidth;
+}
+
+/// Resolve the chat panel's horizontal layout for [totalWidth] columns.
+///
+/// When plan mode is inactive this keeps the bare sidebar decision
+/// ([sidebarWidth] non-null ⇔ the terminal is wide enough for it). When
+/// active:
+///   1. the info sidebar drops FIRST when keeping three panes would
+///      starve chat below [kPlanChatPaneMinWidth] — chat is the primary
+///      surface, the sidebar is ambient;
+///   2. the plan/chat split halves what remains so the plan pane is
+///      never wider than the chat pane, bounded by
+///      [kPlanPaneMinWidth]/[kPlanPaneMaxWidth]. Only at extreme
+///      widths (terminal ≲ 2×[kPlanPaneMinWidth]) can the min clamp
+///      leave chat a column short of plan — the documented
+///      single-column-collapse territory (§9.6).
+PlanSplitLayout resolvePlanSplit(
+  double totalWidth, {
+  required bool planActive,
+  double? sidebarWidth,
+}) {
+  if (!planActive) {
+    return PlanSplitLayout(
+      showSidebar: sidebarWidth != null,
+      sidebarWidth: sidebarWidth ?? 0,
+      planPaneWidth: 0,
+    );
+  }
+  if (sidebarWidth != null) {
+    final avail = totalWidth - sidebarWidth - 2; // plan|chat + chat|sidebar dividers
+    final planPaneWidth = ((avail - 1) / 2)
+        .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
+        .toDouble();
+    if (avail - planPaneWidth >= kPlanChatPaneMinWidth) {
+      return PlanSplitLayout(
+        showSidebar: true,
+        sidebarWidth: sidebarWidth,
+        planPaneWidth: planPaneWidth,
+      );
+    }
+  }
+  // Sidebar dropped: two-pane split over the row minus its divider.
+  final avail = totalWidth - 1;
+  final planPaneWidth = ((avail - 1) / 2)
+      .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
+      .toDouble();
+  return PlanSplitLayout(
+    showSidebar: false,
+    sidebarWidth: 0,
+    planPaneWidth: planPaneWidth,
+  );
+}
+
 /// The left pane of plan mode: renders the plan document as markdown,
 /// tracks the selection, flashes agent edits, and hosts the version
 /// timeline at the bottom.
@@ -212,6 +290,23 @@ class _PlanDocPaneState extends State<PlanDocPane>
               style: TextStyle(color: theme.onSurfaceVariant),
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          // Approve toggle (design doc §5 P6): lifts the edit/write/shell
+          // guards so the agent can implement the plan; same state as
+          // `/plan approve`. When approved the same button offers the
+          // reverse action (unapprove re-arms the guards).
+          Button(
+            label: c.approved
+                ? strings.t('plan.pane.unapprove')
+                : strings.t('plan.pane.approve'),
+            onPressed: c.approved ? c.unapprove : c.approve,
+            color: c.approved ? theme.warning : theme.success,
+          ),
+          const SizedBox(width: 1),
+          Button(
+            label: strings.t('plan.pane.exit'),
+            onPressed: c.exit,
+            color: theme.error,
           ),
         ],
       ),

@@ -109,7 +109,9 @@ void main() {
 
       expect(controller.currentSessionId, isNot(running.id));
       expect(controller.currentSessionId, isNot(interrupted.id));
-      expect(controller.currentSession.title, 'New Session');
+      // Empty title = untitled; the display layer renders a
+      // locale-aware placeholder (see Session.isUntitled).
+      expect(controller.currentSession.title, '');
       expect(controller.currentSession.status, SessionStatus.idle);
     },
   );

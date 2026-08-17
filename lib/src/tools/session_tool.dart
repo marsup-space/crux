@@ -1,23 +1,35 @@
+import 'dart:async';
+
 import '../models/message.dart';
 import '../models/session.dart';
 import '../storage/session_store.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'tool_def.dart';
 
-/// Read-only inspection of Crux chat sessions.
+/// Inspection + archive lifecycle for Crux chat sessions.
 ///
 /// Lets the agent answer questions like "what did we do last session?",
 /// "find the message where the user said X", or "show me the recent
 /// sessions in this project" without having to shell out to `sqlite3`
 /// against the user-data directory.
 ///
-/// The tool is intentionally read-only — it never archives, renames,
-/// or deletes anything. Session lifecycle stays user-driven (the
-/// sidebar, `/archive`, `/clear`).
+/// The read actions (`list` / `show` / `messages` / `search`) never
+/// mutate anything. The only mutations are the `archive` /
+/// `unarchive` lifecycle flips — they never delete, rename, or edit
+/// content, and the current session can never be archived out from
+/// under the running agent.
 class SessionTool extends ToolDef {
   final SessionStore _store;
 
-  SessionTool({required this._store});
+  /// Fires after a successful `archive` / `unarchive` so the UI can
+  /// refresh its sidebar session list + archived counts without a
+  /// full `initSessions()` (which would re-select the current
+  /// session and reload messages mid-turn). Null in tests and
+  /// standalone harnesses — mutation still lands in the store, the
+  /// sidebar just refreshes on its next natural reload.
+  final FutureOr<void> Function(int sessionId, bool archived)? onSessionMutated;
+
+  SessionTool({required this._store, this.onSessionMutated});
 
   @override
   String get name => 'session';
@@ -54,6 +66,13 @@ class SessionTool extends ToolDef {
         final suffix = result.truncated ? ' [truncated]' : '';
         label = '"$pattern": $total matches in $sess sessions$suffix';
         break;
+      case 'archive':
+      case 'unarchive':
+        final sid = meta['sessionId'] as int?;
+        final title = (meta['title'] as String?) ?? '';
+        label = action == 'archive' ? 'archived ' : 'unarchived ';
+        label += sid != null ? '#$sid $title'.trim() : '?';
+        break;
       default:
         label = action;
     }
@@ -69,7 +88,7 @@ class SessionTool extends ToolDef {
   String get description =>
       'Inspect OTHER Crux chat sessions — the agent already has the current '
       'conversation in context, so this tool is for looking at past sessions. '
-      'Read-only; never mutates anything. '
+      'Read actions never mutate anything. '
       'Actions: '
       '`list` (other sessions for the current project, most-recent first; the '
       'current session is hidden by default — pass `includeCurrent: true` to '
@@ -80,7 +99,14 @@ class SessionTool extends ToolDef {
       '`sessionId` is required), '
       '`search` (regex across messages in one or more sessions, ripgrep-style; '
       'the current session is excluded unless pinned via `sessionId` or '
-      '`includeCurrent: true`). '
+      '`includeCurrent: true`), '
+      '`archive` (move a session out of the sidebar into the archived set; '
+      '`sessionId` is required and must NOT be the current session — when '
+      'the user asks to clean up / tidy old sessions, list first, confirm '
+      'which ones, then archive), '
+      '`unarchive` (restore an archived session to the sidebar; `sessionId` '
+      'is required — e.g. the user wants to revisit a session referenced by '
+      'an old `ses://<id>` link). '
       'Tool results (the `tool` role rows that record bash / read / edit output) '
       'are searchable like any other content. '
       'Search is bounded: by default it scans the 50 most-recent sessions so a '
@@ -96,18 +122,26 @@ class SessionTool extends ToolDef {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': const ['list', 'show', 'messages', 'search'],
+        'enum': const [
+          'list',
+          'show',
+          'messages',
+          'search',
+          'archive',
+          'unarchive',
+        ],
         'description':
             'What to do. `list` needs no sessionId. `show` and `messages` '
             'require `sessionId`. `search` scans across sessions and can '
-            'optionally be pinned to one via `sessionId`.',
+            'optionally be pinned to one via `sessionId`. `archive` / '
+            '`unarchive` require `sessionId` (never the current session).',
       },
       'sessionId': {
         'type': 'integer',
         'description':
-            'Required for `show`/`messages`: id of the other session to read. '
-            'Optional for `search`: pin the search to one session. '
-            'Ignored by `list`.',
+            'Required for `show`/`messages`/`archive`/`unarchive`: id of the '
+            'target session. Optional for `search`: pin the search to one '
+            'session. Ignored by `list`.',
       },
       'limit': {
         'type': 'integer',
@@ -240,10 +274,27 @@ class SessionTool extends ToolDef {
           maxSessions: (args['maxSessions'] as int?) ?? 50,
           ctx: ctx,
         );
+      case 'archive':
+        if (sessionId == null) {
+          return ToolResult.error(
+            'Missing required parameter for action=archive: sessionId. '
+            'Use `list` first to pick the session, and never archive the '
+            'current session — the user drives that via `/archive`.',
+          );
+        }
+        return _archiveSession(sessionId: sessionId, ctx: ctx);
+      case 'unarchive':
+        if (sessionId == null) {
+          return ToolResult.error(
+            'Missing required parameter for action=unarchive: sessionId. '
+            'Find archived ids via `list` with `includeArchived: true`.',
+          );
+        }
+        return _unarchiveSession(sessionId: sessionId);
       default:
         return ToolResult.error(
           'Unknown action: $action. Expected one of: '
-          'list, show, messages, search.',
+          'list, show, messages, search, archive, unarchive.',
         );
     }
   }
@@ -642,6 +693,92 @@ class SessionTool extends ToolDef {
         'truncated': truncated,
         // ignore: use_null_aware_elements
         if (singleSessionId != null) 'sessionId': singleSessionId,
+      },
+    );
+  }
+
+  // ── archive / unarchive ───────────────────────────────────────────
+
+  /// Archive [sessionId]: flip `archivedAt` and drop it from the live
+  /// sidebar list. Guards:
+  ///   * unknown id → error;
+  ///   * the current session → error (the agent must never pull the
+  ///     session it is running in out from under itself; the user
+  ///     drives that via `/archive`);
+  ///   * already archived → error (idempotence with a visible cause,
+  ///     mirroring `/unarchive`'s "not archived" toast);
+  ///   * live running in another Crux instance → error (same lease
+  ///     rule the sidebar's switch respects).
+  Future<ToolResult> _archiveSession({
+    required int sessionId,
+    required ToolContext ctx,
+  }) async {
+    final session = await _store.getById(sessionId);
+    if (session == null) {
+      return ToolResult.error('No session with id ${_sesRef(sessionId)}');
+    }
+    if (sessionId == ctx.sessionId) {
+      return ToolResult.error(
+        'Cannot archive the current session ${_sesRef(sessionId)} — the '
+        'agent is running inside it. Ask the user to run `/archive` '
+        'instead if that is the intent.',
+      );
+    }
+    if (session.archivedAt != null) {
+      return ToolResult.error(
+        'Session ${_sesRef(sessionId)} is already archived '
+        '(${_formatTimestamp(session.archivedAt!)}).',
+      );
+    }
+    if (_store.isLiveRunningSessionOwnedByAnotherInstance(session)) {
+      return ToolResult.error(
+        'Session ${_sesRef(sessionId)} is running in another Crux '
+        'instance — archive it from there once it finishes.',
+      );
+    }
+    await _store.archiveSession(sessionId);
+    await onSessionMutated?.call(sessionId, true);
+    return ToolResult(
+      title: 'Archived — session #${session.id}',
+      output:
+          'Archived ${_sesRef(session.id)} '
+          '"${session.title.isEmpty ? '(untitled)' : session.title}". '
+          'It no longer appears in the sidebar; restore it with '
+          'action=unarchive.',
+      metadata: {
+        'sessionId': session.id,
+        'title': session.title,
+        'archived': true,
+      },
+    );
+  }
+
+  /// Unarchive [sessionId]: clear `archivedAt` so the session returns
+  /// to the live sidebar list. A session that wasn't archived is an
+  /// error (visible, idempotent) rather than a silent no-op.
+  Future<ToolResult> _unarchiveSession({required int sessionId}) async {
+    final session = await _store.getById(sessionId);
+    if (session == null) {
+      return ToolResult.error('No session with id ${_sesRef(sessionId)}');
+    }
+    if (session.archivedAt == null) {
+      return ToolResult.error(
+        'Session ${_sesRef(sessionId)} is not archived — it is already '
+        'in the sidebar.',
+      );
+    }
+    await _store.unarchiveSession(sessionId);
+    await onSessionMutated?.call(sessionId, false);
+    return ToolResult(
+      title: 'Unarchived — session #${session.id}',
+      output:
+          'Unarchived ${_sesRef(session.id)} '
+          '"${session.title.isEmpty ? '(untitled)' : session.title}". '
+          'It is back in the sidebar session list.',
+      metadata: {
+        'sessionId': session.id,
+        'title': session.title,
+        'archived': false,
       },
     );
   }

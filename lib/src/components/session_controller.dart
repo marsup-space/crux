@@ -340,10 +340,10 @@ class SessionController {
 
   Session get currentSession {
     if (currentSessionId == null) {
-      return Session(id: 0, title: 'New Session');
+      return Session(id: 0);
     }
     final found = findSession(currentSessionId!);
-    return found ?? Session(id: 0, title: 'New Session');
+    return found ?? Session(id: 0);
   }
 
   List<Message> get currentMessages {
@@ -654,7 +654,9 @@ class SessionController {
       await _providerService.initialize();
       final model = _providerService.resolveDefaultModel() ?? '';
       final session = await _store.create(
-        title: 'New Session',
+        // Empty title = untitled; locale-aware placeholder is
+        // rendered by the display layer (see Session.isUntitled).
+        title: '',
         model: model,
         projectPath: Directory.current.path,
       );
@@ -673,7 +675,8 @@ class SessionController {
       await _providerService.initialize();
       final model = _providerService.resolveDefaultModel() ?? '';
       final session = await _store.create(
-        title: 'New Session',
+        // Empty title = untitled (see above).
+        title: '',
         model: model,
         projectPath: Directory.current.path,
       );
@@ -694,6 +697,30 @@ class SessionController {
     _refresh();
   }
 
+  /// Lightweight sidebar refresh after an external session mutation
+  /// (e.g. the `session` tool archived / unarchived a row mid-turn).
+  /// Re-reads the sidebar lists + archived counts from the store and
+  /// pushes them through the cubit, but — unlike [initSessions] —
+  /// does NOT re-run the auto-archive sweep, re-select the current
+  /// session, or reload any messages, so it is safe to call while a
+  /// turn is streaming.
+  Future<void> reloadSidebar() async {
+    sessions = await _store.list(projectPath: Directory.current.path);
+    chats = await _store.listChats();
+    archivedCount = await _store.archivedCount(
+      projectPath: Directory.current.path,
+    );
+    archivedChatCount = await _store.archivedChatCount();
+    cubit.replaceSessions(
+      sessions: sessions,
+      chats: chats,
+      archivedCount: archivedCount,
+      archivedChatCount: archivedChatCount,
+      currentSessionId: currentSessionId,
+    );
+    _refresh();
+  }
+
   /// Create a Chat-mode session and switch to it. Chats are not tied
   /// to the workspace (`projectPath: ''`), so they show up in every
   /// Crux instance's "Chats" section. The running-lease mechanism
@@ -702,7 +729,9 @@ class SessionController {
     await _providerService.initialize();
     final model = _providerService.resolveDefaultModel() ?? '';
     final chat = await _store.create(
-      title: 'New Chat',
+      // Empty title = untitled ("new chat" placeholder is
+      // locale-aware, rendered by the display layer).
+      title: '',
       model: model,
       projectPath: '',
       kind: 'chat',
@@ -898,6 +927,30 @@ class SessionController {
     if (error != null) return error;
     await completeSwitchSession(id);
     return null;
+  }
+
+  /// Open the session a `ses://<id>` link points at. Falls back to
+  /// [switchSession] when the target is already in the sidebar;
+  /// when it is ARCHIVED, unarchives it first, pulls it back into
+  /// the in-memory sidebar list, then switches — so following an old
+  /// link in a months-old reply works instead of erroring with
+  /// "Session #N not found". A deleted session still errors (there
+  /// is nothing to open).
+  Future<String?> openSessionFromLink(int id) async {
+    if (findSession(id) != null || currentSessionId == id) {
+      return switchSession(id);
+    }
+    final stored = await _store.getById(id);
+    if (stored == null) {
+      return 'Session #$id not found';
+    }
+    if (stored.archivedAt != null) {
+      await _store.unarchiveSession(id);
+    }
+    // Which sidebar section the unarchived row belongs to depends on
+    // its kind; reload both lists (cheap) rather than hand-placing.
+    await reloadSidebar();
+    return switchSession(id);
   }
 
   /// Synchronous half of [switchSession]: validate the target,
@@ -1248,7 +1301,8 @@ class SessionController {
       } else {
         final model = _providerService.resolveDefaultModel() ?? '';
         final session = await _store.create(
-          title: 'New Session',
+          // Empty title = untitled (locale-aware placeholder).
+          title: '',
           model: model,
           projectPath: Directory.current.path,
         );
@@ -1337,8 +1391,11 @@ class SessionController {
       if (title == null) return;
       final session = findSession(sessionId);
       if (session == null) return;
-      final placeholder = session.isChat ? 'New Chat' : 'New Session';
-      if (session.title != placeholder) return;
+      // Only auto-title sessions that are still untitled. An
+      // empty title IS the untitled state — never compare
+      // against a placeholder literal (locale-fragile, and a
+      // user rename to that literal would be clobbered).
+      if (!session.isUntitled) return;
       await _store.update(sessionId, title: title);
       session.title = title;
       cubit.replaceSessions(

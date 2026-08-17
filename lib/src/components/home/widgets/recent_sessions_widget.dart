@@ -166,7 +166,13 @@ class _SessionLine extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final title = session.title.isEmpty ? session.displayId : session.title;
+    // Untitled sessions render a locale-aware placeholder; empty
+    // title IS the untitled state (never persisted as a literal).
+    final title = session.isUntitled
+        ? strings.t(
+            session.isChat ? 'chat.newPlaceholder' : 'session.newPlaceholder',
+          )
+        : session.title;
     final titleColor = selected
         ? theme.selectedText
         : (isCurrent ? theme.text : theme.onSurfaceVariant);

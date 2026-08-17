@@ -99,24 +99,47 @@ void main() {
     }, size: const Size(90, 30));
   });
 
-  test('a {1,2} widget degrades to span 1 to fill a partial row', () async {
-    await testNocterm('span degrade', (tester) async {
-      // 2 columns: span-1 alpha leaves one free column; the {1,2} beta
-      // must drop to span 1 to share the row rather than overflow.
+  test('a {1,2} flexible widget takes a double-width share of its row', () async {
+    await testNocterm('span share', (tester) async {
+      // Flexible boxes split a row's pixels by span: on a 4-column row,
+      // span-1 alpha + span-2 beta fit the 3-span budget, and beta gets
+      // twice alpha's width.
+      // The container must clear the 4-column threshold *after* home's
+      // horizontal padding (2 cols each side): 132 → 128 inner ≥ 120.
       await _pumpHome(
         tester,
         [
           StubHomeWidget('alpha', supportedSpans: const {1}),
           StubHomeWidget('beta', supportedSpans: const {1, 2}),
         ],
-        const Size(90, 30),
+        const Size(132, 30),
       );
+      final text = tester.terminalState.getText();
       expect(
-        tester.terminalState.findText('beta · span 1').isNotEmpty,
+        text.contains('beta · span 2'),
         isTrue,
-        reason: 'a {1,2} widget should degrade to span 1 in a 1-column gap',
+        reason: 'a {1,2} flexible widget renders at its span-2 share',
       );
-    }, size: const Size(90, 30));
+      // Both boxes share one row: alpha's and beta's borders are on the
+      // same terminal line.
+      final borderLine =
+          text.split('\n').firstWhere((l) => l.contains('─ alpha ─'));
+      expect(borderLine, contains('─ beta ─'));
+      // Beta is roughly twice alpha's width. Measure each box by the
+      // span of its top border between the corner glyphs.
+      int boxWidth(String title) {
+        final start = borderLine.indexOf('─ $title ─');
+        final close = borderLine.indexOf('╮', start);
+        return close - start;
+      }
+      final alphaW = boxWidth('alpha');
+      final betaW = boxWidth('beta');
+      expect(
+        betaW / alphaW,
+        closeTo(2.0, 0.4),
+        reason: 'span-2 beta ($betaW) should be ~2x span-1 alpha ($alphaW)',
+      );
+    }, size: const Size(132, 30));
   });
 
   test('arrow keys move the focus ring between boxes', () async {

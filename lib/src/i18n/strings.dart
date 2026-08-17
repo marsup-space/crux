@@ -35,6 +35,12 @@ const Map<AppLocale, Map<String, String>> _catalog = {
 /// previews, or a host that hasn't threaded a [LocaleController]).
 const Strings kEnglishStrings = Strings(AppLocale.en);
 
+/// [Strings] provider defaulting to English. Used where a component
+/// receives a locale resolver at construction time but the locale may
+/// only be knowable later (e.g. [QuitHandler]); the default keeps
+/// existing constructions (tests, previews) English-only.
+Strings kEnglishStringsFn() => kEnglishStrings;
+
 const Map<String, String> _en = {
   // ── /language command ──
   'lang.unavailable': 'Language service is unavailable',
@@ -304,10 +310,14 @@ const Map<String, String> _en = {
   'plan.timeline.empty': 'no versions yet',
   'plan.context.attached': 'plan context attached',
   'plan.pane.approved': 'approved',
+  'plan.pane.approve': 'approve',
+  'plan.pane.unapprove': 'unapprove',
+  'plan.pane.exit': 'exit',
   'cmd.plan.approved': 'Plan approved — codebase edits enabled',
   'cmd.plan.unapproved': 'Plan unapproved — plan-doc editing only',
   'cmd.plan.sug.active': 'active plan',
-  'cmd.plan.sug.existing': 'existing plan',
+  'cmd.plan.sug.recent': 'recent plan',
+  'cmd.plan.sug.byName': 'name contains "plan"',
   'toast.webNoProviders': 'No web providers registered.',
   'toast.webUnknown':
       'Unknown web provider "{id}".{known} Usage: /web-provider <name> <key>|remove',
@@ -402,6 +412,7 @@ const Map<String, String> _en = {
   'chat.toolbar.auxIdle':
       'Auxiliary model: {model}\n(used for /tldr summaries and title generation)',
   'chat.toolbar.clickRefresh': 'Click to refresh',
+  'chat.toolbar.cacheHit': 'cache {pct}%',
   'chat.context.compact': 'Compact',
   'chat.context.skillsNone': 'Loaded skills : none',
   'chat.context.skills': 'Loaded skills : {names}',
@@ -478,6 +489,23 @@ const Map<String, String> _en = {
   'chat.compact.saveOnly':
       'Compaction would save only {pct}% (≈{tokens} tokens) — below the 5% threshold. Skipping.',
   'chat.compact.failed': 'Compaction failed: {error}',
+
+  // ── Run summary (exit box) ──
+  'summary.title': 'Crux Run Summary',
+  'summary.duration': 'Duration:',
+  'summary.turns': 'Turns:',
+  'summary.status': 'Status:',
+  'summary.noLlmCalls': 'no LLM calls this run',
+  'summary.tokensIn': 'Tokens in:',
+  'summary.tokensOut': 'Tokens out:',
+  'summary.cacheSuffix': '(cache {pct}%)',
+  'summary.cacheSuffixNone': '(cache —)',
+
+  // ── Default (untitled) session / chat titles ──
+  // An empty persisted title means "untitled"; these are the
+  // locale-aware placeholders the display layer renders for it.
+  'session.newPlaceholder': 'New Session',
+  'chat.newPlaceholder': 'New Chat',
 };
 
 const Map<String, String> _zh = {
@@ -733,10 +761,14 @@ const Map<String, String> _zh = {
   'plan.timeline.empty': '尚无版本',
   'plan.context.attached': '已附加计划上下文',
   'plan.pane.approved': '已批准',
+  'plan.pane.approve': '批准',
+  'plan.pane.unapprove': '取消批准',
+  'plan.pane.exit': '退出',
   'cmd.plan.approved': '计划已批准——可编辑代码库',
   'cmd.plan.unapproved': '已取消批准——仅可编辑计划文档',
   'cmd.plan.sug.active': '当前计划',
-  'cmd.plan.sug.existing': '已有计划',
+  'cmd.plan.sug.recent': '近期计划',
+  'cmd.plan.sug.byName': '名称含 "plan"',
   'toast.webNoProviders': '未注册任何搜索服务。',
   'toast.webUnknown':
       '未知搜索服务 "{id}"。{known} 用法：/web-provider <name> <key>|remove',
@@ -822,6 +854,7 @@ const Map<String, String> _zh = {
   'chat.toolbar.auxRunning': '辅助模型：{model}\n（回复过程中无法更改）',
   'chat.toolbar.auxIdle': '辅助模型：{model}\n（用于 /tldr 摘要和标题生成）',
   'chat.toolbar.clickRefresh': '点击刷新',
+  'chat.toolbar.cacheHit': '缓存 {pct}%',
   'chat.context.compact': '压缩',
   'chat.context.skillsNone': '已加载技能：无',
   'chat.context.skills': '已加载技能：{names}',
@@ -894,4 +927,19 @@ const Map<String, String> _zh = {
   'chat.compact.counterproductive': '无需压缩——没有可压缩的历史。',
   'chat.compact.saveOnly': '压缩只能节省 {pct}%（约 {tokens} token）——低于 5% 阈值，跳过。',
   'chat.compact.failed': '压缩失败：{error}',
+
+  // ── 运行摘要(退出框)──
+  'summary.title': 'Crux 运行摘要',
+  'summary.duration': '时长：',
+  'summary.turns': '轮次：',
+  'summary.status': '状态：',
+  'summary.noLlmCalls': '本次运行没有 LLM 调用',
+  'summary.tokensIn': '输入 token：',
+  'summary.tokensOut': '输出 token：',
+  'summary.cacheSuffix': '(缓存 {pct}%)',
+  'summary.cacheSuffixNone': '(缓存 —)',
+
+  // ── 默认(未命名)会话/对话标题 ──
+  'session.newPlaceholder': '新会话',
+  'chat.newPlaceholder': '新对话',
 };

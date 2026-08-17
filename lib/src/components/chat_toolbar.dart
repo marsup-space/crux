@@ -680,6 +680,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     sessionController: _sessionController,
                     streamingController: _streamingController,
                     currentSessionId: _sessionController.currentSessionId,
+                    strings: component.strings,
                   ),
                 ),
               if (showCodingPlanUsage && component.codingPlanProvider != null)

@@ -329,7 +329,7 @@ class _YesterdayView extends StatelessComponent {
           children: [
             Expanded(
               child: Text(
-                '· ${s.title.isEmpty ? s.displayId : s.title}',
+                '· ${s.isUntitled ? strings.t(s.isChat ? 'chat.newPlaceholder' : 'session.newPlaceholder') : s.title}',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: theme.onSurfaceDim),
               ),

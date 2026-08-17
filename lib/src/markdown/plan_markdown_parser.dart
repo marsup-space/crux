@@ -1,3 +1,6 @@
+// Unicode-width measuring for terminal columns needs nocterm's
+// internal helpers (same rationale as highlighted_markdown_text.dart).
+// ignore_for_file: implementation_imports
 import 'package:dart_markdown/dart_markdown.dart' as dm;
 import 'package:nocterm/nocterm.dart'
     show FontStyle, FontWeight, InlineSpan, TextSpan, TextStyle;
@@ -5,6 +8,7 @@ import 'package:nocterm/src/utils/unicode_width.dart';
 import 'package:source_span/source_span.dart' as src;
 
 import '../components/ui/highlighted_markdown_text.dart';
+import '../components/ui/highlight_service.dart';
 import '../components/ui/markdown_isolate.dart' show MarkdownThemeFields;
 import '../models/plan_selection.dart' as model;
 
@@ -342,6 +346,17 @@ class _PlanVisitor {
     // newline), each carrying its exact source span. Long lines soft-wrap
     // inside the box — the wrap point gets a synthetic gutter so the
     // source mapping of the *content* stays exact.
+    //
+    // Syntax highlighting reuses the chat renderer's machinery
+    // (HighlightService + colorForScopes — theme-driven colors). The
+    // tokens are applied via a per-character style lookup built from
+    // the code's plain text, so the per-character `_emit` source
+    // mapping is untouched: same text, same offsets, better colors.
+    final codeText = block.children.isEmpty
+        ? ''
+        : block.children.map((c) => c.textContent).join();
+    final charStyles = _codeCharStyles(codeText, language, codeStyle);
+
     var colWidth = 0;
     var lineOpen = false;
 
@@ -385,7 +400,10 @@ class _PlanVisitor {
             closeLine(child.start.offset + i);
             openLine();
           }
-          _emit(ch, codeStyle, segStart, child.start.offset + i + 1);
+          final charStyle = charStyles.isEmpty
+              ? codeStyle
+              : (charStyles[child.start.offset + i] ?? codeStyle);
+          _emit(ch, charStyle, segStart, child.start.offset + i + 1);
           segStart = child.start.offset + i + 1;
           lastAnchor = segStart;
           colWidth += w;
@@ -399,6 +417,56 @@ class _PlanVisitor {
     _emitMarkerText('$footerLine\n', gutterStyle, closeFence ?? openFence,
         fallbackAnchor: block.end.offset);
     _emitSynthetic('\n', null, block.end.offset);
+  }
+
+  /// Per-character styles for a code block's [code] plain text:
+  /// `sourceOffset → highlighted TextStyle`. Empty when no highlighter
+  /// is available (service not initialized / unknown language) — the
+  /// caller then falls back to the uniform code style.
+  ///
+  /// Built from the chat renderer's same machinery: `HighlightService`
+  /// tokenizes the whole block as one string (multi-line tokens like
+  /// `///` doc comments need the full context), `colorForScopes` maps
+  /// scopes to the *theme* colors, and tm styles contribute bold/italic.
+  Map<int, TextStyle> _codeCharStyles(
+    String code,
+    String language,
+    TextStyle fallback,
+  ) {
+    final service = HighlightService.instance;
+    if (service == null || language.isEmpty || code.isEmpty) return const {};
+    final highlighter = service.highlighterFor(language);
+    if (highlighter == null) return const {};
+    try {
+      final tokens = highlighter.highlight(code);
+      if (tokens.isEmpty) return const {};
+      final styles = <int, TextStyle>{};
+      var lastEnd = 0;
+      for (final token in tokens) {
+        if (token.start > lastEnd) {
+          // Gap before the token: keep the fallback style — no entry.
+        }
+        final tmStyle = service.styleForScopes(token.scopes);
+        final style = TextStyle(
+          color: colorForScopes(token.scopes, theme),
+          fontWeight: tmStyle?.bold == true
+              ? FontWeight.bold
+              : FontWeight.normal,
+          fontStyle: tmStyle?.italic == true
+              ? FontStyle.italic
+              : FontStyle.normal,
+        );
+        for (var i = token.start; i < token.end && i < code.length; i++) {
+          styles[i] = style;
+        }
+        lastEnd = token.end;
+      }
+      return styles;
+    } catch (_) {
+      // Highlighting is best-effort decoration; never let it break the
+      // render (or the source map) — fall back to the plain style.
+      return const {};
+    }
   }
 
   void _visitBlockquote(dm.Element quote) {
@@ -545,11 +613,12 @@ class _PlanVisitor {
   }
 
   void _visitTable(dm.Element table) {
-    // Coarse mapping (design doc §9.5): every rendered cell maps to the
-    // table ROW's source line; the grid chrome is synthetic. This is
-    // deliberately simpler than the chat renderer's proportional column
-    // reflow — correct over clever for v1.
-    final rows = <(dm.Element, List<dm.Element>)>[];
+    // Mapping (design doc §9.5): each rendered cell maps to the table
+    // ROW's source line at row granularity; wrapped cell lines map to
+    // their slice of the cell's source range; the grid chrome is
+    // synthetic. Visual treatment mirrors the chat renderer (zebra row
+    // backgrounds, per-cell word wrap, `├─┼─┤` header separator).
+    final rows = <List<dm.Element?>>[];
     for (final section in table.children) {
       if (section is! dm.Element) continue;
       if (section.type != 'tableHead' && section.type != 'tableBody') {
@@ -557,13 +626,14 @@ class _PlanVisitor {
       }
       for (final row in section.children) {
         if (row is! dm.Element || row.type != 'tableRow') continue;
-        final cells = <dm.Element>[
-          for (final c in row.children)
-            if (c is dm.Element &&
-                (c.type == 'tableHeadCell' || c.type == 'tableBodyCell'))
-              c,
-        ];
-        rows.add((row, cells));
+        final cells = <dm.Element?>[];
+        for (final c in row.children) {
+          if (c is dm.Element &&
+              (c.type == 'tableHeadCell' || c.type == 'tableBodyCell')) {
+            cells.add(c);
+          }
+        }
+        rows.add(cells);
       }
     }
     if (rows.isEmpty) {
@@ -573,12 +643,12 @@ class _PlanVisitor {
 
     final colCount = rows.fold<int>(
       0,
-      (max, r) => r.$2.length > max ? r.$2.length : max,
+      (max, r) => r.length > max ? r.length : max,
     );
     final natural = List<int>.filled(colCount, 0);
-    for (final (_, cells) in rows) {
+    for (final cells in rows) {
       for (var c = 0; c < cells.length; c++) {
-        final w = UnicodeWidth.stringWidth(cells[c].textContent);
+        final w = UnicodeWidth.stringWidth(cells[c]!.textContent);
         if (w > natural[c]) natural[c] = w;
       }
     }
@@ -604,27 +674,153 @@ class _PlanVisitor {
 
     border('┌', '─', '┬', '┐');
     for (var r = 0; r < rows.length; r++) {
-      final (row, cells) = rows[r];
-      final rowAnchor = row.start.offset;
-      _emitSynthetic('│', borderStyle, rowAnchor);
+      final cells = rows[r];
+      final isHeader = r == 0;
+      // Zebra: header uses surfaceVariant; body rows alternate
+      // surface / surfaceVariant (chat renderer's exact recipe).
+      final rowBg = isHeader
+          ? theme.surfaceVariant.withOpacity(0.5)
+          : ((r - 1).isEven
+              ? theme.surface
+              : theme.surfaceVariant).withOpacity(0.5);
+      final rowStyle = (isHeader ? headerStyle : textStyle)
+          .copyWith(backgroundColor: rowBg);
+
+      // Wrap each cell into lines of at most `widths[c]` columns.
+      final wrapped = <List<(String, int, int)>>[]; // (text, srcStart, srcEnd)
+      var rowHeight = 1;
       for (var c = 0; c < widths.length; c++) {
         final cell = c < cells.length ? cells[c] : null;
-        final content = cell?.textContent ?? '';
-        final style = r == 0 ? headerStyle : textStyle;
-        _emitSynthetic(' ', style, rowAnchor);
-        if (cell != null && content.isNotEmpty) {
-          _emit(content, style, cell.start.offset, cell.end.offset);
-        }
-        final pad = widths[c] - UnicodeWidth.stringWidth(content);
-        if (pad > 0) _emitSynthetic(' ' * pad, style, rowAnchor);
-        _emitSynthetic(' ', style, rowAnchor);
-        _emitSynthetic('│', borderStyle, rowAnchor);
+        final lines = cell == null
+            ? <(String, int, int)>[('', 0, 0)]
+            : _wrapCell(cell.textContent, widths[c], cell.start.offset);
+        wrapped.add(lines);
+        if (lines.length > rowHeight) rowHeight = lines.length;
       }
-      _emitSynthetic('\n', null, row.end.offset);
+
+      for (var l = 0; l < rowHeight; l++) {
+        _emitSynthetic('│', borderStyle, cells.first?.start.offset ?? table.start.offset);
+        for (var c = 0; c < widths.length; c++) {
+          final (text, s, e) = l < wrapped[c].length
+              ? wrapped[c][l]
+              : ('', 0, 0);
+          _emitSynthetic(' ', rowStyle, table.start.offset);
+          if (text.isNotEmpty) {
+            if (s < e) {
+              _emit(text, rowStyle, s, e);
+            } else {
+              _emitSynthetic(text, rowStyle, table.start.offset);
+            }
+          }
+          final pad = widths[c] - UnicodeWidth.stringWidth(text);
+          if (pad > 0) _emitSynthetic(' ' * pad, rowStyle, table.start.offset);
+          _emitSynthetic(' ', rowStyle, table.start.offset);
+          _emitSynthetic('│', borderStyle, table.start.offset);
+        }
+      }
+      _emitSynthetic('\n', null, table.end.offset);
       if (r == 0 && rows.length > 1) border('├', '─', '┼', '┤');
     }
     border('└', '─', '┴', '┘');
     _emitSynthetic('\n', null, table.end.offset);
+  }
+
+  /// Wrap [content] into lines of at most [cellWidth] display columns,
+  /// each carrying its `(sourceStart, sourceEnd)` slice — a wrapped
+  /// continuation line maps to the exact source sub-range it renders,
+  /// keeping the char-granular mapping intact (better than the old
+  /// whole-cell mapping when cells wrap).
+  ///
+  /// Word-greedy wrap (chat renderer's algorithm); words wider than the
+  /// cell break at character boundaries. Offsets are tracked per word,
+  /// so a line's source range covers exactly the words it contains.
+  List<(String, int, int)> _wrapCell(
+    String content,
+    int cellWidth,
+    int sourceStart,
+  ) {
+    if (cellWidth <= 0) {
+      return [(content, sourceStart, sourceStart + content.length)];
+    }
+    if (UnicodeWidth.stringWidth(content) <= cellWidth) {
+      return [(content, sourceStart, sourceStart + content.length)];
+    }
+
+    // Tokenize into (word, startOffset, endOffset) — offsets index
+    // into [content]; the caller shifts them by [sourceStart].
+    final words = <(String, int, int)>[];
+    var i = 0;
+    while (i < content.length) {
+      if (content[i] == ' ') {
+        i++;
+        continue;
+      }
+      final start = i;
+      while (i < content.length && content[i] != ' ') {
+        i++;
+      }
+      words.add((content.substring(start, i), start, i));
+    }
+
+    final lines = <(String, int, int)>[];
+    var lineText = '';
+    var lineStart = -1; // content offset of the line's first word
+    var lineEnd = 0; // content offset after the line's last word
+    var lineWidth = 0;
+
+    void flush() {
+      if (lineText.isEmpty) return;
+      lines.add((
+        lineText,
+        sourceStart + lineStart,
+        sourceStart + lineEnd,
+      ));
+      lineText = '';
+      lineStart = -1;
+      lineWidth = 0;
+    }
+
+    for (final (word, wStart, wEnd) in words) {
+      final wordWidth = UnicodeWidth.stringWidth(word);
+      if (wordWidth > cellWidth) {
+        // Overlong word: flush what we have, then hard-break the word
+        // at character boundaries recording each chunk's range.
+        flush();
+        var off = wStart;
+        while (off < wEnd) {
+          var chunk = '';
+          var chunkW = 0;
+          final chunkStart = off;
+          while (off < wEnd) {
+            final w = UnicodeWidth.stringWidth(content[off]);
+            if (chunkW > 0 && chunkW + w > cellWidth) break;
+            chunk += content[off];
+            chunkW += w;
+            off++;
+          }
+          lines.add((
+            chunk,
+            sourceStart + chunkStart,
+            sourceStart + off,
+          ));
+        }
+        lineEnd = wEnd;
+        continue;
+      }
+      final sepWidth = lineText.isEmpty ? 0 : 1;
+      if (lineWidth > 0 && lineWidth + sepWidth + wordWidth > cellWidth) {
+        flush();
+      }
+      lineText = lineText.isEmpty ? word : '$lineText $word';
+      if (lineStart < 0) lineStart = wStart;
+      lineEnd = wEnd;
+      lineWidth = UnicodeWidth.stringWidth(lineText);
+    }
+    flush();
+    if (lines.isEmpty) {
+      lines.add(('', sourceStart, sourceStart));
+    }
+    return lines;
   }
 
   List<int> _distributeColumnWidths(List<int> naturalWidths, int? maxWidth) {

@@ -116,3 +116,65 @@ class PlanDocStore {
     return headVersion;
   }
 }
+
+/// A plan doc the `/plan` autocomplete may offer, with the recency
+/// signal used for ordering.
+class KnownPlan {
+  const KnownPlan({required this.name, this.lastUsedAt});
+
+  /// Plan doc name with the `.md` suffix, e.g. `test run.md`.
+  final String name;
+
+  /// Most recent mtime across this plan's version-log directories
+  /// ([PlanDocStore] writes at least `index.json` on every enter and
+  /// edit). Null when the plan qualified via the name heuristic only
+  /// (never entered on this machine).
+  final DateTime? lastUsedAt;
+}
+
+/// Whether [baseName] (a `.md` file name) carries "plan" in it,
+/// case-insensitive. Covers `PLAN.md`, `refactor-plan.md`,
+/// `PlanNorge.md` (alnum-joined) — not `main.md`, `README.md`.
+bool isPlanNameHeuristic(String baseName) =>
+    baseName.toLowerCase().contains('plan');
+
+/// Plan names known to this machine: every `<planName>` directory
+/// under `<projectPath>/.crux/plans/<sessionId>/`.
+///
+/// A plan gets a version-log directory the first time it is entered
+/// ([PlanDocStore] appends the init snapshot), so this is the
+/// "has actually been used in plan mode on this machine" set. The
+/// result is keyed by name — multiple sessions entering the same
+/// plan collapse to the newest mtime — and ordered oldest-first
+/// (empty when the project has no plan history at all).
+Map<String, DateTime?> listKnownPlanNames(String projectPath) {
+  final known = <String, DateTime?>{};
+  final plansRoot = Directory(p.join(projectPath, '.crux', 'plans'));
+  if (!plansRoot.existsSync()) return known;
+  for (final sessionDir in plansRoot.listSync(followLinks: false)) {
+    if (sessionDir is! Directory) continue;
+    for (final planDir in sessionDir.listSync(followLinks: false)) {
+      if (planDir is! Directory) continue;
+      final name = p.basename(planDir.path);
+      if (name.isEmpty) continue;
+      final existing = known[name];
+      // Null (heuristic-only) never overwrites a real timestamp, and a
+      // newer timestamp wins over both.
+      if (existing != null && existing.isAfter(_planDirMtime(planDir))) {
+        continue;
+      }
+      known[name] = _planDirMtime(planDir);
+    }
+  }
+  return known;
+}
+
+DateTime _planDirMtime(Directory planDir) {
+  final index = File(p.join(planDir.path, 'index.json'));
+  if (index.existsSync()) return index.lastModifiedSync();
+  try {
+    return planDir.statSync().modified;
+  } catch (_) {
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+}
