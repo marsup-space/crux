@@ -567,8 +567,12 @@ class _NoteRegionState extends State<_NoteRegion> {
     return TextField(
       controller: component.controller,
       focused: component.active,
-      maxLines: 2,
-      minLines: 1,
+      // Auto-grow: start at 2 visible lines and grow with the content
+      // (soft-wrapped or newline-split), unbounded — same policy as
+      // the main chat input. A hard `maxLines` would clip anything
+      // beyond it, hiding what the user typed.
+      maxLines: null,
+      minLines: 2,
       placeholder: '(optional) add extra context for the agent',
       style: TextStyle(color: theme.foreground),
       decoration: InputDecoration(

@@ -739,6 +739,101 @@ void main() {
         expect(runtime.labels, equals(['Node LTS']));
       }, size: const Size(80, 24));
     });
+
+    test(
+      'note field auto-grows: multi-line note beyond 2 lines stays visible',
+      () async {
+        await testNocterm('ask form note auto-grow', (tester) async {
+          String? submittedProse;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (p, _) => submittedProse = p,
+            onDismiss: () => fail('dismiss should not fire'),
+          );
+
+          // Tab to the note field, then type a note that soft-wraps
+          // well past the old 2-line cap. The screen is 80 columns;
+          // the field's inner width is ~64, so ~200 chars produce
+          // 4+ visual lines.
+          await tester.sendTab();
+          await tester.pump();
+          const note =
+              'line one that is fairly long and will definitely '
+              'wrap around the field width by itself, '
+              'plus a second sentence that pushes the total well '
+              'past two visual lines so the old maxLines cap would '
+              'have clipped the tail out of view entirely';
+          await tester.enterText(note);
+          await tester.pump();
+
+          // The TAIL of the note must still be on screen — with the
+          // old fixed 2-line box everything after line 2 vanished.
+          final rendered = tester.renderToString(showBorders: false);
+          expect(
+            rendered,
+            contains('out of view entirely'),
+            reason:
+                'note content beyond 2 visual lines must stay visible '
+                '($rendered)',
+          );
+
+          // And the full text survives into the serialized answer.
+          await tester.sendEnter();
+          await tester.pump();
+          expect(submittedProse, isNotNull);
+          expect(submittedProse, contains('out of view entirely'));
+        }, size: const Size(80, 24));
+      },
+    );
+
+    test(
+      'note field auto-grows with hard newlines (Shift+Enter style)',
+      () async {
+        await testNocterm('ask form note newline grow', (tester) async {
+          // Seed the controller text indirectly: Tab to the note and
+          // insert explicit newlines via the TextField's newline
+          // insertion path (Ctrl+J is the universal newline key).
+          String? submittedProse;
+          await pumpAskForm(
+            tester,
+            pending: makePending(),
+            onSubmit: (p, _) => submittedProse = p,
+            onDismiss: () => fail('dismiss should not fire'),
+          );
+
+          await tester.sendTab();
+          await tester.pump();
+          await tester.enterText('first');
+          await tester.sendKeyEvent(
+            KeyboardEvent(
+              logicalKey: LogicalKey.keyJ,
+              modifiers: const ModifierKeys(ctrl: true),
+            ),
+          );
+          await tester.enterText('second');
+          await tester.sendKeyEvent(
+            KeyboardEvent(
+              logicalKey: LogicalKey.keyJ,
+              modifiers: const ModifierKeys(ctrl: true),
+            ),
+          );
+          await tester.enterText('third');
+          await tester.pump();
+
+          // 'third' lives on note line 3 — invisible with the old
+          // 2-line box, must render now.
+          expect(
+            tester.renderToString(showBorders: false),
+            contains('third'),
+          );
+
+          await tester.sendEnter();
+          await tester.pump();
+          expect(submittedProse, contains('first\nsecond\nthird'));
+        }, size: const Size(80, 24));
+      },
+    );
   });
 
   group('AskAnswerBubble TUI', () {
