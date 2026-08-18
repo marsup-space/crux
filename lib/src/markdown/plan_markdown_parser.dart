@@ -572,16 +572,51 @@ class _PlanVisitor {
     }
   }
 
+  /// dart_markdown block element types (from the `_visitBlock` switch)
+  /// that mean "block-level content inside a list item".
+  static bool _isBlockLevelChild(dm.Element e) {
+    switch (e.type) {
+      case 'atxHeading':
+      case 'setextHeading':
+      case 'paragraph':
+      case 'fencedCodeBlock':
+      case 'indentedCodeBlock':
+      case 'blockquote':
+      case 'fencedBlockquote':
+      case 'bulletList':
+      case 'orderedList':
+      case 'thematicBreak':
+      case 'table':
+        return true;
+      default:
+        return false;
+    }
+  }
+
   void _visitListItemChildren(dm.Element item, int depth) {
     // Tight lists have bare inline children; loose lists wrap them in
     // `paragraph` blocks (dart_markdown strips the paragraph wrapper for
     // tight lists — see list_syntax.dart). Nested lists recurse.
+    //
+    // Tight-list items expose their emphasis/code/link nodes as DIRECT
+    // children of the list item (no paragraph wrapper). Those are inline
+    // nodes: routing them through `_visitBlock`'s default case would emit
+    // their text and then a paragraph gap (`\n\n`), shredding the item
+    // into one visual paragraph per inline node. So: paragraph-wrapped
+    // children use the paragraph branch, block children (code, blockquote,
+    // nested lists…) go through `_visitBlock`, and everything else is an
+    // inline node visited with the inline walker.
     var first = true;
     for (final child in item.children) {
       if (child is dm.Element &&
           (child.type == 'bulletList' || child.type == 'orderedList')) {
         _emitSynthetic('\n', null, child.start.offset);
         _visitList(child, depth + 1);
+        continue;
+      }
+      if (child is dm.Element && !_isBlockLevelChild(child)) {
+        _visitInline(child, styleSheet.paragraphStyle);
+        first = false;
         continue;
       }
       if (child is dm.Element && child.type == 'paragraph') {
@@ -593,7 +628,7 @@ class _PlanVisitor {
       } else if (child is dm.Text) {
         _emit(child.textContent, null, child.start.offset, child.end.offset);
       } else if (child is dm.Element) {
-        // Fenced code / blockquote inside an item: render inline-ish.
+        // Fenced code / blockquote / other blocks inside an item.
         _visitBlock(child);
       }
       first = false;

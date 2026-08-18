@@ -57,6 +57,57 @@ void main() {
       expect(result.headings, isEmpty);
     });
   });
+
+  group('plan_markdown_parser lists (tight items)', () {
+    // Regression: tight lists expose emphasis/code/link nodes as DIRECT
+    // children of the list item (no paragraph wrapper). Routing those
+    // through the block walk's default case emitted a paragraph gap
+    // after every inline node, shredding items into visual paragraphs.
+    test('ordered-list item renders as one continuous block', () {
+      final result = parsePlanDocument(
+        '1. **Plan scrollbar** — add a scrollbar to the pane, matching the\n'
+        '   chat history\'s scrollbar.\n'
+        '2. **Privacy** — stop rendering `<plan-context>` inline.\n',
+        const _TestTheme(),
+      );
+      // Item content must stay on consecutive rows: no blank rows
+      // INSIDE an item (blank row only after the final item).
+      final rows = result.renderedText.split('\n');
+      // The first item's text starts right after its bullet on row 0
+      // and its second source line continues on row 1.
+      expect(rows[0], startsWith('1. Plan scrollbar — add a scrollbar'));
+      expect(rows[1], "chat history's scrollbar.");
+      // The second item follows immediately — no blank row between.
+      expect(rows[2], startsWith('2. Privacy — stop rendering'));
+      // Inline code renders its content (no gap shredding).
+      expect(rows[2], contains('<plan-context>'));
+    });
+
+    test('bullet-list items render with bullets and no inner gaps', () {
+      final result = parsePlanDocument(
+        '- `AnnotatedScrollbar` is ListView-specific.\n'
+        '- Everything else is shared code.\n',
+        const _TestTheme(),
+      );
+      final rows = result.renderedText.split('\n');
+      expect(rows[0], startsWith('• AnnotatedScrollbar'));
+      expect(rows[1], startsWith('• Everything else'));
+      // Rows 0/1 are dense content; the remaining 1-2 rows are the
+      // list-level trailing separator(s) — no blank row INSIDE items.
+      expect(rows.length, lessThanOrEqualTo(4));
+    });
+
+    test('nested list items keep their inline emphasis', () {
+      final result = parsePlanDocument(
+        '- outer **bold** item\n'
+        '  - inner *italic* item\n',
+        const _TestTheme(),
+      );
+      final rows = result.renderedText.split('\n');
+      expect(rows[0], startsWith('• outer bold item'));
+      expect(rows[1], contains('inner italic item'));
+    });
+  });
 }
 
 /// Colorless theme — the parser only reads colors, never touches a

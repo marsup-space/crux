@@ -139,6 +139,27 @@ class _PlanDocPaneState extends State<PlanDocPane>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Sync the real theme on FIRST build. `enter()` parses the doc
+    // before this pane exists, falling back to the colorless mono
+    // theme; the sync used to live only in `_onControllerChanged` (a
+    // controller listener), but `enter`'s `notifyListeners()` fires
+    // before the pane registers that listener — so the first open
+    // painted black mono-theme spans until the next controller event.
+    // `didChangeDependencies` runs before the first build, and again
+    // on theme switches; the setter's identical-guard makes repeats
+    // free. Without this, re-opening the same plan looked correct
+    // only because the controller's `_theme` survived from the
+    // previous lifecycle.
+    final c = component.controller;
+    final theme = CruxTheme.of(context);
+    if (!identical(c.theme, theme)) {
+      c.theme = theme;
+    }
+  }
+
+  @override
   void dispose() {
     component.controller.removeListener(_onControllerChanged);
     _fadeClock.dispose();
