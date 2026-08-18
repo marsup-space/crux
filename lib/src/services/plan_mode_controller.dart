@@ -38,6 +38,7 @@ class PlanModeController extends ChangeNotifier {
     MarkdownThemeFields? theme,
     this.onFileChanged,
     this.runtimeFor,
+    this.runtimeById,
   }) : _theme = theme;
 
   /// Theme used by the parser for span styles. Settable because the
@@ -60,6 +61,13 @@ class PlanModeController extends ChangeNotifier {
   /// mirrored into `SessionRuntimeState` (the tool guards read it from
   /// there — §5 P6).
   final SessionRuntimeState? Function()? runtimeFor;
+
+  /// Resolves ANY session's runtime by id — needed by session-bound
+  /// plan state: [attachSession] reads the incoming session's plan
+  /// mirror to decide reopen-vs-collapse and writes the outgoing
+  /// session's saved view state. Null in tests (the
+  /// `_runtimeForId` fallback then degrades gracefully).
+  final SessionRuntimeState? Function(int sessionId)? runtimeById;
 
   // ── Core state ────────────────────────────────────────────────────
 
@@ -201,33 +209,150 @@ class PlanModeController extends ChangeNotifier {
 
   int? _sessionId;
 
-  /// Re-key the store when the session changes. The doc path and parsed
-  /// state survive (they're workspace-scoped), but the version log is
-  /// per-session.
+  /// The session the pane is currently bound to, or null before the
+  /// first attach. Read by the turn orchestrator to gate per-session
+  /// `<plan-context>` injection.
+  int? get sessionId => _sessionId;
+
+  /// Whether the pane is currently bound to [sessionId]. A background
+  /// session's turn uses this to decide it must NOT receive the
+  /// foreground session's plan-context block.
+  bool isAttachedTo(int sessionId) =>
+      _active && _sessionId == sessionId;
+
+  /// Re-key the controller when the current session changes.
+  ///
+  /// Plan view is session-bound: switching to a session with no plan
+  /// collapses the pane; switching to one whose runtime still carries a
+  /// `planDocPath` re-opens it there (with the session's saved viewing
+  /// position). Leaving a session saves the pane's view state (view
+  /// mode, timeline position, scroll offset) into that session's
+  /// runtime so a later switch-back restores it.
   void attachSession(int sessionId) {
     if (_sessionId == sessionId) return;
+
+    // 1. Save the outgoing session's pane state into its runtime.
+    _saveViewStateForOutgoingSession();
+
     _sessionId = sessionId;
-    final path = _planDocPath;
-    if (_active && path != null) {
-      final name = p.basename(path);
-      _store = PlanDocStore(
-        projectPath: p.dirname(path),
-        sessionId: sessionId,
-        planName: name,
-      );
-      _store!.ensureInitialized(_docText);
-      _viewingVersion = headVersion;
-      notifyListeners();
+
+    // 2. Restore from the incoming session's runtime mirror.
+    final rt = _runtimeForId(sessionId);
+    final resumedPath = rt?.planDocPath;
+    if (resumedPath == null || resumedPath.isEmpty) {
+      // Incoming session has no plan → collapse the pane (doc on disk
+      // stays as-is).
+      if (_active) {
+        _active = false;
+        _planDocPath = null;
+        _approved = false;
+        _selection = null;
+        _pendingRevert = null;
+        activeFlashes.clear();
+        _store = null;
+        _viewingVersion = 0;
+        onFileChanged?.call();
+        notifyListeners();
+      }
+      return;
     }
+
+    // 3. Incoming session has a plan: (re)open the pane on its doc.
+    //    The file may have changed on disk since (background session
+    //    edits, external editor) — read it fresh.
+    final file = File(resumedPath);
+
+    final wasActive = _active;
+    _active = true;
+    _planDocPath = resumedPath;
+    _approved = rt!.planApproved;
+    _store = PlanDocStore(
+      projectPath: p.dirname(resumedPath),
+      sessionId: sessionId,
+      planName: p.basename(resumedPath),
+    );
+    _docText = file.existsSync() ? file.readAsStringSync() : '';
+    _store!.ensureInitialized(_docText);
+    // Absorb edits made while this session was in the background (the
+    // controller only mirrors the foreground session, so the version
+    // log missed them): when the file on disk no longer equals the
+    // log's head, append it as a regular edit version so the timeline
+    // stays linear and auditable.
+    {
+      final head = _store!.headVersion;
+      final headContent = head > 0 ? _store!.readVersion(head) : null;
+      if (headContent != null && headContent != _docText) {
+        _store!.append(_docText);
+      }
+    }
+    _selection = null;
+    _pendingRevert = null;
+    activeFlashes.clear();
+    _viewMode = rt.planViewModeWasFree
+        ? PlanViewMode.free
+        : PlanViewMode.follow;
+    _lastEditScrollTarget = 0.0;
+
+    // Restore the saved timeline position: a saved history version
+    // keeps time-traveling at that version; HEAD restores to the
+    // (possibly advanced) head.
+    if (rt.planWasViewingHistory &&
+        rt.planSavedViewingVersion > 0 &&
+        rt.planSavedViewingVersion <= _store!.headVersion) {
+      _viewingVersion = rt.planSavedViewingVersion;
+      final content = _store!.readVersion(_viewingVersion);
+      if (content != null) {
+        _parsed = parsePlanDocument(content, _theme ?? _monoTheme);
+      }
+    } else {
+      _viewingVersion = _store!.headVersion;
+      _reparse();
+    }
+
+    // Replay the saved scroll offset. jumpTo clamps against whatever
+    // metrics the pane currently knows; if they're stale (the pane is
+    // about to re-lay-out on the restored content) the next layout
+    // silently corrects the offset into the real bounds — the same
+    // clamp semantics every other scroll site here relies on.
+    scrollController.jumpTo(rt.planSavedScrollOffset);
+
+    // Always notify on a re-open: the pane must rebuild even when the
+    // previous session happened to show the same file.
+    if (!wasActive) onFileChanged?.call();
+    notifyListeners();
   }
+
+  /// Persist the current pane's view state into the outgoing session's
+  /// runtime so a later switch-back can restore it. The core plan flags
+  /// (`planDocPath` / `planApproved`) are already mirrored there by
+  /// `_mirrorPlanState`; this adds the view-position snapshot.
+  void _saveViewStateForOutgoingSession() {
+    final sid = _sessionId;
+    if (sid == null || !_active) return;
+    final rt = _runtimeForId(sid);
+    if (rt == null) return;
+    rt.planWasViewingHistory = isViewingHistory;
+    rt.planSavedViewingVersion = _viewingVersion;
+    rt.planSavedScrollOffset = scrollController.offset;
+    rt.planViewModeWasFree = _viewMode == PlanViewMode.free;
+  }
+
+  SessionRuntimeState? _runtimeForId(int sessionId) =>
+      runtimeById?.call(sessionId);
 
   // ── Edits ─────────────────────────────────────────────────────────
 
   /// Called when a tool result mutated the plan doc. [oldText] /
-  /// [newText] are the before/after file contents. Recomputes the parse,
-  /// diffs, pushes flash regions, snapshots the version, and — in follow
-  /// mode — scrolls to the first changed range.
-  void onAgentEdit(String oldText, String newText) {
+  /// [newText] are the before/after file contents, [sessionId] the
+  /// session whose turn made the edit. Edits from a session other than
+  /// the currently attached one are ignored (the pane is session-bound;
+  /// the background session's plan version log is rebuilt from disk on
+  /// switch-back). Recomputes the parse, diffs, pushes flash regions,
+  /// snapshots the version, and — in follow mode — scrolls to the
+  /// first changed range.
+  void onAgentEdit(String oldText, String newText, {int? sessionId}) {
+    // A background session's edit must not redraw the current pane.
+    if (sessionId != null && sessionId != _sessionId) return;
     if (!_active) return;
     _docText = newText;
     _reparse();

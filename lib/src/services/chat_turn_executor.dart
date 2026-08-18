@@ -106,9 +106,12 @@ class ChatTurnExecutor {
 
   /// Called when a write/edit tool call mutated the plan-mode document
   /// (§5 P4). `(oldContent, newContent)` are the before/after file
-  /// contents. Null in tests; wired by the chat panel to
+  /// contents, `sessionId` identifies which session's turn made the
+  /// edit (the plan pane only reacts when it belongs to the currently
+  /// viewed session). Null in tests; wired by the chat panel to
   /// `PlanModeController.onAgentEdit`.
-  void Function(String oldContent, String newContent)? onPlanDocMutated;
+  void Function(String oldContent, String newContent, int sessionId)?
+      onPlanDocMutated;
 
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
@@ -1349,7 +1352,7 @@ class ChatTurnExecutor {
               if (!f.existsSync()) continue;
               final newContent = f.readAsStringSync();
               if (newContent == oldContent) continue;
-              onPlanDocMutated?.call(oldContent, newContent);
+              onPlanDocMutated?.call(oldContent, newContent, sessionId);
             }
           }
         }

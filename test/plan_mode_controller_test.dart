@@ -205,4 +205,142 @@ void main() {
       expect(controller.selection, isNull);
     });
   });
+
+  group('session-bound pane (attachSession)', () {
+    // Two sessions, each with its own runtime (panel-wired controllers
+    // resolve runtimes by id; tests replicate the same shape).
+    SessionRuntimeState rt(int id) => SessionRuntimeState(sessionId: id);
+
+    PlanModeController wired() {
+      final runtimes = {1: rt(1), 2: rt(2)};
+      return PlanModeController(
+        runtimeFor: () {
+          // Mirrored imperfections are fine — the controller falls
+          // back to runtimeById for cross-session state.
+          return runtimes.values.first;
+        },
+        runtimeById: (id) => runtimes[id],
+      );
+    }
+
+    test('switching to a session without a plan collapses the pane', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      expect(c.active, isTrue);
+
+      c.attachSession(2); // session 2 has no plan
+      expect(c.active, isFalse, reason: 'plan view is session-bound');
+      expect(c.planDocPath, isNull);
+
+      // Switching back re-opens it.
+      c.attachSession(1);
+      expect(c.active, isTrue);
+      expect(c.planDocPath, endsWith('PLAN.md'));
+    });
+
+    test('approved flag survives the round-trip', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      c.approve();
+
+      c.attachSession(2);
+      expect(c.active, isFalse);
+
+      c.attachSession(1);
+      expect(c.approved, isTrue);
+    });
+
+    test('free view mode survives the round-trip', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      c.onUserScroll(); // follow → free
+      expect(c.viewMode, PlanViewMode.free);
+
+      c.attachSession(2);
+      c.attachSession(1);
+      expect(c.viewMode, PlanViewMode.free);
+    });
+
+    test('timeline history position survives the round-trip', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      final path = c.planDocPath!;
+      const v2 = '# Plan\n\n## A\n';
+      File(path).writeAsStringSync(v2);
+      c.onAgentEdit('# Plan\n\n', v2);
+      expect(c.headVersion, 2);
+      c.viewVersion(1); // time-travel to v1
+      expect(c.isViewingHistory, isTrue);
+
+      c.attachSession(2);
+      c.attachSession(1);
+      expect(c.viewingVersion, 1);
+      expect(c.isViewingHistory, isTrue);
+    });
+
+    test('background-session edits do not touch the foreground pane', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      final path = c.planDocPath!;
+      final before = c.docText;
+      final headBefore = c.headVersion;
+
+      // Session 2's turn edits the SAME file (its own plan-mode target
+      // on a shared workspace): the foreground pane must not react.
+      const other = '# Plan\n\n- other session edit\n';
+      File(path).writeAsStringSync(other);
+      c.onAgentEdit(before, other, sessionId: 2);
+
+      expect(c.docText, before, reason: 'pane state untouched');
+      expect(c.headVersion, headBefore);
+    });
+
+    test('background edits are absorbed into the log on switch-back', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      const v2 = '# Plan\n\n- edited in background\n';
+      File(c.planDocPath!).writeAsStringSync(v2);
+
+      c.attachSession(2); // session 1 goes background
+      // Session 2's turn mutated session 1's plan doc on disk.
+      c.attachSession(1); // switch back
+
+      expect(c.docText, v2);
+      expect(c.headVersion, 2,
+          reason: 'the background edit landed as a new version');
+      expect(c.viewingVersion, 2);
+    });
+
+    test('isAttachedTo gates plan-context injection per session', () {
+      final c = wired();
+      addTearDown(c.dispose);
+
+      c.attachSession(1);
+      c.enter(tmp.path);
+      expect(c.isAttachedTo(1), isTrue);
+      expect(c.isAttachedTo(2), isFalse);
+
+      c.attachSession(2);
+      expect(c.active, isFalse);
+      expect(c.isAttachedTo(1), isFalse);
+    });
+  });
 }

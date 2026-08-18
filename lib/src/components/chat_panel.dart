@@ -278,6 +278,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final WebProviderRegistry _webProviderRegistry;
   late final ToolRegistry _toolRegistry;
   StreamSubscription<void>? _webProviderChangesSub;
+  StreamSubscription<void>? _sessionSwitchSub;
   late final SessionController _sessionController;
   late final OverlayController _overlayController;
   late final StreamingController _streamingController;
@@ -421,6 +422,12 @@ class _ChatPanelState extends State<ChatPanel> {
         final sid = _sessionController.currentSessionId;
         return sid == null ? null : _sessionController.runtime(sid);
       },
+      runtimeById: (sessionId) {
+        // Lazily materializes the runtime for any session — the same
+        // call the session controller itself uses, so plan state
+        // survives even for sessions never viewed in this panel run.
+        return _sessionController.runtime(sessionId);
+      },
     );
     final registry = ToolRegistry();
     registry.registerDefaults(
@@ -467,9 +474,24 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     _commandExecutor = CommandExecutor();
     _planModeController.addListener(_refresh);
-    _chatService.onPlanDocMutated = (oldContent, newContent) {
-      _planModeController.onAgentEdit(oldContent, newContent);
+    _chatService.onPlanDocMutated = (oldContent, newContent, sessionId) {
+      _planModeController.onAgentEdit(
+        oldContent,
+        newContent,
+        sessionId: sessionId,
+      );
     };
+
+    // Plan view is session-bound: watch the cubit's session switches
+    // (every switch path — sidebar, home, /new, /chat, ses:// links —
+    // funnels through `cubit.setCurrentSession`) so the pane follows
+    // the session the user is actually looking at. `_switchSession`
+    // keeps its explicit attachSession too (it runs before the stream
+    // event in practice); boot and reassemble attach as before.
+    _sessionSwitchSub = _sessionController.cubit.stream.listen((state) {
+      final sid = state.currentSessionId;
+      if (sid != null) _planModeController.attachSession(sid);
+    });
     final bootSid = _sessionController.currentSessionId;
     if (bootSid != null) _planModeController.attachSession(bootSid);
     _turnOrchestrator = ChatTurnOrchestrator(
@@ -853,6 +875,8 @@ class _ChatPanelState extends State<ChatPanel> {
     CommandRegistry.instance.removeListener(_refresh);
     _webProviderChangesSub?.cancel();
     _webProviderChangesSub = null;
+    _sessionSwitchSub?.cancel();
+    _sessionSwitchSub = null;
     FrameProfiler.instance.clearSnapshotProvider();
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);

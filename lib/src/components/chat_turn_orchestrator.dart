@@ -182,7 +182,15 @@ class ChatTurnOrchestrator {
   /// the LLM sees it.
   String? _buildPlanContextBlock(int sessionId) {
     final controller = planModeController;
-    if (controller == null || !controller.active) return null;
+    // Plan view is session-bound: only inject for the session the
+    // pane is attached to (a background session's turn must not pick
+    // up the foreground session's plan context). The per-session
+    // guards still apply via that session's own runtime mirror.
+    if (controller == null ||
+        !controller.active ||
+        !controller.isAttachedTo(sessionId)) {
+      return null;
+    }
 
     final buf = StringBuffer('<plan-context>\n');
     buf.writeln('plan_path: ${controller.planDocPath}');

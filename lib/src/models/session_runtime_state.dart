@@ -253,6 +253,22 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// unapproved (guards armed) whenever plan mode is re-entered.
   bool planApproved = false;
 
+  /// Plan-pane view state saved by `PlanModeController.attachSession`
+  /// when the user switched AWAY from this session while plan mode was
+  /// active (plan view is session-bound: the pane reopens on switch-back
+  /// with the same viewing position). All in-memory, plan-lifetime only.
+  ///
+  /// [planSavedViewingVersion] is only meaningful when
+  /// [planWasViewingHistory] is true — otherwise the pane was at HEAD
+  /// and restores to the (possibly advanced) head.
+  bool planWasViewingHistory = false;
+  int planSavedViewingVersion = 0;
+  double planSavedScrollOffset = 0.0;
+
+  /// True when the pane was in FREE scroll mode (not follow) at the
+  /// time of the switch-away.
+  bool planViewModeWasFree = false;
+
   /// The set of skill names currently "loaded" into this session's
   /// active context. A skill is added in two ways:
   ///

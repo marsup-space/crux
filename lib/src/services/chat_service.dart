@@ -90,11 +90,13 @@ class ChatService {
 
   /// Called when a write/edit tool call mutated the plan-mode document
   /// (§5 P4). Forwarded to the turn executor; wired by the chat panel
-  /// to `PlanModeController.onAgentEdit`.
-  void Function(String oldContent, String newContent)? get onPlanDocMutated =>
-      _turnExecutor.onPlanDocMutated;
+  /// to `PlanModeController.onAgentEdit`. `sessionId` identifies which
+  /// session's turn made the edit.
+  void Function(String oldContent, String newContent, int sessionId)?
+      get onPlanDocMutated => _turnExecutor.onPlanDocMutated;
   set onPlanDocMutated(
-          void Function(String oldContent, String newContent)? value) =>
+      void Function(String oldContent, String newContent, int sessionId)?
+          value) =>
       _turnExecutor.onPlanDocMutated = value;
 
   // ── Session lease ─────────────────────────────────────────────────
