@@ -8,6 +8,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
+import '../utils/text_width.dart';
 import '../utils/ticker_registry.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -182,6 +183,11 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
       ttftText: ttftText,
       fg: fg,
       hovered: _hovered,
+      // Worst-case localized hover label width; drives the
+      // layout budget so the swapped-in label never overflows.
+      cacheLabelW: stringWidth(
+        component.strings.t('chat.toolbar.cacheHit', {'pct': '100.000'}),
+      ),
     );
   }
 
@@ -260,6 +266,12 @@ class RenderMetricsDisplay extends RenderObject {
   Color _fg;
   bool _hovered;
 
+  /// Worst-case display width of the localized hover label
+  /// ("缓存 100.000%"), pushed from the State alongside the
+  /// text data so [performLayout] can reserve room for it.
+  /// The render object itself has no locale access.
+  int cacheLabelW;
+
   /// The build context of the widget that owns this render
   /// object. Set by the bridge widget so the [State] can
   /// read theme colors when pushing updates without
@@ -270,6 +282,7 @@ class RenderMetricsDisplay extends RenderObject {
     required this._tokText,
     required this._ttftText,
     required this._fg,
+    this.cacheLabelW = 12,
     this._hovered = false,
   });
 
@@ -282,8 +295,14 @@ class RenderMetricsDisplay extends RenderObject {
     required String ttftText,
     required Color? fg,
     required bool hovered,
+    int? cacheLabelW,
   }) {
     var dirty = false;
+    if (cacheLabelW != null && this.cacheLabelW != cacheLabelW) {
+      this.cacheLabelW = cacheLabelW;
+      // Width budget changed → re-run the fixed-size estimate.
+      markNeedsLayout();
+    }
     if (_tokText != tokText) {
       _tokText = tokText;
       dirty = true;
@@ -318,9 +337,16 @@ class RenderMetricsDisplay extends RenderObject {
     // layout pass reserves room — over-estimating is harmless
     // (it just means the area gets reserved when it could
     // be hidden).
-    final tokW = '999.9 tok/s'.length;
-    final ttftW = '999.99s'.length;
-    size = Size((tokW + ttftW + 3).toDouble(), 1.0);
+    //
+    // The tok/s budget must also cover the localized hover
+    // label (e.g. "缓存 100.000%" = 12 display columns) since
+    // the same render object swaps to it on hover. Measure
+    // with stringWidth, never `.length` (CJK is 2 columns
+    // per character).
+    final tokW = stringWidth('999.9 tok/s');
+    final worstTextW = tokW > cacheLabelW ? tokW : cacheLabelW;
+    final ttftW = stringWidth('999.99s');
+    size = Size((worstTextW + ttftW + 3).toDouble(), 1.0);
   }
 
   @override
@@ -338,7 +364,12 @@ class RenderMetricsDisplay extends RenderObject {
       _tokText,
       style: TextStyle(color: _fg),
     );
-    x += _tokText.length + 1;
+    // Advance by the terminal display width, NOT `.length`: the
+    // hover label is localized and CJK labels ("缓存 78.123%") are
+    // 2 columns per character while `.length` counts UTF-16 units
+    // (1 per CJK char). Advancing by `.length` under-shoots, and the
+    // spacer drawn next lands ON the "%" glyph, erasing it.
+    x += stringWidth(_tokText) + 1;
     canvas.drawText(
       offset + Offset(x, 0),
       ' ',
