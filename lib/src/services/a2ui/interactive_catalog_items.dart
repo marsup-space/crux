@@ -483,11 +483,23 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
             '${component.label} ',
             style: TextStyle(color: theme.onSurfaceDim),
           ),
+        // TextField needs a decoration with border or fillColor to get
+        // a proper width constraint inside Expanded — without it the
+        // render object measures zero and nothing renders.
         Expanded(
           child: TextField(
             controller: _controller,
             decoration: InputDecoration(
               hintText: isNumber ? '0' : null,
+              border: BoxBorder.all(
+                color: theme.borderSubtle,
+                style: BoxBorderStyle.rounded,
+              ),
+              focusedBorder: BoxBorder.all(
+                color: theme.borderActive,
+                style: BoxBorderStyle.rounded,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 1),
             ),
             obscureText: isObscured,
             maxLines: isLongText ? 3 : 1,

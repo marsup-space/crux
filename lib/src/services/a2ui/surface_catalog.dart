@@ -208,6 +208,45 @@ class SurfaceCatalog {
       '`{"path": "/fieldName"}`. The value is resolved at render time.',
     );
     buf.writeln();
+    buf.writeln('### Interactive example');
+    buf.writeln();
+    buf.writeln('```json');
+    buf.writeln('{');
+    buf.writeln('  "version": "v0.9",');
+    buf.writeln('  "createSurface": {');
+    buf.writeln('    "surfaceId": "form_1",');
+    buf.writeln('    "catalogId": "$catalogId",');
+    buf.writeln('    "components": [');
+    buf.writeln(
+      '      {"id": "root", "component": "Column", "children": ["name_label", "name_input", "subscribe", "interests", "submit"]},',
+    );
+    buf.writeln(
+      '      {"id": "name_label", "component": "Text", "text": "Name:"},',
+    );
+    buf.writeln(
+      '      {"id": "name_input", "component": "TextField", "value": {"path": "/name"}, "variant": "shortText"},',
+    );
+    buf.writeln(
+      '      {"id": "subscribe", "component": "CheckBox", "label": "Subscribe", "value": {"path": "/subscribe"}},',
+    );
+    buf.writeln(
+      '      {"id": "interests", "component": "ChoicePicker", "label": "Topics", "options": [{"label": "Food", "value": "food"}, {"label": "Tech", "value": "tech"}], "value": {"path": "/interests"}, "variant": "multipleSelection"},',
+    );
+    buf.writeln(
+      '      {"id": "submit_label", "component": "Text", "text": "Submit"},',
+    );
+    buf.writeln(
+      '      {"id": "submit", "component": "Button", "child": "submit_label", "variant": "primary", "action": {"event": {"name": "submit_form", "context": {"name": {"path": "/name"}, "subscribe": {"path": "/subscribe"}, "interests": {"path": "/interests"}}}}}',
+    );
+    buf.writeln('    ],');
+    buf.writeln(
+      '    "dataModel": {"name": "", "subscribe": false, "interests": []}',
+    );
+    buf.writeln('  }');
+    buf.writeln('}');
+    buf.writeln('```');
+    buf.writeln();
+
     buf.writeln('### Rules');
     buf.writeln();
     buf.writeln(
@@ -225,6 +264,17 @@ class SurfaceCatalog {
     );
     buf.writeln(
       '- Keep surfaces compact — they render inside a chat bubble.',
+    );
+    buf.writeln(
+      '- A component referenced as a `child` of Button or Card must NOT '
+      'also appear in a container\'s `children` list — it would render '
+      'twice. Each component should have exactly one parent.',
+    );
+    buf.writeln(
+      '- Button\'s `child` should reference a Text component that serves '
+      'as the button label. Example: '
+      '`{"id": "btn", "component": "Button", "child": "btn_label", ...}` '
+      'with `{"id": "btn_label", "component": "Text", "text": "Submit"}`.',
     );
 
     return buf.toString();
