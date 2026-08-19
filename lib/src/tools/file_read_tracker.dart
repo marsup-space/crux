@@ -154,6 +154,14 @@ class FileReadTracker {
     if (!_cache.containsKey(normalized)) {
       final content = file.readAsStringSync();
       await recordRead(filePath, currentMtime);
+
+      // Empty-file exemption: overwriting an empty (or whitespace-only)
+      // file carries zero data-loss risk — there's nothing to protect.
+      // This commonly happens when a plan-mode session creates an empty
+      // plan doc, or when a user manually creates a placeholder file.
+      // Blocking the first write forces an unnecessary read round-trip.
+      if (content.trim().isEmpty) return null;
+
       return GuardResult(
         header:
             '[GUARD] Write was BLOCKED — file was not read before write. '
@@ -167,6 +175,20 @@ class FileReadTracker {
 
     final recordedMtime = _cache[normalized];
     if (recordedMtime != null && currentMtime > recordedMtime) {
+      // Mtime tolerance window: LSP servers, formatters, and file watchers
+      // can touch a file immediately after we read it, bumping the mtime
+      // by a few milliseconds without semantically modifying the content.
+      // A 500ms window absorbs those spurious touches while still
+      // catching real external edits (which typically happen seconds to
+      // minutes later).
+      const mtimeToleranceMs = 500;
+      if (currentMtime - recordedMtime <= mtimeToleranceMs) {
+        // Within tolerance — treat as unchanged and update the recorded
+        // mtime to the newer value so subsequent checks don't re-trigger.
+        await recordRead(filePath, currentMtime);
+        return null;
+      }
+
       final content = file.readAsStringSync();
       await recordRead(filePath, currentMtime);
 
