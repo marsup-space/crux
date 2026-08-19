@@ -670,6 +670,7 @@ class _ChatHistoryState extends State<ChatHistory> {
               // the mapped label, and the same effort renders two
               // different ways in the same view.
               reasoningPresets: reasoningPresets,
+              surfaceCatalog: component.toolRegistry.surfaceCatalog,
             ),
           );
           items.add((ctx) => const SizedBox(height: 1));

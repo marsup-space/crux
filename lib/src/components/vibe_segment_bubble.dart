@@ -2,12 +2,14 @@ import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
+import '../services/a2ui/surface_catalog.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
 import '../i18n/strings.dart';
 import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
+import 'surface_bubble.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'lsp_state_glyph.dart';
 import 'vibe_box.dart';
@@ -95,6 +97,11 @@ class VibeSegmentBubble extends StatelessComponent {
   /// on how the same effort renders. When null/empty, the raw
   /// internal value is used (identity mapping).
   final List<ReasoningPreset> reasoningPresets;
+
+  /// The A2UI surface catalog for rendering `surface` tool calls
+  /// inline below the boxes. Null when surfaces aren't available.
+  final SurfaceCatalog? surfaceCatalog;
+
   final Strings strings;
 
   const VibeSegmentBubble({
@@ -106,6 +113,7 @@ class VibeSegmentBubble extends StatelessComponent {
     this.onOpenFile,
     this.onDiffFiles,
     this.reasoningPresets = const [],
+    this.surfaceCatalog,
     this.strings = kEnglishStrings,
     super.key,
   });
@@ -317,6 +325,15 @@ class VibeSegmentBubble extends StatelessComponent {
               ],
             ),
           ),
+        // A2UI surfaces — rendered inline between the boxes and the
+        // prose line. Each `surface` tool call in this segment gets
+        // its own [SurfaceBubble].
+        if (surfaceCatalog != null && segment.surfaceToolCalls.isNotEmpty)
+          for (final tc in segment.surfaceToolCalls)
+            SurfaceBubble(
+              toolCall: tc,
+              catalog: surfaceCatalog!,
+            ),
         // Prose line. Single closing message — its `content` is
         // rendered under the `crux:` prefix. Either `role: 'ai'`
         // (the agent's prose reply) or `role: 'tool_call'` with

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
@@ -111,6 +113,83 @@ class ModBoxData {
   });
 }
 
+/// Aggregated progress-box data for one vibe segment — the persisted
+/// echo of a long-running bash call that reported progress signals.
+///
+/// Parsed from the `shellProgress` field the shell base stamps into
+/// `ToolResult.metadata` (and the chat executor persists into
+/// `messages.meta`). Renders as a compact single-row box on reload;
+/// the live bar is the streaming bubble's job.
+class ProgressBoxData {
+  /// Last phase word seen ("Downloading", "Installing", ...).
+  final String? phase;
+
+  /// Highest percent observed across the run, 0..100.
+  final double? peakPercent;
+
+  /// Wall-clock seconds the command ran (as measured by the tool).
+  final int durationSec;
+
+  /// Total stdout+stderr bytes produced.
+  final int bytes;
+
+  /// Process exit code; non-zero renders as a failure row.
+  final int exitCode;
+
+  const ProgressBoxData({
+    this.phase,
+    this.peakPercent,
+    this.durationSec = 0,
+    this.bytes = 0,
+    this.exitCode = 0,
+  });
+}
+
+/// Parse a [ProgressBoxData] out of a persisted `messages.meta` JSON
+/// blob. Null when the blob has no (or malformed) `shellProgress`.
+ProgressBoxData? progressFromMeta(String? meta) {
+  if (meta == null || meta.isEmpty) return null;
+  Map<String, dynamic>? root;
+  try {
+    final decoded = jsonDecode(meta);
+    if (decoded is Map) root = decoded.cast<String, dynamic>();
+  } catch (_) {
+    return null;
+  }
+  final raw = root?['shellProgress'];
+  if (raw is! Map) return null;
+  final m = raw.cast<String, dynamic>();
+  final phase = m['phase'];
+  final peak = _progressNum(m['peakPercent']);
+  final duration = _progressNum(m['durationSec'])?.round() ?? 0;
+  final bytes = _progressNum(m['bytes'])?.round() ?? 0;
+  final exitCode = _progressNum(m['exitCode'])?.round() ?? 0;
+  if (phase is! String && peak == null && duration <= 0) return null;
+  return ProgressBoxData(
+    phase: phase is String ? phase : null,
+    peakPercent: peak,
+    durationSec: duration,
+    bytes: bytes,
+    exitCode: exitCode,
+  );
+}
+
+double? _progressNum(dynamic v) => v is num ? v.toDouble() : null;
+
+/// Merge two segment progress summaries (several bash calls in one
+/// segment): longest duration, highest peak, summed bytes, last phase,
+/// any non-zero exit wins.
+ProgressBoxData mergeProgress(ProgressBoxData a, ProgressBoxData b) {
+  return ProgressBoxData(
+    phase: b.phase ?? a.phase,
+    peakPercent: (a.peakPercent ?? 0) >= (b.peakPercent ?? 0)
+        ? a.peakPercent
+        : b.peakPercent,
+    durationSec: a.durationSec > b.durationSec ? a.durationSec : b.durationSec,
+    bytes: a.bytes + b.bytes,
+    exitCode: (a.exitCode != 0) ? a.exitCode : b.exitCode,
+  );
+}
 
 /// One [VibeSegment] per prose boundary in the message list.
 ///
@@ -152,6 +231,7 @@ class VibeSegment {
   final ThinkBoxData? think;
   final ToolBoxData? tools;
   final ModBoxData? mods;
+  final ProgressBoxData? progress;
   final Message? prose;
   final bool showUserMessage;
 
@@ -162,13 +242,13 @@ class VibeSegment {
   /// live file. Empty when the segment mutated nothing.
   final List<ToolCallData> modCalls;
 
+  /// The segment's `surface` tool calls, in emission order. The walker
+  /// preserves these so [VibeSegmentBubble] can render the A2UI surface
+  /// inline below the boxes. Empty when the segment has no surfaces.
+  final List<ToolCallData> surfaceToolCalls;
+
   /// The turn's abnormal stop, when the agent turn anchored here ended
-  /// with a persisted `stream_error` row (LLM failure, step limit,
-  /// …). Null on turns that completed normally. The chat history
-  /// renders an [ErrorBubble] after the segment so the stop reason is
-  /// visible in vibe mode too — previously these rows were silently
-  /// dropped by the walker and errors were invisible unless the user
-  /// switched to verbose mode.
+  /// with a persisted `stream_error` row. Null on normal completion.
   final Message? stopError;
 
   const VibeSegment({
@@ -176,9 +256,11 @@ class VibeSegment {
     this.think,
     this.tools,
     this.mods,
+    this.progress,
     this.prose,
     this.showUserMessage = true,
     this.modCalls = const [],
+    this.surfaceToolCalls = const [],
     this.stopError,
   });
 }
@@ -243,10 +325,12 @@ List<VibeSegment> walkSegments(
   // The segment's write/edit calls, in order, for the files box's diff
   // action. Accumulated alongside modPaths and reset on each emit.
   final modCalls = <ToolCallData>[];
-  // The turn's abnormal stop: the latest `stream_error` row seen in
-  // this segment window. Carried onto the emitted segment so vibe
-  // mode can render the stop reason + continue affordance. Reset on
-  // each emit and user boundary like every other accumulator.
+  // The segment's surface tool calls, preserved so the vibe bubble
+  // can render A2UI surfaces inline.
+  final surfaceToolCalls = <ToolCallData>[];
+  // Merged progress summary for the progress box: at most one entry
+  // per segment, folded from every bash run that reported signals.
+  ProgressBoxData? progressAccum;
   Message? stopErrorAccum;
   // `true` once the current user turn has produced its first
   // emitted segment. The first segment carries the `you:` line;
@@ -292,6 +376,8 @@ List<VibeSegment> walkSegments(
           modLinesAdded,
           modLinesRemoved,
           modCalls,
+          surfaceToolCalls,
+          progressAccum,
           stopErrorAccum,
           null,
           showUserLine: !userLineShown,
@@ -313,9 +399,8 @@ List<VibeSegment> walkSegments(
           const {},
           const {},
           const [],
-          // Standalone answer segment: no stop error, no prose —
-          // just the user line (swapped for the answer bubble by
-          // the renderer).
+          const [],
+          null,
           null,
           null,
           showUserLine: true,
@@ -335,6 +420,9 @@ List<VibeSegment> walkSegments(
         modLinesAdded.clear();
         modLinesRemoved.clear();
         modCalls.clear();
+        surfaceToolCalls.clear();
+        progressAccum = null;
+        stopErrorAccum = null;
         lastWasToolResult = false;
         continue;
       }
@@ -356,6 +444,8 @@ List<VibeSegment> walkSegments(
         modLinesAdded,
         modLinesRemoved,
         modCalls,
+        surfaceToolCalls,
+        progressAccum,
         stopErrorAccum,
         null,
         showUserLine: !userLineShown,
@@ -373,6 +463,9 @@ List<VibeSegment> walkSegments(
       modLinesAdded.clear();
       modLinesRemoved.clear();
       modCalls.clear();
+      surfaceToolCalls.clear();
+      progressAccum = null;
+      stopErrorAccum = null;
       lastWasToolResult = false;
       continue;
     }
@@ -386,26 +479,10 @@ List<VibeSegment> walkSegments(
     }
 
     if (msg.role == 'stream_error') {
-      // Abnormal stop of the current turn (LLM failure, step limit,
-      // …). Two attachment shapes:
-      //
-      //   * The turn already closed (final prose landed, window
-      //     empty) → fold the error into that closed segment so the
-      //     bubble renders under the reply without spawning an extra
-      //     empty segment.
-      //   * Anything else (mid-round, or nothing emitted yet) → hold
-      //     in the accumulator; the next close / boundary flush /
-      //     trailing flush carries it. This is what makes an error
-      //     with NO prose at all still surface as a bubble.
-      //
-      // Previously these rows were silently dropped here, making
-      // errors invisible unless the user switched to verbose mode.
-      final last = segments.isEmpty ? null : segments.last;
-      final windowHasPendingWork =
-          thinkDuration != Duration.zero ||
-          toolEntries.isNotEmpty ||
-          modPaths.isNotEmpty;
-      if (!windowHasPendingWork &&
+      // Attach errors that arrive after an already-emitted final prose row
+      // to that row; otherwise carry them into the next emitted segment.
+      final last = segments.isNotEmpty ? segments.last : null;
+      if (currentUser != null &&
           last != null &&
           identical(last.userMessage, currentUser) &&
           last.prose != null &&
@@ -480,6 +557,26 @@ List<VibeSegment> walkSegments(
             lspState: mergedState,
           );
           toolTotalTokens += callTokens;
+
+          // Accumulate progress-box data from the tool result's
+          // persisted `shellProgress` metadata — only bash runs that
+          // reported progress signals carry it (see
+          // `shell_progress_parser.dart`). Multiple runs in one
+          // segment fold into a single summary via mergeProgress.
+          final progressMeta = resultMsg?.meta;
+          if (progressMeta != null && progressMeta.isNotEmpty) {
+            final pb = progressFromMeta(progressMeta);
+            if (pb != null) {
+              progressAccum = progressAccum == null
+                  ? pb
+                  : mergeProgress(progressAccum, pb);
+            }
+          }
+
+          // Preserve surface tool calls for inline rendering.
+          if (tc.name == 'surface') {
+            surfaceToolCalls.add(tc);
+          }
 
           // Accumulate file-modification data via the modSummary hook.
           // Dedupe by `p.basename`, NOT by the full path string:
@@ -571,6 +668,8 @@ List<VibeSegment> walkSegments(
           modLinesAdded,
           modLinesRemoved,
           modCalls,
+          surfaceToolCalls,
+          progressAccum,
           stopErrorAccum,
           msg,
           showUserLine: !userLineShown,
@@ -591,6 +690,9 @@ List<VibeSegment> walkSegments(
         modLinesAdded.clear();
         modLinesRemoved.clear();
         modCalls.clear();
+        surfaceToolCalls.clear();
+        progressAccum = null;
+        stopErrorAccum = null;
         // Critically, do NOT clear `currentUser` here. The
         // spec doesn't say to, and the earlier implementation
         // did — that's what silently dropped a 2nd
@@ -621,6 +723,8 @@ List<VibeSegment> walkSegments(
     modLinesAdded,
     modLinesRemoved,
     modCalls,
+    surfaceToolCalls,
+    progressAccum,
     stopErrorAccum,
     null,
     showUserLine: !userLineShown,
@@ -647,9 +751,7 @@ List<VibeSegment> walkSegments(
 /// [progress] is the segment's merged progress summary (bash runs
 /// that reported signals); null when none did.
 ///
-/// [stopError] is the turn's abnormal stop (`stream_error` row) seen
-/// in this window; null on normally-completed turns. Carried onto
-/// [VibeSegment.stopError] so vibe mode renders the stop reason.
+/// [stopError] is the turn's abnormal stop, when one occurred.
 ///
 /// Emit is suppressed when there's nothing visible — e.g. a
 /// flush at a user boundary where the previous turn already
@@ -669,6 +771,8 @@ void _emitSegment(
   Map<String, int> modLinesAdded,
   Map<String, int> modLinesRemoved,
   List<ToolCallData> modCalls,
+  List<ToolCallData> surfaceToolCalls,
+  ProgressBoxData? progress,
   Message? stopError,
   Message? closing, {
   required bool showUserLine,
@@ -678,7 +782,7 @@ void _emitSegment(
   final entries = toolOrder.map((name) => toolEntries[name]!).toList();
   final hasThink = thinkDuration.inMilliseconds > 0 || thinkTokens > 0;
   final hasBoxes =
-      hasThink || entries.isNotEmpty || modPaths.isNotEmpty;
+      hasThink || entries.isNotEmpty || modPaths.isNotEmpty || progress != null;
   final hasProse = closing != null;
 
   // Skip when the flush has nothing to show: no boxes, no
@@ -687,9 +791,6 @@ void _emitSegment(
   // set but accumulators are empty and there's no closing —
   // we want to emit that case (showUserLine=true makes it
   // carry the user line), so the guard is gated on showUserLine.
-  // A stop error alone also justifies an emit: the segment exists
-  // to carry the failure bubble even when the round produced no
-  // boxes and no prose.
   if (!hasBoxes && !hasProse && !showUserLine && stopError == null) return;
 
   segments.add(
@@ -745,9 +846,27 @@ void _emitSegment(
             )
           : null,
       prose: closing,
+      progress: progress,
       modCalls: List.unmodifiable(modCalls),
+      surfaceToolCalls: List.unmodifiable(surfaceToolCalls),
       stopError: stopError,
     ),
+  );
+}
+
+/// Return a copy of [seg] with [stopError] attached.
+VibeSegment _withStopError(VibeSegment seg, Message stopError) {
+  return VibeSegment(
+    userMessage: seg.userMessage,
+    showUserMessage: seg.showUserMessage,
+    think: seg.think,
+    tools: seg.tools,
+    mods: seg.mods,
+    progress: seg.progress,
+    prose: seg.prose,
+    modCalls: seg.modCalls,
+    surfaceToolCalls: seg.surfaceToolCalls,
+    stopError: stopError,
   );
 }
 
@@ -763,21 +882,4 @@ String formatTokens(int tokens) {
     return '${k >= 10 ? k.round() : str}k tokens';
   }
   return '$tokens tokens';
-}
-
-/// Return a copy of [seg] with [stopError] attached. Used by the
-/// walker's fold-into-closed-segment path (an error arriving after
-/// the turn's final prose) — [VibeSegment] is immutable, so the
-/// segment is replaced in place.
-VibeSegment _withStopError(VibeSegment seg, Message stopError) {
-  return VibeSegment(
-    userMessage: seg.userMessage,
-    showUserMessage: seg.showUserMessage,
-    think: seg.think,
-    tools: seg.tools,
-    mods: seg.mods,
-    prose: seg.prose,
-    modCalls: seg.modCalls,
-    stopError: stopError,
-  );
 }
