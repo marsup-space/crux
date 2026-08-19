@@ -8,6 +8,7 @@ library;
 import 'package:nocterm/nocterm.dart';
 
 import '../../theme/crux_theme.dart';
+import 'interactive_catalog_items.dart';
 import 'models.dart';
 import 'surface_catalog.dart';
 
@@ -266,6 +267,9 @@ class DividerCatalogItem extends CatalogItem {
 // ---------------------------------------------------------------------------
 
 /// Register all basic catalog items into a [SurfaceCatalog].
+///
+/// Includes both display components (Text, Column, Row, Card, Divider)
+/// and interactive components (Button, CheckBox, TextField, ChoicePicker).
 SurfaceCatalog createBasicCatalog() {
   final catalog = SurfaceCatalog();
   catalog.register(TextCatalogItem());
@@ -273,5 +277,6 @@ SurfaceCatalog createBasicCatalog() {
   catalog.register(RowCatalogItem());
   catalog.register(CardCatalogItem());
   catalog.register(DividerCatalogItem());
+  registerInteractiveCatalogItems(catalog);
   return catalog;
 }
