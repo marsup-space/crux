@@ -474,14 +474,24 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
   }
 
   /// Handle key events that the TextField's own handler doesn't consume.
-  /// Escape releases focus back to the chat input. Ctrl+C falls through
-  /// to the global quit handler.
+  /// Escape releases focus back to the chat input via FocusManager.unfocus().
+  /// Ctrl+C is consumed here after releasing focus so the event doesn't
+  /// double-trigger (the binding's global Ctrl+C handler would also fire).
   bool _handleKeyEvent(KeyboardEvent event) {
     if (event.logicalKey == LogicalKey.escape) {
+      NoctermBinding.instance.focusManager.unfocus();
       setState(() => _focused = false);
       return true;
     }
-    // Don't consume Ctrl+C — let it propagate to the global handler.
+    // Ctrl+C: release focus AND let the event bubble to the global handler.
+    // The surface TextField must not hold focus when Ctrl+C arrives — the
+    // global quit handler needs to fire. Releasing focus first ensures the
+    // chat input is the active focusable, then the event bubbles up.
+    if (event.logicalKey == LogicalKey.keyC && event.isControlPressed) {
+      NoctermBinding.instance.focusManager.unfocus();
+      setState(() => _focused = false);
+      return false; // let the binding's global Ctrl+C handler fire
+    }
     return false;
   }
 
@@ -703,7 +713,9 @@ class _SurfaceChoicePicker extends StatefulComponent {
 }
 
 class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
-  int _focusedIndex = 0;
+  /// Keyboard-focus index — only set by arrow keys, not by mouse clicks.
+  /// When -1, no option has keyboard focus (mouse-only interaction).
+  int _focusedIndex = -1;
 
   void _toggle(String optionValue) {
     final current = List<String>.from(component.selections);
@@ -724,20 +736,28 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
     final key = event.logicalKey;
     if (key == LogicalKey.arrowUp) {
       setState(() {
-        _focusedIndex =
-            (_focusedIndex - 1 + component.options.length) %
-            component.options.length;
+        if (_focusedIndex < 0) {
+          _focusedIndex = component.options.length - 1;
+        } else {
+          _focusedIndex =
+              (_focusedIndex - 1 + component.options.length) %
+              component.options.length;
+        }
       });
       return true;
     }
     if (key == LogicalKey.arrowDown) {
       setState(() {
-        _focusedIndex = (_focusedIndex + 1) % component.options.length;
+        if (_focusedIndex < 0) {
+          _focusedIndex = 0;
+        } else {
+          _focusedIndex = (_focusedIndex + 1) % component.options.length;
+        }
       });
       return true;
     }
     if (key == LogicalKey.enter || key == LogicalKey.space) {
-      if (component.options.isNotEmpty) {
+      if (component.options.isNotEmpty && _focusedIndex >= 0) {
         _toggle(component.options[_focusedIndex].value);
       }
       return true;
@@ -776,7 +796,9 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
   Component _buildOption(CruxThemeData theme, int index, bool isActive) {
     final option = component.options[index];
     final isSelected = component.selections.contains(option.value);
-    final isFocused = index == _focusedIndex;
+    // Keyboard focus only active when _focusedIndex >= 0 (arrow keys used).
+    // Mouse clicks don't set _focusedIndex, so no blue highlight on click.
+    final isFocused = _focusedIndex >= 0 && index == _focusedIndex;
 
     final String marker;
     if (component.isMutuallyExclusive) {
