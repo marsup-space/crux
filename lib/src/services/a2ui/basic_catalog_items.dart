@@ -7,6 +7,8 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import 'dart:math';
+
 import '../../theme/crux_theme.dart';
 import 'interactive_catalog_items.dart';
 import 'models.dart';
@@ -217,15 +219,25 @@ class CardCatalogItem extends CatalogItem {
 
     final theme = CruxTheme.of(context);
 
+    // Random border style for user evaluation — pick one per render.
+    const styles = [
+      BoxBorderStyle.solid,
+      BoxBorderStyle.double,
+      BoxBorderStyle.rounded,
+      BoxBorderStyle.dashed,
+      BoxBorderStyle.dotted,
+    ];
+    final randomStyle = styles[Random().nextInt(styles.length)];
+
     return DecoratedBox(
       decoration: BoxDecoration(
         border: BoxBorder.all(
           color: theme.borderActive,
-          style: BoxBorderStyle.rounded,
+          style: randomStyle,
         ),
         title: title.isNotEmpty
             ? BorderTitle(
-                text: title,
+                text: '$title [${randomStyle.name}]',
                 style: TextStyle(
                   color: theme.secondary,
                   fontWeight: FontWeight.bold,

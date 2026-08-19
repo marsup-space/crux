@@ -164,7 +164,13 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
         onTap: isActive ? _handleTap : null,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          decoration: BoxDecoration(color: bgColor),
+          decoration: BoxDecoration(
+            color: bgColor,
+            border: BoxBorder.all(
+              color: _hovered ? theme.accent : theme.borderSubtle,
+              style: BoxBorderStyle.rounded,
+            ),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: component.child,
         ),
@@ -287,22 +293,31 @@ class _SurfaceCheckBoxState extends State<_SurfaceCheckBox> {
       child: GestureDetector(
         onTap: isActive ? _toggle : null,
         behavior: HitTestBehavior.opaque,
-        child: Row(
-          children: [
-            Text(
-              '$checkMark ',
-              style: TextStyle(
-                color: markerColor,
-                fontWeight: _hovered ? FontWeight.bold : null,
-              ),
+        child: Container(
+          decoration: BoxDecoration(
+            border: BoxBorder.all(
+              color: _hovered ? theme.accent : theme.background,
+              style: BoxBorderStyle.rounded,
             ),
-            Expanded(
-              child: Text(
-                component.label,
-                style: TextStyle(color: labelColor),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Row(
+            children: [
+              Text(
+                '$checkMark ',
+                style: TextStyle(
+                  color: markerColor,
+                  fontWeight: _hovered ? FontWeight.bold : null,
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                child: Text(
+                  component.label,
+                  style: TextStyle(color: labelColor),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -792,22 +807,31 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
     return GestureDetector(
       onTap: isActive ? () => _toggle(option.value) : null,
       behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          Text(
-            '$marker ',
-            style: TextStyle(
-              color: markerColor,
-              fontWeight: isFocused && isActive ? FontWeight.bold : null,
-            ),
+      child: Container(
+        decoration: BoxDecoration(
+          border: BoxBorder.all(
+            color: isFocused && isActive ? theme.accent : theme.background,
+            style: BoxBorderStyle.rounded,
           ),
-          Expanded(
-            child: Text(
-              option.label,
-              style: TextStyle(color: textColor),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: Row(
+          children: [
+            Text(
+              '$marker ',
+              style: TextStyle(
+                color: markerColor,
+                fontWeight: isFocused && isActive ? FontWeight.bold : null,
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Text(
+                option.label,
+                style: TextStyle(color: textColor),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
