@@ -28,6 +28,7 @@ import 'shell_guard_bubble.dart';
 import 'surface_bubble.dart';
 import 'tool_guard_bubble.dart';
 import 'error_bubble.dart';
+import '../services/a2ui/models.dart';
 import '../services/a2ui/surface_catalog.dart';
 import '../services/llm_error.dart';
 
@@ -86,6 +87,9 @@ class MessageBubble extends StatelessComponent {
   /// [SurfaceBubble] below the collapsed tool-call row.
   final SurfaceCatalog? surfaceCatalog;
 
+  /// Callback fired when an interactive surface triggers an action.
+  final void Function(A2uiAction action)? onSurfaceAction;
+
   final Strings strings;
 
   const MessageBubble({
@@ -100,10 +104,10 @@ class MessageBubble extends StatelessComponent {
     this.onSessionLinkTap,
     this.onQuickReplyTap,
     this.onLinkTap,
-    this.onRetryContinue,
-    this.surfaceCatalog,
-    this.strings = kEnglishStrings,
-  });
+     this.onRetryContinue,
+     this.surfaceCatalog,
+     this.onSurfaceAction,
+     this.strings = kEnglishStrings,});
 
   String _displayEffort(String effort) {
     final presets = reasoningPresets;
@@ -704,15 +708,15 @@ class MessageBubble extends StatelessComponent {
                   onTap: onToolCallTap,
                 );
               }),
-              // Render A2UI surfaces inline below surface tool calls.
-              if (surfaceCatalog != null)
-                for (final tc in calls)
-                  if (tc.name == 'surface')
-                    SurfaceBubble(
-                      toolCall: tc,
-                      catalog: surfaceCatalog!,
-                    ),
-            ],
+               // Render A2UI surfaces inline below surface tool calls.
+               if (surfaceCatalog != null)
+                 for (final tc in calls)
+                   if (tc.name == 'surface')
+                     SurfaceBubble(
+                       toolCall: tc,
+                       catalog: surfaceCatalog!,
+                       onAction: onSurfaceAction,
+                     ),     ],
           ),
         ),
       );

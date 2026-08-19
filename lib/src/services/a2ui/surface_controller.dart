@@ -88,7 +88,13 @@ class _SurfaceControllerState extends State<SurfaceController> {
       context: resolvedContext,
     );
 
+    // Mark the surface as submitted — disables further interaction.
+    component.surface.submitted = true;
+
     component.onAction?.call(resolved);
+
+    // Rebuild to reflect the submitted state (disabled components).
+    setState(() {});
   }
 
   @override

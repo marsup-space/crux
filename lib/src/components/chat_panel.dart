@@ -37,12 +37,12 @@ import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
 import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
+import '../services/a2ui/models.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
 import '../tools/ask_tool.dart';
-import '../tools/shell_monitor.dart'
-    show ShellMonitorNotice, mkMonitorTail;
+import '../tools/shell_monitor.dart' show ShellMonitorNotice, mkMonitorTail;
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/frame_profiler.dart';
@@ -317,6 +317,7 @@ class _ChatPanelState extends State<ChatPanel> {
   /// Session id is captured at open time so a background session's
   /// run stays viewable.
   ({int sessionId, String callId})? _shellLiveFullpane;
+
   /// The skill whose SKILL.md the fullpane is showing (home `skills`
   /// box). Null when the fullpane is showing something else.
   SkillInfo? _skillFullpane;
@@ -456,7 +457,8 @@ class _ChatPanelState extends State<ChatPanel> {
       _providerService,
       LlmClient(),
       toolExecutor,
-      replyLanguage: () => component.localeController?.replyLanguageSettings ??
+      replyLanguage: () =>
+          component.localeController?.replyLanguageSettings ??
           ReplyLanguageSettings.fallback,
     );
     _webProviderChangesSub = _webProviderRegistry.changes.listen((_) {
@@ -789,9 +791,7 @@ class _ChatPanelState extends State<ChatPanel> {
         return;
       case OpenDirectoryResult.notFound:
         _showToast(
-          _strings.t('toast.dirNotFoundCwd', {
-            'path': Directory.current.path,
-          }),
+          _strings.t('toast.dirNotFoundCwd', {'path': Directory.current.path}),
           mode: ToastMode.error,
         );
       case OpenDirectoryResult.failed:
@@ -1021,6 +1021,14 @@ class _ChatPanelState extends State<ChatPanel> {
     } else {
       input.appendText(reply.answer);
     }
+  }
+
+  /// Handle an A2UI surface action — serialize it and submit as the
+  /// next user message so the agent sees the interaction result.
+  void _handleSurfaceAction(A2uiAction action) {
+    final input = _chatInputKey.currentState;
+    if (input == null) return;
+    input.submit(action.toDisplayString());
   }
 
   void _handleMarkdownLinkTap(MarkdownLink link) {
@@ -1309,8 +1317,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final model = _sessionController.currentSession.model;
     final slashIdx = model.indexOf('/');
     if (slashIdx <= 0) return false;
-    return model.substring(0, slashIdx) ==
-        OpenRouterStealthSync.providerName;
+    return model.substring(0, slashIdx) == OpenRouterStealthSync.providerName;
   }
 
   /// Invoked by the toolbar's `⟳ sync` button: run the one-shot
@@ -1393,7 +1400,11 @@ class _ChatPanelState extends State<ChatPanel> {
     }
     final vibeDiff = _vibeDiffRequest;
     if (vibeDiff != null) {
-      return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane, strings: _strings);
+      return VibeDiffFullpane(
+        request: vibeDiff,
+        onClose: _closeFullpane,
+        strings: _strings,
+      );
     }
     final skill = _skillFullpane;
     if (skill != null) {
@@ -1616,8 +1627,8 @@ class _ChatPanelState extends State<ChatPanel> {
       // sessions. The store query is one SQL aggregate; the widget
       // re-invokes it per open (no caching) because the data is cheap
       // and always fresh.
-      dailyTokenTotals: ({required sinceDays}) => _store.messageStore
-          .dailyTokenTotals(
+      dailyTokenTotals: ({required sinceDays}) =>
+          _store.messageStore.dailyTokenTotals(
             sinceDaysAgo: sinceDays,
             projectPath: Directory.current.path,
           ),
@@ -1744,13 +1755,13 @@ class _ChatPanelState extends State<ChatPanel> {
   /// wherever it's placed. Deferred rebuild on each call reads the
   /// panel's live session state.
   PluginHost _pluginHost() => PluginHost(
-        onPromptAction: _handlePluginPromptAction,
-        onShellAction: _handlePluginShellAction,
-        onScreenAction: _handlePluginScreenAction,
-        onTodoToggle: _handlePluginTodoToggle,
-        onAction: _recordPluginAction,
-        projectPath: Directory.current.path,
-      );
+    onPromptAction: _handlePluginPromptAction,
+    onShellAction: _handlePluginShellAction,
+    onScreenAction: _handlePluginScreenAction,
+    onTodoToggle: _handlePluginTodoToggle,
+    onAction: _recordPluginAction,
+    projectPath: Directory.current.path,
+  );
 
   /// Reveal a vibe file row's file in the system file manager (Finder on
   /// macOS, Explorer on Windows, the default manager on Linux). Wired to
@@ -1819,8 +1830,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Full candidate set for the search/archive sections: the same
       // loader the `#` mention picker uses (live lists + archived
       // rows, deduped, live winning).
-      onLoadCandidates: () =>
-          _sessionController.loadSessionMentionCandidates(),
+      onLoadCandidates: () => _sessionController.loadSessionMentionCandidates(),
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -1832,7 +1842,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Archived-aware open: reuses the ses:// link-tap path
       // (unarchive → sidebar refresh → switch, error toast on
       // failure) and closes the manager on success only.
-            onOpenSession: (id) async {
+      onOpenSession: (id) async {
         final current = _sessionController.currentSessionId;
         if (current == id) {
           setState(() {
@@ -1871,9 +1881,7 @@ class _ChatPanelState extends State<ChatPanel> {
       refresh: _refresh,
     );
     if (popover != null) {
-      overlays.add(
-        Positioned(bottom: 0, left: 0, right: 0, child: popover),
-      );
+      overlays.add(Positioned(bottom: 0, left: 0, right: 0, child: popover));
     }
 
     overlays.add(
@@ -1944,8 +1952,8 @@ class _ChatPanelState extends State<ChatPanel> {
             // plan pane never grows wider than the chat pane.
             final bareSidebarWidth = showInfoPanel
                 ? (kSidebarWidthMin +
-                        0.3 * (constraints.maxWidth - kSidebarShowThreshold))
-                    .clamp(kSidebarWidthMin, kSidebarWidthMax)
+                          0.3 * (constraints.maxWidth - kSidebarShowThreshold))
+                      .clamp(kSidebarWidthMin, kSidebarWidthMax)
                 : null;
             final layout = resolvePlanSplit(
               constraints.maxWidth,
@@ -1984,6 +1992,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         onVibeOpenFile: _openVibeFile,
                         onVibeDiffFiles: _openVibeDiff,
                         onShellLiveTap: _openShellLiveFullpane,
+                        onSurfaceAction: _handleSurfaceAction,
                         onCompactionTap: CommandRegistry.instance.debugEnabled
                             ? _openCompactionFullpane
                             : null,
@@ -2223,9 +2232,7 @@ class _ChatPanelState extends State<ChatPanel> {
               final panelWidth = layout.sidebarWidth;
 
               final planActive = _planModeController.active;
-              final planPaneWidth = planActive
-                  ? layout.planPaneWidth
-                  : 0.0;
+              final planPaneWidth = planActive ? layout.planPaneWidth : 0.0;
 
               final body = Row(
                 children: [
@@ -2390,10 +2397,7 @@ class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
                 skill.description,
                 style: TextStyle(color: theme.onSurfaceVariant),
               ),
-              Text(
-                skill.location,
-                style: TextStyle(color: theme.onSurfaceDim),
-              ),
+              Text(skill.location, style: TextStyle(color: theme.onSurfaceDim)),
             ],
           ),
         ),
@@ -2406,8 +2410,7 @@ class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
             child: SingleChildScrollView(
               controller: _scrollController,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
                 child: HighlightedMarkdownText(skill.content),
               ),
             ),

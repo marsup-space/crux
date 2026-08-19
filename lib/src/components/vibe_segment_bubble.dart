@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
+import '../services/a2ui/models.dart';
 import '../services/a2ui/surface_catalog.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
@@ -102,6 +103,9 @@ class VibeSegmentBubble extends StatelessComponent {
   /// inline below the boxes. Null when surfaces aren't available.
   final SurfaceCatalog? surfaceCatalog;
 
+  /// Callback fired when an interactive surface triggers an action.
+  final void Function(A2uiAction action)? onSurfaceAction;
+
   final Strings strings;
 
   const VibeSegmentBubble({
@@ -112,10 +116,10 @@ class VibeSegmentBubble extends StatelessComponent {
     this.onLinkTap,
     this.onOpenFile,
     this.onDiffFiles,
-    this.reasoningPresets = const [],
-    this.surfaceCatalog,
-    this.strings = kEnglishStrings,
-    super.key,
+     this.reasoningPresets = const [],
+     this.surfaceCatalog,
+     this.onSurfaceAction,
+     this.strings = kEnglishStrings,  super.key,
   });
 
   
@@ -328,13 +332,13 @@ class VibeSegmentBubble extends StatelessComponent {
         // A2UI surfaces — rendered inline between the boxes and the
         // prose line. Each `surface` tool call in this segment gets
         // its own [SurfaceBubble].
-        if (surfaceCatalog != null && segment.surfaceToolCalls.isNotEmpty)
-          for (final tc in segment.surfaceToolCalls)
-            SurfaceBubble(
-              toolCall: tc,
-              catalog: surfaceCatalog!,
-            ),
-        // Prose line. Single closing message — its `content` is
+         if (surfaceCatalog != null && segment.surfaceToolCalls.isNotEmpty)
+           for (final tc in segment.surfaceToolCalls)
+             SurfaceBubble(
+               toolCall: tc,
+               catalog: surfaceCatalog!,
+               onAction: onSurfaceAction,
+             ),   // Prose line. Single closing message — its `content` is
         // rendered under the `crux:` prefix. Either `role: 'ai'`
         // (the agent's prose reply) or `role: 'tool_call'` with
         // non-empty content (a mid-round remark that itself

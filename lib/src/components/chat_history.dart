@@ -9,6 +9,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/message.dart';
+import '../services/a2ui/models.dart';
 import '../models/message_queue.dart';
 import '../models/session_runtime_state.dart';
 import '../services/llm_error.dart';
@@ -138,6 +139,12 @@ class ChatHistory extends StatefulComponent {
   /// otherwise interpret `/continue` as a literal user message
   /// and call the LLM with that string).
   final VoidCallback? onRetryContinue;
+
+  /// Callback fired when an interactive surface triggers an action
+  /// (e.g. the user clicks a Button inside a surface). The chat panel
+  /// implements this to serialize the action and submit it as the
+  /// next user message.
+  final void Function(A2uiAction action)? onSurfaceAction;
   final Strings strings;
 
   const ChatHistory({
@@ -159,6 +166,7 @@ class ChatHistory extends StatefulComponent {
     this.onVibeDiffFiles,
     this.onShellLiveTap,
     this.onRetryContinue,
+    this.onSurfaceAction,
     this.strings = kEnglishStrings,
   });
 
@@ -670,7 +678,8 @@ class _ChatHistoryState extends State<ChatHistory> {
               // the mapped label, and the same effort renders two
               // different ways in the same view.
               reasoningPresets: reasoningPresets,
-              surfaceCatalog: component.toolRegistry.surfaceCatalog,
+                             surfaceCatalog: component.toolRegistry.surfaceCatalog,
+               onSurfaceAction: component.onSurfaceAction,
             ),
           );
           items.add((ctx) => const SizedBox(height: 1));
@@ -878,12 +887,11 @@ class _ChatHistoryState extends State<ChatHistory> {
             // in the middle of an active turn — they only get
             // persisted when the turn has fully errored out — so
             // there's no stale-retry concern here.
-            onRetryContinue: component.onRetryContinue,
-            strings: component.strings,
-          );
-        });
-
-        // Turn separator: a single subtle divider between the end of
+             onRetryContinue: component.onRetryContinue,
+             onSurfaceAction: component.onSurfaceAction,
+             strings: component.strings,
+           );
+         });      // Turn separator: a single subtle divider between the end of
         // a completed Crux turn and the next user message. The 'ai'
         // branch covers normal completions (with or without a TLDR
         // block — the TLDR keeps its own flanking dividers); the
