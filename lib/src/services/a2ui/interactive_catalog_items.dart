@@ -439,6 +439,7 @@ class _SurfaceTextField extends StatefulComponent {
 
 class _SurfaceTextFieldState extends State<_SurfaceTextField> {
   late final TextEditingController _controller;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -475,6 +476,7 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     final isObscured = component.variant == 'obscured';
     final isLongText = component.variant == 'longText';
     final isNumber = component.variant == 'number';
+    final isActive = component.onDataModelUpdate != null;
 
     return Row(
       children: [
@@ -486,26 +488,45 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
         // TextField needs a decoration with border or fillColor to get
         // a proper width constraint inside Expanded — without it the
         // render object measures zero and nothing renders.
+        //
+        // Focus is managed locally: tap to focus, Escape to unfocus.
+        // The chat input keeps its default focus; surface text fields
+        // only receive keyboard events after explicit user tap.
         Expanded(
-          child: TextField(
-            controller: _controller,
-            decoration: InputDecoration(
-              hintText: isNumber ? '0' : null,
-              border: BoxBorder.all(
-                color: theme.borderSubtle,
-                style: BoxBorderStyle.rounded,
+          child: GestureDetector(
+            onTap: isActive
+                ? () {
+                    if (!_focused) setState(() => _focused = true);
+                  }
+                : null,
+            behavior: HitTestBehavior.opaque,
+            child: TextField(
+              controller: _controller,
+              focused: _focused,
+              onFocusChange: (hasFocus) {
+                if (!hasFocus && _focused) {
+                  setState(() => _focused = false);
+                }
+              },
+              decoration: InputDecoration(
+                hintText: isNumber ? '0' : null,
+                border: BoxBorder.all(
+                  color: _focused ? theme.borderActive : theme.borderSubtle,
+                  style: BoxBorderStyle.rounded,
+                ),
+                focusedBorder: BoxBorder.all(
+                  color: theme.borderActive,
+                  style: BoxBorderStyle.rounded,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 1),
               ),
-              focusedBorder: BoxBorder.all(
-                color: theme.borderActive,
-                style: BoxBorderStyle.rounded,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 1),
+              obscureText: isObscured,
+              maxLines: isLongText ? 3 : 1,
+              onChanged: _handleChanged,
+              onSubmitted: _handleSubmitted,
+              style: TextStyle(color: theme.foreground),
+              enabled: isActive,
             ),
-            obscureText: isObscured,
-            maxLines: isLongText ? 3 : 1,
-            onChanged: _handleChanged,
-            onSubmitted: _handleSubmitted,
-            style: TextStyle(color: theme.foreground),
           ),
         ),
       ],
