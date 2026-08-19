@@ -164,13 +164,7 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
         onTap: isActive ? _handleTap : null,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          decoration: BoxDecoration(
-            color: bgColor,
-            border: BoxBorder.all(
-              color: _hovered ? theme.accent : theme.borderSubtle,
-              style: BoxBorderStyle.rounded,
-            ),
-          ),
+          decoration: BoxDecoration(color: bgColor),
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: component.child,
         ),
@@ -293,31 +287,22 @@ class _SurfaceCheckBoxState extends State<_SurfaceCheckBox> {
       child: GestureDetector(
         onTap: isActive ? _toggle : null,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          decoration: BoxDecoration(
-            border: BoxBorder.all(
-              color: _hovered ? theme.accent : theme.background,
-              style: BoxBorderStyle.rounded,
+        child: Row(
+          children: [
+            Text(
+              '$checkMark ',
+              style: TextStyle(
+                color: markerColor,
+                fontWeight: _hovered ? FontWeight.bold : null,
+              ),
             ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: Row(
-            children: [
-              Text(
-                '$checkMark ',
-                style: TextStyle(
-                  color: markerColor,
-                  fontWeight: _hovered ? FontWeight.bold : null,
-                ),
+            Expanded(
+              child: Text(
+                component.label,
+                style: TextStyle(color: labelColor),
               ),
-              Expanded(
-                child: Text(
-                  component.label,
-                  style: TextStyle(color: labelColor),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -488,6 +473,18 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     }
   }
 
+  /// Handle key events that the TextField's own handler doesn't consume.
+  /// Escape releases focus back to the chat input. Ctrl+C falls through
+  /// to the global quit handler.
+  bool _handleKeyEvent(KeyboardEvent event) {
+    if (event.logicalKey == LogicalKey.escape) {
+      setState(() => _focused = false);
+      return true;
+    }
+    // Don't consume Ctrl+C — let it propagate to the global handler.
+    return false;
+  }
+
   @override
   Component build(BuildContext context) {
     final theme = component.theme;
@@ -507,9 +504,8 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
         // a proper width constraint inside Expanded — without it the
         // render object measures zero and nothing renders.
         //
-        // Focus is managed locally: tap to focus, Escape to unfocus.
-        // The chat input keeps its default focus; surface text fields
-        // only receive keyboard events after explicit user tap.
+        // Focus: tap to focus, Escape to release back to chat input.
+        // Ctrl+C and other global shortcuts pass through (not consumed).
         Expanded(
           child: GestureDetector(
             onTap: isActive
@@ -526,6 +522,7 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
                   setState(() => _focused = false);
                 }
               },
+              onKeyEvent: _handleKeyEvent,
               decoration: InputDecoration(
                 hintText: isNumber ? '0' : null,
                 border: BoxBorder.all(
@@ -807,31 +804,22 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
     return GestureDetector(
       onTap: isActive ? () => _toggle(option.value) : null,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-          border: BoxBorder.all(
-            color: isFocused && isActive ? theme.accent : theme.background,
-            style: BoxBorderStyle.rounded,
+      child: Row(
+        children: [
+          Text(
+            '$marker ',
+            style: TextStyle(
+              color: markerColor,
+              fontWeight: isFocused && isActive ? FontWeight.bold : null,
+            ),
           ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: Row(
-          children: [
-            Text(
-              '$marker ',
-              style: TextStyle(
-                color: markerColor,
-                fontWeight: isFocused && isActive ? FontWeight.bold : null,
-              ),
+          Expanded(
+            child: Text(
+              option.label,
+              style: TextStyle(color: textColor),
             ),
-            Expanded(
-              child: Text(
-                option.label,
-                style: TextStyle(color: textColor),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

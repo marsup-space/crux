@@ -7,8 +7,6 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
-import 'dart:math';
-
 import '../../theme/crux_theme.dart';
 import 'interactive_catalog_items.dart';
 import 'models.dart';
@@ -218,36 +216,74 @@ class CardCatalogItem extends CatalogItem {
     }
 
     final theme = CruxTheme.of(context);
+    final isInteractive = onAction != null;
 
-    // Random border style for user evaluation — pick one per render.
-    const styles = [
-      BoxBorderStyle.solid,
-      BoxBorderStyle.double,
-      BoxBorderStyle.rounded,
-      BoxBorderStyle.dashed,
-      BoxBorderStyle.dotted,
-    ];
-    final randomStyle = styles[Random().nextInt(styles.length)];
+    return _SurfaceCard(
+      title: title,
+      isInteractive: isInteractive,
+      theme: theme,
+      child: child,
+    );
+  }
+}
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: BoxBorder.all(
-          color: theme.borderActive,
-          style: randomStyle,
+/// Internal stateful card that brightens its border on hover when
+/// the surface is interactive (has action handlers).
+class _SurfaceCard extends StatefulComponent {
+  final String title;
+  final bool isInteractive;
+  final CruxThemeData theme;
+  final Component child;
+
+  const _SurfaceCard({
+    required this.title,
+    required this.isInteractive,
+    required this.theme,
+    required this.child,
+  });
+
+  @override
+  State<_SurfaceCard> createState() => _SurfaceCardState();
+}
+
+class _SurfaceCardState extends State<_SurfaceCard> {
+  bool _hovered = false;
+
+  @override
+  Component build(BuildContext context) {
+    final theme = component.theme;
+    final borderColor = _hovered && component.isInteractive
+        ? theme.accent
+        : theme.borderActive;
+
+    return MouseRegion(
+      onEnter: component.isInteractive
+          ? (_) => setState(() => _hovered = true)
+          : null,
+      onExit: component.isInteractive
+          ? (_) => setState(() => _hovered = false)
+          : null,
+      opaque: false,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: BoxBorder.all(
+            color: borderColor,
+            style: BoxBorderStyle.double,
+          ),
+          title: component.title.isNotEmpty
+              ? BorderTitle(
+                  text: component.title,
+                  style: TextStyle(
+                    color: theme.secondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : null,
         ),
-        title: title.isNotEmpty
-            ? BorderTitle(
-                text: '$title [${randomStyle.name}]',
-                style: TextStyle(
-                  color: theme.secondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              )
-            : null,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: child,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: component.child,
+        ),
       ),
     );
   }
