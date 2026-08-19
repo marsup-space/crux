@@ -273,7 +273,12 @@ class _SurfaceCheckBoxState extends State<_SurfaceCheckBox> {
     final isActive = component.onDataModelUpdate != null;
 
     final checkMark = component.isChecked ? '☑' : '☐';
-    final color = component.isChecked ? theme.accent : theme.onSurfaceDim;
+    final markerColor = _hovered
+        ? theme.accent
+        : component.isChecked
+        ? theme.success
+        : theme.onSurfaceDim;
+    final labelColor = _hovered ? theme.accent : theme.foreground;
 
     return MouseRegion(
       onEnter: isActive ? (_) => setState(() => _hovered = true) : null,
@@ -287,16 +292,14 @@ class _SurfaceCheckBoxState extends State<_SurfaceCheckBox> {
             Text(
               '$checkMark ',
               style: TextStyle(
-                color: _hovered ? theme.buttonTextHover : color,
+                color: markerColor,
                 fontWeight: _hovered ? FontWeight.bold : null,
               ),
             ),
             Expanded(
               child: Text(
                 component.label,
-                style: TextStyle(
-                  color: _hovered ? theme.buttonTextHover : theme.foreground,
-                ),
+                style: TextStyle(color: labelColor),
               ),
             ),
           ],
@@ -770,12 +773,19 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
       marker = isSelected ? '☑' : '☐';
     }
 
+    final Color markerColor;
     final Color textColor;
     if (isFocused && isActive) {
-      textColor = theme.buttonTextFocused;
-    } else if (isSelected) {
+      // Focused: bright accent for both marker and text.
+      markerColor = theme.accent;
       textColor = theme.accent;
+    } else if (isSelected) {
+      // Selected: success green for marker, normal text for label.
+      markerColor = theme.success;
+      textColor = theme.foreground;
     } else {
+      // Unselected: dim for both.
+      markerColor = theme.onSurfaceDim;
       textColor = theme.foreground;
     }
 
@@ -787,11 +797,7 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
           Text(
             '$marker ',
             style: TextStyle(
-              color: isFocused && isActive
-                  ? theme.buttonTextFocused
-                  : isSelected
-                  ? theme.accent
-                  : theme.onSurfaceDim,
+              color: markerColor,
               fontWeight: isFocused && isActive ? FontWeight.bold : null,
             ),
           ),

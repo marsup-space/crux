@@ -220,10 +220,18 @@ class CardCatalogItem extends CatalogItem {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: BoxBorder.all(
-          color: theme.border,
+          color: theme.borderActive,
           style: BoxBorderStyle.rounded,
         ),
-        title: title.isNotEmpty ? BorderTitle(text: title) : null,
+        title: title.isNotEmpty
+            ? BorderTitle(
+                text: title,
+                style: TextStyle(
+                  color: theme.secondary,
+                  fontWeight: FontWeight.bold,
+                ),
+              )
+            : null,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 1),
