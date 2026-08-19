@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../services/a2ui/basic_catalog_items.dart';
+import '../services/a2ui/surface_catalog.dart';
 import '../services/web_provider_registry.dart';
 import '../services/plan_mode_controller.dart';
 import '../storage/session_store.dart';
@@ -19,6 +21,7 @@ import 'semantic_search_tool.dart';
 import 'session_tool.dart';
 import 'plugins_tool.dart';
 import 'skill_tool.dart';
+import 'surface_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
 import 'websearch_tool.dart';
@@ -26,6 +29,10 @@ import 'write_tool.dart';
 
 class ToolRegistry {
   final Map<String, ToolDef> _tools = {};
+
+  /// The A2UI surface catalog, available when the session supports
+  /// generative UI surfaces. Null when the catalog hasn't been created.
+  SurfaceCatalog? surfaceCatalog;
 
   void register(ToolDef tool) {
     _tools[tool.name.toLowerCase()] = tool;
@@ -111,6 +118,12 @@ class ToolRegistry {
     if (pendingAskCubit != null) {
       register(AskTool(pendingAskCubit: pendingAskCubit));
     }
+    // `surface` is always registered — the agent can emit surface
+    // declarations regardless of UI. The UI layer decides whether to
+    // render them (via the surfaceCatalog on MessageBubble).
+    final catalog = createBasicCatalog();
+    surfaceCatalog = catalog;
+    register(SurfaceTool(catalog: catalog));
     // `ask_plan_mode` is registered only when a plan-mode controller is
     // supplied (the real TUI). The tool is the agent's way to *propose*
     // entering/exiting plan mode; the actual flip stays user-driven.

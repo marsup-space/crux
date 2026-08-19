@@ -859,6 +859,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             pairedResult: pairedResult,
             resultByCallId: pairedResultsByCallId,
             toolRegistry: component.toolRegistry,
+            surfaceCatalog: component.toolRegistry.surfaceCatalog,
             highlightText: msg.id == _highlightMessageId
                 ? _highlightText
                 : null,

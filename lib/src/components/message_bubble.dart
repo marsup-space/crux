@@ -25,8 +25,10 @@ import 'single_call_reminder_bubble.dart';
 import 'lsp_diagnostics_bubble.dart';
 import 'lsp_state_glyph.dart';
 import 'shell_guard_bubble.dart';
+import 'surface_bubble.dart';
 import 'tool_guard_bubble.dart';
 import 'error_bubble.dart';
+import '../services/a2ui/surface_catalog.dart';
 import '../services/llm_error.dart';
 
 class MessageBubble extends StatelessComponent {
@@ -79,6 +81,11 @@ class MessageBubble extends StatelessComponent {
   /// every other role.
   final VoidCallback? onRetryContinue;
 
+  /// The A2UI surface catalog for rendering `surface` tool calls.
+  /// When non-null, tool calls named `surface` render an inline
+  /// [SurfaceBubble] below the collapsed tool-call row.
+  final SurfaceCatalog? surfaceCatalog;
+
   final Strings strings;
 
   const MessageBubble({
@@ -94,6 +101,7 @@ class MessageBubble extends StatelessComponent {
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onRetryContinue,
+    this.surfaceCatalog,
     this.strings = kEnglishStrings,
   });
 
@@ -686,15 +694,25 @@ class MessageBubble extends StatelessComponent {
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: calls.map((tc) {
-              final result = resultByCallId[tc.callId];
-              return _ClickableToolCall(
-                toolCall: tc,
-                pairedResult: result,
-                toolRegistry: toolRegistry,
-                onTap: onToolCallTap,
-              );
-            }).toList(),
+            children: [
+              ...calls.map((tc) {
+                final result = resultByCallId[tc.callId];
+                return _ClickableToolCall(
+                  toolCall: tc,
+                  pairedResult: result,
+                  toolRegistry: toolRegistry,
+                  onTap: onToolCallTap,
+                );
+              }),
+              // Render A2UI surfaces inline below surface tool calls.
+              if (surfaceCatalog != null)
+                for (final tc in calls)
+                  if (tc.name == 'surface')
+                    SurfaceBubble(
+                      toolCall: tc,
+                      catalog: surfaceCatalog!,
+                    ),
+            ],
           ),
         ),
       );

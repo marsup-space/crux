@@ -25,6 +25,8 @@ library;
 import '../../i18n/app_locale.dart';
 import '../../i18n/reply_language.dart';
 import '../../models/provider_config.dart';
+import '../a2ui/basic_catalog_items.dart';
+import '../a2ui/surface_prompt_builder.dart';
 import '../skills/skill_discovery.dart';
 import '../skills/skills_prompt.dart';
 import 'environment_meta.dart';
@@ -410,6 +412,11 @@ String buildSystemPrompt({
   if (skillsBlock != null) {
     blocks.add(skillsBlock);
   }
+
+  // Layer 3.6: A2UI surface catalog — teaches the agent how to create
+  // interactive UI surfaces inline in the chat flow.
+  final surfaceCatalog = createBasicCatalog();
+  blocks.add(buildSurfacePromptSection(surfaceCatalog));
 
   // Layer 4: env meta. Always present.
   blocks.add(
