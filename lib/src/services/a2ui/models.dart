@@ -12,6 +12,8 @@
 ///   * `action` — user interaction event sent client→agent
 library;
 
+import 'dart:convert';
+
 // ---------------------------------------------------------------------------
 // Surface declaration (createSurface)
 // ---------------------------------------------------------------------------
@@ -184,14 +186,15 @@ class A2uiAction {
   };
 
   /// Serialize as a human-readable string for tool result output.
+  ///
+  /// Context is a single-line JSON object so it round-trips losslessly —
+  /// [tryParseDisplayString] can rebuild the surface's submitted state from
+  /// the persisted message, preserving bools/numbers/lists.
   String toDisplayString() {
     final buf = StringBuffer('action: $name\n');
     buf.writeln('surface: $surfaceId');
     if (context.isNotEmpty) {
-      buf.writeln('context:');
-      for (final entry in context.entries) {
-        buf.writeln('  ${entry.key}: ${entry.value}');
-      }
+      buf.writeln('context: ${jsonEncode(context)}');
     }
     return buf.toString().trimRight();
   }
@@ -199,12 +202,11 @@ class A2uiAction {
   /// Try to parse a message [content] string as a surface action
   /// produced by [toDisplayString]. Returns null for ordinary user text.
   ///
-  /// Format (line-oriented, key: value):
+  /// Format:
   ///
   ///     action: NAME
   ///     surface: SURFACE_ID
-  ///     context:            (optional)
-  ///       key: value
+  ///     context: {"key": value, ...}     (optional, single-line JSON)
   static A2uiAction? tryParseDisplayString(String content) {
     final lines = content.split('\n');
     if (lines.length < 2) return null;
@@ -218,16 +220,13 @@ class A2uiAction {
     if (name.isEmpty || surfaceId.isEmpty) return null;
 
     final context = <String, dynamic>{};
-    var i = 2;
-    if (i < lines.length && lines[i].trim() == 'context:') {
-      i++;
-      while (i < lines.length && lines[i].startsWith('  ')) {
-        final kv = lines[i].trim();
-        final colon = kv.indexOf(':');
-        if (colon > 0) {
-          context[kv.substring(0, colon)] = kv.substring(colon + 1).trim();
-        }
-        i++;
+    if (lines.length >= 3 && lines[2].startsWith('context: ')) {
+      final json = lines[2].substring('context: '.length).trim();
+      try {
+        final decoded = jsonDecode(json);
+        if (decoded is Map<String, dynamic>) context.addAll(decoded);
+      } catch (_) {
+        // Malformed context JSON — keep the action, drop the context.
       }
     }
 
@@ -313,28 +312,39 @@ class SurfaceInstance {
   /// When true, the surface renders in a disabled/read-only state.
   bool submitted;
 
-  /// Frozen snapshot of the data model at submit time. Non-null only when
-  /// [submitted] is true. The renderer resolves bindings against this
-  /// snapshot so the surface shows exactly what was submitted — later
-  /// edits to [dataModel] don't rewrite history.
-  Map<String, dynamic>? submittedDataModel;
-
   SurfaceInstance({
     required this.declaration,
     Map<String, dynamic>? dataModel,
     this.submitted = false,
-    this.submittedDataModel,
   }) : dataModel = dataModel ?? Map.of(declaration.dataModel);
 
-  /// Mark the surface as submitted, freezing the current data model.
+  /// Mark the surface as submitted. The data model already holds exactly
+  /// what was sent (components mutate it live), and submitted components
+  /// are read-only — so the live model IS the frozen record of the
+  /// submission.
   void markSubmitted() {
     submitted = true;
-    submittedDataModel = Map.of(dataModel);
   }
 
-  /// The data model the renderer should read: the frozen snapshot when
-  /// submitted, the live model otherwise.
-  Map<String, dynamic> get renderDataModel => submittedDataModel ?? dataModel;
+  /// The data model the renderer reads — the live model, which after
+  /// submission holds the submitted values (no further edits possible).
+  Map<String, dynamic> get renderDataModel => dataModel;
+
+  /// Rebuild submitted state from a persisted action's context, as
+  /// recorded in the chat history by the original submission. Used when
+  /// the surface instance is recreated from the tool call (app restart,
+  /// session switch) — the surface renders the submitted values instead
+  /// of resetting to the declaration's initial state.
+  ///
+  /// Context keys are DataModel field names (the agent binds values via
+  /// `{"path": "/field"}` which resolves to the field name in the action
+  /// context).
+  void restoreSubmitted(A2uiAction action) {
+    submitted = true;
+    dataModel
+      ..clear()
+      ..addAll(action.context);
+  }
 
   String get surfaceId => declaration.surfaceId;
 

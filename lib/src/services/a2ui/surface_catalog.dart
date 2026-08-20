@@ -90,6 +90,15 @@ class SurfaceCatalog {
     );
   }
 
+  /// Find a live instance by its surfaceId (not the tool-call key).
+  /// Used by chat history to restore submitted state from action messages.
+  SurfaceInstance? instanceById(String surfaceId) {
+    for (final instance in _instances.values) {
+      if (instance.surfaceId == surfaceId) return instance;
+    }
+    return null;
+  }
+
   SurfaceCatalog({this.catalogId = 'crux/1.0/chat'});
 
   /// Register a catalog item. Replaces any existing item with the same

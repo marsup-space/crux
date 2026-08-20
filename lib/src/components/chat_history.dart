@@ -25,6 +25,7 @@ import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'ask_answer_bubble.dart';
 import 'surface_action_bubble.dart';
+import '../tools/surface_tool.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
@@ -262,6 +263,16 @@ class _ChatHistoryState extends State<ChatHistory> {
           ? const <Message>[]
           : cubit.state.messagesFor(sessionId),
     );
+
+    // Restore submitted surface state from the chat history. When a
+    // session is loaded (app restart, session switch), SurfaceBubble
+    // instances start fresh from the tool call declaration — this pass
+    // re-applies any recorded action messages so submitted surfaces
+    // render their submitted values instead of resetting to initial.
+    // Order matters: the tool call creates the instance, the action
+    // message (later in the list) marks it submitted.
+    _restoreSurfaceStates(messages);
+
     final loadingState = context
         .select<SessionCubit, ({bool isLoading, int? total, int? loaded})>((
           cubit,
@@ -1260,6 +1271,45 @@ class _ChatHistoryState extends State<ChatHistory> {
       }
     }
     return null;
+  }
+
+  /// Restore submitted surface state from the chat history.
+  ///
+  /// Scans [messages] in order: each `surface` tool call registers its
+  /// declaration in the catalog (creating a fresh [SurfaceInstance] if
+  /// one doesn't exist yet), and each user message that parses as a
+  /// surface action ([A2uiAction.tryParseDisplayString]) marks the
+  /// matching surface as submitted and loads its context into the
+  /// DataModel.
+  ///
+  /// Idempotent — [SurfaceCatalog.instanceFor] returns the existing
+  /// instance when already registered, so re-running on rebuilds is
+  /// a no-op for already-submitted surfaces.
+  void _restoreSurfaceStates(List<Message> messages) {
+    final catalog = component.toolRegistry.surfaceCatalog;
+    if (catalog == null) return;
+
+    // Pass 1: register every surface declaration from tool calls.
+    for (final msg in messages) {
+      if (msg.role != 'tool_call' || msg.toolCalls.isEmpty) continue;
+      for (final tc in msg.toolCalls) {
+        if (tc.name != kSurfaceToolName) continue;
+        final surface = surfaceFromToolCall(tc.input);
+        if (surface == null) continue;
+        catalog.instanceFor(tc.callId, surface);
+      }
+    }
+
+    // Pass 2: apply action messages to their target surfaces.
+    for (final msg in messages) {
+      if (msg.role != 'user') continue;
+      final action = A2uiAction.tryParseDisplayString(msg.content);
+      if (action == null) continue;
+      final instance = catalog.instanceById(action.surfaceId);
+      if (instance != null && !instance.submitted) {
+        instance.restoreSubmitted(action);
+      }
+    }
   }
 
   /// Resolve the display label for an internal reasoning effort value,
