@@ -196,6 +196,49 @@ class A2uiAction {
     return buf.toString().trimRight();
   }
 
+  /// Try to parse a message [content] string as a surface action
+  /// produced by [toDisplayString]. Returns null for ordinary user text.
+  ///
+  /// Format (line-oriented, key: value):
+  ///
+  ///     action: NAME
+  ///     surface: SURFACE_ID
+  ///     context:            (optional)
+  ///       key: value
+  static A2uiAction? tryParseDisplayString(String content) {
+    final lines = content.split('\n');
+    if (lines.length < 2) return null;
+    final nameLine = lines[0];
+    if (!nameLine.startsWith('action: ')) return null;
+    final surfaceLine = lines[1];
+    if (!surfaceLine.startsWith('surface: ')) return null;
+
+    final name = nameLine.substring('action: '.length).trim();
+    final surfaceId = surfaceLine.substring('surface: '.length).trim();
+    if (name.isEmpty || surfaceId.isEmpty) return null;
+
+    final context = <String, dynamic>{};
+    var i = 2;
+    if (i < lines.length && lines[i].trim() == 'context:') {
+      i++;
+      while (i < lines.length && lines[i].startsWith('  ')) {
+        final kv = lines[i].trim();
+        final colon = kv.indexOf(':');
+        if (colon > 0) {
+          context[kv.substring(0, colon)] = kv.substring(colon + 1).trim();
+        }
+        i++;
+      }
+    }
+
+    return A2uiAction(
+      name: name,
+      surfaceId: surfaceId,
+      sourceComponentId: '',
+      context: context,
+    );
+  }
+
   @override
   String toString() => 'A2uiAction($name, surface=$surfaceId)';
 }

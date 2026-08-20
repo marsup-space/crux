@@ -24,6 +24,7 @@ import '../tools/registry.dart';
 import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'ask_answer_bubble.dart';
+import 'surface_action_bubble.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
@@ -859,9 +860,18 @@ class _ChatHistoryState extends State<ChatHistory> {
         final askView = msg.role == 'user'
             ? component.sessionController.askAnswerViewFor(msg)
             : null;
+        // Surface-action messages (submitted A2UI form data) swap the
+        // normal user bubble for a compact chip recap — the raw
+        // `action: ...` lines stay in the store for the agent.
+        final surfaceAction = msg.role == 'user'
+            ? A2uiAction.tryParseDisplayString(msg.content)
+            : null;
         items.add((ctx) {
           if (askView != null) {
             return AskAnswerBubble(answer: askView, strings: component.strings);
+          }
+          if (surfaceAction != null) {
+            return SurfaceActionBubble(action: surfaceAction);
           }
           return MessageBubble(
             message: msg,

@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
 import '../services/a2ui/models.dart';
+import 'surface_action_bubble.dart';
 import '../services/a2ui/surface_catalog.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
@@ -289,32 +290,39 @@ class VibeSegmentBubble extends StatelessComponent {
         // anchor the prefix establishes. Explicit user newlines
         // keep their natural indentation inside `Expanded`.
         if (segment.showUserMessage)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  ' You: ',
-                  style: TextStyle(
-                    color: theme.userPrefix,
-                    fontWeight: FontWeight.bold,
+          // Surface-action messages (submitted A2UI form data) swap the
+          // normal user line for a compact chip recap — the raw
+          // `action: ...` lines stay in the store for the agent.
+          if (A2uiAction.tryParseDisplayString(segment.userMessage.content)
+              case final surfaceAction?)
+            SurfaceActionBubble(action: surfaceAction)
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ' You: ',
+                    style: TextStyle(
+                      color: theme.userPrefix,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                Expanded(
-                  // Strip the `Skill: <name>\n<body>` blocks and the
-                  // LLM-only `<plan-context>` block appended for the
-                  // LLM — the chat log shows only what the user
-                  // actually typed (mirrors the verbose `MessageBubble`).
-                  child: Text(
-                    stripPlanContext(
-                      stripSkillBodies(segment.userMessage.content),
-                    ).text.trim(),
+                  Expanded(
+                    // Strip the `Skill: <name>\n<body>` blocks and the
+                    // LLM-only `<plan-context>` block appended for the
+                    // LLM — the chat log shows only what the user
+                    // actually typed (mirrors the verbose `MessageBubble`).
+                    child: Text(
+                      stripPlanContext(
+                        stripSkillBodies(segment.userMessage.content),
+                      ).text.trim(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         // Boxes (only render if at least one box exists)
         if (boxes.isNotEmpty)
           Padding(

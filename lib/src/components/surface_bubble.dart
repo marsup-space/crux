@@ -78,7 +78,11 @@ class SurfaceBubble extends StatelessComponent {
       );
     }
 
-    final instance = SurfaceInstance(declaration: surface);
+    // Use the catalog's instance registry so interactive state (DataModel
+    // edits, submitted flag) survives chat-list rebuilds. The tool call's
+    // callId is a stable key — the same logical surface always maps to the
+    // same instance.
+    final instance = catalog.instanceFor(toolCall.callId, surface);
 
     return Padding(
       padding: const EdgeInsets.only(left: 2, top: 0),

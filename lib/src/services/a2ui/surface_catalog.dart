@@ -69,6 +69,27 @@ class SurfaceCatalog {
   /// The catalog identifier (e.g. `'crux/1.0/chat'`).
   final String catalogId;
 
+  /// Live surface instances keyed by their originating tool-call id.
+  ///
+  /// Surfaces must survive chat-list rebuilds: a rebuild re-parses the
+  /// tool call and constructs a new [SurfaceBubble], but the interactive
+  /// state (DataModel edits, submitted flag) lives here so re-renders
+  /// pick up the same instance instead of resetting to the declaration's
+  /// initial state.
+  final Map<String, SurfaceInstance> _instances = {};
+
+  /// Get or create the live [SurfaceInstance] for a tool call.
+  ///
+  /// [key] should be the tool call's stable id (`ToolCallData.callId`);
+  /// [declaration] is parsed from the tool call input and used only on
+  /// first creation.
+  SurfaceInstance instanceFor(String key, CreateSurface declaration) {
+    return _instances.putIfAbsent(
+      key,
+      () => SurfaceInstance(declaration: declaration),
+    );
+  }
+
   SurfaceCatalog({this.catalogId = 'crux/1.0/chat'});
 
   /// Register a catalog item. Replaces any existing item with the same
