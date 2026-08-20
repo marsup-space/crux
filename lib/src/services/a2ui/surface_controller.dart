@@ -81,9 +81,16 @@ class _SurfaceControllerState extends State<SurfaceController> {
       }
     }
 
+    // Components cannot know the surface id — CatalogItem.build has no
+    // surfaceId parameter, so interactive items fill it with their own
+    // component id (e.g. "submitBtn"). Override it here, at the single
+    // exit point every action passes through, with the real surface id.
+    // Without this, the persisted action message records the component
+    // id in its "surface:" field and state restoration after a restart
+    // (instanceById) never finds the surface.
     final resolved = A2uiAction(
       name: action.name,
-      surfaceId: action.surfaceId,
+      surfaceId: component.surface.surfaceId,
       sourceComponentId: action.sourceComponentId,
       context: resolvedContext,
     );

@@ -1301,11 +1301,30 @@ class _ChatHistoryState extends State<ChatHistory> {
     }
 
     // Pass 2: apply action messages to their target surfaces.
+    // Fallback target for actions whose "surface:" field records a
+    // component id instead of the surface id (actions emitted before
+    // SurfaceController learned to override the id): the most recent
+    // surface tool call before the action. Actions disable all
+    // same-turn surfaces, so the nearest surface is a faithful
+    // approximation of the real target.
+    SurfaceInstance? lastSurface;
     for (final msg in messages) {
+      if (msg.role == 'tool_call') {
+        for (final tc in msg.toolCalls) {
+          if (tc.name != kSurfaceToolName) continue;
+          final surface = surfaceFromToolCall(tc.input);
+          if (surface != null) {
+            lastSurface = catalog.instanceFor(tc.callId, surface);
+          }
+        }
+        continue;
+      }
       if (msg.role != 'user') continue;
       final action = A2uiAction.tryParseDisplayString(msg.content);
       if (action == null) continue;
-      final instance = catalog.instanceById(action.surfaceId);
+      var instance = catalog.instanceById(action.surfaceId);
+      instance ??= lastSurface;
+      lastSurface = null;
       if (instance != null && !instance.submitted) {
         instance.restoreSubmitted(action);
       }

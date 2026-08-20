@@ -202,11 +202,19 @@ class A2uiAction {
   /// Try to parse a message [content] string as a surface action
   /// produced by [toDisplayString]. Returns null for ordinary user text.
   ///
-  /// Format:
+  /// Current format:
   ///
   ///     action: NAME
   ///     surface: SURFACE_ID
   ///     context: {"key": value, ...}     (optional, single-line JSON)
+  ///
+  /// Legacy format (emitted before the JSON switch) is also accepted:
+  ///
+  ///     action: NAME
+  ///     surface: SURFACE_ID
+  ///     context:
+  ///       key: value
+  ///       list: [a, b]
   static A2uiAction? tryParseDisplayString(String content) {
     final lines = content.split('\n');
     if (lines.length < 2) return null;
@@ -222,11 +230,17 @@ class A2uiAction {
     final context = <String, dynamic>{};
     if (lines.length >= 3 && lines[2].startsWith('context: ')) {
       final json = lines[2].substring('context: '.length).trim();
-      try {
-        final decoded = jsonDecode(json);
-        if (decoded is Map<String, dynamic>) context.addAll(decoded);
-      } catch (_) {
-        // Malformed context JSON — keep the action, drop the context.
+      _decodeContextJson(json, context);
+    } else if (lines.length >= 3 && lines[2] == 'context:') {
+      // Legacy multi-line "key: value" pairs (indented by 2 spaces).
+      for (var i = 3; i < lines.length; i++) {
+        final line = lines[i];
+        if (!line.startsWith('  ')) break;
+        final body = line.substring(2);
+        final colon = body.indexOf(': ');
+        final key = colon > 0 ? body.substring(0, colon) : body;
+        final rawValue = colon > 0 ? body.substring(colon + 2) : '';
+        if (key.isNotEmpty) context[key] = _parseLegacyValue(rawValue);
       }
     }
 
@@ -236,6 +250,33 @@ class A2uiAction {
       sourceComponentId: '',
       context: context,
     );
+  }
+
+  static void _decodeContextJson(String json, Map<String, dynamic> out) {
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is Map<String, dynamic>) out.addAll(decoded);
+    } catch (_) {
+      // Malformed context JSON — keep the action, drop the context.
+    }
+  }
+
+  /// Best-effort scalar parse for legacy `key: value` context lines:
+  /// bool/int/double literals, `[a, b, c]` lists, else the raw string.
+  static dynamic _parseLegacyValue(String raw) {
+    final v = raw.trim();
+    if (v == 'true') return true;
+    if (v == 'false') return false;
+    if (v.startsWith('[') && v.endsWith(']')) {
+      final inner = v.substring(1, v.length - 1).trim();
+      if (inner.isEmpty) return const <String>[];
+      return [for (final item in inner.split(',')) item.trim()];
+    }
+    final i = int.tryParse(v);
+    if (i != null) return i;
+    final d = double.tryParse(v);
+    if (d != null) return d;
+    return v;
   }
 
   @override
