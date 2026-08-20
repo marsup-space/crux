@@ -341,9 +341,13 @@ class SurfaceInstance {
   /// context).
   void restoreSubmitted(A2uiAction action) {
     submitted = true;
-    dataModel
-      ..clear()
-      ..addAll(action.context);
+    // Merge the submitted values into the existing model instead of
+    // clearing it — the declaration may carry nested structures that
+    // the flat action context doesn't cover (e.g. "/form/name" paths
+    // create {"form": {"name": ...}} but the action context has flat
+    // keys like {"name": ...}). Merging preserves whatever the
+    // declaration set up.
+    dataModel.addAll(action.context);
   }
 
   String get surfaceId => declaration.surfaceId;

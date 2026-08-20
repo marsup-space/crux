@@ -135,16 +135,18 @@ class _SurfaceControllerState extends State<SurfaceController> {
       );
     }
 
+    final submitted = component.surface.submitted;
+
     return item.build(
       context: context,
       component: comp,
-      // Read from the frozen snapshot when submitted — the surface shows
-      // exactly what was sent, not the (still-mutable) live model.
       dataModel: component.surface.renderDataModel,
       buildChild: (childId) => _buildComponent(context, childId),
-      onAction: _handleAction,
-      onDataModelUpdate: _handleDataModelUpdate,
-      submitted: component.surface.submitted,
+      // Submitted surfaces are read-only: cut the interaction callbacks
+      // so buttons/checkboxes/fields render disabled and ignore input.
+      onAction: submitted ? null : _handleAction,
+      onDataModelUpdate: submitted ? null : _handleDataModelUpdate,
+      submitted: submitted,
     );
   }
 }
