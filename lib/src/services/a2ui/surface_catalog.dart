@@ -280,6 +280,12 @@ class SurfaceCatalog {
     buf.writeln('### Rules');
     buf.writeln();
     buf.writeln(
+      '- IMPORTANT: Pass the createSurface payload directly as the '
+      '"surface" tool argument. Do NOT wrap it in another object. '
+      'The payload must have "surfaceId", "catalogId", and "components" '
+      'at the top level.',
+    );
+    buf.writeln(
       '- Components form an adjacency list: containers reference children '
       'by id, not by nesting.',
     );

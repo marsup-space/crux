@@ -30,7 +30,10 @@ class SurfaceTool extends ToolDef {
   String get description =>
       'Create an interactive UI surface in the chat flow. '
       'The surface is rendered inline using the registered component catalog. '
-      'Pass an A2UI createSurface message as the "surface" argument. '
+      'Pass the A2UI createSurface payload directly as the "surface" '
+      'argument value — do NOT wrap it in another object. '
+      'The payload must have "surfaceId", "catalogId", and "components" '
+      'at the top level. '
       'The surface appears in the chat bubble — the user can see it '
       'immediately. For interactive surfaces (with buttons, inputs), '
       'the user\'s actions are sent back as tool results.';
@@ -78,12 +81,20 @@ class SurfaceTool extends ToolDef {
     Map<String, dynamic> args,
     ToolContext ctx,
   ) async {
-    final surfaceArg = args['surface'];
+    var surfaceArg = args['surface'];
     if (surfaceArg is! Map<String, dynamic>) {
       return ToolResult.error(
         'Invalid surface: expected an object with "surfaceId", '
         '"catalogId", and "components".',
       );
+    }
+
+    // Defensive unwrap: some models double-wrap the parameter,
+    // producing {"surface": {"surface": {...}}}. Peel one layer
+    // when the inner value is also a Map with surface-like keys.
+    if (surfaceArg['surface'] is Map<String, dynamic> &&
+        surfaceArg['surfaceId'] == null) {
+      surfaceArg = surfaceArg['surface'] as Map<String, dynamic>;
     }
 
     final surface = CreateSurface.fromJson(surfaceArg);
@@ -142,7 +153,14 @@ class SurfaceTool extends ToolDef {
 /// rendering — the tool call's `input` map persists with the message,
 /// so the surface can be reconstructed at render time.
 CreateSurface? surfaceFromToolCall(Map<String, dynamic> toolCallInput) {
-  final surfaceArg = toolCallInput['surface'];
+  var surfaceArg = toolCallInput['surface'];
   if (surfaceArg is! Map<String, dynamic>) return null;
+
+  // Same defensive unwrap as in execute().
+  if (surfaceArg['surface'] is Map<String, dynamic> &&
+      surfaceArg['surfaceId'] == null) {
+    surfaceArg = surfaceArg['surface'] as Map<String, dynamic>;
+  }
+
   return CreateSurface.fromJson(surfaceArg);
 }
