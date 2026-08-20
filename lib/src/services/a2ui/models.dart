@@ -313,11 +313,28 @@ class SurfaceInstance {
   /// When true, the surface renders in a disabled/read-only state.
   bool submitted;
 
+  /// Frozen snapshot of the data model at submit time. Non-null only when
+  /// [submitted] is true. The renderer resolves bindings against this
+  /// snapshot so the surface shows exactly what was submitted — later
+  /// edits to [dataModel] don't rewrite history.
+  Map<String, dynamic>? submittedDataModel;
+
   SurfaceInstance({
     required this.declaration,
     Map<String, dynamic>? dataModel,
     this.submitted = false,
+    this.submittedDataModel,
   }) : dataModel = dataModel ?? Map.of(declaration.dataModel);
+
+  /// Mark the surface as submitted, freezing the current data model.
+  void markSubmitted() {
+    submitted = true;
+    submittedDataModel = Map.of(dataModel);
+  }
+
+  /// The data model the renderer should read: the frozen snapshot when
+  /// submitted, the live model otherwise.
+  Map<String, dynamic> get renderDataModel => submittedDataModel ?? dataModel;
 
   String get surfaceId => declaration.surfaceId;
 

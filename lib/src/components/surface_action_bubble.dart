@@ -22,10 +22,12 @@ class SurfaceActionBubble extends StatelessComponent {
   Component build(BuildContext context) {
     final theme = CruxTheme.of(context);
 
+    // One compact line: the user only needs to see THAT they submitted —
+    // WHAT they submitted is frozen into the surface itself (rendered
+    // read-only above in the chat flow).
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             ' Surface ',
@@ -36,19 +38,9 @@ class SurfaceActionBubble extends StatelessComponent {
             ),
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  ' ${action.name} · ${action.surfaceId}',
-                  style: TextStyle(color: theme.hintText),
-                ),
-                for (final entry in action.context.entries)
-                  Text(
-                    '  ${entry.key}: ${entry.value}',
-                    style: TextStyle(color: theme.textMuted),
-                  ),
-              ],
+            child: Text(
+              ' ${action.name} · ${action.surfaceId}',
+              style: TextStyle(color: theme.hintText),
             ),
           ),
         ],

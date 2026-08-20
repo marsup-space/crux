@@ -88,8 +88,9 @@ class _SurfaceControllerState extends State<SurfaceController> {
       context: resolvedContext,
     );
 
-    // Mark the surface as submitted — disables further interaction.
-    component.surface.submitted = true;
+    // Mark the surface as submitted — disables further interaction and
+    // freezes the data model so the surface shows exactly what was sent.
+    component.surface.markSubmitted();
 
     component.onAction?.call(resolved);
 
@@ -137,7 +138,9 @@ class _SurfaceControllerState extends State<SurfaceController> {
     return item.build(
       context: context,
       component: comp,
-      dataModel: component.surface.dataModel,
+      // Read from the frozen snapshot when submitted — the surface shows
+      // exactly what was sent, not the (still-mutable) live model.
+      dataModel: component.surface.renderDataModel,
       buildChild: (childId) => _buildComponent(context, childId),
       onAction: _handleAction,
       onDataModelUpdate: _handleDataModelUpdate,
