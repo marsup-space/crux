@@ -390,4 +390,63 @@ void main() {
       expect(instance.dataModel['name'], 'Alice');
     });
   });
+
+  group('TextField layout robustness', () {
+    test('TextField inside an unbounded Row does not layout-error', () async {
+      await testNocterm('row textfield', (tester) async {
+        // Mirrors deploy-config-demo-1's "nameRow": the outer Row gives
+        // its children unbounded width, and the inner TextField Row's
+        // Expanded must not explode under it.
+        final surface = CreateSurface(
+          surfaceId: 'row_layout_test',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Row',
+              properties: {
+                'children': ['nameLabel', 'nameField'],
+              },
+            ),
+            A2uiComponent(
+              id: 'nameLabel',
+              component: 'Text',
+              properties: {'text': '应用名称：'},
+            ),
+            A2uiComponent(
+              id: 'nameField',
+              component: 'TextField',
+              properties: {
+                'value': {'path': '/appName'},
+                'label': '输入应用名',
+              },
+            ),
+          ],
+          dataModel: {'appName': 'crux-genui'},
+        );
+
+        final instance = catalog.instanceFor('call_1', surface);
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(surface: instance, catalog: catalog),
+          ),
+        );
+        await tester.pump();
+
+        // No layout-error box; label + prefilled value render.
+        expect(
+          tester.terminalState.findText('应用名称：').isNotEmpty,
+          isTrue,
+          reason: 'row label should render',
+        );
+        expect(
+          tester.terminalState.findText('crux-genui').isNotEmpty,
+          isTrue,
+          reason: 'TextField value should render, not a layout error',
+        );
+      }, size: const Size(80, 24));
+    });
+  });
 }

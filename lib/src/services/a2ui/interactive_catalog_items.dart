@@ -503,58 +503,65 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     final isNumber = component.variant == 'number';
     final isActive = component.onDataModelUpdate != null;
 
-    return Row(
-      children: [
-        if (component.label.isNotEmpty)
-          Text(
-            '${component.label} ',
-            style: TextStyle(color: theme.onSurfaceDim),
+    final field = GestureDetector(
+      onTap: isActive
+          ? () {
+              if (!_focused) setState(() => _focused = true);
+            }
+          : null,
+      behavior: HitTestBehavior.opaque,
+      child: TextField(
+        controller: _controller,
+        focused: _focused,
+        onFocusChange: (hasFocus) {
+          if (!hasFocus && _focused) {
+            setState(() => _focused = false);
+          }
+        },
+        onKeyEvent: _handleKeyEvent,
+        decoration: InputDecoration(
+          hintText: isNumber ? '0' : null,
+          border: BoxBorder.all(
+            color: _focused ? theme.borderActive : theme.borderSubtle,
+            style: BoxBorderStyle.rounded,
           ),
-        // TextField needs a decoration with border or fillColor to get
-        // a proper width constraint inside Expanded — without it the
-        // render object measures zero and nothing renders.
-        //
-        // Focus: tap to focus, Escape to release back to chat input.
-        // Ctrl+C and other global shortcuts pass through (not consumed).
-        Expanded(
-          child: GestureDetector(
-            onTap: isActive
-                ? () {
-                    if (!_focused) setState(() => _focused = true);
-                  }
-                : null,
-            behavior: HitTestBehavior.opaque,
-            child: TextField(
-              controller: _controller,
-              focused: _focused,
-              onFocusChange: (hasFocus) {
-                if (!hasFocus && _focused) {
-                  setState(() => _focused = false);
-                }
-              },
-              onKeyEvent: _handleKeyEvent,
-              decoration: InputDecoration(
-                hintText: isNumber ? '0' : null,
-                border: BoxBorder.all(
-                  color: _focused ? theme.borderActive : theme.borderSubtle,
-                  style: BoxBorderStyle.rounded,
-                ),
-                focusedBorder: BoxBorder.all(
-                  color: theme.borderActive,
-                  style: BoxBorderStyle.rounded,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 1),
-              ),
-              obscureText: isObscured,
-              maxLines: isLongText ? 3 : 1,
-              onChanged: _handleChanged,
-              onSubmitted: _handleSubmitted,
-              style: TextStyle(color: theme.foreground),
-              enabled: isActive,
-            ),
+          focusedBorder: BoxBorder.all(
+            color: theme.borderActive,
+            style: BoxBorderStyle.rounded,
           ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 1),
         ),
-      ],
+        obscureText: isObscured,
+        maxLines: isLongText ? 3 : 1,
+        onChanged: _handleChanged,
+        onSubmitted: _handleSubmitted,
+        style: TextStyle(color: theme.foreground),
+        enabled: isActive,
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Expanded under an unbounded main-axis constraint is a flex
+        // layout error — e.g. when the agent declares Row > [Text,
+        // TextField]: the outer Row passes unbounded width down to our
+        // internal Row. Stretch only when bounded; otherwise give the
+        // field a compact fixed width so the outer Row can size itself.
+        final stretch = constraints.maxWidth.isFinite;
+        return Row(
+          children: [
+            if (component.label.isNotEmpty)
+              Text(
+                '${component.label} ',
+                style: TextStyle(color: theme.onSurfaceDim),
+              ),
+            if (stretch)
+              Expanded(child: field)
+            else
+              SizedBox(width: 30, child: field),
+          ],
+        );
+      },
     );
   }
 }
