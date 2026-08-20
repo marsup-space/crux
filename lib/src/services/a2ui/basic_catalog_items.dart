@@ -221,6 +221,7 @@ class CardCatalogItem extends CatalogItem {
     return _SurfaceCard(
       title: title,
       isInteractive: isInteractive,
+      isSubmitted: submitted,
       theme: theme,
       child: child,
     );
@@ -228,16 +229,22 @@ class CardCatalogItem extends CatalogItem {
 }
 
 /// Internal stateful card that brightens its border on hover when
-/// the surface is interactive (has action handlers).
+/// the surface is interactive (has action handlers). Submitted
+/// surfaces fade to a subtle border — visually archival.
 class _SurfaceCard extends StatefulComponent {
   final String title;
   final bool isInteractive;
+
+  /// True when the owning surface has been submitted — the card
+  /// renders with a subdued border and muted title.
+  final bool isSubmitted;
   final CruxThemeData theme;
   final Component child;
 
   const _SurfaceCard({
     required this.title,
     required this.isInteractive,
+    required this.isSubmitted,
     required this.theme,
     required this.child,
   });
@@ -254,7 +261,11 @@ class _SurfaceCardState extends State<_SurfaceCard> {
     final theme = component.theme;
     final borderColor = _hovered && component.isInteractive
         ? theme.accent
+        : component.isSubmitted
+        ? theme.borderSubtle
         : theme.borderActive;
+    final titleColor =
+        component.isSubmitted ? theme.textMuted : theme.secondary;
 
     return MouseRegion(
       onEnter: component.isInteractive
@@ -274,7 +285,7 @@ class _SurfaceCardState extends State<_SurfaceCard> {
               ? BorderTitle(
                   text: component.title,
                   style: TextStyle(
-                    color: theme.secondary,
+                    color: titleColor,
                     fontWeight: FontWeight.bold,
                   ),
                 )
