@@ -221,7 +221,7 @@ const List<SlashCommand> _baseCommands = [
   SlashCommand(
     name: '/provider',
     description: 'cmd.provider.desc',
-    params: ['name', 'key?'],
+    params: ['name', 'key|remove|sync?'],
     suggestionsPerParam: [
       // First param: name (autocompleted from registered providers
       // in the chat panel — see chat_panel.dart's suggestion handler).

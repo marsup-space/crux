@@ -250,6 +250,15 @@ const Map<String, String> _en = {
   'toast.keyMissing': 'missing',
   'toast.removedKey': 'Removed API key for {name}',
   'toast.savedKey': 'Saved API key for {name}',
+  'toast.providerSyncUnsupported':
+      'Provider "{name}" does not support sync. Only openrouter-free does.',
+  'toast.providerSyncPreview':
+      'Stealth-model sync preview:\n{diff}\nRun /provider openrouter-free sync confirm to apply.',
+  'toast.providerSyncNoPending':
+      'No pending sync. Run /provider openrouter-free sync first.',
+  'toast.providerSyncApplied':
+      'Synced stealth models (+{added} −{removed}) → {path}',
+  'toast.providerSyncError': 'Provider sync failed: {error}',
   'toast.quitRunning':
       'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
   'toast.quitUnavailable': 'Quit unavailable (no TUI bound)',
@@ -708,6 +717,12 @@ const Map<String, String> _zh = {
   'toast.keyMissing': '未设置',
   'toast.removedKey': '已移除 {name} 的 API 密钥',
   'toast.savedKey': '已保存 {name} 的 API 密钥',
+  'toast.providerSyncUnsupported': '提供商 "{name}" 不支持同步，仅 openrouter-free 支持。',
+  'toast.providerSyncPreview':
+      'stealth 模型同步预览：\n{diff}\n运行 /provider openrouter-free sync confirm 应用。',
+  'toast.providerSyncNoPending': '没有待应用的同步。请先运行 /provider openrouter-free sync。',
+  'toast.providerSyncApplied': '已同步 stealth 模型（+{added} −{removed}）→ {path}',
+  'toast.providerSyncError': '提供商同步失败：{error}',
   'toast.quitRunning': '有会话正在运行——点击模型按钮中断，Ctrl+C×2 退出',
   'toast.quitUnavailable': '无法退出（未绑定 TUI）',
   'toast.renameUsage': '用法：/rename <新标题>',
