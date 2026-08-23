@@ -27,6 +27,8 @@ import 'provider_seeder.dart';
 /// await loader.loadAll();
 /// final openai = loader.providerByName('openai');
 /// final gpt4o = loader.modelByCompositeKey('openai/gpt-4o');
+/// // Model IDs may contain slashes, e.g. OpenRouter:
+/// final claude = loader.modelByCompositeKey('openrouter/anthropic/claude-sonnet-4');
 /// ```
 class ModelEntry {
   final String compositeKey;
@@ -97,13 +99,16 @@ class ProviderConfigLoader {
 
   /// Look up a model by its composite key `"provider/modelId"`.
   ///
+  /// The model ID itself may contain slashes (e.g. OpenRouter's
+  /// `anthropic/claude-sonnet-4`), so we split on the FIRST slash only.
+  ///
   /// Searches across all loaded providers.
   ModelConfig? modelByCompositeKey(String key) {
-    final parts = key.split('/');
-    if (parts.length != 2) return null;
-    final provider = providerByName(parts[0]);
+    final slashIdx = key.indexOf('/');
+    if (slashIdx <= 0) return null;
+    final provider = providerByName(key.substring(0, slashIdx));
     if (provider == null) return null;
-    return provider.modelById(parts[1]);
+    return provider.modelById(key.substring(slashIdx + 1));
   }
 
   /// Find the provider that owns a given model ID (non-composite).
