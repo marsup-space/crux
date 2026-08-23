@@ -259,6 +259,16 @@ const Map<String, String> _en = {
   'toast.providerSyncApplied':
       'Synced stealth models (+{added} −{removed}) → {path}',
   'toast.providerSyncError': 'Provider sync failed: {error}',
+  'sync.warnExpired':
+      'EXPIRED: {model} expired {date} — remove it or expect 404s',
+  'sync.warnExpiringSoon':
+      '{model} expires {date} (within {days} days)',
+  'sync.warnVanished':
+      '{model} is no longer in OpenRouter\'s catalog',
+  'sync.remove': 'remove {model} (gone upstream)',
+  'sync.add': 'add {model} (ctx {ctx})',
+  'sync.keep': 'keep {model} (refreshed)',
+  'sync.noChanges': '(no changes — already in sync)',
   'toast.quitRunning':
       'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
   'toast.quitUnavailable': 'Quit unavailable (no TUI bound)',
@@ -416,6 +426,9 @@ const Map<String, String> _en = {
       'Coding-plan usage\n5h: short-window remaining\n1w: weekly remaining\nClick to refresh',
   'chat.toolbar.creditHint':
       'Credit balance\nHover for granted / topped-up breakdown\nClick to refresh',
+  'chat.toolbar.syncModels': '⟳ sync',
+  'chat.toolbar.syncModelsHint':
+      'Sync the OpenRouter model list against its live catalog\n(stealth previews come and go — this refreshes them)',
   'chat.toolbar.auxRunning':
       'Auxiliary model: {model}\n(cannot be changed while the agent is responding)',
   'chat.toolbar.auxIdle':

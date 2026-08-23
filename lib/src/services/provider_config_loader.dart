@@ -445,6 +445,11 @@ class ProviderConfigLoader {
     // are null, the system-prompt tuning layer is omitted.
     final systemPromptAddition = _optionalString(map, 'system_prompt_addition');
 
+    // Optional ISO date (yyyy-MM-dd) after which the model may vanish
+    // from its provider. Free-form string — validated only loosely
+    // (non-empty); the sync layer is what interprets it.
+    final expirationDate = _optionalString(map, 'expiration_date');
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -461,6 +466,7 @@ class ProviderConfigLoader {
       hintParallelCalls: hintParallelCalls,
       hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
       systemPromptAddition: systemPromptAddition,
+      expirationDate: expirationDate,
     );
   }
 

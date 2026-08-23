@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../i18n/strings.dart';
 import '../models/provider_config.dart';
 
 /// Syncs the `openrouter-free` provider's stealth-model entries against
@@ -21,6 +22,14 @@ import '../models/provider_config.dart';
 ///     longer exist upstream are removed; new upstream stealths are
 ///     appended; survivors get `context_size` / `image_support` /
 ///     `max_tokens` refreshed.
+///   - **Expiry warnings cover every entry.** OpenRouter's catalog
+///     publishes an `expiration_date` on some models (verified live:
+///     e.g. the `:free` nemotron variants carried 2026-08-24 while
+///     stealth previews show a far-future placeholder). Survivors get
+///     the date persisted into the TOML, and the preview warns when
+///     ANY current model — managed or hand-maintained — is expired,
+///     expires within [expiryWarningDays], or has vanished from the
+///     catalog entirely.
 ///   - **Non-stealth entries are never touched.** The hand-picked
 ///     `:free` workhorses (nemotron, the `openrouter/free` router)
 ///     stay exactly as configured.
@@ -40,6 +49,10 @@ class OpenRouterStealthSync {
   /// The provider name this syncer manages.
   static const providerName = 'openrouter-free';
 
+  /// Warn in the sync preview when a model's `expiration_date` falls
+  /// within this many days of today.
+  static const expiryWarningDays = 14;
+
   /// Fetch the live catalog and diff it against [current].
   ///
   /// [endpointUrl] is the provider's configured base URL (e.g.
@@ -50,34 +63,66 @@ class OpenRouterStealthSync {
     required String endpointUrl,
     required ProviderConfig current,
   }) async {
-    final catalog = await _fetchStealthModels(endpointUrl);
-    final upstreamById = {for (final m in catalog) m.id: m};
+    final body = await _fetchModelsBody(endpointUrl);
+    return diff(catalog: parseCatalogJson(body), current: current);
+  }
 
+  /// Pure diff of a parsed catalog against [current]. Split from
+  /// [plan] so tests can exercise the logic without network.
+  StealthSyncPlan diff({
+    required Map<String, CatalogModel> catalog,
+    required ProviderConfig current,
+  }) {
     final kept = <ModelConfig>[];
     final updated = <ModelConfig>[];
     final removed = <String>[];
-    final added = <_StealthModel>[];
+    final added = <CatalogModel>[];
+    final warnings = <SyncWarning>[];
+
+    final knownIds = current.models.map((m) => m.id).toSet();
 
     for (final m in current.models) {
-      if (!_isStealthId(m.id)) {
-        kept.add(m); // hand-picked non-stealth — untouched
-        continue;
-      }
-      final upstream = upstreamById.remove(m.id);
-      if (upstream == null) {
-        removed.add(m.id);
+      final upstream = catalog[m.id];
+      if (_isStealthId(m.id)) {
+        // Managed: remove / refresh based on the live catalog.
+        if (upstream == null) {
+          removed.add(m.id);
+        } else {
+          updated.add(_mergeExisting(m, upstream));
+        }
+      } else if (upstream == null) {
+        // Hand-maintained and gone upstream — never auto-remove,
+        // but do warn so the user can clean up themselves.
+        warnings.add(SyncWarning.vanished(m.id));
       } else {
-        updated.add(_mergeExisting(m, upstream));
+        kept.add(m); // hand-picked non-stealth — untouched
+      }
+      // Expiry warnings apply to both kinds.
+      final exp = upstream?.expirationDate;
+      if (exp == null) continue;
+      final expDay = DateTime.tryParse(exp);
+      if (expDay == null) continue;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final days = expDay.difference(today).inDays;
+      if (days < 0) {
+        warnings.add(SyncWarning.expired(m.id, exp));
+      } else if (days <= expiryWarningDays) {
+        warnings.add(SyncWarning.expiringSoon(m.id, exp));
       }
     }
-    // Whatever is left in upstreamById is new.
-    added.addAll(upstreamById.values);
+
+    // Whatever remains upstream and unseen is a new stealth candidate.
+    added.addAll(
+      catalog.values.where((m) => _isStealthId(m.id) && !knownIds.contains(m.id)),
+    );
 
     return StealthSyncPlan(
       kept: kept,
       updated: updated,
       removed: removed,
       added: added.map(_toModelConfig).toList(),
+      warnings: warnings,
     );
   }
 
@@ -139,6 +184,9 @@ class OpenRouterStealthSync {
         'reasoning_effort = "${m.reasoningEffort?.name ?? 'none'}"',
       );
       if (m.maxTokens != null) buf.writeln('max_tokens = ${m.maxTokens}');
+      if (m.expirationDate != null) {
+        buf.writeln('expiration_date = "${m.expirationDate}"');
+      }
       buf.writeln('temperature = ${m.temperature}');
       if (m.reasoningLabels.isNotEmpty) {
         buf.writeln();
@@ -175,7 +223,8 @@ class OpenRouterStealthSync {
   /// the file means "came from a previous sync".
   bool _isStealthId(String id) => id.startsWith('stealth/');
 
-  Future<List<_StealthModel>> _fetchStealthModels(String endpointUrl) async {
+  /// Fetch the raw `/models` JSON body. Key-free endpoint.
+  Future<String> _fetchModelsBody(String endpointUrl) async {
     final uri = Uri.parse('${endpointUrl.replaceAll(RegExp(r'/$'), '')}/models');
     final req = await _httpClient.getUrl(uri);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
@@ -183,18 +232,19 @@ class OpenRouterStealthSync {
     if (resp.statusCode != 200) {
       throw HttpException('GET $uri → ${resp.statusCode}', uri: uri);
     }
-    final body = await resp.transform(utf8.decoder).join();
-    final data = (jsonDecode(body) as Map<String, dynamic>)['data'] as List;
+    return resp.transform(utf8.decoder).join();
+  }
 
-    final out = <_StealthModel>[];
+  /// Parse the `/models` response body into catalog records keyed by
+  /// model id. Public + static so tests can feed canned JSON.
+  static Map<String, CatalogModel> parseCatalogJson(String body) {
+    final data = (jsonDecode(body) as Map<String, dynamic>)['data'] as List;
+    final out = <String, CatalogModel>{};
     for (final raw in data) {
       final m = raw as Map<String, dynamic>;
       final id = m['id'] as String? ?? '';
+      if (id.isEmpty) continue;
       final desc = (m['description'] as String? ?? '').toLowerCase();
-      final isStealth =
-          id.startsWith('stealth/') || desc.contains('stealth model');
-      if (!isStealth) continue;
-
       final pricing = m['pricing'] as Map<String, dynamic>? ?? {};
       final reasoning = m['reasoning'] as Map<String, dynamic>?;
       final arch = m['architecture'] as Map<String, dynamic>? ?? {};
@@ -202,21 +252,21 @@ class OpenRouterStealthSync {
           (arch['input_modalities'] as List?)?.cast<String>() ?? const [];
       final top = m['top_provider'] as Map<String, dynamic>? ?? {};
 
-      out.add(
-        _StealthModel(
-          id: id,
-          name: m['name'] as String? ?? id,
-          contextLength: (m['context_length'] as num?)?.toInt() ?? 200000,
-          isFree: pricing['prompt'] == '0' && pricing['completion'] == '0',
-          imageSupport: inputs.contains('image'),
-          reasoningEfforts:
-              (reasoning?['supported_efforts'] as List?)?.cast<String>() ??
-              const [],
-          reasoningMandatory: reasoning?['mandatory'] as bool? ?? false,
-          defaultEffort: reasoning?['default_effort'] as String?,
-          maxCompletionTokens:
-              (top['max_completion_tokens'] as num?)?.toInt(),
-        ),
+      out[id] = CatalogModel(
+        id: id,
+        name: m['name'] as String? ?? id,
+        contextLength: (m['context_length'] as num?)?.toInt() ?? 200000,
+        isStealth:
+            id.startsWith('stealth/') || desc.contains('stealth model'),
+        isFree: pricing['prompt'] == '0' && pricing['completion'] == '0',
+        imageSupport: inputs.contains('image'),
+        reasoningEfforts:
+            (reasoning?['supported_efforts'] as List?)?.cast<String>() ??
+            const [],
+        reasoningMandatory: reasoning?['mandatory'] as bool? ?? false,
+        defaultEffort: reasoning?['default_effort'] as String?,
+        maxCompletionTokens: (top['max_completion_tokens'] as num?)?.toInt(),
+        expirationDate: m['expiration_date'] as String?,
       );
     }
     return out;
@@ -225,7 +275,7 @@ class OpenRouterStealthSync {
   /// Merge upstream catalog facts into an existing TOML entry, keeping
   /// the user's display name and reasoning-label overrides but
   /// refreshing the fields OpenRouter owns.
-  ModelConfig _mergeExisting(ModelConfig existing, _StealthModel up) {
+  ModelConfig _mergeExisting(ModelConfig existing, CatalogModel up) {
     return ModelConfig(
       id: existing.id,
       name: existing.name,
@@ -236,10 +286,11 @@ class OpenRouterStealthSync {
       maxTokens: up.maxCompletionTokens ?? existing.maxTokens,
       temperature: existing.temperature,
       reasoningLabels: existing.reasoningLabels,
+      expirationDate: up.expirationDate,
     );
   }
 
-  ModelConfig _toModelConfig(_StealthModel up) {
+  ModelConfig _toModelConfig(CatalogModel up) {
     return ModelConfig(
       id: up.id,
       name: '${up.name} (stealth, free)',
@@ -249,6 +300,7 @@ class OpenRouterStealthSync {
       thinking: up.reasoningMandatory || up.reasoningEfforts.isNotEmpty,
       maxTokens: up.maxCompletionTokens,
       temperature: 0,
+      expirationDate: up.expirationDate,
     );
   }
 
@@ -257,7 +309,7 @@ class OpenRouterStealthSync {
   /// falling back to the highest supported level. Reasoning-mandatory
   /// models with no list default to `max` (ox-alpha's shape). Returns
   /// `null` (TOML `"none"`) when the model offers no reasoning control.
-  ReasoningEffort? _pickEffort(_StealthModel up) {
+  ReasoningEffort? _pickEffort(CatalogModel up) {
     String? e = up.defaultEffort;
     if (e == null || e == 'none') {
       e = up.reasoningEfforts.isEmpty ? null : up.reasoningEfforts.first;
@@ -303,6 +355,7 @@ class StealthSyncPlan {
     required this.updated,
     required this.removed,
     required this.added,
+    this.warnings = const [],
   });
 
   /// Non-stealth models carried through untouched.
@@ -317,48 +370,105 @@ class StealthSyncPlan {
   /// New stealth models to append.
   final List<ModelConfig> added;
 
+  /// Non-fatal observations: expired / soon-expiring models (any kind)
+  /// and hand-maintained entries that vanished from the catalog.
+  final List<SyncWarning> warnings;
+
   bool get isEmpty => removed.isEmpty && added.isEmpty && !_anyFieldChanged;
 
   bool get _anyFieldChanged => false; // field-level diffs are silent
 
   /// Human-readable preview lines for the confirmation prompt.
-  List<String> previewLines() {
+  ///
+  /// Localized through the message catalog; [strings] defaults to the
+  /// English fallback so tests can call this without a locale.
+  List<String> previewLines([Strings strings = kEnglishStrings]) {
+    final t = strings.t;
     final lines = <String>[];
+    for (final w in warnings) {
+      final args = {'model': w.modelId, 'date': w.date ?? ''};
+      switch (w.kind) {
+        case SyncWarningKind.expired:
+          lines.add('  ! ${t('sync.warnExpired', args)}');
+        case SyncWarningKind.expiringSoon:
+          lines.add(
+            '  ! ${t('sync.warnExpiringSoon', {
+              ...args,
+              'days': '${OpenRouterStealthSync.expiryWarningDays}',
+            })}',
+          );
+        case SyncWarningKind.vanished:
+          lines.add('  ! ${t('sync.warnVanished', args)}');
+      }
+    }
     for (final id in removed) {
-      lines.add('  − remove $id (gone upstream)');
+      lines.add('  − ${t('sync.remove', {'model': id})}');
     }
     for (final m in added) {
-      lines.add('  + add ${m.id} (ctx ${m.contextSize})');
+      lines.add(
+        '  + ${t('sync.add', {'model': m.id, 'ctx': '${m.contextSize}'})}',
+      );
     }
     for (final m in updated) {
-      lines.add('  = keep ${m.id} (refreshed)');
+      lines.add('  = ${t('sync.keep', {'model': m.id})}');
     }
-    if (lines.isEmpty) lines.add('  (no changes — already in sync)');
+    if (lines.isEmpty) lines.add('  ${t('sync.noChanges')}');
     return lines;
   }
 }
 
-/// A stealth-model record from OpenRouter's `/models` catalog.
-class _StealthModel {
-  _StealthModel({
+/// One record from OpenRouter's `/models` catalog (any model, not
+/// just stealth). Public so tests can construct expectations.
+class CatalogModel {
+  CatalogModel({
     required this.id,
     required this.name,
     required this.contextLength,
+    required this.isStealth,
     required this.isFree,
     required this.imageSupport,
     required this.reasoningEfforts,
     required this.reasoningMandatory,
     required this.defaultEffort,
     required this.maxCompletionTokens,
+    this.expirationDate,
   });
 
   final String id;
   final String name;
   final int contextLength;
+
+  /// True when the id starts with `stealth/` or the description
+  /// mentions "stealth model" — i.e. sync manages this entry.
+  final bool isStealth;
   final bool isFree;
   final bool imageSupport;
   final List<String> reasoningEfforts;
   final bool reasoningMandatory;
   final String? defaultEffort;
   final int? maxCompletionTokens;
+
+  /// ISO date (`yyyy-MM-dd`) after which the model may disappear.
+  /// `null` when OpenRouter publishes no expiry for it.
+  final String? expirationDate;
 }
+
+/// A non-fatal observation from a sync diff: an expired or
+/// soon-expiring model (managed or hand-maintained), or a
+/// hand-maintained entry that vanished from the catalog.
+class SyncWarning {
+  SyncWarning.expired(this.modelId, this.date) : kind = SyncWarningKind.expired;
+  SyncWarning.expiringSoon(this.modelId, this.date)
+    : kind = SyncWarningKind.expiringSoon;
+  SyncWarning.vanished(this.modelId)
+    : date = null,
+      kind = SyncWarningKind.vanished;
+
+  final SyncWarningKind kind;
+  final String modelId;
+
+  /// ISO date string; `null` only for [SyncWarningKind.vanished].
+  final String? date;
+}
+
+enum SyncWarningKind { expired, expiringSoon, vanished }
