@@ -91,6 +91,12 @@ class ChatToolbar extends StatefulComponent {
   /// ready to retype.
   final VoidCallback? onTemperaturePressed;
 
+  /// Called when the user clicks the `⟳ sync` button that appears
+  /// next to the coding-plan / credit cells for OpenRouter. Wired by
+  /// the chat panel to run `/provider openrouter-free sync now`
+  /// (fetch, diff, apply, reload — one shot). Null = button hidden.
+  final VoidCallback? onSyncModelsPressed;
+
   final SessionRuntimeState? runtime;
   final int contextMaxTokens;
   final void Function() onModelPressed;
@@ -140,6 +146,7 @@ class ChatToolbar extends StatefulComponent {
     this.onCodingPlanTap,
     this.onCreditBalanceTap,
     this.onTemperaturePressed,
+    this.onSyncModelsPressed,
     this.debugMode = false,
     this.auxButtonInSidePanel = false,
     this.strings = kEnglishStrings,
@@ -537,6 +544,15 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // "  ¥110.00 (¥100.00)" — 22 characters.
         final showCreditBalance = _hasCreditBalanceProvider();
         final creditBalanceW = showCreditBalance ? 22 + spacer : 0;
+        // Sync-models button width budget. Label is the localized
+        // `⟳ sync` chip; measure it so a longer translation
+        // doesn't overflow the reserved slot.
+        final syncLabel = component.onSyncModelsPressed != null
+            ? component.strings.t('chat.toolbar.syncModels')
+            : null;
+        final syncW = syncLabel != null
+            ? UnicodeWidth.stringWidth(syncLabel) + btnPad
+            : 0;
         // Width budget for the auxiliary button is only needed
         // when it's actually rendered in this toolbar (narrow
         // terminals). When the side panel hosts the button the
@@ -575,6 +591,11 @@ class _ChatToolbarState extends State<ChatToolbar> {
         final showCreditBalanceUsage =
             showCreditBalance && (remaining - creditBalanceW) >= 0;
         if (showCreditBalanceUsage) remaining -= creditBalanceW;
+
+        final showSyncButton =
+            component.onSyncModelsPressed != null &&
+            (remaining - syncW) >= 0;
+        if (showSyncButton) remaining -= syncW;
 
         final showAux =
             !component.auxButtonInSidePanel && (remaining - auxW) >= 0;
@@ -706,6 +727,25 @@ class _ChatToolbarState extends State<ChatToolbar> {
                     initialBalance:
                         component.creditBalanceProvider!.latestCreditBalance,
                     onTap: component.onCreditBalanceTap,
+                  ),
+                ),
+              if (showSyncButton && syncLabel != null)
+                // OpenRouter-only model-sync button. Sits beside the
+                // coding-plan / credit cells; click runs
+                // `/provider openrouter-free sync now` (one-shot).
+                Hinted(
+                  hint: component.strings.t('chat.toolbar.syncModelsHint'),
+                  child: Button(
+                    label: syncLabel,
+                    onPressed: component.onSyncModelsPressed,
+                    color: CruxTheme.of(context).onSurfaceVariant,
+                    hoverColor: CruxTheme.of(context).buttonTextHover,
+                    bgColor: CruxTheme.of(context).buttonBackground,
+                    hoverBgColor: CruxTheme.of(context).buttonBackgroundHover,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: kContentHorizontalPadding,
+                      vertical: 0,
+                    ),
                   ),
                 ),
               Expanded(child: SizedBox()),

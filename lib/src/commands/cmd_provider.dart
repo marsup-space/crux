@@ -17,13 +17,15 @@ class _PendingSync {
 
 /// `/provider openrouter-free sync` — preview the stealth-model diff
 /// against OpenRouter's live catalog; `/provider openrouter-free sync
-/// confirm` — apply it. Only the `openrouter-free` provider is
-/// syncable; other names get a helpful error.
+/// confirm` — apply it; `/provider openrouter-free sync now` — fetch,
+/// diff, apply, and reload in one shot (used by the toolbar sync
+/// button). Only the `openrouter-free` provider is syncable; other
+/// names get a helpful error.
 Future<void> executeProviderSync(
   String name,
-  bool confirm,
-  CommandContext ctx,
-) async {
+  String mode, {
+  required CommandContext ctx,
+}) async {
   if (name != OpenRouterStealthSync.providerName) {
     ctx.showToast(
       ctx.strings.t('toast.providerSyncUnsupported', {'name': name}),
@@ -45,7 +47,39 @@ Future<void> executeProviderSync(
 
   final sync = OpenRouterStealthSync();
 
-  if (!confirm) {
+  // `sync now`: preview + confirm collapsed into one round trip.
+  if (mode == 'now') {
+    try {
+      final plan = await sync.plan(
+        endpointUrl: provider.endpointUrl,
+        current: provider,
+      );
+      final file = await sync.write(
+        current: provider,
+        syncPlan: plan,
+        userProvidersDir: ctx.providerService.providersDir,
+      );
+      await ctx.providerService.reload();
+      ctx.refresh();
+      ctx.showToast(
+        '${terminalSymbol('✓', '+')} '
+        '${ctx.strings.t('toast.providerSyncApplied', {
+          'added': '${plan.added.length}',
+          'removed': '${plan.removed.length}',
+          'path': file.path,
+        })}',
+        mode: ToastMode.status,
+      );
+    } catch (e) {
+      ctx.showToast(
+        ctx.strings.t('toast.providerSyncError', {'error': '$e'}),
+        mode: ToastMode.error,
+      );
+    }
+    return;
+  }
+
+  if (mode == 'preview') {
     // Preview: fetch + diff, stash the plan, show the lines.
     try {
       final plan = await sync.plan(
@@ -53,7 +87,7 @@ Future<void> executeProviderSync(
         current: provider,
       );
       _pendingSyncs[name] = _PendingSync(plan, provider.endpointUrl);
-      final lines = plan.previewLines().join('\n');
+      final lines = plan.previewLines(ctx.strings).join('\n');
       ctx.showToast(
         ctx.strings.t('toast.providerSyncPreview', {'diff': lines}),
       );
@@ -137,8 +171,18 @@ Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
     );
     return;
   }
-  if (arg == 'sync' || arg == 'confirm') {
-    await executeProviderSync(name, arg == 'confirm', ctx);
+  if (arg == 'sync' || arg == 'confirm' || arg == 'now') {
+    // `/provider <name> sync now` carries its subcommand in
+    // parts[3]; bare `sync` previews, `confirm` applies the
+    // stashed plan, `now` does both in one shot.
+    final sub = parts.length > 3 ? parts[3].trim() : '';
+    final String mode;
+    if (arg == 'sync') {
+      mode = sub == 'now' ? 'now' : 'preview';
+    } else {
+      mode = arg; // 'confirm' | 'now'
+    }
+    await executeProviderSync(name, mode, ctx: ctx);
     return;
   }
   if (arg == 'remove' || arg == '--remove' || arg == 'rm') {
