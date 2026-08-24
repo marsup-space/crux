@@ -45,10 +45,22 @@ const String earlyAbortSystemNoteMarker =
 /// [kMaxLlmRetries] + 1.
 const int kMaxLlmRetries = 5;
 
+/// Message prefix of the synthetic [LlmError] the empty-stream
+/// auto-retry feeds into the retry loop. Matched by
+/// [errorLabelForRetry] so the status toast says "empty response"
+/// rather than the generic overload text.
+const String kEmptyStreamErrorPrefix = 'empty stream:';
+
 /// Returns a short, user-facing label describing the error that triggered
 /// a retry attempt. Used in the status toast shown between attempts.
 String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
   if (streamError != null) {
+    // The empty-stream retry synthesises an `overloaded` error whose
+    // message carries this marker prefix; label it precisely instead
+    // of the generic overload wording.
+    if (streamError.message.startsWith(kEmptyStreamErrorPrefix)) {
+      return 'empty response';
+    }
     switch (streamError.kind) {
       case LlmErrorKind.rateLimit:
         return 'rate limited';
@@ -982,7 +994,59 @@ class ChatTurnExecutor {
         }
 
         if (streamError == null && thrownError == null) {
-          break;
+          // ── Empty-stream auto-retry ────────────────────────────
+          //
+          // Free stealth previews occasionally close the connection
+          // cleanly but having produced NOTHING: no text, no
+          // reasoning, no tool calls, no real finish reason. The
+          // stream "succeeds" from the HTTP layer's perspective (our
+          // own handlers even synthesise a `finishReason: 'done'`
+          // chunk at natural stream end), so without this check the
+          // round persists an empty AI bubble and the turn stalls
+          // until the user types 请继续.
+          //
+          // Treat it as a retriable `overloaded` error and fall
+          // through to the standard backoff/retry machinery (same
+          // budget as any other transient failure). Only fires when
+          // the round genuinely produced zero output — a partial
+          // answer followed by a drop is handled by the
+          // repetition-guard / nudge paths instead, and a real
+          // finish reason (`stop` / `length` / `tool_calls`) means
+          // the model DID terminate deliberately, so retrying is
+          // not warranted.
+          final sawRealFinish = chunks.any(
+            (c) => c.finishReason != null && c.finishReason != 'done',
+          );
+          final producedNothing =
+              roundTextBuffer.isEmpty &&
+              roundReasoningBuffer.isEmpty &&
+              !chunks.any((c) => c.toolUse != null) &&
+              !sawRealFinish;
+          if (producedNothing) {
+            streamError = LlmError(
+              kind: LlmErrorKind.overloaded,
+              vendor: LlmVendorX.fromProviderName(providerName),
+              message:
+                  '$kEmptyStreamErrorPrefix upstream closed the stream '
+                  'with no content — auto-retrying',
+              providerName: providerName,
+            );
+            if (attempt < kMaxLlmRetries) {
+              onStatus?.call(
+                'Model returned an empty response — retrying '
+                '(${attempt + 1}/$kMaxLlmRetries)…',
+              );
+              // Fall through WITHOUT breaking: the loop's
+              // post-increment moves to the next attempt and the
+              // top-of-loop backoff block runs because
+              // streamError != null.
+            }
+            // Else: retries exhausted — leave streamError set so the
+            // post-loop handler surfaces a proper error bubble (with
+            // the ▶ retry button) instead of a silent empty bubble.
+          } else {
+            break;
+          }
         }
       }
 
