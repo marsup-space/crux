@@ -69,10 +69,14 @@ class PluginHomeWidget extends HomeWidget {
   @override
   Set<int> get supportedSpans => const {1, 2};
 
-  /// Dynamic: 1 label line + up to 3 todo rows + 1 button row, capped
-  /// so a long spec can't hog the grid. Clamped to [4, 8].
+  /// Home-box content height: the spec's label line count (statically
+  /// known from the template) plus headroom for todo/action rows,
+  /// clamped so a long spec can't hog the grid. A longer todo list
+  /// scrolls inside the box (home wraps every box in its own scroll
+  /// area), so the headroom is a floor, not a cap.
   @override
-  int heightFor(int span) => 4;
+  int heightFor(int span) =>
+      (Plugin.labelLineCount(plugin.labelTemplate) + 3).clamp(4, 8);
 
   /// Enter on the focused box fires the plugin's first available
   /// action in the current liveness state. Returns null when the
