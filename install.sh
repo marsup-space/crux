@@ -150,9 +150,25 @@ log "Installing crux v${specific_version}${target:+ ($target)} -> $INSTALL_DIR"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# Install a binary via temp-file + atomic rename.
+#
+# macOS 26 (Tahoe+) provenance tracking can SIGKILL an adhoc-signed binary on
+# exec ("Taskgated Invalid Signature") when it is written over an existing,
+# provenance-flagged path — clearing xattrs on the same inode does NOT clear
+# the cached verdict. Writing a fresh inode and renaming it into place sidesteps
+# the issue entirely. Best-effort `xattr -c` keeps the new file clean too.
+install_binary() {
+    local src="$1" dst="$2"
+    local tmp_dst="${dst}.tmp.$$"
+    rm -f "$tmp_dst"
+    cp "$src" "$tmp_dst"
+    chmod 755 "$tmp_dst"
+    command -v xattr >/dev/null 2>&1 && xattr -cr "$tmp_dst" 2>/dev/null || true
+    mv -f "$tmp_dst" "$dst"
+}
+
 if [ -n "$binary_path" ]; then
-    cp "$binary_path" "${INSTALL_DIR}/${APP}"
-    chmod 755 "${INSTALL_DIR}/${APP}"
+    install_binary "$binary_path" "${INSTALL_DIR}/${APP}"
 else
     command -v curl >/dev/null 2>&1 || fail "curl is required but not installed"
     command -v unzip >/dev/null 2>&1 || fail "unzip is required but not installed"
@@ -184,7 +200,7 @@ else
 
     # Preserve the source name (crux vs crux.exe) so the installed file
     # stays invocable from cmd/PowerShell on Windows.
-    install -m 0755 "$binary" "${INSTALL_DIR}/$(basename "$binary")"
+    install_binary "$binary" "${INSTALL_DIR}/$(basename "$binary")"
 
     # Copy bundled assets as siblings of the binary.
     for asset_dir in providers themes third_party; do
