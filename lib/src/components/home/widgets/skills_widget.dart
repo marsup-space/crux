@@ -184,7 +184,7 @@ class _SkillRow extends StatelessComponent {
             ),
             Expanded(
               child: Text(
-                '  ${skill.description}',
+                '  ${skill.description.replaceAll('\n', ' ')}',
                 softWrap: false,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: descColor),
