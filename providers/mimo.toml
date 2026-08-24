@@ -1,0 +1,98 @@
+# Xiaomi MiMo provider configuration
+# Filename serves as the provider name: "mimo"
+# OpenAI-compatible API: https://api.xiaomimimo.com/v1
+#
+# The custom `type = "mimo"` value is registered in
+# `llm_provider.dart`'s resolveProvider() — it dispatches to a
+# MiMo-specific LlmProvider that:
+#   - extends OpenAICompatibleProvider (OpenAI Chat Completions
+#     wire shape, Bearer auth, stream parsing inherited);
+#   - removes the spurious `reasoning_effort` field (MiMo only
+#     understands the binary `thinking.type: enabled/disabled`
+#     knob, not OpenAI's reasoning-effort scale);
+#   - pins `temperature: 1.0` and `top_p: 0.95` while thinking is
+#     enabled, because MiMo's docs state that v2.5/v2.5-pro ignore
+#     custom values in thinking mode and silently use these
+#     recommended defaults.
+#
+# Models
+# ------
+# Per https://mimo.mi.com/docs/en-US/api/chat/models and the
+# hyperparameter docs, the current flagship text models are:
+#
+#   * mimo-v2.5-pro           — 1T total / 42B active, 1M context
+#   * mimo-v2.5               — native omni-modal + 1M context
+#   * mimo-v2.5-pro-ultraspeed — fastest variant, 1M context
+#
+# The base `mimo-v2.5` model is advertised as natively multimodal;
+# `image_support = true` is set only on that model because the docs
+# explicitly verify image input on it.
+#
+# Reasoning
+# ---------
+# MiMo Chat Completions has no `reasoning_effort` knob — only the
+# `thinking.type` binary toggle. The TOML reasoning labels collapse
+# the five internal effort levels down to a binary [off, on] picker:
+# `off` disables thinking, `max` enables it, and the middle levels
+# are hidden.
+#
+# Stream lerping
+# --------------
+# MiMo streams fine-grained deltas; `stream_lerp = true` opts the
+# chat executor into a 60Hz drain timer for smoother rendering.
+#
+# Balance display
+# ---------------
+# MiMo's inference API has NO key-authenticated balance endpoint.
+# The official docs only document chat / responses / list-models /
+# audio endpoints, and the DeepSeek-style balance paths
+# (/v1/user/balance, /v1/dashboard/billing/*) all 404 on
+# api.xiaomimimo.com. The balance is visible only in the web
+# console (platform.xiaomimimo.com/#/console/balance), which is
+# browser-session authenticated — not callable with the API key.
+# No toolbar balance row is therefore rendered for this provider.
+
+type = "mimo"
+endpoint_url = "https://api.xiaomimimo.com/v1"
+
+[reasoning_labels]
+low = "disabled"
+normal = "disabled"
+high = "disabled"
+max = "on"
+
+# === mimo-v2.5-pro — flagship reasoning model ===
+[[models]]
+id = "mimo-v2.5-pro"
+name = "MiMo V2.5 Pro"
+context_size = 1048576
+image_support = false
+max_tokens = 32768
+reasoning_effort = "max"
+thinking = true
+temperature = 1.0
+stream_lerp = true
+
+# === mimo-v2.5 — omni-modal flagship ===
+[[models]]
+id = "mimo-v2.5"
+name = "MiMo V2.5"
+context_size = 1048576
+image_support = true
+max_tokens = 32768
+reasoning_effort = "max"
+thinking = true
+temperature = 1.0
+stream_lerp = true
+
+# === mimo-v2.5-pro-ultraspeed — fastest flagship ===
+[[models]]
+id = "mimo-v2.5-pro-ultraspeed"
+name = "MiMo V2.5 Pro UltraSpeed"
+context_size = 1048576
+image_support = false
+max_tokens = 32768
+reasoning_effort = "max"
+thinking = true
+temperature = 1.0
+stream_lerp = true

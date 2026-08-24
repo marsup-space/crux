@@ -3,6 +3,7 @@ import 'providers/anthropic_compatible_provider.dart';
 import 'providers/deepseek_provider.dart';
 import 'providers/kimi_provider.dart';
 import 'providers/minimax_provider.dart';
+import 'providers/mimo_provider.dart';
 import 'providers/openai_compatible_provider.dart';
 import 'providers/zhipu_provider.dart';
 
@@ -375,6 +376,12 @@ ResolvedProvider resolveProvider(String type) {
         wire: WireFamily.openaiCompatible,
         authStyle: AuthStyle.bearer,
       );
+    case 'mimo':
+      return ResolvedProvider(
+        provider: MimoProvider(),
+        wire: WireFamily.openaiCompatible,
+        authStyle: AuthStyle.bearer,
+      );
     case 'zhipu':
       return ResolvedProvider(
         provider: ZhipuProvider(),
@@ -396,6 +403,7 @@ List<String> knownProviderTypes() => [
   'deepseek',
   'minimax',
   'kimi',
+  'mimo',
   'zhipu',
 ];
 
@@ -411,6 +419,8 @@ String typeDisplayName(String type) {
       return 'MiniMax';
     case 'kimi':
       return 'Kimi';
+    case 'mimo':
+      return 'MiMo';
     case 'zhipu':
       return 'Zhipu';
     default:
