@@ -79,6 +79,11 @@ class RecentSessionsHomeWidget extends HomeWidget {
   @override
   bool selectItemAt(int index) {
     if (index < 0 || index >= itemCount) return false;
+    // No-op when the highlight is already here: home's onHover fires
+    // on every mouse-motion event, so returning true unconditionally
+    // made sweeping the cursor along one row trigger a full-screen
+    // rebuild per event (hover lag).
+    if (_selectedIndex == index) return false;
     _selectedIndex = index;
     return true;
   }

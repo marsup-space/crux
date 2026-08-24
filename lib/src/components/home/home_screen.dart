@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import '../../services/skills/skill_discovery.dart';
+import '../../services/skills/skill.dart';
 import '../../version.dart';
 import '../ui/button.dart';
 import '../input_chips.dart';
@@ -214,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void reassemble() {
     super.reassemble();
+    _skillsCache = null;
     _allById = {for (final w in _defaultWidgets()) w.id: w};
     _placements = _resolvePlacements();
     _wireWidgetListeners();
@@ -236,6 +238,20 @@ class _HomeScreenState extends State<HomeScreen> {
   /// without re-entering home. (Writing layout fields during build is
   /// this file's existing pattern — see `_packedRowsCache`.)
   String? _lastPluginSignature;
+
+  /// Memoized [discoverSkills] for this home mount. Discovery is a
+  /// synchronous directory walk (~2ms warm, dozens of stat() calls)
+  /// and the skills box re-reads it several times per build —
+  /// `itemCount`, `selectedIndex`, `selectItemAt`, and `build` each
+  /// invoke the closure, so a single hover-driven rebuild used to pay
+  /// 5+ scans. One scan per mount makes those free; the state is
+  /// recreated whenever home is left and re-entered (matching the
+  /// widget's "install a skill and re-enter home" contract), and
+  /// [reassemble] drops it so hot reload re-scans.
+  List<SkillInfo>? _skillsCache;
+
+  List<SkillInfo> _cachedSkills() =>
+      _skillsCache ??= discoverSkills(cwd: _ctx.projectPath);
 
   void _syncPluginBoxes() {
     final plugins = _ctx.plugins?.call();
@@ -269,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
       TokensHomeWidget(),
       CodingPlanHomeWidget(),
       ActivityHomeWidget(),
-      SkillsHomeWidget(skills: () => discoverSkills(cwd: _ctx.projectPath)),
+      SkillsHomeWidget(skills: _cachedSkills),
       NotesHomeWidget(
         service: ctx.notesService,
         openNotes: ctx.openNotes,
@@ -1269,16 +1285,19 @@ class _HomeScreenState extends State<HomeScreen> {
         final row =
             (event.y - firstContentY).round() + widget.boxScrollOffset;
         if (row < 0 || row >= widget.itemCount) return;
-        var changed = widget.selectItemAt(row);
-        if (changed && _focusedIndex != index) {
-          _focusedIndex = index;
-          changed = true;
-        }
-        if (changed) {
-          setState(() {
-            _notice = null;
-          });
-        }
+        // selectItemAt reports whether the highlight actually moved
+        // (the same-index short-circuit inside the widgets keeps a
+        // sweep along one row free). Rebuild only when the selection
+        // or the focused box changed — mouse motion that changes
+        // nothing must not schedule frames at all, or hover feels
+        // laggy under a burst of motion events.
+        final selectionChanged = widget.selectItemAt(row);
+        final focusChanged = _focusedIndex != index;
+        if (!selectionChanged && !focusChanged) return;
+        setState(() {
+          if (focusChanged) _focusedIndex = index;
+          _notice = null;
+        });
       },
       opaque: false,
       child: boxContent,

@@ -80,6 +80,11 @@ class SkillsHomeWidget extends HomeWidget {
     // `index` is already absolute — home's box-level hover adds the
     // box's own scroll offset (boxScrollOffset) before calling this.
     if (index < 0 || index >= itemCount) return false;
+    // No-op when the highlight is already here: home's onHover fires
+    // on every mouse-motion event, so returning true unconditionally
+    // made sweeping the cursor along one row trigger a full-screen
+    // rebuild per event (hover lag).
+    if (_selectedIndex == index) return false;
     _selectedIndex = index;
     return true;
   }
