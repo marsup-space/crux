@@ -13,19 +13,17 @@ import 'ui/multi_button.dart';
 /// only) so their tooltips don't crowd the already-narrow text.
 const double kPlanScrollbarMarkerMinWidth = 24;
 
-/// Minimum width (columns) the plan pane shrinks to before the layout
-/// collapses to single-column.
-const double kPlanPaneMinWidth = 30;
-
-/// Maximum width (columns) the plan pane grows to.
-const double kPlanPaneMaxWidth = 80;
+/// Terminal-width floor (columns) for showing the info sidebar while
+/// plan mode is active. Below this the sidebar is hidden outright,
+/// regardless of how the plan/chat split would work out — a deliberate,
+/// much earlier hide than the bare ≥[kSidebarShowThreshold]-col rule.
+const double kPlanSidebarShowThreshold = 210;
 
 /// Chat-pane floor (columns) while plan mode is active: below this the
 /// info sidebar drops first (§9.6 collapse order) rather than letting
-/// three panes starve the chat area. 56 keeps the chat side comfortable
-/// (toolbar + bubbles + input), which puts the sidebar's survival line
-/// at ≈158 terminal columns — plan mode hides it decidedly earlier than
-/// the bare ≥100-col rule.
+/// three panes starve the chat area. Only reached above
+/// [kPlanSidebarShowThreshold], where the even plan/chat split leaves
+/// chat far above it — a pure safety net, never binding in practice.
 const double kPlanChatPaneMinWidth = 56;
 
 /// Resolved horizontal split of the chat panel row — see
@@ -52,15 +50,14 @@ class PlanSplitLayout {
 /// When plan mode is inactive this keeps the bare sidebar decision
 /// ([sidebarWidth] non-null ⇔ the terminal is wide enough for it). When
 /// active:
-///   1. the info sidebar drops FIRST when keeping three panes would
-///      starve chat below [kPlanChatPaneMinWidth] — chat is the primary
-///      surface, the sidebar is ambient;
+///   1. the info sidebar shows only at or above
+///      [kPlanSidebarShowThreshold] total columns (and even then only
+///      if the three panes would not starve chat below
+///      [kPlanChatPaneMinWidth]) — chat is the primary surface, the
+///      sidebar is ambient;
 ///   2. the plan/chat split halves what remains so the plan pane is
-///      never wider than the chat pane, bounded by
-///      [kPlanPaneMinWidth]/[kPlanPaneMaxWidth]. Only at extreme
-///      widths (terminal ≲ 2×[kPlanPaneMinWidth]) can the min clamp
-///      leave chat a column short of plan — the documented
-///      single-column-collapse territory (§9.6).
+///      never wider than the chat pane — chat keeps the odd column.
+///      No min/max bounds: the split is a straight halving.
 PlanSplitLayout resolvePlanSplit(
   double totalWidth, {
   required bool planActive,
@@ -73,11 +70,11 @@ PlanSplitLayout resolvePlanSplit(
       planPaneWidth: 0,
     );
   }
-  if (sidebarWidth != null) {
+  // Hard width floor first: below kPlanSidebarShowThreshold the
+  // sidebar hides outright, whatever the three-pane split would allow.
+  if (sidebarWidth != null && totalWidth >= kPlanSidebarShowThreshold) {
     final avail = totalWidth - sidebarWidth - 2; // plan|chat + chat|sidebar dividers
-    final planPaneWidth = ((avail - 1) / 2)
-        .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
-        .toDouble();
+    final planPaneWidth = (avail - 1) / 2;
     if (avail - planPaneWidth >= kPlanChatPaneMinWidth) {
       return PlanSplitLayout(
         showSidebar: true,
@@ -88,9 +85,7 @@ PlanSplitLayout resolvePlanSplit(
   }
   // Sidebar dropped: two-pane split over the row minus its divider.
   final avail = totalWidth - 1;
-  final planPaneWidth = ((avail - 1) / 2)
-      .clamp(kPlanPaneMinWidth, kPlanPaneMaxWidth)
-      .toDouble();
+  final planPaneWidth = (avail - 1) / 2;
   return PlanSplitLayout(
     showSidebar: false,
     sidebarWidth: 0,

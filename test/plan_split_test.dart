@@ -24,37 +24,37 @@ void main() {
       expect(narrow.planPaneWidth, 0);
     });
 
-    test('very wide terminal: sidebar + plan, plan == chat', () {
-      // 160 cols: sidebar 40, two dividers, remaining 118 halves
-      // (plan takes the floor) so chat keeps the extra column.
-      final l = resolvePlanSplit(160, planActive: true, sidebarWidth: 40);
+    test('very wide terminal: sidebar + plan, even split with no cap', () {
+      // 220 cols (≥ kPlanSidebarShowThreshold): sidebar 40, two
+      // dividers, remaining 178 halves to 89 plan / 89 chat — no max.
+      final l = resolvePlanSplit(220, planActive: true, sidebarWidth: 40);
       expect(l.showSidebar, isTrue);
-      expect(l.planPaneWidth, 58.5);
+      expect(l.planPaneWidth, 88.5);
     });
 
-    test('plan drops the sidebar when chat would starve', () {
-      // 120 cols: sidebar 34 → avail 84 → plan 41.5, chat 42.5 < 56
-      // → sidebar drops; two-pane split: avail 119 → plan 59,
-      // chat 60 ≥ plan. ✓
-      final l = resolvePlanSplit(120, planActive: true, sidebarWidth: 34);
+    test('sidebar hides outright below the 210-col threshold', () {
+      // 160 cols: even though the three-pane split would leave chat
+      // roomy (58.5 plan / 59.5 chat), the hard width floor drops the
+      // sidebar; two-pane split: avail 159 → plan 79, chat 80.
+      final l = resolvePlanSplit(160, planActive: true, sidebarWidth: 40);
       expect(l.showSidebar, isFalse);
       expect(l.sidebarWidth, 0);
-      expect(l.planPaneWidth, 59);
+      expect(l.planPaneWidth, 79);
     });
 
-    test('sidebar survives when three panes still leave chat roomy', () {
-      // 160 cols: sidebar 40 → avail 118 → plan 58.5, chat 59.5 ≥ 56.
-      final l = resolvePlanSplit(160, planActive: true, sidebarWidth: 40);
+    test('sidebar survives at exactly the threshold', () {
+      // 210 cols: sidebar 40 → avail 168 → plan 83.5, chat 84.5 ≥ 56.
+      final l = resolvePlanSplit(210, planActive: true, sidebarWidth: 40);
       expect(l.showSidebar, isTrue);
-      expect(l.planPaneWidth, 58.5);
+      expect(l.planPaneWidth, 83.5);
     });
 
-    test('sidebar drops at 150 cols (below the 56-col chat floor)', () {
-      // 150 cols: sidebar 40 → avail 108 → plan 53.5, chat 54.5 < 56
-      // → drop; two-pane: avail 149 → plan 74, chat 75.
-      final l = resolvePlanSplit(150, planActive: true, sidebarWidth: 40);
+    test('sidebar drops one column below the threshold', () {
+      // 209 cols: below the floor → drop; two-pane: avail 208 →
+      // plan 103.5, chat 104.5.
+      final l = resolvePlanSplit(209, planActive: true, sidebarWidth: 40);
       expect(l.showSidebar, isFalse);
-      expect(l.planPaneWidth, 74);
+      expect(l.planPaneWidth, 103.5);
     });
 
     test('narrow: sidebar already gone, plan halves with chat', () {
@@ -68,19 +68,20 @@ void main() {
       expect(l.planPaneWidth, 39);
     });
 
-    test('extreme narrow: plan clamps to its 30-col minimum', () {
+    test('extreme narrow: plan still halves with no minimum', () {
+      // 50 cols: avail 49 → plan 24, chat 25 — no 30-col floor.
       final l = resolvePlanSplit(
         50,
         planActive: true,
         sidebarWidth: null,
       );
-      expect(l.planPaneWidth, kPlanPaneMinWidth);
+      expect(l.planPaneWidth, 24);
     });
 
     test('plan pane is never wider than chat at common widths', () {
       // Sweep the realistic terminal widths; plan ≤ chat everywhere
-      // except the documented ≲60-col single-column territory.
-      for (var w = 60.0; w <= 220; w++) {
+      // (chat keeps the odd column of the halved split).
+      for (var w = 60.0; w <= 260; w++) {
         for (final sidebar in <double?>[null, 28, 34, 40]) {
           final l = resolvePlanSplit(
             w,
