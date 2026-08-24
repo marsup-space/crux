@@ -750,6 +750,91 @@ void main() {
           reason: 'original must not be mutated in place',
         );
       });
+
+      test('drops assistant messages with null content and no tool_calls', () {
+        // Regression for OpenAI-compatible endpoints (Kimi, Zhipu,
+        // plain OpenAI) that reject "message at position N with
+        // role 'assistant' must not be empty" when wire_format
+        // emits 'content': null for an empty ai-role history row.
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': null},
+          {'role': 'user', 'content': 'hello?'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(2));
+        expect(out.map((m) => m['role']), ['user', 'user']);
+      });
+
+      test('drops assistant messages with empty-string content and no '
+          'tool_calls', () {
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': ''},
+          {'role': 'user', 'content': 'hello?'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(2));
+        expect(out.map((m) => m['role']), ['user', 'user']);
+      });
+
+      test('drops assistant messages with empty-list content and no '
+          'tool_calls', () {
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': <Map<String, dynamic>>[]},
+          {'role': 'user', 'content': 'hello?'},
+        ];
+        final out = provider.sanitizeMessages(messages);
+        expect(out, hasLength(2));
+        expect(out.map((m) => m['role']), ['user', 'user']);
+      });
+
+      test('preserves assistant messages with null content when they carry '
+          'tool_calls', () {
+        // OpenAI Chat Completions explicitly allows content: null on a
+        // tool-call turn.
+        final messages = [
+          {'role': 'user', 'content': 'do it'},
+          {
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': [toolCall('call_a')],
+          },
+          {'role': 'tool', 'tool_call_id': 'call_a', 'content': 'r1'},
+        ];
+        expect(
+          identical(provider.sanitizeMessages(messages), messages),
+          isTrue,
+        );
+      });
+
+      test('preserves assistant messages with non-empty content', () {
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': 'hello'},
+          {'role': 'user', 'content': 'bye'},
+        ];
+        expect(
+          identical(provider.sanitizeMessages(messages), messages),
+          isTrue,
+        );
+      });
+
+      test(
+        'returns the original list reference when no empty assistant '
+        'messages are present',
+        () {
+          final messages = [
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'content': 'hello'},
+          ];
+          expect(
+            identical(provider.sanitizeMessages(messages), messages),
+            isTrue,
+          );
+        },
+      );
     },
   );
 

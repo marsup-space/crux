@@ -127,7 +127,67 @@ class OpenAICompatibleProvider extends LlmProvider {
   List<Map<String, dynamic>> sanitizeMessages(
     List<Map<String, dynamic>> messages,
   ) {
-    return _enforceToolCallPairing(messages);
+    final paired = _enforceToolCallPairing(messages);
+    return _dropEmptyAssistantMessages(paired);
+  }
+
+  /// Drop assistant messages that would make the OpenAI Chat
+  /// Completions request malformed.
+  ///
+  /// An assistant message with a `null`/empty `content` and no
+  /// `tool_calls` is rejected by OpenAI-compatible endpoints with
+  /// errors like "message at position N with role 'assistant' must
+  /// not be empty" (Kimi, Zhipu, and plain OpenAI-compatible). This
+  /// typically happens when Crux's wire-format builder emits
+  /// `'content': null` for an empty `ai`-role history row, and the
+  /// message survives until the next request.
+  ///
+  /// Assistant messages that carry non-empty `tool_calls` are
+  /// preserved — OpenAI allows (and expects) `content: null` on a
+  /// tool-call turn. Messages whose `content` is a non-empty list
+  /// or string also pass through untouched.
+  ///
+  /// Returns the original list reference when nothing is dropped,
+  /// keeping the common-case fast path allocation-free.
+  static List<Map<String, dynamic>> _dropEmptyAssistantMessages(
+    List<Map<String, dynamic>> messages,
+  ) {
+    var hasEmpty = false;
+    for (final m in messages) {
+      if (m['role'] == 'assistant' && _isEmptyAssistantContent(m)) {
+        hasEmpty = true;
+        break;
+      }
+    }
+    if (!hasEmpty) return messages;
+
+    final out = <Map<String, dynamic>>[];
+    for (final m in messages) {
+      if (m['role'] == 'assistant' && _isEmptyAssistantContent(m)) {
+        continue;
+      }
+      out.add(m);
+    }
+    return out;
+  }
+
+  static bool _isEmptyAssistantContent(Map<String, dynamic> m) {
+    final content = m['content'];
+    final bool contentEmpty;
+    if (content == null) {
+      contentEmpty = true;
+    } else if (content is String) {
+      contentEmpty = content.isEmpty;
+    } else if (content is List) {
+      contentEmpty = content.isEmpty;
+    } else {
+      contentEmpty = false;
+    }
+
+    final toolCalls = m['tool_calls'] as List?;
+    final hasToolCalls = toolCalls != null && toolCalls.isNotEmpty;
+
+    return contentEmpty && !hasToolCalls;
   }
 
   static List<Map<String, dynamic>> _enforceToolCallPairing(
