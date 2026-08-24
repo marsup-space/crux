@@ -100,7 +100,15 @@ question nobody asked. Guard against it:
   which server, what signal matters (port? errors? requests/min?),
   and what does the user want to DO about it (restart? tail logs)?
   One short clarifying question beats a mis-fitted plugin the user
-  silently deletes.
+  silently deletes. In particular, users rarely know to specify:
+  - **Scope**: project plugin (`.crux/plugins/`, one repo, ships
+    with the code) or global (`~/.crux/plugins/`, every project)?
+    ASK when not stated — a price ticker wants global, a dev-server
+    control wants project-local. If the user says "my global .crux
+    directory", that's global.
+  - **Placement**: sidebar (glance while working), home dashboard
+    (check on landing), or both? ASK when not stated; when in doubt
+    default to sidebar and say so.
 - **Propose, don't surprise.** If the user didn't explicitly ask
   for a plugin, describe what you'd add (one line: what it shows,
   which buttons) and let them confirm. An unasked-for dashboard is
@@ -178,7 +186,7 @@ Create `.crux/plugins/<id>.toml` (project) or `~/.crux/plugins/<id>
     [[status.state_rules]]               # top-down, first match wins
     when = { field = "phase", equals = "ready" }
     text = "✓ ready on :{port}"
-    color = "normal"                     # normal|warning|error|dim
+    color = "normal"                     # normal|success|warning|error|dim
 
     [[status.state_rules]]
     when = { field = "phase", equals = "error" }
@@ -204,11 +212,15 @@ Create `.crux/plugins/<id>.toml` (project) or `~/.crux/plugins/<id>
     url = "http://127.0.0.1:{port}/close"
 
     # Quick actions — always shown. command/prompt are templates over
-    # the status JSON.
+    # the status JSON. style picks the affordance: "segment" (default)
+    # folds into the hover-morph MultiButton; "button" renders an
+    # always-visible standalone button (better for content boxes
+    # whose label is data, not chrome).
     [[actions]]
     label = "test"
     kind = "shell"
     command = "dart test"
+    style = "button"
 
     [[actions]]
     label = "review"
@@ -225,28 +237,64 @@ TOML `"""` string or `\n`:
     title = "gold"
     placement = "sidebar"
     label = """
-    XAU ${price}/oz
+    $XAU {price}
     {arrow} {delta} today
-    updated {updatedAt@HH:MM}"""
+    {updatedAt@HH:MM}"""
     refresh_ms = 60000
 
     [status]
-    path = ".dart_tool/gold.json"
+    path = "~/.crux/gold.json"           # absolute for a shared cache
+    touch_on_poll = "~/.crux/gold.watch" # consumer-driven (see below)
+
+    # Red-up/green-down (or your locale's convention): the `!` marks
+    # mark which VALUES take the rule color (the price, the delta) —
+    # everything else (arrow, units) stays neutral. The label above
+    # would read `{price!}` / `{delta!}` in this scheme.
+    [[status.state_rules]]
+    when = { field = "trend", equals = "up" }
+    text = "▲ up"
+    color = "error"        # red
 
     [[status.state_rules]]
     when = { field = "trend", equals = "down" }
     text = "▼ down"
-    color = "warning"
+    color = "success"      # green
 
     fallback_alive_text = "live"
 
-Renders as:
+**Background fetchers (`[producer]`)**: when a plugin's data comes
+from a FETCH (an API, an expensive probe), do NOT park a resident
+daemon yourself (launchd/cron/setsid — platform glue the agent
+shouldn't need). Declare a producer instead:
+
+    [producer]
+    command = "~/.crux/bin/gold-fetch.sh --loop"
+
+cruxd (the Crux sidecar daemon) keeps that command running WHILE any
+instance renders the plugin — reference-counted across instances
+(N instances ⇒ ONE fetcher), crash-restarted with backoff,
+group-killed when the last instance exits, and the daemon itself
+lights off with it. The script stays dumb: a `while/sleep` loop.
+`{field}` placeholders resolve against the plugin's own status JSON
+at spawn time. `cwd` is optional (default: the declaring project).
+For daemon-less environments there's also `touch_on_poll =
+"<watch file>"` (consumers bump its mtime each poll tick; pair with
+a launchd WatchPaths oneshot agent) — a fallback, not the default.
+
+Renders as (whole label red on an up day):
 
     ╭ gold ──────────╮
-    │ XAU 2411.5/oz  │
+    │ XAU 2411.5     │
     │ ▲ +0.8% today  │
     │ updated 11:59  │
     ╰────────────────╯
+
+NOTE the layout budget: keep every line of a SIDEBAR label within
+**26 columns** (the sidebar content area is 24–36 cols; plan for the
+narrow end). A longer line WRAPS mid-word and the box overflows its
+rows. Home boxes are wider (see "Layout budgets" below), so write
+the label once for the narrowest surface it renders on — or drop the
+`/oz`-style unit suffixes when a number is self-evident.
 
 ### 4. A global plugin
 
@@ -277,12 +325,49 @@ In `label`, rule `text`, action `url` / `command` / `prompt`:
     {state}         → the computed state text (labels only)
     {field}         → dotted path into the status JSON ({lastRun.result})
     {field@HH:MM}   → ISO-8601 timestamp as local HH:MM
+    {field!}        → marks THIS value for emphasis coloring (see below)
     \n in the label → hard line break; each line renders as its own row
 
 Unknown fields render as the literal `{placeholder}` — typos stay
 visible instead of silently blank.
 
-### 6. Rules
+**Emphasis coloring (`!`)**: mark the placeholders whose VALUES the
+user actually tracks (the price, the delta). When the matched state
+rule's color is `success`/`error`, ONLY the `!`-marked values take
+that color — arrow glyphs, units, timestamps, literal text stay
+neutral. Without any `!` marker the whole label keeps the rule
+color (the historical behaviour). Spell out the exact coloring you
+chose to the user so a mismatch is caught early.
+
+### 6. Layout budgets (measure before you write)
+
+A plugin label renders in REAL boxes with REAL width limits. Look
+these up BEFORE choosing your line structure — don't discover them
+by shipping a wrapped mess (read `lib/src/components/ui/
+layout_metrics.dart` and the home grid in `lib/src/components/home/
+home_screen.dart` for the current numbers):
+
+- **Sidebar box**: shows only when the terminal is ≥ 100 cols.
+  Content width = sidebar width minus border (2) and padding —
+  **24–36 columns**, so budget **≤ 26** per line. Long lines WRAP
+  mid-word and the box's content overflows; there is no ellipsis.
+- **Home box**: the grid is 1 column < 80 terminal cols, 2 columns
+  at 80–119, 4 columns at ≥ 120. A plugin home box spans 1–2 grid
+  cells; content width ≈ 24–36 (span 1) / 56–60 (span 2, 4-col
+  grid) — assume the narrow one.
+- **Count your lines**: sidebar boxes size to their content. Home
+  plugin boxes size to the spec: label lines + headroom (todos/
+  actions), clamped to 4–8 content rows — a many-line label grows
+  the home box up to 8 rows, then the todo list scrolls instead.
+- **One line = one fact.** Price on line 1, delta on line 2, meta
+  (updated-at) on line 3. Never put two prices on one sidebar line
+  ("$4396.00/oz · ¥954.45/g" = 26 cols — already at the limit; two
+  prices go on two lines).
+- When a user asks for colors/arrows/deltas, TELL them the mapping
+  you chose (e.g. "red=up, green=down per your convention") so a
+  mismatch is caught before it ships.
+
+### 7. Rules
 
 - `id` MUST match the file name (`foo.toml` → `id = "foo"`) or the
   spec is skipped.
@@ -297,7 +382,7 @@ visible instead of silently blank.
 - Home boxes: `Enter` on a focused plugin box fires its first
   available action; the mouse covers per-button clicks.
 
-### 7. You see what the user does
+### 8. You see what the user does
 
 Every plugin interaction lands in the session context:
 

@@ -41,7 +41,7 @@
 //   [[status.state_rules]]              # top-down, first hit wins
 //   when = { field = "lastReload.result", equals = "succeeded" }
 //   text = "✓ {lastReload.at@HH:MM}"
-//   color = "normal"                    # normal|warning|error|dim
+//   color = "normal"                    # normal|success|warning|error|dim
 //
 //   fallback_alive_text = "●"           # alive, no rule matched
 //   fallback_stale_text = "stale"       # heartbeat expired
@@ -70,7 +70,7 @@ import 'package:toml/toml.dart';
 
 /// Rule-matched state text color hints. The renderer maps these onto
 /// theme colors; unknown values fall back to the default.
-enum PluginStateColor { normal, warning, error, dim }
+enum PluginStateColor { normal, success, warning, error, dim }
 
 /// One `when`/`text` state rule.
 class PluginStateRule {
@@ -85,6 +85,18 @@ class PluginStateRule {
     required this.text,
     this.color = PluginStateColor.normal,
   });
+}
+
+/// How an action's button renders. The spec picks the affordance;
+/// the semantics (kind, liveness gating) are orthogonal to it.
+enum PluginActionStyle {
+  /// Hover-morph MultiButton segment — the historical compact
+  /// chrome: label at rest, `seg | seg | …` on hover. Default.
+  segment,
+
+  /// Always-visible standalone [Button] — discovered without hover,
+  /// better for a monitor box whose label列 is content, not chrome.
+  button,
 }
 
 /// What an action does when invoked.
@@ -140,6 +152,12 @@ class PluginAction {
   /// `record = false`.
   final bool record;
 
+  /// Button affordance for this action. Defaults to a hover-morph
+  /// MultiButton segment ([PluginActionStyle.segment]) — the compact
+  /// historical chrome. `style = "button"` in the TOML renders an
+  /// always-visible [Button] instead.
+  final PluginActionStyle style;
+
   const PluginAction({
     required this.label,
     this.url,
@@ -148,6 +166,7 @@ class PluginAction {
     this.prompt,
     this.screen,
     this.record = true,
+    this.style = PluginActionStyle.segment,
   });
 }
 
@@ -157,6 +176,20 @@ class PluginAction {
 /// - [home]: a box in the home dashboard grid.
 /// - [both]: sidebar row AND home box.
 enum PluginPlacement { sidebar, home, both }
+
+/// `[producer]` table: a command cruxd keeps running while any
+/// instance renders the plugin (reference-counted, crash-restarted,
+/// group-killed on last-consumer exit — see lib/src/daemon/).
+class PluginProducer {
+  /// Command template (bash -c), `{field}` placeholders resolved
+  /// against the plugin's OWN status JSON at spawn time.
+  final String command;
+
+  /// Working directory; null = the declaring instance's project root.
+  final String? cwd;
+
+  const PluginProducer({required this.command, this.cwd});
+}
 
 /// A parsed plugin spec.
 class Plugin {
@@ -180,6 +213,21 @@ class Plugin {
   final String aliveText;
   final String staleText;
   final String absentText;
+
+  /// Optional file the consumer TOUCHES on each poll tick (mtime
+  /// bump, no content). Pair it with a launchd `WatchPaths` agent:
+  /// the agent fires ONCE when the file changes (oneshot, exits
+  /// after fetching) and `ThrottleInterval` merges bursts from
+  /// multiple Crux instances. Zero consumers ⇒ zero fetches, zero
+  /// daemons — data collection becomes consumer-driven. The path
+  /// resolves against the project root like [statusPath] (absolute
+  /// paths win, which is what a global plugin wants).
+  final String? touchOnPoll;
+
+  /// The plugin's producer declaration (`[producer]` in the TOML):
+  /// a resident command cruxd keeps running WHILE any instance
+  /// renders this plugin. Null for plugins with no producer.
+  final PluginProducer? producer;
 
   /// The plugin's action buttons. See [PluginAction].
   final List<PluginAction> actions;
@@ -207,6 +255,8 @@ class Plugin {
     this.staleText = 'stale',
     this.absentText = 'not running',
     this.actions = const [],
+    this.touchOnPoll,
+    this.producer,
   }) : title = title ?? id;
 
   bool get showsOnSidebar =>
@@ -216,6 +266,14 @@ class Plugin {
   bool get showsOnHome =>
       placement == PluginPlacement.home ||
       placement == PluginPlacement.both;
+
+  /// Non-empty display lines in [labelTemplate] — statically known at
+  /// parse time, so the home grid can size its box to the spec
+  /// (label lines + headroom for todo/action rows).
+  static int labelLineCount(String template) => template
+      .split('\n')
+      .where((l) => l.trim().isNotEmpty)
+      .length;
 
   /// Parse a spec file. Returns null when the file is unreadable or
   /// malformed, or the `id` doesn't match the file name — the caller
@@ -292,6 +350,10 @@ class Plugin {
         final prompt = raw['prompt'] as String?;
         final screen = raw['screen'] as String?;
         final record = raw['record'] as bool? ?? true;
+        final style = switch (raw['style'] as String?) {
+          'button' => PluginActionStyle.button,
+          _ => PluginActionStyle.segment,
+        };
         if (kind == PluginActionKind.http && url == null) continue;
         if ((kind == PluginActionKind.launch ||
                 kind == PluginActionKind.shell) &&
@@ -315,6 +377,7 @@ class Plugin {
             prompt: prompt,
             screen: screen,
             record: record,
+            style: style,
           ),
         );
       }
@@ -339,11 +402,25 @@ class Plugin {
       staleText: status['fallback_stale_text'] as String? ?? 'stale',
       absentText: status['fallback_absent_text'] as String? ?? 'not running',
       actions: actions,
+      touchOnPoll: (status['touch_on_poll'] as String?)?.trim(),
+      producer: _parseProducer(map['producer']),
+    );
+  }
+
+  static PluginProducer? _parseProducer(dynamic raw) {
+    if (raw is! Map) return null;
+    final command = raw['command'] as String?;
+    if (command == null || command.trim().isEmpty) return null;
+    return PluginProducer(
+      command: command,
+      cwd: raw['cwd'] as String?,
     );
   }
 
   static PluginStateColor _parseColor(String? raw) {
     switch (raw) {
+      case 'success':
+        return PluginStateColor.success;
       case 'warning':
         return PluginStateColor.warning;
       case 'error':
@@ -355,6 +432,12 @@ class Plugin {
     }
   }
 }
+
+/// One rendered label fragment: [text], whether it came from a
+/// `{placeholder}` substitution (a live data VALUE), and whether the
+/// spec marked it with a trailing `!` (`{price!}`) for emphasis
+/// coloring by the renderer.
+typedef PluginLabelSpan = ({String text, bool isValue, bool emphasize});
 
 /// Liveness of a plugin's status source.
 enum PluginAlive { absent, stale, alive }
@@ -381,6 +464,13 @@ class PluginStatus {
       .where((l) => l.trim().isNotEmpty)
       .toList(growable: false);
 
+  /// The rendered label split into display lines of
+  /// [PluginLabelSpan]s, mirroring [labelLines]. Dead states render
+  /// as single literal spans (colors would be misleading). Renderers
+  /// that don't care about per-value coloring can keep using
+  /// [labelLines] — the plain text is identical.
+  final List<List<PluginLabelSpan>> spanLines;
+
   /// Display color for the label.
   final PluginStateColor color;
 
@@ -389,6 +479,7 @@ class PluginStatus {
     required this.data,
     required this.stateText,
     required this.label,
+    required this.spanLines,
     required this.color,
   });
 }
@@ -415,13 +506,25 @@ PluginStatus evaluatePluginStatus(
   }
 
   final alive = _computeAlive(plugin, data, fileExists, now);
+
+  // Dead-state label: when the template embeds `{state}` the fallback
+  // text renders through the template as before (single-line service
+  // plugins). A template WITHOUT `{state}` (multi-line content
+  // plugins, e.g. a price monitor) has no place for the fallback —
+  // rendering it would leak raw `{field}` placeholders from the
+  // missing file — so the whole label becomes the fallback text.
+  String deadLabel(String text) => plugin.labelTemplate.contains('{state}')
+      ? renderTemplate(plugin.labelTemplate, data, text)
+      : text;
+
   switch (alive) {
     case PluginAlive.absent:
       return PluginStatus(
         alive: alive,
         data: data,
         stateText: plugin.absentText,
-        label: renderTemplate(plugin.labelTemplate, data, plugin.absentText),
+        label: deadLabel(plugin.absentText),
+        spanLines: _deadSpanLines(deadLabel(plugin.absentText)),
         color: PluginStateColor.dim,
       );
     case PluginAlive.stale:
@@ -429,7 +532,8 @@ PluginStatus evaluatePluginStatus(
         alive: alive,
         data: data,
         stateText: plugin.staleText,
-        label: renderTemplate(plugin.labelTemplate, data, plugin.staleText),
+        label: deadLabel(plugin.staleText),
+        spanLines: _deadSpanLines(deadLabel(plugin.staleText)),
         color: PluginStateColor.warning,
       );
     case PluginAlive.alive:
@@ -443,6 +547,8 @@ PluginStatus evaluatePluginStatus(
             data: data,
             stateText: stateText,
             label: renderTemplate(plugin.labelTemplate, data, stateText),
+            spanLines:
+                _aliveSpanLines(plugin.labelTemplate, data, stateText),
             color: rule.color,
           );
         }
@@ -452,9 +558,79 @@ PluginStatus evaluatePluginStatus(
         data: data,
         stateText: plugin.aliveText,
         label: renderTemplate(plugin.labelTemplate, data, plugin.aliveText),
+        spanLines:
+            _aliveSpanLines(plugin.labelTemplate, data, plugin.aliveText),
         color: PluginStateColor.normal,
       );
   }
+}
+
+/// Dead states: the label is plain fallback text — one literal span
+/// per line (no values to emphasize).
+List<List<PluginLabelSpan>> _deadSpanLines(String label) => label
+    .split('\n')
+    .map((l) => l.trimRight())
+    .where((l) => l.trim().isNotEmpty)
+    .map((l) => <PluginLabelSpan>[(text: l, isValue: false, emphasize: false)])
+    .toList(growable: false);
+
+/// Alive: partition each template line into literal/value spans with
+/// the same substitution rules as [renderTemplate] (including the
+/// visible-literal-placeholder fallback for unknown fields).
+List<List<PluginLabelSpan>> _aliveSpanLines(
+  String template,
+  Map<String, dynamic> data,
+  String stateText,
+) {
+  final out = <List<PluginLabelSpan>>[];
+  for (final rawLine in template.split('\n')) {
+    final line = rawLine.trimRight();
+    if (line.trim().isEmpty) continue;
+    final spans = <PluginLabelSpan>[];
+    var last = 0;
+    for (final m in _placeholderPattern.allMatches(line)) {
+      if (m.start > last) {
+        spans.add(
+          (text: line.substring(last, m.start), isValue: false, emphasize: false),
+        );
+      }
+      final name = m.group(1)!;
+      String? value;
+      if (name == 'state') {
+        value = stateText;
+      } else {
+        final v = _dig(data, name);
+        if (v != null) {
+          value = m.group(2) == 'HH:MM'
+              ? _formatHm(v.toString())
+              : v.toString();
+        }
+      }
+      spans.add(
+        value == null
+            // Unknown field: keep the literal placeholder visible
+            // (spec typo) — nothing to emphasize.
+            ? (text: m.group(0)!, isValue: false, emphasize: false)
+            : (text: value, isValue: true, emphasize: m.group(3) == '!'),
+      );
+      last = m.end;
+    }
+    if (last < line.length) {
+      spans.add((text: line.substring(last), isValue: false, emphasize: false));
+    }
+    if (spans.isNotEmpty) out.add(spans);
+  }
+  return out;
+}
+
+/// `{field@HH:MM}` — ISO-8601 timestamp as local HH:MM (empty when
+/// unparseable, mirroring [renderTemplate]).
+String? _formatHm(String raw) {
+  final t = DateTime.tryParse(raw);
+  if (t == null) return '';
+  final local = t.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
 
 /// Substitute a URL template for an action (same syntax as labels; no
@@ -627,6 +803,13 @@ PluginAlive _computeAlive(
       : PluginAlive.stale;
 }
 
+/// The placeholder pattern shared by [renderTemplate] and span
+/// splitting: `{field}`, `{field@HH:MM}`, `{state}`, each optionally
+/// suffixed with `!` (`{price!}`) to mark the substituted value for
+/// emphasis coloring.
+final RegExp _placeholderPattern =
+    RegExp(r'\{([a-zA-Z0-9_.]+)(?:@(HH:MM))?(!)?\}');
+
 /// Substitute `{state}`, `{field}` and `{field@HH:MM}` placeholders.
 /// Unknown or missing fields render as the literal placeholder so spec
 /// typos are visible instead of silently blank.
@@ -640,7 +823,7 @@ String renderTemplate(
   String stateText,
 ) {
   return template.replaceAllMapped(
-    RegExp(r'\{([a-zA-Z0-9_.]+)(?:@(HH:MM))?\}'),
+    _placeholderPattern,
     (match) {
       final name = match.group(1)!;
       if (name == 'state') return stateText;

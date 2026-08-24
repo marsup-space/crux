@@ -269,6 +269,36 @@ record = false
       expect(quiet.actions.single.record, isFalse);
     });
 
+    test('action style parses: segment default, button opt-in', () {
+      final spec = _parseString('''
+id = "my-notes"
+label = "{display}"
+[status]
+path = "s.json"
+
+[[actions]]
+label = "start"
+kind = "launch"
+command = "run.sh"
+
+[[actions]]
+label = "refresh"
+kind = "shell"
+command = "fetch.sh"
+style = "button"
+
+[[actions]]
+label = "bogus"
+kind = "shell"
+command = "x.sh"
+style = "diagonal"
+''', name: 'my-notes')!;
+      // Default and unknown styles are segment; "button" opts in.
+      expect(spec.actions[0].style, PluginActionStyle.segment);
+      expect(spec.actions[1].style, PluginActionStyle.button);
+      expect(spec.actions[2].style, PluginActionStyle.segment);
+    });
+
     test('parses a multi-line label template', () {
       final spec = _parseString('''
 id = "dev-harness"
@@ -428,6 +458,136 @@ path = "s.json"
       expect(s.labelLines, ['XAU 2411.5/oz', '▲ +0.8% today']);
     });
 
+    test('spanLines mark substituted values vs literal text', () {
+      final monitor = Plugin(
+        id: 'gold',
+        // `!` marks emphasis-colored values (e.g. the price); the
+        // arrow/timestamp stay neutral.
+        labelTemplate: 'Au {price!}/oz\n{arrow} {delta!} ({pct}%)',
+        refresh: const Duration(seconds: 10),
+        statusPath: 'status.json',
+        stateRules: const [
+          PluginStateRule(
+            field: 'trend',
+            equals: 'down',
+            text: '▼',
+            color: PluginStateColor.success,
+          ),
+        ],
+      );
+      write({
+        'price': '953.56',
+        'arrow': '▼',
+        'delta': '-1.20',
+        'pct': '-0.03',
+        'trend': 'down',
+      });
+      final s = evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      expect(s.spanLines, hasLength(2));
+
+      // Line 1: dim literal, EMPHASIS value, dim literal.
+      expect(
+        s.spanLines[0]
+            .map((sp) => (sp.text, sp.isValue, sp.emphasize))
+            .toList(),
+        [
+          ('Au ', false, false),
+          ('953.56', true, true),
+          ('/oz', false, false),
+        ],
+      );
+
+      // Line 2: neutral arrow value, emphasis delta, neutral pct.
+      expect(
+        s.spanLines[1].map((sp) => (sp.text, sp.isValue, sp.emphasize)).toList(),
+        [
+          ('▼', true, false),
+          (' ', false, false),
+          ('-1.20', true, true),
+          (' (', false, false),
+          ('-0.03', true, false),
+          ('%)', false, false),
+        ],
+      );
+
+      // Span text always reassembles into the plain label lines.
+      for (var i = 0; i < s.spanLines.length; i++) {
+        expect(
+          s.spanLines[i].map((sp) => sp.text).join(),
+          s.labelLines[i],
+        );
+      }
+    });
+
+    test('dead states render spanLines as single literal spans', () {
+      final monitor = Plugin(
+        id: 'gold',
+        labelTemplate: 'Au {price}/oz\n{arrow} {delta}',
+        refresh: const Duration(seconds: 10),
+        statusPath: 'status.json',
+        heartbeatField: 'heartbeatAt',
+        staleText: 'no update',
+      );
+      // No status file → absent.
+      final s = evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.absent);
+      expect(s.spanLines, [
+        [(text: 'not running', isValue: false, emphasize: false)],
+      ]);
+    });
+
+    test('dead label is the fallback text when template has no {state}',
+        () {
+      // Content plugins (price monitors) reference data fields the
+      // missing/stale file can't supply — the dead label must be the
+      // plain fallback, not raw `{field}` placeholders.
+      final monitor = Plugin(
+        id: 'gold',
+        labelTemplate: 'Au {price}/oz\n{arrow} {delta} today',
+        refresh: const Duration(seconds: 10),
+        statusPath: 'status.json',
+        heartbeatField: 'heartbeatAt',
+        staleAfter: const Duration(seconds: 35),
+        staleText: 'no update',
+        absentText: 'tracker not running',
+      );
+
+      final absent =
+          evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      expect(absent.alive, PluginAlive.absent);
+      expect(absent.label, 'tracker not running');
+
+      write({
+        'heartbeatAt':
+            DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+      });
+      final stale = evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      expect(stale.alive, PluginAlive.stale);
+      expect(stale.label, 'no update');
+    });
+
+    test('parses the success state color', () {
+      final spec = Plugin(
+        id: 'gold',
+        labelTemplate: '{arrow} {delta}',
+        refresh: const Duration(seconds: 10),
+        statusPath: 'status.json',
+        stateRules: const [
+          PluginStateRule(
+            field: 'trend',
+            equals: 'down',
+            text: '▼ down',
+            color: PluginStateColor.success,
+          ),
+        ],
+      );
+      write({'trend': 'down', 'arrow': '▼', 'delta': '-3.2'});
+      final s = evaluatePluginStatus(spec, statusFile, DateTime.now());
+      expect(s.alive, PluginAlive.alive);
+      expect(s.color, PluginStateColor.success);
+      expect(s.labelLines, ['▼ -3.2']);
+    });
+
     test('labelLines drops blank lines and trims trailing space', () {
       final w = Plugin(
         id: 'x',
@@ -559,14 +719,22 @@ path = "s.json"
 
   group('PluginRegistry', () {
     late Directory project;
+    late Directory home;
 
     setUp(() {
       project = Directory.systemTemp.createTempSync('spec_registry_test_');
+      // Sealed home: without the override the registry would scan the
+      // REAL ~/.crux/plugins and pick up whatever the user installed
+      // there, breaking the length/id expectations below.
+      home = Directory.systemTemp.createTempSync('spec_registry_home_');
     });
 
     tearDown(() {
       try {
         project.deleteSync(recursive: true);
+      } catch (_) {}
+      try {
+        home.deleteSync(recursive: true);
       } catch (_) {}
     });
 
@@ -586,7 +754,10 @@ path = "s.json"
             '[status]\n'
             'path = "s.json"\n',
       );
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
 
       expect(registry.plugins, hasLength(1));
@@ -595,7 +766,10 @@ path = "s.json"
     });
 
     test('picks up new specs on a later scan; drops deleted ones', () {
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
       expect(registry.plugins, isEmpty);
 
@@ -622,7 +796,10 @@ path = "s.json"
 
     test('invalid specs are skipped and reported as warnings', () {
       writeSpec('broken', 'id = "mismatch"\nlabel = "x"\n[status]\n');
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
 
       expect(registry.plugins, isEmpty);
@@ -636,7 +813,10 @@ path = "s.json"
         'a',
         'id = "a"\nlabel = "A · {state}"\n[status]\npath = "s.json"\n',
       );
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       var notifications = 0;
       registry.addListener(() => notifications++);
 
@@ -657,6 +837,7 @@ path = "s.json"
       // up the rewrite below.
       final registry = PluginRegistry(
         projectPath: project.path,
+        homeOverride: home.path,
         scanInterval: const Duration(hours: 1),
       );
       registry.start();
@@ -688,7 +869,10 @@ path = "s.json"
         'id = "p-both"\nplacement = "both"\nlabel = "x {state}"\n'
             '[status]\npath = "s.json"\n',
       );
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
       final byId = {for (final p in registry.plugins) p.id: p};
       expect(byId['p-default']!.placement, PluginPlacement.sidebar);
@@ -715,7 +899,10 @@ path = "s.json"
       File('${dir.path}/legacy.toml').writeAsStringSync(
         'id = "legacy"\nlabel = "old {state}"\n[status]\npath = "s.json"\n',
       );
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
       expect(registry.plugins.map((p) => p.id), ['legacy']);
       registry.dispose();
@@ -731,7 +918,10 @@ path = "s.json"
       File('${dir.path}/dup.toml').writeAsStringSync(
         'id = "dup"\nlabel = "old {state}"\n[status]\npath = "s.json"\n',
       );
-      final registry = PluginRegistry(projectPath: project.path);
+      final registry = PluginRegistry(
+        projectPath: project.path,
+        homeOverride: home.path,
+      );
       registry.scan();
       expect(registry.plugins.single.labelTemplate, contains('new'));
       registry.dispose();

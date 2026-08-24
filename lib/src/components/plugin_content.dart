@@ -99,6 +99,11 @@ class _PluginContentState extends State<PluginContent> {
   PluginStatus? _status;
   bool _busy = false;
 
+  /// mtime of the watch file at our last touch — micro-throttles the
+  /// touch when several surfaces poll in quick succession (e.g. the
+  /// sidebar and home boxes of one instance ticking together).
+  DateTime? _lastTouch;
+
   @override
   void initState() {
     super.initState();
@@ -126,6 +131,7 @@ class _PluginContentState extends State<PluginContent> {
 
   void _refresh() {
     final plugin = component.plugin;
+    _touchWatchFile(plugin);
     final next = evaluatePluginStatus(
       plugin,
       File(p.join(component.host.projectPath, plugin.statusPath)),
@@ -138,6 +144,36 @@ class _PluginContentState extends State<PluginContent> {
       return;
     }
     setState(() => _status = next);
+  }
+
+  /// Consumer-driven data collection: bump the plugin's watch file
+  /// (if any) on each poll tick. A launchd `WatchPaths` agent turns
+  /// that into an on-demand fetch, so the producer only runs while
+  /// some Crux instance is actually RENDERING this plugin. Multiple
+  /// instances touching the same file merge into one fetch via the
+  /// agent's throttle. Errors are silently ignored — the watch file
+  /// is an optimization signal, never load-bearing.
+  void _touchWatchFile(Plugin plugin) {
+    final path = plugin.touchOnPoll;
+    if (path == null) return;
+    final file = File(p.join(component.host.projectPath, path));
+    try {
+      final now = DateTime.now();
+      if (_lastTouch != null &&
+          now.difference(_lastTouch!) < const Duration(seconds: 8)) {
+        return;
+      }
+      _lastTouch = now;
+      if (!file.existsSync()) {
+        file.createSync(recursive: true);
+      }
+      // A real `touch`: bump mtime, content stays empty. WatchPaths
+      // fires on the metadata change alone.
+      file.setLastModifiedSync(now);
+    } catch (_) {
+      // Unwritable location — polling still works; the producer
+      // (if any) keeps its previous cadence.
+    }
   }
 
   Future<void> _runAction(PluginAction action) async {
@@ -259,35 +295,12 @@ class _PluginContentState extends State<PluginContent> {
       label = status.label;
       color = switch (status.color) {
         PluginStateColor.normal => theme.onSurfaceVariant,
+        PluginStateColor.success => theme.successColor,
         PluginStateColor.warning => theme.warningColor,
         PluginStateColor.error => theme.errorColor,
         PluginStateColor.dim => theme.onSurfaceDim,
       };
     }
-
-    // Actions split by kind: http actions control a *running* service
-    // (reload/remount/close), launch actions start a *dead* one, and
-    // prompt/shell/screen actions (quick actions) are available in any
-    // liveness state.
-    final launchActions = component.plugin.actions
-        .where((a) => a.kind == PluginActionKind.launch)
-        .toList();
-    final controlActions = component.plugin.actions
-        .where((a) => a.kind == PluginActionKind.http)
-        .toList();
-    final promptActions = component.host.onPromptAction == null
-        ? const <PluginAction>[]
-        : component.plugin.actions
-            .where((a) => a.kind == PluginActionKind.prompt)
-            .toList();
-    final shellActions = component.plugin.actions
-        .where((a) => a.kind == PluginActionKind.shell)
-        .toList();
-    final screenActions = component.host.onScreenAction == null
-        ? const <PluginAction>[]
-        : component.plugin.actions
-            .where((a) => a.kind == PluginActionKind.screen)
-            .toList();
 
     MultiButtonSegment segmentFor(PluginAction action) =>
         MultiButtonSegment(
@@ -295,67 +308,124 @@ class _PluginContentState extends State<PluginContent> {
           onPressed: () => _fire(action),
         );
 
-    // Screen actions are pure UI entry points (open a fullpane), not
-    // controls on a running service. Rendering them as hover-reveal
-    // MultiButton segments would hide the label's content lines on
-    // hover and make the button undiscoverable at rest — so they get
-    // permanent, always-visible [Button]s instead. Service-control
-    // kinds (http/launch/prompt/shell) keep the hover-morph MultiButton.
-    final hasMorphActions = launchActions.isNotEmpty ||
-        controlActions.isNotEmpty ||
-        promptActions.isNotEmpty ||
-        shellActions.isNotEmpty;
+    // Actions available in the CURRENT liveness state (launch is
+    // dead-only, http alive-only), split by the spec's chosen button
+    // affordance: `segment` actions feed the hover-morph MultiButton,
+    // `button` actions render always-visible standalone buttons.
+    // Prompt/screen actions additionally need their host handler
+    // wired (the affordance is pointless without it).
+    bool available(PluginAction a) => switch (a.kind) {
+          PluginActionKind.launch => !alive,
+          PluginActionKind.http => alive,
+          PluginActionKind.prompt => component.host.onPromptAction != null,
+          PluginActionKind.screen => component.host.onScreenAction != null,
+          _ => true,
+        };
+    final liveActions = component.plugin.actions
+        .where(available)
+        .toList();
+    final segmentActions = liveActions
+        .where((a) =>
+            a.style == PluginActionStyle.segment &&
+            // Screen actions always render as standalone buttons (the
+            // historical behaviour): a hover-morph would hide the
+            // label's content lines and make the button undiscoverable.
+            a.kind != PluginActionKind.screen)
+        .toList();
+    final buttonActions = liveActions
+        .where((a) =>
+            a.style == PluginActionStyle.button ||
+            a.kind == PluginActionKind.screen)
+        .toList();
 
-    // The label's first line feeds the MultiButton (when there are
-    // morph actions) so a single-line service plugin renders exactly
-    // as before; continuation lines render below. When there are NO
-    // morph actions the label renders entirely as static text (the
-    // common case for a content plugin like notes), so nothing is ever
-    // collapsed by a hover morph.
-    final labelLines = status?.labelLines ?? const <String>[];
-    final firstLine = labelLines.isEmpty ? label : labelLines.first;
-    final extraLines =
-        labelLines.length > 1 ? labelLines.sublist(1) : const <String>[];
+    final morphSegments = <MultiButtonSegment>[
+      for (final action in segmentActions) segmentFor(action),
+    ];
+    final hasMorphActions = morphSegments.isNotEmpty;
+
+    final spanLines = status?.spanLines ?? const <List<PluginLabelSpan>>[];
+    final hasEmphasis = spanLines.any(
+      (line) => line.any((s) => s.emphasize),
+    );
+    final emphasized = !_busy &&
+        hasEmphasis &&
+        (status?.color == PluginStateColor.success ||
+            status?.color == PluginStateColor.error);
+    final List<PluginLabelSpan> firstSpans;
+    if (_busy || spanLines.isEmpty) {
+      firstSpans = [(text: label, isValue: false, emphasize: false)];
+    } else {
+      firstSpans = spanLines.first;
+    }
+    final extraSpansList = spanLines.length > 1
+        ? spanLines.sublist(1)
+        : const <List<PluginLabelSpan>>[];
+
+    Component spanRow(List<PluginLabelSpan> spans) {
+      if (!emphasized) {
+        return Text(
+          spans.map((s) => s.text).join(),
+          style: TextStyle(color: color),
+        );
+      }
+      return RichText(
+        text: TextSpan(
+          children: [
+            for (final s in spans)
+              TextSpan(
+                text: s.text,
+                style: TextStyle(
+                  color: s.emphasize ? color : theme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
 
     final Component inner;
     if (_busy) {
       inner = Text(label, style: TextStyle(color: color));
     } else if (hasMorphActions) {
-      final segments = <MultiButtonSegment>[
-        if (!alive)
-          for (final action in launchActions) segmentFor(action),
-        if (alive)
-          for (final action in controlActions) segmentFor(action),
-        for (final action in promptActions) segmentFor(action),
-        for (final action in shellActions) segmentFor(action),
-      ];
+      // Hover-morph row: plain single-color label (the morph replaces
+      // it with segments on hover, so per-value coloring buys nothing
+      // here).
       inner = MultiButton(
-        label: firstLine,
+        label: firstSpans.map((s) => s.text).join(),
         color: color,
         hoverColor: theme.foreground,
-        segments: segments,
+        segments: morphSegments,
       );
     } else {
-      // No morph actions: the label's first line is plain text. (Any
-      // continuation lines are appended below, next to the button row.)
-      inner = Text(firstLine, style: TextStyle(color: color));
+      // No morph actions: the label's first line is plain text, offset
+      // one column to align with what the MultiButton branch's
+      // internal padding produces for ITS first line. (Continuation
+      // lines below get the same +1 offset.)
+      inner = Padding(
+        padding: const EdgeInsets.only(left: 1),
+        child: spanRow(firstSpans),
+      );
     }
 
-    // Always-visible screen-action buttons, one per `screen` action.
-    final screenButtons = <Component>[
-      for (final action in screenActions)
-        Padding(
-          padding: const EdgeInsets.only(right: 1),
-          child: Button(
-            label: component.strings.t(action.label),
-            onPressed: () => _fire(action),
-            color: theme.accent,
-            hoverColor: theme.buttonTextHover,
-            bgColor: theme.surfaceVariant,
-            hoverBgColor: theme.buttonBackgroundHover,
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-          ),
-        ),
+    // Always-visible `button`-style action buttons (spec-chosen
+    // affordance via `style = "button"`), alongside the screen-action
+    // buttons — all of them standalone [Button]s.
+    Component standaloneButton(PluginAction action) => Padding(
+      padding: const EdgeInsets.only(right: 1),
+      child: Button(
+        label: component.strings.t(action.label),
+        onPressed: () => _fire(action),
+        color: theme.accent,
+        hoverColor: theme.buttonTextHover,
+        bgColor: theme.surfaceVariant,
+        hoverBgColor: theme.buttonBackgroundHover,
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+      ),
+    );
+    final standaloneButtons = <Component>[
+      // `buttonActions` already contains every screen action (its filter
+      // is `style == button || kind == screen`), so one pass suffices.
+      for (final action in buttonActions) standaloneButton(action),
     ];
 
     // Clickable todo rows, driven by the status JSON's `todos` array
@@ -373,7 +443,7 @@ class _PluginContentState extends State<PluginContent> {
         todos.add((text: text, line: line));
       }
     }
-    final todoList = ClickableTodoList(
+    final todoList = _TodoScrollArea(
       todos: todos,
       onToggle: component.host.onTodoToggle,
       undoWindow: component.todoCheckedTtl,
@@ -381,17 +451,17 @@ class _PluginContentState extends State<PluginContent> {
     );
 
     // First row: with morph actions the MultiButton is the row; with a
-    // plain label the count text and any screen buttons share one line
-    // (e.g. `1 todo` … `open`), keeping the box compact.
+    // plain label the content and any standalone buttons share one
+    // line (e.g. `Au 4391.90/oz` … `refresh`), keeping the box compact.
     final Component firstRow;
     if (_busy || hasMorphActions) {
       firstRow = inner;
-    } else if (screenButtons.isNotEmpty) {
+    } else if (standaloneButtons.isNotEmpty) {
       firstRow = Row(
         children: [
           inner,
           const Spacer(),
-          ...screenButtons,
+          ...standaloneButtons,
         ],
       );
     } else {
@@ -403,11 +473,85 @@ class _PluginContentState extends State<PluginContent> {
       children: [
         firstRow,
         todoList,
-        for (final line in extraLines)
-          Text(line, style: TextStyle(color: color)),
-        if (hasMorphActions && screenButtons.isNotEmpty)
-          Row(children: screenButtons),
+        for (final spans in extraSpansList)
+          Padding(
+            padding: const EdgeInsets.only(left: 1),
+            child: spanRow(spans),
+          ),
+        if (hasMorphActions && standaloneButtons.isNotEmpty)
+          Row(children: standaloneButtons),
       ],
+    );
+  }
+}
+
+/// A scroll-capped [ClickableTodoList]. The sidebar's `my-notes` box is
+/// shrink-wrapped to its content, so a long todo list would push the
+/// rest of the side panel off screen. This wrapper caps the list at
+/// [_maxRows] visible rows and scrolls inside — count line and action
+/// buttons above it stay put. The home grid box needs no such cap
+/// (home already wraps every box in its own scroll area), so the plain
+/// `ClickableTodoList` remains the bare renderer shared by both.
+class _TodoScrollArea extends StatefulComponent {
+  /// Visible-row cap before the list scrolls.
+  static const _maxRows = 10;
+
+  final List<({String text, int line})> todos;
+  final void Function(String text, int line, bool done)? onToggle;
+  final Duration undoWindow;
+  final Color? color;
+
+  const _TodoScrollArea({
+    required this.todos,
+    this.onToggle,
+    required this.undoWindow,
+    this.color,
+  });
+
+  @override
+  State<_TodoScrollArea> createState() => _TodoScrollAreaState();
+}
+
+class _TodoScrollAreaState extends State<_TodoScrollArea> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    // Cap visible rows only when the list actually overflows — a short
+    // list keeps its natural height and shows no scrollbar chrome.
+    final needsScroll = component.todos.length > _TodoScrollArea._maxRows;
+    if (!needsScroll) {
+      return ClickableTodoList(
+        todos: component.todos,
+        onToggle: component.onToggle,
+        undoWindow: component.undoWindow,
+        color: component.color,
+      );
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: _TodoScrollArea._maxRows.toDouble()),
+      child: Scrollbar(
+        controller: _controller,
+        thumbVisibility: true,
+        thumbColor: theme.onSurfaceDim.withOpacity(0.4),
+        trackColor: theme.surfaceVariant.withOpacity(0.3),
+        child: SingleChildScrollView(
+          controller: _controller,
+          child: ClickableTodoList(
+            todos: component.todos,
+            onToggle: component.onToggle,
+            undoWindow: component.undoWindow,
+            color: component.color,
+          ),
+        ),
+      ),
     );
   }
 }

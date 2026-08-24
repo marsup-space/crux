@@ -11,8 +11,8 @@ import 'tool_def.dart';
 /// so it never goes stale the way a prompt-injected snapshot would.
 ///
 /// It is intentionally NOT the `.dart_tool/my_notes.json` file the
-/// sidebar widget polls — that projection only carries a lossy todo
-/// summary (max 3 open items), not the full markdown. Reading it
+/// sidebar widget polls — that projection only carries the open-todo
+/// list (no done items, no prose), not the full markdown. Reading it
 /// would show the agent an incomplete view of the note.
 ///
 /// Read-only, mirroring [SessionTool]: the note belongs to the user,
@@ -44,8 +44,7 @@ class NotesTool extends ToolDef {
       'proactively — the notes are the user\'s private scratchpad, not part '
       'of your working context. '
       'Do NOT read the `.dart_tool/my_notes.json` projection file instead — '
-      'it only carries a lossy todo summary (max 3 open items), not the '
-      'full note.';
+      'it only carries the open-todo list, not the full note.';
 
   @override
   Map<String, dynamic> get parametersSchema => {

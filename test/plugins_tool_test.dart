@@ -22,13 +22,21 @@ void main() {
 
   setUp(() {
     project = Directory.systemTemp.createTempSync('plugin_tool_test_');
-    tool = PluginsTool();
-  });
-
-  tearDown(() {
-    try {
-      project.deleteSync(recursive: true);
-    } catch (_) {}
+    // A hermetic fake home: the registry also scans the GLOBAL roots
+    // (`~/.crux/plugins/`, `~/.crux/widgets/`), so a developer with
+    // real global plugins installed (e.g. `gold`) would otherwise
+    // leak them into these counts — the tests assert what THIS
+    // project's specs produce, not what's installed on the machine.
+    final fakeHome = Directory.systemTemp.createTempSync('plugin_tool_home_');
+    addTearDown(() {
+      try {
+        project.deleteSync(recursive: true);
+      } catch (_) {}
+      try {
+        fakeHome.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    tool = PluginsTool(homeOverride: fakeHome.path);
   });
 
   void writeSpec(String id, {String statusPath = 's.json'}) {

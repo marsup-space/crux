@@ -39,6 +39,18 @@ below the version header. Each version has at most two categories:
 
 ### Fixes
 
+- **`my notes` todo list scrolls instead of "+N more"** — the notes
+  projection (`.dart_tool/my_notes.json`) now carries **all** open
+  todos (was capped at 3 with a `… +N more` overflow line in
+  `display`). The home-grid `my notes` box renders the full list and
+  scrolls inside its existing box scroll area (scrollbar thumb
+  signals more below); the sidebar `my-notes` plugin caps its list
+  at 10 visible rows and scrolls inside a scrollbar'd area — count
+  line and `open` button stay fixed. nocterm: scrollable viewports
+  now do scroll chaining (a wheel that hits an edge hands the event
+  to the enclosing scrollable), and the test binding routes wheel
+  events like the production binding does.
+
 - **i18n: auxiliary title generation follows the reply-language
   setting** — the auxiliary model's session-title prompt used to
   hardcode "use the same language as the user", so with

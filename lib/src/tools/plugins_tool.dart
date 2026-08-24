@@ -33,7 +33,13 @@ class PluginsTool extends ToolDef {
   final Future<bool> Function(PluginAction action, String projectPath)?
       launchFn;
 
-  PluginsTool({this.launchFn});
+  /// Override for the user's home directory — passed straight to
+  /// [PluginRegistry]. Tests inject an empty temp dir so the global
+  /// scan roots (`~/.crux/plugins/`) don't leak the developer's real
+  /// global plugins into the expected plugin counts.
+  final String? homeOverride;
+
+  PluginsTool({this.launchFn, this.homeOverride});
 
   @override
   String get name => 'plugins';
@@ -120,7 +126,10 @@ class PluginsTool extends ToolDef {
   /// legacy widgets + the two global roots), with the same
   /// precedence, so the tool always agrees with what's on screen.
   List<Plugin> _loadPlugins(String projectPath) {
-    final registry = PluginRegistry(projectPath: projectPath);
+    final registry = PluginRegistry(
+      projectPath: projectPath,
+      homeOverride: homeOverride,
+    );
     registry.scan();
     return registry.plugins;
   }

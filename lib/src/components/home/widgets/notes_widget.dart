@@ -40,10 +40,17 @@ class NotesHomeWidget extends HomeWidget {
   @override
   Set<int> get supportedSpans => const {1, 2};
 
-  /// 4 rows: count line + up to 3 todo rows. The list scrolls inside
-  /// the box when there are more open todos.
+  /// 4 rows minimum: count line + the first todo rows; a longer list
+  /// scrolls inside the box (home wraps every box in a scroll area,
+  /// so the full todo list renders and overflows into scrolling, with
+  /// a scrollbar thumb signalling more below).
   @override
   int heightFor(int span) => 4;
+
+  /// A content list — stays top-aligned (centering a scrollable list
+  /// would fight the scrollview's height constraint).
+  @override
+  bool get verticallyCenter => false;
 
   /// Passive box (no selectable items) — the whole-box Enter/click opens
   /// the editor. Todo rows handle their own clicks.

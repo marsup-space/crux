@@ -890,4 +890,101 @@ onAction: (note) async => notes.add(note)
       });
     });
   });
+
+  group('PluginSidebarBox — scrolling todo list', () {
+    Plugin notesSpec() => Plugin(
+          id: 'my-notes',
+          title: 'my notes',
+          labelTemplate: '{display}',
+          refresh: const Duration(hours: 1),
+          statusPath: '.dart_tool/crux_dev.json',
+          actions: const [
+            PluginAction(
+              label: 'open',
+              kind: PluginActionKind.screen,
+              screen: 'notes',
+            ),
+          ],
+        );
+
+    test('long todo list caps its height and scrolls (no "+N more")',
+        () async {
+      await testNocterm('spec widget notes scroll', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '12 todos',
+          'todos': [
+            for (var i = 1; i <= 12; i++)
+              {'text': 'todo $i of 12', 'line': i},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 40,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: PluginSidebarBox(
+                plugin: notesSpec(),
+                host: PluginHost(projectPath: project.path),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Early items visible, later items clipped (past the row cap).
+        expect(tester.terminalState.containsText('☐ todo 1 of 12'), isTrue);
+        expect(tester.terminalState.containsText('☐ todo 10 of 12'), isTrue);
+        expect(tester.terminalState.containsText('todo 11 of 12'), isFalse);
+        // No overflow-collapse line — the list scrolls instead.
+        expect(tester.terminalState.containsText('more'), isFalse);
+
+        // Wheel down inside the list → hidden rows scroll into view.
+        final row = tester.terminalState.findText('todo 1 of 12').first;
+        await tester.sendMouseEvent(MouseEvent(
+          button: MouseButton.wheelDown,
+          x: row.x + 2,
+          y: row.y,
+          pressed: false,
+        ));
+        await tester.pump();
+        expect(tester.terminalState.containsText('☐ todo 12 of 12'), isTrue);
+        expect(tester.terminalState.containsText('☐ todo 1 of 12'), isFalse);
+      });
+    });
+
+    test('short todo list keeps natural height (no scrollbar)', () async {
+      await testNocterm('spec widget notes short', (tester) async {
+        writeStatus(controlPort: 1);
+        statusFile().writeAsStringSync(jsonEncode({
+          'display': '2 todos',
+          'todos': [
+            {'text': 'solo', 'line': 0},
+            {'text': 'duo', 'line': 1},
+          ],
+        }));
+        await tester.pumpComponent(
+          Container(
+            width: 60,
+            height: 20,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: PluginSidebarBox(
+                plugin: notesSpec(),
+                host: PluginHost(projectPath: project.path),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(tester.terminalState.containsText('☐ solo'), isTrue);
+        expect(tester.terminalState.containsText('☐ duo'), isTrue);
+        // No scrollbar chrome on a short list.
+        expect(tester.terminalState.containsText('▲'), isFalse);
+        expect(tester.terminalState.containsText('▼'), isFalse);
+      });
+    });
+  });
 }

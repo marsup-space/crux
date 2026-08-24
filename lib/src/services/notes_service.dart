@@ -26,15 +26,16 @@ import '../utils/todo_parser.dart';
 ///       {"text": "write tests", "line": 7},
 ///       {"text": "ship it", "line": 9}
 ///     ],
-///     "display": "3 todos\n… +2 more"
+///     "display": "3 todos"
 ///   }
 ///
 /// The widget label template is a single `{display}` — spec templates
-/// can't loop over arrays, so the service pre-renders the *count* and
-/// overflow lines into `display`, while the individual open items live
-/// in the structured `todos` array (`{text, line}`) so the renderer can
-/// draw each as a clickable row. Clicking a row marks that todo done in
-/// the DB ([markTodoDone]); the projection is rewritten, and the row
+/// can't loop over arrays, so the service pre-renders the *count* line
+/// into `display`, while the individual open items live in the
+/// structured `todos` array (**all** of them — the host renders the
+/// list in a scrollable area, so nothing is collapsed into "+N more").
+/// Clicking a row marks that todo done in the DB ([markTodoDone]); the
+/// projection is rewritten, and the row
 /// disappears at the widget's next poll (~2 s) — the note still holds
 /// the item, now checked.
 ///
@@ -56,10 +57,6 @@ class NotesService {
   /// Path of the status projection the widget polls, relative to
   /// [projectPath]. Kept in sync with the `.crux/plugins/my-notes.toml` plugin.
   static const statusPath = '.dart_tool/my_notes.json';
-
-  /// How many open todo items the projection (and therefore the
-  /// widget) lists inline before collapsing the rest into "+N more".
-  static const maxListedOpenTodos = 3;
 
   /// Load the note content from the DB (empty string when none yet)
   /// and refresh the projection so the widget is correct even before
@@ -102,18 +99,14 @@ class NotesService {
 
   /// Render the multi-line widget label body for [summary]. Line 1 is
   /// the open count (just "N todo(s)" — the items themselves are the
-  /// widget's clickable rows, not part of the label); a "+N more" line
-  /// collapses any overflow beyond [maxListedOpenTodos]. Pure and
-  /// top-level so it's unit-testable and reusable by the fullpane.
+  /// widget's clickable rows, not part of the label). The full open
+  /// list lives in the structured `todos` array and scrolls where the
+  /// host renders it, so there is no "+N more" overflow line anymore.
+  /// Pure and top-level so it's unit-testable and reusable by the
+  /// fullpane.
   static String renderDisplay(TodoSummary summary) {
     if (summary.isEmpty) return 'no todos';
-    final open = summary.open;
-    final lines = <String>[
-      '${summary.openCount} todo${summary.openCount == 1 ? '' : 's'}',
-    ];
-    final overflow = open.length - maxListedOpenTodos;
-    if (overflow > 0) lines.add('… +$overflow more');
-    return lines.join('\n');
+    return '${summary.openCount} todo${summary.openCount == 1 ? '' : 's'}';
   }
 
   /// Persist [content] to the DB and rewrite the widget projection.
@@ -188,7 +181,10 @@ class NotesService {
       'openCount': todos.openCount,
       'totalCount': todos.totalCount,
       'todos': [
-        for (final item in open.take(maxListedOpenTodos))
+        // Full list (was capped at 3 with a "+N more" overflow line in
+        // `display`; the rendering surfaces now show a scrollbar and
+        // scroll instead of collapsing).
+        for (final item in open)
           {'text': item.text, 'line': item.lineIndex},
       ],
       'display': NotesService.renderDisplay(todos),

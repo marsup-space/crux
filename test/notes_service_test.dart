@@ -53,15 +53,14 @@ void main() {
       );
     });
 
-    test('overflow collapses into "+N more"', () {
+    test('overflow no longer collapses — the full list scrolls at the host',
+        () {
       final s = parseTodos(
         '- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n- [ ] five\n',
       );
-      final lines = NotesService.renderDisplay(s).split('\n');
-      // count + overflow line only (items are structured rows).
-      expect(lines.first, '5 todos');
-      expect(lines.length, 2);
-      expect(lines.last, '… +2 more');
+      // Count line only: rendering surfaces show every open todo in a
+      // scrollable list, so there's no "+N more" overflow line anymore.
+      expect(NotesService.renderDisplay(s), '5 todos');
     });
 
     test('singular "todo" for exactly one open item', () {
@@ -100,14 +99,15 @@ void main() {
       ]);
     });
 
-    test('todos array caps at maxListedOpenTodos with overflow line', () async {
+    test('todos array carries the full open list (host scrolls, no cap)',
+        () async {
       await service.init();
       await service.save(
         '- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n',
       );
       final proj = readProjection();
-      expect(proj['todos'], hasLength(3)); // capped
-      expect(proj['display'], '4 todos\n… +1 more');
+      expect(proj['todos'], hasLength(4)); // uncapped — full list
+      expect(proj['display'], '4 todos');
     });
 
     test('projection reflects fenced-code todos being ignored', () async {
