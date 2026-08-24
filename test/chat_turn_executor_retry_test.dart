@@ -215,6 +215,299 @@ class SendCallbacks {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void main() {
+  group('ChatTurnExecutor.sendMessage — empty-stream auto-retry', () {
+    // Regression net for the OpenRouter free-tier failure mode: the
+    // upstream closes the stream cleanly having produced NOTHING —
+    // no text, no reasoning, no tool calls, and either no finish
+    // reason at all (bare connection close → synthetic 'done') or a
+    // bare `data: [DONE]` (which LlmClient now also reports as
+    // 'done'). The executor must treat this as retriable
+    // `overloaded` and loop, not persist a silent empty bubble.
+    late SessionStore store;
+    late ProviderService providerService;
+
+    setUp(() async {
+      ChatTurnExecutor.debugBackoffOverride = (_) => Duration.zero;
+      store = await _freshStore();
+      providerService = _StubProviderService(
+        userProvidersDir: await _makeTempProvidersDir(),
+      );
+      await providerService.initialize();
+    });
+
+    tearDown(() {
+      ChatTurnExecutor.debugBackoffOverride = null;
+    });
+
+    test('stream ending with only synthetic done (zero content) retries, '
+        'second attempt succeeds', () async {
+      // Attempt 0: a single synthetic 'done' chunk — exactly what a
+      // bare connection-close or bare `[DONE]` yields. Attempt 1: a
+      // normal answer.
+      final fakeLlm = FakeLlmClient([
+        const [LlmChunk(finishReason: 'done')],
+        _successStream('recovered'),
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(fakeLlm.calls, 2, reason: 'empty stream must trigger one retry');
+      expect(_lastError, isNull);
+      expect(fakeLlm.allText.toString(), 'recovered');
+      expect(
+        _statusMessages,
+        contains(contains('empty response')),
+        reason: 'status must name the empty response, not generic overload',
+      );
+    });
+
+    test('empty stream exhausts retries and surfaces retriable '
+        'overloaded error', () async {
+      final fakeLlm = FakeLlmClient(
+        List.filled(kMaxLlmRetries + 1, const [LlmChunk(finishReason: 'done')]),
+      );
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(
+        fakeLlm.calls,
+        kMaxLlmRetries + 1,
+        reason: 'must burn every attempt before giving up',
+      );
+      expect(_lastComplete, isNull);
+      expect(_lastError, isNotNull);
+      expect(_lastError!.kind, LlmErrorKind.overloaded);
+      expect(_lastError!.isRetriable, isTrue);
+      expect(_lastError!.message, startsWith(kEmptyStreamErrorPrefix));
+    });
+
+    test('empty stream with explicit finishReason stop DOES retry — '
+        'zero output means the finish reason is untrustworthy', () async {
+      // The contract change: OpenRouter documents a *blank*
+      // finish_reason for empty completions, and a free-tier drop can
+      // surface any finish_reason. A round with ZERO output has no
+      // content worth preserving, so 'stop' is no longer treated as
+      // "deliberate" — the empty-stream retry fires anyway.
+      final fakeLlm = FakeLlmClient([
+        const [LlmChunk(finishReason: 'stop')],
+        _successStream('recovered after fake stop'),
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(
+        fakeLlm.calls,
+        2,
+        reason: 'a zero-content stop is not deliberate — retry fires',
+      );
+      expect(_lastError, isNull);
+      expect(fakeLlm.allText.toString(), 'recovered after fake stop');
+    });
+
+    test('non-retriable chunk.error with zero output retries as '
+        'overloaded (OpenRouter mislabels upstream drops)', () async {
+      // OpenRouter sometimes reports an upstream drop as a terminal
+      // HTTP error (a 502 HTML page or a JSON error body) that
+      // classifies as non-retriable. With zero output there is nothing
+      // to lose — retry as overloaded. `unknown` is used here because
+      // the credential kinds + invalidRequest are deliberately exempt.
+      final fakeLlm = FakeLlmClient([
+        [
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.unknown,
+              vendor: LlmVendor.openai,
+              message: '502 Bad Gateway (upstream dropped)',
+              providerName: _providerName,
+            ),
+          ),
+        ],
+        _successStream('after the 502'),
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(
+        fakeLlm.calls,
+        2,
+        reason: 'a non-retriable error with zero output must still retry',
+      );
+      expect(_lastError, isNull);
+      expect(fakeLlm.allText.toString(), 'after the 502');
+      expect(
+        _statusMessages,
+        contains(contains('empty response')),
+        reason: 'status names the empty response, not the 502 label',
+      );
+    });
+
+    test('non-retriable thrown error with zero output retries as '
+        'overloaded', () async {
+      // Same shape but thrown out of the stream (e.g. an HttpException
+      // that classifies as `unknown`).
+      final fakeLlm = FakeLlmClient([
+        const HttpException('upstream sent malformed frame'),
+        _successStream('after the throw'),
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(
+        fakeLlm.calls,
+        2,
+        reason: 'a non-retriable thrown error with zero output retries',
+      );
+      expect(_lastError, isNull);
+      expect(fakeLlm.allText.toString(), 'after the throw');
+    });
+
+    test('non-retriable chunk.error WITH content does NOT retry '
+        '(partial answer is preserved)', () async {
+      // The guard that keeps the honest path honest: once the round
+      // produced content, a non-retriable error surfaces as-is — we
+      // do NOT retry and risk double-speaking. (Uses `unknown`; the
+      // credential kinds and invalidRequest are exempt regardless of
+      // content.)
+      final fakeLlm = FakeLlmClient([
+        [
+          const LlmChunk(textDelta: 'partial answer'),
+          LlmChunk(
+            error: LlmError(
+              kind: LlmErrorKind.unknown,
+              vendor: LlmVendor.openai,
+              message: 'malformed frame',
+              providerName: _providerName,
+            ),
+          ),
+        ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hello',
+        );
+      });
+
+      expect(
+        fakeLlm.calls,
+        1,
+        reason: 'a non-retriable error WITH content surfaces, no retry',
+      );
+      expect(_lastError, isNotNull);
+      expect(_lastError!.kind, LlmErrorKind.unknown);
+    });
+  });
+
   group('ChatTurnExecutor.sendMessage — auto-retry', () {
     late SessionStore store;
     late ProviderService providerService;

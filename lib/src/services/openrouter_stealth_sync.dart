@@ -165,6 +165,15 @@ class OpenRouterStealthSync {
     if (current.defaultMaxRounds != null) {
       buf.writeln('default_max_rounds = ${current.defaultMaxRounds}');
     }
+    // Preserve the provider-level watchdog overrides too — dropping
+    // them on sync would silently restore the 120s/10min defaults
+    // the shipped TOML deliberately tightens for the flaky free tier.
+    if (current.streamIdleTimeoutMs != null) {
+      buf.writeln('stream_idle_timeout_ms = ${current.streamIdleTimeoutMs}');
+    }
+    if (current.streamMaxDurationMs != null) {
+      buf.writeln('stream_max_duration_ms = ${current.streamMaxDurationMs}');
+    }
     buf.writeln();
 
     void emitModel(ModelConfig m, {String? comment}) {

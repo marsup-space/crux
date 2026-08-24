@@ -30,6 +30,7 @@ import 'llm_error.dart';
 import 'prompts/praise_prompts.dart';
 import 'prompts/semantic_search_hint.dart';
 import 'prompts/system_prompt.dart';
+import 'prompts/environment_meta.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
 import 'shell_progress_registry.dart';
@@ -783,6 +784,48 @@ class ChatTurnExecutor {
                 break;
               }
 
+              // ── Non-retriable error, but the round produced nothing ──
+              //
+              // OpenRouter's free tier sometimes reports an upstream
+              // drop as a terminal HTTP error (e.g. a 502 HTML page,
+              // or a JSON error body) that classifies as non-retriable
+              // — `unknown` / `notFound` / `conflict`. When the round
+              // still produced ZERO output there is nothing to lose by
+              // retrying: a dead upstream is far more likely than a
+              // genuinely malformed request (the same payload
+              // succeeded on prior turns). Retry as `overloaded` so
+              // the status toast names the empty response, not the
+              // misleading HTTP label.
+              //
+              // Exemptions — kinds whose retry is pointless or harmful:
+              //   • credential errors (auth/permission/billing/quota):
+              //     retrying the same key never helps; surface fast.
+              //   • invalidRequest: covers the orphan-tool 2013 shape
+              //     whose dedicated repair path below must run instead
+              //     (retrying verbatim would loop the same 400).
+              final errKind = chunk.error!.kind;
+              final zeroOutputNoRetry = errKind == LlmErrorKind.auth ||
+                  errKind == LlmErrorKind.permission ||
+                  errKind == LlmErrorKind.billing ||
+                  errKind == LlmErrorKind.quota ||
+                  errKind == LlmErrorKind.invalidRequest;
+              if (!zeroOutputNoRetry &&
+                  roundTextBuffer.isEmpty &&
+                  roundReasoningBuffer.isEmpty &&
+                  !chunks.any((c) => c.toolUse != null) &&
+                  attempt < kMaxLlmRetries) {
+                streamError = LlmError(
+                  kind: LlmErrorKind.overloaded,
+                  vendor: LlmVendorX.fromProviderName(providerName),
+                  message:
+                      '$kEmptyStreamErrorPrefix upstream returned '
+                      '${chunk.error!.kind.name} with no content — '
+                      'auto-retrying',
+                  providerName: providerName,
+                );
+                break;
+              }
+
               // ── Orphan tool history auto-repair + retry ─────────
               //
               // Only on Anthropic-compatible providers
@@ -981,6 +1024,30 @@ class ChatTurnExecutor {
           final error = classifyThrownError(e, providerName: providerName);
           if (error.isRetriable && attempt < kMaxLlmRetries) {
             thrownError = e;
+          } else if (error.kind != LlmErrorKind.auth &&
+              error.kind != LlmErrorKind.permission &&
+              error.kind != LlmErrorKind.billing &&
+              error.kind != LlmErrorKind.quota &&
+              error.kind != LlmErrorKind.invalidRequest &&
+              roundTextBuffer.isEmpty &&
+              roundReasoningBuffer.isEmpty &&
+              !chunks.any((c) => c.toolUse != null) &&
+              attempt < kMaxLlmRetries) {
+            // Non-retriable thrown error, but the round produced
+            // nothing — a dropped connection / malformed HTTP frame
+            // mid-handshake often classifies as `unknown`/`network`
+            // even though the upstream is just overloaded. Nothing to
+            // lose by retrying as `overloaded`. Credential and
+            // invalidRequest shapes are exempt (same rationale as the
+            // chunk.error path above).
+            streamError = LlmError(
+              kind: LlmErrorKind.overloaded,
+              vendor: LlmVendorX.fromProviderName(providerName),
+              message:
+                  '$kEmptyStreamErrorPrefix upstream threw '
+                  '${error.kind.name} with no content — auto-retrying',
+              providerName: providerName,
+            );
           } else {
             runtime.pauseStreamingTimer();
             stopActiveRound();
@@ -996,32 +1063,32 @@ class ChatTurnExecutor {
         if (streamError == null && thrownError == null) {
           // ── Empty-stream auto-retry ────────────────────────────
           //
-          // Free stealth previews occasionally close the connection
-          // cleanly but having produced NOTHING: no text, no
-          // reasoning, no tool calls, no real finish reason. The
-          // stream "succeeds" from the HTTP layer's perspective (our
-          // own handlers even synthesise a `finishReason: 'done'`
-          // chunk at natural stream end), so without this check the
-          // round persists an empty AI bubble and the turn stalls
-          // until the user types 请继续.
+          // Free stealth previews die in several shapes that all end
+          // the same way: an empty AI bubble and a stalled turn.
           //
-          // Treat it as a retriable `overloaded` error and fall
-          // through to the standard backoff/retry machinery (same
-          // budget as any other transient failure). Only fires when
-          // the round genuinely produced zero output — a partial
-          // answer followed by a drop is handled by the
-          // repetition-guard / nudge paths instead, and a real
-          // finish reason (`stop` / `length` / `tool_calls`) means
-          // the model DID terminate deliberately, so retrying is
-          // not warranted.
-          final sawRealFinish = chunks.any(
-            (c) => c.finishReason != null && c.finishReason != 'done',
-          );
+          //   1. Bare connection close — no chunks at all; our handler
+          //      synthesises `finishReason: 'done'`.
+          //   2. Bare `data: [DONE]` with zero deltas — LlmClient now
+          //      also reports that as 'done'.
+          //   3. A clean stream carrying an upstream-specific
+          //      finish_reason ('error', 'content_filter', a blank
+          //      string, …) that used to satisfy `sawRealFinish` and
+          //      suppress the retry — OpenRouter documents a *blank*
+          //      finish_reason for empty completions, so a finish
+          //      reason is NOT proof the model produced anything.
+          //
+          // The only honest signal is "did the round produce output?".
+          // If not, treat it as a retriable `overloaded` error and
+          // fall through to the standard backoff/retry machinery
+          // regardless of what finish_reason claimed. A deliberate
+          // zero-token stop has no content worth preserving anyway, so
+          // retrying it is always safe. A partial answer followed by a
+          // drop is handled by the repetition-guard / nudge paths, not
+          // here.
           final producedNothing =
               roundTextBuffer.isEmpty &&
               roundReasoningBuffer.isEmpty &&
-              !chunks.any((c) => c.toolUse != null) &&
-              !sawRealFinish;
+              !chunks.any((c) => c.toolUse != null);
           if (producedNothing) {
             streamError = LlmError(
               kind: LlmErrorKind.overloaded,

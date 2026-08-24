@@ -46,6 +46,13 @@ endpoint_url = "https://openrouter.ai/api/v1"
 # moderate so a runaway agent loop doesn't burn the daily quota.
 default_max_rounds = 50
 
+# Free tier is oversubscribed and flaky: a stalled stream is far more
+# likely a dropped upstream than a slow one. Fail fast (45s of
+# silence) so the auto-retry loop kicks in sooner instead of sitting
+# on a dead connection for the 120s default. Provider-level, so
+# `/provider openrouter-free sync` preserves it.
+stream_idle_timeout_ms = 45000
+
 # === Stealth: Ox Alpha — flagship free coding/reasoning model ===
 # 1M context, image+video inputs, tools, mandatory reasoning.
 [[models]]

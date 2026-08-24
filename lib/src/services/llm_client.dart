@@ -467,6 +467,9 @@ class LlmClient {
     required Duration idleTimeout,
   }) async {
     String buffer = '';
+    // Any visible content this stream produced — text, reasoning, or
+    // a tool call. Drives the `[DONE]` finish-reason choice below.
+    var sawContent = false;
     await for (final chunk in response) {
       if (cancelToken?.isCancelled ?? false) {
         idleTimer?.cancel();
@@ -517,7 +520,18 @@ class LlmClient {
         if (data == '[DONE]') {
           idleTimer.cancel();
           maxTimer?.cancel();
-          controller.add(const LlmChunk(finishReason: 'stop'));
+          // OpenRouter's free tier (notably stealth/*) answers
+          // overload with a bare `data: [DONE]` — zero deltas, zero
+          // finish_reason. Reporting 'stop' here told the executor
+          // "the model terminated deliberately", suppressing the
+          // empty-stream auto-retry and persisting a silent empty
+          // bubble. When nothing was produced, report 'done' (the
+          // same synthetic reason a natural connection-close gets)
+          // so the executor's empty-stream check fires and retries.
+          // With content, keep the honest 'stop'.
+          controller.add(
+            LlmChunk(finishReason: sawContent ? 'stop' : 'done'),
+          );
           await controller.close();
           return;
         }
@@ -552,6 +566,7 @@ class LlmClient {
                 final reasoning = delta['reasoning_content'] as String?;
 
                 if (text != null || reasoning != null) {
+                  sawContent = true;
                   controller.add(
                     LlmChunk(textDelta: text, reasoningContent: reasoning),
                   );
@@ -559,6 +574,7 @@ class LlmClient {
 
                 final toolCalls = delta['tool_calls'] as List<dynamic>?;
                 if (toolCalls != null) {
+                  sawContent = true;
                   for (final tc in toolCalls) {
                     final tcMap = tc as Map<String, dynamic>;
                     final tcIndex = tcMap['index'] as int? ?? 0;

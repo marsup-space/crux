@@ -783,6 +783,107 @@ void main() {
     });
   });
 
+  group('LlmClient — [DONE] finish reason (empty-stream retry hook)', () {
+    // OpenRouter's free tier (stealth/*) answers overload with a
+    // bare `data: [DONE]` — zero deltas, zero finish_reason. If the
+    // handler reports 'stop' the executor treats it as a deliberate
+    // termination and suppresses the empty-stream auto-retry,
+    // persisting a silent empty bubble. These tests pin the contract:
+    // a `[DONE]` with no prior content reports 'done' (the synthetic
+    // reason a natural connection-close gets) so the retry fires;
+    // a `[DONE]` after content stays an honest 'stop'.
+
+    /// Spin up a one-shot SSE server that emits [sseBody] then closes.
+    Future<({String base, HttpServer server})> sseServer(String sseBody) async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((req) async {
+        await req.fold<List<int>>([], (acc, b) => acc..addAll(b));
+        req.response.statusCode = 200;
+        req.response.headers.set('content-type', 'text/event-stream');
+        req.response.write(sseBody);
+        await req.response.close();
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      return (base: 'http://127.0.0.1:${server.port}', server: server);
+    }
+
+    test('bare [DONE] with zero content reports finishReason done '
+        '(empty-stream auto-retry can fire)', () async {
+      final srv = await sseServer('data: [DONE]\n\n');
+      addTearDown(() => srv.server.close(force: true));
+
+      final client = LlmClient();
+      addTearDown(client.dispose);
+      final config = _provider(
+        type: 'openai_compatible',
+        endpointUrl: srv.base,
+      );
+
+      String? finishReason;
+      var sawText = false;
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      )) {
+        if (c.textDelta != null) sawText = true;
+        if (c.finishReason != null) finishReason = c.finishReason;
+      }
+
+      expect(sawText, isFalse);
+      expect(
+        finishReason,
+        'done',
+        reason: 'an empty [DONE] must look like a natural close so the '
+            'executor empty-stream retry fires, not a deliberate stop',
+      );
+    });
+
+    test('[DONE] after content keeps honest finishReason stop '
+        '(no spurious retry of a real answer)', () async {
+      final srv = await sseServer(
+        'data: {"choices":[{"delta":{"content":"hello"},'
+        '"finish_reason":null}]}\n\n'
+        'data: [DONE]\n\n',
+      );
+      addTearDown(() => srv.server.close(force: true));
+
+      final client = LlmClient();
+      addTearDown(client.dispose);
+      final config = _provider(
+        type: 'openai_compatible',
+        endpointUrl: srv.base,
+      );
+
+      final text = StringBuffer();
+      String? finishReason;
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      )) {
+        if (c.textDelta != null) text.write(c.textDelta);
+        if (c.finishReason != null) finishReason = c.finishReason;
+      }
+
+      expect(text.toString(), 'hello');
+      expect(
+        finishReason,
+        'stop',
+        reason: 'a [DONE] after content is a real termination — '
+            'must not trigger the empty-stream retry',
+      );
+    });
+  });
+
   group('LlmClient — stream watchdog catches silent hangs', () {
     // Reproduces the "stuck waiting for streams" failure mode
     // the user hit during peak hours: the upstream accepts the

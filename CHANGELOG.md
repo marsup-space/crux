@@ -39,6 +39,37 @@ below the version header. Each version has at most two categories:
 
 ### Fixes
 
+- **LLM: empty-stream auto-retry now covers every OpenRouter
+  free-tier drop shape** — the free stealth tier (stealth/ox-alpha)
+  dies in several ways that all used to end as a silent empty AI
+  bubble and a stalled turn. The empty-stream auto-retry now catches
+  all of them, keyed on one honest signal — **did the round produce
+  any output?** — instead of trusting `finish_reason`:
+  (1) a bare `data: [DONE]` with zero deltas (LlmClient now reports
+  that as `finishReason: 'done'`, not `'stop'`, so the retry fires);
+  (2) a bare connection close with no chunks at all;
+  (3) a clean stream carrying an upstream-specific or *blank*
+  `finish_reason` (OpenRouter documents blank finish_reason for empty
+  completions, so a finish reason is no longer treated as proof the
+  model produced anything);
+  (4) a **non-retriable** error chunk or thrown exception that still
+  produced zero output — OpenRouter sometimes reports an upstream drop
+  as a terminal 502/unknown error; with nothing to lose, these retry
+  as `overloaded` too. Credential errors (`auth`/`permission`/
+  `billing`/`quota`) and `invalidRequest` are deliberately exempt from
+  the zero-output retry (retrying the same key never helps, and
+  `invalidRequest` covers the orphan-tool 2013 shape whose dedicated
+  repair path must run instead). Also tightened the free tier's stall
+  tolerance: `providers/openrouter-free.toml` sets
+  `stream_idle_timeout_ms = 45000` (was the 120s default) so a dead
+  connection retries fast instead of sitting for two minutes, and the
+  stealth sync's `write()` now preserves the provider-level
+  `stream_idle_timeout_ms` / `stream_max_duration_ms` instead of
+  silently dropping them on rewrite. New tests pin the `[DONE]`
+  contract (empty → `done`, content → `stop`), the executor's
+  empty-stream retry loop across all four drop shapes plus the
+  exemption list, and the sync watchdog-field round-trip.
+
 - **`my notes` todo list scrolls instead of "+N more"** — the notes
   projection (`.dart_tool/my_notes.json`) now carries **all** open
   todos (was capped at 3 with a `… +N more` overflow line in

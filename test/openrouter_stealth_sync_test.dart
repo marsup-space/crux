@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:test/test.dart';
 
 import 'package:crux/src/models/provider_config.dart';
@@ -206,6 +208,69 @@ void main() {
               .previewLines(kEnglishStrings);
       expect(lines, hasLength(1));
       expect(lines.single, contains('no changes'));
+    });
+  });
+
+  group('write', () {
+    test('preserves provider-level stream watchdog overrides', () async {
+      // The shipped openrouter-free.toml tightens
+      // stream_idle_timeout_ms for the flaky free tier. Sync used to
+      // drop it on rewrite (it only preserved type/endpoint_url/
+      // default_max_rounds), silently restoring the 120s default.
+      // Pin the round-trip so a sync can't regress the watchdog.
+      final dir = await Directory.systemTemp.createTemp('sync_write');
+      addTearDown(() => dir.delete(recursive: true));
+
+      final current = ProviderConfig(
+        name: 'openrouter-free',
+        type: 'openai_compatible',
+        wireFamily: WireFamily.openaiCompatible,
+        endpointUrl: 'https://openrouter.ai/api/v1',
+        defaultMaxRounds: 50,
+        streamIdleTimeoutMs: 45000,
+        streamMaxDurationMs: 600000,
+        models: [
+          ModelConfig(
+            id: 'nvidia/nemotron-nano-9b-v2:free',
+            name: 'Nemotron (free)',
+            contextSize: 128000,
+          ),
+        ],
+      );
+      final plan = sync.diff(catalog: catalog, current: current);
+      final file = await sync.write(
+        current: current,
+        syncPlan: plan,
+        userProvidersDir: dir.path,
+      );
+
+      final body = await file.readAsString();
+      expect(body, contains('stream_idle_timeout_ms = 45000'));
+      expect(body, contains('stream_max_duration_ms = 600000'));
+      expect(body, contains('default_max_rounds = 50'));
+    });
+
+    test('omits watchdog lines when unset', () async {
+      final dir = await Directory.systemTemp.createTemp('sync_write');
+      addTearDown(() => dir.delete(recursive: true));
+
+      final current = _config([
+        ModelConfig(
+          id: 'nvidia/nemotron-nano-9b-v2:free',
+          name: 'Nemotron (free)',
+          contextSize: 128000,
+        ),
+      ]);
+      final plan = sync.diff(catalog: catalog, current: current);
+      final file = await sync.write(
+        current: current,
+        syncPlan: plan,
+        userProvidersDir: dir.path,
+      );
+
+      final body = await file.readAsString();
+      expect(body, isNot(contains('stream_idle_timeout_ms')));
+      expect(body, isNot(contains('stream_max_duration_ms')));
     });
   });
 }
