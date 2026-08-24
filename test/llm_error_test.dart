@@ -335,6 +335,25 @@ void main() {
       );
       _assertField(err.kind, LlmErrorKind.serverError);
     });
+
+    test('OpenRouter numeric error.code does not throw (regression)', () {
+      // OpenRouter's error body uses a NUMERIC `code` (the HTTP
+      // status): {"error":{"code":429,"message":"..."}}. The naive
+      // `errorObj['code'] as String?` cast threw
+      // "type 'int' is not a subtype of type 'String?' in type cast".
+      final err = parseHttpError(
+        statusCode: 429,
+        body: jsonEncode({
+          'error': {'code': 429, 'message': 'Rate limit exceeded'},
+        }),
+        vendor: LlmVendor.openai,
+        providerName: 'openrouter-free',
+      );
+      _assertField(err.kind, LlmErrorKind.rateLimit);
+      _assertField(err.vendorCode, '429');
+      _assertField(err.message, 'Rate limit exceeded');
+      _assertField(err.isRetriable, isTrue);
+    });
   });
 
   // ─── Stream events (mid-stream after a 200) ───────────────────
@@ -377,6 +396,28 @@ void main() {
       );
       _assertField(err.kind, LlmErrorKind.overloaded);
       _assertField(err.statusCode, isNull);
+    });
+
+    test('OpenRouter numeric error.code does not throw (regression)', () {
+      // OpenRouter's mid-stream SSE error chunk carries a top-level
+      // `error` object whose `code` is a NUMBER (the HTTP status),
+      // e.g. {"error":{"code":429,"message":"..."}}. The old
+      // `errorObj['code'] as String?` cast threw
+      // "type 'int' is not a subtype of type 'String?' in type cast",
+      // masking the real rate-limit error.
+      final err = parseOpenAiStreamError(
+        eventJson: {
+          'error': {
+            'code': 429,
+            'message': 'Rate limit exceeded',
+            'metadata': {'error_type': 'rate_limit_exceeded'},
+          },
+        },
+        providerName: 'openrouter-free',
+      );
+      _assertField(err.kind, LlmErrorKind.unknown); // no HTTP status mid-stream
+      _assertField(err.vendorCode, '429');
+      _assertField(err.message, 'Rate limit exceeded');
     });
   });
 

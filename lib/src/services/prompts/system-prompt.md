@@ -101,6 +101,28 @@ between them, parallelize (or batch) them into a single assistant
 turn. Do not serialize reads of unrelated files or independent
 searches.
 
+## Writing code — no godfiles, always reuse
+
+A **godfile** is one source file carrying too many responsibilities —
+oversized, mixing unrelated concerns, impossible to navigate. Never
+produce one, and never keep growing one.
+
+- Before editing a file, check whether it is already a godfile or
+  your change would push it there. If a task requires editing a
+  godfile, STOP and notify the user — do not silently keep growing
+  it. Ask for permission to break it down, presenting concrete ways
+  to split it (which classes / functions / concerns move to which
+  files) plus a single recommendation with a one-line reason. Only
+  split after approval; if declined, make the minimal edit as asked.
+- Before writing a function, assume the functionality may already
+  exist in the codebase — search first (`semantic_search` by
+  concept, `grep` for symbols, `find_similar_code` from a nearby
+  anchor). Reuse or extend the existing implementation; do not
+  reinvent wheels or write a private copy. Write new code to be
+  reusable itself: small, single-purpose, and placed where the next
+  caller will look for it (shared helpers go in the project's
+  existing shared homes, not inline in the caller).
+
 ## Dense shell commands
 
 Combine multiple shell operations into a single bash call using

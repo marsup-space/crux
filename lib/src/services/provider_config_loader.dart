@@ -27,6 +27,8 @@ import 'provider_seeder.dart';
 /// await loader.loadAll();
 /// final openai = loader.providerByName('openai');
 /// final gpt4o = loader.modelByCompositeKey('openai/gpt-4o');
+/// // Model IDs may contain slashes, e.g. OpenRouter:
+/// final claude = loader.modelByCompositeKey('openrouter/anthropic/claude-sonnet-4');
 /// ```
 class ModelEntry {
   final String compositeKey;
@@ -97,13 +99,16 @@ class ProviderConfigLoader {
 
   /// Look up a model by its composite key `"provider/modelId"`.
   ///
+  /// The model ID itself may contain slashes (e.g. OpenRouter's
+  /// `anthropic/claude-sonnet-4`), so we split on the FIRST slash only.
+  ///
   /// Searches across all loaded providers.
   ModelConfig? modelByCompositeKey(String key) {
-    final parts = key.split('/');
-    if (parts.length != 2) return null;
-    final provider = providerByName(parts[0]);
+    final slashIdx = key.indexOf('/');
+    if (slashIdx <= 0) return null;
+    final provider = providerByName(key.substring(0, slashIdx));
     if (provider == null) return null;
-    return provider.modelById(parts[1]);
+    return provider.modelById(key.substring(slashIdx + 1));
   }
 
   /// Find the provider that owns a given model ID (non-composite).
@@ -440,6 +445,11 @@ class ProviderConfigLoader {
     // are null, the system-prompt tuning layer is omitted.
     final systemPromptAddition = _optionalString(map, 'system_prompt_addition');
 
+    // Optional ISO date (yyyy-MM-dd) after which the model may vanish
+    // from its provider. Free-form string — validated only loosely
+    // (non-empty); the sync layer is what interprets it.
+    final expirationDate = _optionalString(map, 'expiration_date');
+
     return ModelConfig(
       id: id,
       name: displayName,
@@ -456,6 +466,7 @@ class ProviderConfigLoader {
       hintParallelCalls: hintParallelCalls,
       hintParallelCallsSingleThreshold: hintParallelCallsSingleThreshold,
       systemPromptAddition: systemPromptAddition,
+      expirationDate: expirationDate,
     );
   }
 

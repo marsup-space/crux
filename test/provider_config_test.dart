@@ -162,6 +162,36 @@ void main() {
       expect(openaiConfig.modelByCompositeKey('gpt-4o'), isNull);
     });
 
+    test('modelByCompositeKey resolves model IDs that contain a slash', () {
+      // OpenRouter-style: provider = "openrouter", model id =
+      // "anthropic/claude-sonnet-4". The composite key is
+      // "openrouter/anthropic/claude-sonnet-4" (two slashes) and must
+      // still resolve — split on the FIRST slash only.
+      const orConfig = ProviderConfig(
+        name: 'openrouter',
+        type: 'openai_compatible',
+        wireFamily: WireFamily.openaiCompatible,
+        endpointUrl: 'https://openrouter.ai/api/v1',
+        models: [
+          ModelConfig(
+            id: 'anthropic/claude-sonnet-4',
+            name: 'Claude Sonnet 4',
+            contextSize: 200000,
+          ),
+        ],
+      );
+      final model = orConfig.modelByCompositeKey(
+        'openrouter/anthropic/claude-sonnet-4',
+      );
+      expect(model, isNotNull);
+      expect(model!.id, 'anthropic/claude-sonnet-4');
+      // Wrong provider still returns null.
+      expect(
+        orConfig.modelByCompositeKey('other/anthropic/claude-sonnet-4'),
+        isNull,
+      );
+    });
+
     test('compositeKeys returns all provider/model pairs', () {
       final keys = openaiConfig.compositeKeys();
       expect(keys, ['openai/gpt-4o', 'openai/o1']);
@@ -762,6 +792,32 @@ image_support = true
 
       expect(loader.modelByCompositeKey('openai/nonexistent'), isNull);
       expect(loader.modelByCompositeKey('nonexistent/gpt-4o'), isNull);
+    });
+
+    test('modelByCompositeKey resolves model IDs that contain a slash', () async {
+      // OpenRouter-style: provider = "openrouter", model id =
+      // "anthropic/claude-sonnet-4" (contains a slash).
+      await File('${tempDir.path}/openrouter.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://openrouter.ai/api/v1"
+
+[[models]]
+id = "anthropic/claude-sonnet-4"
+name = "Claude Sonnet 4"
+context_size = 200000
+''');
+      await loader.loadAll();
+
+      final model = loader.modelByCompositeKey(
+        'openrouter/anthropic/claude-sonnet-4',
+      );
+      expect(model, isNotNull);
+      expect(model!.name, 'Claude Sonnet 4');
+
+      expect(
+        loader.modelByCompositeKey('openrouter/nonexistent/model'),
+        isNull,
+      );
     });
 
     test('allModelKeys returns composite keys from all providers', () async {

@@ -435,22 +435,23 @@ LlmError parseHttpError({
     if (json['type'] == 'error' && json['error'] is Map) {
       final inner = json['error'] as Map;
       return _fromAnthropic(
-        errorType: inner['type'] as String?,
-        message: inner['message'] as String?,
+        errorType: _asString(inner['type']),
+        message: _asString(inner['message']),
         statusCode: statusCode,
         providerName: providerName,
         requestId: requestId,
       );
     }
 
-    // 3. OpenAI {error: {message, type, code, param}}.
+    // 3. OpenAI {error: {message, type, code, param}}. OpenRouter
+    // uses this shape with a NUMERIC `code` (the HTTP status).
     final errorObj = json['error'];
     if (errorObj is Map) {
       return _fromOpenAi(
-        errorType: errorObj['type'] as String?,
-        errorCode: errorObj['code'] as String?,
-        message: errorObj['message'] as String?,
-        param: errorObj['param'] as String?,
+        errorType: _asString(errorObj['type']),
+        errorCode: _asString(errorObj['code']),
+        message: _asString(errorObj['message']),
+        param: _asString(errorObj['param']),
         statusCode: statusCode,
         providerName: providerName,
         requestId: requestId,
@@ -498,8 +499,8 @@ LlmError parseAnthropicStreamError({
   final errorObj = eventJson['error'];
   if (errorObj is Map) {
     return _fromAnthropic(
-      errorType: errorObj['type'] as String?,
-      message: errorObj['message'] as String?,
+      errorType: _asString(errorObj['type']),
+      message: _asString(errorObj['message']),
       statusCode: null,
       providerName: providerName,
       requestId: requestId,
@@ -527,10 +528,10 @@ LlmError parseOpenAiStreamError({
   final errorObj = eventJson['error'];
   if (errorObj is Map) {
     return _fromOpenAi(
-      errorType: errorObj['type'] as String?,
-      errorCode: errorObj['code'] as String?,
-      message: errorObj['message'] as String?,
-      param: errorObj['param'] as String?,
+      errorType: _asString(errorObj['type']),
+      errorCode: _asString(errorObj['code']),
+      message: _asString(errorObj['message']),
+      param: _asString(errorObj['param']),
       statusCode: null,
       providerName: providerName,
     );
@@ -570,10 +571,10 @@ LlmError parseResponsesApiStreamError({
 
   if (errorObj is Map) {
     return _fromOpenAi(
-      errorType: errorObj['type'] as String?,
-      errorCode: errorObj['code'] as String?,
-      message: errorObj['message'] as String?,
-      param: errorObj['param'] as String?,
+      errorType: _asString(errorObj['type']),
+      errorCode: _asString(errorObj['code']),
+      message: _asString(errorObj['message']),
+      param: _asString(errorObj['param']),
       statusCode: null,
       providerName: providerName,
     );
@@ -813,6 +814,22 @@ Map<String, dynamic>? _tryParseJsonObject(String s) {
   } catch (_) {
     return null;
   }
+}
+
+/// Coerce a JSON scalar to `String?` without throwing.
+///
+/// Vendor error bodies are not as well-typed as the OpenAI reference
+/// shape suggests: OpenRouter's `error.code` is a **number** (the HTTP
+/// status, e.g. `{"error":{"code":429,"message":"..."}}`), not a
+/// string, and `error.type` / `error.param` can likewise be numeric or
+/// structured on some gateways. A naive `value as String?` then throws
+/// `type 'int' is not a subtype of type 'String?' in type cast`,
+/// masking the real error. Strings pass through; ints/doubles/bools are
+/// stringified; anything else (maps, lists) yields null.
+String? _asString(Object? v) {
+  if (v is String) return v;
+  if (v is num || v is bool) return v.toString();
+  return null;
 }
 
 /// Decode a previously-persisted [LlmError] JSON blob from the

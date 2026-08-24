@@ -228,6 +228,14 @@ class ModelConfig {
   /// ```
   final String? systemPromptAddition;
 
+  /// Optional ISO date (`yyyy-MM-dd`) after which the model may
+  /// disappear from its provider. Populated by the OpenRouter stealth
+  /// sync from the catalog's `expiration_date`; `null` = no published
+  /// expiry. Informational only — the runtime never blocks a request
+  /// on it; the sync surfaces a preview warning once the date is
+  /// within [OpenRouterStealthSync.expiryWarningDays].
+  final String? expirationDate;
+
   const ModelConfig({
     required this.id,
     required this.name,
@@ -244,6 +252,7 @@ class ModelConfig {
     this.hintParallelCalls,
     this.hintParallelCallsSingleThreshold,
     this.systemPromptAddition,
+    this.expirationDate,
   });
 
   /// The composite key used throughout Crux: `providerName/modelId`.
@@ -255,7 +264,8 @@ class ModelConfig {
       'img=$imageSupport, effort=$reasoningEffort, think=$thinking, '
       'temp=$temperature, maxRounds=$maxRounds, '
       'hintParallelCalls=$hintParallelCalls, '
-      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold)';
+      'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold, '
+      'exp=$expirationDate)';
 }
 
 /// Usage quota tier — maps a time window label to a token/request budget.
@@ -476,10 +486,14 @@ class ProviderConfig {
   }
 
   /// Convenience: look up a model by its composite key `"providerName/modelId"`.
+  ///
+  /// The model ID itself may contain slashes (e.g. OpenRouter's
+  /// `anthropic/claude-sonnet-4`), so we split on the FIRST slash only.
   ModelConfig? modelByCompositeKey(String key) {
-    final parts = key.split('/');
-    if (parts.length != 2 || parts[0] != name) return null;
-    return modelById(parts[1]);
+    final slashIdx = key.indexOf('/');
+    if (slashIdx <= 0) return null;
+    if (key.substring(0, slashIdx) != name) return null;
+    return modelById(key.substring(slashIdx + 1));
   }
 
   /// All composite keys for models under this provider.

@@ -1,0 +1,104 @@
+# OpenRouter Free provider configuration
+# Filename serves as the provider name: "openrouter-free"
+# OpenAI-compatible API: https://openrouter.ai/api/v1
+#
+# Zero-cost access to OpenRouter's free tier — stealth preview models
+# (stealth/*) and the :free variants of open-weight models, plus the
+# openrouter/free auto-router. All models here bill $0.00 prompt and
+# completion tokens.
+#
+# Get an API key at https://openrouter.ai/keys (free; no payment method
+# needed for $0 models).
+#
+# Caveats of the free tier (see https://openrouter.ai/docs/faq):
+#   - Rate limits: ~50 requests/day for accounts that have never
+#     purchased credits; 1000/day once you've bought ≥10 credits.
+#   - Free-model prompts/completions may be logged and used for
+#     training by the upstream provider. Stealth models are run by an
+#     anonymous third party under OpenRouter's Stealth Model Terms.
+#   - Stealth models are previews: they appear, get renamed, and
+#     disappear without notice. If a model below 404s, check
+#     https://openrouter.ai/api/v1/models for the current free set.
+#
+# Reasoning on the wire
+# ---------------------
+# OpenRouter's canonical knob is a `reasoning: {effort: ...}` object,
+# but it also accepts OpenAI's flat `reasoning_effort` (both are listed
+# in each model's supported_parameters), which is exactly what Crux's
+# generic openai_compatible provider sends — so no custom provider
+# class is needed.
+#
+# stealth/ox-alpha: reasoning is MANDATORY (the API rejects
+# effort "none" / thinking disabled). Its supported efforts are
+# max | high | low, default max. Crux's internal scale maps as:
+#   max    → max
+#   high   → high
+#   normal → high  (OpenAICompatibleProvider.mapEffort)
+#   low    → not in mapEffort's switch → also "high", so we hide it
+#            via reasoning_labels to avoid a misleading picker entry.
+# The model's thinking on/off toggle still renders but 'disabled' is
+# not honored upstream — leave thinking enabled.
+
+type = "openai_compatible"
+endpoint_url = "https://openrouter.ai/api/v1"
+
+# Free tier is shared and rate-limited; keep the round-trip cap
+# moderate so a runaway agent loop doesn't burn the daily quota.
+default_max_rounds = 50
+
+# === Stealth: Ox Alpha — flagship free coding/reasoning model ===
+# 1M context, image+video inputs, tools, mandatory reasoning.
+[[models]]
+id = "stealth/ox-alpha"
+name = "Ox Alpha (stealth, free)"
+context_size = 1048576
+image_support = true
+thinking = true
+reasoning_effort = "max"
+max_tokens = 131072
+temperature = 0
+
+[models.reasoning_labels]
+low = "disabled"
+
+# === NVIDIA Nemotron 3 Ultra — strongest free open-weight model ===
+# 550B total / 12B active MoE, 1M context, reasoning high|medium.
+# The best non-stealth workhorse in the free pool.
+[[models]]
+id = "nvidia/nemotron-3-ultra-550b-a55b:free"
+name = "Nemotron 3 Ultra (free)"
+context_size = 1000000
+image_support = false
+thinking = true
+reasoning_effort = "high"
+temperature = 0
+
+# === NVIDIA Nemotron 3.5 Lightning — fast, no reasoning ===
+# 1M context, fills the "quick question" slot where ox-alpha's
+# mandatory thinking is overkill.
+# Note (smoke-tested 2026-08): the model still emits reasoning tokens
+# in responses even with thinking disabled — upstream exposes no knob
+# to turn them off. Harmless; Crux just renders a thinking block.
+[[models]]
+id = "nvidia/nemotron-3.5-lightning:free"
+name = "Nemotron 3.5 Lightning (free)"
+context_size = 1000000
+image_support = false
+thinking = false
+reasoning_effort = "none"
+temperature = 0
+stream_lerp = true
+
+# === Free Models Router — random pick from the free pool ===
+# No reasoning guarantees (router omits the reasoning field), 200K
+# context ceiling, image input depending on the chosen model.
+# Reasoning-effort controls are disabled: the underlying model is
+# chosen per-request, so any effort we send may be meaningless.
+[[models]]
+id = "openrouter/free"
+name = "Free Models Router"
+context_size = 200000
+image_support = true
+thinking = false
+reasoning_effort = "none"
+temperature = 0

@@ -20,6 +20,7 @@ import '../services/plugin.dart';
 import '../services/plugin_registry.dart';
 import '../components/plugin_content.dart';
 import '../services/llm_client.dart';
+import '../services/openrouter_stealth_sync.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
@@ -1119,6 +1120,30 @@ class _ChatPanelState extends State<ChatPanel> {
     _chatInputKey.currentState?.stashAndSetCommand('/temperature ');
   }
 
+  /// Whether the active session's provider is OpenRouter — the only
+  /// provider with a model-list sync. Drives the toolbar's `⟳ sync`
+  /// button visibility (null callback = hidden).
+  bool get _activeProviderIsOpenRouter {
+    if (!_providerServiceReady) return false;
+    final model = _sessionController.currentSession.model;
+    final slashIdx = model.indexOf('/');
+    if (slashIdx <= 0) return false;
+    return model.substring(0, slashIdx) ==
+        OpenRouterStealthSync.providerName;
+  }
+
+  /// Invoked by the toolbar's `⟳ sync` button: run the one-shot
+  /// `/provider openrouter-free sync now` command (fetch, diff,
+  /// apply, reload). Goes through `_executeCommand` so it reuses
+  /// the same CommandContext as a typed slash command.
+  void _onSyncModelsPressed() {
+    unawaited(
+      _executeCommand(
+        '/provider ${OpenRouterStealthSync.providerName} sync now',
+      ),
+    );
+  }
+
   void _cycleThinkingLevel(SessionRuntimeState rt) {
     final modelKey = _sessionController.currentSession.model;
     final slashIdx = modelKey.indexOf('/');
@@ -1843,6 +1868,9 @@ class _ChatPanelState extends State<ChatPanel> {
                   onAuxiliaryPressed: _onAuxiliaryModelButtonPressed,
                   onCycleThinking: _cycleThinkingLevel,
                   onTemperaturePressed: _onTemperatureChipPressed,
+                  onSyncModelsPressed: _activeProviderIsOpenRouter
+                      ? _onSyncModelsPressed
+                      : null,
                   strings: _strings,
                   compactEstimate: sessionId == null
                       ? null
