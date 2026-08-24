@@ -906,6 +906,7 @@ class ChatTurnExecutor {
                 chunk.reasoningContent != null ||
                 chunk.toolUse != null) {
               final now = DateTime.now();
+              runtime.lastChunkTime = now;
               if (runtime.roundFirstTokenTime == null) {
                 runtime.roundFirstTokenTime = now;
                 roundFirstDeltaTime = now;

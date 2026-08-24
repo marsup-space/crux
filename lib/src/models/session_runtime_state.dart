@@ -65,6 +65,13 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// chunks. False during local tool execution and the wait between rounds.
   bool roundStreaming = false;
 
+  /// Wall-clock time the most recent stream chunk carrying actual content
+  /// (text delta, reasoning delta, or tool_use delta) arrived from the
+  /// provider. The toolbar metrics display reads this to show a
+  /// "stalled stream" readout (seconds since last chunk) once the gap
+  /// exceeds a threshold. Reset to null at the start of each turn.
+  DateTime? lastChunkTime;
+
   double tokCount;
   double streamingDurationMs;
   DateTime? _streamingStart;
@@ -363,6 +370,7 @@ class SessionRuntimeState implements SessionRuntimeSink {
     roundStartTime = null;
     roundFirstTokenTime = null;
     roundStreaming = false;
+    lastChunkTime = null;
     isResponding = false;
     btwMode = false;
     interrupted = false;
@@ -378,14 +386,29 @@ class SessionRuntimeState implements SessionRuntimeSink {
     resetMetrics();
     isResponding = true;
     responseStartTime = now ?? DateTime.now();
+    // Anchor the stall clock to the response start. `resetMetrics`
+    // nulls this, which would otherwise leave the metrics display
+    // showing nothing until the first chunk arrives — and worse, if
+    // the field somehow kept a stale value from the previous turn
+    // (e.g. a sink path that skips resetMetrics), the user would see
+    // "last chunk 87.3s ago" immediately after hitting Enter. The
+    // stall readout is about "the provider hasn't sent anything in a
+    // while", so the wait before the first chunk counts too.
+    lastChunkTime = responseStartTime;
     this.btwMode = btwMode;
     interrupted = false;
   }
 
   @override
   void beginModelRound({DateTime? now}) {
-    roundStartTime = now ?? DateTime.now();
+    final t = now ?? DateTime.now();
+    roundStartTime = t;
     roundStreaming = true;
+    // A new LLM request just started — the gap between the previous
+    // round's last chunk and now is tool-execution / between-round
+    // time, NOT a stalled stream. Re-anchor so the stall readout only
+    // measures silence *within* the active request.
+    lastChunkTime = t;
   }
 
   @override

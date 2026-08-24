@@ -527,7 +527,9 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // estimate, so use the worst-case (longest) form of
         // the strings it might display — over-estimating
         // here just means the area gets reserved when it
-        // could be hidden, which is harmless.
+        // could be hidden, which is harmless. The stalled-stream
+        // readout ("quiet 45.3s") is shorter than the tok/s
+        // shape, so the original budget already covers it.
         final tokW = '999.9 tok/s'.length + spacer;
         final ttftW = '999.99s'.length + smallSpacer;
         // Coding-plan usage readout width budget. The widget

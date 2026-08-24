@@ -53,6 +53,12 @@ class MetricsDisplay extends StatefulComponent {
 class _MetricsDisplayState extends State<MetricsDisplay> {
   static const Duration _interval = Duration(milliseconds: 50);
 
+  /// Once the stream has been silent for this long while a response is
+  /// still in flight, the tok/s readout is swapped for a "seconds since
+  /// last chunk" counter so the user can see the stream has stalled
+  /// (e.g. a hung provider connection that hasn't errored out yet).
+  static const Duration _stallThreshold = Duration(seconds: 30);
+
   /// The session id whose metrics are being shown. We bind
   /// to a specific session id rather than "whatever the
   /// current session is right now" so a session switch
@@ -165,11 +171,32 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
     final isResponding = turnState.isResponding;
     final tokPerSec = metricsState.tokPerSec;
     final ttftMs = metricsState.ttftMs;
-    final tokText = isResponding
-        ? '${tokPerSec.toStringAsFixed(1)} tok/s'
-        : tokPerSec > 0
-        ? '${tokPerSec.toStringAsFixed(1)} tok/s'
-        : '— tok/s';
+    // Stalled-stream readout: while a response is in flight, if no
+    // content chunk has arrived for more than [_stallThreshold], swap
+    // the tok/s label for a "seconds since last chunk" counter so the
+    // user can see the stream is stuck. `lastChunkTime` lives on the
+    // runtime (write-side SSoT, updated per chunk in the executor) —
+    // it isn't mirrored into the cubit, so read it directly here.
+    final String tokText;
+    final lastChunkTime = component.sessionController
+        .runtime(sessionId)
+        .lastChunkTime;
+    final stallSeconds = (isResponding && lastChunkTime != null)
+        ? (DateTime.now().difference(lastChunkTime).inMicroseconds /
+              1000000.0)
+        : null;
+    final thresholdSeconds = _stallThreshold.inMicroseconds / 1000000.0;
+    if (stallSeconds != null && stallSeconds >= thresholdSeconds) {
+      tokText = component.strings.t('chat.toolbar.stalled', {
+        'secs': stallSeconds.toStringAsFixed(1),
+      });
+    } else {
+      tokText = isResponding
+          ? '${tokPerSec.toStringAsFixed(1)} tok/s'
+          : tokPerSec > 0
+          ? '${tokPerSec.toStringAsFixed(1)} tok/s'
+          : '— tok/s';
+    }
     final ttftText = isResponding
         ? component.streamingController.formatTtft(ttftMs)
         : ttftMs > 0
@@ -342,7 +369,9 @@ class RenderMetricsDisplay extends RenderObject {
     // label (e.g. "缓存 100.000%" = 12 display columns) since
     // the same render object swaps to it on hover. Measure
     // with stringWidth, never `.length` (CJK is 2 columns
-    // per character).
+    // per character). The stalled-stream label ("quiet 45.3s")
+    // is shorter than the tok/s shape, so the original
+    // budget already covers it.
     final tokW = stringWidth('999.9 tok/s');
     final worstTextW = tokW > cacheLabelW ? tokW : cacheLabelW;
     final ttftW = stringWidth('999.99s');

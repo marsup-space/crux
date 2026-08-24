@@ -113,6 +113,10 @@ class BtwTurnHandler {
     // chat-panel _refresh().
     sessionController.mirrorTurnFlags(sessionId);
     rt.responseStartTime = DateTime.now();
+    // Anchor the stall clock to the btw start, same as the main
+    // turn path — otherwise a stale value from the previous real
+    // turn would surface as a bogus "quiet Ns" readout.
+    rt.lastChunkTime = rt.responseStartTime;
     rt.ttftMs = 0.0;
     rt.ttftReceived = false;
     rt.tokPerSec = 0.0;

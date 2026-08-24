@@ -409,6 +409,12 @@ class ChatTurnOrchestrator {
       // turn kickoff immediately.
       _sessionController.mirrorTurnFlags(sessionId);
       rt.responseStartTime = DateTime.now();
+      // Anchor the stall clock to the turn start so the metrics
+      // display doesn't inherit a stale `lastChunkTime` from the
+      // previous turn (the executor only stamps it when a content
+      // chunk arrives; between Enter and the first delta, this is
+      // the only write).
+      rt.lastChunkTime = rt.responseStartTime;
       rt.ttftMs = 0.0;
       rt.ttftReceived = false;
       rt.tokPerSec = 0.0;
