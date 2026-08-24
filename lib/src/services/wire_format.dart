@@ -10,6 +10,7 @@ import '../storage/session_store.dart';
 import 'tool_executor.dart';
 import '../utils/token_estimate.dart';
 import 'prompts/system_prompt.dart';
+import 'prompts/environment_meta.dart';
 import 'provider_service.dart';
 
 /// Wire-format conversion and token math for the chat subsystem.
@@ -372,7 +373,15 @@ class ResolvedChatTarget {
 
     String? systemPrompt = session.systemPrompt;
     final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
-    if (systemPrompt == null || systemPrompt.isEmpty || staleChat) {
+    // Detect model change: if the cached prompt's env block names a
+    // different model than the session's current model, rebuild so the
+    // env block reflects the active model. This handles the case where
+    // the user switches models via /model but doesn't send a message
+    // before switching back — the prompt is rebuilt on the next turn
+    // with whichever model is current at send time.
+    final cachedModelId = extractModelIdFromPrompt(systemPrompt);
+    final modelChanged = cachedModelId != null && cachedModelId != modelId;
+    if (systemPrompt == null || systemPrompt.isEmpty || staleChat || modelChanged) {
       systemPrompt = session.isChat
           ? buildChatSystemPrompt(
               provider: provider,

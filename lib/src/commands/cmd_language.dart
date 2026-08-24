@@ -52,10 +52,19 @@ Future<void> executeLanguage(List<String> parts, CommandContext ctx) async {
   // When the agent replies in the UI language (`follow` mode), the cached
   // system prompt's language section still names the *old* locale — rebuild
   // it so the switch takes effect on the next turn.
+  //
+  // Only rebuild when the session has no cached prompt yet (i.e. it's a
+  // brand-new session that hasn't sent its first message). Rebuilding an
+  // existing session's prompt would silently overwrite the env block's
+  // model info with the *current* model — even if the session was created
+  // with a different model and the user never switched.
   if (controller.replyLanguageMode == ReplyLanguageMode.follow) {
     final sid = ctx.currentSessionId;
     if (sid != null) {
-      await ctx.rebuildSystemPrompt?.call(sid);
+      final session = await ctx.store.getById(sid);
+      if (session?.systemPrompt == null) {
+        await ctx.rebuildSystemPrompt?.call(sid);
+      }
     }
   }
 }

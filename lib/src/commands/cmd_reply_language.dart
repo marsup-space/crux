@@ -54,8 +54,17 @@ Future<void> executeReplyLanguage(List<String> parts, CommandContext ctx) async 
 
   // The system prompt's language section is cached on the session row, so
   // rebuild it now to pick up the new policy on the next turn.
+  //
+  // Only rebuild when the session has no cached prompt yet (i.e. it's a
+  // brand-new session that hasn't sent its first message). Rebuilding an
+  // existing session's prompt would silently overwrite the env block's
+  // model info with the *current* model — even if the session was created
+  // with a different model and the user never switched.
   final sid = ctx.currentSessionId;
   if (sid != null) {
-    await ctx.rebuildSystemPrompt?.call(sid);
+    final session = await ctx.store.getById(sid);
+    if (session?.systemPrompt == null) {
+      await ctx.rebuildSystemPrompt?.call(sid);
+    }
   }
 }

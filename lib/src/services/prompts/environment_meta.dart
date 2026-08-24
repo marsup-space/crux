@@ -76,6 +76,18 @@ String buildChatEnvironmentMeta({
       '</env>';
 }
 
+/// Extract the model ID from a cached system prompt's env block.
+/// Returns null if no env block or model line is found.
+///
+/// Used to detect when the session's model has changed since the
+/// system prompt was last built, so the prompt can be rebuilt with
+/// the current model info.
+String? extractModelIdFromPrompt(String? cachedPrompt) {
+  if (cachedPrompt == null || cachedPrompt.isEmpty) return null;
+  final match = RegExp(r'Model: (\S+)').firstMatch(cachedPrompt);
+  return match?.group(1);
+}
+
 /// Cheap, best-effort git detection: walks up from [cwd] looking
 /// for a `.git` entry. Returns `true` on the first hit, `false`
 /// at the filesystem root or on any error.
