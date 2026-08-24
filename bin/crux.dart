@@ -9,6 +9,7 @@ import 'package:crux/src/i18n/locale_config_store.dart';
 import 'package:crux/src/i18n/locale_controller.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/services/plugin_registry.dart';
+import 'package:crux/src/services/daemon_client.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/clipboard_text.dart';
 import 'package:crux/src/utils/windows_vt.dart';
@@ -191,6 +192,25 @@ void main(List<String> args) async {
     }).sendPort,
   );
 
+  // ── cruxd sidecar wiring ─────────────────────────────────────────
+  // Register this instance with the daemon (bootstrapping cruxd when
+  // a scanned plugin declares a [producer]); re-declare when the
+  // plugin set changes; deregister on exit so the last instance out
+  // lights the daemon off. Every step degrades silently — producers
+  // are an optimization, never load-bearing for the TUI itself.
+  final pluginRegistry = PluginRegistry(
+    projectPath: Directory.current.path,
+  )..start();
+  final daemonClient = DaemonClient(projectPath: Directory.current.path);
+  {
+    pluginRegistry.addListener(() {
+      daemonClient.pluginsChanged(pluginRegistry.plugins);
+    });
+    // Connect after the first scan lands (registry.start() scans
+    // synchronously, so declarations are ready immediately).
+    unawaited(daemonClient.connect(pluginRegistry.plugins));
+  }
+
   await runApp(
     _CruxApp(
       userProvidersDir: userDir.path,
@@ -205,9 +225,7 @@ void main(List<String> args) async {
       // `~/.crux/plugins/` roots), so any session that writes a spec
       // shows up in this session's sidebar/home within ~2 s. The
       // dev-harness plugin is just the seeded default spec.
-      pluginRegistry: PluginRegistry(
-        projectPath: Directory.current.path,
-      )..start(),
+            pluginRegistry: pluginRegistry,
       showHomeOnLaunch: showHomeOnLaunch,
       homeLayoutStore: homeLayoutStore,
       initialHomeLayout: homeLayoutConfig.layout,
@@ -266,6 +284,15 @@ void main(List<String> args) async {
   // the panel's quit callback. Both paths are idempotent:
   // printing the summary twice is harmless.
   _printRunSummary();
+
+  // Deregister from cruxd (bounded): if THIS was the last instance
+  // the daemon group-kills its producers and lights off. Never let
+  // a wedged daemon stall the exit — heartbeat GC covers us anyway.
+  await daemonClient.shutdown().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+  pluginRegistry.dispose();
 }
 
 /// Write the per-run summary block to stdout. Called once, after
