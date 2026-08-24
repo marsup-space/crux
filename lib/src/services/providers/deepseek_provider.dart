@@ -24,6 +24,9 @@ import 'credit_balance_provider.dart';
 ///   `input` (a list of input items or a plain string), `reasoning:
 ///   {effort}`, `max_output_tokens`, flat `tools: [{type,function,name,
 ///   description,parameters}]`, `stream: true`.
+/// - Multi-modal input: for `deepseek-v4-flash-vision-exp`, user messages
+///   can carry `input_image` parts built from the OpenAI-IR `image_url`
+///   content blocks produced by `wire_format.dart`.
 /// - SSE: semantic events (`response.output_text.delta`,
 ///   `response.reasoning_text.delta`,
 ///   `response.function_call_arguments.delta`, …), ending with
@@ -184,8 +187,8 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
       }
       // user (and anything we didn't pattern-match) — pass content
       // through as a message item. The Responses API expects content
-      // as a list of typed parts (`input_text` for user messages),
-      // not a bare string.
+      // as a list of typed parts (`input_text`/`input_image` for user
+      // messages), not a bare string.
       final content = m['content'];
       if (content is String) {
         input.add({
@@ -195,21 +198,44 @@ class DeepSeekProvider extends LlmProvider with CreditBalanceProvider {
           ],
         });
       } else if (content is List) {
-        // Multi-modal OpenAI content blocks. The DeepSeek Responses
-        // API only accepts `input_text` / `output_text` parts for
-        // messages (no images). Reduce to the text parts joined.
-        final text = content
-            .whereType<Map>()
-            .where((b) => b['type'] == 'text' || b['type'] == 'input_text')
-            .map((b) => b['text'] as String? ?? '')
-            .join();
-        if (text.isNotEmpty) {
-          input.add({
-            'role': role ?? 'user',
-            'content': [
-              {'type': 'input_text', 'text': text},
-            ],
-          });
+        // Multi-modal OpenAI content blocks. DeepSeek's vision model
+        // (`deepseek-v4-flash-vision-exp`) accepts `input_image` parts
+        // alongside `input_text`; non-vision models reject them with
+        // a 400. Preserve the original block order and convert each
+        // known OpenAI block type to its Responses-API counterpart.
+        final parts = <Map<String, dynamic>>[];
+        for (final block in content.whereType<Map>()) {
+          final type = block['type'] as String?;
+          if (type == 'text' || type == 'input_text') {
+            final text = block['text'] as String?;
+            if (text != null && text.isNotEmpty) {
+              parts.add({'type': 'input_text', 'text': text});
+            }
+          } else if (type == 'image_url') {
+            final imageUrl = block['image_url'];
+            String? url;
+            if (imageUrl is String) {
+              url = imageUrl;
+            } else if (imageUrl is Map) {
+              url = imageUrl['url'] as String?;
+            }
+            if (url != null && url.isNotEmpty) {
+              final part = <String, dynamic>{
+                'type': 'input_image',
+                'image_url': url,
+              };
+              final detail = imageUrl is Map
+                  ? imageUrl['detail'] as String?
+                  : null;
+              if (detail != null && detail.isNotEmpty) {
+                part['detail'] = detail;
+              }
+              parts.add(part);
+            }
+          }
+        }
+        if (parts.isNotEmpty) {
+          input.add({'role': role ?? 'user', 'content': parts});
         }
       }
     }

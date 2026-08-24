@@ -35,3 +35,12 @@ context_size = 1048576
 reasoning_effort = "high"
 thinking = true
 temperature = 0
+
+[[models]]
+id = "deepseek-v4-flash-vision-exp"
+name = "DeepSeek V4 Flash Vision Exp"
+context_size = 1048576
+image_support = true
+reasoning_effort = "high"
+thinking = true
+temperature = 0

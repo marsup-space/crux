@@ -1527,6 +1527,70 @@ void main() {
         },
       ]);
     });
+
+    test('converts OpenAI image_url blocks to Responses input_image parts', () {
+      // Regression for deepseek-v4-flash-vision-exp support: the
+      // OpenAI-IR blocks produced by wire_format.dart must become
+      // Responses-API `input_image` parts.
+      final body = provider.buildRequestBody(
+        'deepseek-v4-flash-vision-exp',
+        [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'text', 'text': 'What is this?'},
+              {
+                'type': 'image_url',
+                'image_url': {
+                  'url': 'data:image/png;base64,ABC123',
+                  'detail': 'low',
+                },
+              },
+            ],
+          },
+        ],
+      );
+      final input = body['input'] as List;
+      expect(input, hasLength(1));
+      expect(input[0], {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': 'What is this?'},
+          {
+            'type': 'input_image',
+            'image_url': 'data:image/png;base64,ABC123',
+            'detail': 'low',
+          },
+        ],
+      });
+    });
+
+    test('converts legacy string image_url to input_image', () {
+      final body = provider.buildRequestBody(
+        'deepseek-v4-flash-vision-exp',
+        [
+          {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'image_url',
+                'image_url': 'data:image/jpeg;base64,XYZ789',
+              },
+            ],
+          },
+        ],
+      );
+      final input = body['input'] as List;
+      expect(input[0], {
+        'role': 'user',
+        'content': [
+          {
+            'type': 'input_image',
+            'image_url': 'data:image/jpeg;base64,XYZ789',
+          },
+        ],
+      });
+    });
   });
 
   group('MiniMaxProvider', () {
