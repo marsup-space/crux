@@ -295,20 +295,32 @@ class VibeSegmentBubble extends StatelessComponent {
     final theme = CruxTheme.of(context);
 
     CreateSurface? surface;
+    String? parseError;
     try {
       final json = jsonDecode(jsonStr);
       if (json is Map<String, dynamic>) {
         final createSurface = json['createSurface'];
         if (createSurface is Map<String, dynamic>) {
           surface = CreateSurface.fromJson(createSurface);
+          if (surface == null) {
+            parseError = 'CreateSurface.fromJson returned null';
+          }
+        } else {
+          parseError =
+              'no "createSurface" key (keys: ${json.keys.take(5).join(",")})';
         }
+      } else {
+        parseError = 'json is ${json.runtimeType}, not a Map';
       }
-    } catch (_) {
-      // Malformed JSON — render as error text.
+    } catch (e) {
+      parseError = '$e';
     }
 
     if (surface == null) {
-      return Text('[invalid a2ui block]', style: TextStyle(color: theme.error));
+      return Text(
+        '[invalid a2ui block: $parseError]',
+        style: TextStyle(color: theme.error),
+      );
     }
 
     final errors = catalog.validate(surface);
