@@ -466,6 +466,7 @@ class MessageBubble extends StatelessComponent {
                       styleSheet: HighlightMarkdownStyleSheet.thinking(
                         CruxTheme.of(context),
                       ),
+                      strings: strings,
                     ),
                   ),
                 ],
@@ -499,6 +500,7 @@ class MessageBubble extends StatelessComponent {
                         onSessionLinkTap: onSessionLinkTap,
                         onQuickReplyTap: onQuickReplyTap,
                         onLinkTap: onLinkTap,
+                        strings: strings,
                       ),
               ),
             ],
@@ -542,6 +544,7 @@ class MessageBubble extends StatelessComponent {
             child: HighlightedMarkdownText(
               message.content,
               highlightText: highlightText,
+              strings: strings,
             ),
           ),
         ],
@@ -630,6 +633,7 @@ class MessageBubble extends StatelessComponent {
                     styleSheet: HighlightMarkdownStyleSheet.thinking(
                       CruxTheme.of(context),
                     ),
+                    strings: strings,
                   ),
                 ),
               ],
@@ -663,6 +667,7 @@ class MessageBubble extends StatelessComponent {
                   onSessionLinkTap: onSessionLinkTap,
                   onQuickReplyTap: onQuickReplyTap,
                   onLinkTap: onLinkTap,
+                  strings: strings,
                 ),
               ),
             ],

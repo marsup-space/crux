@@ -529,6 +529,9 @@ const Map<String, String> _en = {
   // locale-aware placeholders the display layer renders for it.
   'session.newPlaceholder': 'New Session',
   'chat.newPlaceholder': 'New Chat',
+
+  // ── Diagram rendering ──
+  'diagram.cycleWarning': 'cycle: {nodes}',
 };
 
 const Map<String, String> _zh = {
@@ -982,4 +985,7 @@ const Map<String, String> _zh = {
   // ── 默认(未命名)会话/对话标题 ──
   'session.newPlaceholder': '新会话',
   'chat.newPlaceholder': '新对话',
+
+  // ── 图表渲染 ──
+  'diagram.cycleWarning': '循环：{nodes}',
 };

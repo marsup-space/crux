@@ -74,6 +74,26 @@ void main() {
       expect(out, contains('ask://Use cache'));
     });
 
+    test('teaches the LLM the mermaid/d2 diagram format', () {
+      // The TUI renders fenced `mermaid` / `d2` blocks as ASCII-art
+      // diagrams; the model needs to know the format exists and which
+      // subset is renderable, or it writes `pie`/`sequenceDiagram`
+      // (unsupported → falls back to plain code, defeating the feature).
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Diagrams in replies'));
+      expect(out, contains('stateDiagram-v2'));
+      expect(out, contains('flowchart LR|TD'));
+      expect(out, contains('a -> b: label'));
+      // The supported subset is spelled out (and pie is excluded).
+      expect(out, contains('no `pie`'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),
@@ -346,6 +366,20 @@ void main() {
       expect(out, isNot(contains('Is directory a git repo')));
       expect(out, contains('<env>'));
       expect(out, contains('not tied to any workspace'));
+    });
+
+    test('still teaches the mermaid/d2 diagram capability', () {
+      // Chat replies render diagrams too — a workspace-free session
+      // needs the format hint even though the full prompt body doesn't
+      // apply.
+      final out = buildChatSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('mermaid'));
+      expect(out, contains('d2'));
+      expect(out, contains('stateDiagram-v2'));
     });
 
     test('includes provider system_prompt_addition and env meta', () {

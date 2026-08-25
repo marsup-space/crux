@@ -11,6 +11,9 @@ import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'highlight_service.dart';
 import 'markdown_isolate.dart';
+import '../../diagram/diagram.dart';
+import '../../diagram/diagram_model.dart';
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/frame_profiler.dart';
 import '../../utils/markdown_links.dart';
@@ -37,6 +40,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.onLinkTap,
     this.linkStyle,
     this.linkHoverStyle,
+    this.strings = kEnglishStrings,
   });
 
   final String data;
@@ -131,6 +135,10 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// Override the hover style. Defaults to a reverse-video
   /// treatment using `mdLink` as the background.
   final TextStyle? linkHoverStyle;
+
+  /// Localized chrome strings (diagram warnings etc.). Defaults to
+  /// English so existing constructions (tests, previews) stay green.
+  final Strings strings;
 
   @override
   State<HighlightedMarkdownText> createState() =>
@@ -274,6 +282,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               maxWidth: maxWidth,
               styleSheet: styleSheet,
               collectedLinks: collectedLinks,
+              strings: component.strings,
             );
             _markdownLinks = collectedLinks;
           }
@@ -929,6 +938,7 @@ List<InlineSpan> parseMarkdownToInlineSpans(
   int? maxWidth,
   HighlightMarkdownStyleSheet? styleSheet,
   List<MarkdownLink>? collectedLinks,
+  Strings strings = kEnglishStrings,
 }) {
   // Build the per-call style sheet from the theme when none
   // is supplied. The [HighlightMarkdownStyleSheet] factory
@@ -948,6 +958,7 @@ List<InlineSpan> parseMarkdownToInlineSpans(
     theme: theme,
     maxWidth: maxWidth,
     collectedLinks: collectedLinks,
+    strings: strings,
   );
   return visitor.visitNodes(nodes);
 }
@@ -1091,11 +1102,13 @@ class _HighlightMarkdownVisitor {
     required this.theme,
     this.maxWidth,
     this.collectedLinks,
+    this.strings = kEnglishStrings,
   });
 
   final HighlightMarkdownStyleSheet styleSheet;
   final MarkdownThemeFields theme;
   final int? maxWidth;
+  final Strings strings;
   int _listDepth = 0;
 
   /// Optional sink for markdown links discovered during the walk.
@@ -1366,6 +1379,18 @@ class _HighlightMarkdownVisitor {
 
     final width = math.max(4, maxWidth ?? 80);
     final codeLineWidth = math.max(0, width - 4);
+
+    // Diagram languages (mermaid / d2) render as bare ASCII-art graphs —
+    // NO code-block box around them, since the graph's own node borders
+    // are the drawing and an extra box would nest two frames inside the
+    // message bubble. Parse failures fall through to the plain bordered
+    // code block below — essential while the LLM is still streaming an
+    // unfinished diagram source.
+    if (isDiagramLanguage(language)) {
+      final diagram = _tryRenderDiagramAsArt(code, language, codeLineWidth);
+      if (diagram != null) return diagram;
+    }
+
     final langLabel = language ?? '';
     final headerContent = langLabel.isNotEmpty ? ' $langLabel ' : '';
     // Rounded corners (╭ ╮ ╰ ╯) match the vibe boxes, toasts, and
@@ -1572,6 +1597,53 @@ class _HighlightMarkdownVisitor {
       ),
     );
 
+    return TextSpan(children: spans);
+  }
+
+  /// Render a mermaid/d2 fenced block as bare ASCII-art — NO code-block
+  /// box around it, because the graph's own node borders are the drawing;
+  /// wrapping it in a box would nest two frames inside the message bubble.
+  ///
+  /// Returns null when the source cannot (yet) be parsed — the caller
+  /// then falls through to the standard bordered code block, which is the
+  /// right presentation for raw/incomplete source (streaming partials).
+  InlineSpan? _tryRenderDiagramAsArt(
+    String code,
+    String? language,
+    int codeLineWidth,
+  ) {
+    DiagramRenderResult result;
+    try {
+      result = renderDiagram(
+        code,
+        DiagramRenderOptions(maxWidth: codeLineWidth),
+        language: language,
+      );
+    } on DiagramParseException {
+      return null;
+    }
+
+    final baseStyle =
+        styleSheet.paragraphStyle ?? TextStyle(color: theme.markdownText);
+    final spans = <InlineSpan>[];
+    final lines = result.text.split('\n');
+    for (final line in lines) {
+      spans.add(TextSpan(text: '$line\n', style: baseStyle));
+    }
+    // Warnings (e.g. cycles) surface dimmed below the drawing rather than
+    // inside a box, so they don't read as part of the graph.
+    for (final warning in result.warnings) {
+      spans.add(
+        TextSpan(
+          text: '⚠ ${warning.message(
+            cycleDetected: (nodes) =>
+                strings.t('diagram.cycleWarning', {'nodes': nodes}),
+          )}\n',
+          style: TextStyle(color: theme.codeBlockGutter),
+        ),
+      );
+    }
+    spans.add(const TextSpan(text: '\n'));
     return TextSpan(children: spans);
   }
 

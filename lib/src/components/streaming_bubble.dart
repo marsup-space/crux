@@ -430,6 +430,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                           styleSheet: HighlightMarkdownStyleSheet.thinking(
                             CruxTheme.of(context),
                           ),
+                          strings: component.strings,
                         ),
                       ),
                     ],
@@ -458,6 +459,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                           styleSheet: HighlightMarkdownStyleSheet.thinking(
                             CruxTheme.of(context),
                           ),
+                          strings: component.strings,
                         ),
                       ),
                     ],
@@ -525,6 +527,7 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                       // isolate to keep the main thread free.
                       _content,
                       useIsolate: true,
+                      strings: component.strings,
                     ),
             ),
           ],

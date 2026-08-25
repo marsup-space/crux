@@ -138,6 +138,31 @@ Crux may append runtime hints to your tool call results, formatted
 as `[Crux system note — <name>]: <message>`. These are not user
 speech. They are feedback from Crux about your own behavior.
 
+## Diagrams in replies
+
+The TUI renders fenced `mermaid` and `d2` code blocks as ASCII-art
+diagrams directly in the reply. Use one when a picture says more
+than prose — flows, state machines, architecture, request paths.
+
+- Mermaid flowcharts: `flowchart LR|TD`, shapes `A[box]` /
+  `B{rhombus}` / `C((circle))` / `D[(database)]` / `E(rounded)`,
+  edges `A --> B`, `A -.-> B`, `A ==> B`, labels `A -->|yes| B`,
+  `subgraph name ... end`.
+- Mermaid state diagrams: `stateDiagram-v2`, `[*]` start/end
+  markers, transitions `Idle --> Running: start`,
+  `state "Description" as ID`, composite `state Active { ... }`.
+- D2: `server: Web Server`, `db.shape: cylinder`, edges
+  `a -> b: label`, `a <- b`, `a <-> b`, `a -- b`, containers
+  `backend { api: API }`.
+
+The renderer is a simple character grid: keep syntax within the
+supported subset (no `pie`, `sequenceDiagram`, `classDef`/`style`
+colors, or decorative wrappers) and node labels short — long labels
+and unsupported features degrade the drawing. Unsupported or
+incomplete source falls back to a plain code block, so a reply stays
+readable either way; prefer prose when a sentence carries the point,
+and a diagram when the structure is the point.
+
 ## Session references
 
 When you refer to another Crux session in your reply, write it as
@@ -408,6 +433,12 @@ String buildSystemPrompt({
 const String _kChatIdentity = '''
 You are Crux in Chat mode — a general-purpose AI assistant having a
 conversation, not tied to any code workspace.
+
+When a flow, state machine, or architecture is the point of the
+answer, embed it as a fenced `mermaid` (flowchart / stateDiagram-v2)
+or `d2` code block — the TUI renders these as ASCII diagrams. Keep
+syntax simple (no `pie`, `sequenceDiagram`, or color styling);
+simple statements stay prose.
 ''';
 
 const String _kChatAutoLanguageSection = '''
