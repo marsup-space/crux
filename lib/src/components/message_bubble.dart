@@ -401,9 +401,7 @@ class MessageBubble extends StatelessComponent {
       if (before.isNotEmpty) segments.add((before, null));
 
       // JSON payload between tags.
-      final json = remaining
-          .substring(startIdx + 6, endIdx)
-          .trim();
+      final json = remaining.substring(startIdx + 6, endIdx).trim();
       segments.add(('', json));
 
       remaining = remaining.substring(endIdx + 7);

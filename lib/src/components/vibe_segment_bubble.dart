@@ -1,10 +1,13 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
+import 'dart:convert';
+
 import '../models/message.dart';
 import '../services/a2ui/models.dart';
 import 'surface_action_bubble.dart';
 import '../services/a2ui/surface_catalog.dart';
+import '../services/a2ui/surface_controller.dart';
 import '../services/llm_provider.dart';
 import '../theme/crux_theme.dart';
 import '../i18n/strings.dart';
@@ -117,13 +120,12 @@ class VibeSegmentBubble extends StatelessComponent {
     this.onLinkTap,
     this.onOpenFile,
     this.onDiffFiles,
-     this.reasoningPresets = const [],
-     this.surfaceCatalog,
-     this.onSurfaceAction,
-     this.strings = kEnglishStrings,  super.key,
+    this.reasoningPresets = const [],
+    this.surfaceCatalog,
+    this.onSurfaceAction,
+    this.strings = kEnglishStrings,
+    super.key,
   });
-
-  
 
   /// Map a persisted effort internal value to its display label
   /// using the provider's reasoning presets. Returns the raw
@@ -135,6 +137,155 @@ class VibeSegmentBubble extends StatelessComponent {
       if (p.internalValue == internal) return p.displayLabel;
     }
     return internal;
+  }
+
+  static String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+  }
+
+  static String _fmtDuration(int secs) {
+    if (secs < 60) return '${secs}s';
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    if (m < 60) return '${m}m ${s}s';
+    return '${m ~/ 60}h ${m % 60}m';
+  }
+
+  /// Build the prose content, splitting out any inline
+  /// `<a2ui>...</a2ui>` tags into live [SurfaceController] widgets.
+  ///
+  /// Text segments render via [HighlightedMarkdownText]; a2ui segments
+  /// parse the JSON payload and render via [SurfaceController] — no
+  /// background tint, no extra padding, just the raw component tree
+  /// embedded in the prose flow.
+  Component _buildProse(BuildContext context) {
+    final content = segment.prose!.content;
+    final catalog = surfaceCatalog;
+
+    // Fast path: no a2ui tags → plain markdown text.
+    if (catalog == null || !content.contains('<a2ui>')) {
+      return HighlightedMarkdownText(
+        content,
+        onQuickReplyTap: enableQuickReplies && segment.prose!.role == 'ai'
+            ? onQuickReplyTap
+            : null,
+        onSessionLinkTap: onSessionLinkTap,
+        onLinkTap: onLinkTap,
+      );
+    }
+
+    // Split into alternating text/surface segments.
+    final segments = _splitA2uiSegments(content);
+    if (segments.length == 1 && segments.first.$2 == null) {
+      // Only text, no surfaces found (malformed a2ui block).
+      return HighlightedMarkdownText(
+        content,
+        onQuickReplyTap: enableQuickReplies && segment.prose!.role == 'ai'
+            ? onQuickReplyTap
+            : null,
+        onSessionLinkTap: onSessionLinkTap,
+        onLinkTap: onLinkTap,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (text, surfaceJson) in segments)
+          if (surfaceJson != null)
+            _buildInlineSurface(context, surfaceJson, catalog)
+          else if (text.isNotEmpty)
+            HighlightedMarkdownText(
+              text,
+              onQuickReplyTap: enableQuickReplies && segment.prose!.role == 'ai'
+                  ? onQuickReplyTap
+                  : null,
+              onSessionLinkTap: onSessionLinkTap,
+              onLinkTap: onLinkTap,
+            ),
+      ],
+    );
+  }
+
+  /// Split [content] into alternating (text, null) and ('', json)
+  /// segments at `<a2ui>...</a2ui>` tag boundaries.
+  List<(String, String?)> _splitA2uiSegments(String content) {
+    final segments = <(String, String?)>[];
+    var remaining = content;
+
+    while (true) {
+      final startIdx = remaining.indexOf('<a2ui>');
+      if (startIdx == -1) break;
+
+      final endIdx = remaining.indexOf('</a2ui>', startIdx);
+      if (endIdx == -1) break; // unclosed tag — treat rest as text
+
+      // Text before the tag.
+      final before = remaining.substring(0, startIdx).trimRight();
+      if (before.isNotEmpty) segments.add((before, null));
+
+      // JSON payload between tags.
+      final json = remaining.substring(startIdx + 6, endIdx).trim();
+      segments.add(('', json));
+
+      remaining = remaining.substring(endIdx + 7);
+    }
+
+    // Trailing text after last tag.
+    final trailing = remaining.trimRight();
+    if (trailing.isNotEmpty) segments.add((trailing, null));
+
+    return segments;
+  }
+
+  /// Build an inline surface from a JSON payload string.
+  Component _buildInlineSurface(
+    BuildContext context,
+    String jsonStr,
+    SurfaceCatalog catalog,
+  ) {
+    final theme = CruxTheme.of(context);
+    CreateSurface? surface;
+    try {
+      final json = jsonDecode(jsonStr);
+      if (json is Map<String, dynamic>) {
+        final createSurface = json['createSurface'];
+        if (createSurface is Map<String, dynamic>) {
+          surface = CreateSurface.fromJson(createSurface);
+        }
+      }
+    } catch (_) {
+      // Malformed JSON — render as error text.
+    }
+
+    if (surface == null) {
+      return Text('[invalid a2ui block]', style: TextStyle(color: theme.error));
+    }
+
+    final errors = catalog.validate(surface);
+    if (errors.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'surface "${surface.surfaceId}": validation errors',
+            style: TextStyle(color: theme.error),
+          ),
+          for (final e in errors)
+            Text('  $e', style: TextStyle(color: theme.textMuted)),
+        ],
+      );
+    }
+
+    final instance = catalog.instanceFor(surface.surfaceId, surface);
+
+    return SurfaceController(
+      surface: instance,
+      catalog: catalog,
+      onAction: onSurfaceAction,
+    );
   }
 
   @override
@@ -221,10 +372,7 @@ class VibeSegmentBubble extends StatelessComponent {
         // changes)" placeholder — disable the action instead of
         // opening that dead end. The MultiButton renders a null
         // callback as a dim, non-clickable segment.
-        final diffable = hasReconstructableVibeFileDiff(
-          path,
-          segment.modCalls,
-        );
+        final diffable = hasReconstructableVibeFileDiff(path, segment.modCalls);
         rows.add(
           VibeFileRow(
             key: ValueKey('vibe-file-$i-$path'),
@@ -253,6 +401,32 @@ class VibeSegmentBubble extends StatelessComponent {
           bodyRowComponents: rows,
           mutedColor: theme.success,
           activeColor: theme.warning,
+        ),
+      );
+    }
+
+    // Persisted progress box: the compact echo of a long-running bash
+    // call that reported progress signals. Green ✓ on success, warning
+    // ✗ on failure — same palette convention as the other boxes (muted
+    // color carries the state; the box is never "active" once persisted).
+    if (segment.progress != null) {
+      final p = segment.progress!;
+      final ok = p.exitCode == 0;
+      final phase = p.phase ?? 'bash';
+      final details = <String>[];
+      if (p.peakPercent != null) details.add('${p.peakPercent!.round()}%');
+      if (p.bytes > 0) details.add(_fmtBytes(p.bytes));
+      if (p.durationSec > 0) details.add(_fmtDuration(p.durationSec));
+      final row = ok
+          ? '✓ $phase${details.isEmpty ? '' : ' · ${details.join(' · ')}'}'
+          : '✗ $phase failed'
+                '${p.peakPercent != null ? ' at ${p.peakPercent!.round()}%' : ''}';
+      boxes.add(
+        VibeBox(
+          title: strings.t('chat.vibe.progress'),
+          bodyRows: [row],
+          mutedColor: ok ? theme.success : theme.warning,
+          activeColor: theme.accent,
         ),
       );
     }
@@ -340,13 +514,13 @@ class VibeSegmentBubble extends StatelessComponent {
         // A2UI surfaces — rendered inline between the boxes and the
         // prose line. Each `surface` tool call in this segment gets
         // its own [SurfaceBubble].
-         if (surfaceCatalog != null && segment.surfaceToolCalls.isNotEmpty)
-           for (final tc in segment.surfaceToolCalls)
-             SurfaceBubble(
-               toolCall: tc,
-               catalog: surfaceCatalog!,
-               onAction: onSurfaceAction,
-             ),   // Prose line. Single closing message — its `content` is
+        if (surfaceCatalog != null && segment.surfaceToolCalls.isNotEmpty)
+          for (final tc in segment.surfaceToolCalls)
+            SurfaceBubble(
+              toolCall: tc,
+              catalog: surfaceCatalog!,
+              onAction: onSurfaceAction,
+            ), // Prose line. Single closing message — its `content` is
         // rendered under the `crux:` prefix. Either `role: 'ai'`
         // (the agent's prose reply) or `role: 'tool_call'` with
         // non-empty content (a mid-round remark that itself
@@ -365,29 +539,7 @@ class VibeSegmentBubble extends StatelessComponent {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Expanded(
-                  // Forward every markdown clickable token the way
-                  // the verbose `MessageBubble` does. Quick-reply
-                  // is gated to the latest closed AI segment so
-                  // older turns' `ask://` labels don't go stale; the
-                  // session link and markdown link callbacks are
-                  // always live because a `ses://<id>` or
-                  // `[label](url)` reference in an older turn is
-                  // still actionable. When any callback is null,
-                  // [HighlightedMarkdownText] short-circuits the
-                  // matching token type — zero per-build cost, so
-                  // the verbose path's `null` callback trick is
-                  // preserved for legacy callers.
-                  child: HighlightedMarkdownText(
-                    segment.prose!.content,
-                    onQuickReplyTap:
-                        enableQuickReplies && segment.prose!.role == 'ai'
-                        ? onQuickReplyTap
-                        : null,
-                    onSessionLinkTap: onSessionLinkTap,
-                    onLinkTap: onLinkTap,
-                  ),
-                ),
+                Expanded(child: _buildProse(context)),
               ],
             ),
           ),
