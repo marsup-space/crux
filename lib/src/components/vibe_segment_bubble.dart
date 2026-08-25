@@ -195,18 +195,12 @@ class VibeSegmentBubble extends StatelessComponent {
       children: [
         for (final (text, surfaceJson) in segments)
           if (surfaceJson != null)
-            // Inline surface: left border stripe, no background tint —
-            // visually distinct from prose but not a separate bubble.
+            // Inline surface: subtle background tint so it reads as a
+            // distinct component, not just prose. No extra padding —
+            // the tint alone is enough to separate it from the text.
             Container(
-              decoration: BoxDecoration(
-                border: BoxBorder(
-                  left: BorderSide(
-                    color: theme.accent.withOpacity(0.4),
-                    width: 1,
-                  ),
-                ),
-              ),
-              padding: const EdgeInsets.only(left: 1),
+              decoration: BoxDecoration(color: theme.surface),
+              padding: const EdgeInsets.symmetric(horizontal: 1),
               child: _buildInlineSurface(context, surfaceJson, catalog),
             )
           else if (text.isNotEmpty)
