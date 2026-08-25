@@ -30,6 +30,7 @@ import 'tool_guard_bubble.dart';
 import 'error_bubble.dart';
 import '../services/a2ui/models.dart';
 import '../services/a2ui/surface_catalog.dart';
+import '../services/a2ui/surface_controller.dart';
 import '../services/llm_error.dart';
 
 class MessageBubble extends StatelessComponent {
@@ -104,10 +105,11 @@ class MessageBubble extends StatelessComponent {
     this.onSessionLinkTap,
     this.onQuickReplyTap,
     this.onLinkTap,
-     this.onRetryContinue,
-     this.surfaceCatalog,
-     this.onSurfaceAction,
-     this.strings = kEnglishStrings,});
+    this.onRetryContinue,
+    this.surfaceCatalog,
+    this.onSurfaceAction,
+    this.strings = kEnglishStrings,
+  });
 
   String _displayEffort(String effort) {
     final presets = reasoningPresets;
@@ -319,6 +321,155 @@ class MessageBubble extends StatelessComponent {
         cc == 0x20;
   }
 
+  /// Build the assistant's reply content, splitting out any inline
+  /// ` ```a2ui ` code blocks into live [SurfaceController] widgets.
+  ///
+  /// The content is split into alternating text/surface segments:
+  /// text segments render via [HighlightedMarkdownText] as usual,
+  /// a2ui segments parse the JSON payload and render the surface
+  /// inline — no background tint, no extra padding, just the raw
+  /// component tree embedded in the prose flow.
+  Component _buildAssistantContent(BuildContext context) {
+    final content = message.content;
+    final catalog = surfaceCatalog;
+
+    // Fast path: no a2ui blocks → plain markdown text.
+    if (catalog == null || !content.contains('```a2ui')) {
+      return HighlightedMarkdownText(
+        content,
+        highlightText: highlightText,
+        onSessionLinkTap: onSessionLinkTap,
+        onQuickReplyTap: onQuickReplyTap,
+        onLinkTap: onLinkTap,
+      );
+    }
+
+    // Split into alternating text/surface segments.
+    final segments = _splitA2uiSegments(content);
+    if (segments.length == 1 && segments.first.$2 == null) {
+      // Only text, no surfaces found (malformed a2ui block).
+      return HighlightedMarkdownText(
+        content,
+        highlightText: highlightText,
+        onSessionLinkTap: onSessionLinkTap,
+        onQuickReplyTap: onQuickReplyTap,
+        onLinkTap: onLinkTap,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (text, surfaceJson) in segments)
+          if (surfaceJson != null)
+            _buildInlineSurface(context, surfaceJson, catalog)
+          else if (text.isNotEmpty)
+            HighlightedMarkdownText(
+              text,
+              highlightText: highlightText,
+              onSessionLinkTap: onSessionLinkTap,
+              onQuickReplyTap: onQuickReplyTap,
+              onLinkTap: onLinkTap,
+            ),
+      ],
+    );
+  }
+
+  /// Split [content] into alternating (text, null) and ('', json)
+  /// segments at ` ```a2ui ` fenced code block boundaries.
+  List<(String, String?)> _splitA2uiSegments(String content) {
+    final segments = <(String, String?)>[];
+    final lines = content.split('\n');
+    var textBuf = StringBuffer();
+    var inBlock = false;
+    var jsonBuf = StringBuffer();
+
+    for (final line in lines) {
+      if (!inBlock && line.trimLeft().startsWith('```a2ui')) {
+        // Flush accumulated text.
+        final text = textBuf.toString().trimRight();
+        if (text.isNotEmpty) segments.add((text, null));
+        textBuf = StringBuffer();
+        inBlock = true;
+        jsonBuf = StringBuffer();
+        continue;
+      }
+      if (inBlock && line.trimLeft() == '```') {
+        segments.add(('', jsonBuf.toString().trim()));
+        inBlock = false;
+        continue;
+      }
+      if (inBlock) {
+        jsonBuf.writeln(line);
+      } else {
+        textBuf.writeln(line);
+      }
+    }
+
+    // Trailing text after last block.
+    final trailing = textBuf.toString().trimRight();
+    if (trailing.isNotEmpty) segments.add((trailing, null));
+    // Unclosed block — treat remaining as text.
+    if (inBlock) {
+      segments.add(('```a2ui\n$jsonBuf', null));
+    }
+
+    return segments;
+  }
+
+  /// Build an inline surface from a JSON payload string.
+  ///
+  /// Parses the A2UI `createSurface` message, validates against the
+  /// catalog, and renders via [SurfaceController] — without the
+  /// background tint / padding of a [SurfaceBubble], so the surface
+  /// sits naturally in the prose flow.
+  Component _buildInlineSurface(
+    BuildContext context,
+    String jsonStr,
+    SurfaceCatalog catalog,
+  ) {
+    final theme = CruxTheme.of(context);
+    CreateSurface? surface;
+    try {
+      final json = jsonDecode(jsonStr);
+      if (json is Map<String, dynamic>) {
+        final createSurface = json['createSurface'];
+        if (createSurface is Map<String, dynamic>) {
+          surface = CreateSurface.fromJson(createSurface);
+        }
+      }
+    } catch (_) {
+      // Malformed JSON — render as error text.
+    }
+
+    if (surface == null) {
+      return Text('[invalid a2ui block]', style: TextStyle(color: theme.error));
+    }
+
+    final errors = catalog.validate(surface);
+    if (errors.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'surface "${surface.surfaceId}": validation errors',
+            style: TextStyle(color: theme.error),
+          ),
+          for (final e in errors)
+            Text('  $e', style: TextStyle(color: theme.textMuted)),
+        ],
+      );
+    }
+
+    final instance = catalog.instanceFor(surface.surfaceId, surface);
+
+    return SurfaceController(
+      surface: instance,
+      catalog: catalog,
+      onAction: onSurfaceAction,
+    );
+  }
+
   Component _buildInner(BuildContext context) {
     if (message.role == 'tool') return const SizedBox.shrink();
     if (message.role == 'tool_call') return _buildToolCallWithContent(context);
@@ -466,7 +617,7 @@ class MessageBubble extends StatelessComponent {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                  ' ${strings.t('chat.bubble.think')}: ',
+                    ' ${strings.t('chat.bubble.think')}: ',
                     style: TextStyle(
                       color: CruxTheme.of(context).thinkPrefix,
                       fontWeight: FontWeight.bold,
@@ -478,7 +629,6 @@ class MessageBubble extends StatelessComponent {
                       styleSheet: HighlightMarkdownStyleSheet.thinking(
                         CruxTheme.of(context),
                       ),
-                      strings: strings,
                     ),
                   ),
                 ],
@@ -506,14 +656,7 @@ class MessageBubble extends StatelessComponent {
               Expanded(
                 child: isUser
                     ? _buildUserMessageContent(context)
-                    : HighlightedMarkdownText(
-                        message.content,
-                        highlightText: highlightText,
-                        onSessionLinkTap: onSessionLinkTap,
-                        onQuickReplyTap: onQuickReplyTap,
-                        onLinkTap: onLinkTap,
-                        strings: strings,
-                      ),
+                    : _buildAssistantContent(context),
               ),
             ],
           ),
@@ -556,7 +699,6 @@ class MessageBubble extends StatelessComponent {
             child: HighlightedMarkdownText(
               message.content,
               highlightText: highlightText,
-              strings: strings,
             ),
           ),
         ],
@@ -604,8 +746,8 @@ class MessageBubble extends StatelessComponent {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                  ' ${strings.t('chat.bubble.think')}: ',
-                  style: TextStyle(
+                ' ${strings.t('chat.bubble.think')}: ',
+                style: TextStyle(
                   color: CruxTheme.of(context).thinkPrefix,
                   fontWeight: FontWeight.bold,
                 ),
@@ -645,7 +787,6 @@ class MessageBubble extends StatelessComponent {
                     styleSheet: HighlightMarkdownStyleSheet.thinking(
                       CruxTheme.of(context),
                     ),
-                    strings: strings,
                   ),
                 ),
               ],
@@ -679,7 +820,6 @@ class MessageBubble extends StatelessComponent {
                   onSessionLinkTap: onSessionLinkTap,
                   onQuickReplyTap: onQuickReplyTap,
                   onLinkTap: onLinkTap,
-                  strings: strings,
                 ),
               ),
             ],
@@ -708,15 +848,16 @@ class MessageBubble extends StatelessComponent {
                   onTap: onToolCallTap,
                 );
               }),
-               // Render A2UI surfaces inline below surface tool calls.
-               if (surfaceCatalog != null)
-                 for (final tc in calls)
-                   if (tc.name == 'surface')
-                     SurfaceBubble(
-                       toolCall: tc,
-                       catalog: surfaceCatalog!,
-                       onAction: onSurfaceAction,
-                     ),     ],
+              // Render A2UI surfaces inline below surface tool calls.
+              if (surfaceCatalog != null)
+                for (final tc in calls)
+                  if (tc.name == 'surface')
+                    SurfaceBubble(
+                      toolCall: tc,
+                      catalog: surfaceCatalog!,
+                      onAction: onSurfaceAction,
+                    ),
+            ],
           ),
         ),
       );
