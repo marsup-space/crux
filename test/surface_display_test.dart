@@ -365,6 +365,68 @@ void main() {
       expect(instance.readDataModel('/a'), isNull);
     });
   });
+  group('Button single-child', () {
+    test('Button child label renders exactly once', () async {
+      await testNocterm('button label dedup', (tester) async {
+        final surface = CreateSurface(
+          surfaceId: 'btn_dedup',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {
+                'children': ['card'],
+              },
+            ),
+            A2uiComponent(
+              id: 'card',
+              component: 'Card',
+              properties: {'child': 'inner', 'title': 'T'},
+            ),
+            A2uiComponent(
+              id: 'inner',
+              component: 'Column',
+              properties: {
+                'children': ['go'],
+              },
+            ),
+            A2uiComponent(
+              id: 'go',
+              component: 'Button',
+              properties: {
+                'child': 'go_lbl',
+                'action': {'event': {'name': 'go', 'context': {}}},
+              },
+            ),
+            A2uiComponent(
+              id: 'go_lbl',
+              component: 'Text',
+              properties: {'text': '提交验收'},
+            ),
+          ],
+        );
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('c1', surface),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Count occurrences of the label text on screen. The
+        // terminalState.findText returns a list of positions; assert
+        // exactly one match.
+        final positions = tester.terminalState.findText('提交验收');
+        expect(positions.length, 1,
+            reason: 'Button label must render exactly once, not twice');
+      }, size: const Size(80, 24));
+    });
+  });
 }
 
 class _FakeToolContext implements ToolContext {

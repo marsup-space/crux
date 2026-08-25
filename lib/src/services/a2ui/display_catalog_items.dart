@@ -605,12 +605,19 @@ class ListCatalogItem extends CatalogItem {
     // thumb height from viewport dimensions) and crashes with
     // "Infinity or NaN toInt". Cap at maxHeight so the ListView scrolls
     // inside a fixed viewport.
+    //
+    // Wrap in a Scrollbar so the user sees a visible handle on the right
+    // edge when content overflows — the thumb tracks the scroll offset
+    // and is draggable.
     return SizedBox(
       height: maxHeight.toDouble(),
-      child: ListView(
-        keyboardScrollable: true,
-        lazy: false,
-        children: children,
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: ListView(
+          keyboardScrollable: true,
+          lazy: false,
+          children: children,
+        ),
       ),
     );
   }
