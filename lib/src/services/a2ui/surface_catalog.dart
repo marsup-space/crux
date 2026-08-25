@@ -432,6 +432,16 @@ class SurfaceCatalog {
       '`{"id": "btn", "component": "Button", "child": "btn_label", ...}` '
       'with `{"id": "btn_label", "component": "Text", "text": "Submit"}`.',
     );
+    buf.writeln(
+      '- INLINE SURFACES: You can also embed a surface directly in your '
+      'prose reply with an <a2ui>...</a2ui> tag. The tag body must be the '
+      'RAW createSurface JSON object — do NOT wrap it in a markdown code '
+      'fence (```), do NOT add a "version" wrapper. Example: '
+      '<a2ui>{"createSurface": {"surfaceId": "x", "catalogId": "$catalogId", '
+      '"components": [...], "dataModel": {}}}</a2ui>. Use inline surfaces '
+      'for small contextual confirmations; use the `surface` tool for '
+      'larger panels.',
+    );
 
     return buf.toString();
   }

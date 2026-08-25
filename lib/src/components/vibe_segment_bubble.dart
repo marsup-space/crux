@@ -297,7 +297,22 @@ class VibeSegmentBubble extends StatelessComponent {
     CreateSurface? surface;
     String? parseError;
     try {
-      final json = jsonDecode(jsonStr);
+      // The agent sometimes wraps the JSON payload in a markdown code
+      // fence out of habit (```json ... ```). Strip the fence before
+      // parsing — the tag protocol itself is the delimiter, the fence
+      // is just noise.
+      var payload = jsonStr.trim();
+      if (payload.startsWith('```')) {
+        final firstNewline = payload.indexOf('\n');
+        if (firstNewline != -1) {
+          payload = payload.substring(firstNewline + 1);
+          if (payload.endsWith('```')) {
+            payload = payload.substring(0, payload.length - 3).trim();
+          }
+        }
+      }
+
+      final json = jsonDecode(payload);
       if (json is Map<String, dynamic>) {
         final createSurface = json['createSurface'];
         if (createSurface is Map<String, dynamic>) {
