@@ -195,13 +195,25 @@ class VibeSegmentBubble extends StatelessComponent {
       children: [
         for (final (text, surfaceJson) in segments)
           if (surfaceJson != null)
-            // Inline surface: subtle background tint so it reads as a
-            // distinct component, not just prose. No extra padding —
-            // the tint alone is enough to separate it from the text.
-            Container(
-              decoration: BoxDecoration(color: theme.surface),
-              padding: const EdgeInsets.symmetric(horizontal: 1),
-              child: _buildInlineSurface(context, surfaceJson, catalog),
+            // Inline surface: surface background tint + left accent
+            // stripe + 1-line vertical margin — reads as a distinct
+            // component embedded in prose, separated from text above
+            // and below.
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.surface,
+                  border: BoxBorder(
+                    left: BorderSide(
+                      color: theme.accent.withOpacity(0.5),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: _buildInlineSurface(context, surfaceJson, catalog),
+              ),
             )
           else if (text.isNotEmpty)
             HighlightedMarkdownText(
