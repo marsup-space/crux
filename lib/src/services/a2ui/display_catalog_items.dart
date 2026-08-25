@@ -606,17 +606,59 @@ class ListCatalogItem extends CatalogItem {
     // "Infinity or NaN toInt". Cap at maxHeight so the ListView scrolls
     // inside a fixed viewport.
     //
-    // Wrap in a Scrollbar so the user sees a visible handle on the right
-    // edge when content overflows — the thumb tracks the scroll offset
-    // and is draggable.
+    // A ScrollController is shared between the ListView and the Scrollbar
+    // so the scrollbar can read maxScrollExtent and paint its thumb —
+    // without it, Scrollbar renders nothing.
+    return _SurfaceList(
+      maxHeight: maxHeight,
+      children: children,
+    );
+  }
+}
+
+/// Internal scrollable list with a shared [ScrollController] so the
+/// [Scrollbar] can read the ListView's scroll metrics and paint its
+/// thumb on the right edge.
+class _SurfaceList extends StatefulComponent {
+  final int maxHeight;
+  final List<Component> children;
+
+  const _SurfaceList({
+    required this.maxHeight,
+    required this.children,
+  });
+
+  @override
+  State<_SurfaceList> createState() => _SurfaceListState();
+}
+
+class _SurfaceListState extends State<_SurfaceList> {
+  late final ScrollController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Component build(BuildContext context) {
     return SizedBox(
-      height: maxHeight.toDouble(),
+      height: component.maxHeight.toDouble(),
       child: Scrollbar(
+        controller: _controller,
         thumbVisibility: true,
         child: ListView(
+          controller: _controller,
           keyboardScrollable: true,
           lazy: false,
-          children: children,
+          children: component.children,
         ),
       ),
     );
