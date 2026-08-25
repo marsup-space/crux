@@ -317,7 +317,10 @@ class VibeSegmentBubble extends StatelessComponent {
       // to be parsed as real surfaces. Render them as muted text
       // instead of a scary error.
       if (payload.contains('...')) {
-        parseError = 'illustrative example (contains ...)';
+        return Text(
+          '[a2ui example — not a live surface]',
+          style: TextStyle(color: theme.textMuted),
+        );
       } else {
         final json = jsonDecode(payload);
         if (json is Map<String, dynamic>) {

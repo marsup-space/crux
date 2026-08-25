@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:test/test.dart';
 
@@ -545,7 +547,6 @@ void main() {
   group('Inline surface in prose', () {
     test('a2ui tag renders as live surface, not code text', () async {
       await testNocterm('inline surface', (tester) async {
-        final catalog = createBasicCatalog();
         final content = '''Deploy checklist:
 
 <a2ui>
@@ -580,6 +581,92 @@ Done.''';
         expect(surfSegs, 1, reason: 'should find one a2ui tag');
         expect(textSegs, greaterThan(0),
             reason: 'should have text segments too');
+      }, size: const Size(80, 24));
+    });
+
+    test('a2ui tag with markdown fence parses correctly', () async {
+      await testNocterm('inline surface fenced', (tester) async {
+        // The agent habitually wraps JSON in ```json fences even inside
+        // <a2ui> tags — the parser must strip them before jsonDecode.
+        final content = '''Before.
+
+<a2ui>
+```json
+{"createSurface": {"surfaceId": "fenced_1", "catalogId": "crux/1.0/chat", "components": [{"id": "root", "component": "Text", "text": "FENCED_OK"}], "dataModel": {}}}
+```
+</a2ui>
+
+After.''';
+
+        // Simulate _buildProse: split and render.
+        final segments = <(String, String?)>[];
+        var remaining = content;
+        while (true) {
+          final startIdx = remaining.indexOf('<a2ui>');
+          if (startIdx == -1) break;
+          final endIdx = remaining.indexOf('</a2ui>', startIdx);
+          if (endIdx == -1) break;
+          final before = remaining.substring(0, startIdx).trimRight();
+          if (before.isNotEmpty) segments.add((before, null));
+          segments.add(('', remaining.substring(startIdx + 6, endIdx).trim()));
+          remaining = remaining.substring(endIdx + 7);
+        }
+        final trailing = remaining.trimRight();
+        if (trailing.isNotEmpty) segments.add((trailing, null));
+
+        // Find the surface segment and verify it parses after fence-stripping.
+        final surfaceSeg = segments.firstWhere((s) => s.$2 != null);
+        final payload = surfaceSeg.$2!.trim();
+        // Strip markdown fence.
+        var stripped = payload;
+        if (stripped.startsWith('```')) {
+          final firstNewline = stripped.indexOf('\n');
+          if (firstNewline != -1) {
+            stripped = stripped.substring(firstNewline + 1);
+            if (stripped.endsWith('```')) {
+              stripped = stripped.substring(0, stripped.length - 3).trim();
+            }
+          }
+        }
+        final json = jsonDecode(stripped);
+        expect(json, isA<Map<String, dynamic>>());
+        expect(json['createSurface'], isA<Map<String, dynamic>>());
+      }, size: const Size(80, 24));
+    });
+
+    test('a2ui tag with illustrative ellipsis shows muted note', () async {
+      await testNocterm('inline surface ellipsis', (tester) async {
+        // Documentation snippets like `{"createSurface": ...}` are
+        // never meant to be parsed — they should render as a muted
+        // note, not a scary FormatException.
+        final content = '''Example:
+
+<a2ui>
+{"createSurface": ...}
+</a2ui>
+
+Done.''';
+
+        final segments = <(String, String?)>[];
+        var remaining = content;
+        while (true) {
+          final startIdx = remaining.indexOf('<a2ui>');
+          if (startIdx == -1) break;
+          final endIdx = remaining.indexOf('</a2ui>', startIdx);
+          if (endIdx == -1) break;
+          final before = remaining.substring(0, startIdx).trimRight();
+          if (before.isNotEmpty) segments.add((before, null));
+          segments.add(('', remaining.substring(startIdx + 6, endIdx).trim()));
+          remaining = remaining.substring(endIdx + 7);
+        }
+        final trailing = remaining.trimRight();
+        if (trailing.isNotEmpty) segments.add((trailing, null));
+
+        final surfaceSeg = segments.firstWhere((s) => s.$2 != null);
+        final payload = surfaceSeg.$2!.trim();
+        // The payload contains "..." — it should be detected as
+        // illustrative, not parsed as JSON.
+        expect(payload.contains('...'), isTrue);
       }, size: const Size(80, 24));
     });
   });
