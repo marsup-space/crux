@@ -160,7 +160,7 @@ class VibeSegmentBubble extends StatelessComponent {
   /// parse the JSON payload and render via [SurfaceController] — no
   /// background tint, no extra padding, just the raw component tree
   /// embedded in the prose flow.
-  Component _buildProse(BuildContext context) {
+  Component _buildProse(BuildContext context, CruxThemeData theme) {
     final content = segment.prose!.content;
     final catalog = surfaceCatalog;
 
@@ -195,7 +195,20 @@ class VibeSegmentBubble extends StatelessComponent {
       children: [
         for (final (text, surfaceJson) in segments)
           if (surfaceJson != null)
-            _buildInlineSurface(context, surfaceJson, catalog)
+            // Inline surface: left border stripe, no background tint —
+            // visually distinct from prose but not a separate bubble.
+            Container(
+              decoration: BoxDecoration(
+                border: BoxBorder(
+                  left: BorderSide(
+                    color: theme.accent.withOpacity(0.4),
+                    width: 1,
+                  ),
+                ),
+              ),
+              padding: const EdgeInsets.only(left: 1),
+              child: _buildInlineSurface(context, surfaceJson, catalog),
+            )
           else if (text.isNotEmpty)
             HighlightedMarkdownText(
               text,
@@ -211,23 +224,44 @@ class VibeSegmentBubble extends StatelessComponent {
 
   /// Split [content] into alternating (text, null) and ('', json)
   /// segments at `<a2ui>...</a2ui>` tag boundaries.
+  ///
+  /// Skips `<a2ui>` tags inside markdown code fences — those are
+  /// literal examples, not live surfaces.
   List<(String, String?)> _splitA2uiSegments(String content) {
     final segments = <(String, String?)>[];
     var remaining = content;
+    var inCodeFence = false;
 
     while (true) {
-      final startIdx = remaining.indexOf('<a2ui>');
-      if (startIdx == -1) break;
+      // Track code fence state before looking for <a2ui>.
+      final fenceIdx = remaining.indexOf('```');
+      final a2uiIdx = remaining.indexOf('<a2ui>');
 
-      final endIdx = remaining.indexOf('</a2ui>', startIdx);
+      if (a2uiIdx == -1) break; // no more tags
+
+      // If the next ``` fence starts before the next <a2ui>, we're
+      // entering a code block — skip past it.
+      if (fenceIdx != -1 && fenceIdx < a2uiIdx) {
+        inCodeFence = !inCodeFence;
+        remaining = remaining.substring(fenceIdx + 3);
+        continue;
+      }
+
+      if (inCodeFence) {
+        // Skip this <a2ui> — it's inside a code block.
+        remaining = remaining.substring(a2uiIdx + 6);
+        continue;
+      }
+
+      final endIdx = remaining.indexOf('</a2ui>', a2uiIdx);
       if (endIdx == -1) break; // unclosed tag — treat rest as text
 
       // Text before the tag.
-      final before = remaining.substring(0, startIdx).trimRight();
+      final before = remaining.substring(0, a2uiIdx).trimRight();
       if (before.isNotEmpty) segments.add((before, null));
 
       // JSON payload between tags.
-      final json = remaining.substring(startIdx + 6, endIdx).trim();
+      final json = remaining.substring(a2uiIdx + 6, endIdx).trim();
       segments.add(('', json));
 
       remaining = remaining.substring(endIdx + 7);
@@ -539,7 +573,7 @@ class VibeSegmentBubble extends StatelessComponent {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Expanded(child: _buildProse(context)),
+                Expanded(child: _buildProse(context, theme)),
               ],
             ),
           ),
