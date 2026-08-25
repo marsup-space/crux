@@ -195,24 +195,29 @@ class VibeSegmentBubble extends StatelessComponent {
       children: [
         for (final (text, surfaceJson) in segments)
           if (surfaceJson != null)
-            // Inline surface: surface background tint + left accent
-            // stripe + 1-line vertical margin — reads as a distinct
-            // component embedded in prose, separated from text above
-            // and below.
+            // Inline surface: left accent stripe (full height, not
+            // swallowed by padding) + surface background tint +
+            // 1-line vertical margin — reads as a distinct component
+            // embedded in prose, separated from text above and below.
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 1),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: theme.surface,
-                  border: BoxBorder(
-                    left: BorderSide(
-                      color: theme.accent.withOpacity(0.5),
-                      width: 1,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Accent stripe — full height of the surface area.
+                  Container(
+                    width: 1,
+                    color: theme.accent.withOpacity(0.5),
+                  ),
+                  // Content area with background tint and padding.
+                  Expanded(
+                    child: Container(
+                      color: theme.surface,
+                      padding: const EdgeInsets.symmetric(horizontal: 1),
+                      child: _buildInlineSurface(context, surfaceJson, catalog),
                     ),
                   ),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: _buildInlineSurface(context, surfaceJson, catalog),
+                ],
               ),
             )
           else if (text.isNotEmpty)
@@ -260,7 +265,16 @@ class VibeSegmentBubble extends StatelessComponent {
       }
 
       final endIdx = remaining.indexOf('</a2ui>', a2uiIdx);
-      if (endIdx == -1) break; // unclosed tag — treat rest as text
+      if (endIdx == -1) {
+        // Unclosed tag — the model is still streaming the JSON payload.
+        // Emit a "building" placeholder instead of raw text so the user
+        // sees a surface being constructed, not a half-written tag.
+        final before = remaining.substring(0, a2uiIdx).trimRight();
+        if (before.isNotEmpty) segments.add((before, null));
+        segments.add(('', '__building__'));
+        remaining = '';
+        break;
+      }
 
       // Text before the tag.
       final before = remaining.substring(0, a2uiIdx).trimRight();
@@ -287,6 +301,16 @@ class VibeSegmentBubble extends StatelessComponent {
     SurfaceCatalog catalog,
   ) {
     final theme = CruxTheme.of(context);
+
+    // Placeholder for a still-streaming a2ui block — the model has
+    // emitted `<a2ui>` but not yet `</a2ui>`.
+    if (jsonStr == '__building__') {
+      return Text(
+        '  building surface…',
+        style: TextStyle(color: theme.textMuted),
+      );
+    }
+
     CreateSurface? surface;
     try {
       final json = jsonDecode(jsonStr);
