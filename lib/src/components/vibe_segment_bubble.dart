@@ -262,13 +262,9 @@ class VibeSegmentBubble extends StatelessComponent {
 
       final endIdx = remaining.indexOf('</a2ui>', a2uiIdx);
       if (endIdx == -1) {
-        // Unclosed tag — the model is still streaming the JSON payload.
-        // Emit a "building" placeholder instead of raw text so the user
-        // sees a surface being constructed, not a half-written tag.
-        final before = remaining.substring(0, a2uiIdx).trimRight();
-        if (before.isNotEmpty) segments.add((before, null));
-        segments.add(('', '__building__'));
-        remaining = '';
+        // Unclosed tag — the stream ended before </a2ui> arrived.
+        // Render the rest as plain text (the surface will never
+        // complete), not as a "building" placeholder.
         break;
       }
 
@@ -297,15 +293,6 @@ class VibeSegmentBubble extends StatelessComponent {
     SurfaceCatalog catalog,
   ) {
     final theme = CruxTheme.of(context);
-
-    // Placeholder for a still-streaming a2ui block — the model has
-    // emitted `<a2ui>` but not yet `</a2ui>`.
-    if (jsonStr == '__building__') {
-      return Text(
-        '  building surface…',
-        style: TextStyle(color: theme.textMuted),
-      );
-    }
 
     CreateSurface? surface;
     try {
