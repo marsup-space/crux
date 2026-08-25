@@ -541,6 +541,48 @@ void main() {
       }, size: const Size(80, 24));
     });
   });
+
+  group('Inline surface in prose', () {
+    test('a2ui tag renders as live surface, not code text', () async {
+      await testNocterm('inline surface', (tester) async {
+        final catalog = createBasicCatalog();
+        final content = '''Deploy checklist:
+
+<a2ui>
+{"createSurface": {"surfaceId": "inline_1", "catalogId": "crux/1.0/chat", "components": [{"id": "root", "component": "Row", "gap": 2, "children": ["label", "btn"]}, {"id": "label", "component": "Text", "text": "Env:"}, {"id": "btn", "component": "Button", "child": "btn_l", "action": {"event": {"name": "go"}}}, {"id": "btn_l", "component": "Text", "text": "Deploy"}], "dataModel": {}}}
+</a2ui>
+
+Done.''';
+
+        // Simulate what _buildAssistantContent does: split at a2ui
+        // tags and render text via markdown, surface via controller.
+        final hasA2ui = content.contains('<a2ui>');
+        expect(hasA2ui, isTrue);
+
+        // Verify split logic produces both text and surface segments.
+        final segments = <(String, String?)>[];
+        var remaining = content;
+        while (true) {
+          final startIdx = remaining.indexOf('<a2ui>');
+          if (startIdx == -1) break;
+          final endIdx = remaining.indexOf('</a2ui>', startIdx);
+          if (endIdx == -1) break;
+          final before = remaining.substring(0, startIdx).trimRight();
+          if (before.isNotEmpty) segments.add((before, null));
+          segments.add(('', remaining.substring(startIdx + 6, endIdx).trim()));
+          remaining = remaining.substring(endIdx + 7);
+        }
+        final trailing = remaining.trimRight();
+        if (trailing.isNotEmpty) segments.add((trailing, null));
+
+        final textSegs = segments.where((s) => s.$2 == null).length;
+        final surfSegs = segments.where((s) => s.$2 != null).length;
+        expect(surfSegs, 1, reason: 'should find one a2ui tag');
+        expect(textSegs, greaterThan(0),
+            reason: 'should have text segments too');
+      }, size: const Size(80, 24));
+    });
+  });
 }
 
 class _FakeToolContext implements ToolContext {

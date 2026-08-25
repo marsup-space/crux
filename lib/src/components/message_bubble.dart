@@ -322,19 +322,23 @@ class MessageBubble extends StatelessComponent {
   }
 
   /// Build the assistant's reply content, splitting out any inline
-  /// ` ```a2ui ` code blocks into live [SurfaceController] widgets.
+  /// `<a2ui>...</a2ui>` tags into live [SurfaceController] widgets.
   ///
   /// The content is split into alternating text/surface segments:
   /// text segments render via [HighlightedMarkdownText] as usual,
   /// a2ui segments parse the JSON payload and render the surface
   /// inline — no background tint, no extra padding, just the raw
   /// component tree embedded in the prose flow.
+  ///
+  /// Uses a custom `<a2ui>` tag instead of markdown code fences —
+  /// avoids interference from the markdown parser and works reliably
+  /// in both streaming and persisted messages.
   Component _buildAssistantContent(BuildContext context) {
     final content = message.content;
     final catalog = surfaceCatalog;
 
-    // Fast path: no a2ui blocks → plain markdown text.
-    if (catalog == null || !content.contains('```a2ui')) {
+    // Fast path: no a2ui tags → plain markdown text.
+    if (catalog == null || !content.contains('<a2ui>')) {
       return HighlightedMarkdownText(
         content,
         highlightText: highlightText,
@@ -376,43 +380,38 @@ class MessageBubble extends StatelessComponent {
   }
 
   /// Split [content] into alternating (text, null) and ('', json)
-  /// segments at ` ```a2ui ` fenced code block boundaries.
+  /// segments at `<a2ui>...</a2ui>` tag boundaries.
+  ///
+  /// Uses a custom XML-like tag instead of markdown code fences —
+  /// avoids interference from the markdown parser and works reliably
+  /// in both streaming and persisted messages.
   List<(String, String?)> _splitA2uiSegments(String content) {
     final segments = <(String, String?)>[];
-    final lines = content.split('\n');
-    var textBuf = StringBuffer();
-    var inBlock = false;
-    var jsonBuf = StringBuffer();
+    var remaining = content;
 
-    for (final line in lines) {
-      if (!inBlock && line.trimLeft().startsWith('```a2ui')) {
-        // Flush accumulated text.
-        final text = textBuf.toString().trimRight();
-        if (text.isNotEmpty) segments.add((text, null));
-        textBuf = StringBuffer();
-        inBlock = true;
-        jsonBuf = StringBuffer();
-        continue;
-      }
-      if (inBlock && line.trimLeft() == '```') {
-        segments.add(('', jsonBuf.toString().trim()));
-        inBlock = false;
-        continue;
-      }
-      if (inBlock) {
-        jsonBuf.writeln(line);
-      } else {
-        textBuf.writeln(line);
-      }
+    while (true) {
+      final startIdx = remaining.indexOf('<a2ui>');
+      if (startIdx == -1) break;
+
+      final endIdx = remaining.indexOf('</a2ui>', startIdx);
+      if (endIdx == -1) break; // unclosed tag — treat rest as text
+
+      // Text before the tag.
+      final before = remaining.substring(0, startIdx).trimRight();
+      if (before.isNotEmpty) segments.add((before, null));
+
+      // JSON payload between tags.
+      final json = remaining
+          .substring(startIdx + 6, endIdx)
+          .trim();
+      segments.add(('', json));
+
+      remaining = remaining.substring(endIdx + 7);
     }
 
-    // Trailing text after last block.
-    final trailing = textBuf.toString().trimRight();
+    // Trailing text after last tag.
+    final trailing = remaining.trimRight();
     if (trailing.isNotEmpty) segments.add((trailing, null));
-    // Unclosed block — treat remaining as text.
-    if (inBlock) {
-      segments.add(('```a2ui\n$jsonBuf', null));
-    }
 
     return segments;
   }
