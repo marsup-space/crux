@@ -162,7 +162,7 @@ class TableCatalogItem extends CatalogItem {
         );
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         headerRow(),
         for (final row in rows) dataRow(row),

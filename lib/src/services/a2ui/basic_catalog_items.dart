@@ -118,7 +118,10 @@ class ColumnCatalogItem extends CatalogItem {
       }
     }
 
-    return Column(children: children);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 }
 

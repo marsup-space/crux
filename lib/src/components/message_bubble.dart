@@ -697,7 +697,7 @@ class MessageBubble extends StatelessComponent {
             vertical: 0,
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ...calls.map((tc) {
                 final result = resultByCallId[tc.callId];
