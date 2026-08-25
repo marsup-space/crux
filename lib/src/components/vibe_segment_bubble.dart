@@ -312,20 +312,28 @@ class VibeSegmentBubble extends StatelessComponent {
         }
       }
 
-      final json = jsonDecode(payload);
-      if (json is Map<String, dynamic>) {
-        final createSurface = json['createSurface'];
-        if (createSurface is Map<String, dynamic>) {
-          surface = CreateSurface.fromJson(createSurface);
-          if (surface == null) {
-            parseError = 'CreateSurface.fromJson returned null';
+      // Detect shorthand/illustrative payloads (e.g. documentation
+      // snippets like `{"createSurface": ...}`) that were never meant
+      // to be parsed as real surfaces. Render them as muted text
+      // instead of a scary error.
+      if (payload.contains('...')) {
+        parseError = 'illustrative example (contains ...)';
+      } else {
+        final json = jsonDecode(payload);
+        if (json is Map<String, dynamic>) {
+          final createSurface = json['createSurface'];
+          if (createSurface is Map<String, dynamic>) {
+            surface = CreateSurface.fromJson(createSurface);
+            if (surface == null) {
+              parseError = 'CreateSurface.fromJson returned null';
+            }
+          } else {
+            parseError =
+                'no "createSurface" key (keys: ${json.keys.take(5).join(",")})';
           }
         } else {
-          parseError =
-              'no "createSurface" key (keys: ${json.keys.take(5).join(",")})';
+          parseError = 'json is ${json.runtimeType}, not a Map';
         }
-      } else {
-        parseError = 'json is ${json.runtimeType}, not a Map';
       }
     } catch (e) {
       parseError = '$e';
