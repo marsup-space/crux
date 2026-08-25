@@ -46,10 +46,10 @@ class ButtonCatalogItem extends CatalogItem {
       'type': 'string',
       'enum': ['primary', 'bordered', 'borderless'],
       'description':
-          'Button style hint. '
-          'primary: accent background + border (main action). '
-          'bordered: subtle background + border (secondary action). '
-          'borderless: subtle background, no border (default).',
+          'Button style. '
+          'borderless (default): subtle background + subtle border. '
+          'bordered: subtle background + visible border. '
+          'primary: accent background + accent border (main action).',
     },
   };
 
@@ -154,7 +154,6 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     final theme = component.theme;
     final isActive = !component.isDisabled && component.onAction != null;
 
-    final bool isBordered = component.variant == 'bordered';
     final Color borderColor;
     final Color bgColor;
     if (component.isDisabled) {
@@ -166,9 +165,13 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     } else if (component.isPrimary) {
       borderColor = theme.accent;
       bgColor = theme.accent;
-    } else {
+    } else if (component.variant == 'bordered') {
       borderColor = theme.borderActive;
-      bgColor = theme.buttonBackground;
+      bgColor = theme.surfaceVariant;
+    } else {
+      // Default: subtle bg + subtle border — always visible as a button.
+      borderColor = theme.borderSubtle;
+      bgColor = theme.surfaceVariant;
     }
 
     return MouseRegion(
@@ -181,12 +184,10 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
         child: Container(
           decoration: BoxDecoration(
             color: bgColor,
-            border: isBordered || component.isPrimary
-                ? BoxBorder.all(
-                    color: borderColor,
-                    style: BoxBorderStyle.rounded,
-                  )
-                : null,
+            border: BoxBorder.all(
+              color: borderColor,
+              style: BoxBorderStyle.rounded,
+            ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: component.child,
@@ -527,12 +528,12 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     final isNumber = component.variant == 'number';
     final isActive = component.onDataModelUpdate != null;
 
-    // Border color: focused > hovered > subtle.
+    // Border color: focused > hovered > default (visible but not loud).
     final borderColor = _focused
         ? theme.borderActive
         : _hovered
             ? theme.accent
-            : theme.borderSubtle;
+            : theme.borderActive.withOpacity(0.5);
 
     final field = GestureDetector(
       onTap: isActive
