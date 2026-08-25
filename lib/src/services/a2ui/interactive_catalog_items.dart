@@ -624,8 +624,11 @@ class ChoicePickerCatalogItem extends CatalogItem {
     },
     'displayStyle': {
       'type': 'string',
-      'enum': ['checkbox', 'chips'],
-      'description': 'The display style of the component.',
+      'enum': ['checkbox', 'chips', 'inline'],
+      'description':
+          'checkbox: one option per line (default). '
+          'inline: options flow horizontally on one line, '
+          'separated by two spaces. Use inline for ≤4 short options.',
     },
   };
 
@@ -683,6 +686,8 @@ class ChoicePickerCatalogItem extends CatalogItem {
     }
 
     final isMutuallyExclusive = variant == 'mutuallyExclusive';
+    final displayStyle =
+        component.properties['displayStyle'] as String? ?? 'checkbox';
 
     return _SurfaceChoicePicker(
       label: label,
@@ -690,6 +695,7 @@ class ChoicePickerCatalogItem extends CatalogItem {
       selections: selections,
       path: path,
       isMutuallyExclusive: isMutuallyExclusive,
+      displayStyle: displayStyle,
       onDataModelUpdate: submitted ? null : onDataModelUpdate,
       theme: theme,
     );
@@ -702,6 +708,7 @@ class _SurfaceChoicePicker extends StatefulComponent {
   final List<String> selections;
   final String path;
   final bool isMutuallyExclusive;
+  final String displayStyle;
   final void Function(String path, dynamic value)? onDataModelUpdate;
   final CruxThemeData theme;
 
@@ -711,6 +718,7 @@ class _SurfaceChoicePicker extends StatefulComponent {
     required this.selections,
     required this.path,
     required this.isMutuallyExclusive,
+    this.displayStyle = 'checkbox',
     required this.onDataModelUpdate,
     required this.theme,
   });
@@ -776,6 +784,34 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
   Component build(BuildContext context) {
     final theme = component.theme;
     final isActive = component.onDataModelUpdate != null;
+    final isInline = component.displayStyle == 'inline';
+
+    if (isInline) {
+      return Focusable(
+        onKeyEvent: _handleKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (component.label.isNotEmpty)
+              Text(
+                component.label,
+                style: TextStyle(
+                  color: theme.onSurfaceDim,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            Row(
+              children: [
+                for (var i = 0; i < component.options.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 2),
+                  _buildInlineOption(theme, i, isActive),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     return Focusable(
       onKeyEvent: _handleKey,
@@ -796,6 +832,48 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
           for (var i = 0; i < component.options.length; i++)
             _buildOption(theme, i, isActive),
         ],
+      ),
+    );
+  }
+
+  /// Inline option — renders as a compact tag-like button, all on one
+  /// line separated by 2-column gaps. Selected state shown by
+  /// background highlight instead of a checkbox marker.
+  Component _buildInlineOption(
+    CruxThemeData theme,
+    int index,
+    bool isActive,
+  ) {
+    final option = component.options[index];
+    final isSelected = component.selections.contains(option.value);
+    final isFocused = _focusedIndex >= 0 && index == _focusedIndex;
+
+    final Color bg;
+    final Color fg;
+    if (isSelected) {
+      bg = theme.success;
+      fg = theme.onColor(theme.success);
+    } else if (isFocused && isActive) {
+      bg = theme.surfaceVariant;
+      fg = theme.accent;
+    } else {
+      bg = theme.surfaceVariant;
+      fg = theme.foreground;
+    }
+
+    return GestureDetector(
+      onTap: isActive ? () => _toggle(option.value) : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        decoration: BoxDecoration(color: bg),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: Text(
+          option.label,
+          style: TextStyle(
+            color: fg,
+            fontWeight: isSelected ? FontWeight.bold : null,
+          ),
+        ),
       ),
     );
   }

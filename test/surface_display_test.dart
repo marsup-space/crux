@@ -427,6 +427,120 @@ void main() {
       }, size: const Size(80, 24));
     });
   });
+
+  group('Inline layout', () {
+    test('ChoicePicker inline renders options on one line', () async {
+      await testNocterm('inline picker', (tester) async {
+        final surface = CreateSurface(
+          surfaceId: 'inline_1',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {
+                'children': ['picker'],
+              },
+            ),
+            A2uiComponent(
+              id: 'picker',
+              component: 'ChoicePicker',
+              properties: {
+                'options': [
+                  {'label': 'Yes', 'value': 'yes'},
+                  {'label': 'No', 'value': 'no'},
+                  {'label': 'Skip', 'value': 'skip'},
+                ],
+                'value': {'path': '/choice'},
+                'variant': 'mutuallyExclusive',
+                'displayStyle': 'inline',
+              },
+            ),
+          ],
+          dataModel: {'choice': <String>[]},
+        );
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('c1', surface),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // All three options should render.
+        expect(tester.terminalState.findText('Yes').isNotEmpty, isTrue);
+        expect(tester.terminalState.findText('No').isNotEmpty, isTrue);
+        expect(tester.terminalState.findText('Skip').isNotEmpty, isTrue);
+
+        // Inline: options on the same row. Find their positions and
+        // verify they're all on the same line (same y coordinate).
+        final yesPos = tester.terminalState.findText('Yes');
+        final noPos = tester.terminalState.findText('No');
+        expect(yesPos.isNotEmpty, isTrue);
+        expect(noPos.isNotEmpty, isTrue);
+        // Same row → same y.
+        expect(yesPos.first.y, noPos.first.y,
+            reason: 'inline options should be on the same row');
+      }, size: const Size(80, 24));
+    });
+
+    test('Row with gap renders spacing between children', () async {
+      await testNocterm('row gap', (tester) async {
+        final surface = CreateSurface(
+          surfaceId: 'row_gap',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Row',
+              properties: {
+                'gap': 4,
+                'children': ['a', 'b'],
+              },
+            ),
+            A2uiComponent(
+              id: 'a',
+              component: 'Text',
+              properties: {'text': 'LEFT'},
+            ),
+            A2uiComponent(
+              id: 'b',
+              component: 'Text',
+              properties: {'text': 'RIGHT'},
+            ),
+          ],
+        );
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('c1', surface),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final leftPos = tester.terminalState.findText('LEFT');
+        final rightPos = tester.terminalState.findText('RIGHT');
+        expect(leftPos.isNotEmpty, isTrue);
+        expect(rightPos.isNotEmpty, isTrue);
+        // Same row, RIGHT is after LEFT + gap. The exact offset
+        // depends on nocterm's Row spacing internals — assert a
+        // reasonable gap (at least 5 = LEFT width, at most 12).
+        final dx = rightPos.first.x - leftPos.first.x;
+        expect(dx, greaterThanOrEqualTo(6),
+            reason: 'RIGHT should be at least 1 col after LEFT ends');
+        expect(dx, lessThanOrEqualTo(12),
+            reason: 'gap=4 should not push RIGHT too far');
+      }, size: const Size(80, 24));
+    });
+  });
 }
 
 class _FakeToolContext implements ToolContext {

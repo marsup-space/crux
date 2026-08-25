@@ -325,6 +325,66 @@ class SurfaceCatalog {
     buf.writeln('```');
     buf.writeln();
 
+    buf.writeln('### Layout guidance — use the full terminal width');
+    buf.writeln();
+    buf.writeln(
+      'Surfaces render inside a chat bubble that spans the full terminal width. '
+      'Avoid stacking every component vertically — that wastes the right side. '
+      'Instead:',
+    );
+    buf.writeln();
+    buf.writeln(
+      '- **Row** for side-by-side layout: labels + inputs, multiple buttons, '
+      'status indicators. Use `gap` (default 1) for spacing.',
+    );
+    buf.writeln(
+      '- **ChoicePicker** with `"displayStyle": "inline"` for ≤4 short options — '
+      'renders all options on one line as compact tags.',
+    );
+    buf.writeln(
+      '- **Text + Button on one Row**: put a label and its action button side-by-side.',
+    );
+    buf.writeln();
+    buf.writeln('Compact example — a confirmation form using horizontal layout:');
+    buf.writeln();
+    buf.writeln('```json');
+    buf.writeln('{');
+    buf.writeln('  "version": "v0.9",');
+    buf.writeln('  "createSurface": {');
+    buf.writeln('    "surfaceId": "confirm_1",');
+    buf.writeln('    "catalogId": "$catalogId",');
+    buf.writeln('    "components": [');
+    buf.writeln(
+      '      {"id": "root", "component": "Column", "children": ["title", "options", "actions"]},',
+    );
+    buf.writeln(
+      '      {"id": "title", "component": "Text", "text": "Deploy to production?"},',
+    );
+    buf.writeln(
+      '      {"id": "options", "component": "ChoicePicker", "options": [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}, {"label": "Dry run", "value": "dry"}], "value": {"path": "/choice"}, "variant": "mutuallyExclusive", "displayStyle": "inline"},',
+    );
+    buf.writeln(
+      '      {"id": "actions", "component": "Row", "gap": 2, "children": ["ok", "cancel"]},',
+    );
+    buf.writeln(
+      '      {"id": "ok", "component": "Button", "child": "ok_label", "variant": "primary", "action": {"event": {"name": "confirm"}}},',
+    );
+    buf.writeln(
+      '      {"id": "ok_label", "component": "Text", "text": "Confirm"},',
+    );
+    buf.writeln(
+      '      {"id": "cancel", "component": "Button", "child": "cancel_label", "action": {"event": {"name": "cancel"}}},',
+    );
+    buf.writeln(
+      '      {"id": "cancel_label", "component": "Text", "text": "Cancel"}',
+    );
+    buf.writeln('    ],');
+    buf.writeln('    "dataModel": {"choice": []}');
+    buf.writeln('  }');
+    buf.writeln('}');
+    buf.writeln('```');
+    buf.writeln();
+
     buf.writeln('### Rules');
     buf.writeln();
     buf.writeln(
@@ -363,12 +423,8 @@ class SurfaceCatalog {
       'by the host.',
     );
     buf.writeln(
-      '- Keep surfaces compact — they render inside a chat bubble.',
-    );
-    buf.writeln(
-      '- A component referenced as a `child` of Button or Card must NOT '
-      'also appear in a container\'s `children` list — it would render '
-      'twice. Each component should have exactly one parent.',
+      '- Keep surfaces compact — they render inside a chat bubble. '
+      'Prefer Row for side-by-side layout over stacking everything in a Column.',
     );
     buf.writeln(
       '- Button\'s `child` should reference a Text component that serves '

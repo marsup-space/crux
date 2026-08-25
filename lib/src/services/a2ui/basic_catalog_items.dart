@@ -136,7 +136,8 @@ class RowCatalogItem extends CatalogItem {
 
   @override
   String get description =>
-      'Horizontal layout container. Children are placed left-to-right.';
+      'Horizontal layout container. Children are placed left-to-right. '
+      'Use `gap` to control spacing between children.';
 
   @override
   Map<String, dynamic> get propertiesSchema => {
@@ -144,6 +145,11 @@ class RowCatalogItem extends CatalogItem {
       'type': 'array',
       'items': {'type': 'string'},
       'description': 'List of child component ids, in order.',
+    },
+    'gap': {
+      'type': 'number',
+      'description':
+          'Horizontal spacing (columns) between children. Default 1.',
     },
   };
 
@@ -158,11 +164,18 @@ class RowCatalogItem extends CatalogItem {
     bool submitted = false,
   }) {
     final childrenRaw = component.properties['children'];
+    final gapRaw = component.properties['gap'];
+    final gap = gapRaw is num ? gapRaw.toInt().clamp(0, 20) : 1;
+
     final children = <Component>[];
 
     if (childrenRaw is List) {
-      for (final childId in childrenRaw) {
+      for (var i = 0; i < childrenRaw.length; i++) {
+        final childId = childrenRaw[i];
         if (childId is String) {
+          if (i > 0 && gap > 0) {
+            children.add(SizedBox(width: gap.toDouble()));
+          }
           children.add(buildChild(childId));
         }
       }
