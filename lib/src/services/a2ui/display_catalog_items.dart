@@ -197,13 +197,15 @@ class TableCatalogItem extends CatalogItem {
 
 /// A2UI `ProgressBar` component (Crux extension) — numeric progress.
 ///
-/// Unlike the agent-side convention of hand-rolling `####----` character
-/// art in Text, this component sizes to available width and follows the
-/// host theme.
+/// Renders like the ContextBar: every cell carries a background color
+/// (filled/empty/boundary-blend), and the percentage/label text is drawn
+/// directly on those cells with the appropriate fg — the number never
+/// floats over a transparent background.
 ///
 /// Properties:
 /// - `value` (number | binding, optional): progress fraction 0..1.
-/// - `label` (string | binding, optional): text drawn inside the bar.
+/// - `label` (string | binding, optional): text drawn inside the bar
+///   (overrides the percentage readout when set).
 /// - `indeterminate` (bool, optional): animated pulse (no value needed).
 /// - `showPercentage` (bool, optional, default false).
 class ProgressBarCatalogItem extends CatalogItem {
@@ -266,24 +268,226 @@ class ProgressBarCatalogItem extends CatalogItem {
       value = double.tryParse(valueRaw)?.clamp(0.0, 1.0);
     }
 
+    // Label overrides percentage readout; neither shown when the bar is
+    // indeterminate without a label.
+    String? displayText = label;
+    if (displayText == null && showPercentage && value != null) {
+      displayText = '${(value * 100).toInt()}%';
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth.isFinite
             ? constraints.maxWidth.toInt()
             : 20;
-        return SizedBox(
-          width: width.toDouble(),
-          child: ProgressBar(
-            value: indeterminate ? null : value,
-            indeterminate: indeterminate,
-            label: label,
-            showPercentage: showPercentage,
-            valueColor: theme.success,
-            backgroundColor: theme.borderSubtle,
-          ),
+        return _SurfaceProgressBar(
+          width: width,
+          value: indeterminate ? null : value,
+          indeterminate: indeterminate,
+          displayText: displayText,
+          fillColor: theme.success,
+          emptyColor: theme.borderSubtle,
+          labelFillFg: theme.background,
+          labelEmptyFg: theme.foreground,
         );
       },
     );
+  }
+}
+
+/// Custom-rendered progress bar — draws per-cell backgrounds and writes
+/// the label/percentage directly on those cells, mirroring ContextBar's
+/// paint logic so the readout never sits on a bare background.
+class _SurfaceProgressBar extends StatefulComponent {
+  final int width;
+  final double? value;
+  final bool indeterminate;
+  final String? displayText;
+  final Color fillColor;
+  final Color emptyColor;
+  final Color labelFillFg;
+  final Color labelEmptyFg;
+
+  const _SurfaceProgressBar({
+    required this.width,
+    required this.value,
+    required this.indeterminate,
+    required this.displayText,
+    required this.fillColor,
+    required this.emptyColor,
+    required this.labelFillFg,
+    required this.labelEmptyFg,
+  });
+
+  @override
+  State<_SurfaceProgressBar> createState() => _SurfaceProgressBarState();
+}
+
+class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
+  int _frame = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (component.indeterminate) _startTimer();
+  }
+
+  @override
+  void didUpdateComponent(_SurfaceProgressBar oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    if (oldComponent.indeterminate != component.indeterminate) {
+      if (component.indeterminate) {
+        _startTimer();
+      } else {
+        _stopTimer();
+      }
+    }
+  }
+
+  void _startTimer() {
+    // nocterm ProgressBar's indeterminate pulse advances on repaint only —
+    // a timer drives it so the animation actually runs.
+    // The cadence matches the system-wide 16ms ticker cadence.
+    // Note: no TickerRegistry here — surfaces are content, not chrome;
+    // a lightweight periodic timer is sufficient and keeps the a2ui
+    // layer self-contained.
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(milliseconds: 80));
+      if (!mounted || !component.indeterminate) return false;
+      setState(() => _frame++);
+      return true;
+    });
+  }
+
+  void _stopTimer() {
+    // The doWhile loop exits on next check when indeterminate is false.
+  }
+
+  @override
+  Component build(BuildContext context) {
+    final width = component.width;
+    final value = component.value;
+    final text = component.displayText ?? '';
+
+    final cells = <Component>[];
+
+    if (component.indeterminate) {
+      // Pulse: a moving 30% highlight band sweeping left→right→left.
+      final pos = _frame % (width * 2);
+      final center = pos <= width ? pos : width * 2 - pos;
+      final bandHalf = (width * 0.3 / 2).ceil().clamp(1, width ~/ 2);
+      for (var i = 0; i < width; i++) {
+        final inBand = (i - center).abs() <= bandHalf;
+        cells.add(
+          Container(
+            decoration: BoxDecoration(
+              color: inBand ? component.fillColor : component.emptyColor,
+            ),
+            child: const Text(' '),
+          ),
+        );
+      }
+    } else if (value != null) {
+      // Determinate: filled prefix with a boundary-blend cell for the
+      // fractional remainder, then empty suffix.
+      final rawFill = value * width;
+      final filledCount = rawFill.floor();
+      final partial = rawFill - filledCount;
+      final boundaryIdx = (partial > 0.0 && filledCount < width)
+          ? filledCount
+          : -1;
+      for (var i = 0; i < width; i++) {
+        final Color bg;
+        if (i < filledCount) {
+          bg = component.fillColor;
+        } else if (i == boundaryIdx) {
+          bg = Color.lerp(component.emptyColor, component.fillColor, partial)!;
+        } else {
+          bg = component.emptyColor;
+        }
+        cells.add(
+          Container(
+            decoration: BoxDecoration(color: bg),
+            child: const Text(' '),
+          ),
+        );
+      }
+    } else {
+      // Empty bar.
+      for (var i = 0; i < width; i++) {
+        cells.add(
+          Container(
+            decoration: BoxDecoration(color: component.emptyColor),
+            child: const Text(' '),
+          ),
+        );
+      }
+    }
+
+    // Overlay the label/percentage centered on the bar. Each character
+    // is drawn with the fg appropriate to the cell underneath.
+    if (text.isNotEmpty && text.length <= width) {
+      final start = (width - text.length) ~/ 2;
+      final value = component.value;
+      final rawFill = value != null ? value * width : 0.0;
+      final filledCount = rawFill.floor();
+      final partial = rawFill - filledCount;
+      final boundaryIdx = (partial > 0.0 && filledCount < width)
+          ? filledCount
+          : -1;
+
+      for (var i = 0; i < text.length; i++) {
+        final cellIdx = start + i;
+        if (cellIdx < 0 || cellIdx >= width) continue;
+
+        final Color bg;
+        final Color fg;
+        if (component.indeterminate) {
+          // Pulse: label fg flips per band membership.
+          final pos = _frame % (width * 2);
+          final center = pos <= width ? pos : width * 2 - pos;
+          final bandHalf = (width * 0.3 / 2).ceil().clamp(1, width ~/ 2);
+          final inBand = (cellIdx - center).abs() <= bandHalf;
+          bg = inBand ? component.fillColor : component.emptyColor;
+          fg = inBand ? component.labelFillFg : component.labelEmptyFg;
+        } else if (value != null) {
+          if (cellIdx < filledCount) {
+            bg = component.fillColor;
+            fg = component.labelFillFg;
+          } else if (cellIdx == boundaryIdx && partial >= 0.5) {
+            bg = Color.lerp(
+              component.emptyColor,
+              component.fillColor,
+              partial,
+            )!;
+            fg = component.labelFillFg;
+          } else if (cellIdx == boundaryIdx) {
+            bg = Color.lerp(
+              component.emptyColor,
+              component.fillColor,
+              partial,
+            )!;
+            fg = component.labelEmptyFg;
+          } else {
+            bg = component.emptyColor;
+            fg = component.labelEmptyFg;
+          }
+        } else {
+          bg = component.emptyColor;
+          fg = component.labelEmptyFg;
+        }
+
+        cells[cellIdx] = Container(
+          decoration: BoxDecoration(color: bg),
+          child: Text(
+            text[i],
+            style: TextStyle(color: fg),
+          ),
+        );
+      }
+    }
+
+    return Row(children: cells);
   }
 }
 

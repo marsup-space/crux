@@ -170,6 +170,7 @@ void main() {
               component: 'ProgressBar',
               properties: {
                 'value': {'path': '/progress'},
+                'showPercentage': true,
               },
             ),
           ],
@@ -186,19 +187,24 @@ void main() {
         );
         await tester.pump();
 
-        // 50% at width 80 → 40 filled '█' columns.
-        expect(tester.terminalState.findText('████').isNotEmpty, isTrue);
+        // 50% at width 80 → the bar should render with a "50%" readout
+        // centered, drawn on filled/empty cell backgrounds.
+        expect(
+          tester.terminalState.findText('50%').isNotEmpty,
+          isTrue,
+          reason: 'percentage readout should render on the bar',
+        );
 
         // Advance via surface_update path.
         instance.updateDataModel('/progress', 1.0);
         await tester.pump();
 
-        // Full bar renders (many fill chars). At least as much filled
-        // as before — the count grows with value.
-        final full = tester.terminalState
-            .findText('█' * 70)
-            .isNotEmpty;
-        expect(full, isTrue, reason: 'fully-filled bar should render');
+        // Full bar: 100% readout.
+        expect(
+          tester.terminalState.findText('100%').isNotEmpty,
+          isTrue,
+          reason: '100% readout should render after update',
+        );
       }, size: const Size(80, 24));
     });
   });

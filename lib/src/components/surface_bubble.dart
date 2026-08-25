@@ -86,10 +86,12 @@ class SurfaceBubble extends StatelessComponent {
 
     // Wrap in a subtle background tint so surfaces visually lift from the
     // plain message flow — a surface is an interactive artifact, not prose.
-    // Horizontal padding keeps the Card border inset from the tint edge.
+    // Horizontal padding keeps the Card border inset from the tint edge;
+    // vertical padding (1 line above/below) separates the surface from
+    // surrounding message prose.
     return Container(
       decoration: BoxDecoration(color: theme.surface),
-      padding: const EdgeInsets.symmetric(horizontal: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
       child: Padding(
         padding: const EdgeInsets.only(left: 1, top: 0),
         child: SurfaceController(

@@ -185,6 +185,34 @@ class SurfaceCatalog {
       }
     }
 
+    // Rule: a component referenced as a single-child (`child`) must NOT
+    // also appear in any container's `children` list — it would render
+    // twice (once inside the parent, once as an orphan). A2UI adjacency
+    // list means each component has exactly one parent.
+    final singleChildRefs = <String, String>{};
+    for (final c in surface.components) {
+      final child = c.properties['child'];
+      if (child is String) {
+        singleChildRefs[child] = c.id;
+      }
+    }
+    if (singleChildRefs.isNotEmpty) {
+      for (final c in surface.components) {
+        final children = c.properties['children'];
+        if (children is! List) continue;
+        for (final childId in children) {
+          final parent = singleChildRefs[childId];
+          if (parent != null) {
+            errors.add(
+              'component "$childId" is declared as the "child" of "$parent" '
+              'AND appears in "$c.id".children — it would render twice. '
+              'Keep it only as "$parent".child.',
+            );
+          }
+        }
+      }
+    }
+
     return errors;
   }
 
@@ -299,6 +327,14 @@ class SurfaceCatalog {
 
     buf.writeln('### Rules');
     buf.writeln();
+    buf.writeln(
+      '- CRITICAL: A component referenced as a `child` of Button or Card '
+      'must NOT also appear in any container\'s `children` list — it would '
+      'render twice (once inside the parent, once as an orphan). Each '
+      'component has exactly ONE parent. If a Button has '
+      '`"child": "btn_label"`, the `btn_label` component must NOT be in '
+      'root.children.',
+    );
     buf.writeln(
       '- IMPORTANT: Pass the createSurface payload directly as the '
       '"surface" tool argument. Do NOT wrap it in another object. '
