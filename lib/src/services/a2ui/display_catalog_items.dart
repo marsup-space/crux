@@ -326,9 +326,20 @@ class _SurfaceProgressBar extends StatefulComponent {
 class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
   int _frame = 0;
 
+  // Determinate lerp animation state.
+  double _displayValue = 0.0;
+  double _targetValue = 0.0;
+  bool _lerping = false;
+  static const Duration _lerpTick = Duration(milliseconds: 16);
+  static const double _lerpSpeed = 6.0; // per-second convergence rate
+  DateTime _lastTick = DateTime.now();
+
   @override
   void initState() {
     super.initState();
+    final v = component.value;
+    _displayValue = v ?? 0.0;
+    _targetValue = v ?? 0.0;
     if (component.indeterminate) _startTimer();
   }
 
@@ -342,15 +353,21 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
         _stopTimer();
       }
     }
+
+    // Value changed → lerp the displayed value toward the new target.
+    final oldTarget = oldComponent.value;
+    final newTarget = component.value;
+    if (oldTarget != newTarget) {
+      _targetValue = newTarget ?? 0.0;
+      if (!_lerping && !component.indeterminate) {
+        _lerping = true;
+        _lastTick = DateTime.now();
+        _tickLerp();
+      }
+    }
   }
 
   void _startTimer() {
-    // nocterm ProgressBar's indeterminate pulse advances on repaint only —
-    // a timer drives it so the animation actually runs.
-    // The cadence matches the system-wide 16ms ticker cadence.
-    // Note: no TickerRegistry here — surfaces are content, not chrome;
-    // a lightweight periodic timer is sufficient and keeps the a2ui
-    // layer self-contained.
     Future.doWhile(() async {
       await Future.delayed(const Duration(milliseconds: 80));
       if (!mounted || !component.indeterminate) return false;
@@ -363,10 +380,42 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
     // The doWhile loop exits on next check when indeterminate is false.
   }
 
+  void _tickLerp() {
+    if (!mounted || component.indeterminate) {
+      _lerping = false;
+      return;
+    }
+    final now = DateTime.now();
+    final dt = (now.difference(_lastTick).inMicroseconds) /
+        Duration.microsecondsPerSecond;
+    _lastTick = now;
+    final diff = _targetValue - _displayValue;
+    if (diff.abs() < 0.005) {
+      // Close enough — snap and stop.
+      setState(() {
+        _displayValue = _targetValue;
+        _lerping = false;
+      });
+      return;
+    }
+    setState(() {
+      _displayValue += diff * (dt * _lerpSpeed).clamp(0.0, 1.0);
+    });
+    Future.delayed(_lerpTick, _tickLerp);
+  }
+
+  /// The value the bar should visually present — the lerped display
+  /// value while animating, the target value when at rest.
+  double? get _renderedValue => component.value != null
+      ? _displayValue.clamp(0.0, 1.0)
+      : component.value;
+
   @override
   Component build(BuildContext context) {
     final width = component.width;
-    final value = component.value;
+    // Render the lerped display value (not the target) so the bar and
+    // the percentage readout animate smoothly toward the new value.
+    final value = _renderedValue;
     final text = component.displayText ?? '';
 
     final cells = <Component>[];
@@ -389,7 +438,8 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
       }
     } else if (value != null) {
       // Determinate: filled prefix with a boundary-blend cell for the
-      // fractional remainder, then empty suffix.
+      // fractional remainder, then empty suffix.  Uses the lerped
+      // display value so the bar animates smoothly.
       final rawFill = value * width;
       final filledCount = rawFill.floor();
       final partial = rawFill - filledCount;
@@ -425,10 +475,12 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
     }
 
     // Overlay the label/percentage centered on the bar. Each character
-    // is drawn with the fg appropriate to the cell underneath.
+    // is drawn with the fg appropriate to the cell underneath. The
+    // percentage is computed from the lerped display value so the readout
+    // animates in lock-step with the bar.
     if (text.isNotEmpty && text.length <= width) {
       final start = (width - text.length) ~/ 2;
-      final value = component.value;
+      final value = _renderedValue;
       final rawFill = value != null ? value * width : 0.0;
       final filledCount = rawFill.floor();
       final partial = rawFill - filledCount;
