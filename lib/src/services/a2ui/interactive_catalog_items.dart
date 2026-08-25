@@ -44,8 +44,12 @@ class ButtonCatalogItem extends CatalogItem {
     },
     'variant': {
       'type': 'string',
-      'enum': ['primary', 'borderless'],
-      'description': 'A hint for the button style.',
+      'enum': ['primary', 'bordered', 'borderless'],
+      'description':
+          'Button style hint. '
+          'primary: accent background + border (main action). '
+          'bordered: subtle background + border (secondary action). '
+          'borderless: subtle background, no border (default).',
     },
   };
 
@@ -93,6 +97,7 @@ class ButtonCatalogItem extends CatalogItem {
       onAction: isDisabled ? null : onAction,
       isPrimary: isPrimary,
       isDisabled: isDisabled,
+      variant: variant,
       theme: theme,
       child: child,
     );
@@ -108,6 +113,7 @@ class _SurfaceButton extends StatefulComponent {
   final void Function(A2uiAction action)? onAction;
   final bool isPrimary;
   final bool isDisabled;
+  final String variant;
   final CruxThemeData theme;
   final Component child;
 
@@ -119,6 +125,7 @@ class _SurfaceButton extends StatefulComponent {
     required this.onAction,
     required this.isPrimary,
     required this.isDisabled,
+    this.variant = '',
     required this.theme,
     required this.child,
   });
@@ -147,12 +154,20 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     final theme = component.theme;
     final isActive = !component.isDisabled && component.onAction != null;
 
+    final bool isBordered = component.variant == 'bordered';
+    final Color borderColor;
     final Color bgColor;
     if (component.isDisabled) {
+      borderColor = theme.borderSubtle;
       bgColor = theme.surface;
     } else if (_hovered) {
+      borderColor = theme.accent;
       bgColor = theme.buttonBackgroundHover;
+    } else if (component.isPrimary) {
+      borderColor = theme.accent;
+      bgColor = theme.accent;
     } else {
+      borderColor = theme.borderActive;
       bgColor = theme.buttonBackground;
     }
 
@@ -164,7 +179,15 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
         onTap: isActive ? _handleTap : null,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          decoration: BoxDecoration(color: bgColor),
+          decoration: BoxDecoration(
+            color: bgColor,
+            border: isBordered || component.isPrimary
+                ? BoxBorder.all(
+                    color: borderColor,
+                    style: BoxBorderStyle.rounded,
+                  )
+                : null,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: component.child,
         ),
@@ -443,6 +466,7 @@ class _SurfaceTextField extends StatefulComponent {
 class _SurfaceTextFieldState extends State<_SurfaceTextField> {
   late final TextEditingController _controller;
   bool _focused = false;
+  bool _hovered = false;
 
   @override
   void initState() {
@@ -503,6 +527,13 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     final isNumber = component.variant == 'number';
     final isActive = component.onDataModelUpdate != null;
 
+    // Border color: focused > hovered > subtle.
+    final borderColor = _focused
+        ? theme.borderActive
+        : _hovered
+            ? theme.accent
+            : theme.borderSubtle;
+
     final field = GestureDetector(
       onTap: isActive
           ? () {
@@ -510,33 +541,38 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
             }
           : null,
       behavior: HitTestBehavior.opaque,
-      child: TextField(
-        controller: _controller,
-        focused: _focused,
-        onFocusChange: (hasFocus) {
-          if (!hasFocus && _focused) {
-            setState(() => _focused = false);
-          }
-        },
-        onKeyEvent: _handleKeyEvent,
-        decoration: InputDecoration(
-          hintText: isNumber ? '0' : null,
-          border: BoxBorder.all(
-            color: _focused ? theme.borderActive : theme.borderSubtle,
-            style: BoxBorderStyle.rounded,
+      child: MouseRegion(
+        onEnter: isActive ? (_) => setState(() => _hovered = true) : null,
+        onExit: isActive ? (_) => setState(() => _hovered = false) : null,
+        opaque: false,
+        child: TextField(
+          controller: _controller,
+          focused: _focused,
+          onFocusChange: (hasFocus) {
+            if (!hasFocus && _focused) {
+              setState(() => _focused = false);
+            }
+          },
+          onKeyEvent: _handleKeyEvent,
+          decoration: InputDecoration(
+            hintText: isNumber ? '0' : null,
+            border: BoxBorder.all(
+              color: borderColor,
+              style: BoxBorderStyle.rounded,
+            ),
+            focusedBorder: BoxBorder.all(
+              color: theme.borderActive,
+              style: BoxBorderStyle.rounded,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 1),
           ),
-          focusedBorder: BoxBorder.all(
-            color: theme.borderActive,
-            style: BoxBorderStyle.rounded,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 1),
+          obscureText: isObscured,
+          maxLines: isLongText ? 3 : 1,
+          onChanged: _handleChanged,
+          onSubmitted: _handleSubmitted,
+          style: TextStyle(color: theme.foreground),
+          enabled: isActive,
         ),
-        obscureText: isObscured,
-        maxLines: isLongText ? 3 : 1,
-        onChanged: _handleChanged,
-        onSubmitted: _handleSubmitted,
-        style: TextStyle(color: theme.foreground),
-        enabled: isActive,
       ),
     );
 
