@@ -155,23 +155,25 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     final isActive = !component.isDisabled && component.onAction != null;
 
     final Color borderColor;
-    final Color bgColor;
+    final Color? bgColor;
     if (component.isDisabled) {
       borderColor = theme.borderSubtle;
-      bgColor = theme.surface;
+      bgColor = null;
     } else if (_hovered) {
       borderColor = theme.accent;
       bgColor = theme.buttonBackgroundHover;
     } else if (component.isPrimary) {
+      // Primary keeps a filled accent background — the main action
+      // should pop. Other variants are border-only.
       borderColor = theme.accent;
       bgColor = theme.accent;
     } else if (component.variant == 'bordered') {
       borderColor = theme.borderActive;
-      bgColor = theme.surfaceVariant;
+      bgColor = null;
     } else {
-      // Default: subtle bg + subtle border — always visible as a button.
+      // Default: subtle border, no fill.
       borderColor = theme.borderSubtle;
-      bgColor = theme.surfaceVariant;
+      bgColor = null;
     }
 
     return MouseRegion(
