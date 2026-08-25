@@ -26,6 +26,7 @@ import 'annotated_scrollbar.dart';
 import 'ask_answer_bubble.dart';
 import 'surface_action_bubble.dart';
 import '../tools/surface_tool.dart';
+import '../tools/surface_update_tool.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
@@ -1289,14 +1290,29 @@ class _ChatHistoryState extends State<ChatHistory> {
     final catalog = component.toolRegistry.surfaceCatalog;
     if (catalog == null) return;
 
-    // Pass 1: register every surface declaration from tool calls.
+    // Pass 1: register every surface declaration from tool calls, and
+    // replay surface_update calls onto their target instances (so a
+    // restarted session renders the final updated state).
     for (final msg in messages) {
       if (msg.role != 'tool_call' || msg.toolCalls.isEmpty) continue;
       for (final tc in msg.toolCalls) {
-        if (tc.name != kSurfaceToolName) continue;
-        final surface = surfaceFromToolCall(tc.input);
-        if (surface == null) continue;
-        catalog.instanceFor(tc.callId, surface);
+        if (tc.name == kSurfaceToolName) {
+          final surface = surfaceFromToolCall(tc.input);
+          if (surface == null) continue;
+          catalog.instanceFor(tc.callId, surface);
+        } else if (tc.name == kSurfaceUpdateToolName) {
+          final surfaceId = tc.input['surface_id']?.toString();
+          final updates = tc.input['updates'];
+          if (surfaceId == null || updates is! Map<String, dynamic>) {
+            continue;
+          }
+          final instance = catalog.instanceById(surfaceId);
+          if (instance != null && !instance.submitted) {
+            for (final entry in updates.entries) {
+              instance.updateDataModel(entry.key, entry.value);
+            }
+          }
+        }
       }
     }
 

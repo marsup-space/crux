@@ -14,6 +14,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:nocterm/nocterm.dart' show ChangeNotifier;
+
 // ---------------------------------------------------------------------------
 // Surface declaration (createSurface)
 // ---------------------------------------------------------------------------
@@ -341,7 +343,13 @@ class DataBinding {
 ///
 /// Tracks the component tree, the mutable data model, and whether the
 /// surface has been submitted (action sent) and is therefore non-interactive.
-class SurfaceInstance {
+///
+/// Extends [ChangeNotifier]: mutations that affect rendering (external
+/// `updateDataModel` messages, submit, restore) notify listeners so a
+/// mounted [SurfaceController] rebuilds with the fresh values. Local
+/// DataModel edits route through the controller (which calls
+/// [updateDataModel]) and thus also notify.
+class SurfaceInstance extends ChangeNotifier {
   /// The parsed createSurface payload.
   final CreateSurface declaration;
 
@@ -364,7 +372,9 @@ class SurfaceInstance {
   /// are read-only — so the live model IS the frozen record of the
   /// submission.
   void markSubmitted() {
+    if (submitted) return;
     submitted = true;
+    notifyListeners();
   }
 
   /// The data model the renderer reads — the live model, which after
@@ -389,11 +399,15 @@ class SurfaceInstance {
     // keys like {"name": ...}). Merging preserves whatever the
     // declaration set up.
     dataModel.addAll(action.context);
+    notifyListeners();
   }
 
   String get surfaceId => declaration.surfaceId;
 
   /// Update a value in the data model by path.
+  ///
+  /// Notifies listeners — mounted [SurfaceController]s rebuild so
+  /// data-bound components (Text, ProgressBar, Table, …) re-resolve.
   void updateDataModel(String path, dynamic value) {
     final segments = path.startsWith('/')
         ? path.substring(1).split('/')
@@ -411,6 +425,7 @@ class SurfaceInstance {
     if (segments.isNotEmpty && segments.last.isNotEmpty) {
       current[segments.last] = value;
     }
+    notifyListeners();
   }
 
   /// Read a value from the data model by path.

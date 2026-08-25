@@ -8,6 +8,7 @@ library;
 import 'package:nocterm/nocterm.dart';
 
 import '../../theme/crux_theme.dart';
+import 'display_catalog_items.dart' show registerDisplayCatalogItems;
 import 'interactive_catalog_items.dart';
 import 'models.dart';
 import 'surface_catalog.dart';
@@ -345,5 +346,6 @@ SurfaceCatalog createBasicCatalog() {
   catalog.register(CardCatalogItem());
   catalog.register(DividerCatalogItem());
   registerInteractiveCatalogItems(catalog);
+  registerDisplayCatalogItems(catalog);
   return catalog;
 }

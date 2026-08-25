@@ -83,11 +83,31 @@ class SurfaceCatalog {
   /// [key] should be the tool call's stable id (`ToolCallData.callId`);
   /// [declaration] is parsed from the tool call input and used only on
   /// first creation.
+  ///
+  /// Re-keying: when a *different* key arrives carrying a declaration
+  /// whose `surfaceId` already has a live instance, the existing
+  /// instance is re-keyed instead of duplicating. This is what makes
+  /// `surface` + `surface_update` tool calls in the same turn share one
+  /// instance — the update fires before the UI first renders (both tool
+  /// calls execute back-to-back), so by the time `SurfaceBubble` mounts,
+  /// the create-call's key resolves to the instance the update already
+  /// mutated. Restart/restore walks calls in order, so the create call
+  /// registers first and the update call re-keys to it (a no-op).
   SurfaceInstance instanceFor(String key, CreateSurface declaration) {
-    return _instances.putIfAbsent(
-      key,
-      () => SurfaceInstance(declaration: declaration),
-    );
+    final existing = _instances[key];
+    if (existing != null) return existing;
+
+    // Re-key an instance created via a different tool call (surface_update
+    // targeting the same surfaceId).
+    final byId = instanceById(declaration.surfaceId);
+    if (byId != null) {
+      _instances[key] = byId;
+      return byId;
+    }
+
+    final created = SurfaceInstance(declaration: declaration);
+    _instances[key] = created;
+    return created;
   }
 
   /// Find a live instance by its surfaceId (not the tool-call key).
@@ -284,6 +304,14 @@ class SurfaceCatalog {
       '"surface" tool argument. Do NOT wrap it in another object. '
       'The payload must have "surfaceId", "catalogId", and "components" '
       'at the top level.',
+    );
+    buf.writeln(
+      '- To refresh a live surface later (progress, status, new data), '
+      'call the `surface_update` tool with '
+      '{"surface_id": "<surfaceId>", "updates": {"/field": value, ...}} '
+      '— data-bound components re-render immediately. Declare the '
+      'dynamic parts as {"path": "/field"} bindings in createSurface '
+      'so updates can flow in.',
     );
     buf.writeln(
       '- Components form an adjacency list: containers reference children '

@@ -59,6 +59,33 @@ class _SurfaceControllerState extends State<SurfaceController> {
   /// component tree re-builds with the latest values.
   int _rebuildGeneration = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    // External mutations (surface_update tool calls writing into the
+    // DataModel) notify here so mounted surfaces re-render live.
+    component.surface.addListener(_onSurfaceChanged);
+  }
+
+  @override
+  void didUpdateComponent(SurfaceController oldComponent) {
+    super.didUpdateComponent(oldComponent);
+    if (oldComponent.surface != component.surface) {
+      oldComponent.surface.removeListener(_onSurfaceChanged);
+      component.surface.addListener(_onSurfaceChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    component.surface.removeListener(_onSurfaceChanged);
+    super.dispose();
+  }
+
+  void _onSurfaceChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _handleDataModelUpdate(String path, dynamic value) {
     component.surface.updateDataModel(path, value);
     component.onDataModelUpdate?.call(path, value);

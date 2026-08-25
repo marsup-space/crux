@@ -22,6 +22,7 @@ import 'session_tool.dart';
 import 'plugins_tool.dart';
 import 'skill_tool.dart';
 import 'surface_tool.dart';
+import 'surface_update_tool.dart';
 import 'tool_def.dart';
 import 'webfetch_tool.dart';
 import 'websearch_tool.dart';
@@ -124,6 +125,7 @@ class ToolRegistry {
     final catalog = createBasicCatalog();
     surfaceCatalog = catalog;
     register(SurfaceTool(catalog: catalog));
+    register(SurfaceUpdateTool(catalog: catalog));
     // `ask_plan_mode` is registered only when a plan-mode controller is
     // supplied (the real TUI). The tool is the agent's way to *propose*
     // entering/exiting plan mode; the actual flip stays user-driven.

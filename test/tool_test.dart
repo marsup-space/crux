@@ -118,11 +118,12 @@ void main() {
       );
       if (Platform.isWindows) {
         expect(names, contains('powershell'));
-        expect(registry.all.length, 14);
+        expect(registry.all.length, 16);
       } else {
         expect(names, isNot(contains('powershell')));
         expect(names, isNot(contains('cmd')));
-        expect(registry.all.length, 13);
+        // ask (with pendingAskCubit), surface, surface_update.
+        expect(registry.all.length, 15);
       }
     });
   });
