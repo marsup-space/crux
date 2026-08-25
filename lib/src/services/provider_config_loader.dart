@@ -345,6 +345,25 @@ class ProviderConfigLoader {
       fieldLabel: 'Provider "$name"',
     );
 
+    // --- Optional provider-level retry-budget overrides ---
+    // `max_retries` raises the automatic retry count for retriable
+    // failures (the initial attempt is try 0, so total HTTP attempts
+    // = max_retries + 1); `retry_base_delay_ms` sets the exponential
+    // backoff base (wait before retry N = base * 2^(N-1), capped at
+    // 30s). Both default to the historical hardcoded values (5 and
+    // 1000ms) when absent, so existing provider TOMLs need no change.
+    // Negative values are rejected at load time with a clear error.
+    final maxRetries = _optionalNonNegativeInt(
+      map,
+      'max_retries',
+      fieldLabel: 'Provider "$name"',
+    );
+    final retryBaseDelayMs = _optionalNonNegativeInt(
+      map,
+      'retry_base_delay_ms',
+      fieldLabel: 'Provider "$name"',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -359,6 +378,8 @@ class ProviderConfigLoader {
       systemPromptAddition: systemPromptAddition,
       streamIdleTimeoutMs: streamIdleTimeoutMs,
       streamMaxDurationMs: streamMaxDurationMs,
+      maxRetries: maxRetries,
+      retryBaseDelayMs: retryBaseDelayMs,
     );
   }
 

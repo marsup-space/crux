@@ -40,11 +40,13 @@ import 'wire_format.dart';
 const String earlyAbortSystemNoteMarker =
     '[Crux system note — tool-call early abort]';
 
-/// Maximum number of automatic retries for retriable LLM errors
-/// (rateLimit, overloaded, serverError, timeout, network). The initial
-/// attempt counts as try 0, so the total number of attempts is
-/// [kMaxLlmRetries] + 1.
-const int kMaxLlmRetries = 5;
+/// Default cap on automatic retries for retriable LLM errors
+/// (rateLimit, overloaded, serverError, timeout, network). Used when
+/// the provider TOML does not set `max_retries`. The initial attempt
+/// counts as try 0, so the total number of attempts is this value + 1.
+/// Per-provider overrides live in `ProviderConfig.maxRetries`; see
+/// [RetryBudget] for how the executor resolves them.
+const int kMaxLlmRetries = kDefaultMaxLlmRetries;
 
 /// Message prefix of the synthetic [LlmError] the empty-stream
 /// auto-retry feeds into the retry loop. Matched by
@@ -87,6 +89,32 @@ String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
   return 'error';
 }
 
+/// The resolved retry policy for one turn: how many automatic retries
+/// a retriable failure gets, and the base delay of the exponential
+/// backoff ladder between them.
+///
+/// Resolution order: `ChatTurnExecutor.debugRetryBudgetOverride`
+/// (tests only) → [ProviderConfig.maxRetries] / `.retryBaseDelayMs`
+/// (per-provider TOML) → [kDefaultMaxLlmRetries] /
+/// [kDefaultRetryBaseDelayMs]. This is what lets flaky providers
+/// (OpenRouter's free stealth previews) carry an aggressive budget
+/// while every other provider keeps the conservative default.
+class RetryBudget {
+  final int maxRetries;
+  final int baseDelayMs;
+
+  const RetryBudget({required this.maxRetries, required this.baseDelayMs});
+}
+
+RetryBudget _retryBudgetFor(ProviderConfig? provider) {
+  final override = ChatTurnExecutor.debugRetryBudgetOverride?.call();
+  if (override != null) return override;
+  return RetryBudget(
+    maxRetries: provider?.maxRetries ?? kDefaultMaxLlmRetries,
+    baseDelayMs: provider?.retryBaseDelayMs ?? kDefaultRetryBaseDelayMs,
+  );
+}
+
 /// Runs a single chat turn: streams the LLM response, executes tool
 /// calls in parallel, injects hints, and persists the round.
 ///
@@ -96,13 +124,20 @@ String errorLabelForRetry(Object? thrownError, LlmError? streamError) {
 /// management.
 class ChatTurnExecutor {
   /// Test hook: when set, this function replaces the production exponential
-  /// backoff (`1s, 2s, 4s, 8s, 16s`, capped at 30s) so unit tests can drive
+  /// backoff (`base * 2^(N-1)`, capped at 30s; historically
+  /// `1s, 2s, 4s, 8s, 16s`) so unit tests can drive
   /// the retry loop without waiting up to 31 seconds. Set to
   /// `(int) => Duration.zero` to skip the wait entirely.
   ///
   /// Always reset to `null` in `tearDown` so a leaked override doesn't
   /// affect other tests in the same process.
   static Duration Function(int attempt)? debugBackoffOverride;
+
+  /// Test hook: when set, replaces the retry budget resolved from the
+  /// provider config ([_retryBudgetFor]) so tests can exercise custom
+  /// `max_retries` / `retry_base_delay_ms` values without writing a
+  /// bespoke provider TOML. Reset to `null` in `tearDown`.
+  static RetryBudget? Function()? debugRetryBudgetOverride;
 
   final SessionStore store;
   final ProviderService providerService;
@@ -357,6 +392,13 @@ class ChatTurnExecutor {
       return;
     }
 
+    // Resolve the per-provider retry budget once per turn. Flaky
+    // providers (openrouter-free's stealth previews) raise max_retries
+    // / lower retry_base_delay_ms in their TOML; everyone else keeps
+    // the historical defaults. Resolved after the null check so a
+    // missing provider still surfaces the auth error above untouched.
+    final retryBudget = _retryBudgetFor(provider);
+
     String? systemPrompt = session.systemPrompt;
     // A chat prompt rendered before the workspace-free env meta still
     // names the launch directory — rebuild it rather than keep leaking.
@@ -604,17 +646,26 @@ class ChatTurnExecutor {
       Completer<void>? lerpDrainCompleter;
       final useLerp = modelConfig.streamLerp;
 
-      for (var attempt = 0; attempt <= kMaxLlmRetries; attempt++) {
+      for (
+        var attempt = 0;
+        attempt <= retryBudget.maxRetries;
+        attempt++
+      ) {
         if (attempt > 0) {
-          // Production backoff: 1s, 2s, 4s, 8s, 16s (capped at 30s).
-          // Tests can set `debugBackoffOverride` to skip the wait entirely.
+          // Production backoff: base * 2^(N-1), capped at 30s. With
+          // the default 1000ms base that's 1s, 2s, 4s, 8s, 16s;
+          // openrouter-free lowers the base to 250ms so its extended
+          // ladder reaches the cap sooner. Tests can set
+          // `debugBackoffOverride` to skip the wait entirely.
           final backoff =
               ChatTurnExecutor.debugBackoffOverride?.call(attempt) ??
               Duration(
-                milliseconds: (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
+                milliseconds: (retryBudget.baseDelayMs *
+                        (1 << (attempt - 1)))
+                    .clamp(retryBudget.baseDelayMs, 30000),
               );
           onStatus?.call(
-            'Retrying ($attempt/$kMaxLlmRetries) after '
+            'Retrying ($attempt/${retryBudget.maxRetries}) after '
             '${errorLabelForRetry(thrownError, streamError)} — '
             'waiting ${backoff.inMilliseconds}ms...',
           );
@@ -787,7 +838,8 @@ class ChatTurnExecutor {
 
             if (chunk.error != null) {
               lerpTimer?.cancel();
-              if (chunk.error!.isRetriable && attempt < kMaxLlmRetries) {
+              if (chunk.error!.isRetriable &&
+                  attempt < retryBudget.maxRetries) {
                 streamError = chunk.error!;
                 break;
               }
@@ -821,7 +873,7 @@ class ChatTurnExecutor {
                   roundTextBuffer.isEmpty &&
                   roundReasoningBuffer.isEmpty &&
                   !chunks.any((c) => c.toolUse != null) &&
-                  attempt < kMaxLlmRetries) {
+                  attempt < retryBudget.maxRetries) {
                 streamError = LlmError(
                   kind: LlmErrorKind.overloaded,
                   vendor: LlmVendorX.fromProviderName(providerName),
@@ -1031,7 +1083,7 @@ class ChatTurnExecutor {
         } catch (e) {
           lerpTimer?.cancel();
           final error = classifyThrownError(e, providerName: providerName);
-          if (error.isRetriable && attempt < kMaxLlmRetries) {
+          if (error.isRetriable && attempt < retryBudget.maxRetries) {
             thrownError = e;
           } else if (error.kind != LlmErrorKind.auth &&
               error.kind != LlmErrorKind.permission &&
@@ -1041,7 +1093,7 @@ class ChatTurnExecutor {
               roundTextBuffer.isEmpty &&
               roundReasoningBuffer.isEmpty &&
               !chunks.any((c) => c.toolUse != null) &&
-              attempt < kMaxLlmRetries) {
+              attempt < retryBudget.maxRetries) {
             // Non-retriable thrown error, but the round produced
             // nothing — a dropped connection / malformed HTTP frame
             // mid-handshake often classifies as `unknown`/`network`
@@ -1107,10 +1159,10 @@ class ChatTurnExecutor {
                   'with no content — auto-retrying',
               providerName: providerName,
             );
-            if (attempt < kMaxLlmRetries) {
+            if (attempt < retryBudget.maxRetries) {
               onStatus?.call(
                 'Model returned an empty response — retrying '
-                '(${attempt + 1}/$kMaxLlmRetries)…',
+                '(${attempt + 1}/${retryBudget.maxRetries})…',
               );
               // Fall through WITHOUT breaking: the loop's
               // post-increment moves to the next attempt and the

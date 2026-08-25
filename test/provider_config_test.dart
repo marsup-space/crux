@@ -548,6 +548,63 @@ context_size = 8192
       );
     });
 
+    test('loadAll parses max_retries and retry_base_delay_ms when set; '
+        'defaults to null when absent', () async {
+      // First: provider with an aggressive retry budget (the
+      // openrouter-free shape).
+      await File('${tempDir.path}/flaky.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://openrouter.ai/api/v1"
+max_retries = 12
+retry_base_delay_ms = 250
+
+[[models]]
+id = "stealth/ox-alpha"
+name = "Ox Alpha (stealth, free)"
+context_size = 1048576
+''');
+      // Second: provider with neither override (default behavior).
+      await File('${tempDir.path}/normal.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+      await loader.loadAll();
+
+      final flaky = loader.providerByName('flaky')!;
+      expect(flaky.maxRetries, 12);
+      expect(flaky.retryBaseDelayMs, 250);
+
+      final normal = loader.providerByName('normal')!;
+      expect(normal.maxRetries, isNull);
+      expect(normal.retryBaseDelayMs, isNull);
+    });
+
+    test('loadAll rejects negative max_retries / retry_base_delay_ms '
+        'values', () async {
+      await File('${tempDir.path}/badretry.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+max_retries = -3
+
+[[models]]
+id = "x"
+name = "X"
+context_size = 8192
+''');
+      await loader.loadAll();
+      expect(loader.providerByName('badretry'), isNull);
+      expect(loader.loadErrors(), isNotEmpty);
+      expect(
+        loader.loadErrors().values.first,
+        contains('max_retries'),
+      );
+    });
+
     test('loadAll parses multiple models', () async {
       final tomlContent = '''
 type = "openai_compatible"

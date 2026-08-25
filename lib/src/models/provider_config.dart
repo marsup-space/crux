@@ -60,6 +60,17 @@ String wireFamilyLabel(WireFamily w) {
 /// `null` (absent in TOML) means the model does not support reasoning effort.
 enum ReasoningEffort { low, medium, high, max }
 
+/// Default cap on automatic LLM retries per attempt-round when a provider
+/// TOML does not set `max_retries`. Matches the historical hardcoded
+/// `kMaxLlmRetries` in `chat_turn_executor.dart`.
+const int kDefaultMaxLlmRetries = 5;
+
+/// Default base delay (ms) of the exponential retry backoff when a
+/// provider TOML does not set `retry_base_delay_ms`. The ladder is
+/// `base * 2^(attempt-1)` capped at 30s; 1000ms reproduces the
+/// historical 1s → 2s → 4s → 8s → 16s schedule.
+const int kDefaultRetryBaseDelayMs = 1000;
+
 extension ReasoningEffortParse on ReasoningEffort {
   static ReasoningEffort? fromString(String? value) {
     if (value == null) return null;
@@ -450,6 +461,40 @@ class ProviderConfig {
   /// 30 min by default.
   final int? streamMaxDurationMs;
 
+  /// Provider-level override for the automatic LLM retry budget.
+  ///
+  /// Governs how many times a retriable failure (rateLimit,
+  /// overloaded, serverError, timeout, network — plus the empty-stream
+  /// auto-retry) is re-attempted with exponential backoff before the
+  /// turn surfaces an error bubble. The initial attempt counts as try
+  /// 0, so the total number of HTTP attempts is [maxRetries] + 1.
+  ///
+  /// `null` (TOML absent) keeps the default of
+  /// [kDefaultMaxLlmRetries] (5). Raise this for providers whose
+  /// upstreams are flaky enough that the standard budget gives up too
+  /// early — OpenRouter's free tier / stealth previews are the
+  /// motivating case: a single stealth request can fail several times
+  /// in a row before one lands.
+  ///
+  /// Must be >= 0; negatives are rejected at load time.
+  final int? maxRetries;
+
+  /// Provider-level override for the exponential backoff base delay
+  /// (ms) between automatic LLM retries.
+  ///
+  /// The wait before retry N is `base * 2^(N-1)`, clamped to at least
+  /// [maxRetries] steps and capped at 30s. `null` (TOML absent) keeps
+  /// the default of [kDefaultRetryBaseDelayMs] (1000ms), i.e. the
+  /// historical 1s → 2s → 4s → 8s → 16s ladder.
+  ///
+  /// Lower this together with a raised [maxRetries] for flaky
+  /// providers: a smaller base reaches the 30s ceiling sooner, so the
+  /// extra attempts still fit inside a reasonable wall-clock budget
+  /// (e.g. base 250ms × 12 retries ≈ 92s worst case).
+  ///
+  /// Must be >= 0; negatives are rejected at load time.
+  final int? retryBaseDelayMs;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -464,6 +509,8 @@ class ProviderConfig {
     this.systemPromptAddition,
     this.streamIdleTimeoutMs,
     this.streamMaxDurationMs,
+    this.maxRetries,
+    this.retryBaseDelayMs,
   });
 
   /// Resolve the effective system-prompt tuning block for a model.
@@ -526,5 +573,6 @@ class ProviderConfig {
       'hintParallelCalls=$hintParallelCalls, '
       'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold, '
       'streamIdleTimeoutMs=$streamIdleTimeoutMs, '
-      'streamMaxDurationMs=$streamMaxDurationMs)';
+      'streamMaxDurationMs=$streamMaxDurationMs, '
+      'maxRetries=$maxRetries, retryBaseDelayMs=$retryBaseDelayMs)';
 }

@@ -174,6 +174,16 @@ class OpenRouterStealthSync {
     if (current.streamMaxDurationMs != null) {
       buf.writeln('stream_max_duration_ms = ${current.streamMaxDurationMs}');
     }
+    // Preserve the retry-budget overrides too — the shipped TOML
+    // raises max_retries / lowers retry_base_delay_ms for the flaky
+    // free tier; dropping them on sync would silently restore the
+    // conservative 5-retry / 1s-base defaults.
+    if (current.maxRetries != null) {
+      buf.writeln('max_retries = ${current.maxRetries}');
+    }
+    if (current.retryBaseDelayMs != null) {
+      buf.writeln('retry_base_delay_ms = ${current.retryBaseDelayMs}');
+    }
     buf.writeln();
 
     void emitModel(ModelConfig m, {String? comment}) {

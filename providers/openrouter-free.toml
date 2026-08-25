@@ -53,6 +53,17 @@ default_max_rounds = 50
 # `/provider openrouter-free sync` preserves it.
 stream_idle_timeout_ms = 45000
 
+# Stealth previews fail often and randomly — a request that 502s or
+# dies mid-handshake usually succeeds on a later try. Give this
+# provider an aggressive retry budget: up to 12 automatic retries
+# (13 total attempts) with a fast backoff base. The ladder is
+# 0.25s → 0.5s → 1s → 2s → 4s → 8s → 16s → 30s → 30s …, so the worst
+# case spends ~92s waiting before giving up — long enough to ride out
+# most free-tier turbulence without hanging the turn forever.
+# Provider-level, preserved by sync.
+max_retries = 12
+retry_base_delay_ms = 250
+
 # === Stealth: Ox Alpha — flagship free coding/reasoning model ===
 # 1M context, image+video inputs, tools, mandatory reasoning.
 [[models]]
