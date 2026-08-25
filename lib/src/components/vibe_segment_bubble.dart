@@ -195,29 +195,25 @@ class VibeSegmentBubble extends StatelessComponent {
       children: [
         for (final (text, surfaceJson) in segments)
           if (surfaceJson != null)
-            // Inline surface: left accent stripe (full height, not
-            // swallowed by padding) + surface background tint +
-            // 1-line vertical margin — reads as a distinct component
-            // embedded in prose, separated from text above and below.
+            // Inline surface: left accent stripe (border.left) +
+            // surface background tint + 1-line vertical margin via
+            // Padding — the stripe spans the full height of the
+            // Container (including its padding area), and the Padding
+            // provides the vertical gap above and below.
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 1),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Accent stripe — full height of the surface area.
-                  Container(
-                    width: 1,
-                    color: theme.accent.withOpacity(0.5),
-                  ),
-                  // Content area with background tint and padding.
-                  Expanded(
-                    child: Container(
-                      color: theme.surface,
-                      padding: const EdgeInsets.symmetric(horizontal: 1),
-                      child: _buildInlineSurface(context, surfaceJson, catalog),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.surface,
+                  border: BoxBorder(
+                    left: BorderSide(
+                      color: theme.accent.withOpacity(0.5),
+                      width: 1,
                     ),
                   ),
-                ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: _buildInlineSurface(context, surfaceJson, catalog),
               ),
             )
           else if (text.isNotEmpty)
