@@ -343,23 +343,19 @@ class ListCatalogItem extends CatalogItem {
       }
     }
 
-    // Hard cap without a scroll view: a plain Column inside a SizedBox
-    // clips silently on overflow, which is worse than scrolling. Use
-    // ListView with lazy: false so children keep their state.
+    // The SizedBox height must ALWAYS be bounded: `height: null` lets the
+    // internal ListView keep an infinite intrinsic height, which bubbles up
+    // to the chat scroll area's scrollbar math (RenderScrollbar computes
+    // thumb height from viewport dimensions) and crashes with
+    // "Infinity or NaN toInt". Cap at maxHeight so the ListView scrolls
+    // inside a fixed viewport.
     return SizedBox(
-      height: children.length < maxHeight
-          ? maxHeight.toDouble()
-          : null,
-      child: children.length <= maxHeight
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            )
-          : ListView(
-              keyboardScrollable: true,
-              lazy: false,
-              children: children,
-            ),
+      height: maxHeight.toDouble(),
+      child: ListView(
+        keyboardScrollable: true,
+        lazy: false,
+        children: children,
+      ),
     );
   }
 }
