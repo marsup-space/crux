@@ -242,6 +242,15 @@ class VibeSegment {
   /// live file. Empty when the segment mutated nothing.
   final List<ToolCallData> modCalls;
 
+  /// The turn's abnormal stop, when the agent turn anchored here ended
+  /// with a persisted `stream_error` row (LLM failure, step limit,
+  /// …). Null on turns that completed normally. The chat history
+  /// renders an [ErrorBubble] after the segment so the stop reason is
+  /// visible in vibe mode too — previously these rows were silently
+  /// dropped by the walker and errors were invisible unless the user
+  /// switched to verbose mode.
+  final Message? stopError;
+
   const VibeSegment({
     required this.userMessage,
     this.think,
@@ -251,6 +260,7 @@ class VibeSegment {
     this.prose,
     this.showUserMessage = true,
     this.modCalls = const [],
+    this.stopError,
   });
 }
 
@@ -317,6 +327,11 @@ List<VibeSegment> walkSegments(
   // Merged progress summary for the progress box: at most one entry
   // per segment, folded from every bash run that reported signals.
   ProgressBoxData? progressAccum;
+  // The turn's abnormal stop: the latest `stream_error` row seen in
+  // this segment window. Carried onto the emitted segment so vibe
+  // mode can render the stop reason + continue affordance. Reset on
+  // each emit and user boundary like every other accumulator.
+  Message? stopErrorAccum;
   // `true` once the current user turn has produced its first
   // emitted segment. The first segment carries the `you:` line;
   // siblings in the same turn render prose only. Reset on
@@ -362,6 +377,7 @@ List<VibeSegment> walkSegments(
           modLinesRemoved,
           modCalls,
           progressAccum,
+          stopErrorAccum,
           null,
           showUserLine: !userLineShown,
         );
@@ -382,6 +398,10 @@ List<VibeSegment> walkSegments(
           const {},
           const {},
           const [],
+          // Standalone answer segment: no progress, no stop error,
+          // no prose — just the user line (swapped for the answer
+          // bubble by the renderer).
+          null,
           null,
           null,
           showUserLine: true,
@@ -424,6 +444,7 @@ List<VibeSegment> walkSegments(
         modLinesRemoved,
         modCalls,
         progressAccum,
+        stopErrorAccum,
         null,
         showUserLine: !userLineShown,
       );
@@ -450,6 +471,39 @@ List<VibeSegment> walkSegments(
       // accumulation above (via resultsByCallId), so no segment work
       // here — just record the boundary for ask-answer detection.
       lastWasToolResult = true;
+      continue;
+    }
+
+    if (msg.role == 'stream_error') {
+      // Abnormal stop of the current turn (LLM failure, step limit,
+      // …). Two attachment shapes:
+      //
+      //   * The turn already closed (final prose landed, window
+      //     empty) → fold the error into that closed segment so the
+      //     bubble renders under the reply without spawning an extra
+      //     empty segment.
+      //   * Anything else (mid-round, or nothing emitted yet) → hold
+      //     in the accumulator; the next close / boundary flush /
+      //     trailing flush carries it. This is what makes an error
+      //     with NO prose at all still surface as a bubble.
+      //
+      // Previously these rows were silently dropped here, making
+      // errors invisible unless the user switched to verbose mode.
+      final last = segments.isEmpty ? null : segments.last;
+      final windowHasPendingWork =
+          thinkDuration != Duration.zero ||
+          toolEntries.isNotEmpty ||
+          modPaths.isNotEmpty ||
+          progressAccum != null;
+      if (!windowHasPendingWork &&
+          last != null &&
+          identical(last.userMessage, currentUser) &&
+          last.prose != null &&
+          last.stopError == null) {
+        segments[segments.length - 1] = _withStopError(last, msg);
+      } else {
+        stopErrorAccum = msg;
+      }
       continue;
     }
 
@@ -623,6 +677,7 @@ List<VibeSegment> walkSegments(
           modLinesRemoved,
           modCalls,
           progressAccum,
+          stopErrorAccum,
           msg,
           showUserLine: !userLineShown,
         );
@@ -674,6 +729,7 @@ List<VibeSegment> walkSegments(
     modLinesRemoved,
     modCalls,
     progressAccum,
+    stopErrorAccum,
     null,
     showUserLine: !userLineShown,
   );
@@ -699,6 +755,10 @@ List<VibeSegment> walkSegments(
 /// [progress] is the segment's merged progress summary (bash runs
 /// that reported signals); null when none did.
 ///
+/// [stopError] is the turn's abnormal stop (`stream_error` row) seen
+/// in this window; null on normally-completed turns. Carried onto
+/// [VibeSegment.stopError] so vibe mode renders the stop reason.
+///
 /// Emit is suppressed when there's nothing visible — e.g. a
 /// flush at a user boundary where the previous turn already
 /// emitted everything. Without this guard the trailing flush
@@ -718,6 +778,7 @@ void _emitSegment(
   Map<String, int> modLinesRemoved,
   List<ToolCallData> modCalls,
   ProgressBoxData? progress,
+  Message? stopError,
   Message? closing, {
   required bool showUserLine,
 }) {
@@ -735,7 +796,10 @@ void _emitSegment(
   // set but accumulators are empty and there's no closing —
   // we want to emit that case (showUserLine=true makes it
   // carry the user line), so the guard is gated on showUserLine.
-  if (!hasBoxes && !hasProse && !showUserLine) return;
+  // A stop error alone also justifies an emit: the segment exists
+  // to carry the failure bubble even when the round produced no
+  // boxes and no prose.
+  if (!hasBoxes && !hasProse && !showUserLine && stopError == null) return;
 
   segments.add(
     VibeSegment(
@@ -792,6 +856,7 @@ void _emitSegment(
       prose: closing,
       progress: progress,
       modCalls: List.unmodifiable(modCalls),
+      stopError: stopError,
     ),
   );
 }
@@ -808,4 +873,22 @@ String formatTokens(int tokens) {
     return '${k >= 10 ? k.round() : str}k tokens';
   }
   return '$tokens tokens';
+}
+
+/// Return a copy of [seg] with [stopError] attached. Used by the
+/// walker's fold-into-closed-segment path (an error arriving after
+/// the turn's final prose) — [VibeSegment] is immutable, so the
+/// segment is replaced in place.
+VibeSegment _withStopError(VibeSegment seg, Message stopError) {
+  return VibeSegment(
+    userMessage: seg.userMessage,
+    showUserMessage: seg.showUserMessage,
+    think: seg.think,
+    tools: seg.tools,
+    mods: seg.mods,
+    progress: seg.progress,
+    prose: seg.prose,
+    modCalls: seg.modCalls,
+    stopError: stopError,
+  );
 }

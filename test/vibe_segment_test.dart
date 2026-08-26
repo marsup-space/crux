@@ -88,6 +88,72 @@ void main() {
       expect(segments[0].prose, isNull);
     });
 
+    group('stream_error (abnormal stop) attachment', () {
+      Message errRow(String content, {int id = 9}) => Message(
+        id: id,
+        sessionId: 1,
+        role: 'stream_error',
+        content: content,
+      );
+
+      test('error after an ai close attaches to that segment', () {
+        final messages = [
+          _userMsg('do the thing', id: 1),
+          _aiMsg('partial work', id: 2),
+          errRow('Step limit reached (50 tool rounds).', id: 3),
+        ];
+        final segments = walkSegments(messages, {}, ToolRegistry());
+
+        expect(segments.length, 1);
+        expect(segments[0].prose!.content, 'partial work');
+        expect(segments[0].stopError, isNotNull);
+        expect(
+          segments[0].stopError!.content,
+          contains('Step limit reached'),
+        );
+      });
+
+      test('error with no prose still emits a segment carrying it', () {
+        // The turn died before any ai row landed — the segment exists
+        // purely to carry the failure bubble.
+        final messages = [
+          _userMsg('go', id: 1),
+          errRow('upstream overloaded', id: 2),
+        ];
+        final segments = walkSegments(messages, {}, ToolRegistry());
+
+        expect(segments.length, 1);
+        expect(segments[0].prose, isNull);
+        expect(segments[0].stopError, isNotNull);
+        expect(segments[0].stopError!.content, 'upstream overloaded');
+      });
+
+      test('normal turn has no stopError', () {
+        final messages = [
+          _userMsg('hi', id: 1),
+          _aiMsg('done', id: 2),
+        ];
+        final segments = walkSegments(messages, {}, ToolRegistry());
+        expect(segments.single.stopError, isNull);
+      });
+
+      test('stopError resets at the next user boundary', () {
+        final messages = [
+          _userMsg('turn one', id: 1),
+          _aiMsg('ok', id: 2),
+          errRow('boom', id: 3),
+          _userMsg('turn two', id: 4),
+          _aiMsg('fine now', id: 5),
+        ];
+        final segments = walkSegments(messages, {}, ToolRegistry());
+
+        expect(segments.length, 2);
+        expect(segments[0].stopError!.content, 'boom');
+        expect(segments[1].stopError, isNull,
+            reason: 'the error belongs to turn one only');
+      });
+    });
+
     test(
       'consecutive ai rows emit one segment per row, anchored to the same user',
       () {

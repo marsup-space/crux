@@ -246,6 +246,21 @@ class LlmError {
   /// [LlmErrorKindX.isRetriable].
   bool get isRetriable => kind.isRetriable;
 
+  /// `true` when the turn stopped for a reason that still allows
+  /// resuming the conversation with `/continue` — retriable failures
+  /// (transient upstream problems) plus non-failure stops like the
+  /// agentic loop's step-limit cap ("Step limit reached (N tool
+  /// rounds)"). Drives the one-click continue affordance on the
+  /// persisted error bubble: anything the user would plausibly want
+  /// to resume gets the button, not just transient network shapes.
+  bool get canContinue {
+    if (isRetriable) return true;
+    // ChatTurnExecutor's step-limit stop (default_max_rounds cap)
+    // surfaces as an `unknown`-kind error carrying this message.
+    if (message.startsWith('Step limit reached')) return true;
+    return false;
+  }
+
   @override
   String toString() =>
       'LlmError(kind=${kind.name}, vendor=${vendor.name}, '

@@ -46,6 +46,47 @@ void main() {
     });
   });
 
+  // ─── LlmError.canContinue ─────────────────────────────────────
+
+  group('LlmError.canContinue', () {
+    LlmError err(LlmErrorKind kind, String message) => LlmError(
+      kind: kind,
+      vendor: LlmVendor.unknown,
+      message: message,
+    );
+
+    test('retriable kinds can always continue', () {
+      expect(err(LlmErrorKind.overloaded, 'x').canContinue, isTrue);
+      expect(err(LlmErrorKind.timeout, 'x').canContinue, isTrue);
+      expect(err(LlmErrorKind.network, 'x').canContinue, isTrue);
+    });
+
+    test('step-limit stop (unknown kind) can continue', () {
+      // ChatTurnExecutor surfaces the default_max_rounds cap as an
+      // unknown-kind error with this message prefix.
+      expect(
+        err(
+          LlmErrorKind.unknown,
+          'Step limit reached (50 tool rounds). '
+              'Send another message to continue.',
+        ).canContinue,
+        isTrue,
+      );
+    });
+
+    test('hard failures cannot continue', () {
+      expect(err(LlmErrorKind.auth, 'bad key').canContinue, isFalse);
+      expect(err(LlmErrorKind.billing, 'no credit').canContinue, isFalse);
+      expect(err(LlmErrorKind.contentPolicy, 'blocked').canContinue, isFalse);
+      expect(err(LlmErrorKind.quota, 'quota').canContinue, isFalse);
+    });
+
+    test('arbitrary unknown errors cannot continue', () {
+      expect(err(LlmErrorKind.unknown, 'something broke').canContinue,
+          isFalse);
+    });
+  });
+
   // ─── MiniMax code → kind ──────────────────────────────────────
 
   group('parseHttpError — MiniMax base_resp shape', () {
