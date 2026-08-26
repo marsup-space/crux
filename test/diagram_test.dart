@@ -258,7 +258,7 @@ api -> db
   });
 
   group('markdown integration', () {
-    test('diagram fence renders as bare art — no code-block box', () async {
+    test('diagram fence renders inside one complete bordered box', () async {
       await testNocterm('mermaid fence renders diagram', (tester) async {
         await tester.pumpComponent(
           Container(
@@ -269,10 +269,14 @@ api -> db
             ),
           ),
         );
-        expect(tester.terminalState, containsText('Start'));
-        expect(tester.terminalState, containsText('End'));
-        // Success: no `╭─ mermaid ...╮` wrapper — a bare drawing.
-        expect(tester.terminalState.containsText('╭─ mermaid'), isFalse);
+        final screen = tester.terminalState;
+        expect(screen, containsText('Start'));
+        expect(screen, containsText('End'));
+        // One complete frame — header and footer present.
+        expect(screen.containsText('╭─ mermaid'), isTrue);
+        expect(screen.containsText('╰'), isTrue);
+        // Right gutter present (not a broken open frame).
+        expect(screen.containsText(' │\n'), isTrue);
       });
     });
 

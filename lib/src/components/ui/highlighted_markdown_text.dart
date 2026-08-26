@@ -1380,16 +1380,14 @@ class _HighlightMarkdownVisitor {
     final width = math.max(4, maxWidth ?? 80);
     final codeLineWidth = math.max(0, width - 4);
 
-    // Diagram languages (mermaid / d2) render as bare ASCII-art graphs —
-    // NO code-block box around them, since the graph's own node borders
-    // are the drawing and an extra box would nest two frames inside the
-    // message bubble. Parse failures fall through to the plain bordered
-    // code block below — essential while the LLM is still streaming an
-    // unfinished diagram source.
-    if (isDiagramLanguage(language)) {
-      final diagram = _tryRenderDiagramAsArt(code, language, codeLineWidth);
-      if (diagram != null) return diagram;
-    }
+    // Diagram languages (mermaid / d2) render as ASCII-art graphs inside
+    // the standard bordered code block — ONE complete frame (left AND
+    // right gutters), same as any other code block. Parse failures fall
+    // through to the plain code path below — essential while the LLM is
+    // still streaming an unfinished diagram source.
+    final diagramText = isDiagramLanguage(language)
+        ? _tryRenderDiagramText(code, language, codeLineWidth)
+        : null;
 
     final langLabel = language ?? '';
     final headerContent = langLabel.isNotEmpty ? ' $langLabel ' : '';
@@ -1497,7 +1495,10 @@ class _HighlightMarkdownVisitor {
       }
     }
 
-    if (stripped.isEmpty) {
+    if (diagramText != null) {
+      // Graph drawn as code rows inside the complete bordered box.
+      emitCodeRows([(diagramText, codeStyle)]);
+    } else if (stripped.isEmpty) {
       // Empty code block — still render a single gutter so the box has height.
       emitCodeRows(const []);
     } else {
@@ -1600,14 +1601,15 @@ class _HighlightMarkdownVisitor {
     return TextSpan(children: spans);
   }
 
-  /// Render a mermaid/d2 fenced block as bare ASCII-art — NO code-block
-  /// box around it, because the graph's own node borders are the drawing;
-  /// wrapping it in a box would nest two frames inside the message bubble.
+  /// Render a mermaid/d2 fenced block to the art text (the graph's lines
+  /// plus any warnings). The caller draws this inside the standard bordered
+  /// code block, so the diagram gets one complete frame like any other
+  /// code block — not a naked drawing, not a doubled box.
   ///
   /// Returns null when the source cannot (yet) be parsed — the caller
-  /// then falls through to the standard bordered code block, which is the
-  /// right presentation for raw/incomplete source (streaming partials).
-  InlineSpan? _tryRenderDiagramAsArt(
+  /// then renders the raw source in the same box, which is the right
+  /// presentation for incomplete source (streaming partials).
+  String? _tryRenderDiagramText(
     String code,
     String? language,
     int codeLineWidth,
@@ -1623,28 +1625,15 @@ class _HighlightMarkdownVisitor {
       return null;
     }
 
-    final baseStyle =
-        styleSheet.paragraphStyle ?? TextStyle(color: theme.markdownText);
-    final spans = <InlineSpan>[];
-    final lines = result.text.split('\n');
-    for (final line in lines) {
-      spans.add(TextSpan(text: '$line\n', style: baseStyle));
-    }
-    // Warnings (e.g. cycles) surface dimmed below the drawing rather than
-    // inside a box, so they don't read as part of the graph.
+    final buffer = StringBuffer(result.text);
+    // Warnings (e.g. cycles) surface below the drawing, inside the box.
     for (final warning in result.warnings) {
-      spans.add(
-        TextSpan(
-          text: '⚠ ${warning.message(
-            cycleDetected: (nodes) =>
-                strings.t('diagram.cycleWarning', {'nodes': nodes}),
-          )}\n',
-          style: TextStyle(color: theme.codeBlockGutter),
-        ),
-      );
+      buffer.write('\n⚠ ${warning.message(
+        cycleDetected: (nodes) =>
+            strings.t('diagram.cycleWarning', {'nodes': nodes}),
+      )}');
     }
-    spans.add(const TextSpan(text: '\n'));
-    return TextSpan(children: spans);
+    return buffer.toString();
   }
 
   List<InlineSpan> visitChildren(md.Element element) {
