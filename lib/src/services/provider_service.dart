@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:toml/toml.dart';
 
@@ -112,15 +113,19 @@ class ProviderService {
   /// on load we read from this if `auth.toml` doesn't exist yet.
   late final String authJsonPath;
 
-  ProviderService({required this.userProvidersDir, this.builtInProvidersDir})
-    : _loader = ProviderConfigLoader.multi(
-        providersDirs: [
-          Directory(userProvidersDir),
-          if (builtInProvidersDir != null) Directory(builtInProvidersDir),
-        ],
-      ) {
-    authTomlPath = p.join(resolveUserDataDirectory(), 'auth.toml');
-    authJsonPath = p.join(resolveUserDataDirectory(), 'auth.json');
+  ProviderService({
+    required this.userProvidersDir,
+    this.builtInProvidersDir,
+    @visibleForTesting String? userDataDirOverride,
+  }) : _loader = ProviderConfigLoader.multi(
+         providersDirs: [
+           Directory(userProvidersDir),
+           if (builtInProvidersDir != null) Directory(builtInProvidersDir),
+         ],
+       ) {
+    final base = userDataDirOverride ?? resolveUserDataDirectory();
+    authTomlPath = p.join(base, 'auth.toml');
+    authJsonPath = p.join(base, 'auth.json');
   }
 
   // ---------------------------------------------------------------------------
@@ -358,7 +363,11 @@ class ProviderService {
   /// Checks the following sources in order:
   /// 1. Keys stored in `auth.toml` (loaded into [_envKeys])
   /// 2. Process environment variables ([Platform.environment])
-  /// 3. The global default key `CRUX_API_KEY` (from either source)
+  /// 3. Base-name fallback for hyphenated ids (`openrouter-free` →
+  ///    `openrouter`, `mimo-pro` → `mimo`), in the same two sources. Users
+  ///    routinely store the key under the short service name; without this
+  ///    a variant provider appears keyless after every restart.
+  /// 4. The global default key `CRUX_API_KEY` (from either source)
   ///
   /// Convention: `CRUX_API_KEY_<PROVIDERNAME>` (uppercase),
   /// e.g. `CRUX_API_KEY_OPENAI`, `CRUX_API_KEY_ANTHROPIC`.
@@ -366,9 +375,18 @@ class ProviderService {
     final envKey = 'CRUX_API_KEY_${providerName.toUpperCase()}';
 
     if (_envKeys.containsKey(envKey)) return _envKeys[envKey];
-
     if (Platform.environment.containsKey(envKey)) {
       return Platform.environment[envKey];
+    }
+
+    // Base-name fallback: strip one `-segment` at a time from the right.
+    for (var name = providerName; name.contains('-');) {
+      name = name.substring(0, name.lastIndexOf('-'));
+      final baseKey = 'CRUX_API_KEY_${name.toUpperCase()}';
+      if (_envKeys.containsKey(baseKey)) return _envKeys[baseKey];
+      if (Platform.environment.containsKey(baseKey)) {
+        return Platform.environment[baseKey];
+      }
     }
 
     if (_envKeys.containsKey('CRUX_API_KEY')) return _envKeys['CRUX_API_KEY'];
