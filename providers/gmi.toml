@@ -1,0 +1,50 @@
+# GMI Cloud provider configuration
+# Filename serves as the provider name: "gmi"
+# OpenAI-compatible API: https://api.gmi-serving.com/v1
+#
+# GMI Cloud (console.gmicloud.ai) is a GPU inference platform serving
+# Claude / GPT / DeepSeek / Gemini / GLM / Kimi / Qwen / MiniMax and
+# more behind a single OpenAI-compatible endpoint. Crux talks to it
+# with the generic `type = "openai_compatible"` — Bearer auth, Chat
+# Completions wire shape, stream parsing inherited — so no custom
+# LlmProvider registration in llm_provider.dart is needed.
+#
+# Docs: https://docs.gmicloud.ai/quickstart
+# Model catalog: https://docs.gmicloud.ai/model-quickstarts/text/overview
+#
+# Model IDs are HuggingFace-style (`org/model`, e.g.
+# `MiniMaxAI/MiniMax-M3`). Slashes inside the ID are fine: the
+# composite key splits on the FIRST slash only, so this model is
+# addressed as `gmi/MiniMaxAI/MiniMax-M3`.
+#
+# The seeded entry below comes from the user's Model Hub page
+# (1M context). Extend by adding more [[models]] blocks, or run the
+# in-app model discovery — openai_compatible providers expose
+# GET <endpoint_url>/models, which lists everything the API key can
+# reach (see ProviderService.discoverModels).
+
+type = "openai_compatible"
+endpoint_url = "https://api.gmi-serving.com/v1"
+
+[[models]]
+id = "MiniMaxAI/MiniMax-M3"
+name = "MiniMax M3 (GMI)"
+context_size = 1048576
+image_support = true
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+temperature = 0
+stream_lerp = true
+
+# Mirror the native minimax provider's treatment of M3: its thinking
+# knob is binary (adaptive vs disabled) — there is no documented
+# low/high/max ladder. Collapse the picker to [off, normal] so the
+# generic openai_compatible body never sends a `reasoning_effort`
+# value the serving stack may reject; `normal` maps to wire effort
+# "high" via OpenAICompatibleProvider.mapEffort, `off` drops the
+# field entirely (thinking.type = "disabled").
+[models.reasoning_labels]
+low = "disabled"
+high = "disabled"
+max = "disabled"
