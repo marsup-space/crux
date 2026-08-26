@@ -163,6 +163,17 @@ class ProviderService {
   ModelConfig? modelByCompositeKey(String key) =>
       _loader.modelByCompositeKey(key);
 
+  /// Human-readable display label for a model composite key.
+  ///
+  /// Returns the TOML `name` (e.g. "Ox Alpha (stealth, free)") when the
+  /// key resolves to a known model; otherwise the composite key itself,
+  /// so unknown/stale keys still render something meaningful. Empty
+  /// input returns empty — callers use that as "no model selected".
+  String displayLabelFor(String compositeKey) {
+    if (compositeKey.isEmpty) return compositeKey;
+    return modelByCompositeKey(compositeKey)?.name ?? compositeKey;
+  }
+
   /// All loaded provider names in load order.
   List<String> providerNames() => _loader.providerNames();
 

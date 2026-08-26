@@ -13,7 +13,14 @@ Future<void> executeModel(List<String> parts, CommandContext ctx) async {
         ctx.currentSession.model = modelKey;
       }
       ctx.refresh();
-      ctx.showToast(ctx.strings.t('toast.modelSwitched', {'model': modelKey}), mode: ToastMode.status);
+      // Toast the human-readable TOML `name` (e.g. "Ox Alpha (stealth,
+      // free)") — the raw composite key is noisy, especially for
+      // OpenRouter's slashed ids. Falls back to the key itself when
+      // the model can't be resolved (providerService not ready).
+      final display = ctx.providerServiceReady
+          ? ctx.providerService.displayLabelFor(modelKey)
+          : modelKey;
+      ctx.showToast(ctx.strings.t('toast.modelSwitched', {'model': display}), mode: ToastMode.status);
       ctx.providerService.setLastUsedModel(modelKey);
     }
   } else {

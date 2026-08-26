@@ -418,9 +418,15 @@ class _ChatToolbarState extends State<ChatToolbar> {
   }
 
   Component _buildInner(BuildContext context) {
-    final modelLabel = _sessionController.currentSession.model.isEmpty
+    // Display the model's human-readable TOML `name` (e.g. "Ox Alpha
+    // (stealth, free)") instead of the raw composite key — OpenRouter
+    // keys like `openrouter-free/stealth/ox-alpha` are far too wide
+    // for the toolbar. Falls back to the composite key for unknown /
+    // stale models so the label never goes blank.
+    final rawModelKey = _sessionController.currentSession.model;
+    final modelLabel = rawModelKey.isEmpty
         ? 'select model'
-        : _sessionController.currentSession.model;
+        : _providerService.displayLabelFor(rawModelKey);
     final rt = _rt;
     final isSessionRunning =
         _sessionController.currentSession.status == SessionStatus.running;

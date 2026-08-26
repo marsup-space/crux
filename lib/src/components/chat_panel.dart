@@ -67,6 +67,7 @@ import 'overlay_controller.dart';
 import 'polling_coordinator.dart';
 import 'quit_handler.dart';
 import 'session_controller.dart';
+import 'session_cycle.dart';
 import 'session_management_panel.dart';
 import 'streaming_controller.dart';
 import 'tool_detail_pane.dart';
@@ -1479,14 +1480,18 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       projectPath: Directory.current.path,
       activeModel: () {
-        // The current session's model composite key; empty means "no
-        // provider configured yet", which the workspace box turns into
-        // a setup hint. Guarded because a fresh panel with no sessions
-        // has no current session to read.
+        // The current session's model, shown as its human-readable
+        // TOML `name` (e.g. "Ox Alpha (stealth, free)") — the raw
+        // composite key (`openrouter-free/stealth/ox-alpha`) is too
+        // wide for the workspace box. Empty means "no provider
+        // configured yet", which the workspace box turns into a setup
+        // hint. Guarded because a fresh panel with no sessions has no
+        // current session to read.
         final sessionId = _sessionController.currentSessionId;
         if (sessionId == null) return null;
         final model = _sessionController.currentSession.model;
-        return model.isEmpty ? null : model;
+        if (model.isEmpty) return null;
+        return _providerService.displayLabelFor(model);
       },
       // Settings box: the active theme id, the configured auxiliary
       // model's short name, and the current session's chat display mode.

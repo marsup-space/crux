@@ -14,7 +14,12 @@ Future<void> executeAuxiliary(List<String> parts, CommandContext ctx) async {
     } else {
       await ctx.providerService.setAuxiliaryModel(modelKey);
       ctx.resolveAuxiliaryModel();
-      ctx.showToast(ctx.strings.t('toast.auxSet', {'model': modelKey}), mode: ToastMode.status);
+      // Toast the human-readable TOML `name` — same rationale as
+      // /model's toast (OpenRouter composite keys are too noisy).
+      final display = ctx.providerServiceReady
+          ? ctx.providerService.displayLabelFor(modelKey)
+          : modelKey;
+      ctx.showToast(ctx.strings.t('toast.auxSet', {'model': display}), mode: ToastMode.status);
     }
   } else {
     ctx.showToast(ctx.strings.t('toast.auxUsage'));
