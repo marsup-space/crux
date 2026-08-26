@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
+import '../services/llm_error.dart';
 import 'message_store.dart';
 import 'notes_store.dart';
 import 'shell_monitor_log_store.dart';
@@ -678,12 +679,36 @@ WHERE context_tokens = 0
   /// them as resumable rather than falsely reporting them as
   /// still in flight.
   ///
+  /// For every transitioned session this also persists a
+  /// `stream_error` row explaining WHY the turn stopped (the process
+  /// died mid-stream), so the chat history shows an abnormal-stop
+  /// bubble with a one-click continue affordance instead of leaving
+  /// the turn silently dangling. Best-effort: a failed insert never
+  /// blocks the status transition.
+  ///
   /// Returns the number of sessions transitioned.
   Future<int> markOrphanedRunningSessionsAsInterrupted({
     required String projectPath,
   }) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final staleBeforeMs = nowMs - runningLeaseTimeout.inMilliseconds;
+
+    // Read the ids BEFORE the update so we know which sessions to
+    // annotate. The lease predicates match exactly what the UPDATE
+    // below transitions, so the two sets are identical.
+    final staleIds =
+        await (_db.select(_db.sessions)
+              ..where((t) => t.status.equals(SessionStatus.running.name))
+              ..where((t) => t.projectPath.equals(projectPath))
+              ..where(
+                (t) =>
+                    t.runningOwnerId.isNull() |
+                    t.runningHeartbeatAt.isNull() |
+                    t.runningHeartbeatAt.isSmallerThanValue(staleBeforeMs),
+              ))
+            .map((row) => row.id)
+            .get();
+
     final updated = await _db.customUpdate(
       '''
 UPDATE sessions
@@ -708,6 +733,32 @@ WHERE status = ?
       ],
       updates: {_db.sessions},
     );
+
+    // Persist an abnormal-stop bubble for each transitioned session.
+    // The structured payload decodes into the same ErrorBubble the
+    // live error path renders, so a crash-resumed turn reads exactly
+    // like any other non-normal stop: reason + one-click continue.
+    for (final id in staleIds) {
+      try {
+        final stopError = LlmError(
+          kind: LlmErrorKind.cancelled,
+          vendor: LlmVendor.unknown,
+          message: 'The previous Crux process exited while this turn '
+              'was still streaming — the response was cut off.',
+          providerName: '',
+        );
+        await messageStore.addMessage(
+          id,
+          role: 'stream_error',
+          content: stopError.toUserMessage(),
+          error: stopError.toJson(),
+        );
+      } catch (_) {
+        // Annotation is best-effort; the status transition above is
+        // the source of truth and must not be rolled back.
+      }
+    }
+
     return updated;
   }
 
