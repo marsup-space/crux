@@ -1,4 +1,5 @@
 import '../components/ui/toast.dart';
+import '../i18n/strings.dart';
 import 'command_executor.dart';
 
 /// The `/reply-language` command — switch the agent's reply-language
@@ -11,7 +12,10 @@ import 'command_executor.dart';
 Future<void> executeReplyLanguage(List<String> parts, CommandContext ctx) async {
   final controller = ctx.localeController;
   if (controller == null) {
-    ctx.showToast('Reply-language service is unavailable', mode: ToastMode.error);
+    ctx.showToast(
+      kEnglishStrings.t('replylang.unavailable'),
+      mode: ToastMode.error,
+    );
     return;
   }
 

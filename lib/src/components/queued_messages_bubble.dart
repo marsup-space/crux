@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../models/message_queue.dart';
 import '../utils/terminal_symbols.dart';
@@ -12,10 +13,14 @@ class QueuedMessagesBubble extends StatelessComponent {
   final List<QueuedMessage> messages;
   final void Function(int queueId) onDiscard;
 
+  /// Locale-aware chrome strings. Defaulted to English.
+  final Strings strings;
+
   const QueuedMessagesBubble({
     super.key,
     required this.messages,
     required this.onDiscard,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -60,14 +65,14 @@ class QueuedMessagesBubble extends StatelessComponent {
             Row(
               children: [
                 Text(
-                  ' ${terminalSymbol('⏳', '>')} Queued: ',
+                  strings.t('bubble.queued'),
                   style: TextStyle(
                     color: CruxTheme.of(context).queuePrefix,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
-                  '${messages.length} message${messages.length > 1 ? 's' : ''}',
+                  strings.t('bubble.queuedCount', {'n': '${messages.length}'}),
                   style: TextStyle(color: CruxTheme.of(context).queueText),
                 ),
               ],

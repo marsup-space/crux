@@ -106,6 +106,7 @@ class ChatTurnOrchestrator {
          messageStore: store.messageStore,
          showToast: showToast,
          refresh: refresh,
+         strings: strings,
        ),
        _tldrHandler = TldrHandler(
          sessionController: sessionController,
@@ -114,6 +115,7 @@ class ChatTurnOrchestrator {
          messageStore: store.messageStore,
          showToast: showToast,
          refresh: refresh,
+         strings: strings,
        );
 
   void showToast(String message, {ToastMode mode = ToastMode.info}) {
@@ -338,8 +340,10 @@ class ChatTurnOrchestrator {
                 }
                 rt.turnsSinceLastCompact = 1;
                 _showToast(
-                  'Context was getting full — compacted '
-                  '(~${result.postEstimateTokens} ← ${result.preTokens} tokens)',
+                  _strings.t('toast.autoCompactDone', {
+                    'post': '${result.postEstimateTokens}',
+                    'pre': '${result.preTokens}',
+                  }),
                   mode: ToastMode.status,
                 );
                 await _sessionController.loadMessages(sessionId);
@@ -475,7 +479,10 @@ class ChatTurnOrchestrator {
       _streamingController.stopContextAnimation();
       _streamingController.clearStreamingFor(sessionId);
       await _sessionController.reconcileInactiveRunningSessions(refresh: false);
-      _showToast('Failed to start response: $e', mode: ToastMode.error);
+      _showToast(
+        _strings.t('toast.failedStartResponse', {'error': '$e'}),
+        mode: ToastMode.error,
+      );
       _refresh();
       return;
     }
@@ -780,7 +787,10 @@ class ChatTurnOrchestrator {
         )
         .catchError((e) {
           if (!_interruptedSessions.contains(sessionId)) {
-            _showToast('Unhandled error: $e', mode: ToastMode.error);
+            _showToast(
+              _strings.t('toast.unhandledError', {'error': '$e'}),
+              mode: ToastMode.error,
+            );
           }
           rt.isResponding = false;
           _sessionController.mirrorTurnFlags(sessionId);
@@ -799,21 +809,21 @@ class ChatTurnOrchestrator {
   Future<void> compactCurrentSession() async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) {
-      _showToast('No active session', mode: ToastMode.error);
+      _showToast(_strings.t('toast.compactNoSession'), mode: ToastMode.error);
       return;
     }
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) {
-      _showToast('Cannot compact while AI is responding');
+      _showToast(_strings.t('toast.compactWhileResponding'));
       return;
     }
     final session = _sessionController.findSession(sessionId);
     if (session == null) {
-      _showToast('No active session', mode: ToastMode.error);
+      _showToast(_strings.t('toast.compactNoSession'), mode: ToastMode.error);
       return;
     }
     try {
-      _showToast('Compacting context...', mode: ToastMode.status);
+      _showToast(_strings.t('toast.compactInProgress'), mode: ToastMode.status);
       final result = await _chatService.createChatLogCompaction(
         sessionId: sessionId,
         session: session,
@@ -822,7 +832,7 @@ class ChatTurnOrchestrator {
         reason: CompactionReason.manual,
       );
       if (result == null) {
-        _showToast('Nothing to compact', mode: ToastMode.status);
+        _showToast(_strings.t('toast.nothingToCompact'), mode: ToastMode.status);
         return;
       }
       // ContextBar reads MetricsCubit, while the compaction service updates
@@ -838,8 +848,12 @@ class ChatTurnOrchestrator {
         );
       }
       _showToast(
-        'Compacted — ${result.sourceEndMessageId - result.sourceStartMessageId + 1} messages '
-        '(~${result.postEstimateTokens} ← ${result.preTokens} tokens)',
+        _strings.t('toast.compactDone', {
+          'n':
+              '${result.sourceEndMessageId - result.sourceStartMessageId + 1}',
+          'post': '${result.postEstimateTokens}',
+          'pre': '${result.preTokens}',
+        }),
         mode: ToastMode.status,
       );
       await _sessionController.loadMessages(sessionId);
@@ -1023,7 +1037,7 @@ class ChatTurnOrchestrator {
       session.status = SessionStatus.interrupted;
     }
 
-    _showToast('Response interrupted', mode: ToastMode.status);
+    _showToast(_strings.t('toast.responseInterrupted'), mode: ToastMode.status);
     _refresh();
   }
 

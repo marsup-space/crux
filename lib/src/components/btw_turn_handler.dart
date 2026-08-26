@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../i18n/strings.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/install_slug.dart';
 import '../services/llm_client.dart';
@@ -27,6 +28,11 @@ class BtwTurnHandler {
   final ShowToastCallback showToast;
   final void Function() refresh;
 
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// test constructions stay green — production wiring is via
+  /// [ChatTurnOrchestrator] which passes the live `Strings`.
+  final Strings strings;
+
   final Map<int, bool> _btwCancelFlags = {};
 
   BtwTurnHandler({
@@ -36,6 +42,7 @@ class BtwTurnHandler {
     required this.messageStore,
     required this.showToast,
     required this.refresh,
+    this.strings = kEnglishStrings,
   });
 
   Future<void> sendBtwTurn(String prompt) async {
@@ -72,12 +79,8 @@ class BtwTurnHandler {
       }
       showToast(
         effectiveName.isNotEmpty
-            ? 'No API key for provider "$effectiveName". '
-                  'Use /provider $effectiveName to configure an API key, '
-                  'then try again.'
-            : 'No configured provider serves model "$modelId". '
-                  'Use /provider to configure a provider and API key, '
-                  'then try again.',
+            ? strings.t('toast.btwMissingKey', {'name': effectiveName})
+            : strings.t('toast.btwNoProvider', {'model': modelId}),
         mode: ToastMode.error,
       );
       return;

@@ -97,6 +97,7 @@ Component? buildOverlayPopover({
         maxVisible: maxVisible,
         query: overlay.atMentionQuery,
         isSearching: overlay.isSearching,
+        strings: strings,
         onHover: (i) {
           overlay.onHoverFile(i);
           refresh();
@@ -123,6 +124,7 @@ Component? buildOverlayPopover({
         scrollOffset: overlay.skillScrollOffset,
         maxVisible: maxVisible,
         query: overlay.skillChipQuery,
+        strings: strings,
         onHover: (i) {
           overlay.onHoverSkill(i);
           refresh();

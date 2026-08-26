@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../utils/file_searcher.dart';
 import 'ui/spinner.dart';
@@ -21,6 +22,10 @@ class FileBrowserOverlay extends StatelessComponent {
   /// on every keypress.
   final bool isSearching;
 
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// constructions stay green.
+  final Strings strings;
+
   final void Function(int)? onHover;
   final void Function(int)? onTap;
 
@@ -34,6 +39,7 @@ class FileBrowserOverlay extends StatelessComponent {
     this.isSearching = false,
     this.onHover,
     this.onTap,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -48,7 +54,7 @@ class FileBrowserOverlay extends StatelessComponent {
         child: Row(
           children: [
             Text(
-              'Files',
+              strings.t('picker.files.title'),
               style: TextStyle(
                 color: theme.wizardTitle,
                 fontWeight: FontWeight.bold,
@@ -56,7 +62,9 @@ class FileBrowserOverlay extends StatelessComponent {
             ),
             SizedBox(width: 1),
             Text(
-              query.isEmpty ? '(@-mention a file)' : '(@$query)',
+              query.isEmpty
+                  ? strings.t('picker.files.mentionHint')
+                  : strings.t('picker.files.searching', {'query': query}),
               style: TextStyle(color: theme.wizardTextDim),
             ),
             if (isSearching) ...[
@@ -65,7 +73,7 @@ class FileBrowserOverlay extends StatelessComponent {
             ] else if (files.isEmpty) ...[
               SizedBox(width: 1),
               Text(
-                '  no matches',
+                strings.t('picker.files.noMatches'),
                 style: TextStyle(color: theme.wizardTextDim),
               ),
             ],

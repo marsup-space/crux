@@ -10,6 +10,7 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../services/skills/skill.dart';
 import '../theme/crux_theme.dart';
 
@@ -35,6 +36,9 @@ class SkillPickerOverlay extends StatelessComponent {
   final void Function(int)? onHover;
   final void Function(int)? onTap;
 
+  /// Locale-aware chrome strings. Defaulted to English.
+  final Strings strings;
+
   const SkillPickerOverlay({
     super.key,
     required this.skills,
@@ -44,6 +48,7 @@ class SkillPickerOverlay extends StatelessComponent {
     required this.query,
     this.onHover,
     this.onTap,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -60,7 +65,7 @@ class SkillPickerOverlay extends StatelessComponent {
         child: Row(
           children: [
             Text(
-              'Skills',
+              strings.t('picker.skills.title'),
               style: TextStyle(
                 color: theme.wizardTitle,
                 fontWeight: FontWeight.bold,
@@ -87,7 +92,7 @@ class SkillPickerOverlay extends StatelessComponent {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Text(
-            'No matching skills. Press Esc to dismiss.',
+            strings.t('picker.skills.noMatches'),
             style: TextStyle(color: theme.wizardTextDim),
           ),
         ),

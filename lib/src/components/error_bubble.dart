@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../services/llm_error.dart';
 import '../theme/crux_theme.dart';
 import '../utils/terminal_symbols.dart';
@@ -7,20 +8,20 @@ import 'system_hint_bubble.dart';
 
 /// Persisted error bubble rendered at the end of a chat when the
 /// last LLM turn failed. Shows [LlmError.toUserMessage] as the body
-/// and — when [error] is `isRetriable` AND [onRetry] is wired — a
-/// clickable `▶ retry (/continue)` affordance below the body.
+/// and — when [error.canContinue] AND [onRetry] is wired — a
+/// clickable `▶ continue` affordance below the body.
 ///
 /// Two render modes:
 ///
-///   - **Retriable + callback**: body message, then a separator line,
-///     then the affordance. The affordance is a [GestureDetector]
-///     wrapping a styled `Text`, so it picks up click detection
-///     directly from nocterm without routing through the chat input
-///     pipeline (which would interpret `/continue` as a literal user
-///     message instead of a command).
+///   - **Can-continue + callback**: body message, then a separator
+///     line, then the affordance. The affordance is a
+///     [GestureDetector] wrapping a styled `Text`, so it picks up
+///     click detection directly from nocterm without routing through
+///     the chat input pipeline (which would interpret `/continue` as
+///     a literal user message instead of a command).
 ///
-///   - **Non-retriable or no callback**: body message only. The user
-///     can still see the failure but isn't offered a button that
+///   - **Cannot continue or no callback**: body message only. The
+///     user can still see the failure but isn't offered a button that
 ///     would obviously fail (e.g. retrying an auth error won't
 ///     conjure a valid API key).
 ///
@@ -29,7 +30,7 @@ import 'system_hint_bubble.dart';
 /// other inline system-hint bubbles (`parallel_praise`,
 /// `single_call_reminder`, etc.) without a custom paint path.
 class ErrorBubble extends SystemHintBubble {
-  /// Structured error — drives the body text, the retriable
+  /// Structured error — drives the body text, the can-continue
   /// check, and (for future detail-view affordances) the
   /// debugging fields.
   final LlmError error;
@@ -41,7 +42,17 @@ class ErrorBubble extends SystemHintBubble {
   /// see `ChatHistory` and `ChatPanel` for the exact wiring.
   final VoidCallback? onRetry;
 
-  const ErrorBubble({super.key, required this.error, this.onRetry});
+  /// Localized strings for the affordance label. Defaults to the
+  /// English fallback so tests / previews without a locale still
+  /// render.
+  final Strings strings;
+
+  const ErrorBubble({
+    super.key,
+    required this.error,
+    this.onRetry,
+    this.strings = kEnglishStrings,
+  });
 
   @override
   SystemHintKind get kind => SystemHintKind.error;
@@ -52,12 +63,17 @@ class ErrorBubble extends SystemHintBubble {
   @override
   Component build(BuildContext context) {
     // Defer to the standard system-hint layout for the body row.
-    // The retry affordance — only when applicable — is added as a
+    // The continue affordance — only when applicable — is added as a
     // second row below the body. Putting it in the same `Row`
     // would require escaping the body's `Text` widget; using a
     // second row keeps the alignment clean and makes the
     // affordance visually separable from the failure description.
-    final showRetry = error.isRetriable && onRetry != null;
+    //
+    // Gate on `canContinue`, not `isRetriable`: transient failures
+    // AND non-failure stops (step limit reached, …) are both things
+    // the user resumes with one click. Hard failures (auth, billing,
+    // content policy) stay button-less — resuming cannot succeed.
+    final showRetry = error.canContinue && onRetry != null;
     if (!showRetry) return super.build(context);
 
     final theme = CruxTheme.of(context);
@@ -72,7 +88,7 @@ class ErrorBubble extends SystemHintBubble {
           // Standard system-hint row: glyph + body in the error
           // colour.
           super.build(context),
-          // Separator + retry affordance. We re-render the glyph
+          // Separator + continue affordance. We re-render the glyph
           // slot so the affordance column aligns with the body
           // column above (the column gutter inside `super.build`
           // is `glyph.length + 1`; matching that here keeps the
@@ -87,7 +103,7 @@ class ErrorBubble extends SystemHintBubble {
                   child: GestureDetector(
                     onTap: onRetry,
                     child: Text(
-                      '$symbol retry (/continue)',
+                      '$symbol ${strings.t('error.continue')}',
                       style: TextStyle(
                         color: color,
                         fontWeight: FontWeight.bold,

@@ -1,5 +1,6 @@
 import '../components/ui/toast.dart';
 import '../i18n/reply_language.dart';
+import '../i18n/strings.dart';
 import 'command_executor.dart';
 
 /// The `/language` command — switch the UI language (`en` / `zh`).
@@ -10,7 +11,10 @@ import 'command_executor.dart';
 Future<void> executeLanguage(List<String> parts, CommandContext ctx) async {
   final controller = ctx.localeController;
   if (controller == null) {
-    ctx.showToast('Language service is unavailable', mode: ToastMode.error);
+    ctx.showToast(
+      kEnglishStrings.t('lang.unavailable'),
+      mode: ToastMode.error,
+    );
     return;
   }
 

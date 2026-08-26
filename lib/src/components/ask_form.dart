@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../tools/ask_tool.dart';
 import 'ask_answer_bubble.dart';
@@ -39,11 +40,15 @@ class AskForm extends StatefulComponent {
   final void Function(String prose, AskAnswerView view) onSubmit;
   final VoidCallback onDismiss;
 
+  /// Locale-aware chrome strings. Defaulted to English.
+  final Strings strings;
+
   const AskForm({
     super.key,
     required this.pending,
     required this.onSubmit,
     required this.onDismiss,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -291,7 +296,7 @@ class _AskFormState extends State<AskForm> {
       Row(
         children: [
           Text(
-            ' Ask ',
+            component.strings.t('ask.chip'),
             style: TextStyle(
               color: theme.buttonTextFocused,
               fontWeight: FontWeight.bold,
@@ -351,7 +356,10 @@ class _AskFormState extends State<AskForm> {
         padding: const EdgeInsets.only(top: 1),
         child: Row(
           children: [
-            Text(' Notes: ', style: TextStyle(color: theme.hintText)),
+            Text(
+              component.strings.t('ask.notes'),
+              style: TextStyle(color: theme.hintText),
+            ),
             Expanded(
               // Tapping anywhere on the field — including its border
               // and padding, which sit outside the render text field's
@@ -369,6 +377,7 @@ class _AskFormState extends State<AskForm> {
                   active: _focusRegion == _AskFocusRegion.note,
                   controller: _noteController,
                   onKeyEvent: _handleNoteKey,
+                  strings: component.strings,
                   onFocusRequest: () {
                     if (_focusRegion != _AskFocusRegion.note) {
                       setState(() => _focusRegion = _AskFocusRegion.note);
@@ -391,15 +400,18 @@ class _AskFormState extends State<AskForm> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(' Esc: dismiss ', style: TextStyle(color: theme.hintText)),
+            Text(
+              component.strings.t('ask.hint.dismiss'),
+              style: TextStyle(color: theme.hintText),
+            ),
             Row(
               children: [
                 Text(
-                  'Tab: switch region  ',
+                  component.strings.t('ask.hint.tab'),
                   style: TextStyle(color: theme.hintText),
                 ),
                 _ActionButton(
-                  label: 'Submit',
+                  label: component.strings.t('ask.submit'),
                   focused: _focusRegion == _AskFocusRegion.submit,
                   onPressed: _doSubmit,
                   onKeyEvent: (e) =>
@@ -408,7 +420,7 @@ class _AskFormState extends State<AskForm> {
                 ),
                 const SizedBox(width: 1),
                 _ActionButton(
-                  label: 'Dismiss',
+                  label: component.strings.t('ask.dismiss'),
                   focused: _focusRegion == _AskFocusRegion.dismiss,
                   onPressed: component.onDismiss,
                   onKeyEvent: (e) =>
@@ -543,11 +555,16 @@ class _NoteRegion extends StatefulComponent {
   /// GestureDetector in [_AskFormState.build].
   final VoidCallback onFocusRequest;
 
+  /// Locale-aware strings threaded from the parent so the placeholder
+  /// text renders in the active UI language.
+  final Strings strings;
+
   const _NoteRegion({
     required this.active,
     required this.controller,
     required this.onKeyEvent,
     required this.onFocusRequest,
+    required this.strings,
   });
 
   @override
@@ -573,7 +590,7 @@ class _NoteRegionState extends State<_NoteRegion> {
       // beyond it, hiding what the user typed.
       maxLines: null,
       minLines: 2,
-      placeholder: '(optional) add extra context for the agent',
+      placeholder: component.strings.t('ask.notePlaceholder'),
       style: TextStyle(color: theme.foreground),
       decoration: InputDecoration(
         border: BoxBorder.all(color: borderColor),

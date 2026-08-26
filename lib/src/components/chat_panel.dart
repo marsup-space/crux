@@ -654,12 +654,16 @@ class _ChatPanelState extends State<ChatPanel> {
         return;
       case OpenDirectoryResult.notFound:
         _showToast(
-          'Directory not found: ${Directory.current.path}',
+          _strings.t('toast.dirNotFoundCwd', {
+            'path': Directory.current.path,
+          }),
           mode: ToastMode.error,
         );
       case OpenDirectoryResult.failed:
         _showToast(
-          "Couldn't open file manager for ${Directory.current.path}",
+          _strings.t('toast.fileManagerFailed', {
+            'path': Directory.current.path,
+          }),
           mode: ToastMode.error,
         );
     }
@@ -855,10 +859,16 @@ class _ChatPanelState extends State<ChatPanel> {
       case UrlLaunchResult.launched:
         return;
       case UrlLaunchResult.rejected:
-        _showToast('Refused to open url: ${link.url}', mode: ToastMode.error);
+        _showToast(
+          _strings.t('toast.urlRefused', {'url': '${link.url}'}),
+          mode: ToastMode.error,
+        );
         return;
       case UrlLaunchResult.failed:
-        _showToast("Couldn't open url: ${link.url}", mode: ToastMode.error);
+        _showToast(
+          _strings.t('toast.urlFailed', {'url': '${link.url}'}),
+          mode: ToastMode.error,
+        );
         return;
     }
   }
@@ -1577,7 +1587,7 @@ class _ChatPanelState extends State<ChatPanel> {
         _openNotesFullpane();
       default:
         _showToast(
-          'Unknown screen: ${action.screen}',
+          _strings.t('toast.unknownScreen', {'screen': '${action.screen}'}),
           mode: ToastMode.error,
         );
     }
@@ -1623,9 +1633,15 @@ class _ChatPanelState extends State<ChatPanel> {
       case RevealResult.launched:
         return;
       case RevealResult.notFound:
-        _showToast('File not found: $path', mode: ToastMode.error);
+        _showToast(
+          _strings.t('toast.fileNotFound', {'path': path}),
+          mode: ToastMode.error,
+        );
       case RevealResult.failed:
-        _showToast("Couldn't open file manager", mode: ToastMode.error);
+        _showToast(
+          _strings.t('toast.fileManagerGeneric'),
+          mode: ToastMode.error,
+        );
     }
   }
 
@@ -2033,6 +2049,7 @@ class _ChatPanelState extends State<ChatPanel> {
                           _pendingAskCubit.dismiss();
                         }
                       },
+                      strings: _strings,
                     );
                   },
                 ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../i18n/strings.dart';
 import '../models/message.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
@@ -22,6 +23,11 @@ class TldrHandler {
   final ShowToastCallback showToast;
   final void Function() refresh;
 
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// test constructions stay green — production wiring is via
+  /// [ChatTurnOrchestrator] which passes the live `Strings`.
+  final Strings strings;
+
   TldrHandler({
     required this.sessionController,
     required this.providerService,
@@ -29,6 +35,7 @@ class TldrHandler {
     required this.messageStore,
     required this.showToast,
     required this.refresh,
+    this.strings = kEnglishStrings,
   });
 
   Future<void> maybeGenerateTldr(
@@ -45,10 +52,7 @@ class TldrHandler {
 
     if (!hasAuxModel) {
       if (force) {
-        showToast(
-          'No auxiliary model — set one with /auxiliary',
-          mode: ToastMode.error,
-        );
+        showToast(strings.t('toast.tldrNoAux'), mode: ToastMode.error);
       }
       refresh();
       return;

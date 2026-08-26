@@ -11,6 +11,7 @@ import 'package:nocterm_bloc/nocterm_bloc.dart';
 import '../models/message.dart';
 import '../models/message_queue.dart';
 import '../models/session_runtime_state.dart';
+import '../services/llm_error.dart';
 import '../services/llm_provider.dart';
 import '../services/provider_service.dart';
 import '../utils/frame_profiler.dart';
@@ -28,6 +29,7 @@ import 'chat_turn_cubit.dart';
 import 'chat_turn_orchestrator.dart';
 import 'compacted_session_header.dart';
 import 'compaction_divider.dart';
+import 'error_bubble.dart';
 import 'message_bubble.dart';
 import 'queued_messages_bubble.dart';
 import 'session_controller.dart';
@@ -617,7 +619,7 @@ class _ChatHistoryState extends State<ChatHistory> {
           // sibling segment (same user anchor, user line suppressed)
           // and render through the normal path below — nothing to
           // re-emit here.
-          items.add((ctx) => AskAnswerBubble(answer: askView));
+          items.add((ctx) => AskAnswerBubble(answer: askView, strings: component.strings));
           if (!isLiveOpenSegment) {
             items.add((ctx) => const SizedBox(height: 1));
           }
@@ -712,6 +714,23 @@ class _ChatHistoryState extends State<ChatHistory> {
                     Divider(color: CruxTheme.of(ctx).divider, height: 1),
               );
             }
+          }
+
+          // Abnormal-stop bubble — mirrors the verbose path's
+          // `stream_error` MessageBubble. The walker attaches the
+          // turn's `stream_error` row to [VibeSegment.stopError];
+          // without this the stop reason (LLM failure, step limit,
+          // …) was invisible in vibe mode entirely.
+          final stopError = seg.stopError;
+          if (stopError != null) {
+            items.add(
+              (ctx) => ErrorBubble(
+                error: decodeLlmErrorJson(stopError.error ?? ''),
+                onRetry: component.onRetryContinue,
+                strings: component.strings,
+              ),
+            );
+            items.add((ctx) => const SizedBox(height: 1));
           }
         }
       }
@@ -825,7 +844,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             : null;
         items.add((ctx) {
           if (askView != null) {
-            return AskAnswerBubble(answer: askView);
+            return AskAnswerBubble(answer: askView, strings: component.strings);
           }
           return MessageBubble(
             message: msg,
@@ -1043,12 +1062,15 @@ class _ChatHistoryState extends State<ChatHistory> {
           return;
         case UrlLaunchResult.rejected:
           component.showToast(
-            'Refused to open url: $url',
+            component.strings.t('toast.urlRefused', {'url': url}),
             mode: ToastMode.error,
           );
           return;
         case UrlLaunchResult.failed:
-          component.showToast("Couldn't open url: $url", mode: ToastMode.error);
+          component.showToast(
+            component.strings.t('toast.urlFailed', {'url': url}),
+            mode: ToastMode.error,
+          );
           return;
       }
     }
@@ -1132,12 +1154,17 @@ class _ChatHistoryState extends State<ChatHistory> {
   String _loadingLabel(int? total, int? loaded) {
     if (total != null && total > 0 && loaded != null && loaded > 0) {
       final pct = ((loaded * 100) / total).clamp(0, 100).round();
-      return 'Loading $total messages… ($pct%)';
+      return component.strings.t('chat.history.loadingPct', {
+        'total': '$total',
+        'pct': '$pct',
+      });
     }
     if (total != null && total > 0) {
-      return 'Loading $total messages…';
+      return component.strings.t('chat.history.loadingKnown', {
+        'total': '$total',
+      });
     }
-    return 'Loading messages…';
+    return component.strings.t('chat.history.loadingUnknown');
   }
 
   /// The placeholder for a genuinely empty session (no messages, no
@@ -1158,16 +1185,12 @@ class _ChatHistoryState extends State<ChatHistory> {
       mainAxisSize: MainAxisSize.min,
       children: hasApiKey
           ? [
-              Text('No messages yet.', style: style),
-              Text('Type / for commands, @ to mention files.', style: style),
+              Text(component.strings.t('chat.history.emptyWithKey'), style: style),
+              Text(component.strings.t('chat.history.emptyHint'), style: style),
             ]
           : [
-              Text('No provider configured yet.', style: style),
-              Text(
-                'Run /provider <name> <key> to connect a model — '
-                'type / to see all commands.',
-                style: style,
-              ),
+              Text(component.strings.t('chat.history.emptyNoKey'), style: style),
+              Text(component.strings.t('chat.history.emptyNoKeyHint'), style: style),
             ],
     );
   }

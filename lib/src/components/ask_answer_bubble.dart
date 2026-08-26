@@ -1,5 +1,5 @@
 import 'package:nocterm/nocterm.dart';
-
+import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 
 /// What the user picked in one group of the `ask` form, for display
@@ -64,7 +64,14 @@ class AskAnswerView {
 class AskAnswerBubble extends StatelessComponent {
   final AskAnswerView answer;
 
-  const AskAnswerBubble({super.key, required this.answer});
+  /// Locale-aware chrome strings. Defaulted to English.
+  final Strings strings;
+
+  const AskAnswerBubble({
+    super.key,
+    required this.answer,
+    this.strings = kEnglishStrings,
+  });
 
   @override
   Component build(BuildContext context) {
@@ -77,7 +84,7 @@ class AskAnswerBubble extends StatelessComponent {
       Row(
         children: [
           Text(
-            ' Ask ',
+            strings.t('ask.chip'),
             style: TextStyle(
               color: theme.buttonTextFocused,
               fontWeight: FontWeight.bold,

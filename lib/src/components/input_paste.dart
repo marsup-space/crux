@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/strings.dart';
 import '../models/image_attachment.dart';
 import '../services/provider_service.dart';
 import '../utils/clipboard_image.dart';
@@ -27,6 +28,11 @@ class InputPaste {
   final void Function(ImageAttachment image)? onAttachClipboardImage;
   final void Function() onStateChanged;
 
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// constructions stay green — production wiring is via [ChatPanel]
+  /// which passes the live `Strings`.
+  final Strings strings;
+
   InputPaste({
     required this.sessionController,
     required this.turnOrchestrator,
@@ -36,6 +42,7 @@ class InputPaste {
     required this.projectPath,
     required this.onAttachClipboardImage,
     required this.onStateChanged,
+    this.strings = kEnglishStrings,
   });
 
   /// Attempt to read an image from the system clipboard and add it as
@@ -56,22 +63,21 @@ class InputPaste {
         onAttachClipboardImage?.call(image);
         final sizeKB = (result.bytes.length / 1024).toStringAsFixed(0);
         turnOrchestrator.showToast(
-          '📎 Clipboard image attached ($sizeKB KB). '
-          'Type your message and press Enter to send.',
+          strings.t('toast.clipboardAttached', {'kb': sizeKB}),
           mode: ToastMode.status,
         );
         onStateChanged();
         return true;
       } else if (showEmptyToast) {
         turnOrchestrator.showToast(
-          'Clipboard is empty or unavailable',
+          strings.t('toast.clipboardEmpty'),
           mode: ToastMode.error,
         );
       }
     } catch (e) {
       if (showEmptyToast) {
         turnOrchestrator.showToast(
-          'Failed to read clipboard: $e',
+          strings.t('toast.clipboardReadFailed', {'error': '$e'}),
           mode: ToastMode.error,
         );
       }
@@ -97,7 +103,7 @@ class InputPaste {
     }
 
     turnOrchestrator.showToast(
-      'Clipboard is empty or unavailable',
+      strings.t('toast.clipboardEmpty'),
       mode: ToastMode.error,
     );
   }
@@ -233,7 +239,9 @@ class InputPaste {
 
     if (missingNames.isNotEmpty) {
       turnOrchestrator.showToast(
-        '⚠️ File(s) not found: ${missingNames.join(', ')}',
+        strings.t('toast.droppedFileMissing', {
+          'names': missingNames.join(', '),
+        }),
         mode: ToastMode.error,
       );
     }
@@ -242,7 +250,7 @@ class InputPaste {
       if (imageCount > 0) parts.add('$imageCount image(s) attached');
       if (refCount > 0) parts.add('$refCount path(s) inserted');
       turnOrchestrator.showToast(
-        '📎 Dropped: ${parts.join(', ')}',
+        strings.t('toast.droppedSummary', {'summary': parts.join(', ')}),
         mode: ToastMode.status,
       );
     }
@@ -263,13 +271,15 @@ class InputPaste {
       onAttachClipboardImage?.call(image);
       final sizeKB = (file.lengthSync() / 1024).toStringAsFixed(0);
       turnOrchestrator.showToast(
-        '📎 Attached: ${image.label} ($sizeKB KB). '
-        'Type your message and press Enter to send.',
+        strings.t('toast.imageAttached', {
+          'label': image.label,
+          'kb': sizeKB,
+        }),
         mode: ToastMode.status,
       );
     } catch (e) {
       turnOrchestrator.showToast(
-        'Failed to attach image: $e',
+        strings.t('toast.imageAttachFailed', {'error': '$e'}),
         mode: ToastMode.error,
       );
     }

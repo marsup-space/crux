@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/terminal_symbols.dart';
 import 'button.dart';
@@ -324,6 +325,11 @@ class WizardOverlay extends StatefulComponent {
   /// If not provided, an internal controller is created.
   final WizardController? controller;
 
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// constructions stay green — production wiring is by the host
+  /// (e.g. [ChatPanel]) which passes the live `Strings`.
+  final Strings strings;
+
   const WizardOverlay({
     super.key,
     required this.steps,
@@ -331,6 +337,7 @@ class WizardOverlay extends StatefulComponent {
     required this.onCancel,
     this.onStepChanged,
     this.controller,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -457,7 +464,10 @@ class _WizardOverlayState extends State<WizardOverlay> {
           Row(
             children: [
               Text(
-                'Step ${_currentStep + 1}/${steps.length}: ',
+                component.strings.t('wizard.step', {
+                  'current': '${_currentStep + 1}',
+                  'total': '${steps.length}',
+                }),
                 style: TextStyle(color: CruxTheme.of(context).wizardTextDim),
               ),
               Text(

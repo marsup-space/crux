@@ -150,6 +150,7 @@ const Map<String, String> _en = {
   'home.tokens.tokens': 'tokens',
   'home.tokens.turns': 'turns',
   'home.tokens.sessions': 'sessions',
+  'home.tokens.models': 'models',
 
   // ── Yesterday ──
   'home.yesterday.summarizing': 'summarizing {day}…',
@@ -501,6 +502,7 @@ const Map<String, String> _en = {
   'chat.tool.lsp': 'LSP · {n} {word}',
   'chat.tool.error': 'error',
   'chat.tool.errors': 'errors',
+  'error.continue': 'continue (/continue)',
 
   // ── Fullpane + compaction ──
   'chat.fullpane.skill': 'Skill — {name}',
@@ -532,6 +534,158 @@ const Map<String, String> _en = {
 
   // ── Diagram rendering ──
   'diagram.cycleWarning': 'cycle: {nodes}',
+
+  // ── /language option labels (visible in /language <code> suggestions) ──
+  'cmd.lang.sug.en': 'English',
+  'cmd.lang.sug.zh': '中文',
+
+  // ── /session placeholder suggestions (shown in the autocomplete panel) ──
+  'cmd.session.sug.1': 'Build a TUI chat app',
+  'cmd.session.sug.2': 'Debug rendering pipeline',
+  'cmd.session.sug.3': 'Add markdown support',
+  'cmd.session.sug.4': 'Refactor command registry',
+
+  // ── /d-* debug command descriptions ──
+  'cmd.d.state.desc': '[debug] Dump current session state',
+  'cmd.d.messages.desc': '[debug] Dump all messages in current session',
+  'cmd.d.context.desc': '[debug] Dump context window info and token estimates',
+  'cmd.d.runtime.desc': '[debug] Dump runtime state (TTFT, tok/s, etc.)',
+  'cmd.d.monitor.desc': '[debug] Show recent aux shell-monitor runs',
+  'cmd.d.providers.desc': '[debug] List all loaded providers and models',
+  'cmd.d.tools.desc': '[debug] List all registered tools',
+  'cmd.d.paths.desc': '[debug] Print relevant file paths (DB, providers, project)',
+  'cmd.d.env.desc': '[debug] Print environment info (Dart version, platform)',
+  'cmd.d.toast.desc':
+      '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
+  'cmd.d.fullpane.desc':
+      '[debug] Open the fullpane (near-full-screen modal) overlay',
+  'cmd.d.profiler.desc':
+      '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
+
+  // ── URL handling (chat history + chat panel) ──
+  'toast.urlRefused': 'Refused to open url: {url}',
+  'toast.urlFailed': "Couldn't open url: {url}",
+
+  // ── Chat history: loading progress + empty-state guidance ──
+  'chat.history.loadingPct': 'Loading {total} messages… ({pct}%)',
+  'chat.history.loadingKnown': 'Loading {total} messages…',
+  'chat.history.loadingUnknown': 'Loading messages…',
+  'chat.history.emptyWithKey': 'No messages yet.',
+  'chat.history.emptyHint': 'Type / for commands, @ to mention files.',
+  'chat.history.emptyNoKey': 'No provider configured yet.',
+  'chat.history.emptyNoKeyHint':
+      'Run /provider <name> <key> to connect a model — type / to see all commands.',
+
+  // ── File manager / file system toasts ──
+  'toast.dirNotFoundCwd': 'Directory not found: {path}',
+  'toast.fileManagerFailed': "Couldn't open file manager for {path}",
+  'toast.fileNotFound': 'File not found: {path}',
+  'toast.fileManagerGeneric': "Couldn't open file manager",
+  'toast.unknownScreen': 'Unknown screen: {screen}',
+
+  // ── Orchestrator-level error / status toasts ──
+  'toast.responseInterrupted': 'Response interrupted',
+  'toast.failedStartResponse': 'Failed to start response: {error}',
+  'toast.unhandledError': 'Unhandled error: {error}',
+
+  // ── Manual compact toasts (orchestrator) ──
+  'toast.compactNoSession': 'No active session',
+  'toast.compactWhileResponding':
+      'Cannot compact while AI is responding',
+  'toast.compactInProgress': 'Compacting context...',
+  'toast.nothingToCompact': 'Nothing to compact',
+  'toast.compactDone': 'Compacted — {n} messages (~{post} ← {pre} tokens)',
+  'toast.autoCompactDone':
+      'Context was getting full — compacted (~{post} ← {pre} tokens)',
+
+  // ── BTW (side-question) missing-key toasts ──
+  'toast.btwMissingKey':
+      'No API key for provider "{name}". Use /provider {name} to configure an API key, then try again.',
+  'toast.btwNoProvider':
+      'No configured provider serves model "{model}". Use /provider to configure a provider and API key, then try again.',
+
+  // ── Clipboard / image-attach toasts ──
+  'toast.clipboardAttached':
+      '📎 Clipboard image attached ({kb} KB). Type your message and press Enter to send.',
+  'toast.clipboardEmpty': 'Clipboard is empty or unavailable',
+  'toast.clipboardReadFailed': 'Failed to read clipboard: {error}',
+  'toast.imageAttached':
+      '📎 Attached: {label} ({kb} KB). Type your message and press Enter to send.',
+  'toast.imageAttachFailed': 'Failed to attach image: {error}',
+  'toast.droppedFileMissing': '⚠️ File(s) not found: {names}',
+  'toast.droppedSummary': '📎 Dropped: {summary}',
+
+  // ── Ctrl+C quit hint ──
+  'toast.ctrlCQuit': 'A session is running. Press Ctrl+C again to quit.',
+
+  // ── TLDR auxiliary-model warning ──
+  'toast.tldrNoAux': 'No auxiliary model — set one with /auxiliary',
+
+  // ── Picker overlay headers / empty states ──
+  'picker.files.title': 'Files',
+  'picker.files.mentionHint': '(@-mention a file)',
+  'picker.files.searching': '(@{query})',
+  'picker.files.noMatches': '  no matches',
+  'picker.skills.title': 'Skills',
+  'picker.skills.noMatches': 'No matching skills. Press Esc to dismiss.',
+
+  // ── Wizard overlay chrome ──
+  'wizard.step': 'Step {current}/{total}: ',
+
+  // ── Ask form chrome ──
+  'ask.chip': ' Ask ',
+  'ask.submit': 'Submit',
+  'ask.dismiss': 'Dismiss',
+  'ask.hint.dismiss': ' Esc: dismiss ',
+  'ask.hint.tab': 'Tab: switch region  ',
+  'ask.notes': ' Notes: ',
+  'ask.notePlaceholder': '(optional) add extra context for the agent',
+
+  // ── Streaming / queued / compaction bubble chips ──
+  'bubble.cruxPrefix': ' Crux: ',
+  'bubble.waiting': ' (waiting for {secs})',
+  'bubble.executing': ' (executing tools for {secs})',
+  'bubble.executingFor': ' {preview}executing for {secs}',
+  'bubble.compacting': ' Compacting: ',
+  'bubble.compactFailed': ' Compact failed: ',
+  'bubble.summary': ' Summary: ',
+  'bubble.queued': ' ⏳ Queued: ',
+  'bubble.queuedCount': '{n} message(s)',
+  'bubble.tldrPrefix': ' TLDR: ',
+  'bubble.tldrGenerating': 'generating...',
+
+  // ── Compacted session header ──
+  'compacted.from': 'Compacted from ',
+
+  // ── Tool detail pane chrome ──
+  'tool.label': 'Tool',
+  'tool.labelIntent': 'Intent',
+  'tool.abortedByCrux': 'Aborted mid-stream by Crux (early abort)',
+  'tool.abortedUnknown': 'Aborted mid-stream: unknown tool',
+  'tool.abortedUnknownNamed': "Aborted mid-stream: unknown tool '{name}'",
+  'tool.pattern': 'Pattern: ',
+  'tool.patternInPath': '  in {path}',
+  'tool.patternFilter': '  filter: {filter}',
+  'tool.url': 'URL: ',
+  'tool.unchangedLines': '  {glyph} {n} unchanged lines',
+  'tool.guardTriggered': 'Guard triggered',
+  'tool.guardReason': 'Guard: {reason}',
+  'tool.autoRead': 'Auto-read',
+  'tool.autoReadReason': 'Auto-read: {reason}',
+  'tool.fileHeaderIntent': '  {intent}',
+
+  // ── Toolbar fixed-temperature chip ──
+  'toolbar.fixedTemp.label': 'T:{value} (fixed)',
+  'toolbar.fixedTemp.hint':
+      'Temperature: {value} (fixed by the provider — /temperature has no effect)',
+
+  // ── Activity widget week labels ──
+  'activity.weekLabel': 'W{n}  ',
+
+  // ── Clipboard image labels (shown in input row + toast) ──
+  'clipboard.png': 'clipboard (PNG)',
+  'clipboard.jpeg': 'clipboard (JPEG)',
+  'clipboard.tiff': 'clipboard (TIFF)',
 };
 
 const Map<String, String> _zh = {
@@ -639,6 +793,7 @@ const Map<String, String> _zh = {
   'home.tokens.tokens': 'Token',
   'home.tokens.turns': '轮次',
   'home.tokens.sessions': '会话',
+  'home.tokens.models': '模型',
 
   // ── Yesterday ──
   'home.yesterday.summarizing': '正在总结 {day}…',
@@ -961,6 +1116,7 @@ const Map<String, String> _zh = {
   'chat.tool.lsp': 'LSP · {n} {word}',
   'chat.tool.error': '错误',
   'chat.tool.errors': '错误',
+  'error.continue': '继续 (/continue)',
 
   // ── Fullpane + compaction ──
   'chat.fullpane.skill': '技能 — {name}',
@@ -988,4 +1144,154 @@ const Map<String, String> _zh = {
 
   // ── 图表渲染 ──
   'diagram.cycleWarning': '循环：{nodes}',
+
+  // ── /language option labels ──
+  'cmd.lang.sug.en': 'English',
+  'cmd.lang.sug.zh': '中文',
+
+  // ── /session 占位 suggestion ──
+  'cmd.session.sug.1': '构建一个 TUI 聊天应用',
+  'cmd.session.sug.2': '调试渲染流水线',
+  'cmd.session.sug.3': '添加 Markdown 支持',
+  'cmd.session.sug.4': '重构命令注册表',
+
+  // ── /d-* 调试命令描述 ──
+  'cmd.d.state.desc': '[调试] 打印当前会话状态',
+  'cmd.d.messages.desc': '[调试] 打印当前会话全部消息',
+  'cmd.d.context.desc': '[调试] 打印上下文窗口信息与 token 估算',
+  'cmd.d.runtime.desc': '[调试] 打印运行时状态（首 token 时延、tok/s 等）',
+  'cmd.d.monitor.desc': '[调试] 查看最近的辅助 shell-monitor 运行',
+  'cmd.d.providers.desc': '[调试] 列出所有已加载的提供商与模型',
+  'cmd.d.tools.desc': '[调试] 列出所有已注册的工具',
+  'cmd.d.paths.desc': '[调试] 打印相关文件路径（数据库、提供商、项目）',
+  'cmd.d.env.desc': '[调试] 打印环境信息（Dart 版本、平台）',
+  'cmd.d.toast.desc':
+      '[调试] 显示一条 toast——根据消息内容自动判断 info/error/status',
+  'cmd.d.fullpane.desc': '[调试] 打开 fullpane（近全屏模态）覆盖层',
+  'cmd.d.profiler.desc':
+      '[调试] 记录逐帧耗时：/d-profiler <秒数> [路径]，/d-profiler stop',
+
+  // ── URL 处理（chat 历史 + chat 面板） ──
+  'toast.urlRefused': '拒绝打开链接：{url}',
+  'toast.urlFailed': '无法打开链接：{url}',
+
+  // ── 聊天历史：加载进度 + 空状态引导 ──
+  'chat.history.loadingPct': '正在加载 {total} 条消息…（{pct}%）',
+  'chat.history.loadingKnown': '正在加载 {total} 条消息…',
+  'chat.history.loadingUnknown': '正在加载消息…',
+  'chat.history.emptyWithKey': '暂无消息。',
+  'chat.history.emptyHint': '输入 / 调用命令，输入 @ 引用文件。',
+  'chat.history.emptyNoKey': '尚未配置任何提供商。',
+  'chat.history.emptyNoKeyHint':
+      '运行 /provider <名称> <密钥> 接入模型——输入 / 查看所有命令。',
+
+  // ── 文件管理器 / 文件系统 toast ──
+  'toast.dirNotFoundCwd': '目录不存在：{path}',
+  'toast.fileManagerFailed': '无法为 {path} 打开文件管理器',
+  'toast.fileNotFound': '文件不存在：{path}',
+  'toast.fileManagerGeneric': '无法打开文件管理器',
+  'toast.unknownScreen': '未知页面：{screen}',
+
+  // ── 编排层错误 / 状态 toast ──
+  'toast.responseInterrupted': '回复已中断',
+  'toast.failedStartResponse': '启动回复失败：{error}',
+  'toast.unhandledError': '未处理错误：{error}',
+
+  // ── 手动压缩 toast（编排层） ──
+  'toast.compactNoSession': '没有活动会话',
+  'toast.compactWhileResponding': 'AI 正在回复中，无法压缩',
+  'toast.compactInProgress': '正在压缩上下文…',
+  'toast.nothingToCompact': '没有可压缩的内容',
+  'toast.compactDone': '已压缩 {n} 条消息（约 {post} ← {pre} token）',
+  'toast.autoCompactDone':
+      '上下文即将溢出——已自动压缩（约 {post} ← {pre} token）',
+
+  // ── BTW（侧问）缺少密钥 toast ──
+  'toast.btwMissingKey':
+      '提供商 "{name}" 未配置 API 密钥。请用 /provider {name} 配置后重试。',
+  'toast.btwNoProvider':
+      '没有提供商能为模型 "{model}" 提供服务。请用 /provider 配置提供商和密钥后重试。',
+
+  // ── 剪贴板 / 图片附件 toast ──
+  'toast.clipboardAttached':
+      '📎 已附加剪贴板图片（{kb} KB）。输入消息后回车即可发送。',
+  'toast.clipboardEmpty': '剪贴板为空或不可用',
+  'toast.clipboardReadFailed': '读取剪贴板失败：{error}',
+  'toast.imageAttached':
+      '📎 已附加：{label}（{kb} KB）。输入消息后回车即可发送。',
+  'toast.imageAttachFailed': '附加图片失败：{error}',
+  'toast.droppedFileMissing': '⚠️ 找不到以下文件：{names}',
+  'toast.droppedSummary': '📎 已拖入：{summary}',
+
+  // ── Ctrl+C 退出提示 ──
+  'toast.ctrlCQuit': '有会话正在运行。再按一次 Ctrl+C 退出。',
+
+  // ── TLDR 缺少辅助模型提示 ──
+  'toast.tldrNoAux': '未设置辅助模型——用 /auxiliary 设置一个',
+
+  // ── 选择器覆盖层标题 / 空状态 ──
+  'picker.files.title': '文件',
+  'picker.files.mentionHint': '（用 @ 引用文件）',
+  'picker.files.searching': '（@{query}）',
+  'picker.files.noMatches': '  无匹配',
+  'picker.skills.title': '技能',
+  'picker.skills.noMatches': '无匹配技能。按 Esc 关闭。',
+
+  // ── 向导覆盖层 chrome ──
+  'wizard.step': '第 {current}/{total} 步：',
+
+  // ── Ask 表单 chrome ──
+  'ask.chip': ' 询问 ',
+  'ask.submit': '提交',
+  'ask.dismiss': '取消',
+  'ask.hint.dismiss': ' Esc：取消 ',
+  'ask.hint.tab': 'Tab：切换区域  ',
+  'ask.notes': ' 备注：',
+  'ask.notePlaceholder': '（可选）为智能体补充上下文',
+
+  // ── 流式 / 排队 / 压缩气泡 chip ──
+  'bubble.cruxPrefix': ' Crux：',
+  'bubble.waiting': ' （等待 {secs}）',
+  'bubble.executing': ' （执行工具 {secs}）',
+  'bubble.executingFor': ' {preview}执行中 {secs}',
+  'bubble.compacting': ' 压缩中：',
+  'bubble.compactFailed': ' 压缩失败：',
+  'bubble.summary': ' 摘要：',
+  'bubble.queued': ' ⏳ 已排队：',
+  'bubble.queuedCount': '{n} 条消息',
+  'bubble.tldrPrefix': ' TLDR：',
+  'bubble.tldrGenerating': '生成中…',
+
+  // ── 压缩会话头 ──
+  'compacted.from': '从以下会话压缩：',
+
+  // ── 工具详情面板 chrome ──
+  'tool.label': '工具',
+  'tool.labelIntent': '意图',
+  'tool.abortedByCrux': '被 Crux 中途中止（early abort）',
+  'tool.abortedUnknown': '中途中止：未知工具',
+  'tool.abortedUnknownNamed': "中途中止：未知工具 '{name}'",
+  'tool.pattern': '模式：',
+  'tool.patternInPath': '  路径 {path}',
+  'tool.patternFilter': '  过滤：{filter}',
+  'tool.url': '链接：',
+  'tool.unchangedLines': '  {glyph} {n} 行未变更',
+  'tool.guardTriggered': '触发守卫',
+  'tool.guardReason': '守卫：{reason}',
+  'tool.autoRead': '自动读取',
+  'tool.autoReadReason': '自动读取：{reason}',
+  'tool.fileHeaderIntent': '  {intent}',
+
+  // ── 工具栏固定温度 chip ──
+  'toolbar.fixedTemp.label': 'T:{value}（固定）',
+  'toolbar.fixedTemp.hint':
+      '温度：{value}（由提供商固定——/temperature 不生效）',
+
+  // ── 活跃度 widget 周标签 ──
+  'activity.weekLabel': 'W{n}  ',
+
+  // ── 剪贴板图片标签（在输入条和 toast 中显示） ──
+  'clipboard.png': '剪贴板 (PNG)',
+  'clipboard.jpeg': '剪贴板 (JPEG)',
+  'clipboard.tiff': '剪贴板 (TIFF)',
 };
