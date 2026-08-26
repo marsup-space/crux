@@ -5,6 +5,7 @@ import 'package:nocterm/nocterm.dart';
 import '../../../i18n/strings.dart';
 import '../../../theme/crux_theme.dart';
 import '../../../utils/text_width.dart';
+import '../../../utils/token_format.dart';
 import '../home_widgets.dart';
 
 /// One day's token total, keyed by local calendar day.
@@ -218,33 +219,11 @@ class _ActivityGrid extends StatelessComponent {
   }
 
   /// Compact token count for the legend: `1.5M`, `100M`, `42k`.
-  static String _fmtTokens(int n) {
-    if (n >= 1000000) {
-      final m = n / 1000000;
-      return '${m % 1 == 0 ? m.toInt() : m.toStringAsFixed(1)}M';
-    }
-    if (n >= 1000) {
-      final k = n / 1000;
-      return '${k % 1 == 0 ? k.toInt() : k.toStringAsFixed(1)}k';
-    }
-    return '$n';
-  }
+  static String _fmtTokens(int n) => formatTokensCompact(n);
 
-  /// Week-row total in megatokens, at most 5 chars: the most precise
-  /// M-value that fits. `4.51M`, `13.1M`, `130M` (a `130.1M` would
-  /// be 6 chars, so the decimals drop), and tiny-but-nonzero weeks
-  /// show `0.01M` rather than rounding to a misleading `0M`.
-  static String _fmtMegs(int n) {
-    final m = n / 1000000;
-    for (final decimals in const [2, 1, 0]) {
-      final s = '${m.toStringAsFixed(decimals)}M';
-      if (s.length <= 5) return s;
-    }
-    // >= 10000M (10G): 5 chars can't hold the M value. Compress to G
-    // (`10000M` -> `10.0G`); a >= 10T week overflows 5 chars whatever
-    // we do, so don't truncate the number into a wrong one.
-    return '${(m / 1000).toStringAsFixed(1)}G';
-  }
+  /// Week-row total in megatokens, at most 5 chars — see
+  /// [formatMegs].
+  static String _fmtMegs(int n) => formatMegs(n);
 
   /// The Monday of the week [weeksBack] weeks before [today]'s week.
   /// Week starts on Monday (ISO convention).

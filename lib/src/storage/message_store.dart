@@ -225,7 +225,10 @@ class MessageStore {
 
   /// Per-local-day usage stats for the home screen's `today` box: total
   /// tokens, conversation turns (`role: 'user'` messages), and the
-  /// number of distinct sessions that had activity that day.
+  /// number of distinct sessions that had activity that day. Each day
+  /// also carries a per-model token breakdown ([DailyUsageStats.byModel],
+  /// from a second `GROUP BY day, model` aggregate) for the box's bar
+  /// chart.
   ///
   /// Returns a map from `'YYYY-MM-DD'` (local time) to a
   /// [DailyUsageStats]. [sinceDaysAgo] bounds the window (e.g. 371 for a
@@ -264,12 +267,43 @@ class MessageStore {
           readsFrom: {_db.messages, _db.sessions},
         )
         .get();
+
+    // Per-day × per-model totals (same filters as the day aggregate).
+    // Only models with a nonzero sum are kept — empty-string model ids
+    // (user/tool rows and legacy data) carry no tokens of their own.
+    // `model` is fully qualified in GROUP BY/HAVING: both `messages`
+    // and `sessions` carry a `model` column, so a bare `model` is an
+    // ambiguous reference and SQLite rejects the statement outright.
+    final modelRows = await _db
+        .customSelect(
+          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          'AS day, '
+          'm.model AS model, '
+          'SUM(m.tokens_in + m.tokens_out) AS tokens '
+          'FROM messages m '
+          'JOIN sessions s ON s.id = m.session_id '
+          "WHERE m.created_at >= ? AND m.model != '' $projectFilter "
+          'GROUP BY day, m.model '
+          'HAVING tokens > 0',
+          variables: variables,
+          readsFrom: {_db.messages, _db.sessions},
+        )
+        .get();
+    // day → model → tokens.
+    final byModel = <String, Map<String, int>>{};
+    for (final row in modelRows) {
+      byModel
+          .putIfAbsent(row.read<String>('day'), () => {})
+          [row.read<String>('model')] = row.read<int>('tokens');
+    }
+
     return {
       for (final row in rows)
         row.read<String>('day'): DailyUsageStats(
           tokens: row.read<int>('tokens'),
           turns: row.read<int>('turns'),
           sessions: row.read<int>('sessions'),
+          byModel: byModel[row.read<String>('day')] ?? const {},
         ),
     };
   }

@@ -273,6 +273,7 @@ void main() {
       required DateTime when,
       int tokensIn = 0,
       int tokensOut = 0,
+      String model = '',
     }) async {
       await store.database
           .into(store.database.messages)
@@ -283,6 +284,7 @@ void main() {
               createdAt: when.millisecondsSinceEpoch,
               tokensIn: Value(tokensIn),
               tokensOut: Value(tokensOut),
+              model: Value(model),
             ),
           );
     }
@@ -333,6 +335,53 @@ void main() {
       expect(todayStats.turns, 2);
       // Two distinct sessions.
       expect(todayStats.sessions, 2);
+    });
+
+    test('aggregates per-model token totals per day', () async {
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+
+      final s1 = await store.create(title: 'a', projectPath: '/p');
+
+      // Two models, several messages each.
+      await addMessage(
+        sessionId: s1.id,
+        role: 'ai',
+        when: todayStart.add(const Duration(hours: 9)),
+        tokensIn: 100,
+        tokensOut: 50,
+        model: 'claude-opus-4',
+      );
+      await addMessage(
+        sessionId: s1.id,
+        role: 'ai',
+        when: todayStart.add(const Duration(hours: 10)),
+        tokensIn: 200,
+        model: 'gpt-5.2',
+      );
+      await addMessage(
+        sessionId: s1.id,
+        role: 'user',
+        when: todayStart.add(const Duration(hours: 11)),
+        tokensIn: 5,
+        model: 'claude-opus-4', // user tokens count toward the model too
+      );
+
+      final stats = await store.messageStore.dailyUsageStats(
+        sinceDaysAgo: 7,
+        projectPath: '/p',
+      );
+      final byModel = stats.values.fold<Map<String, int>>(
+        {},
+        (acc, s) => acc..addAll(s.byModel),
+      );
+      // claude-opus-4: (100 + 50) from the ai row + 5 from the user
+      // row = 155. The aggregate sums every row's tokens under its
+      // persisted model — roles don't filter the by-model breakdown.
+      expect(byModel['claude-opus-4'], 155);
+      expect(byModel['gpt-5.2'], 200);
+      // Only models with usage appear — no zero/empty-model entries.
+      expect(byModel.length, 2);
     });
   });
 }

@@ -33,23 +33,52 @@ import 'package:crux/src/theme/crux_theme.dart';
 
 /// Renders a widget's content (no box chrome) at a fixed width inside a
 /// themed container, and returns the tester for text assertions.
-Future<void> _pump(
-  NoctermTester tester,
-  HomeWidget widget,
-  HomeContext ctx,
-) async {
-  await tester.pumpComponent(
-    Container(
+///
+/// The host wires [HomeWidget.onChanged] to a rebuild — the same
+/// contract HomeScreen honors via `_wireWidgetListeners`. Without it,
+/// an async loader that lands after the first pump calls
+/// `notifyChanged()` into the void and the terminal stays on the
+/// "loading…" frame forever.
+class _PumpHost extends StatefulComponent {
+  final HomeWidget widget;
+  final HomeContext ctx;
+
+  const _PumpHost(this.widget, this.ctx);
+
+  @override
+  State<_PumpHost> createState() => _PumpHostState();
+}
+
+class _PumpHostState extends State<_PumpHost> {
+  @override
+  void initState() {
+    super.initState();
+    component.widget.onChanged = () {
+      if (mounted) setState(() {});
+    };
+  }
+
+  @override
+  Component build(BuildContext context) {
+    return Container(
       width: 60,
       height: 12,
       child: CruxTheme(
         data: CruxThemeData.draculaFallback,
         child: Builder(
-          builder: (context) => widget.build(context, ctx, 1),
+          builder: (context) => component.widget.build(context, component.ctx, 1),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+Future<void> _pump(
+  NoctermTester tester,
+  HomeWidget widget,
+  HomeContext ctx,
+) async {
+  await tester.pumpComponent(_PumpHost(widget, ctx));
   await tester.pump();
 }
 
@@ -148,8 +177,135 @@ void main() {
       });
     });
 
-    test('shows today\'s tokens, turns, and sessions by default', () async {
+    test('renders one horizontal bar per model, busiest first', () async {
       await testNocterm('tokens today', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): const DailyUsageStats(
+              tokens: 17800,
+              turns: 34,
+              sessions: 3,
+              byModel: {
+                'claude-opus-4': 12800,
+                'gpt-5.2': 5000,
+              },
+            ),
+          },
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        expect(widget.title, 'Today');
+        // Both models show, labelled with a compact count.
+        expect(
+          tester.terminalState.findText('claude-opus-4'),
+          isNotEmpty,
+        );
+        expect(tester.terminalState.findText('gpt-5.2'), isNotEmpty);
+        expect(tester.terminalState.findText('12.8k'), isNotEmpty);
+        expect(tester.terminalState.findText('5k'), isNotEmpty);
+        // Turns/sessions stay visible on a trailing one-liner.
+        expect(
+          tester.terminalState.findText('turns 34 · sessions 3'),
+          isNotEmpty,
+        );
+      });
+    });
+
+    test('bars sort by descending usage regardless of map order', () async {
+      await testNocterm('tokens bars sorted', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): const DailyUsageStats(
+              tokens: 1000,
+              byModel: {'aaa-small': 100, 'bbb-big': 900},
+            ),
+          },
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        // The busiest model's bar sits above the smaller one.
+        final big = tester.terminalState.findText('bbb-big').single;
+        final small = tester.terminalState.findText('aaa-small').single;
+        expect(big.y, lessThan(small.y));
+      });
+    });
+
+    test('more models than fit the box scroll into view', () async {
+      await testNocterm('tokens bars scroll', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        // 8 models: 8 bar rows + 1 summary line, taller than the box's
+        // 5-row viewport — the box chrome's scrollview must clip (not
+        // overflow) and let the wheel bring the rest into view.
+        // Values descend with the index so the busiest (model-01)
+        // tops the chart and the quiet tail (model-08) is clipped
+        // below the fold — matching the busiest-first sort.
+        final byModel = <String, int>{
+          for (var i = 1; i <= 8; i++) 'model-0$i': 900 - i * 100,
+        };
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): DailyUsageStats(
+              tokens: 3600,
+              byModel: byModel,
+            ),
+          },
+        );
+        final base = HomeContext.minimal(close: () {});
+        final ctx = HomeContext(
+          runCommand: (_) => true,
+          close: () {},
+          seedInput: (_) {},
+          gitStatusService: base.gitStatusService,
+          sessions: () => const [],
+          currentSessionId: () => null,
+          switchSession: (_) => false,
+        );
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 24,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child:
+                  HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(); // loader lands
+        expect(widget.title, 'Today');
+
+        // Sorted busiest-first: model-01 tops the chart; the tail
+        // (model-08) is clipped below the fold.
+        expect(
+          tester.terminalState.findText('model-01'),
+          isNotEmpty,
+        );
+        expect(tester.terminalState.containsText('model-08'), isFalse);
+
+        // Wheel down over the box → the clipped tail scrolls into view.
+        final top = tester.terminalState.findText('model-01').first;
+        for (var i = 0; i < 2; i++) {
+          await tester.sendMouseEvent(MouseEvent(
+            button: MouseButton.wheelDown,
+            x: top.x + 2,
+            y: top.y,
+            pressed: false,
+          ));
+          await tester.pump();
+        }
+        expect(tester.terminalState.containsText('model-08'), isTrue);
+      }, size: const Size(80, 24));
+    });
+
+    test('falls back to plain totals without a per-model breakdown',
+        () async {
+      await testNocterm('tokens legacy totals', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
           now: () => now,
@@ -160,12 +316,11 @@ void main() {
         );
         await _pump(tester, widget, _ctx());
         await tester.pump();
-        expect(widget.title, 'Today');
-        expect(tester.terminalState.findText('12,800'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('turns  34'), nocterm.isNotEmpty);
+        expect(tester.terminalState.findText('12,800'), isNotEmpty);
+        expect(tester.terminalState.findText('turns  34'), isNotEmpty);
         expect(
           tester.terminalState.findText('sessions  3'),
-          nocterm.isNotEmpty,
+          isNotEmpty,
         );
       });
     });

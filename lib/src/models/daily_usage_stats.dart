@@ -16,10 +16,18 @@ class DailyUsageStats {
   /// sessions the user actually talked in).
   final int sessions;
 
+  /// Tokens (in + out) spent that day, keyed by model id — only models
+  /// with a nonzero total appear (the SQL groups by `messages.model` and
+  /// drops empty/zero rows). Feeds the `today` box's per-model bar chart.
+  /// Empty when the store predates per-model tracking or no store is
+  /// wired (tests / previews) — the box then renders without bars.
+  final Map<String, int> byModel;
+
   const DailyUsageStats({
     required this.tokens,
     this.turns = 0,
     this.sessions = 0,
+    this.byModel = const {},
   });
 
   /// True when the day had no recorded activity at all.
@@ -27,5 +35,6 @@ class DailyUsageStats {
 
   @override
   String toString() =>
-      'DailyUsageStats(tokens=$tokens, turns=$turns, sessions=$sessions)';
+      'DailyUsageStats(tokens=$tokens, turns=$turns, sessions=$sessions, '
+      'byModel=$byModel)';
 }
