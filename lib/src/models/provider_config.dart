@@ -495,6 +495,30 @@ class ProviderConfig {
   /// Must be >= 0; negatives are rejected at load time.
   final int? retryBaseDelayMs;
 
+  /// Provider-level override for the **data-idle** stream watchdog (ms).
+  ///
+  /// The LlmClient resets this timer only when a *parsed data event*
+  /// arrives — a `data:` line carrying JSON, `[DONE]`, or (for
+  /// Anthropic) any `event:`-typed SSE event. SSE comment lines
+  /// (`: OPENROUTER PROCESSING`) and raw TCP keepalives do NOT reset
+  /// it. If no real data arrives within this window, the stream is
+  /// closed with a `LlmErrorKind.timeout` chunk, which the retry loop
+  /// treats as retriable.
+  ///
+  /// Why a second watchdog: OpenRouter's free tier keeps the TCP
+  /// connection warm with periodic keepalive comments while the
+  /// request sits in an upstream queue that has already died. Those
+  /// bytes reset the byte-level idle watchdog forever, so a dead
+  /// request can sit "streaming" for many minutes without tripping
+  /// it. This watchdog measures the thing the user actually cares
+  /// about — no model output for N seconds → give up and retry.
+  ///
+  /// `null` (TOML absent) disables it (`0` = disabled too). Set it to
+  /// roughly the longest quiet gap a healthy stream legitimately
+  /// produces; openrouter-free uses 60s because its stealth previews
+  /// either start producing within a minute or are never going to.
+  final int? dataIdleTimeoutMs;
+
   const ProviderConfig({
     required this.name,
     required this.type,
@@ -511,6 +535,7 @@ class ProviderConfig {
     this.streamMaxDurationMs,
     this.maxRetries,
     this.retryBaseDelayMs,
+    this.dataIdleTimeoutMs,
   });
 
   /// Resolve the effective system-prompt tuning block for a model.
@@ -574,5 +599,6 @@ class ProviderConfig {
       'hintParallelCallsSingleThreshold=$hintParallelCallsSingleThreshold, '
       'streamIdleTimeoutMs=$streamIdleTimeoutMs, '
       'streamMaxDurationMs=$streamMaxDurationMs, '
-      'maxRetries=$maxRetries, retryBaseDelayMs=$retryBaseDelayMs)';
+      'maxRetries=$maxRetries, retryBaseDelayMs=$retryBaseDelayMs, '
+      'dataIdleTimeoutMs=$dataIdleTimeoutMs)';
 }

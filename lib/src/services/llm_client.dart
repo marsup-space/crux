@@ -21,6 +21,75 @@ String _formatMaxDuration(Duration d) {
   return d.inSeconds == 1 ? '1 second' : '${d.inSeconds} seconds';
 }
 
+/// Data-level idle watchdog for one streaming request.
+///
+/// Unlike the byte-level `idleTimer` (reset by every raw TCP batch,
+/// so SSE comment keepalives like OpenRouter's
+/// `: OPENROUTER PROCESSING` keep a dead stream alive forever), this
+/// watchdog only resets when the stream handlers report a *parsed
+/// data event* — a `data:` line carrying JSON or `[DONE]`, or an
+/// Anthropic event-typed SSE event. When it fires, the stream is
+/// closed with a retriable [LlmErrorKind.timeout] chunk, handing
+/// control to the executor's retry loop.
+///
+/// Disabled when [timeout] is zero or null.
+class _DataIdleWatchdog {
+  _DataIdleWatchdog(
+    StreamController<LlmChunk> controller, {
+    required String providerName,
+    LlmVendor? vendor,
+    required Duration? timeout,
+  })  : _controller = controller,
+        // Private named params can't be initializing formals.
+        // ignore: prefer_initializing_formals
+        _providerName = providerName,
+        // ignore: prefer_initializing_formals
+        _vendor = vendor,
+        _timeout = (timeout == null || timeout <= Duration.zero)
+            ? null
+            : timeout;
+
+  final StreamController<LlmChunk> _controller;
+  final String _providerName;
+  final LlmVendor? _vendor;
+  final Duration? _timeout;
+  Timer? _timer;
+  bool _fired = false;
+
+  /// Whether this watchdog is armed at all.
+  bool get isEnabled => _timeout != null;
+
+  /// Restart the countdown. Call on every parsed data event.
+  void reset() {
+    final timeout = _timeout;
+    if (timeout == null || _fired || _controller.isClosed) return;
+    _timer?.cancel();
+    _timer = Timer(timeout, () {
+      if (_fired || _controller.isClosed) return;
+      _fired = true;
+      _controller.add(
+        LlmChunk(
+          error: LlmError(
+            kind: LlmErrorKind.timeout,
+            vendor: _vendor ?? LlmVendorX.fromProviderName(_providerName),
+            message:
+                'No data received for ${timeout.inSeconds}s '
+                '(keepalive comments ignored) — upstream appears '
+                'stalled; retrying.',
+            providerName: _providerName,
+          ),
+        ),
+      );
+      _controller.close();
+    });
+  }
+
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+  }
+}
+
 class ToolUseChunk {
   final int index;
   final String callId;
@@ -253,6 +322,18 @@ class LlmClient {
     final maxDuration = config.streamMaxDurationMs != null
         ? Duration(milliseconds: config.streamMaxDurationMs!)
         : const Duration(minutes: 10);
+    // Data-level watchdog (see [_DataIdleWatchdog]): fires only when
+    // no parsed data event has arrived for this long — SSE comment
+    // keepalives don't reset it. Disabled unless the provider TOML
+    // opts in (`data_idle_timeout_ms`, 0 = off).
+    final dataIdleWatchdog = _DataIdleWatchdog(
+      controller,
+      providerName: config.name,
+      vendor: errorVendor,
+      timeout: config.dataIdleTimeoutMs == null
+          ? null
+          : Duration(milliseconds: config.dataIdleTimeoutMs!),
+    );
     Timer? idleTimer;
     Timer? maxTimer;
 
@@ -361,6 +442,12 @@ class LlmClient {
           controller.close();
         });
 
+        // Arm the data-idle watchdog now — its countdown must start
+        // at response time, not at the first data event, otherwise a
+        // stream that NEVER produces data (the exact failure mode it
+        // exists for) would never trip it.
+        dataIdleWatchdog.reset();
+
         if (response.statusCode != 200) {
           final errorBody = await response.transform(utf8.decoder).join();
           // Anthropic puts a `request-id` header on every response;
@@ -398,6 +485,7 @@ class LlmClient {
             idleTimer: idleTimer,
             maxTimer: maxTimer,
             idleTimeout: idleTimeout,
+            dataIdleWatchdog: dataIdleWatchdog,
           );
         } else if (wireFamily == WireFamily.responsesApi) {
           await _handleResponsesApiStream(
@@ -408,6 +496,7 @@ class LlmClient {
             idleTimer: idleTimer,
             maxTimer: maxTimer,
             idleTimeout: idleTimeout,
+            dataIdleWatchdog: dataIdleWatchdog,
           );
         } else {
           await _handleOpenAiStream(
@@ -418,11 +507,13 @@ class LlmClient {
             idleTimer: idleTimer,
             maxTimer: maxTimer,
             idleTimeout: idleTimeout,
+            dataIdleWatchdog: dataIdleWatchdog,
           );
         }
         // Successful (or already-errored) return — both timers
         // are stopped by their respective code paths; the
         // catch-all below stops them on a thrown exception.
+        dataIdleWatchdog.dispose();
       } catch (e) {
         // Make sure the watchdog timers don't keep running if
         // the request blew up before the handler took ownership
@@ -434,6 +525,7 @@ class LlmClient {
         maxTimer?.cancel();
         idleTimer = null;
         maxTimer = null;
+        dataIdleWatchdog.dispose();
         if (!controller.isClosed) {
           if (cancelToken?.isCancelled ?? false) {
             controller.add(
@@ -465,6 +557,7 @@ class LlmClient {
     required Timer? idleTimer,
     required Timer? maxTimer,
     required Duration idleTimeout,
+    required _DataIdleWatchdog dataIdleWatchdog,
   }) async {
     String buffer = '';
     // Any visible content this stream produced — text, reasoning, or
@@ -514,10 +607,15 @@ class LlmClient {
 
       for (final line in lines) {
         final trimmed = line.trim();
-        if (trimmed.isEmpty || !trimmed.startsWith('data: ')) continue;
+        // SSE comment lines (`: OPENROUTER PROCESSING` etc.) are
+        // keepalive noise — skip them entirely so they neither parse
+        // nor reset the data-idle watchdog.
+        if (trimmed.isEmpty || trimmed.startsWith(':')) continue;
+        if (!trimmed.startsWith('data: ')) continue;
 
         final data = trimmed.substring(6);
         if (data == '[DONE]') {
+          dataIdleWatchdog.dispose();
           idleTimer.cancel();
           maxTimer?.cancel();
           // OpenRouter's free tier (notably stealth/*) answers
@@ -538,8 +636,12 @@ class LlmClient {
 
         try {
           final json = jsonDecode(data) as Map<String, dynamic>;
+          // A parsed JSON data event — real upstream output, not a
+          // keepalive comment. Restart the data-idle countdown.
+          dataIdleWatchdog.reset();
           final error = json['error'];
           if (error != null) {
+            dataIdleWatchdog.dispose();
             idleTimer.cancel();
             maxTimer?.cancel();
             controller.add(
@@ -615,6 +717,7 @@ class LlmClient {
 
     idleTimer?.cancel();
     maxTimer?.cancel();
+    dataIdleWatchdog.dispose();
     controller.add(const LlmChunk(finishReason: 'done'));
     await controller.close();
   }
@@ -660,6 +763,7 @@ class LlmClient {
     required Timer? idleTimer,
     required Timer? maxTimer,
     required Duration idleTimeout,
+    required _DataIdleWatchdog dataIdleWatchdog,
   }) async {
     String buffer = '';
     // Function-call blocks seeded by `response.output_item.added`,
@@ -723,6 +827,7 @@ class LlmClient {
       for (final line in lines) {
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
+        if (trimmed.startsWith(':')) continue;
         if (trimmed.startsWith('event: ')) continue;
         if (!trimmed.startsWith('data: ')) continue;
 
@@ -731,6 +836,7 @@ class LlmClient {
           // The Responses API doesn't emit `[DONE]`, but the guard
           // stays as defence-in-depth for proxies / mirrors that
           // add one.
+          dataIdleWatchdog.dispose();
           idleTimer.cancel();
           maxTimer?.cancel();
           controller.add(
@@ -743,6 +849,10 @@ class LlmClient {
         try {
           final json = jsonDecode(data) as Map<String, dynamic>;
           final type = json['type'] as String?;
+
+          // A parsed semantic event — real upstream output, not a
+          // keepalive comment. Restart the data-idle countdown.
+          if (type != null) dataIdleWatchdog.reset();
 
           if (type == null) continue;
 
@@ -806,6 +916,7 @@ class LlmClient {
             if (usage != null) {
               controller.add(responsesApiUsageToChunk(usage));
             }
+            dataIdleWatchdog.dispose();
             idleTimer.cancel();
             maxTimer?.cancel();
             // The Responses API's terminal `status` is always
@@ -831,6 +942,7 @@ class LlmClient {
             if (usage != null) {
               controller.add(responsesApiUsageToChunk(usage));
             }
+            dataIdleWatchdog.dispose();
             idleTimer.cancel();
             maxTimer?.cancel();
             controller.add(const LlmChunk(finishReason: 'length'));
@@ -839,6 +951,7 @@ class LlmClient {
           }
 
           if (type == 'response.failed') {
+            dataIdleWatchdog.dispose();
             idleTimer.cancel();
             maxTimer?.cancel();
             controller.add(
@@ -860,6 +973,7 @@ class LlmClient {
 
     idleTimer?.cancel();
     maxTimer?.cancel();
+    dataIdleWatchdog.dispose();
     controller.add(const LlmChunk(finishReason: 'done'));
     await controller.close();
   }
@@ -874,6 +988,7 @@ class LlmClient {
     required Timer? idleTimer,
     required Timer? maxTimer,
     required Duration idleTimeout,
+    required _DataIdleWatchdog dataIdleWatchdog,
   }) async {
     String buffer = '';
     String? eventType;
@@ -945,7 +1060,10 @@ class LlmClient {
           // watchdog so a quiet-but-alive stream (e.g. model is
           // doing a long reasoning pass before the first content
           // delta) doesn't trip the timeout — the ping itself is
-          // proof of life from the upstream.
+          // proof of life from the upstream. It does NOT reset the
+          // data-idle watchdog: a ping carries no model output, and
+          // the data watchdog exists precisely to catch "upstream
+          // keeps the connection warm but never produces anything".
           if (eventType == 'ping') {
             idleTimer?.cancel();
             idleTimer = Timer(idleTimeout, () {
@@ -967,7 +1085,13 @@ class LlmClient {
             continue;
           }
 
+          // Any other parsed event-typed SSE event — real upstream
+          // output (message_start, content_block_delta, …). Restart
+          // the data-idle countdown.
+          if (eventType != null) dataIdleWatchdog.reset();
+
           if (eventType == 'error') {
+            dataIdleWatchdog.dispose();
             idleTimer?.cancel();
             maxTimer?.cancel();
             controller.add(
@@ -1034,6 +1158,7 @@ class LlmClient {
 
     idleTimer?.cancel();
     maxTimer?.cancel();
+    dataIdleWatchdog.dispose();
     controller.add(const LlmChunk(finishReason: 'done'));
     await controller.close();
   }

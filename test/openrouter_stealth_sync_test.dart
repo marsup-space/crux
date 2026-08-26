@@ -231,6 +231,7 @@ void main() {
         streamMaxDurationMs: 600000,
         maxRetries: 12,
         retryBaseDelayMs: 250,
+        dataIdleTimeoutMs: 60000,
         models: [
           ModelConfig(
             id: 'nvidia/nemotron-nano-9b-v2:free',
@@ -252,6 +253,7 @@ void main() {
       expect(body, contains('default_max_rounds = 50'));
       expect(body, contains('max_retries = 12'));
       expect(body, contains('retry_base_delay_ms = 250'));
+      expect(body, contains('data_idle_timeout_ms = 60000'));
     });
 
     test('omits watchdog lines when unset', () async {

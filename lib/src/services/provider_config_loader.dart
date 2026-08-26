@@ -364,6 +364,18 @@ class ProviderConfigLoader {
       fieldLabel: 'Provider "$name"',
     );
 
+    // --- Optional provider-level data-idle watchdog override ---
+    // Fires only when no *parsed data event* (a `data:` line carrying
+    // JSON / `[DONE]`, or an Anthropic event-typed SSE event) has
+    // arrived for this long — SSE comment keepalives (`: OPENROUTER
+    // PROCESSING`) do NOT reset it, unlike the byte-level
+    // stream_idle_timeout_ms above. 0 or absent = disabled.
+    final dataIdleTimeoutMs = _optionalNonNegativeInt(
+      map,
+      'data_idle_timeout_ms',
+      fieldLabel: 'Provider "$name"',
+    );
+
     return ProviderConfig(
       name: name,
       type: type,
@@ -380,6 +392,7 @@ class ProviderConfigLoader {
       streamMaxDurationMs: streamMaxDurationMs,
       maxRetries: maxRetries,
       retryBaseDelayMs: retryBaseDelayMs,
+      dataIdleTimeoutMs: dataIdleTimeoutMs,
     );
   }
 

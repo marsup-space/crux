@@ -995,4 +995,185 @@ void main() {
       );
     });
   });
+
+  group('LlmClient — data-idle watchdog (data_idle_timeout_ms)', () {
+    // Regression net for the OpenRouter free-tier failure mode: the
+    // request dies in an upstream queue, but OpenRouter keeps the
+    // TCP connection warm with periodic `: OPENROUTER PROCESSING`
+    // SSE comment keepalives. Those bytes reset the byte-level
+    // stream_idle_timeout_ms forever, so a dead request can sit
+    // "streaming" for many minutes without tripping it. The
+    // data-idle watchdog only resets on *parsed data events*, so
+    // keepalive comments don't save it.
+    //
+    // Tests use a 300ms watchdog (well above scheduler noise, well
+    // below any human patience) and a server that emits comment
+    // lines every 100ms.
+
+    /// Server that streams SSE comment keepalives forever and never
+    /// sends a real data event. Returns the bound base URL.
+    Future<String> startKeepaliveServer() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((req) async {
+        await req.fold<List<int>>([], (acc, b) => acc..addAll(b));
+        req.response.statusCode = 200;
+        req.response.headers.set('content-type', 'text/event-stream');
+        req.response.headers.set('cache-control', 'no-cache');
+        await req.response.flush();
+        while (true) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          req.response.write(': OPENROUTER PROCESSING\n\n');
+          await req.response.flush();
+        }
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      return 'http://127.0.0.1:${server.port}';
+    }
+
+    ProviderConfig configWithWatchdog(
+      String base, {
+      int? dataIdleTimeoutMs,
+    }) {
+      return ProviderConfig(
+        name: 'p',
+        type: 'openai_compatible',
+        wireFamily: WireFamily.openaiCompatible,
+        endpointUrl: base,
+        dataIdleTimeoutMs: dataIdleTimeoutMs,
+        models: [ModelConfig(id: 'm', name: 'm', contextSize: 1000)],
+      );
+    }
+
+    test('keepalive comments alone trip the watchdog; stream ends with '
+        'a retriable timeout error', () async {
+      final base = await startKeepaliveServer();
+      final client = LlmClient();
+      addTearDown(client.dispose);
+
+      final config = configWithWatchdog(base, dataIdleTimeoutMs: 300);
+
+      final chunks = <LlmChunk>[];
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      )) {
+        chunks.add(c);
+      }
+
+      expect(chunks, hasLength(1));
+      expect(chunks.single.error, isNotNull);
+      expect(chunks.single.error!.kind, LlmErrorKind.timeout);
+      expect(chunks.single.error!.isRetriable, isTrue);
+      expect(
+        chunks.single.error!.message,
+        contains('No data received'),
+        reason: 'the message must name the data-idle watchdog, '
+            'not the byte-level idle timeout',
+      );
+    });
+
+    test('watchdog disabled by default (dataIdleTimeoutMs null) — '
+        'keepalive-only stream does not error within the window',
+        () async {
+      final base = await startKeepaliveServer();
+      final client = LlmClient();
+      addTearDown(client.dispose);
+
+      final config = configWithWatchdog(base); // null → off
+
+      final chunks = <LlmChunk>[];
+      final stream = client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      );
+      final sub = stream.listen(chunks.add);
+
+      // Far longer than the 300ms watchdog would need; the
+      // byte-level idle timer (120s default) is what would
+      // eventually fire here — we tear down long before that.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      expect(chunks.where((c) => c.error != null), isEmpty);
+      await sub.cancel();
+    });
+
+    test('a real data event resets the countdown; comments do not',
+        () async {
+      // Server sends one real delta at t=200ms, then only comments.
+      // With a 500ms watchdog armed at t≈0:
+      //   - comments never reset it;
+      //   - the delta at t=200ms restarts it → fires ≈ t=700ms.
+      // We assert an error arrives AFTER ~600ms total, proving the
+      // reset happened (without it, firing would be ≈ t=500ms).
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((req) async {
+        await req.fold<List<int>>([], (acc, b) => acc..addAll(b));
+        req.response.statusCode = 200;
+        req.response.headers.set('content-type', 'text/event-stream');
+        req.response.headers.set('cache-control', 'no-cache');
+        await req.response.flush();
+        // t=100ms: comment (must NOT reset).
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        req.response.write(': OPENROUTER PROCESSING\n\n');
+        await req.response.flush();
+        // t=200ms: real data event (MUST reset).
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        req.response.write(
+          'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
+        );
+        await req.response.flush();
+        // Then comments forever.
+        while (true) {
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          req.response.write(': OPENROUTER PROCESSING\n\n');
+          await req.response.flush();
+        }
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final client = LlmClient();
+      addTearDown(client.dispose);
+      final config = configWithWatchdog(server.port.toString().isEmpty
+          ? ''
+          : 'http://127.0.0.1:${server.port}', dataIdleTimeoutMs: 500);
+
+      final watch = Stopwatch()..start();
+      LlmChunk? errorChunk;
+      await for (final c in client.streamChat(
+        endpointUrl: config.endpointUrl,
+        config: config,
+        apiKey: 'sk-fake',
+        modelId: 'm',
+        messages: const [
+          {'role': 'user', 'content': 'hi'},
+        ],
+      )) {
+        if (c.error != null) {
+          errorChunk = c;
+          break;
+        }
+      }
+      watch.stop();
+
+      expect(errorChunk, isNotNull);
+      expect(errorChunk!.error!.kind, LlmErrorKind.timeout);
+      // Fired ≈ 200ms (delta) + 500ms (watchdog) = 700ms. Allow
+      // generous slop for CI scheduling but keep the lower bound
+      // tight enough to prove the reset pushed it past 500ms.
+      expect(watch.elapsedMilliseconds, greaterThan(550),
+          reason: 'the data event at t=200ms must have restarted '
+              'the countdown (otherwise fire ≈ t=500ms)');
+    });
+  });
 }

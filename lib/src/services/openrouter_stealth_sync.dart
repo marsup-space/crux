@@ -184,6 +184,13 @@ class OpenRouterStealthSync {
     if (current.retryBaseDelayMs != null) {
       buf.writeln('retry_base_delay_ms = ${current.retryBaseDelayMs}');
     }
+    // Preserve the data-idle watchdog too — same rationale as the
+    // byte-level watchdog above: dropping it on sync would silently
+    // restore "disabled", reintroducing the minutes-long fake-live
+    // stalls on keepalive-comment streams.
+    if (current.dataIdleTimeoutMs != null) {
+      buf.writeln('data_idle_timeout_ms = ${current.dataIdleTimeoutMs}');
+    }
     buf.writeln();
 
     void emitModel(ModelConfig m, {String? comment}) {

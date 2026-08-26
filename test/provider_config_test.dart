@@ -584,6 +584,35 @@ context_size = 128000
       expect(normal.retryBaseDelayMs, isNull);
     });
 
+    test('loadAll parses data_idle_timeout_ms when set; defaults to '
+        'null (disabled) when absent', () async {
+      await File('${tempDir.path}/openrouter.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://openrouter.ai/api/v1"
+data_idle_timeout_ms = 60000
+
+[[models]]
+id = "stealth/ox-alpha"
+name = "Ox Alpha (stealth, free)"
+context_size = 1048576
+''');
+      await File('${tempDir.path}/plain.toml').writeAsString('''
+type = "openai_compatible"
+endpoint_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-4o"
+name = "GPT-4o"
+context_size = 128000
+''');
+      await loader.loadAll();
+
+      expect(loader.providerByName('openrouter')!.dataIdleTimeoutMs, 60000);
+      // Absent → disabled (null), so every other provider keeps the
+      // historical behavior unchanged.
+      expect(loader.providerByName('plain')!.dataIdleTimeoutMs, isNull);
+    });
+
     test('loadAll rejects negative max_retries / retry_base_delay_ms '
         'values', () async {
       await File('${tempDir.path}/badretry.toml').writeAsString('''

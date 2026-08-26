@@ -64,6 +64,17 @@ stream_idle_timeout_ms = 45000
 max_retries = 12
 retry_base_delay_ms = 250
 
+# The killer failure mode on this tier: the request dies in an
+# upstream queue, but OpenRouter keeps the TCP connection warm with
+# periodic `: OPENROUTER PROCESSING` SSE comment keepalives. Those
+# bytes reset the byte-level watchdog above forever, so a dead
+# request can sit "streaming" for many minutes without tripping it.
+# This watchdog only counts *parsed data events* — comments don't
+# reset it — so 60s of zero real output kills the attempt and hands
+# control to the retry loop. 60s is comfortably longer than any
+# legitimate quiet gap a healthy stream produces here.
+data_idle_timeout_ms = 60000
+
 # === Stealth: Ox Alpha — flagship free coding/reasoning model ===
 # 1M context, image+video inputs, tools, mandatory reasoning.
 [[models]]
