@@ -52,6 +52,11 @@ class ChatInput extends StatefulComponent {
   /// Open the home screen on a plain ESC press. Wired by the chat
   /// panel; when null (tests), a plain ESC press is consumed as a no-op.
   final VoidCallback? onOpenHome;
+
+  /// Cycle to the next session on plain Tab (active → done →
+  /// interrupted → previous). Wired by the chat panel; null keeps Tab
+  /// falling through to the TextField.
+  final VoidCallback? onCycleSessions;
   final String projectPath;
   final RecentProjectsStore? recentProjectsStore;
   final Strings strings;
@@ -82,6 +87,7 @@ class ChatInput extends StatefulComponent {
     this.onAttachClipboardImage,
     this.onQuitRequest,
     this.onOpenHome,
+    this.onCycleSessions,
     this.projectPath = '.',
     this.recentProjectsStore,
     this.activePlanName,
@@ -134,6 +140,7 @@ class ChatInputState extends State<ChatInput> {
       projectPath: component.projectPath,
       onAttachClipboardImage: component.onAttachClipboardImage,
       onStateChanged: _onControllerStateChanged,
+      strings: component.strings,
     );
 
     _keyHandler = InputKeyHandler(
@@ -141,6 +148,7 @@ class ChatInputState extends State<ChatInput> {
       turnOrchestrator: component.turnOrchestrator,
       onQuitRequest: component.onQuitRequest,
       onOpenHome: component.onOpenHome,
+      onCycleSessions: component.onCycleSessions,
       refresh: component.refresh,
       onStateChanged: _onControllerStateChanged,
       textController: component.textController,
@@ -148,6 +156,7 @@ class ChatInputState extends State<ChatInput> {
       scrollController: component.scrollController,
       getCommandStash: () => _commandStashedText,
       setCommandStash: (v) => _commandStashedText = v,
+      strings: component.strings,
     );
 
     // Wire callbacks from key handler to paste and send logic

@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../commands/registry.dart';
+import '../i18n/strings.dart';
 import '../utils/at_mention_parser.dart';
 import '../utils/skill_chip_parser.dart';
 import '../utils/session_mention.dart';
@@ -79,11 +80,21 @@ class InputKeyHandler {
   /// Open the home screen on a plain ESC press. Wired by the chat
   /// panel; when null (tests), a plain ESC press is consumed as a no-op.
   final VoidCallback? onOpenHome;
+
+  /// Cycle to the next session (Tab) — active → done → interrupted →
+  /// previous. Wired by the chat panel; when null, plain Tab falls
+  /// through to the TextField (indent / focus behaviour).
+  final VoidCallback? onCycleSessions;
   final VoidCallback refresh;
   final void Function() onStateChanged;
   final TextEditingController textController;
   final OverlayController overlayController;
   final AutoScrollController? scrollController;
+
+  /// Locale-aware chrome strings. Defaulted to English so existing
+  /// constructions stay green — production wiring is via [ChatInput]
+  /// which passes the live `Strings`.
+  final Strings strings;
 
   // Shared state accessor (owned by ChatInputState)
   final String? Function() getCommandStash;
@@ -98,6 +109,7 @@ class InputKeyHandler {
     required this.turnOrchestrator,
     required this.onQuitRequest,
     this.onOpenHome,
+    this.onCycleSessions,
     required this.refresh,
     required this.onStateChanged,
     required this.textController,
@@ -105,6 +117,7 @@ class InputKeyHandler {
     this.scrollController,
     required this.getCommandStash,
     required this.setCommandStash,
+    this.strings = kEnglishStrings,
   });
 
   bool get ctrlCQuitHint => _ctrlCQuitHint;
@@ -147,7 +160,7 @@ class InputKeyHandler {
         _lastCtrlCPressTime = now;
         _ctrlCQuitHint = true;
         turnOrchestrator.showToast(
-          'A session is running. Press Ctrl+C again to quit.',
+          strings.t('toast.ctrlCQuit'),
           mode: ToastMode.info,
         );
         Future.delayed(const Duration(seconds: 3), () {
@@ -443,6 +456,22 @@ class InputKeyHandler {
         }
         onOpenHome?.call();
         return true;
+      }
+
+      // Plain Tab (no modifiers, overlay off): cycle to the next
+      // session — active → done → interrupted → previous. Wired by the
+      // chat panel; home's quick-chat leaves it null so Tab keeps its
+      // grid-navigation meaning there.
+      if (event.logicalKey == LogicalKey.tab &&
+          !event.isShiftPressed &&
+          !event.isControlPressed &&
+          !event.isAltPressed &&
+          !event.isMetaPressed) {
+        if (onCycleSessions != null) {
+          onCycleSessions!();
+          return true;
+        }
+        return false;
       }
 
       final isEnter =
