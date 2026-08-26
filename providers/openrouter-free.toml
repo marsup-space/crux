@@ -42,9 +42,14 @@
 type = "openai_compatible"
 endpoint_url = "https://openrouter.ai/api/v1"
 
-# Free tier is shared and rate-limited; keep the round-trip cap
-# moderate so a runaway agent loop doesn't burn the daily quota.
-default_max_rounds = 50
+# Free tier is shared and rate-limited, but the cap still has to fit
+# real agentic work: large-file refactors burn rounds fast (a single
+# read-before-write guard block on a 2000-line file costs one round,
+# and a split-into-commits task runs dozens of edit/verify cycles).
+# 100 keeps a runaway loop bounded while letting those tasks finish
+# in one turn instead of stopping at the old 50 with "send another
+# message to continue".
+default_max_rounds = 100
 
 # Free tier is oversubscribed and flaky: a stalled stream is far more
 # likely a dropped upstream than a slow one. Fail fast (45s of
