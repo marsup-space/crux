@@ -26,6 +26,17 @@
 type = "openai_compatible"
 endpoint_url = "https://api.gmi-serving.com/v1"
 
+# Aggressive retry budget: GMI's free / preview-tier traffic is
+# oversubscribed and occasionally 5xxs or drops mid-handshake, mirroring
+# the failure mode OpenRouter's stealth previews show. A retried
+# request almost always succeeds on a later try, so we trade up to
+# ~92s of waiting for a much higher first-attempt success rate.
+# The ladder is 0.25s → 0.5s → 1s → 2s → 4s → 8s → 16s → 30s → 30s …
+# (12 retries, base 250ms, cap 30s per step). Identical knobs to
+# openrouter-free.toml so both flaky providers behave the same way.
+max_retries = 12
+retry_base_delay_ms = 250
+
 [[models]]
 id = "MiniMaxAI/MiniMax-M3"
 name = "MiniMax M3 (GMI)"
