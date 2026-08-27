@@ -1,6 +1,6 @@
 name: crux
 description: A terminal-based AI coding agent with agentic orchestration.
-version: 0.30.0
+version: 0.50.0
 publish_to: none
 
 environment:

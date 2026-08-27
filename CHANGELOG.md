@@ -8,7 +8,42 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-27
+
+42194e11
+
 ### Features
+
+- **Diagram: `<br>` multi-line labels + shrink/truncate width fit +
+  tighter gaps** (`2f435f06`) — mermaid/D2 `<br>`/`<br/>`/`<br />`
+  normalize to real newlines so node labels lay out multi-line, and
+  later declarations upgrade a bare id's label in place (mermaid
+  `A --> B[Full Name]` chains now work). Width overflow is fixed in
+  the layout itself: pass 1 re-layouts with tight node padding,
+  pass 2 greedily truncates the widest label line with an ellipsis
+  until the drawing fits `maxWidth` — rows are never wrapped by the
+  text renderer, wrapping tears box borders. hGap/vGap tightened to
+  4/3 for every direction (arrows sit exactly one shaft row from
+  boxes); the renderer's left pad drops from 16 to 2 and
+  label-centering is clamped inside the border columns.
+
+- **Home: tokens box model display names + layout-aware bars**
+  (`43a18bbc`) — the per-model breakdown arrives keyed by the raw
+  composite `provider/modelId`; ChatPanel now maps keys to the
+  TOML display names so the bar chart labels models like the rest
+  of the UI (unresolvable/renamed keys fall back to themselves).
+  Bar rows fill the box width via LayoutBuilder: the label column
+  sizes to the longest display name actually shown (clamped
+  14–20), counts right-align as one column against the edge, and
+  the bar track takes the remainder; unbounded tests/previews keep
+  a fixed track.
+
+- **Providers: GMI aggressive retry budget** (`42194e11`) — GMI's
+  free/preview tier occasionally 5xxs or drops mid-handshake;
+  `providers/gmi.toml` now sets `max_retries = 12` /
+  `retry_base_delay_ms = 250` (ladder up to a 30 s cap, identical
+  knobs to `openrouter-free.toml`), trading ~92 s worst-case wait
+  for a much higher first-attempt success rate.
 
 - **Providers: zhipu slimmed to GLM-5.3 + new GLM-5.3-Flash** —
   the GLM Coding Plan now serves exactly two models; the five
@@ -101,8 +136,7 @@ below the version header. Each version has at most two categories:
   `ChatService` and `ChatTurnExecutor`) and resolves the policy at
   call time: `follow` injects the UI locale's label into
   `titleSystemPromptFor(...)`, `auto` keeps the historical
-  match-the-user behaviour. `titleSystemPrompt` remains as a
-  backwards-compatible alias.
+  match-the-user behaviour.   `titleSystemPrompt` remains as a backwards-compatible alias.
 
 ## [0.30.0] - 2026-08-14
 
