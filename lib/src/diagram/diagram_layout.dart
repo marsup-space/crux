@@ -34,10 +34,136 @@ int displayWidthOf(String text) {
 void computeLayout(DiagramGraph graph, DiagramRenderOptions options) {
   _sizeNodes(graph);
   final layers = _assignLayers(graph);
-  final (hGap, vGap) = _calculateGaps(graph, layers, options);
+  var (hGap, vGap) = _calculateGaps(graph, layers, options);
   _assignCoordinates(graph, layers, hGap, vGap);
   _computeSubgraphBounds(graph);
   _separateSiblingSubgraphs(graph);
+  // Last-resort width fit: shrink node padding, then truncate the widest
+  // label lines, until the whole drawing fits the budget. Diagram rows are
+  // never wrapped downstream (wrapping tears the boxes), so the layout
+  // itself must guarantee the fit.
+  _fitWidth(graph, layers, options, hGap, vGap);
+}
+
+/// Shrink the drawing until its total width fits [options.maxWidth].
+///
+/// Pass 1: re-layout with tighter node padding (labels lose their
+/// centering slack). Pass 2: truncate the widest label line per node
+/// (appending `…`) and re-layout. Diagram rows are never wrapped by the
+/// text renderer — a wrapped row tears box borders — so this is the only
+/// place the width budget can be enforced.
+void _fitWidth(
+  DiagramGraph graph,
+  Map<String, int> layers,
+  DiagramRenderOptions options,
+  int hGap,
+  int vGap,
+) {
+  final maxWidth = options.maxWidth;
+  if (maxWidth == null) return;
+
+  // The renderer adds a small left pad (labelRoom=2) and the grid keeps
+  // a right pad; subtract both so the budget matches the final drawing.
+  const renderOverhead = 4;
+  final budget = math.max(20, maxWidth - renderOverhead);
+
+  int totalWidth() {
+    var maxX = 0;
+    for (final n in graph.nodes.values) {
+      maxX = math.max(maxX, n.x + n.width);
+    }
+    for (final sg in graph.subgraphs) {
+      if (sg.width > 0) maxX = math.max(maxX, sg.x + sg.width);
+    }
+    return maxX;
+  }
+
+  // Pass 1: tighter node padding (labels hug their borders).
+  if (totalWidth() > budget) {
+    _sizeNodes(graph, tightPadding: true);
+    _assignCoordinates(graph, layers, hGap, vGap);
+    _computeSubgraphBounds(graph);
+    _separateSiblingSubgraphs(graph);
+  }
+
+  // Pass 2: greedily truncate the WIDEST node's widest line, one node
+  // per round, until it fits (or nothing left to trim). Trimming only
+  // the widest offender keeps short labels intact.
+  var guard = 0;
+  while (totalWidth() > budget && guard++ < 64) {
+    DiagramNode? widestNode;
+    var widestLine = 0;
+    for (final n in graph.nodes.values) {
+      for (final l in n.label.split('\n')) {
+        final w = displayWidthOf(l);
+        if (w > widestLine) {
+          widestLine = w;
+          widestNode = n;
+        }
+      }
+    }
+    if (widestNode == null || !_truncateWidestLine(widestNode)) break;
+    _assignCoordinates(graph, layers, hGap, vGap);
+    _computeSubgraphBounds(graph);
+    _separateSiblingSubgraphs(graph);
+  }
+}
+
+/// Shorten [node]'s widest label line by one grapheme (plus an ellipsis
+/// on first trim). Returns false when nothing can be trimmed further.
+bool _truncateWidestLine(DiagramNode node) {
+  final lines = node.label.split('\n');
+  var widestIdx = -1;
+  var widest = 0;
+  for (var i = 0; i < lines.length; i++) {
+    final w = displayWidthOf(lines[i]);
+    if (w > widest) {
+      widest = w;
+      widestIdx = i;
+    }
+  }
+  if (widestIdx < 0 || widest <= 4) return false;
+  final chars = lines[widestIdx].characters.toList();
+  final hadEllipsis = chars.isNotEmpty && chars.last == '…';
+  if (hadEllipsis && chars.length <= 5) return false;
+  // Remove trailing graphemes until at least 2 columns are freed.
+  var removed = 0;
+  while (chars.length > (hadEllipsis ? 5 : 1) && removed < 2) {
+    final last = chars.removeLast();
+    removed += UnicodeWidth.graphemeWidth(last);
+  }
+  if (chars.isEmpty) return false;
+  if (!hadEllipsis) chars.add('…');
+  lines[widestIdx] = chars.join();
+  node.label = lines.join('\n');
+  // Re-measure the node from its (now shorter) label.
+  _sizeOneNode(node, tightPadding: true);
+  return true;
+}
+
+void _sizeOneNode(DiagramNode node, {bool tightPadding = false}) {
+  final lines = node.label.split('\n');
+  var maxLine = 0;
+  for (final l in lines) {
+    maxLine = math.max(maxLine, displayWidthOf(l));
+  }
+  // Padding is the label slack INSIDE the two border columns; the node
+  // width always includes both borders, so the minimum is maxLine + 2.
+  // tightPadding=1 keeps one slack column; 2 keeps the comfortable two.
+  final padding = (tightPadding ? 1 : 2) + 2;
+  node.width = math.max(maxLine + padding, _minNodeWidth);
+  node.height = lines.length > 1 ? lines.length + 2 : _nodeHeight;
+  if (node.shape == NodeShape.diamond) {
+    node.width += 2;
+    node.height = math.max(node.height, 3);
+  }
+  if (node.shape == NodeShape.cylinder) {
+    node.height = math.max(node.height, 5);
+  }
+  if (node.shape == NodeShape.circle) {
+    node.width = math.max(node.width, 3);
+    node.height = math.max(node.height, 3);
+  }
 }
 
 /// Node-level layout ignores containers, so sibling subgraphs can end up
@@ -131,29 +257,9 @@ bool _chainContains(DiagramSubgraph sg, String ancestorId, DiagramGraph graph) {
   return false;
 }
 
-void _sizeNodes(DiagramGraph graph) {
-  const textPadding = 2; // one border column each side
+void _sizeNodes(DiagramGraph graph, {bool tightPadding = false}) {
   for (final node in graph.nodes.values) {
-    final lines = node.label.split('\n');
-    var maxLine = 0;
-    for (final l in lines) {
-      maxLine = math.max(maxLine, displayWidthOf(l));
-    }
-    node.width = math.max(maxLine + textPadding, _minNodeWidth);
-    node.height = lines.length > 1 ? lines.length + 2 : _nodeHeight;
-    if (node.shape == NodeShape.diamond) {
-      // '<' + label + '>' plus room for the /\ apexes.
-      node.width += 2;
-      node.height = math.max(node.height, 3);
-    }
-    if (node.shape == NodeShape.cylinder) {
-      node.height = math.max(node.height, 5);
-    }
-    if (node.shape == NodeShape.circle) {
-      // Circles are drawn as (●) style pills; keep them compact.
-      node.width = math.max(node.width, 3);
-      node.height = math.max(node.height, 3);
-    }
+    _sizeOneNode(node, tightPadding: tightPadding);
   }
 }
 
@@ -244,10 +350,13 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
   Map<String, int> layers,
   DiagramRenderOptions options,
 ) {
-  final hGap = 8;
-  final vGap = 4;
+  // Tight defaults: 8/4 left awkward blank rows between arrows and nodes
+  // in chain diagrams. vGap=3 gives an edge exactly one shaft row plus
+  // the arrowhead row — no blank line between box and arrow.
+  final hGap = 4;
+  final vGap = 3;
   final maxWidth = options.maxWidth;
-  if (maxWidth == null || !graph.direction.isHorizontal) return (hGap, vGap);
+  if (maxWidth == null) return (hGap, vGap);
 
   final byLayer = <int, List<String>>{};
   var maxLayer = 0;
@@ -259,22 +368,39 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
     list.sort();
   }
 
+  // Horizontal layouts spend budget left-to-right; vertical ones spend
+  // it within a layer (nodes side by side). Both can overflow.
   var totalWidth = 0;
-  for (var l = 0; l <= maxLayer; l++) {
-    final ids = byLayer[l] ?? const [];
-    var layerMax = 0;
-    for (final id in ids) {
-      layerMax = math.max(layerMax, graph.nodes[id]?.width ?? 0);
+  if (graph.direction.isHorizontal) {
+    for (var l = 0; l <= maxLayer; l++) {
+      final ids = byLayer[l] ?? const [];
+      var layerMax = 0;
+      for (final id in ids) {
+        layerMax = math.max(layerMax, graph.nodes[id]?.width ?? 0);
+      }
+      totalWidth += layerMax;
     }
-    totalWidth += layerMax;
-  }
-  totalWidth += maxLayer * hGap;
-
-  if (totalWidth > maxWidth && maxLayer > 0) {
-    final nodeWidth = totalWidth - maxLayer * hGap;
-    final availableForGaps = math.max(0, maxWidth - nodeWidth);
-    final newGap = math.max(_minGap, availableForGaps ~/ maxLayer);
-    return (newGap, vGap);
+    totalWidth += maxLayer * hGap;
+    if (totalWidth > maxWidth && maxLayer > 0) {
+      final nodeWidth = totalWidth - maxLayer * hGap;
+      final availableForGaps = math.max(0, maxWidth - nodeWidth);
+      final newGap = math.max(_minGap, availableForGaps ~/ maxLayer);
+      return (newGap, vGap);
+    }
+  } else {
+    for (var l = 0; l <= maxLayer; l++) {
+      final ids = byLayer[l] ?? const [];
+      var layerTotal = 0;
+      for (final id in ids) {
+        layerTotal += (graph.nodes[id]?.width ?? 0) + hGap;
+      }
+      totalWidth = math.max(totalWidth, math.max(0, layerTotal - hGap));
+    }
+    if (totalWidth > maxWidth) {
+      // Vertical flow: shrink the horizontal gap between side-by-side
+      // nodes; the vertical gap stays (it separates flow steps).
+      return (math.min(hGap, _minGap), vGap);
+    }
   }
   return (hGap, vGap);
 }

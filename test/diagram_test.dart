@@ -58,6 +58,32 @@ void main() {
       expect(() => parseMermaidFlowchart('A --> B'),
           throwsA(isA<DiagramParseException>()));
     });
+
+    test('<br> in labels becomes a real line break', () {
+      // Mermaid's official line-break syntax inside node labels.
+      final graph = parseMermaidFlowchart(
+          'flowchart TB\nA[line one<br>line two] --> B');
+      expect(graph.nodes['A']!.label, 'line one\nline two');
+      // Layout sizes the node for two label rows.
+      computeLayout(graph, const DiagramRenderOptions());
+      expect(graph.nodes['A']!.height, 4); // 2 rows + 2 borders
+      // Both lines render inside the node box.
+      final result = renderDiagram(
+        'flowchart TB\nA[line one<br>line two] --> B',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      expect(result.text, contains('line one'));
+      expect(result.text, contains('line two'));
+      expect(result.text, isNot(contains('<br>')));
+    });
+
+    test('<br/> and <br /> variants normalize too', () {
+      final graph = parseMermaidFlowchart(
+          'flowchart TB\nA[a<br/>b] --> B[c<br />d]');
+      expect(graph.nodes['A']!.label, 'a\nb');
+      expect(graph.nodes['B']!.label, 'c\nd');
+    });
   });
 
   group('state diagram parser', () {

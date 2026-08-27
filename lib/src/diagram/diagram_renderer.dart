@@ -113,7 +113,10 @@ class DiagramRenderer {
 
     // Shift geometry so there is room above/left for edge labels and
     // diamond apexes; the grid itself gets extra padding on every side.
-    const labelRoom = 16;
+    // The left pad is small on purpose: edge labels sit BESIDE vertical
+    // segments mid-drawing, not at x=0, so a huge fixed indent just
+    // wastes width budget (and pushed wide LR chains past the limit).
+    const labelRoom = 2;
     var minX = 1 << 60;
     var minY = 1 << 60;
     for (final n in graph.nodes.values) {
@@ -268,7 +271,11 @@ class DiagramRenderer {
     for (var i = 0; i < lines.length; i++) {
       final rowY = n.y + 1 + i;
       final w = displayWidthOf(lines[i]);
-      _writeText(grid, n.x + 1 + ((n.width - 2 - w) ~/ 2), rowY, lines[i]);
+      // Clamp the centering offset so an over-wide label can never
+      // overwrite the border columns.
+      final inner = math.max(0, n.width - 2);
+      final offset = math.max(0, math.min(inner - w, (inner - w) ~/ 2));
+      _writeText(grid, n.x + 1 + offset, rowY, lines[i]);
     }
   }
 

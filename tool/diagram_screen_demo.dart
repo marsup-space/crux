@@ -10,6 +10,14 @@ import 'package:nocterm/nocterm.dart' hide isNotEmpty;
 /// Run: `dart test tool/diagram_screen_demo.dart`
 Future<void> main() async {
   final cases = <String, String>{
+    '<br> multi-line labels (80)': '''
+```mermaid
+flowchart TB
+    A[AI 的双面表演<br>公开装AI躲票 私密装人偷情报] --> B
+    B[人装AI: 冷静 逻辑 无情绪<br>避免成为投票目标] --> C
+    C[人装人: 互证身份 交换实锤<br>组建人类同盟] --> A
+```
+''',
     'flowchart (80)': '''
 这是系统架构：
 
@@ -19,30 +27,6 @@ flowchart LR
     B --> C{鉴权}
     C -->|通过| D[服务]
     C -->|拒绝| B
-```
-''',
-    'state diagram (80)': '''
-会话状态机：
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Running: start
-    Running --> Idle: stop
-    Running --> [*]: complete
-```
-''',
-    'd2 (80)': '''
-数据流：
-
-```d2
-user: 用户
-server: Web 服务器
-db: 数据库
-
-user -> server: HTTP 请求
-server -> db: SQL 查询
-db -> server: 结果
 ```
 ''',
   };

@@ -175,8 +175,19 @@ class DiagramGraph {
 
   DiagramGraph({this.direction = DiagramDirection.topToBottom});
 
-  /// Get-or-create a node with [id]. Returns the existing node untouched
-  /// when present (first declaration wins, matching mermaid behavior).
+  /// Normalize a raw label: mermaid/D2 line breaks (`<br>`, `<br/>`,
+  /// `<br />`) become real newlines so multi-line node labels lay out
+  /// correctly. Idempotent on labels that already use `\n`.
+  static String normalizeLabel(String raw) {
+    return raw.replaceAll(
+        RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+  }
+
+  /// Get-or-create a node with [id]. When the node already exists and a
+  /// fresh explicit label arrives, the label is upgraded in place —
+  /// mermaid chains like `A --> B[Full Name]` declare the bare id first
+  /// and attach the label on a later line, so later declarations win for
+  /// labels (but shape/subgraph stay from the first declaration).
   DiagramNode ensureNode(
     String id, {
     String? label,
@@ -184,10 +195,15 @@ class DiagramGraph {
     String? subgraphId,
   }) {
     final existing = nodes[id];
-    if (existing != null) return existing;
+    if (existing != null) {
+      if (label != null && label != id && existing.label != label) {
+        existing.label = normalizeLabel(label);
+      }
+      return existing;
+    }
     final node = DiagramNode(
       id: id,
-      label: label ?? id,
+      label: normalizeLabel(label ?? id),
       shape: shape,
       subgraphId: subgraphId,
     );
@@ -196,10 +212,11 @@ class DiagramGraph {
   }
 
   DiagramSubgraph ensureSubgraph(String id, String label, {String? parent}) {
+    final normalized = normalizeLabel(label);
     for (final sg in subgraphs) {
       if (sg.id == id) return sg;
     }
-    final sg = DiagramSubgraph(id: id, label: label, parent: parent);
+    final sg = DiagramSubgraph(id: id, label: normalized, parent: parent);
     subgraphs.add(sg);
     return sg;
   }
