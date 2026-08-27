@@ -1,6 +1,7 @@
 import 'package:crux/src/diagram/diagram.dart';
 
-/// Repro: LR chain wider than the box, and TB chain arrow spacing.
+/// Repro: LR chain wider than the box, TB chain arrow spacing, quoted
+/// labels with literal \n escapes (the fog-shader graph shape).
 Future<void> main() async {
   final lr = '''
 flowchart LR
@@ -21,9 +22,6 @@ flowchart LR
 flowchart TB
     A[第1回合: 大课堂<br>群答亮卷 搜档案] --> B[第2回合: 答辩会<br>纵向解剖一个目标]
     B --> C[第3回合: 拍卖会<br>用秘密换豁免 吐真货]
-    C --> D[第4回合: 祭祀日<br>动机反转 装AI改竞选]
-    D --> E[第5回合: 共谋作案<br>双人甩锅 信任熔断]
-    E --> F[终局: 官投市场清算<br>或泄漏值裁决]
 ''';
   final r2 = renderDiagram(
     tb,
@@ -32,4 +30,21 @@ flowchart TB
   );
   print('==== TB chain ====');
   print(r2.text);
+
+  // Quoted labels + literal \n escapes + bare ids with dots — the exact
+  // shape from the user's fog-shader screenshot.
+  final quoted = '''
+flowchart LR
+    A["SpriteRenderer.color.a\\n(0=远 1=近)"] --> C
+    B["FishingSkyDriver\\n(dayTime 三段混合)"] --> C
+    C[_GameFogColor 全局雾色] --> D["SpriteAmbientLight.shader"]
+    D --> E["lerp(fog, lit, color.a)"]
+''';
+  final r3 = renderDiagram(
+    quoted,
+    const DiagramRenderOptions(maxWidth: 96),
+    language: 'mermaid',
+  );
+  print('==== quoted + \\n labels ====');
+  print(r3.text);
 }

@@ -84,6 +84,29 @@ void main() {
       expect(graph.nodes['A']!.label, 'a\nb');
       expect(graph.nodes['B']!.label, 'c\nd');
     });
+
+    test('literal \\n escape becomes a real line break', () {
+      // Agents write D2-style "\n" in mermaid labels; render it as the
+      // line break they intended instead of a literal backslash-n.
+      final graph = parseMermaidFlowchart(
+          r'flowchart LR' '\n' r'A[line one\nline two] --> B');
+      expect(graph.nodes['A']!.label, 'line one\nline two');
+    });
+
+    test('surrounding quotes are stripped from labels', () {
+      // Quotes are delimiters in mermaid/D2; agents often quote all
+      // labels. Rendering them verbatim reads as noise.
+      final graph = parseMermaidFlowchart(
+          'flowchart LR\nA["quoted label"] --> B[\'single quoted\']');
+      expect(graph.nodes['A']!.label, 'quoted label');
+      expect(graph.nodes['B']!.label, 'single quoted');
+    });
+
+    test('later explicit label wins over an earlier bare id', () {
+      final graph = parseMermaidFlowchart(
+          'flowchart LR\nA --> B[Bare]\nB[Labeled] --> C');
+      expect(graph.nodes['B']!.label, 'Labeled');
+    });
   });
 
   group('state diagram parser', () {

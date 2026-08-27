@@ -175,12 +175,26 @@ class DiagramGraph {
 
   DiagramGraph({this.direction = DiagramDirection.topToBottom});
 
-  /// Normalize a raw label: mermaid/D2 line breaks (`<br>`, `<br/>`,
-  /// `<br />`) become real newlines so multi-line node labels lay out
-  /// correctly. Idempotent on labels that already use `\n`.
+  /// Normalize a raw label into display form:
+  /// - surrounding quotes are stripped (`"label"` → `label`) — they are
+  ///   delimiters in both mermaid and D2, not content;
+  /// - agent line-break conventions become real newlines: mermaid's
+  ///   `<br>` / `<br/>` / `<br />` and the literal `\n` escape agents
+  ///   write in both syntaxes.
+  /// Idempotent on labels that already use real newlines.
   static String normalizeLabel(String raw) {
-    return raw.replaceAll(
-        RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    var s = raw.trim();
+    // Strip one layer of matching surrounding quotes (repeatedly: agents
+    // sometimes double-quote an already-quoted label).
+    while (s.length >= 2 &&
+        ((s.startsWith('"') && s.endsWith('"')) ||
+            (s.startsWith("'") && s.endsWith("'")))) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    // Literal backslash-n escape (D2 style, or mermaid agents guessing).
+    s = s.replaceAll(r'\n', '\n');
+    return s;
   }
 
   /// Get-or-create a node with [id]. When the node already exists and a
