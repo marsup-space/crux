@@ -1478,7 +1478,7 @@ void main() {
         await _pump(
           tester,
           SetupHomeWidget(),
-          setupCtx(hasKey: true, aux: 'glm-4.5-air', path: '/work/crux'),
+          setupCtx(hasKey: true, aux: 'glm-5.3-flash', path: '/work/crux'),
         );
         // Done rows carry their detail.
         expect(
@@ -1486,7 +1486,7 @@ void main() {
           nocterm.isNotEmpty,
         );
         expect(
-          tester.terminalState.findText('glm-4.5-air'),
+          tester.terminalState.findText('glm-5.3-flash'),
           nocterm.isNotEmpty,
         );
         expect(tester.terminalState.findText('crux'), nocterm.isNotEmpty);

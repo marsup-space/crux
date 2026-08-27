@@ -156,7 +156,7 @@ dart run bin/crux.dart /path/to/your/project
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
-| Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.2 / GLM-5.1 / GLM-5-Turbo / GLM-4.7 / GLM-4.5-Air |
+| Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
 | MiMo | `/provider mimo` | V2.5 Pro / V2.5 / V2.5 Pro UltraSpeed |
 | LongCat | `/provider longcat` | 2.0 |
 | OpenRouter Free | `/provider openrouter-free` | 免费档位模型自动同步 |
@@ -407,7 +407,7 @@ Connect LLM providers with the `/provider` command:
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
-| Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.2 / GLM-5.1 / GLM-5-Turbo / GLM-4.7 / GLM-4.5-Air |
+| Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
 | MiMo | `/provider mimo` | V2.5 Pro / V2.5 / V2.5 Pro UltraSpeed |
 | LongCat | `/provider longcat` | 2.0 |
 | OpenRouter Free | `/provider openrouter-free` | Auto-synced free-tier models |

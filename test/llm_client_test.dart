@@ -199,7 +199,7 @@ void main() {
           endpointUrl: config.endpointUrl,
           config: config,
           apiKey: 'sk-fake',
-          modelId: 'glm-5.2',
+          modelId: 'glm-5.3',
           messages: const [],
         )) {}
 

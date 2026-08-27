@@ -269,7 +269,7 @@ class _SetupDebugScreenState extends State<_SetupDebugScreen> {
 
   static const _partial = [
     SetupItem(label: 'provider key', done: true, detail: 'connected'),
-    SetupItem(label: 'aux model', done: true, detail: 'glm-4.5-air'),
+    SetupItem(label: 'aux model', done: true, detail: 'glm-5.3-flash'),
     SetupItem(label: 'web provider', done: false, seedText: '/web-provider '),
     SetupItem(label: 'workspace', done: true, detail: 'crux'),
   ];

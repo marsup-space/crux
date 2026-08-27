@@ -22,16 +22,16 @@ import 'openai_compatible_provider.dart';
 /// 1. **`max_tokens`, not `max_completion_tokens`.** The Zhipu
 ///    docs only show the legacy OpenAI field name in their cURL
 ///    examples (see
-///    [glm-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
-///    [glm-5.2](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2)
-///    and [glm-5.1](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.1)).
+///    [glm-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3)
+///    and the switch guide
+///    [glm-5.3-flash](https://docs.bigmodel.cn/cn/coding-plan/latest-model)).
 ///    The generic `OpenAICompatibleProvider` body uses the
 ///    newer `max_completion_tokens`; we rename the field so
 ///    a future Zhipu tightening of the spec can't 400 on us.
 ///
 /// 2. **Model IDs are lowercase and dot-separated** (`glm-5.3`,
-///    `glm-5.2`, `glm-5.1`, `glm-4.7`, `glm-4.5-air`). The model-overview
-///    pages use the marketing names "GLM-5.2" etc., but every
+///    `glm-5.3-flash`). The model-overview
+///    pages use the marketing names "GLM-5.3" etc., but every
 ///    authoritative wire-format reference (cURL, Python, Java
 ///    SDK examples) uses lowercase. Crux passes the TOML `id`
 ///    field through verbatim, so the `zhipu.toml` is the source

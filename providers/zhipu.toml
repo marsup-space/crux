@@ -20,27 +20,34 @@
 #
 # Models
 # ------
-# Per https://docs.bigmodel.cn/cn/coding-plan/latest-model and
-# the model-overview pages, the GLM Coding Plan is open to
-# all tiers (Lite / Pro / Max) and currently supports six
-# flagship-tier text models:
+# Per https://docs.bigmodel.cn/cn/coding-plan/overview, the GLM
+# Coding Plan is open to all tiers (Lite / Pro / Max) and
+# currently serves exactly two models:
 #
-#   * GLM-5.3      — 1M context, 128K out (newest flagship)
-#   * GLM-5.2      — 1M context, 128K out
-#   * GLM-5.1      — 200K, 128K
-#   * GLM-5-Turbo  — 200K, 128K ("Lobster" long-task enhanced)
-#   * GLM-4.7      — 200K, 128K (workhorse)
-#   * GLM-4.5-Air  — 128K, 96K  (budget)
+#   * GLM-5.3        — 1M context, 128K out (flagship, text-only)
+#   * GLM-5.3-Flash  — 1M context, multimodal (image input),
+#                      always-on thinking, ~1/3 the credit cost
+#                      of GLM-5.3
+#
+# Legacy models are gone from the plan: per the same page,
+# calling GLM-5.2 or GLM-5.1 is auto-redirected to GLM-5.3,
+# and calling GLM-5-Turbo or GLM-4.7 is auto-redirected to
+# GLM-5.3-Flash (GLM-4.5-Air is no longer mentioned at all).
+# Since upstream silently rewrites the model anyway, Crux lists
+# only the two real targets — no point showing IDs the plan no
+# longer serves.
 #
 # Model IDs on the wire are lowercase + dot-separated
-# (`glm-5.3`, `glm-5.2`, `glm-4.5-air`) — every authoritative
+# (`glm-5.3`, `glm-5.3-flash`) — every authoritative
 # wire-format reference uses lowercase, even though the
 # marketing names are mixed case. Crux passes the TOML `id`
 # field through verbatim, so the `id` here is the canonical ID.
 #
-# All six models are text-only (no image input — the vision
-# models `GLM-5V-Turbo` / `GLM-4.6V` are a separate family not
-# part of the Coding Plan quota pool).
+# GLM-5.3 is text-only (no image input). GLM-5.3-Flash is
+# natively multimodal — the official switching guide
+# (https://docs.bigmodel.cn/cn/coding-plan/latest-model)
+# explicitly says to enable "Support Images" for it — so
+# `image_support = true` on the Flash entry.
 #
 # Stream lerping
 # --------------
@@ -67,21 +74,25 @@
 # The generic OpenAI-compatible builder already maps Crux's
 # `max` → wire `max`, so the picker cycles through the
 # standard five-level scale without an override.
+#
+# GLM-5.3-Flash always thinks — the announcement notes its
+# thinking mode "is always on (disabled not supported)" — so
+# the effort picker only changes depth, never turns it off.
 type = "zhipu"
 endpoint_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 
-# === GLM-5.3 — newest flagship, 1M context ===
+# === GLM-5.3 — flagship, 1M context, text-only ===
 # Per the GLM-5.3 model page
 # (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
 # GLM-5.3 is Zhipu's latest flagship, built on the *same base*
 # as GLM-5.2 (1M context / 128K out) with a far larger
-# long-horizon post-training scale. GLM Coding Plan has rolled
-# it out to all tiers (Max & Pro & Lite). Text-only with
-# thinking support; same wire format as GLM-5.2. Claude Code
-# users append `[1m]` (e.g. `glm-5.3[1m]`) to opt into 1M on
-# the Anthropic-compatible endpoint, but on the
-# OpenAI-compatible endpoint the API serves 1M context
-# automatically (same as GLM-5.2).
+# long-horizon post-training scale; on Z.ai Code Bench it
+# scores +50% over GLM-5.2. GLM Coding Plan has rolled it out
+# to all tiers (Max & Pro & Lite). Text-only with thinking
+# support. Claude Code users append `[1m]` (e.g. `glm-5.3[1m]`)
+# to opt into 1M on the Anthropic-compatible endpoint, but on
+# the OpenAI-compatible endpoint the API serves 1M context
+# automatically.
 [[models]]
 id = "glm-5.3"
 name = "GLM-5.3"
@@ -94,89 +105,30 @@ reasoning_effort = "max"
 temperature = 0
 stream_lerp = true
 
-# === GLM-5.2 — previous flagship, 1M context ===
-# Per the GLM-5.2 model page
-# (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2),
-# this was the first Coding Plan model to ship a true 1M
-# context window. Claude Code users append `[1m]` (e.g. `glm-5.2[1m]`)
-# to opt into 1M, but the underlying upstream ID is still
-# `glm-5.2`; on the OpenAI-compatible endpoint the API serves
-# 1M context automatically. Suffix handling is a Claude Code
-# configuration detail and is not relevant to Crux's wire.
+# === GLM-5.3-Flash — multimodal, 1M context, always-on thinking ===
+# Per the Coding Plan switch guide
+# (https://docs.bigmodel.cn/cn/coding-plan/latest-model) and
+# the release notes
+# (https://docs.bigmodel.cn/cn/update/new-releases):
+#   * natively multimodal — understands images/video, supports
+#     GUI-agent workflows (the switch guide tells Cline users
+#     to tick "Support Images" for this model);
+#   * 1M context with native function calling; auto-compress
+#     window / context-window size 1000000 per the guide —
+#     same convention as GLM-5.3/5.2 above, so 2^20 here;
+#   * thinking is always on (not disable-able); effort still
+#     cycles low/high/max per the guide's effort table;
+#   * max output is not published for the Flash variant —
+#     128K is used, matching every other GLM-5.x text model
+#     (5.3 / 5.2 / 5.1 / 5-Turbo all document 128K out);
+#   * credit cost ~1/3 of GLM-5.3 (deduction factors
+#     2.3/0.56/8 vs 6.9/1.7/24 per the plan overview).
 [[models]]
-id = "glm-5.2"
-name = "GLM-5.2"
+id = "glm-5.3-flash"
+name = "GLM-5.3-Flash"
 context_size = 1048576
-image_support = false
+image_support = true
 max_tokens = 131072
-thinking = true
-thinking_budget = 10000
-reasoning_effort = "max"
-temperature = 0
-stream_lerp = true
-
-# === GLM-5.1 — earlier flagship ===
-# 200K context, 128K output. Per the GLM-5.1 model page, the
-# "Coding Plan 团队版 已上线 GLM-5.2" banner on the older doc
-# shows 5.2 as the newer tier; 5.1 remains in the model list
-# because the "所有套餐均支持" overview still includes it.
-[[models]]
-id = "glm-5.1"
-name = "GLM-5.1"
-context_size = 204800
-image_support = false
-max_tokens = 131072
-thinking = true
-thinking_budget = 10000
-reasoning_effort = "max"
-temperature = 0
-stream_lerp = true
-
-# === GLM-5-Turbo — long-task enhanced ("lobster") ===
-# 200K context, 128K output. Documented as a "龙虾任务核心需求
-# 专项优化" model — optimized for long-running agentic
-# workflows. Same wire format as 5.1.
-[[models]]
-id = "glm-5-turbo"
-name = "GLM-5-Turbo"
-context_size = 204800
-image_support = false
-max_tokens = 131072
-thinking = true
-thinking_budget = 10000
-reasoning_effort = "max"
-temperature = 0
-stream_lerp = true
-
-# === GLM-4.7 — workhorse ===
-# 200K context, 128K output. The recommended "default" model
-# per the Coding Plan overview: "我们推荐您在复杂任务上切换至
-# GLM-5.1 处理，普通任务上继续使用 GLM-4.7，以避免套餐用量
-# 额度消耗过快" — i.e. Lite-tier users get more prompts out
-# of the 4.7 than the 5.x line because the higher-tier models
-# are billed at 2–3× the rate of 4.7.
-[[models]]
-id = "glm-4.7"
-name = "GLM-4.7"
-context_size = 204800
-image_support = false
-max_tokens = 131072
-thinking = true
-thinking_budget = 10000
-reasoning_effort = "max"
-temperature = 0
-stream_lerp = true
-
-# === GLM-4.5-Air — budget option ===
-# 128K context, 96K output. Half the context of the flagship
-# tier, with the lowest per-prompt cost on the plan. Useful
-# for subagent or batch work where 200K context isn't needed.
-[[models]]
-id = "glm-4.5-air"
-name = "GLM-4.5-Air"
-context_size = 131072
-image_support = false
-max_tokens = 98304
 thinking = true
 thinking_budget = 10000
 reasoning_effort = "max"

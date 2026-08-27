@@ -10,6 +10,15 @@ below the version header. Each version has at most two categories:
 
 ### Features
 
+- **Providers: zhipu slimmed to GLM-5.3 + new GLM-5.3-Flash** —
+  the GLM Coding Plan now serves exactly two models; the five
+  legacy entries (`glm-5.2`, `glm-5.1`, `glm-5-turbo`,
+  `glm-4.7`, `glm-4.5-air`) are removed since upstream
+  auto-redirects them (`glm-5.2`/`glm-5.1` → `glm-5.3`,
+  `glm-5-turbo`/`glm-4.7` → `glm-5.3-flash`). The new
+  `glm-5.3-flash` is natively multimodal (image support on), 1M
+  context, always-on thinking, ~1/3 the credit cost of GLM-5.3.
+
 - **Plugins: widget system renamed + placement (sidebar / home /
   both) + global plugins** — the spec-widget system is renamed to
   **plugins** with three new capabilities. (1) **Placement**: a
