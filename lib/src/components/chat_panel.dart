@@ -7,6 +7,7 @@ import '../commands/command_executor.dart';
 import '../commands/registry.dart';
 import '../lsp/actors/registry.dart';
 import '../lsp/manager.dart';
+import '../models/daily_usage_stats.dart';
 import '../models/image_attachment.dart';
 import '../services/plan_mode_controller.dart';
 import 'plan_doc_pane.dart';
@@ -1565,11 +1566,30 @@ class _ChatPanelState extends State<ChatPanel> {
           ),
       // Today box: per-day tokens + turns + active-session count over
       // this workspace, same aggregate shape as the activity heatmap.
-      dailyUsageStats: ({required sinceDays}) => _store.messageStore
-          .dailyUsageStats(
-            sinceDaysAgo: sinceDays,
-            projectPath: Directory.current.path,
-          ),
+      // The per-model breakdown arrives keyed by the raw composite key
+      // (`provider/modelId`, what messages.model persists); it's mapped
+      // to the human-readable TOML `name` here — the same translation
+      // displayLabelFor does for the toolbar/workspace box — so the bar
+      // chart labels models, not provider-prefixed ids. Unresolvable
+      // keys (stale/renamed models) fall back to the key itself.
+      dailyUsageStats: ({required sinceDays}) async {
+        final stats = await _store.messageStore.dailyUsageStats(
+          sinceDaysAgo: sinceDays,
+          projectPath: Directory.current.path,
+        );
+        return {
+          for (final e in stats.entries)
+            e.key: DailyUsageStats(
+              tokens: e.value.tokens,
+              turns: e.value.turns,
+              sessions: e.value.sessions,
+              byModel: {
+                for (final m in e.value.byModel.entries)
+                  _providerService.displayLabelFor(m.key): m.value,
+              },
+            ),
+        };
+      },
       // My-notes box: same NotesService + editor fullpane as the sidebar
       // spec widget — the box polls the same projection file.
       notesService: _notesService,

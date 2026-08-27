@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:nocterm/nocterm.dart';
 
 import '../../../i18n/strings.dart';
@@ -18,11 +20,11 @@ import '../home_widgets.dart';
 /// `MM-DD` date beyond a week.
 ///
 /// One bar per model that spent tokens that day, longest bar first,
-/// each labelled with its model id and a compact count (`12.8k`). Bars
-/// scale linearly against the busiest model. More models than fit the
-/// box simply scroll — every box's content lives in the grid chrome's
-/// scrollview ([_BoxScrollArea] on the home screen), so an overflowing
-/// chart scrolls instead of clipping.
+/// each labelled with the model's display name and a compact count
+/// (`12.8k`). Bars scale linearly against the busiest model. More
+/// models than fit the box simply scroll — every box's content lives
+/// in the grid chrome's scrollview ([_BoxScrollArea] on the home
+/// screen), so an overflowing chart scrolls instead of clipping.
 ///
 /// Days whose data predates per-model tracking (or tests injecting a
 /// bare [DailyUsageStats]) have an empty `byModel`; the box falls back
@@ -296,14 +298,19 @@ class _ModelBars extends StatelessComponent {
     required this.strings,
   });
 
-  /// Label column width (terminal columns). Model ids longer than this
-  /// truncate with `…` — the full id lives in the session's `/model`,
-  /// the bar only needs to disambiguate at a glance.
-  static const _labelWidth = 14;
+  /// Label column bounds (terminal columns). The column sizes to the
+  /// longest display name actually shown, clamped to this range —
+  /// narrow boxes truncate long names, wide boxes don't stretch the
+  /// gutter past what a glance needs.
+  static const _minLabelWidth = 14;
+  static const _maxLabelWidth = 20;
 
-  /// Bar track width. Longest-bar-first ordering makes the top bar
-  /// always full-width; everything else shades against it.
-  static const _barWidth = 10;
+  /// Bar track width when the box gives the chart unbounded width
+  /// (tests / previews without a LayoutBuilder constraint).
+  static const _fallbackBarWidth = 10;
+
+  /// Gap between the bar track and the right-aligned count.
+  static const _countGap = 1;
 
   /// Models, busiest first (ties broken by id for a stable order).
   List<MapEntry<String, int>> get _sorted {
@@ -323,34 +330,76 @@ class _ModelBars extends StatelessComponent {
     // values are > 0 (the query drops zero rows), so no divide-by-zero.
     final ceiling = models.first.value;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final m in models) _bar(m.key, m.value, ceiling),
-        _summary(),
-      ],
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final maxWidth = constraints.maxWidth;
+      // Unbounded width (tests / previews): fixed track, no count
+      // column — the compact count trails the bar instead.
+      final bounded = maxWidth.isFinite;
+
+      // Label column: the longest name actually shown, clamped.
+      final longestName =
+          models.map((m) => stringWidth(m.key)).fold(0, math.max);
+      final labelWidth = bounded
+          ? longestName.clamp(_minLabelWidth, _maxLabelWidth).toInt()
+          : _minLabelWidth;
+
+      // Count column: the widest compact count, right-aligned against
+      // the box edge so the numbers read as one column.
+      final countWidth = bounded
+          ? models.map((m) => stringWidth(formatTokensCompact(m.value)))
+              .fold(0, math.max)
+          : 0;
+
+      // Bar track: whatever the row has left. At least 1 col so a
+      // pathologically narrow box still shows a bar.
+      final barWidth = bounded
+          ? math.max(
+              1,
+              maxWidth -
+                  labelWidth -
+                  1 -
+                  countWidth -
+                  _countGap,
+            ).toInt()
+          : _fallbackBarWidth;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final m in models)
+            _bar(m.key, m.value, ceiling, labelWidth, barWidth, countWidth),
+          _summary(),
+        ],
+      );
+    });
   }
 
-  Component _bar(String model, int tokens, int ceiling) {
+  Component _bar(
+    String model,
+    int tokens,
+    int ceiling,
+    int labelWidth,
+    int barWidth,
+    int countWidth,
+  ) {
     final filled =
-        ((tokens / ceiling) * _barWidth).round().clamp(0, _barWidth);
+        ((tokens / ceiling) * barWidth).round().clamp(0, barWidth);
+    final bar = '█' * filled + '░' * (barWidth - filled);
+    final count = formatTokensCompact(tokens);
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          _fit(model, _labelWidth),
+          _fit(model, labelWidth),
           style: TextStyle(color: theme.onSurfaceDim),
         ),
         const Text(' '),
-        Text(
-          '█' * filled + '░' * (_barWidth - filled),
-          style: TextStyle(color: theme.success),
-        ),
-        Text(
-          ' ${formatTokensCompact(tokens)}',
-          style: TextStyle(color: theme.onSurfaceVariant),
-        ),
+        Text(bar, style: TextStyle(color: theme.success)),
+        if (countWidth > 0) ...[
+          // Right-align the count against the box edge.
+          Text(' ' * math.max(1, countWidth - stringWidth(count) + _countGap)),
+          Text(count, style: TextStyle(color: theme.onSurfaceVariant)),
+        ] else
+          Text(' $count', style: TextStyle(color: theme.onSurfaceVariant)),
       ],
     );
   }
