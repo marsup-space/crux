@@ -470,36 +470,32 @@ class DiagramRenderer {
     if (from == null || to == null) return;
 
     final horizontal = graph.direction.isHorizontal;
-    var path = _routeEdge(grid, from, to, horizontal, blocked, edge.style);
+    final out = _RouteOut();
+    var path = _routeEdge(
+        grid, from, to, horizontal, blocked, edge.style,
+        out: out);
     if (path == null) return;
 
-    // Multi-edge bus merge: when an earlier edge already claims the
-    // arrowhead cell outside this target's port, terminate THIS edge on
-    // the trunk instead — the first arrival owns the port's arrowhead,
-    // later arrivals end at a junction glyph on the trunk column. Keeps
-    // N>1 inbound edges from duelling over one arrowhead cell.
-    // Ownership rule: the port cell belongs to whoever arrives first and
-    // is not already owned; a latecomer trims its arrowhead and merges
-    // into the trunk with an arm towards the port (composes into T
-    // glyphs). Vertical arrivals into top/bottom ports keep their
-    // arrows — those ports are single-shot, no contention exists.
-    var suppressArrowhead = false;
-    if (path.length >= 2) {
+    // Termination baked by the router: an off-midline Z arrival ends ON
+    // the trunk cell at the target's mid row. That cell lies on the
+    // same-row owner's shaft, so we suppress this edge's arrowhead and
+    // let the junction pass weld a T there — never a free-floating ▼/▲.
+    var suppressArrowhead = out.terminatesOnTrunkWithoutArrow;
+    if (path.length >= 2 && !suppressArrowhead) {
+      // Port occupancy check is only about REAL port claims: an
+      // arrowhead glyph. A trunk cell merely touched by a merge edge is
+      // a pass-through crossing, not a port owner.
       final last = path.last;
-      final portBusy = ((grid.isProtected(last.x, last.y) ||
-                  grid.isTouched(last.x, last.y)) &&
-              grid.get(last.x, last.y) != ' ') ||
-          grid.get(last.x, last.y) == g.arrowRight ||
-          grid.get(last.x, last.y) == g.arrowLeft ||
-          grid.get(last.x, last.y) == g.arrowDown ||
-          grid.get(last.x, last.y) == g.arrowUp;
+      final ch = grid.get(last.x, last.y);
+      final portBusy = const {
+        '▶', '◀', '▼', '▲', '>', '<', 'v', '^',
+      }.contains(ch);
       if (portBusy) {
         path = path.sublist(0, path.length - 1);
         if (path.length >= 2) {
           final tip = path.last;
           grid.addArms(
               tip.x, tip.y, _armToward(tip, last), edge.style);
-          grid.protect(tip.x, tip.y);
           suppressArrowhead = true;
         }
       }
@@ -521,8 +517,9 @@ class DiagramRenderer {
     DiagramNode to,
     bool horizontal,
     Set<int> blocked,
-    EdgeStyle style,
-  ) {
+    EdgeStyle style, {
+    _RouteOut? out,
+  }) {
     // Circle pills: a horizontal anchor is only right when flow is
     // horizontal or the pill sits BESIDE its peer. In vertical layouts
     // pills stack in one column — route through their top/bottom ports
@@ -644,6 +641,10 @@ class DiagramRenderer {
           start.x + 1,
           start.x - 1,
         ];
+        // An off-midline arrival must stop on the trunk at the target's
+        // mid row: that cell sits on the same-row owner's shaft, so the
+        // junction pass can weld a proper ┤/├ there.
+        final arrivesOnPortRow = start.y == goal.y;
         for (final bx in trunks) {
           if (bx <= start.x || bx >= goal.x) continue;
           final e1 = _Point(bx, start.y);
@@ -651,6 +652,17 @@ class DiagramRenderer {
           if (_segmentClear(grid, start, e1, blocked) &&
               _segmentClear(grid, e1, e2, blocked) &&
               _segmentClear(grid, e2, goal, blocked)) {
+            // Off-midline arrivals stop ON the trunk at the target's mid
+            // row — the port row belongs to the same-row edge, whose
+            // straight shaft crosses this very cell. Drawing a port leg
+            // here would hang a └▶ one row above/below the owner's
+            // arrowhead.
+            if (!arrivesOnPortRow) {
+              out?.terminatesOnTrunkWithoutArrow = true;
+              // Down the trunk to the target's mid row, but NO port leg:
+              // the same-row owner's shaft crosses this cell.
+              return _expand([start, e1, _Point(bx, goal.y)]);
+            }
             // _expand already includes start; a duplicate here would
             // read as a zero-length leg and paint a phantom elbow at
             // the box exit.
@@ -1080,6 +1092,12 @@ class DiagramRenderer {
     if (!grid.inBounds(p.x, p.y)) return false;
     return !blocked.contains(p.y * grid.width + p.x);
   }
+}
+
+class _RouteOut {
+  /// Router reports: this arrival terminates ON the trunk (off-midline
+  /// Z route), so the caller must not paint an arrowhead at the tip.
+  bool terminatesOnTrunkWithoutArrow = false;
 }
 
 class _Point {
