@@ -757,13 +757,28 @@ class ChatTurnOrchestrator {
                 .then((changed) {
                   if (changed) _refresh();
                 });
+            // The provider may have already charged the round's prompt
+            // tokens before the error (HTTP 200 with a mid-stream
+            // abort, an SSE truncation, etc.). Pull whatever the
+            // stream reported off the runtime and write it on the
+            // error row so the daily aggregate still includes the
+            // spend. Zero means "no usage data arrived", which is
+            // fine — addMessage's default handles it.
+            final promptTokens = rt.lastRoundPromptTokens;
+            final completionTokens = rt.lastRoundCompletionTokens;
+            final reasoningTokens = rt.lastRoundReasoningTokens;
+            final session = _sessionController.findSession(sessionId);
             _messageStore
                 .addMessage(
                   sessionId,
                   role: 'stream_error',
                   content: error.toUserMessage(),
                   error: error.toJson(),
-                  model: _sessionController.currentSession.model,
+                  model: session?.model ??
+                      _sessionController.currentSession.model,
+                  tokensIn: promptTokens,
+                  tokensOut: completionTokens,
+                  reasoningTokens: reasoningTokens,
                 )
                 .then((persisted) {
                   final cache = _sessionController.messageCache[sessionId];
@@ -775,6 +790,28 @@ class ChatTurnOrchestrator {
                       ...cache,
                       persisted,
                     ]);
+                  }
+                  // Same side-effect as the abort path: keep the
+                  // session counters honest so the sidebar / context
+                  // bar don't show a token count that's missing the
+                  // just-charged round. Skipped on a zero-usage error
+                  // (provider never reported a usage block).
+                  if (session != null &&
+                      (promptTokens > 0 || completionTokens > 0)) {
+                    unawaited(
+                      _store.update(
+                        sessionId,
+                        tokensIn: session.tokensIn + promptTokens,
+                        tokensOut: session.tokensOut + completionTokens,
+                        contextTokens: promptTokens +
+                            completionTokens -
+                            reasoningTokens,
+                      ),
+                    );
+                    session.tokensIn += promptTokens;
+                    session.tokensOut += completionTokens;
+                    session.contextTokens =
+                        promptTokens + completionTokens - reasoningTokens;
                   }
                   _refresh();
                 });
@@ -797,6 +834,72 @@ class ChatTurnOrchestrator {
           _streamingController.stopMetricsTimer(sessionId);
           _streamingController.clearStreamingFor(sessionId);
           _activeAbortSignals.remove(sessionId);
+          // The catchError path runs when `runAgentTurn` itself
+          // throws — the onError handler above didn't fire, so no
+          // `stream_error` row exists. Persist one (with whatever
+          // usage the stream had already reported before the throw)
+          // and mirror the counts onto the session so the home
+          // dashboard doesn't lose this turn's spend. Without this
+          // write, an unhandled error is invisible to the daily
+          // aggregate.
+          final promptTokens = rt.lastRoundPromptTokens;
+          final completionTokens = rt.lastRoundCompletionTokens;
+          final reasoningTokens = rt.lastRoundReasoningTokens;
+          final session = _sessionController.findSession(sessionId);
+          _messageStore
+              .addMessage(
+                sessionId,
+                role: 'stream_error',
+                content: '$e',
+                model: session?.model ??
+                    _sessionController.currentSession.model,
+                tokensIn: promptTokens,
+                tokensOut: completionTokens,
+                reasoningTokens: reasoningTokens,
+              )
+              .then((persisted) {
+                final cache = _sessionController.messageCache[sessionId];
+                if (cache != null) {
+                  _sessionController.putCachedMessages(sessionId, [
+                    ...cache,
+                    persisted,
+                  ]);
+                }
+                if (session != null &&
+                    (promptTokens > 0 || completionTokens > 0)) {
+                  unawaited(
+                    _store.update(
+                      sessionId,
+                      tokensIn: session.tokensIn + promptTokens,
+                      tokensOut: session.tokensOut + completionTokens,
+                      contextTokens: promptTokens +
+                          completionTokens -
+                          reasoningTokens,
+                    ),
+                  );
+                  session.tokensIn += promptTokens;
+                  session.tokensOut += completionTokens;
+                  session.contextTokens =
+                      promptTokens + completionTokens - reasoningTokens;
+                }
+                _sessionController
+                    .loadMessages(sessionId)
+                    .then((_) => _refresh());
+              })
+              .catchError((_) {
+                // addMessage itself failed (rare, e.g. disk full).
+                // Still reconcile the in-memory session state and
+                // refresh so the UI is at least consistent, even if
+                // the row never made it to disk.
+                if (session != null &&
+                    (promptTokens > 0 || completionTokens > 0)) {
+                  session.tokensIn += promptTokens;
+                  session.tokensOut += completionTokens;
+                  session.contextTokens =
+                      promptTokens + completionTokens - reasoningTokens;
+                }
+                _refresh();
+              });
           _sessionController
               .reconcileInactiveRunningSessions(refresh: false)
               .then((changed) {
@@ -1004,14 +1107,57 @@ class ChatTurnOrchestrator {
             ? '$partialContent\n\n*[Response interrupted by user]*'
             : '*[Response interrupted by user]*';
 
+        // Pull the provider-reported usage off the runtime: this is the
+        // last round's `usage` block (the same numbers the normal
+        // completion path would have written). Persist them on the
+        // partial row so the home dashboard's `tokens_in +
+        // tokens_out` aggregate reflects the spend the provider
+        // actually billed. Without this the abort path leaves a
+        // `tokens_in=0` row and the daily totals silently under-count
+        // the turn.
+        final promptTokens = rt.lastRoundPromptTokens;
+        final completionTokens = rt.lastRoundCompletionTokens;
+        final reasoningTokens = rt.lastRoundReasoningTokens;
+        final session = _sessionController.findSession(sessionId);
+        final model = session?.model ?? '';
+
         _messageStore
             .addMessage(
               sessionId,
               role: 'ai',
               content: interruptedContent,
               reasoningContent: partialReasoning,
+              reasoningTokens: reasoningTokens,
+              model: model,
+              tokensIn: promptTokens,
+              tokensOut: completionTokens,
             )
-            .then((_) {
+            .then((persisted) {
+              // Mirror the abort-time usage onto the in-memory session
+              // counters and the persisted session row so the sidebar /
+              // context bar don't show a token count that's missing
+              // the just-charged round. The normal completion path does
+              // the same via `executor.runAgentTurn`; we duplicate it
+              // here because the abort path bypasses the executor's
+              // return. Skip when no real usage was reported — keeps a
+              // pre-streaming abort (no chunks yet) from inflating
+              // the counters with zeros.
+              if (session != null &&
+                  (promptTokens > 0 || completionTokens > 0)) {
+                unawaited(
+                  _store.update(
+                    sessionId,
+                    tokensIn: session.tokensIn + promptTokens,
+                    tokensOut: session.tokensOut + completionTokens,
+                    contextTokens:
+                        promptTokens + completionTokens - reasoningTokens,
+                  ),
+                );
+                session.tokensIn += promptTokens;
+                session.tokensOut += completionTokens;
+                session.contextTokens =
+                    promptTokens + completionTokens - reasoningTokens;
+              }
               _sessionController
                   .loadMessages(sessionId)
                   .then((_) => _refresh());

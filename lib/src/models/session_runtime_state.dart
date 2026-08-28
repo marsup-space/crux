@@ -47,6 +47,23 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// part of its completion.
   int cumulativeCompletionTokens = 0;
 
+  /// Provider-reported token usage for the most recent LLM request
+  /// round of the current turn — the **last** `usage` block the stream
+  /// emitted, so on a multi-round agent loop it reflects only the
+  /// final round. The other `cumulative*` fields above are
+  /// character-estimated deltas, not the billable number; these three
+  /// are the real values and are what the chat-orchestrator's
+  /// interruption / error paths read back so the persisted message
+  /// row carries the actual prompt / completion / reasoning tokens
+  /// the provider charged for (otherwise interrupted or errored
+  /// turns record `tokens_in=0` and silently lose the spend).
+  ///
+  /// Reset to 0 at the start of each turn alongside
+  /// [cumulativeCompletionTokens] in [resetMetrics].
+  int lastRoundPromptTokens = 0;
+  int lastRoundCompletionTokens = 0;
+  int lastRoundReasoningTokens = 0;
+
   /// Wall-clock time the current LLM request round started. Null between
   /// rounds, including while local tools execute. This remains useful for
   /// lifecycle/debug timing; tok/s uses [roundFirstTokenTime] instead so TTFT
@@ -367,6 +384,9 @@ class SessionRuntimeState implements SessionRuntimeSink {
     firstTokenTime = null;
     cumulativeGenMs = 0.0;
     cumulativeCompletionTokens = 0;
+    lastRoundPromptTokens = 0;
+    lastRoundCompletionTokens = 0;
+    lastRoundReasoningTokens = 0;
     roundStartTime = null;
     roundFirstTokenTime = null;
     roundStreaming = false;

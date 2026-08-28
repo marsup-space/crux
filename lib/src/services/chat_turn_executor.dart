@@ -1059,9 +1059,16 @@ class ChatTurnExecutor {
 
             if (chunk.promptTokens != null) {
               promptTokens = chunk.promptTokens!;
+              // Mirror to the runtime so the chat orchestrator's
+              // interrupt / error paths can persist the real billed
+              // token counts on the message row they write (without
+              // this, the normal-completion path records the usage
+              // but the abort / onError / catchError paths drop it).
+              runtime.lastRoundPromptTokens = promptTokens;
             }
             if (chunk.completionTokens != null) {
               completionTokens = chunk.completionTokens!;
+              runtime.lastRoundCompletionTokens = completionTokens;
             }
             if (chunk.promptCacheHitTokens != null) {
               promptCacheHitTokens = chunk.promptCacheHitTokens!;
@@ -1071,6 +1078,7 @@ class ChatTurnExecutor {
             }
             if (chunk.reasoningTokens != null) {
               reasoningTokens = chunk.reasoningTokens!;
+              runtime.lastRoundReasoningTokens = reasoningTokens;
             }
           }
 

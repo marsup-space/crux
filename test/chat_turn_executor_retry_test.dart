@@ -1364,6 +1364,145 @@ void main() {
       ], [1000, 2000, 4000, 8000, 16000]);
     });
   });
+
+  group(
+      'ChatTurnExecutor.sendMessage — provider usage mirrors onto the '
+      'runtime', () {
+    // Regression net for the home-dashboard "tokens_in=0 on every
+    // interrupted turn" bug. The executor already updated its own
+    // local accumulators from the final usage chunk, but the
+    // chat orchestrator's abort / onError / catchError paths read
+    // from the runtime — if the runtime never sees the values, the
+    // partial message row those paths write carries tokens_in=0 and
+    // the daily aggregate silently under-counts the spend. This
+    // group pins the mirror.
+
+    late SessionStore store;
+    late ProviderService providerService;
+
+    setUp(() async {
+      store = await _freshStore();
+      providerService = _StubProviderService(
+        userProvidersDir: await _makeTempProvidersDir(),
+      );
+      await providerService.initialize();
+    });
+
+    test(
+        'on a clean stop the runtime carries the final usage block so '
+        'abort / error paths downstream can read it', () async {
+      // Three chunks: a text delta, a usage block (the trailing
+      // "here's what you owe me" the provider emits on the last SSE
+      // event), and a stop reason. The usage chunk's prompt /
+      // completion / reasoning numbers are what the home dashboard
+      // needs to count — assert they land on the runtime.
+      final fakeLlm = FakeLlmClient([
+        [
+          const LlmChunk(textDelta: 'hello'),
+          const LlmChunk(
+            promptTokens: 1234,
+            completionTokens: 56,
+            reasoningTokens: 78,
+          ),
+          const LlmChunk(finishReason: 'stop'),
+        ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+
+      final runtime = _newRuntime(session.id);
+      await _runTurn(
+        executor,
+        session,
+        (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hi',
+          );
+        },
+        runtime: runtime,
+      );
+
+      // Clean path: the runtime mirrors the trailing usage block
+      // exactly. The orchestrator's abort / onError branches read
+      // from these fields when they write their partial message
+      // rows, so a regression here breaks the home totals on
+      // interrupted turns.
+      expect(runtime.lastRoundPromptTokens, 1234);
+      expect(runtime.lastRoundCompletionTokens, 56);
+      expect(runtime.lastRoundReasoningTokens, 78);
+
+      // And the normal-completion path also still works (sanity
+      // check that we didn't break the contract that onComplete
+      // receives the same numbers).
+      expect(_lastComplete, isNotNull);
+      expect(_lastComplete!.promptTokens, 1234);
+      expect(_lastComplete!.completionTokens, 56);
+      expect(_lastError, isNull);
+    });
+
+    test(
+        'chunk without a trailing usage block leaves the runtime at the '
+        "last seen values, not at 0 — the provider's mid-stream "
+        'usage counts still matter', () async {
+      // Some providers emit usage on an earlier chunk and a bare
+      // stop at the end (no second usage). The mirror must capture
+      // the first usage and the stop chunk must not blank it.
+      final fakeLlm = FakeLlmClient([
+        [
+          const LlmChunk(
+            promptTokens: 100,
+            completionTokens: 10,
+          ),
+          const LlmChunk(finishReason: 'stop'),
+        ],
+      ]);
+      final executor = _buildExecutor(
+        store: store,
+        providerService: providerService,
+        llmClient: fakeLlm,
+      );
+      final session = await _createSession(store);
+      final runtime = _newRuntime(session.id);
+
+      await _runTurn(
+        executor,
+        session,
+        (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'hi',
+          );
+        },
+        runtime: runtime,
+      );
+
+      expect(runtime.lastRoundPromptTokens, 100);
+      expect(runtime.lastRoundCompletionTokens, 10);
+      // No reasoning chunk was emitted — stays at default 0.
+      expect(runtime.lastRoundReasoningTokens, 0);
+    });
+  });
 }
 
 /// Construct a single-shot success stream: one text chunk and a stop chunk.

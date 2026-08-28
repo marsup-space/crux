@@ -30,6 +30,21 @@ void main() {
     expect(runtime.roundStreaming, isFalse);
   });
 
+  test(
+      'beginResponse clears last-round provider usage so a stale value from '
+      'a prior turn never leaks into a new interrupted turn', () {
+    final runtime = SessionRuntimeState(sessionId: 1)
+      ..lastRoundPromptTokens = 1234
+      ..lastRoundCompletionTokens = 567
+      ..lastRoundReasoningTokens = 89;
+
+    runtime.beginResponse(now: DateTime(2026, 1, 1, 12));
+
+    expect(runtime.lastRoundPromptTokens, 0);
+    expect(runtime.lastRoundCompletionTokens, 0);
+    expect(runtime.lastRoundReasoningTokens, 0);
+  });
+
   test('recordFirstToken captures TTFT once', () {
     final start = DateTime(2026, 1, 1, 12);
     final first = start.add(const Duration(milliseconds: 250));
