@@ -131,10 +131,12 @@ class DiagramEdge {
   DiagramEdge({
     required this.from,
     required this.to,
-    this.label,
+    String? label,
     this.style = EdgeStyle.solidArrow,
     this.semanticCycle = false,
-  });
+  }) : label = (label == null || label.isEmpty)
+            ? null
+            : DiagramGraph.normalizeLabel(label);
 }
 
 /// Structured warning produced while parsing or laying out.

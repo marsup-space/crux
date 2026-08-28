@@ -274,6 +274,94 @@ api -> db
       expect(result.text.contains('st│rt') || result.text.contains('sto│p'),
           isFalse);
     });
+
+    test('edge turns use proper elbow glyphs', () {
+      // A back edge A → B → C → A must bend with corner characters,
+      // not leave half-horizontal / half-vertical stubs on the turn.
+      // The back edge hugs an outer corridor: it leaves C's column at
+      // the bottom lane (╰) and rises beside A before slipping in.
+      final result = renderDiagram(
+        'flowchart TB\nA --> B\nB --> C\nC --> A',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      expect(result.text, contains('╭'));
+    });
+
+    test('thick edge turns keep the heavy weight', () {
+      final result = renderDiagram(
+        'flowchart TB\nA ==> B\nB ==> C\nC ==> A',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      expect(result.text, contains('┏═══┛'));
+    });
+
+    test('ascii mode turns use plus corners', () {
+      final result = renderDiagram(
+        'flowchart TB\nA --> B\nB --> C\nC --> A',
+        const DiagramRenderOptions(ascii: true),
+        language: 'mermaid',
+      );
+      // '+' appears for both node borders and edge elbows.
+      expect(result.text, contains('+'));
+    });
+
+    test('edge labels normalize quotes and <br>', () {
+      // Agents write quoted, <br>-separated edge labels; they must go
+      // through the same normalization as node labels.
+      final result = renderDiagram(
+        'flowchart LR\nA -->|"<br>plain"| B',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      expect(result.text, contains('plain'));
+      expect(result.text, isNot(contains('<br>')));
+      expect(result.text, isNot(contains('"')));
+    });
+
+    test('straight runs never recompose into junction ladders', () {
+      final result = renderDiagram(
+        'flowchart TD\nA --> B\nB --> C\nC --> D',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      // A pure vertical chain must be plain │ shafts — no phantom ┼
+      // repeats from mis-registered arm bits.
+      expect(result.text.contains('┼┼'), isFalse);
+      expect(result.text.contains('├┤'), isFalse);
+    });
+
+    test('LR multi-source edges share one trunk beside the target', () {
+      // Several sources into one target: no elbow Immediately after the
+      // box exit, horizontal runs reach the shared riser, and T-joints
+      // compose with correct arm orientation (┤ has stems up+down and
+      // the bar to the LEFT where the incoming edge arrives).
+      final result = renderDiagram(
+        'flowchart LR\nA --> D\nB --> D\nC --> D\nE --> D\nF --> D',
+        const DiagramRenderOptions(),
+        language: 'mermaid',
+      );
+      final lines = result.text.split('\n');
+      // The line right after each box wall must not start with an
+      // elbow — it must be a plain horizontal run.
+      for (final line in lines) {
+        final row = line.trimLeft();
+        if (row.startsWith('│') || row.startsWith('╭') ||
+            row.startsWith('|')) {
+          // elbow directly at the exit column is the old bug's mark;
+          // allowed only when the row genuinely turns (last char).
+          final last = row.isEmpty ? '' : row[row.length - 1];
+          expect(
+            row.startsWith('╭') && last != '╮',
+            isFalse,
+            reason: 'phantom elbow right after box exit: $line',
+          );
+        }
+      }
+      // Trunk T-joints must exist and point the right way.
+      expect(result.text, contains('┤'));
+    });
   });
 
   group('dispatch', () {

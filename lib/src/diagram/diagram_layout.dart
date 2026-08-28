@@ -350,11 +350,23 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
   Map<String, int> layers,
   DiagramRenderOptions options,
 ) {
-  // Tight defaults: 8/4 left awkward blank rows between arrows and nodes
-  // in chain diagrams. vGap=3 gives an edge exactly one shaft row plus
-  // the arrowhead row — no blank line between box and arrow.
-  final hGap = 4;
+  // Horizontal layouts spend budget left-to-right; vertical ones spend
+  // it within a layer (nodes side by side). Both can overflow. Edges
+  // may carry a label: widen the gap when the widest edge label on the
+  // layout axis does not fit in the plain gap (label + 2 padding cells).
+  var hGap = 4;
   final vGap = 3;
+  var labelBonus = 0;
+  for (final e in graph.edges) {
+    if (e.label == null || e.label!.isEmpty) continue;
+    // Longest label line; multi-line labels sit beside vertical shafts.
+    var w = 0;
+    for (final l in e.label!.split('\n')) {
+      w = math.max(w, displayWidthOf(l));
+    }
+    labelBonus = math.max(labelBonus, w + 2 - hGap);
+  }
+  hGap += labelBonus;
   final maxWidth = options.maxWidth;
   if (maxWidth == null) return (hGap, vGap);
 
