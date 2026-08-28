@@ -573,9 +573,20 @@ List<VibeSegment> walkSegments(
             }
           }
 
-          // Preserve surface tool calls for inline rendering.
+          // Preserve surface tool calls for inline rendering — but
+          // only SUCCESSFUL ones. A failed `surface` call (bad payload,
+          // missing surfaceId, validation errors) renders as a red
+          // "invalid declaration" SurfaceBubble below the boxes, which
+          // duplicates the error the tool-result row already shows and
+          // sits as an ugly red block next to the retried success.
+          // Failure signal: the persisted tool-result row's `error`
+          // column (the walker's local ToolResult carries a synthetic
+          // empty title, so the `title == 'Error'` convention used in
+          // chat_turn_executor is not available here).
           if (tc.name == 'surface') {
-            surfaceToolCalls.add(tc);
+            final failed =
+                resultMsg == null || (resultMsg.error ?? '').isNotEmpty;
+            if (!failed) surfaceToolCalls.add(tc);
           }
 
           // Accumulate file-modification data via the modSummary hook.

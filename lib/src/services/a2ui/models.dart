@@ -17,6 +17,64 @@ import 'dart:convert';
 import 'package:nocterm/nocterm.dart' show ChangeNotifier;
 
 // ---------------------------------------------------------------------------
+// Provider-mangled payload normalization
+// ---------------------------------------------------------------------------
+
+/// Normalize a property value that is expected to be a JSON array.
+///
+/// Some providers (observed with MiniMax-M3 via OpenRouter, ses://5047)
+/// serialize tool-call arguments with the array wrapped in a keyed
+/// object — `"children": {"item": ["a", "b"]}` instead of
+/// `"children": ["a", "b"]` — and turn numeric literals into strings
+/// (`"gap": "2"`). The strict `is List` checks in the catalog items
+/// then silently drop the value and the surface renders empty.
+///
+/// Unwraps, in order:
+/// * a single-key `{"<key>": [...]}` wrapper whose value is a List
+///   (any key name — `item`, `items`, `children`, …);
+/// * a JSON-encoded string (`"[\"a\"]"` → `["a"]`);
+/// * anything else passes through unchanged (the caller's `is List`
+///   check still guards).
+dynamic unwrapListProperty(dynamic value) {
+  // Already a list — nothing to do.
+  if (value is List) return value;
+
+  // Single-key object wrapper: {"item": [...]} → [...].
+  if (value is Map<String, dynamic> && value.length == 1) {
+    final inner = value.values.first;
+    if (inner is List) return inner;
+  }
+
+  // JSON-encoded array string: "[\"a\",\"b\"]" → ["a","b"].
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is List) return decoded;
+      } catch (_) {
+        // Not valid JSON — fall through.
+      }
+    }
+  }
+
+  return value;
+}
+
+/// Normalize a property value that is expected to be a number.
+///
+/// Providers sometimes stringify numbers (`"gap": "2"`). Returns the
+/// int value, or [fallback] when the value is not numeric.
+int coerceIntProperty(dynamic value, int fallback) {
+  if (value is num) return value.toInt();
+  if (value is String) {
+    final parsed = int.tryParse(value.trim()) ?? double.tryParse(value.trim());
+    if (parsed != null) return parsed.toInt();
+  }
+  return fallback;
+}
+
+// ---------------------------------------------------------------------------
 // Surface declaration (createSurface)
 // ---------------------------------------------------------------------------
 
