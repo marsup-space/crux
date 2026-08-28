@@ -46,10 +46,10 @@ class ButtonCatalogItem extends CatalogItem {
       'type': 'string',
       'enum': ['primary', 'bordered', 'borderless'],
       'description':
-          'Button style. '
-          'borderless (default): subtle background + subtle border. '
-          'bordered: subtle background + visible border. '
-          'primary: accent background + accent border (main action).',
+          'Button style. All variants render borderless (chip style, same '
+          'size as ChoicePicker inline tags); they differ by background: '
+          'borderless/bordered (default): subtle surfaceVariant fill. '
+          'primary: solid accent fill + bold text (the main action pops).',
     },
   };
 
@@ -62,6 +62,7 @@ class ButtonCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
     final childId = component.properties['child'];
@@ -154,27 +155,52 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     final theme = component.theme;
     final isActive = !component.isDisabled && component.onAction != null;
 
-    final Color borderColor;
-    final Color? bgColor;
+    // Borderless chip style — matches the ChoicePicker inline tags so
+    // buttons and option tags sit side-by-side at the same size.
+    // Differentiation is by background color, not by border:
+    //   primary  → solid accent fill (the main action pops)
+    //   others   → surfaceVariant fill (same base as option tags)
+    //   hover    → accent foreground text (no border to highlight)
+    final Color bg;
+    final Color fg;
+    final FontWeight? weight;
     if (component.isDisabled) {
-      borderColor = theme.borderSubtle;
-      bgColor = null;
-    } else if (_hovered) {
-      borderColor = theme.accent;
-      bgColor = theme.buttonBackgroundHover;
+      bg = theme.surfaceVariant;
+      fg = theme.onSurfaceDim;
+      weight = null;
     } else if (component.isPrimary) {
-      // Primary keeps a filled accent background — the main action
-      // should pop. Other variants are border-only.
-      borderColor = theme.accent;
-      bgColor = theme.accent;
-    } else if (component.variant == 'bordered') {
-      borderColor = theme.borderActive;
-      bgColor = null;
+      // Hover INVERTS the primary button: accent fill with on-accent
+      // text normally; bright surface fill with accent text on hover.
+      // A full light/dark flip reads far more clearly in a terminal
+      // palette than a 20% lighten of the same hue.
+      bg = _hovered ? theme.buttonBackgroundHover : theme.accent;
+      fg = _hovered ? theme.accent : theme.onColor(theme.accent);
+      weight = FontWeight.bold;
+    } else if (_hovered) {
+      bg = theme.buttonBackgroundHover;
+      fg = theme.accent;
+      weight = null;
     } else {
-      // Default: subtle border, no fill.
-      borderColor = theme.borderSubtle;
-      bgColor = null;
+      bg = theme.surfaceVariant;
+      fg = theme.foreground;
+      weight = null;
     }
+
+    // The button label is a Text per the catalog contract — restyle it
+    // directly (no DefaultTextStyle in nocterm). Non-Text children pass
+    // through untouched.
+    final child = component.child;
+    final styledChild = child is Text
+        ? Text(
+            child.data,
+            key: child.key,
+            style: TextStyle(color: fg, fontWeight: weight),
+            softWrap: child.softWrap,
+            overflow: child.overflow,
+            textAlign: child.textAlign,
+            maxLines: child.maxLines,
+          )
+        : child;
 
     return MouseRegion(
       onEnter: isActive ? (_) => setState(() => _hovered = true) : null,
@@ -184,15 +210,9 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
         onTap: isActive ? _handleTap : null,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          decoration: BoxDecoration(
-            color: bgColor,
-            border: BoxBorder.all(
-              color: borderColor,
-              style: BoxBorderStyle.rounded,
-            ),
-          ),
+          decoration: BoxDecoration(color: bg),
           padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: component.child,
+          child: styledChild,
         ),
       ),
     );
@@ -242,6 +262,7 @@ class CheckBoxCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
@@ -389,6 +410,7 @@ class TextFieldCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
@@ -680,6 +702,7 @@ class ChoicePickerCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
@@ -694,9 +717,11 @@ class ChoicePickerCatalogItem extends CatalogItem {
       path = valueRef['path'] as String;
     }
 
-    // Parse options.
+    // Parse options. unwrapListProperty tolerates the {"item": [...]}
+    // array wrapper some providers emit.
     final options = <({String label, String value})>[];
-    if (optionsRaw is List) {
+    final optionsList = unwrapListProperty(optionsRaw);
+    if (optionsList is List) {
       for (final o in optionsRaw) {
         if (o is Map<String, dynamic>) {
           final optLabel = o['label']?.toString() ?? '';
@@ -770,6 +795,10 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
   /// Keyboard-focus index — only set by arrow keys, not by mouse clicks.
   /// When -1, no option has keyboard focus (mouse-only interaction).
   int _focusedIndex = -1;
+
+  /// Mouse-hover index for the inline tag style — gives the same hover
+  /// feedback buttons get (background lightens).
+  int _hoveredIndex = -1;
 
   void _toggle(String optionValue) {
     final current = List<String>.from(component.selections);
@@ -886,12 +915,18 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
     final option = component.options[index];
     final isSelected = component.selections.contains(option.value);
     final isFocused = _focusedIndex >= 0 && index == _focusedIndex;
+    final isHovered = _hoveredIndex == index && isActive;
 
     final Color bg;
     final Color fg;
     if (isSelected) {
-      bg = theme.success;
-      fg = theme.onColor(theme.success);
+      // Selected tags invert on hover too — same language as buttons:
+      // a light/dark flip reads much more clearly than a slight tint.
+      bg = isHovered ? theme.buttonBackgroundHover : theme.success;
+      fg = isHovered ? theme.success : theme.onColor(theme.success);
+    } else if (isHovered) {
+      bg = theme.buttonBackgroundHover;
+      fg = theme.accent;
     } else if (isFocused && isActive) {
       bg = theme.surfaceVariant;
       fg = theme.accent;
@@ -900,17 +935,22 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
       fg = theme.foreground;
     }
 
-    return GestureDetector(
-      onTap: isActive ? () => _toggle(option.value) : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(color: bg),
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: Text(
-          option.label,
-          style: TextStyle(
-            color: fg,
-            fontWeight: isSelected ? FontWeight.bold : null,
+    return MouseRegion(
+      onEnter: isActive ? (_) => setState(() => _hoveredIndex = index) : null,
+      onExit: isActive ? (_) => setState(() => _hoveredIndex = -1) : null,
+      opaque: false,
+      child: GestureDetector(
+        onTap: isActive ? () => _toggle(option.value) : null,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          decoration: BoxDecoration(color: bg),
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Text(
+            option.label,
+            style: TextStyle(
+              color: fg,
+              fontWeight: isSelected ? FontWeight.bold : null,
+            ),
           ),
         ),
       ),

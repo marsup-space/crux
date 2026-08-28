@@ -181,6 +181,10 @@ class _SurfaceControllerState extends State<SurfaceController> {
       onAction: submitted ? null : _handleAction,
       onDataModelUpdate: submitted ? null : _handleDataModelUpdate,
       submitted: submitted,
+      // Lets layout containers make type-aware decisions (Column
+      // auto-flowing sibling Cards into a row on wide terminals).
+      childType: (childId) =>
+          component.surface.declaration.componentById(childId)?.component,
     );
   }
 }

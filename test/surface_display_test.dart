@@ -30,6 +30,87 @@ void main() {
     });
   });
 
+  group('Column responsive Card layout', () {
+    CreateSurface twoCardSurface() => CreateSurface(
+          surfaceId: 'cards',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {
+                'children': ['cardA', 'cardB'],
+              },
+            ),
+            A2uiComponent(
+              id: 'cardA',
+              component: 'Card',
+              properties: {'title': 'Alpha', 'child': 'textA'},
+            ),
+            A2uiComponent(
+              id: 'textA',
+              component: 'Text',
+              properties: {'text': 'first card body'},
+            ),
+            A2uiComponent(
+              id: 'cardB',
+              component: 'Card',
+              properties: {'title': 'Beta', 'child': 'textB'},
+            ),
+            A2uiComponent(
+              id: 'textB',
+              component: 'Text',
+              properties: {'text': 'second card body'},
+            ),
+          ],
+        );
+
+    test('two Cards flow side-by-side on a wide terminal', () async {
+      await testNocterm('cards wide', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('cw', twoCardSurface()),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final alpha = tester.terminalState.findText('Alpha');
+        final beta = tester.terminalState.findText('Beta');
+        expect(alpha, isNotEmpty);
+        expect(beta, isNotEmpty);
+        // Side-by-side → same row, Beta to the right of Alpha.
+        expect(alpha.first.y, beta.first.y);
+        expect(beta.first.x, greaterThan(alpha.first.x));
+      }, size: const Size(120, 24));
+    });
+
+    test('two Cards stack vertically on a narrow terminal', () async {
+      await testNocterm('cards narrow', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('cn', twoCardSurface()),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final alpha = tester.terminalState.findText('Alpha');
+        final beta = tester.terminalState.findText('Beta');
+        expect(alpha, isNotEmpty);
+        expect(beta, isNotEmpty);
+        // Stacked → Beta on a lower row than Alpha.
+        expect(beta.first.y, greaterThan(alpha.first.y));
+      }, size: const Size(60, 24));
+    });
+  });
+
   group('Table rendering', () {
     test('renders header and rows with column alignment', () async {
       await testNocterm('table basic', (tester) async {

@@ -67,6 +67,7 @@ class TextCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final text = resolveString(component.properties['text'], dataModel);
     return Text(text);
@@ -86,7 +87,11 @@ class ColumnCatalogItem extends CatalogItem {
 
   @override
   String get description =>
-      'Vertical layout container. Children are stacked top-to-bottom.';
+      'Vertical layout container. Children are stacked top-to-bottom. '
+      'Responsive: when ≥2 consecutive children are Cards and the '
+      'terminal is wide enough, the host automatically flows them '
+      'side-by-side into a row (equal widths) — the agent should just '
+      'stack Cards in a Column and NOT wrap them in a Row manually.';
 
   @override
   Map<String, dynamic> get propertiesSchema => {
@@ -106,21 +111,75 @@ class ColumnCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
-    final childrenRaw = component.properties['children'];
-    final children = <Component>[];
+    // unwrapListProperty: some providers wrap arrays as {"item": [...]}
+    // or JSON-encode them as strings — normalize before the is List check.
+    final childrenRaw = unwrapListProperty(component.properties['children']);
+    final childIds = <String>[
+      if (childrenRaw is List)
+        for (final id in childrenRaw)
+          if (id is String) id,
+    ];
 
-    if (childrenRaw is List) {
-      for (final childId in childrenRaw) {
-        if (childId is String) {
-          children.add(buildChild(childId));
+    // Host-side responsive layout: when the agent stacks several Cards
+    // vertically, flow each run of ≥2 consecutive Cards into a
+    // side-by-side Row whenever the terminal is wide enough. The agent
+    // only declares content; the host owns presentation. Widths are
+    // shared equally via Expanded; non-Card children break a run and
+    // render stacked as before.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 0.0;
+
+        final children = <Component>[];
+        var i = 0;
+        while (i < childIds.length) {
+          final id = childIds[i];
+          if (childType?.call(id) == 'Card') {
+            // Collect the run of consecutive Card ids.
+            var j = i;
+            while (j < childIds.length &&
+                childType?.call(childIds[j]) == 'Card') {
+              j++;
+            }
+            final runLength = j - i;
+            // Each card needs ~36 columns to stay readable (border +
+            // padding + a couple of table columns). Only flow when the
+            // run fits and there are at least two cards to place.
+            final fits = runLength >= 2 &&
+                maxWidth > 0 &&
+                maxWidth / runLength >= 36;
+            if (fits) {
+              children.add(
+                Row(
+                  children: [
+                    for (var k = i; k < j; k++) ...[
+                      if (k > i) const SizedBox(width: 2),
+                      Expanded(child: buildChild(childIds[k])),
+                    ],
+                  ],
+                ),
+              );
+            } else {
+              for (var k = i; k < j; k++) {
+                children.add(buildChild(childIds[k]));
+              }
+            }
+            i = j;
+          } else {
+            children.add(buildChild(id));
+            i++;
+          }
         }
-      }
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        );
+      },
     );
   }
 }
@@ -162,10 +221,12 @@ class RowCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
-    final childrenRaw = component.properties['children'];
-    final gapRaw = component.properties['gap'];
-    final gap = gapRaw is num ? gapRaw.toInt().clamp(0, 20) : 1;
+    // unwrapListProperty: tolerate provider-mangled array wrappers.
+    final childrenRaw = unwrapListProperty(component.properties['children']);
+    final gap = coerceIntProperty(component.properties['gap'], 1)
+        .clamp(0, 20);
 
     final children = <Component>[];
 
@@ -223,6 +284,7 @@ class CardCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final childId = component.properties['child'];
     final title = resolveString(component.properties['title'], dataModel);
@@ -341,6 +403,7 @@ class DividerCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     return const Divider();
   }

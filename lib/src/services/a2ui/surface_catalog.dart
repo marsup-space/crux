@@ -47,6 +47,10 @@ abstract class CatalogItem {
   /// the data model (text input, checkbox toggle). Null for Phase 1.
   /// [submitted] is true when the surface has been submitted and should
   /// render in a disabled/read-only state.
+  /// [childType] resolves a child component id to its A2UI type name
+  /// (e.g. `'Card'`). Hosts inject this so layout containers can make
+  /// type-aware decisions (e.g. Column auto-flowing sibling Cards into
+  /// a row when the terminal is wide). Null disables type-aware layout.
   Component build({
     required BuildContext context,
     required A2uiComponent component,
@@ -55,6 +59,7 @@ abstract class CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted,
+    String? Function(String childId)? childType,
   });
 }
 
@@ -166,9 +171,10 @@ class SurfaceCatalog {
       errors.add('no root component found (need a component with id "root")');
     }
 
-    // Check that all child references resolve.
+    // Check that all child references resolve. unwrapListProperty
+    // tolerates the {"item": [...]} wrapper some providers emit.
     for (final c in surface.components) {
-      final children = c.properties['children'];
+      final children = unwrapListProperty(c.properties['children']);
       if (children is List) {
         for (final childId in children) {
           if (childId is String && !ids.contains(childId)) {
@@ -325,24 +331,28 @@ class SurfaceCatalog {
     buf.writeln('```');
     buf.writeln();
 
-    buf.writeln('### Layout guidance — use the full terminal width');
+    buf.writeln('### Layout — declare content, the host owns presentation');
     buf.writeln();
     buf.writeln(
-      'Surfaces render inside a chat bubble that spans the full terminal width. '
-      'Avoid stacking every component vertically — that wastes the right side. '
-      'Instead:',
+      'You declare WHAT is on the surface; the host decides HOW it is laid '
+      'out for the actual terminal width. Do NOT hand-place siblings into '
+      'rows to fill width — the host does that responsively:',
     );
     buf.writeln();
     buf.writeln(
-      '- **Row** for side-by-side layout: labels + inputs, multiple buttons, '
-      'status indicators. Use `gap` (default 1) for spacing.',
+      '- **Just stack Cards in a Column.** When ≥2 consecutive Cards fit '
+      'the terminal width, the host automatically flows them side-by-side '
+      'into an equal-width row; on narrow terminals they stack. Never wrap '
+      'Cards in a Row yourself.',
+    );
+    buf.writeln(
+      '- **Row** is still right for intrinsically horizontal groups that '
+      'must stay together at any width: a label + its input, action '
+      'buttons, the ChoicePicker + submit button of a form.',
     );
     buf.writeln(
       '- **ChoicePicker** with `"displayStyle": "inline"` for ≤4 short options — '
       'renders all options on one line as compact tags.',
-    );
-    buf.writeln(
-      '- **Text + Button on one Row**: put a label and its action button side-by-side.',
     );
     buf.writeln();
     buf.writeln('Compact example — a confirmation form using horizontal layout:');

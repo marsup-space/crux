@@ -83,11 +83,13 @@ class TableCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
 
-    // Parse column definitions.
-    final columnsRaw = component.properties['columns'];
+    // Parse column definitions. unwrapListProperty tolerates the
+    // {"item": [...]} array wrapper some providers emit.
+    final columnsRaw = unwrapListProperty(component.properties['columns']);
     final columns = <({String header, String key, int? width})>[];
     if (columnsRaw is List) {
       for (final c in columnsRaw) {
@@ -105,8 +107,10 @@ class TableCatalogItem extends CatalogItem {
       }
     }
 
-    // Resolve rows (literal or data-bound).
-    final rowsRaw = resolveValue(component.properties['rows'], dataModel);
+    // Resolve rows (literal or data-bound); unwrap provider-mangled arrays.
+    final rowsRaw = unwrapListProperty(
+      resolveValue(component.properties['rows'], dataModel),
+    );
     final rows = <Map<String, dynamic>>[];
     if (rowsRaw is List) {
       for (final r in rowsRaw) {
@@ -251,6 +255,7 @@ class ProgressBarCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
     final theme = CruxTheme.of(context);
     final valueRaw = resolveValue(component.properties['value'], dataModel);
@@ -586,11 +591,13 @@ class ListCatalogItem extends CatalogItem {
     void Function(A2uiAction action)? onAction,
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
+    String? Function(String childId)? childType,
   }) {
-    final childrenRaw = component.properties['children'];
-    final maxHeightRaw = component.properties['maxHeight'];
-    final maxHeight =
-        maxHeightRaw is num ? maxHeightRaw.toInt().clamp(1, 100) : 8;
+    final childrenRaw = unwrapListProperty(component.properties['children']);
+    final maxHeight = coerceIntProperty(
+      component.properties['maxHeight'],
+      8,
+    ).clamp(1, 100);
 
     final children = <Component>[];
     if (childrenRaw is List) {
