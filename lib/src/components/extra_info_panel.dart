@@ -26,7 +26,6 @@ import 'ui/multi_button.dart';
 
 /// Time-based grouping for sessions in the sidebar.
 enum _SessionGroup {
-  pinned('chat.sessions.pinned'),
   yesterday('chat.sessions.yesterday'),
   threeDays('chat.sessions.threeDays'),
   archived('chat.sessions.archived'),
@@ -35,6 +34,15 @@ enum _SessionGroup {
 
   const _SessionGroup(this.label);
   final String label;
+}
+
+/// Sentinel row marker: "render a horizontal divider here". Pinned
+/// rows are followed by a divider so they read as their own visual
+/// band at the top of the section, without needing a "Pinned" header
+/// label. Marker-only (no fields) so the list-of-Object payload stays
+/// allocation-light.
+class _DividerRow {
+  const _DividerRow();
 }
 
 /// Right-hand side panel showing the active and historical sessions,
@@ -226,12 +234,30 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// group headers where appropriate.
   ///
   /// Layout:
-  /// - "Pinned" header + pinned sessions/chats (sorted by pin time)
-  /// - Today's sessions first, **no header label**
-  /// - "Yesterday" header + yesterday's sessions
-  /// - "3 Days" header + sessions from 2–3 days ago
-  /// - "N archived /unarchive #id" hint
-  /// - "Chats" header + the same recency buckets for chats
+  /// - Sessions section:
+  ///   - Pinned sessions (sorted by pin time, newest first), followed
+  ///     by a horizontal divider that separates them from the rest
+  ///   - Today's sessions, **no header label**
+  ///   - "Yesterday" header + yesterday's sessions
+  ///   - "3 Days" header + sessions from 2–3 days ago
+  ///   - "N archived /unarchive #id" hint
+  /// - Chats section:
+  ///   - "Chats" header (divider)
+  ///   - Pinned chats (sorted by pin time, newest first), followed
+  ///     by a divider
+  ///   - Today's chats, no header
+  ///   - "Yesterday" / "3 Days" headers + those buckets
+  ///   - "N archived /unarchive #id" hint
+  ///
+  /// Pinned rows are deliberately not hoisted into a single
+  /// cross-section group at the very top: a pinned chat must stay
+  /// in the Chats section (where chats live) and a pinned session
+  /// must stay in the Sessions section. The previous "shared
+  /// Pinned header" layout made a pinned chat look like it had
+  /// jumped into the workspace Sessions list. Pinned rows now sit
+  /// at the top of their own section, with a divider underneath so
+  /// the visual band reads as a "Pinned" group without needing a
+  /// label.
   static List<Object> _buildRows(
     List<Session> sorted,
     int archivedCount,
@@ -245,19 +271,17 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
 
     final rows = <Object>[];
 
-    // ── Pinned section ──────────────────────────────────────────
-    // Pinned workspace sessions and chats are mixed into one list at
-    // the very top, sorted by when they were pinned (newest first),
-    // and excluded from the recency buckets below.
-    final pinned = <Session>[
+    // ── Sessions section ───────────────────────────────────────
+    // Pinned sessions live at the very top of THIS section, not in a
+    // shared top-of-list group. Sorted by pin time, newest first.
+    // A divider below closes the "Pinned" visual band.
+    final pinnedSessions = <Session>[
       for (final s in sorted)
         if (s.isPinned) s,
-      for (final s in sortedChats)
-        if (s.isPinned) s,
     ]..sort((a, b) => b.pinnedAt!.compareTo(a.pinnedAt!));
-    if (pinned.isNotEmpty) {
-      rows.add(_SessionGroup.pinned);
-      rows.addAll(pinned);
+    if (pinnedSessions.isNotEmpty) {
+      rows.addAll(pinnedSessions);
+      rows.add(const _DividerRow());
     }
 
     // Bucket non-pinned sessions into recency groups.
@@ -297,14 +321,30 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
     // sessions list's recency grouping (today unlabeled, then
     // "Yesterday" / "3 Days") so the two sections read identically.
     // A chat running in another Crux instance is refused on tap by
-    // SessionController's lease check. Pinned chats are excluded here
-    // (they render in the "Pinned" section above).
+    // SessionController's lease check.
+    //
+    // Pinned chats live at the top of THIS section, not hoisted into
+    // a shared cross-section header — that's what made a pinned chat
+    // appear above every workspace session in the previous layout.
     final unpinnedChats = <Session>[
       for (final s in sortedChats)
         if (!s.isPinned) s,
     ];
-    if (unpinnedChats.isNotEmpty || archivedChatCount > 0) {
+    if (unpinnedChats.isNotEmpty ||
+        sortedChats.any((s) => s.isPinned) ||
+        archivedChatCount > 0) {
       rows.add(_SessionGroup.chats);
+
+      // Pinned chats, sorted by pin time, newest first, with a
+      // divider underneath so they read as a top-of-section band.
+      final pinnedChats = <Session>[
+        for (final s in sortedChats)
+          if (s.isPinned) s,
+      ]..sort((a, b) => b.pinnedAt!.compareTo(a.pinnedAt!));
+      if (pinnedChats.isNotEmpty) {
+        rows.addAll(pinnedChats);
+        rows.add(const _DividerRow());
+      }
 
       final chatsToday = <Session>[];
       final chatsYesterday = <Session>[];
@@ -660,6 +700,16 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                       final item = rows[index];
                       if (item is _SessionGroup) {
                         return _buildGroupHeader(item);
+                      }
+                      if (item is _DividerRow) {
+                        // Closes the "Pinned" visual band at the top
+                        // of a section. Width: 1 cell, color matches
+                        // the panel's outline so it reads as a
+                        // continuation of the section chrome.
+                        return Divider(
+                          color: CruxTheme.of(context).outline,
+                          height: 1,
+                        );
                       }
                       return _buildSessionRow(
                         item as Session,
