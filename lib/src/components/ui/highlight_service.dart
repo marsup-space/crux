@@ -80,22 +80,27 @@ class HighlightService {
       case 'yml':
         return 'yaml';
       case 'c#':
-      case 'cs':
+      case 'cs': // also the file extension — grammar id stays 'csharp'
         return 'csharp';
+      case 'c++':
+      case 'c': // no standalone 'c' grammar ships; C uses the cpp grammar
+      case 'h':
       case 'cc':
       case 'cxx':
       case 'hpp':
       case 'hxx':
       case 'hh':
         return 'cpp';
-      case 'h':
-        return 'c';
       case 'rb':
         return 'ruby';
       case 'sh':
       case 'zsh':
+      case 'shell':
         return 'bash';
       case 'patch':
+        return 'diff';
+      case 'diff':
+      case 'git':
         return 'diff';
       case 'md':
         return 'markdown';
