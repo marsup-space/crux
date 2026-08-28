@@ -5,8 +5,11 @@
 ///
 ///   * `Table`       — column-aligned grid with header, `stringWidth()`
 ///                     driven column sizing (CJK = 2 columns)
-///   * `ProgressBar` — numeric range indicator, wraps nocterm's
-///                     `ProgressBar` render object
+///   * `ProgressBar` — numeric range indicator; a custom render object
+///                     (mirroring ContextBar) that paints `width × 1`
+///                     fixed-size cells directly on the canvas, so a
+///                     CJK label can never blow the bar past its slot
+///                     the way widget-composed cells could
 ///   * `List`        — scrollable list of row components, height-capped
 ///                     to keep chat bubbles compact
 ///
@@ -19,6 +22,10 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../theme/crux_theme.dart';
 import '../../utils/text_width.dart';
+// For TerminalCanvas — the custom ProgressBar render object paints
+// per-cell backgrounds directly, mirroring ContextBar.
+// ignore_for_file: implementation_imports
+import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'basic_catalog_items.dart' show resolveValue;
 import 'models.dart';
 import 'surface_catalog.dart';
@@ -125,12 +132,12 @@ class TableCatalogItem extends CatalogItem {
       );
     }
 
-    // Compute column widths: natural = max(header, longest cell) with a
+    // Compute natural column widths: max(header, longest cell) with a
     // 20-col safety cap per column; explicit `width` wins.
-    final widths = List<int>.filled(columns.length, 0);
+    final natural = List<int>.filled(columns.length, 0);
     for (var i = 0; i < columns.length; i++) {
       if (columns[i].width != null) {
-        widths[i] = columns[i].width!;
+        natural[i] = columns[i].width!;
         continue;
       }
       var w = stringWidth(columns[i].header);
@@ -139,60 +146,92 @@ class TableCatalogItem extends CatalogItem {
         final cw = stringWidth(cell);
         if (cw > w) w = cw;
       }
-      widths[i] = w > 20 ? 20 : w;
+      natural[i] = w > 20 ? 20 : w;
     }
 
-    Component headerRow() => Row(
+    // Fit the table to the available width. In a tight container (an
+    // Expanded inside a side-by-side Card row, a narrow terminal) the
+    // natural widths can overflow — shrink columns proportionally so
+    // the table respects the constraint instead of blowing out the
+    // Card border and pushing siblings off screen.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final widths = List<int>.from(natural);
+        if (constraints.maxWidth.isFinite) {
+          final avail = constraints.maxWidth.floor();
+          var total = widths.fold(0, (a, b) => a + b);
+          if (total > avail && avail >= columns.length * 3) {
+            // Shrink round-robin from the widest columns until we fit,
+            // never below 3 cols (2 content + ellipsis stays readable).
+            while (total > avail) {
+              var widest = 0;
+              for (var i = 1; i < widths.length; i++) {
+                if (widths[i] > widths[widest]) widest = i;
+              }
+              if (widths[widest] <= 3) break;
+              widths[widest]--;
+              total--;
+            }
+          }
+        }
+
+        Component headerRow() => Row(
+              children: [
+                for (var i = 0; i < columns.length; i++)
+                  Text(
+                    _padCell(columns[i].header, widths[i]),
+                    style: TextStyle(
+                      color: theme.secondary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+              ],
+            );
+
+        Component dataRow(Map<String, dynamic> row) => Row(
+              children: [
+                for (var i = 0; i < columns.length; i++)
+                  Text(
+                    _padCell(row[columns[i].key]?.toString() ?? '', widths[i]),
+                    style: TextStyle(color: theme.foreground),
+                  ),
+              ],
+            );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (var i = 0; i < columns.length; i++)
-              Text(
-                _padCell(columns[i].header, widths[i]),
-                style: TextStyle(
-                  color: theme.secondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            headerRow(),
+            for (final row in rows) dataRow(row),
           ],
         );
-
-    Component dataRow(Map<String, dynamic> row) => Row(
-          children: [
-            for (var i = 0; i < columns.length; i++)
-              Text(
-                _padCell(row[columns[i].key]?.toString() ?? '', widths[i]),
-                style: TextStyle(color: theme.foreground),
-              ),
-          ],
-        );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        headerRow(),
-        for (final row in rows) dataRow(row),
-      ],
+      },
     );
   }
 
   /// Pad a cell to [width] terminal columns, truncating with `…` when
   /// the content overflows. Uses `stringWidth`, so CJK padding is exact.
-  static String _padCell(String text, int width) {
-    final w = stringWidth(text);
-    if (w > width) {
-      // Truncate to width - 1 columns + ellipsis (1 col).
-      var acc = 0;
-      final buf = StringBuffer();
-      for (final rune in text.runes) {
-        final ch = String.fromCharCode(rune);
-        final cw = stringWidth(ch);
-        if (acc + cw > width - 1) break;
-        buf.write(ch);
-        acc += cw;
-      }
-      return '$buf…';
-    }
-    return padToWidth(text, width);
+  static String _padCell(String text, int width) =>
+      padToWidth(_truncateToWidth(text, width), width);
+}
+
+/// Truncate [text] to at most [width] terminal columns, ending with `…`
+/// when truncation occurred. A wide rune that straddles the limit is
+/// dropped rather than half-drawn; the result can therefore end up a
+/// column short, so callers still need to pad afterwards when the exact
+/// width matters (see `_padCell`).
+String _truncateToWidth(String text, int width) {
+  if (stringWidth(text) <= width) return text;
+  var acc = 0;
+  final buf = StringBuffer();
+  for (final rune in text.runes) {
+    final ch = String.fromCharCode(rune);
+    final cw = stringWidth(ch);
+    if (acc + cw > width - 1) break;
+    buf.write(ch);
+    acc += cw;
   }
+  return '$buf…';
 }
 
 // ---------------------------------------------------------------------------
@@ -417,134 +456,299 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
 
   @override
   Component build(BuildContext context) {
-    final width = component.width;
-    // Render the lerped display value (not the target) so the bar and
-    // the percentage readout animate smoothly toward the new value.
-    final value = _renderedValue;
-    final text = component.displayText ?? '';
+    return _SurfaceProgressBarComponent(
+      width: component.width,
+      renderValue: _renderedValue,
+      indeterminateFrame: component.indeterminate ? _frame : null,
+      displayText: component.displayText,
+      fillColor: component.fillColor,
+      emptyColor: component.emptyColor,
+      labelFillFg: component.labelFillFg,
+      labelEmptyFg: component.labelEmptyFg,
+    );
+  }
+}
 
-    final cells = <Component>[];
+/// Bridge component — creates the render object and hands fresh visual
+/// state (lerped value, pulse frame) to it on every rebuild.
+class _SurfaceProgressBarComponent extends SingleChildRenderObjectComponent {
+  final int width;
+  final double? renderValue;
+  final int? indeterminateFrame;
+  final String? displayText;
+  final Color fillColor;
+  final Color emptyColor;
+  final Color labelFillFg;
+  final Color labelEmptyFg;
 
-    if (component.indeterminate) {
-      // Pulse: a moving 30% highlight band sweeping left→right→left.
-      final pos = _frame % (width * 2);
-      final center = pos <= width ? pos : width * 2 - pos;
-      final bandHalf = (width * 0.3 / 2).ceil().clamp(1, width ~/ 2);
-      for (var i = 0; i < width; i++) {
+  const _SurfaceProgressBarComponent({
+    required this.width,
+    required this.renderValue,
+    required this.indeterminateFrame,
+    required this.displayText,
+    required this.fillColor,
+    required this.emptyColor,
+    required this.labelFillFg,
+    required this.labelEmptyFg,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderSurfaceProgressBar(
+      width: width,
+      value: renderValue,
+      indeterminateFrame: indeterminateFrame,
+      label: displayText,
+      fillColor: fillColor,
+      emptyColor: emptyColor,
+      labelFillFg: labelFillFg,
+      labelEmptyFg: labelEmptyFg,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderSurfaceProgressBar renderObject,
+  ) {
+    renderObject
+      ..width = width
+      ..setVisualState(
+        value: renderValue,
+        indeterminateFrame: indeterminateFrame,
+        label: displayText,
+      )
+      ..fillColor = fillColor
+      ..emptyColor = emptyColor
+      ..labelFillFg = labelFillFg
+      ..labelEmptyFg = labelEmptyFg;
+  }
+}
+
+/// Custom render object for the surface ProgressBar. Paints `width × 1`
+/// fixed-size cells DIRECTLY on the canvas (mirroring ContextBar) so the
+/// bar can never exceed its layout slot — a CJK label character advances
+/// two columns on screen but is pre-coloured here per-cell in grid
+/// space, so wide glyphs cannot push the row past the Card border the
+/// way widget-composed cells could (their natural width made the Row
+/// overflow by one column per wide char, erasing the Card's right
+/// border).
+///
+/// Layout is trivially `Size(width, 1)`; every visual change goes
+/// through `markNeedsPaint`.
+class RenderSurfaceProgressBar extends RenderObject {
+  int _width;
+  double? _value;
+  int? _indeterminateFrame;
+  String _label;
+  Color _fillColor;
+  Color _emptyColor;
+  Color _labelFillFg;
+  Color _labelEmptyFg;
+
+  RenderSurfaceProgressBar({
+    required int width,
+    required double? value,
+    required int? indeterminateFrame,
+    String? label,
+    required Color fillColor,
+    required Color emptyColor,
+    required Color labelFillFg,
+    required Color labelEmptyFg,
+  })  :         // Width/value/frame are transformed (frame is nullable in the
+        // param, non-null usage inside), so explicit assignment reads
+        // clearest; the lint is informational.
+        // ignore: prefer_initializing_formals
+        _width = width,
+        // ignore: prefer_initializing_formals
+        _value = value,
+        // ignore: prefer_initializing_formals
+        _indeterminateFrame = indeterminateFrame,
+        _label = label ?? '',
+        // Style infos trigger `prefer_initializing_formals` noise when
+        // assigned in the initializer list; ContextBar's render object
+        // lays these out the same way, and the lint is informational —
+        // keep explicit assignment for readability.
+        // ignore: prefer_initializing_formals
+        _fillColor = fillColor,
+        // ignore: prefer_initializing_formals
+        _emptyColor = emptyColor,
+        // ignore: prefer_initializing_formals
+        _labelFillFg = labelFillFg,
+        // ignore: prefer_initializing_formals
+        _labelEmptyFg = labelEmptyFg;
+
+  /// Width change re-lays-out (size depends on it); visual-only changes
+  /// just repaint.
+  set width(int value) {
+    if (_width == value) return;
+    _width = value;
+    markNeedsLayout();
+  }
+
+  /// Bulk visual-state update from the bridge component. Repaints only
+  /// when something actually changed (the lerp timer ticks at 60 fps
+  /// while animating).
+  void setVisualState({
+    required double? value,
+    required int? indeterminateFrame,
+    required String? label,
+  }) {
+    var dirty = false;
+    if (_value != value) {
+      _value = value;
+      dirty = true;
+    }
+    if (_indeterminateFrame != indeterminateFrame) {
+      _indeterminateFrame = indeterminateFrame;
+      dirty = true;
+    }
+    if (_label != label) {
+      _label = label ?? '';
+      dirty = true;
+    }
+    if (dirty) markNeedsPaint();
+  }
+
+  set fillColor(Color value) {
+    if (_fillColor == value) return;
+    _fillColor = value;
+    markNeedsPaint();
+  }
+
+  set emptyColor(Color value) {
+    if (_emptyColor == value) return;
+    _emptyColor = value;
+    markNeedsPaint();
+  }
+
+  set labelFillFg(Color value) {
+    if (_labelFillFg == value) return;
+    _labelFillFg = value;
+    markNeedsPaint();
+  }
+
+  set labelEmptyFg(Color value) {
+    if (_labelEmptyFg == value) return;
+    _labelEmptyFg = value;
+    markNeedsPaint();
+  }
+
+  @override
+  void setupParentData(RenderObject child) {
+    if (child.parentData is! BoxParentData) {
+      child.parentData = BoxParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    // Fixed size: exactly [_width] cells wide, 1 row tall. The parent's
+    // constraints have already been measured by the catalog's
+    // LayoutBuilder, so the slot can always hold this size.
+    size = Size(_width.toDouble(), 1.0);
+  }
+
+  @override
+  void paint(TerminalCanvas canvas, Offset offset) {
+    super.paint(canvas, offset);
+
+    final width = _width;
+    final value = _value;
+    final label = _label;
+
+    final frame = _indeterminateFrame;
+    final pos = frame == null ? 0 : frame % (width * 2);
+    final center = pos <= width ? pos : width * 2 - pos;
+    final bandHalf = (width * 0.3 / 2).ceil().clamp(1, width ~/ 2);
+
+    final rawFill = (value ?? 0.0) * width;
+    final filledCount = rawFill.floor();
+    final partial = rawFill - filledCount;
+    final boundaryIdx = (partial > 0.0 && filledCount < width)
+        ? filledCount
+        : -1;
+
+    // Label centred in grid space; truncated to the bar's own width
+    // with `…` when it would overflow.
+    final fitted = _truncateToWidth(label, width);
+    final labelWidth = stringWidth(fitted);
+    final labelStart = (width - labelWidth) ~/ 2;
+
+    // Walk label runes with their grid widths, building a per-cell
+    // char/fg map so wide glyphs occupy their true column counts.
+    final labelChars = <String?>[for (var i = 0; i < width; i++) null];
+    final labelFgs = <Color?>[for (var i = 0; i < width; i++) null];
+    var cellX = labelStart;
+    for (final rune in fitted.runes) {
+      final ch = String.fromCharCode(rune);
+      final gw = stringWidth(ch);
+      if (gw > 0 && cellX >= 0 && cellX + gw <= width) {
+        final fg = _labelFgFor(
+          cellX: cellX,
+          filledCount: filledCount,
+          boundaryIdx: boundaryIdx,
+          partial: partial,
+          center: center,
+          bandHalf: bandHalf,
+        );
+        labelChars[cellX] = ch;
+        labelFgs[cellX] = fg;
+        if (gw == 2 && cellX + 1 < width) labelFgs[cellX + 1] = fg;
+      }
+      cellX += gw;
+    }
+
+    for (var i = 0; i < width; i++) {
+      final Color bg;
+      if (_indeterminateFrame != null) {
+        // Pulse: a moving 30% band sweeping left→right→left.
         final inBand = (i - center).abs() <= bandHalf;
-        cells.add(
-          Container(
-            decoration: BoxDecoration(
-              color: inBand ? component.fillColor : component.emptyColor,
-            ),
-            child: const Text(' '),
-          ),
-        );
+        bg = inBand ? _fillColor : _emptyColor;
+      } else if (i < filledCount) {
+        bg = _fillColor;
+      } else if (i == boundaryIdx) {
+        bg = Color.lerp(_emptyColor, _fillColor, partial)!;
+      } else {
+        bg = _emptyColor;
       }
-    } else if (value != null) {
-      // Determinate: filled prefix with a boundary-blend cell for the
-      // fractional remainder, then empty suffix.  Uses the lerped
-      // display value so the bar animates smoothly.
-      final rawFill = value * width;
-      final filledCount = rawFill.floor();
-      final partial = rawFill - filledCount;
-      final boundaryIdx = (partial > 0.0 && filledCount < width)
-          ? filledCount
-          : -1;
-      for (var i = 0; i < width; i++) {
-        final Color bg;
-        if (i < filledCount) {
-          bg = component.fillColor;
-        } else if (i == boundaryIdx) {
-          bg = Color.lerp(component.emptyColor, component.fillColor, partial)!;
-        } else {
-          bg = component.emptyColor;
-        }
-        cells.add(
-          Container(
-            decoration: BoxDecoration(color: bg),
-            child: const Text(' '),
-          ),
-        );
-      }
-    } else {
-      // Empty bar.
-      for (var i = 0; i < width; i++) {
-        cells.add(
-          Container(
-            decoration: BoxDecoration(color: component.emptyColor),
-            child: const Text(' '),
-          ),
-        );
-      }
+
+      final ch = labelChars[i];
+      final fg = labelFgs[i];
+      final style = TextStyle(
+        color: fg,
+        backgroundColor: bg,
+      );
+      // Always draw exactly one column per iteration: bg fill for
+      // every cell, label char where mapped, space elsewhere.
+      canvas.drawText(
+        offset + Offset(i.toDouble(), 0),
+        ch ?? ' ',
+        style: style,
+      );
     }
+  }
 
-    // Overlay the label/percentage centered on the bar. Each character
-    // is drawn with the fg appropriate to the cell underneath. The
-    // percentage is computed from the lerped display value so the readout
-    // animates in lock-step with the bar.
-    if (text.isNotEmpty && text.length <= width) {
-      final start = (width - text.length) ~/ 2;
-      final value = _renderedValue;
-      final rawFill = value != null ? value * width : 0.0;
-      final filledCount = rawFill.floor();
-      final partial = rawFill - filledCount;
-      final boundaryIdx = (partial > 0.0 && filledCount < width)
-          ? filledCount
-          : -1;
-
-      for (var i = 0; i < text.length; i++) {
-        final cellIdx = start + i;
-        if (cellIdx < 0 || cellIdx >= width) continue;
-
-        final Color bg;
-        final Color fg;
-        if (component.indeterminate) {
-          // Pulse: label fg flips per band membership.
-          final pos = _frame % (width * 2);
-          final center = pos <= width ? pos : width * 2 - pos;
-          final bandHalf = (width * 0.3 / 2).ceil().clamp(1, width ~/ 2);
-          final inBand = (cellIdx - center).abs() <= bandHalf;
-          bg = inBand ? component.fillColor : component.emptyColor;
-          fg = inBand ? component.labelFillFg : component.labelEmptyFg;
-        } else if (value != null) {
-          if (cellIdx < filledCount) {
-            bg = component.fillColor;
-            fg = component.labelFillFg;
-          } else if (cellIdx == boundaryIdx && partial >= 0.5) {
-            bg = Color.lerp(
-              component.emptyColor,
-              component.fillColor,
-              partial,
-            )!;
-            fg = component.labelFillFg;
-          } else if (cellIdx == boundaryIdx) {
-            bg = Color.lerp(
-              component.emptyColor,
-              component.fillColor,
-              partial,
-            )!;
-            fg = component.labelEmptyFg;
-          } else {
-            bg = component.emptyColor;
-            fg = component.labelEmptyFg;
-          }
-        } else {
-          bg = component.emptyColor;
-          fg = component.labelEmptyFg;
-        }
-
-        cells[cellIdx] = Container(
-          decoration: BoxDecoration(color: bg),
-          child: Text(
-            text[i],
-            style: TextStyle(color: fg),
-          ),
-        );
-      }
+  /// Per-cell label foreground for each fill/band state, mirroring the
+  /// previous widget-composed logic:
+  /// - filled: dedicated fill fg
+  /// - boundary cell: fill fg when the blend is fill-dominant (≥ 0.5)
+  /// - empty / pulse-outside: dedicated empty fg
+  Color _labelFgFor({
+    required int cellX,
+    required int filledCount,
+    required int boundaryIdx,
+    required double partial,
+    required int center,
+    required int bandHalf,
+  }) {
+    if (_indeterminateFrame != null) {
+      final inBand = (cellX - center).abs() <= bandHalf;
+      return inBand ? _labelFillFg : _labelEmptyFg;
     }
-
-    return Row(children: cells);
+    if (cellX < filledCount) return _labelFillFg;
+    if (cellX == boundaryIdx && partial >= 0.5) return _labelFillFg;
+    return _labelEmptyFg;
   }
 }
 

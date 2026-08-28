@@ -109,6 +109,112 @@ void main() {
         expect(beta.first.y, greaterThan(alpha.first.y));
       }, size: const Size(60, 24));
     });
+
+    test('wide Table shrinks to fit a side-by-side Card', () async {
+      await testNocterm('cards overflow', (tester) async {
+        final surface = CreateSurface(
+          surfaceId: 'overflow',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {
+                'children': ['cardT', 'cardB'],
+              },
+            ),
+            A2uiComponent(
+              id: 'cardT',
+              component: 'Card',
+              properties: {'title': '指标', 'child': 'table'},
+            ),
+            A2uiComponent(
+              id: 'table',
+              component: 'Table',
+              properties: {
+                'columns': [
+                  {'header': '指标', 'key': 'k'},
+                  {'header': '中国', 'key': 'cn'},
+                  {'header': '美国', 'key': 'us'},
+                ],
+                'rows': [
+                  {'k': '国防预算', 'cn': '约 \$2,360 亿（官方口径）', 'us': '\$8,860 亿'},
+                  {'k': '核弹头', 'cn': '约 600 枚（快速增长中）', 'us': '约 5,244 枚（库存）'},
+                ],
+              },
+            ),
+            A2uiComponent(
+              id: 'cardB',
+              component: 'Card',
+              properties: {'title': '预算比例', 'child': 'bar'},
+            ),
+            A2uiComponent(
+              id: 'bar',
+              component: 'ProgressBar',
+              properties: {'value': 1.0, 'label': '美国 \$8,860 亿'},
+            ),
+          ],
+        );
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: catalog.instanceFor('ov', surface),
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Measure the CELL GRID (one cell per terminal column), NOT
+        // renderToString string indexes — wide CJK chars occupy two
+        // grid columns but a single string index, so string scanning
+        // misreports border positions.
+        String gridRow(int y) {
+          final b = StringBuffer();
+          for (var x = 0; x < 80; x++) {
+            b.write(tester.terminalState.buffer.getCell(x, y).char);
+          }
+          return b.toString();
+        }
+
+        // Signature per row: the sorted columns holding a vertical
+        // border char. Top/bottom rows of the taller (left) card
+        // legitimately show only its own two borders. The invariant is:
+        //  - across ALL rows the border columns form exactly the two
+        //    cards' four edges (any 5th column = a row drifted right,
+        //    i.e. content overflowed its card);
+        //  - at least one row shows all four borders simultaneously
+        //    (a missing 4th column on bar rows = the bar overpainted
+        //    its card's right border).
+        final allBorderCols = <int>{};
+        final rowSignatures = <String>{};
+        for (var y = 0; y < 8; y++) {
+          final row = gridRow(y);
+          final cols = [for (var x = 0; x < 80; x++) if (row[x] == '║') x];
+          if (cols.isEmpty) continue;
+          allBorderCols.addAll(cols);
+          rowSignatures.add(cols.join(','));
+        }
+        expect(rowSignatures, isNotEmpty);
+        expect(
+          allBorderCols,
+          equals({0, 38, 41, 79}),
+          reason: 'border columns must be exactly the two cards edges; '
+              'an extra column means a row drifted (overflow), got '
+              '$allBorderCols',
+        );
+        expect(
+          rowSignatures.contains('0,38,41,79'),
+          isTrue,
+          reason: 'at least one row must show both cards complete right '
+              'borders; signatures seen: $rowSignatures',
+        );
+        // The sibling card must still be on screen (its title visible).
+        expect(tester.terminalState.findText('预算比例').isNotEmpty, isTrue);
+      }, size: const Size(80, 24));
+    });
   });
 
   group('Table rendering', () {
