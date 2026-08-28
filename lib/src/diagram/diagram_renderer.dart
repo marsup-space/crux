@@ -281,8 +281,44 @@ class DiagramRenderer {
       }
     }
 
+    // Port ownership per target, decided up front: among the LR edges
+    // converging on one target, the one whose source midline is nearest
+    // the target's midline draws the full port leg with the arrowhead;
+    // all others stop on the trunk. Without this, a "same-row only"
+    // rule leaves NO owner when no edge is exactly level with the
+    // target (box heights differ) — the port leg goes undrawn and the
+    // line into the target breaks.
+    final portOwner = <DiagramEdge, bool>{};
+    final byTarget = <String, List<DiagramEdge>>{};
     for (final edge in graph.edges) {
-      _drawEdge(grid, edge, blocked);
+      byTarget.putIfAbsent(edge.to, () => []).add(edge);
+    }
+    byTarget.forEach((_, edges) {
+      if (edges.length == 1) {
+        portOwner[edges.single] = true;
+        return;
+      }
+      final target = graph.nodes[edges.first.to];
+      if (target == null) return;
+      final targetMid = target.y + target.height ~/ 2;
+      DiagramEdge? best;
+      var bestDist = 1 << 30;
+      for (final e in edges) {
+        final src = graph.nodes[e.from];
+        if (src == null) continue;
+        final d = (src.y + src.height ~/ 2 - targetMid).abs();
+        if (d < bestDist) {
+          bestDist = d;
+          best = e;
+        }
+      }
+      for (final e in edges) {
+        portOwner[e] = identical(e, best);
+      }
+    });
+
+    for (final edge in graph.edges) {
+      _drawEdge(grid, edge, blocked, isPortOwner: portOwner[edge] ?? true);
     }
 
     // One junction pass after ALL edges: rebuild every line cell from the
@@ -463,43 +499,30 @@ class DiagramRenderer {
   void _drawEdge(
     _Grid grid,
     DiagramEdge edge,
-    Set<int> blocked,
-  ) {
+    Set<int> blocked, {
+    required bool isPortOwner,
+  }) {
     final from = graph.nodes[edge.from];
     final to = graph.nodes[edge.to];
     if (from == null || to == null) return;
 
     final horizontal = graph.direction.isHorizontal;
-    final out = _RouteOut();
+    final out = _RouteOut()..isPortOwner = isPortOwner;
     var path = _routeEdge(
         grid, from, to, horizontal, blocked, edge.style,
         out: out);
     if (path == null) return;
 
-    // Termination baked by the router: an off-midline Z arrival ends ON
-    // the trunk cell at the target's mid row. That cell lies on the
-    // same-row owner's shaft, so we suppress this edge's arrowhead and
-    // let the junction pass weld a T there — never a free-floating ▼/▲.
-    var suppressArrowhead = out.terminatesOnTrunkWithoutArrow;
-    if (path.length >= 2 && !suppressArrowhead) {
-      // Port occupancy check is only about REAL port claims: an
-      // arrowhead glyph. A trunk cell merely touched by a merge edge is
-      // a pass-through crossing, not a port owner.
-      final last = path.last;
-      final ch = grid.get(last.x, last.y);
-      final portBusy = const {
-        '▶', '◀', '▼', '▲', '>', '<', 'v', '^',
-      }.contains(ch);
-      if (portBusy) {
-        path = path.sublist(0, path.length - 1);
-        if (path.length >= 2) {
-          final tip = path.last;
-          grid.addArms(
-              tip.x, tip.y, _armToward(tip, last), edge.style);
-          suppressArrowhead = true;
-        }
-      }
-    }
+    // Termination baked by the router: an off-midline Z arrival wants to
+    // stop on the trunk (no port leg). Only override that when this edge
+    // WON port ownership — it draws the leg and the arrowhead regardless
+    // of row alignment, otherwise no one would and the line would break.
+    var suppressArrowhead =
+        out.terminatesOnTrunkWithoutArrow && !isPortOwner;
+    // No subnet trimming: the path already ends ON the trunk at the mid
+    // row — dropping the tip cell would break the shaft one cell short
+    // of the owner's port row (a visible gap). Suppressing the
+    // arrowhead is enough; the junction pass turns that cell into ┤.
     _paintPath(grid, path, edge.style, suppressArrowhead: suppressArrowhead);
 
     if (edge.label != null && edge.label!.isNotEmpty) {
@@ -641,10 +664,12 @@ class DiagramRenderer {
           start.x + 1,
           start.x - 1,
         ];
-        // An off-midline arrival must stop on the trunk at the target's
-        // mid row: that cell sits on the same-row owner's shaft, so the
-        // junction pass can weld a proper ┤/├ there.
-        final arrivesOnPortRow = start.y == goal.y;
+        // Port ownership is decided up front (isPortOwner): the owner
+        // draws the full Z with the port leg + arrowhead even if its
+        // row is off the target midline; everyone else stops on the
+        // trunk at the target mid row so the junction pass can weld a
+        // ┤ into the owner's shaft (or the owner's port leg — either
+        // way the merge glyph sits where strokes actually cross).
         for (final bx in trunks) {
           if (bx <= start.x || bx >= goal.x) continue;
           final e1 = _Point(bx, start.y);
@@ -652,15 +677,9 @@ class DiagramRenderer {
           if (_segmentClear(grid, start, e1, blocked) &&
               _segmentClear(grid, e1, e2, blocked) &&
               _segmentClear(grid, e2, goal, blocked)) {
-            // Off-midline arrivals stop ON the trunk at the target's mid
-            // row — the port row belongs to the same-row edge, whose
-            // straight shaft crosses this very cell. Drawing a port leg
-            // here would hang a └▶ one row above/below the owner's
-            // arrowhead.
-            if (!arrivesOnPortRow) {
-              out?.terminatesOnTrunkWithoutArrow = true;
-              // Down the trunk to the target's mid row, but NO port leg:
-              // the same-row owner's shaft crosses this cell.
+            if (out != null && !out.isPortOwner) {
+              out.terminatesOnTrunkWithoutArrow = true;
+              // Down the trunk to the target mid row, but NO port leg.
               return _expand([start, e1, _Point(bx, goal.y)]);
             }
             // _expand already includes start; a duplicate here would
@@ -876,7 +895,9 @@ class DiagramRenderer {
       final first = path.first;
       final last = path.last;
       grid.protect(first.x, first.y);
-      grid.protect(last.x, last.y);
+      // A suppressed tip is a trunk crossing cell — it MUST stay open to
+      // the junction pass so other strokes' arms can weld a T there.
+      if (!suppressArrowhead) grid.protect(last.x, last.y);
     }
   }
 
@@ -1098,6 +1119,10 @@ class _RouteOut {
   /// Router reports: this arrival terminates ON the trunk (off-midline
   /// Z route), so the caller must not paint an arrowhead at the tip.
   bool terminatesOnTrunkWithoutArrow = false;
+
+  /// Set by the caller before routing: did THIS edge win port ownership
+  /// for the target? The owner always draws the full port leg.
+  bool isPortOwner = true;
 }
 
 class _Point {
