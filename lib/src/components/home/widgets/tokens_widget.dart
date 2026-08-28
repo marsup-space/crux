@@ -19,6 +19,13 @@ import '../home_widgets.dart';
 /// title names the day — "Today", "Yesterday", "2 days ago", …, or the
 /// `MM-DD` date beyond a week.
 ///
+/// **Empty-today fallback:** when the shown default day (today) has no
+/// recorded activity but some earlier day does, the box seeds its
+/// navigation back to the most recent day-with-activity — opening on a
+/// real chart instead of a dead "暂无活动" placeholder. Seeding only
+/// applies before the user navigates (`‹ ›` win immediately), and an
+/// all-empty window still shows the placeholder honestly.
+///
 /// One bar per model that spent tokens that day, longest bar first,
 /// each labelled with the model's display name and a compact count
 /// (`12.8k`). Bars scale linearly against the busiest model. More
@@ -124,6 +131,37 @@ class TokensHomeWidget extends HomeWidget {
     notifyChanged();
   }
 
+  /// Seed the shown day when the stats query settles (called once by
+  /// the view, right after the loader resolves). While navigation is
+  /// untouched — i.e. today is still the shown default — an
+  /// activity-less today falls back to the **most recent earlier day
+  /// with activity**, so the box opens on the user's last working day
+  /// rather than the "暂无活动" placeholder. Manual `‹ ›` navigation
+  /// always wins: this never overrides a set [_navigatedDay]. An
+  /// entirely empty window leaves the box on today with the honest
+  /// placeholder.
+  void _seedFallbackDay(Map<String, DailyUsageStats> stats) {
+    if (_navigatedDay != null) return;
+    final today = _todayStart;
+    DateTime? latestActive;
+    stats.forEach((key, s) {
+      if (s.isEmpty) return;
+      final day =
+          DateTime.tryParse(key)?.toLocal(); // bucket keys are local days
+      if (day == null || day.isAfter(today)) return;
+      if (latestActive == null || day.isAfter(latestActive!)) {
+        latestActive = day;
+      }
+    });
+    if (latestActive == null) return;
+    // Local-midnight to local-midnight; round() absorbs DST-shifted
+    // 23h/25h days instead of truncating to 0/-1.
+    final gap = (today.difference(latestActive!).inHours / 24).round();
+    if (gap <= 0) return; // today itself has activity — nothing to do
+    _navigatedDay = gap;
+    notifyChanged();
+  }
+
   @override
   Set<int> get supportedSpans => const {1};
 
@@ -158,6 +196,7 @@ class TokensHomeWidget extends HomeWidget {
   }) {
     return _TokensView(
       loader: () => _load(ctx),
+      owner: this,
       daysAgo: _daysAgo,
       now: _now,
       strings: ctx.strings,
@@ -170,6 +209,10 @@ class TokensHomeWidget extends HomeWidget {
 class _TokensView extends StatefulComponent {
   final Future<Map<String, DailyUsageStats>> Function() loader;
 
+  /// The owning [TokensHomeWidget] — day navigation lives on it, so
+  /// the loader callback can seed the fallback day there.
+  final TokensHomeWidget owner;
+
   /// How many days back the shown day is (`0` = today).
   final int daysAgo;
 
@@ -180,6 +223,7 @@ class _TokensView extends StatefulComponent {
 
   const _TokensView({
     required this.loader,
+    required this.owner,
     required this.daysAgo,
     required this.now,
     required this.strings,
@@ -207,6 +251,9 @@ class _TokensViewState extends State<_TokensView> {
     _requested = true;
     component.loader().then((stats) {
       if (!mounted) return;
+      // Seed the shown day before the first paint of the settled data
+      // (no-op when today has activity or the user already navigated).
+      component.owner._seedFallbackDay(stats);
       setState(() {
         _stats = stats;
         _settled = true;

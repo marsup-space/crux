@@ -416,9 +416,9 @@ void main() {
         ),
       );
       await tester.pump();
-      // Hero is 7 rows (1 padding + 5 logo + 1 gap), so the box border
-      // sits at y=7; action rows at y=8 (/new), 9 (/chat), 10.
-      await tester.tap(4, 9);
+      // Hero is 8 rows (1 padding + 6 logo + 1 gap), so the box border
+      // sits at y=8; action rows at y=9 (/new), 10 (/chat), 11.
+      await tester.tap(4, 10);
       await tester.pump();
     }, size: const Size(60, 24));
     expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
@@ -497,8 +497,8 @@ void main() {
       );
       await tester.pump();
       expect(widget.selectedIndex, 0);
-      // /chat row is at y=9 in this 60×16 layout (border y=7, rows 8-10).
-      await tester.hover(3, 9);
+      // /chat row is at y=10 in this 60×16 layout (border y=8, rows 9-11).
+      await tester.hover(3, 10);
       for (var i = 0; i < 4; i++) {
         await tester.pump();
       }
@@ -507,8 +507,8 @@ void main() {
         1,
         reason: 'hovering the /chat row selects it',
       );
-      // Hover /new (y=8) and confirm the selection moves up.
-      await tester.hover(3, 8);
+      // Hover /new (y=9) and confirm the selection moves up.
+      await tester.hover(3, 9);
       for (var i = 0; i < 4; i++) {
         await tester.pump();
       }
@@ -552,53 +552,11 @@ void main() {
         ];
       },
     );
+    // Reading itemCount twice is intentional: each read invokes the
+    // skills closure once, driving `calls` to 2 for the assertion below.
     expect(widget.itemCount, 2);
     expect(widget.itemCount, 2);
     expect(calls, 2, reason: 'no caching inside the widget itself');
-  });
-
-  test('quick-chat input starts a new chat on Enter', () async {
-    await testNocterm('home quick chat', (tester) async {
-      String? started;
-      await tester.pumpComponent(
-        Container(
-          width: 80,
-          height: 24,
-          child: CruxTheme(
-            data: CruxThemeData.draculaFallback,
-            child: HomeScreen(
-              onExit: () {},
-              widgets: [StubHomeWidget('alpha')],
-              context_: _ctx(),
-              onStartChat: (text) {
-                started = text;
-                return true;
-              },
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      // The quick-chat field renders its prompt + placeholder.
-      expect(
-        tester.terminalState.findText('Start a new chat').isNotEmpty,
-        isTrue,
-        reason: 'the quick-chat field renders its placeholder',
-      );
-
-      await tester.enterText('hello chat');
-      await tester.pump();
-      expect(
-        tester.terminalState.findText('hello chat').isNotEmpty,
-        isTrue,
-        reason: 'typed text should appear in the quick-chat field',
-      );
-      await tester.sendEnter();
-      await tester.pump();
-
-      expect(started, 'hello chat');
-    }, size: const Size(80, 24));
   });
 }
 

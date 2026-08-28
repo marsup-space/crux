@@ -60,8 +60,6 @@ import 'extra_info_panel.dart';
 import 'home/home_layout_store.dart';
 import 'home/home_screen.dart';
 import 'home/home_widgets.dart';
-import 'input_keys.dart';
-import 'input_overlay.dart';
 import 'input_overlay_popover.dart';
 import 'notes_fullpane.dart';
 import 'overlay_controller.dart';
@@ -337,13 +335,6 @@ class _ChatPanelState extends State<ChatPanel> {
   final _chatInputKey = GlobalKey<ChatInputState>();
   final AutoScrollController scrollController = AutoScrollController();
   final TextEditingController textController = TextEditingController();
-
-  // Home quick-chat input machinery — built lazily when home opens and
-  // disposed when it closes, so the home input gets the same command /
-  // @-mention / #-mention / $skill handling as the chat input.
-  InputOverlay? _homeInputOverlay;
-  InputKeyHandler? _homeInputKeyHandler;
-  String? _homeCommandStash;
 
   // Sidebar show threshold and width growth — see
   // [kSidebarShowThreshold] / [kSidebarWidthMin] / [kSidebarWidthMax]
@@ -1329,112 +1320,12 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _closeHome() {
-    textController.removeListener(_onHomeInputChanged);
-    _homeInputOverlay?.dispose();
-    _homeInputOverlay = null;
-    _homeInputKeyHandler = null;
-    _homeCommandStash = null;
     setState(() {
       _overlayController.showHome = false;
     });
   }
 
-  /// Start a new Chat-mode conversation with [text] as the first prompt
-  /// and leave home for the chat screen. Returns false when refused
-  /// mid-stream.
-  bool _startChat(String text) {
-    if (_homeResponding) return false;
-    unawaited(_startChatAsync(text));
-    return true;
-  }
-
-  Future<void> _startChatAsync(String text) async {
-    // Create a fresh workspace-free chat (kind='chat', minimal prompt)
-    // and switch to it, then send the prompt as its first message.
-    await _sessionController.createChatSession();
-    _turnOrchestrator.sendMessage(text: text, textController: textController);
-    _closeHome();
-  }
-
-  /// Lazily build the home quick-chat input's overlay + key-handler
-  /// machinery, reusing the shared [OverlayController] and [textController]
-  /// so the home input has the same `/` command, `@` file, `#` session,
-  /// and `$` skill handling as the chat input.
-  ///
-  static void _noopHomeQuickChatRebuild() {}
-
-  /// The quick-chat area's LOCAL rebuild callback, not the panel-wide
-  /// `_refresh`: typing must only repaint the input row + its popover.
-  /// The old wiring rebuilt the whole home grid (~10 boxes, ~26ms of
-  /// layout) on every keystroke. Swapped in by the quick-chat area when
-  /// it mounts; a no-op while home is closed.
-  VoidCallback _homeQuickChatRebuild = _noopHomeQuickChatRebuild;
-
-  void _ensureHomeInput() {
-    if (_homeInputOverlay != null && _homeInputKeyHandler != null) return;
-    // Panel-level refresh for the home input: the quick-chat area
-    // registers its setState here when it mounts (see
-    // [HomeScreen.onQuickChatAreaMounted]), so this forwarding method
-    // always targets whatever subtree is currently the input row. While
-    // home is closed it's a no-op dummy.
-    void localRefresh() => _homeQuickChatRebuild();
-    _homeInputOverlay = InputOverlay(
-      overlayController: _overlayController,
-      sessionController: _sessionController,
-      providerService: _providerService,
-      providerServiceReady: _providerServiceReady,
-      webProviderRegistry: _webProviderRegistry,
-      themeController: component.themeController,
-      recentProjectsStore: _recentProjectsStore,
-      textController: textController,
-      projectPath: Directory.current.path,
-      refresh: localRefresh,
-      onStateChanged: localRefresh,
-      strings: _strings,
-    );
-    _homeInputKeyHandler = InputKeyHandler(
-      sessionController: _sessionController,
-      turnOrchestrator: _turnOrchestrator,
-      onQuitRequest: _quitHandler.quitAndPrintSummary,
-      // A plain ESC on home returns to the chat screen (the chat input's
-      // `onOpenHome` semantic is "leave the current screen").
-      onOpenHome: _closeHome,
-      refresh: localRefresh,
-      onStateChanged: localRefresh,
-      textController: textController,
-      overlayController: _overlayController,
-      scrollController: null,
-      getCommandStash: () => _homeCommandStash,
-      setCommandStash: (v) => _homeCommandStash = v,
-    );
-    _homeInputKeyHandler!.onSendMessage = _submitHomeInput;
-    textController.addListener(_onHomeInputChanged);
-  }
-
-  void _onHomeInputChanged() {
-    _homeInputOverlay?.onTextChanged();
-  }
-
-  /// Home quick-chat submit: a leading `/` that resolves to a command
-  /// executes it; anything else starts a fresh Chat conversation.
-  void _submitHomeInput() {
-    final text = textController.text.trim();
-    if (text.isEmpty) return;
-    if (text.startsWith('/')) {
-      final cmd = findCommand(text.split(' ').first);
-      if (cmd != null) {
-        textController.clear();
-        unawaited(_executeCommand(text));
-        return;
-      }
-    }
-    if (_startChat(text)) {
-      textController.clear();
-    }
-  }
-
   Component _buildHome() {
-    _ensureHomeInput();
     // Home is an independent full screen, not a modal Fullpane — no
     // close button, no barrier, no margins. See HomeScreen.
     return HomeScreen(
@@ -1446,16 +1337,6 @@ class _ChatPanelState extends State<ChatPanel> {
       // run summary + clean teardown fire regardless of where the user
       // hits Ctrl+C.
       quitApp: _quitHandler.quitAndPrintSummary,
-      onStartChat: _startChat,
-      overlayController: _overlayController,
-      inputController: textController,
-      inputOverlay: _homeInputOverlay,
-      inputKeyHandler: _homeInputKeyHandler,
-      maxVisibleItems: _maxVisibleItems,
-      // The quick-chat area hands us its local setState so typing (and
-      // popover navigation) rebuilds only the input row, not the grid.
-      onQuickChatAreaMounted: (rebuild) =>
-          _homeQuickChatRebuild = rebuild,
     );
   }
 

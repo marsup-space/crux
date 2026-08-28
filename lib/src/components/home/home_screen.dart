@@ -8,11 +8,6 @@ import '../../services/skills/skill_discovery.dart';
 import '../../services/skills/skill.dart';
 import '../../version.dart';
 import '../ui/button.dart';
-import '../input_chips.dart';
-import '../input_keys.dart';
-import '../input_overlay.dart';
-import '../input_overlay_popover.dart';
-import '../overlay_controller.dart';
 import 'home_layout_store.dart';
 import 'home_widgets.dart';
 import 'widgets/activity_widget.dart';
@@ -80,38 +75,6 @@ class HomeScreen extends StatefulComponent {
   /// quit handler can never trap the user on the home screen.
   final VoidCallback? quitNow;
 
-  /// Start a new Chat-mode conversation with [text] as the first prompt,
-  /// then leave home for the chat screen. Returns false if refused
-  /// mid-stream. Null (tests / previews) means "no starter wired" — the
-  /// quick-chat input then does nothing on submit.
-  final bool Function(String text)? onStartChat;
-
-  /// Shared overlay state for the full-featured quick-chat input. When
-  /// null (tests / previews), the input is a plain starter field.
-  final OverlayController? overlayController;
-
-  /// Shared text buffer backing the quick-chat input. When null, home
-  /// falls back to its own local controller.
-  final TextEditingController? inputController;
-
-  /// Trigger detection (@ / # / $ / slash) for the quick-chat input.
-  final InputOverlay? inputOverlay;
-
-  /// Key handling (overlay navigation, command mode, submit) for the
-  /// quick-chat input.
-  final InputKeyHandler? inputKeyHandler;
-
-  /// Max visible rows in the overlay popover.
-  final int maxVisibleItems;
-
-  /// Wired by the chat panel so the quick-chat area can register its
-  /// local rebuild callback. Typing in the field must only rebuild the
-  /// input row (+ its popover), never the whole home grid — the panel
-  /// points the InputOverlay/InputKeyHandler `refresh` at this widget
-  /// instead of its own panel-wide setState, which used to rebuild all
-  /// ~10 boxes (~26ms) on every keystroke. Null in tests/previews.
-  final void Function(VoidCallback rebuild)? onQuickChatAreaMounted;
-
   const HomeScreen({
     super.key,
     required this.onExit,
@@ -121,13 +84,6 @@ class HomeScreen extends StatefulComponent {
     this.onLayoutChanged,
     this.quitApp,
     this.quitNow,
-    this.onStartChat,
-    this.overlayController,
-    this.inputController,
-    this.inputOverlay,
-    this.inputKeyHandler,
-    this.maxVisibleItems = 6,
-    this.onQuickChatAreaMounted,
   });
 
   @override
@@ -156,12 +112,11 @@ class _Row {
   int get height {
     var h = 0;
     for (var i = 0; i < widgets.length; i++) {
-      // +2 for the border rows, +1 for the title-button row when the
-      // box has one (its title renders as a component row, not in the
-      // painted border).
-      final wh = widgets[i].heightFor(spans[i]) +
-          2 +
-          (widgets[i].hasTitleButtons ? 1 : 0);
+      // +2 for the border rows. Boxes WITH title buttons need no extra
+      // budget: their title row is stacked OVER the top border (real
+      // components overlaying the painted line), not inside the
+      // content — every box on a row shares identical geometry.
+      final wh = widgets[i].heightFor(spans[i]) + 2;
       if (wh > h) h = wh;
     }
     return h;
@@ -172,23 +127,21 @@ class _HomeScreenState extends State<HomeScreen> {
   // Splash ASCII-art logo — the same art the boot splash renders, so
   // home carries the brand. Colored with the theme's accent.
   static const _logo = [
-    '  ██████╗   ██████╗  ██╗   ██╗ ██╗  ██╗',
-    ' ██╔════╝  ██╔══██╗ ██║   ██║  ██╗██╔╝',
-    ' ██║      ██████╔╝ ██║   ██║   ███╔╝ ',
-    ' ██║      ██╔══██╗ ██║   ██║  ██╔██╗ ',
-    '  ██████╗ ██║  ██║  █████╔╝ ██╔╝ ██╗',
+    ' ██████╗██████╗ ██╗   ██╗██╗  ██╗',
+    '██╔════╝██╔══██╗██║   ██║╚██╗██╔╝',
+    '██║     ██████╔╝██║   ██║ ╚███╔╝ ',
+    '██║     ██╔══██╗██║   ██║ ██╔██╗ ',
+    '╚██████╗██║  ██║╚██████╔╝██╔╝ ██╗',
+    ' ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝',
   ];
 
   /// Rows above the scroll viewport: container top padding (1) + hero
-  /// block (5 logo rows; the info column shares them) + gap (1). The box
+  /// block (6 logo rows; the info column shares them) + gap (1). The box
   /// hover handler uses this to map the cursor's terminal y to a content
   /// row.
-  static const double _kAboveViewport = 1 + 5 + 1;
+  static const double _kAboveViewport = 1 + 6 + 1;
 
   final _scrollController = ScrollController();
-
-  /// Controller for the quick-chat input at the bottom of home.
-  final TextEditingController _chatController = TextEditingController();
 
   /// Index of the focused box in the flat placement list.
   int _focusedIndex = 0;
@@ -420,7 +373,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
-    _chatController.dispose();
     super.dispose();
   }
 
@@ -915,42 +867,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// so a hidden box is unreachable.
   List<HomeWidget> _visibleWidgets = const [];
 
-  // ── Quick-chat input ──────────────────────────────────────────────
-
-  bool get _hasFullInput =>
-      component.overlayController != null &&
-      component.inputController != null &&
-      component.inputOverlay != null &&
-      component.inputKeyHandler != null;
-
-  Component _quickChatArea(CruxThemeData theme) {
-    // The full input path re-airs its own rebuilds through the local
-    // state below (see _QuickChatArea); the fallback field keeps
-    // home's setState (it's one Text + the local controller, cheap).
-    return _QuickChatArea(
-      hasFullInput: _hasFullInput,
-      overlayController: component.overlayController,
-      inputController: component.inputController,
-      inputOverlay: component.inputOverlay,
-      inputKeyHandler: component.inputKeyHandler,
-      maxVisibleItems: component.maxVisibleItems,
-      fallbackController: _chatController,
-      strings: _ctx.strings,
-      onSubmit: _submitChat,
-      onKey: _handleKey,
-      onMounted: component.onQuickChatAreaMounted,
-      theme: theme,
-    );
-  }
-
-  void _submitChat(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    final ok = component.onStartChat?.call(trimmed);
-    if (ok == null || !ok) return; // no starter wired, or refused mid-stream
-    _chatController.clear();
-  }
-
   // ── Build ─────────────────────────────────────────────────────────
 
   @override
@@ -1064,16 +980,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // ── Quick-chat input (+ overlay popover) ──
-            // A one-line field to start a fresh Chat conversation, with
-            // the slash / @ / # / $ popover stacked above it. One
-            // self-contained component that rebuilds ITSELF on typing —
-            // a keystroke never re-lays-out the whole dashboards grid.
-            // Hidden during edit mode (edit mode owns the keyboard).
-            if (!_editing) _quickChatArea(theme),
-            const SizedBox(height: 1),
-
             // ── Key-hint footer ──
+            const SizedBox(height: 1),
             if (_notice != null)
               Text(_notice!, style: TextStyle(color: theme.errorColor))
             else if (_editing)
@@ -1201,13 +1109,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final hasItems = widget.itemCount > 0;
     final boxAction = widget.activate(_ctx);
 
-    // A box with title buttons renders its title as a real component
-    // row: the buttons need hover + tap, which the painted border title
-    // can't host (it's painted into the border cells at paint time).
-    // The title row takes one content row — budgeted in `_Row.height` —
-    // and the border above it paints as a plain line.
+    // A box with title buttons stacks them OVER the top border: the
+    // buttons need hover + tap, which the painted border title can't
+    // host (it's painted into the border cells at paint time). A
+    // nocterm Stack hit-tests children topmost-first, so real Button
+    // components layered on the border row work — visually the title
+    // sits IN the border like every other box, while content gets the
+    // full inner height (the old in-column title row stole one).
     final titleButtons = widget.titleButtons;
     final hasTitleButtons = titleButtons != null && titleButtons.isNotEmpty;
+
+    final inner = _BoxScrollArea(
+      owner: widget,
+      child: _boxContent(context, widget, span, focused),
+    );
 
     final boxContent = Container(
       height: height.toDouble(),
@@ -1239,24 +1154,27 @@ class _HomeScreenState extends State<HomeScreen> {
       // do boxes that opt out via [HomeWidget.verticallyCenter] — a
       // content list like Yesterday must keep top alignment for the
       // scroll to read naturally.
-      child: hasTitleButtons
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _titleRow(theme, widget, titleButtons, focused),
-                Expanded(
-                  child: _BoxScrollArea(
-                    owner: widget,
-                    child: _boxContent(context, widget, span, focused),
-                  ),
-                ),
-              ],
-            )
-          : _BoxScrollArea(
-              owner: widget,
-              child: _boxContent(context, widget, span, focused),
-            ),
+      child: inner,
     );
+
+    // Title-button boxes: base = bordered container (content starts on
+    // the first row under the border), overlay = the interactive title
+    // row pinned to the top border line. The row spans [corner─][space]
+    // [title ‹ ›] like the painted `─ Title ──` format, so it reads as
+    // part of the border.
+    final titled = hasTitleButtons
+        ? Stack(
+            fit: StackFit.passthrough,
+            children: [
+              boxContent,
+              Positioned(
+                top: 0,
+                left: 2,
+                child: _titleRow(theme, widget, titleButtons, focused),
+              ),
+            ],
+          )
+        : boxContent;
 
     // Hover-focus lives on a non-opaque MouseRegion so it never blocks
     // clicks from reaching the content. onHover additionally maps the
@@ -1300,7 +1218,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       },
       opaque: false,
-      child: boxContent,
+      child: titled,
     );
 
     // Only a passive / whole-action box (git, tokens, …) needs a
@@ -1390,226 +1308,6 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 1),
             ),
       ],
-    );
-  }
-}
-
-/// The quick-chat input area: the overlay popover (slash / @ / # / $
-/// completion) stacked above the one-line "start a new chat" field.
-///
-/// Self-contained statefulness: everything that changes while typing —
-/// the text, the cursor, the popover rows — is repainted by THIS
-/// component's own setState, never by the home screen's. This is a
-/// performance boundary, not a style choice: home's build re-runs
-/// every box widget (~10 boxes, worst case ~26ms of layout on a single
-/// rebuild) and a keystroke used to trigger exactly that through the
-/// panel-wide `_refresh` callback. Key events that belong to the grid
-/// (navigation while the field is empty) bounce back out via [onKey]
-/// to `_HomeScreenState._handleKey`, which re-renders the grid as
-/// before.
-class _QuickChatArea extends StatefulComponent {
-  /// Whether the full-featured input is wired (controller / overlay /
-  /// key handler from the chat panel). False in tests/previews → the
-  /// plain local-controller field renders.
-  final bool hasFullInput;
-
-  final OverlayController? overlayController;
-  final TextEditingController? inputController;
-  final InputOverlay? inputOverlay;
-  final InputKeyHandler? inputKeyHandler;
-  final int maxVisibleItems;
-
-  /// Home's local controller — used when [inputController] is null.
-  final TextEditingController fallbackController;
-
-  final Strings strings;
-
-  /// Submit on Enter (full path submits via [inputKeyHandler]; this
-  /// covers the fallback field's own `onSubmitted`).
-  final void Function(String text) onSubmit;
-
-  /// Grid key handler for empty-field navigation keys.
-  final bool Function(KeyboardEvent event) onKey;
-
-  /// Rebuild hook for the chat panel: the panel swaps the
-  /// InputOverlay/InputKeyHandler `refresh` to this component's local
-  /// setState, so typing rebuilds only this subtree. Cleared on
-  /// unmount.
-  final void Function(VoidCallback rebuild)? onMounted;
-
-  final CruxThemeData theme;
-
-  const _QuickChatArea({
-    required this.hasFullInput,
-    required this.overlayController,
-    required this.inputController,
-    required this.inputOverlay,
-    required this.inputKeyHandler,
-    required this.maxVisibleItems,
-    required this.fallbackController,
-    required this.strings,
-    required this.onSubmit,
-    required this.onKey,
-    required this.onMounted,
-    required this.theme,
-  });
-
-  @override
-  State<_QuickChatArea> createState() => _QuickChatAreaState();
-}
-
-class _QuickChatAreaState extends State<_QuickChatArea> {
-  void _localRebuild() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    component.onMounted?.call(_localRebuild);
-  }
-
-  @override
-  void dispose() {
-    component.onMounted?.call(() {});
-    super.dispose();
-  }
-
-  /// The quick-chat field keeps home's keyboard shortcuts working while
-  /// it's empty: arrows / Tab / PgUp / PgDn / Home / End / Enter / `e` /
-  /// `[` / `]` are delegated to the grid's key handler for navigation,
-  /// edit mode, and box activation. Once the user has typed something,
-  /// the field owns the keyboard (typing, cursor, Enter to submit).
-  ///
-  /// With the full-featured input wired, empty-field nav keys still go
-  /// to the grid; every other key goes to the [InputKeyHandler] (overlay
-  /// navigation, command mode, chip backspace, Enter to submit).
-  bool _keyHandler(KeyboardEvent event) {
-    final keyHandler = component.inputKeyHandler;
-    final controller = component.inputController;
-    if (keyHandler != null && controller != null) {
-      if (controller.text.isEmpty) {
-        final key = event.logicalKey;
-        switch (key) {
-          case LogicalKey.arrowUp:
-          case LogicalKey.arrowDown:
-          case LogicalKey.arrowLeft:
-          case LogicalKey.arrowRight:
-          case LogicalKey.tab:
-          case LogicalKey.pageUp:
-          case LogicalKey.pageDown:
-          case LogicalKey.home:
-          case LogicalKey.end:
-          case LogicalKey.enter:
-          case LogicalKey.keyE:
-          case LogicalKey.bracketLeft:
-          case LogicalKey.bracketRight:
-            return component.onKey(event);
-          default:
-            break;
-        }
-      }
-      return keyHandler.handleKeyEvent(event);
-    }
-
-    if (component.fallbackController.text.isNotEmpty) return false;
-    final key = event.logicalKey;
-    switch (key) {
-      case LogicalKey.arrowUp:
-      case LogicalKey.arrowDown:
-      case LogicalKey.arrowLeft:
-      case LogicalKey.arrowRight:
-      case LogicalKey.tab:
-      case LogicalKey.pageUp:
-      case LogicalKey.pageDown:
-      case LogicalKey.home:
-      case LogicalKey.end:
-      case LogicalKey.enter:
-      case LogicalKey.keyE:
-      case LogicalKey.bracketLeft:
-      case LogicalKey.bracketRight:
-        return component.onKey(event);
-      default:
-        return false;
-    }
-  }
-
-  @override
-  Component build(BuildContext context) {
-    final theme = component.theme;
-    final controller =
-        component.inputController ?? component.fallbackController;
-    final styleSegments = component.hasFullInput
-        ? buildInputChipSegments(
-            text: controller.text,
-            mentionChips: component.overlayController!.mentionChips,
-            theme: theme,
-            baseStyle: TextStyle(color: theme.foreground),
-          )
-        : null;
-
-    final children = <Component>[
-      LayoutBuilder(
-        builder: (context, constraints) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            decoration: BoxDecoration(
-              color: theme.surface,
-              border: BoxBorder.all(
-                color: theme.accent,
-                style: BoxBorderStyle.rounded,
-              ),
-              title: BorderTitle(
-                text: component.strings.t('home.newChat'),
-                style: TextStyle(
-                  color: theme.accent,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Text('> ', style: TextStyle(color: theme.onSurfaceDim)),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    focused: true,
-                    maxLines: 1,
-                    style: TextStyle(color: theme.foreground),
-                    placeholder: component.strings.t('home.newChatPlaceholder'),
-                    styleSegments: styleSegments,
-                    onSubmitted: component.onSubmit,
-                    onKeyEvent: _keyHandler,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    ];
-
-    // Popover above the field (bottom-up column: field first, popover
-    // unshifts above it via the parent Column ordering — matches the
-    // old `[..._popover(), field]` order by rebuilding the column with
-    // the popover as a leading child when active).
-    if (component.hasFullInput) {
-      final popover = buildOverlayPopover(
-        overlay: component.overlayController!,
-        maxVisible: component.maxVisibleItems,
-        strings: component.strings,
-        refresh: _localRebuild,
-      );
-      if (popover != null) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [popover, const SizedBox(height: 1), ...children],
-        );
-      }
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
     );
   }
 }

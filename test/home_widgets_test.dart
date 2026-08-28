@@ -380,6 +380,77 @@ void main() {
       });
     });
 
+    test('empty today falls back to the latest day with activity', () async {
+      await testNocterm('tokens empty-today fallback', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        // Today and yesterday are empty; 2 days ago has data.
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): const DailyUsageStats(tokens: 0),
+            dayKey(now, 1): const DailyUsageStats(tokens: 0),
+            dayKey(now, 3): const DailyUsageStats(tokens: 3400),
+          },
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump(); // let the loader land + seeding settle
+        // The box shifted its default view to 3 days ago — the most
+        // recent day WITH activity (day 1 and 2 have none)… note day-2
+        // is simply absent from the map; day 3 is the latest non-empty.
+        expect(widget.daysAgo, 3);
+        expect(widget.title, '3 days ago');
+        expect(
+          tester.terminalState.findText('3,400'),
+          nocterm.isNotEmpty,
+        );
+
+        // Manual navigation still works from the seeded day.
+        widget.goForward();
+        await tester.pump();
+        expect(widget.daysAgo, 2);
+        expect(widget.title, '2 days ago');
+      });
+    });
+
+    test('today with activity keeps the default view', () async {
+      await testNocterm('tokens today active', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {
+            dayKey(now, 0): const DailyUsageStats(tokens: 500),
+            dayKey(now, 5): const DailyUsageStats(tokens: 99999),
+          },
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        // Today has activity — no seeding, even though an older day is
+        // busier.
+        expect(widget.daysAgo, 0);
+        expect(widget.title, 'Today');
+        expect(tester.terminalState.findText('500'), nocterm.isNotEmpty);
+      });
+    });
+
+    test('entirely empty window stays on today with the placeholder',
+        () async {
+      await testNocterm('tokens all empty', (tester) async {
+        final now = DateTime(2024, 6, 15, 12);
+        final widget = TokensHomeWidget(
+          now: () => now,
+          loader: (_) async => {},
+        );
+        await _pump(tester, widget, _ctx());
+        await tester.pump();
+        expect(widget.daysAgo, 0);
+        expect(widget.title, 'Today');
+        expect(
+          tester.terminalState.findText('no activity'),
+          nocterm.isNotEmpty,
+        );
+      });
+    });
+
     test('title switches to MM-DD beyond a week', () async {
       await testNocterm('tokens title date', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
