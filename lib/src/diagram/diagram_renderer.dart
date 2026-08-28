@@ -470,10 +470,35 @@ class DiagramRenderer {
     if (from == null || to == null) return;
 
     final horizontal = graph.direction.isHorizontal;
-    final path = _routeEdge(grid, from, to, horizontal, blocked, edge.style);
+    var path = _routeEdge(grid, from, to, horizontal, blocked, edge.style);
     if (path == null) return;
 
-    _paintPath(grid, path, edge.style);
+    // Multi-edge bus merge: when an earlier edge already claims the
+    // arrowhead cell outside this target's port, terminate THIS edge on
+    // the trunk instead — the first arrival owns the port's arrowhead,
+    // later arrivals end at a junction glyph on the trunk column. Keeps
+    // N>1 inbound edges from duelling over one arrowhead cell.
+    var suppressArrowhead = false;
+    if (path.length >= 2) {
+      final last = path.last;
+      final arrowBusy = grid.isTouched(last.x, last.y) &&
+          grid.get(last.x, last.y) != ' ';
+      if (arrowBusy) {
+        // Trim the final arrowhead cell off; the new tip (the trunk
+        // cell) gains an arm TOWARDS the port so the upstream stroke
+        // and the port leg merge into ┤/├/T at that cell.
+        path = path.sublist(0, path.length - 1);
+        if (path.length >= 2) {
+          final tip = path.last;
+          grid.addArms(tip.x, tip.y, _armToward(tip, last), edge.style);
+          // Seal the tip and suppress its arrowhead: this edge ends as
+          // a merge into the bus, the port arrow belongs to its owner.
+          grid.protect(tip.x, tip.y);
+          suppressArrowhead = true;
+        }
+      }
+    }
+    _paintPath(grid, path, edge.style, suppressArrowhead: suppressArrowhead);
 
     if (edge.label != null && edge.label!.isNotEmpty) {
       _paintLabel(grid, path, edge.label!);
@@ -582,7 +607,9 @@ class DiagramRenderer {
       }
       return _findPath(start, goal, blocked, grid);
     }
-    // Horizontal flow: side receptors on the facing walls.
+    // Horizontal flow: side receptors OUTSIDE the facing walls (never on
+    // the blocked border cells). Flushness comes from _paintPath drawing
+    // the port cells themselves, not from putting ports on the wall.
     final aheadX = from.x + from.width <= to.x;
     if (aheadX) {
       final start = _Point(from.x + from.width, from.y + from.height ~/ 2);
@@ -757,11 +784,16 @@ class DiagramRenderer {
   void _paintPath(
     _Grid grid,
     List<_Point> path,
-    EdgeStyle style,
-  ) {
+    EdgeStyle style, {
+    bool suppressArrowhead = false,
+  }) {
     for (var i = 0; i < path.length; i++) {
       final p = path[i];
-      if (i == 0 || i == path.length - 1) continue;
+      // The first cell (the source port) IS drawn: it sits outside the
+      // box wall and must touch the border so no gap column appears.
+      // The last cell carries the arrowhead (or the arrival port when
+      // suppressed) and is drawn in the terminal phase below.
+      if (i == path.length - 1) continue;
       final prev = path[i > 0 ? i - 1 : 0];
       final next = path[i < path.length - 1 ? i + 1 : i];
       final inHoriz = prev.y == p.y && prev.x != p.x;
@@ -801,7 +833,7 @@ class DiagramRenderer {
 
     // Arrowhead at the goal end; both endpoints are sealed afterwards so
     // the junction pass never redraws ink that abuts a node border.
-    if (style.isArrow && path.length >= 2) {
+    if (style.isArrow && !suppressArrowhead && path.length >= 2) {
       final last = path.last;
       final beforeLast = path[path.length - 2];
       String head;
