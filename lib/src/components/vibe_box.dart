@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../theme/crux_theme.dart';
+import '../utils/text_width.dart';
 
 /// A single bordered metadata box for vibe mode.
 ///
@@ -126,6 +127,17 @@ class VibeBox extends StatelessComponent {
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      // Guarantee enough width for the border title. Title painting
+      // (decorated_box.dart) needs ` W ≥ title + 6 ` for an untruncated
+      // `␣title␣`: two corners + one horizontal col before the title +
+      // `␣title␣` (title+2) + at least one horizontal col after. A
+      // content-like box ("0.3s" / "max", ~4 cols) otherwise shrink-wraps
+      // to ~9 columns and the top border degrades the title to `th…`.
+      // minWidth degrades safely via BoxConstraints.enforce when the row
+      // truly runs out of space.
+      constraints: BoxConstraints(
+        minWidth: (stringWidth(title) + 6).toDouble(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: bodyChildren,

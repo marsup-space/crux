@@ -77,5 +77,62 @@ void main() {
         expect(tester.terminalState.findText('files'), isNotEmpty);
       });
     });
+
+    test('narrow content still leaves room for the full title', () async {
+      // Regression: content narrower than the title ("0.3s" / "max")
+      // shrink-wrapped the box to ~4 columns, so the top border skipped
+      // the title entirely. minWidth = title + padding + corners must
+      // keep the title visible.
+      await testNocterm('vibe box narrow content', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 60,
+              height: 8,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  VibeBox(
+                    title: 'think',
+                    bodyRows: ['0.3s', 'max'],
+                    mutedColor: const Color.fromRGB(128, 128, 128),
+                    activeColor: const Color.fromRGB(255, 255, 0),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        expect(tester.terminalState.findText('think'), isNotEmpty);
+        expect(tester.terminalState.findText('0.3s'), isNotEmpty);
+        expect(tester.terminalState.findText('max'), isNotEmpty);
+      });
+    });
+
+    test('box width never exceeds parent when parent is narrower', () async {
+      // Parent tighter than title+4: minWidth must clamp, not overflow.
+      await testNocterm('vibe box clamped by parent', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 6,
+              height: 8,
+              child: VibeBox(
+                title: 'tools',
+                bodyRows: ['x'],
+                mutedColor: const Color.fromRGB(128, 128, 128),
+                activeColor: const Color.fromRGB(255, 255, 0),
+              ),
+            ),
+          ),
+        );
+
+        // Clamped to 6 columns; body row still renders.
+        expect(tester.terminalState.findText('x'), isNotEmpty);
+      });
+    });
   });
 }
