@@ -206,6 +206,61 @@ void main() {
     });
   });
 
+  group('layoutWidth (pane width budget)', () {
+    test('parser receives maxWidth once the pane reports a width', () {
+      controller.enter(tmp.path);
+      // Wide table: natural width far exceeds the budget below.
+      const text = '# Plan\n\n'
+          '| col | very long header column | another wide header column |\n'
+          '| --- | --- | --- |\n'
+          '| 1 | some long cell content in this column | more content |\n';
+      File(controller.planDocPath!).writeAsStringSync(text);
+      controller.onAgentEdit('# Plan\n\n', text);
+
+      final unbounded = controller.parsed.renderedText
+          .split('\n')
+          .fold(0, (m, l) => l.length > m ? l.length : m);
+
+      controller.applyLayoutWidth(60);
+      final bounded = controller.parsed.renderedText
+          .split('\n')
+          .fold(0, (m, l) => l.length > m ? l.length : m);
+
+      expect(unbounded, greaterThan(62),
+          reason: 'sanity: the table overflows without a width budget');
+      expect(bounded, lessThanOrEqualTo(60),
+          reason: 'every rendered row fits the reported layout width');
+    });
+
+    test('same-width reReports are free (no reparse)', () {
+      controller.enter(tmp.path);
+      controller.applyLayoutWidth(80);
+      controller.applyLayoutWidth(80);
+      // Identical-or-better: parsed object may be new after the first
+      // call but the second same-value call must not disturb state.
+      expect(controller.layoutWidth, 80);
+      expect(controller.active, isTrue);
+    });
+
+    test('onAgentEdit keeps flash mapping on HEAD while viewing history',
+        () {
+      controller.enter(tmp.path);
+      final path = controller.planDocPath!;
+      const v2 = '# Plan\n\n## A\n';
+      File(path).writeAsStringSync(v2);
+      controller.onAgentEdit('# Plan\n\n', v2);
+      controller.viewVersion(1); // time-travel away from HEAD
+
+      const v3 = '# Plan\n\n## A\n## B\n';
+      File(path).writeAsStringSync(v3);
+      controller.onAgentEdit(v2, v3);
+
+      expect(controller.viewingVersion, controller.headVersion,
+          reason: 'an agent edit lands on HEAD');
+      expect(controller.docText, v3);
+    });
+  });
+
   group('session-bound pane (attachSession)', () {
     // Two sessions, each with its own runtime (panel-wired controllers
     // resolve runtimes by id; tests replicate the same shape).

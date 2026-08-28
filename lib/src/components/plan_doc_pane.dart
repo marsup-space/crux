@@ -152,6 +152,11 @@ class _PlanDocPaneState extends State<PlanDocPane>
     if (!identical(c.theme, theme)) {
       c.theme = theme;
     }
+    // Same lazy-sync for the pane's message catalog: parser-level copy
+    // (diagram warnings) follows the UI locale.
+    if (!identical(c.strings, component.strings)) {
+      c.strings = component.strings;
+    }
   }
 
   @override
@@ -169,6 +174,9 @@ class _PlanDocPaneState extends State<PlanDocPane>
     final theme = CruxTheme.of(context);
     if (!identical(c.theme, theme)) {
       c.theme = theme;
+    }
+    if (!identical(c.strings, component.strings)) {
+      c.strings = component.strings;
     }
     if (c.activeFlashes.isNotEmpty && !_fadeClock.isAnimating) {
       _fadeClock.forward(from: 0.0);
@@ -216,6 +224,14 @@ class _PlanDocPaneState extends State<PlanDocPane>
         final width = constraints.maxWidth.isFinite
             ? constraints.maxWidth.toInt()
             : 80;
+        // Content budget = pane minus the 1-col horizontal Padding
+        // around the RichText below (both sides). Feeding it here lets
+        // the parser shrink wide tables / thematic breaks to the real
+        // width instead of overflowing into soft-wrap garbling.
+        // Deliberately no notifyListeners round-trip: this builder
+        // reads `c.parsed` below in the same frame, so the fresh spans
+        // are picked up without extra relayout.
+        c.applyLayoutWidth(width - 2);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

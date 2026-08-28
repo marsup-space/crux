@@ -108,6 +108,55 @@ void main() {
       expect(rows[1], contains('inner italic item'));
     });
   });
+
+  group('plan_markdown_parser diagram fences (mermaid/d2)', () {
+    test('a parseable mermaid fence renders the graph inside the box',
+        () {
+      final result = parsePlanDocument(
+        '```mermaid\n'
+        'flowchart LR\n'
+        '  A[Start] --> B[End]\n'
+        '```\n',
+        const _TestTheme(),
+        maxWidth: 80,
+      );
+      final rows = result.renderedText.split('\n');
+      // Box header carries the language label.
+      expect(rows.first, contains('╭─ mermaid'));
+      // Some rendered row contains an arrow — the graph, not raw source
+      // (`-->` with boxes around it; raw source would show `A[Start]`).
+      expect(
+        rows.any((r) => r.contains('──') && r.contains('▶') ||
+            r.contains('-->') == false && r.contains('[') ),
+        isTrue,
+        reason: 'diagram art expected; got:\n${result.renderedText}',
+      );
+      expect(result.renderedText.contains('flowchart LR'), isFalse,
+          reason: 'raw source must not leak when parsing succeeded');
+    });
+
+    test('an unparseable (streaming partial) fence falls back to code', () {
+      final result = parsePlanDocument(
+        '```mermaid\n'
+        'this is not diagram source\n'
+        '```\n',
+        const _TestTheme(),
+        maxWidth: 80,
+      );
+      // Fallback renders RAW source rows — the source text is present.
+      expect(result.renderedText, contains('this is not diagram source'));
+    });
+
+    test('non-diagram fences never hit the diagram path', () {
+      final result = parsePlanDocument(
+        '```dart\nvoid main() {}\n```\n',
+        const _TestTheme(),
+        maxWidth: 80,
+      );
+      expect(result.renderedText, contains('void main() {}'));
+      expect(result.renderedText.contains('╭─ dart'), isTrue);
+    });
+  });
 }
 
 /// Colorless theme — the parser only reads colors, never touches a

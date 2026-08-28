@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../components/tool_detail_utils.dart';
 import '../components/ui/markdown_isolate.dart' show MarkdownThemeFields;
+import '../i18n/strings.dart';
 import '../markdown/plan_markdown_parser.dart';
 import '../models/plan_selection.dart';
 import '../models/session_runtime_state.dart';
@@ -49,6 +50,38 @@ class PlanModeController extends ChangeNotifier {
   set theme(MarkdownThemeFields? value) {
     if (identical(value, _theme)) return;
     _theme = value;
+    if (_active) _reparse();
+  }
+
+  /// Content width (terminal columns) reported by the pane's
+  /// `LayoutBuilder` — the budget the parser fits wide tables /
+  /// thematic breaks into. Passes to `parsePlanDocument(maxWidth:)`.
+  /// Null until the pane's first layout; enters/tests parse unbounded,
+  /// exactly like the theme's lazy-sync dance.
+  int? _layoutWidth;
+  int? get layoutWidth => _layoutWidth;
+
+  /// Called by the pane on every layout with the latest content width
+  /// (pane inset already subtracted by the caller). Deliberately does
+  /// NOT notifyListeners(): the caller is the pane's own build — it
+  /// rebuilds everything that reads `parsed` in the same frame with
+  /// the fresh spans, and a synchronous notification from inside a
+  /// LayoutBuilderwould land as setState-during-build on the pane.
+  void applyLayoutWidth(int? width) {
+    if (width == _layoutWidth) return;
+    _layoutWidth = width;
+    if (_active) _reparse();
+  }
+
+  /// Message catalog used by parser-level user-facing text (the
+  /// diagram cycle warning). Same lazy-sync dance as [_theme]: settable
+  /// because `Strings` is resolved from the locale the pane knows at
+  /// build time; defaults to English until then. Re-parses on change.
+  Strings _strings = kEnglishStrings;
+  Strings get strings => _strings;
+  set strings(Strings value) {
+    if (identical(value, _strings)) return;
+    _strings = value;
     if (_active) _reparse();
   }
 
@@ -302,7 +335,12 @@ class PlanModeController extends ChangeNotifier {
       _viewingVersion = rt.planSavedViewingVersion;
       final content = _store!.readVersion(_viewingVersion);
       if (content != null) {
-        _parsed = parsePlanDocument(content, _theme ?? _monoTheme);
+        _parsed = parsePlanDocument(
+          content,
+          _theme ?? _monoTheme,
+          maxWidth: _layoutWidth,
+          strings: _strings,
+        );
       }
     } else {
       _viewingVersion = _store!.headVersion;
@@ -355,8 +393,10 @@ class PlanModeController extends ChangeNotifier {
     if (sessionId != null && sessionId != _sessionId) return;
     if (!_active) return;
     _docText = newText;
-    _reparse();
+    // Land on HEAD *before* reparsing: `_reparse` renders
+    // `_viewedText`, which follows `_viewingVersion`.
     _viewingVersion = _store?.append(newText) ?? headVersion;
+    _reparse();
 
     final changedLines = _changedSourceLines(oldText, newText);
     final rows = <int>{
@@ -400,8 +440,8 @@ class PlanModeController extends ChangeNotifier {
       revertedTo: version,
     );
     _docText = content;
-    _reparse();
     _viewingVersion = newHead;
+    _reparse();
     _pendingRevert = PlanRevertEvent(
       fromVersion: fromVersion,
       toVersion: version,
@@ -424,7 +464,12 @@ class PlanModeController extends ChangeNotifier {
     } else {
       final content = store.readVersion(version);
       if (content != null) {
-        _parsed = parsePlanDocument(content, _theme ?? _monoTheme);
+        _parsed = parsePlanDocument(
+          content,
+          _theme ?? _monoTheme,
+          maxWidth: _layoutWidth,
+          strings: _strings,
+        );
       }
     }
     notifyListeners();
@@ -541,7 +586,12 @@ class PlanModeController extends ChangeNotifier {
   static const _monoTheme = _MonoTheme();
 
   void _reparse() {
-    _parsed = parsePlanDocument(_docText, _theme ?? _monoTheme);
+    _parsed = parsePlanDocument(
+      _viewedText,
+      _theme ?? _monoTheme,
+      maxWidth: _layoutWidth,
+      strings: _strings,
+    );
   }
 
   void _pruneFlashes() {

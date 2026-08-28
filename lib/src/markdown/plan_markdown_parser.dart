@@ -10,6 +10,10 @@ import 'package:source_span/source_span.dart' as src;
 import '../components/ui/highlighted_markdown_text.dart';
 import '../components/ui/highlight_service.dart';
 import '../components/ui/markdown_isolate.dart' show MarkdownThemeFields;
+import '../diagram/diagram.dart'
+    show DiagramRenderOptions, DiagramRenderResult, isDiagramLanguage, renderDiagram;
+import '../diagram/diagram_model.dart' show DiagramParseException;
+import '../i18n/strings.dart';
 import '../models/plan_selection.dart' as model;
 
 /// Parse result for the plan pane: the rendered span tree plus the
@@ -72,8 +76,9 @@ PlanParseResult parsePlanDocument(
   String text,
   MarkdownThemeFields theme, {
   int? maxWidth,
+  Strings strings = kEnglishStrings,
 }) {
-  final visitor = _PlanVisitor(theme, maxWidth: maxWidth);
+  final visitor = _PlanVisitor(theme, maxWidth: maxWidth, strings: strings);
   return visitor.parse(text);
 }
 
@@ -100,10 +105,20 @@ PlanParseResult parsePlanDocument(
 ///     `sourceLinesToRenderedRows` attributes blank rows to the block's
 ///     trailing source lines instead of to nothing.
 class _PlanVisitor {
-  _PlanVisitor(this.theme, {this.maxWidth});
+  _PlanVisitor(
+    this.theme, {
+    this.maxWidth,
+    this.strings = kEnglishStrings,
+  });
 
   final MarkdownThemeFields theme;
   final int? maxWidth;
+
+  /// Message catalog for parser-level user-facing text (the diagram
+  /// cycle warning). Defaults to English so bare construction stays
+  /// valid in tests/previews; the pane-synced controller passes the
+  /// real locale.
+  final Strings strings;
 
   late final HighlightMarkdownStyleSheet styleSheet =
       HighlightMarkdownStyleSheet.fromThemeFields(theme);
@@ -342,6 +357,38 @@ class _PlanVisitor {
     _emitMarkerText('$headerLine\n', gutterStyle, openFence,
         fallbackAnchor: block.start.offset);
 
+    final codeText = block.children.isEmpty
+        ? ''
+        : block.children.map((c) => c.textContent).join();
+
+    // Diagram languages (mermaid / d2 / stateDiagram-v2) render as
+    // ASCII-art inside this same bordered box, mirroring the chat
+    // renderer (`_tryRenderDiagramText`). Parse failure (streaming
+    // partials!) falls through to the plain code path below.
+    final diagramLines = isDiagramLanguage(language)
+        ? _tryRenderDiagramLines(codeText, language, codeLineWidth)
+        : null;
+
+    if (diagramLines != null) {
+      for (final line in diagramLines) {
+        _emitSynthetic('│ ', gutterStyle, block.start.offset);
+        _emitSynthetic(line, codeStyle, block.start.offset);
+        final pad = codeLineWidth - UnicodeWidth.stringWidth(line);
+        if (pad > 0) {
+          _emitSynthetic(' ' * pad, codeStyle, block.start.offset);
+        }
+        _emitSynthetic(' │\n', gutterStyle, block.start.offset);
+      }
+      // Footer for the diagram body, then the shared close below.
+      final closeFenceD = block.markers.length > 1
+          ? block.markers.last
+          : openFence;
+      _emitMarkerText('$footerLine\n', gutterStyle, closeFenceD,
+          fallbackAnchor: block.end.offset);
+      _emitSynthetic('\n', null, block.end.offset);
+      return;
+    }
+
     // Code body: children are one Text node per line (with trailing
     // newline), each carrying its exact source span. Long lines soft-wrap
     // inside the box — the wrap point gets a synthetic gutter so the
@@ -352,9 +399,6 @@ class _PlanVisitor {
     // tokens are applied via a per-character style lookup built from
     // the code's plain text, so the per-character `_emit` source
     // mapping is untouched: same text, same offsets, better colors.
-    final codeText = block.children.isEmpty
-        ? ''
-        : block.children.map((c) => c.textContent).join();
     final charStyles = _codeCharStyles(codeText, language, codeStyle);
 
     var colWidth = 0;
@@ -419,6 +463,37 @@ class _PlanVisitor {
     _emitSynthetic('\n', null, block.end.offset);
   }
 
+  /// Try to render [code] as a mermaid/d2/stateDiagram graph and return
+  /// its ASCII-art lines (warnings included), or null when the source
+  /// cannot (yet) be parsed — streaming partials then fall back to the
+  /// raw-source path in [_visitCodeBlock], matching the chat renderer's
+  /// `_tryRenderDiagramText`.
+  List<String>? _tryRenderDiagramLines(
+    String code,
+    String language,
+    int codeLineWidth,
+  ) {
+    final DiagramRenderResult result;
+    try {
+      result = renderDiagram(
+        code,
+        DiagramRenderOptions(maxWidth: codeLineWidth),
+        language: language,
+      );
+    } on DiagramParseException {
+      return null;
+    }
+    return [
+      ...result.text.split('\n'),
+      for (final warning in result.warnings)
+        '⚠ ${warning.message(
+          cycleDetected: (nodes) => strings.t('diagram.cycleWarning', {
+            'nodes': nodes,
+          }),
+        )}',
+    ];
+  }
+
   /// Per-character styles for a code block's [code] plain text:
   /// `sourceOffset → highlighted TextStyle`. Empty when no highlighter
   /// is available (service not initialized / unknown language) — the
@@ -476,7 +551,7 @@ class _PlanVisitor {
     // temporary sub-visitor, then replay its spans row by row, prefixing
     // each row with a gutter. Source ranges are shifted proportionally
     // for clipped content spans; markers keep their anchors.
-    final sub = _PlanVisitor(theme, maxWidth: maxWidth);
+    final sub = _PlanVisitor(theme, maxWidth: maxWidth, strings: strings);
     sub._visitBlocks(quote.children);
     final subFlat = sub._flat.toString();
     final subLines = subFlat.split('\n');
@@ -752,8 +827,10 @@ class _PlanVisitor {
           _emitSynthetic(' ', rowStyle, table.start.offset);
           _emitSynthetic('│', borderStyle, table.start.offset);
         }
+        // One newline PER display line — wrapped cells must break
+        // between their lines, not only after the row's last one.
+        _emitSynthetic('\n', null, table.end.offset);
       }
-      _emitSynthetic('\n', null, table.end.offset);
       if (r == 0 && rows.length > 1) border('├', '─', '┼', '┤');
     }
     border('└', '─', '┴', '┘');
