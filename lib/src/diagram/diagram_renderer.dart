@@ -478,21 +478,27 @@ class DiagramRenderer {
     // the trunk instead — the first arrival owns the port's arrowhead,
     // later arrivals end at a junction glyph on the trunk column. Keeps
     // N>1 inbound edges from duelling over one arrowhead cell.
+    // Ownership rule: the port cell belongs to whoever arrives first and
+    // is not already owned; a latecomer trims its arrowhead and merges
+    // into the trunk with an arm towards the port (composes into T
+    // glyphs). Vertical arrivals into top/bottom ports keep their
+    // arrows — those ports are single-shot, no contention exists.
     var suppressArrowhead = false;
     if (path.length >= 2) {
       final last = path.last;
-      final arrowBusy = grid.isTouched(last.x, last.y) &&
-          grid.get(last.x, last.y) != ' ';
-      if (arrowBusy) {
-        // Trim the final arrowhead cell off; the new tip (the trunk
-        // cell) gains an arm TOWARDS the port so the upstream stroke
-        // and the port leg merge into ┤/├/T at that cell.
+      final portBusy = ((grid.isProtected(last.x, last.y) ||
+                  grid.isTouched(last.x, last.y)) &&
+              grid.get(last.x, last.y) != ' ') ||
+          grid.get(last.x, last.y) == g.arrowRight ||
+          grid.get(last.x, last.y) == g.arrowLeft ||
+          grid.get(last.x, last.y) == g.arrowDown ||
+          grid.get(last.x, last.y) == g.arrowUp;
+      if (portBusy) {
         path = path.sublist(0, path.length - 1);
         if (path.length >= 2) {
           final tip = path.last;
-          grid.addArms(tip.x, tip.y, _armToward(tip, last), edge.style);
-          // Seal the tip and suppress its arrowhead: this edge ends as
-          // a merge into the bus, the port arrow belongs to its owner.
+          grid.addArms(
+              tip.x, tip.y, _armToward(tip, last), edge.style);
           grid.protect(tip.x, tip.y);
           suppressArrowhead = true;
         }
@@ -616,8 +622,9 @@ class DiagramRenderer {
       final goal = _Point(to.x - 1, to.y + to.height ~/ 2);
       if (start.y == goal.y) {
         if (_segmentClear(grid, start, goal, blocked)) {
-          // Register arms as we draw so a shared cell with another
-          // edge's riser composes into a T/cross in the junction pass.
+          // Same-row edge: the straight shot into the target port. It
+          // owns the arrowhead; inbound edges on other rows merge into
+          // its shaft with T-glyphs instead of duelling for the port.
           for (final q in _hRun(start.y, start.x, goal.x)) {
             grid.touch(q.x, q.y);
             grid.addArms(q.x, q.y, 0x3, style);
@@ -794,16 +801,21 @@ class DiagramRenderer {
       // The last cell carries the arrowhead (or the arrival port when
       // suppressed) and is drawn in the terminal phase below.
       if (i == path.length - 1) continue;
-      final prev = path[i > 0 ? i - 1 : 0];
       final next = path[i < path.length - 1 ? i + 1 : i];
-      final inHoriz = prev.y == p.y && prev.x != p.x;
+      // The source port (i == 0) has no real predecessor — treat its
+      // entry direction as the direction towards next. Without this the
+      // self-fallback prev makes inHoriz false and the port paints an
+      // elbow right at the box exit.
+      final refPrev = i > 0 ? path[i - 1] : next;
+      final inHoriz = refPrev.y == p.y && refPrev.x != p.x;
       final outHoriz = next.y == p.y && next.x != p.x;
 
-      // Direction flags entering (from prev) and leaving (to next).
-      final enter =
-          inHoriz ? (prev.x < p.x ? 1 : 2) : (prev.y < p.y ? 4 : 8);
+      // Direction flags entering (from refPrev) and leaving (to next).
+      final enter = inHoriz
+          ? (refPrev.x < p.x ? 1 : 2)
+          : (refPrev.y < p.y ? 4 : 8);
       final exit = outHoriz ? (next.x > p.x ? 2 : 1) : (next.y > p.y ? 8 : 4);
-      final selfArms = _armToward(p, prev) | _armToward(p, next);
+      final selfArms = _armToward(p, refPrev) | _armToward(p, next);
 
       // Register: full arms here, plus the RECIPROCAL arm at each
       // neighbour pointing back along the same stroke — a later
@@ -814,7 +826,7 @@ class DiagramRenderer {
       grid.addArms(p.x, p.y, selfArms, style);
       void mate(_Point q) =>
           grid.addArms(q.x, q.y, _armToward(q, p), style);
-      mate(prev);
+      mate(refPrev);
       mate(next);
 
       // A turn combines one horizontal and one vertical arm; straight
