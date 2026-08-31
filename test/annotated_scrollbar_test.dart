@@ -399,6 +399,113 @@ void main() {
     }, size: const Size(40, 20));
   });
 
+  test('tooltip anchors to the marker even when a left pane shifts the chat '
+      'rightward (plan-view layout)', () async {
+    // Regression test for the plan-view tooltip bug: the real app puts
+    // the [HintOverlay] at the root (bin/crux.dart) and, when plan mode
+    // is on, lays the chat pane out in a Row AFTER the plan doc pane —
+    // so the chat scrollbar sits at a non-zero global column. Anchoring
+    // from local coordinates shifted the tooltip left by exactly the
+    // first pane's width, drawing it over the plan pane. The fix makes
+    // [RenderAnnotatedScrollbar.markerSourceBounds] translate to global
+    // coordinates (same frame the mouse events/hit-testing use), so the
+    // tooltip must now hug the marker regardless of the scrollbar's
+    // terminal position.
+    await testNocterm('proposal: tooltip tracks shifted scrollbar', (
+      tester,
+    ) async {
+      final controller = ScrollController();
+
+      // Emulate the plan split: a 20-col placeholder pane at the left,
+      // a 1-col divider, then the chat pane with its scrollbar. The
+      // [HintOverlay] (Stack anchored at the terminal origin) wraps the
+      // whole row — exactly like the app root.
+      await tester.pumpComponent(
+        HintOverlay(
+          child: Row(
+            children: [
+              const SizedBox(width: 20, child: Text('plan')),
+              const SizedBox(width: 1, child: Text('│')),
+              Expanded(
+                child: ChatScrollbar(
+                  controller: controller,
+                  thumbVisibility: true,
+                  markers: const [
+                    ScrollbarMarker(
+                      itemIndex: 50,
+                      color: Color(0xFF50FA7B),
+                      label: 'User prompt',
+                    ),
+                  ],
+                  child: ListView.builder(
+                    controller: controller,
+                    itemCount: 100,
+                    itemBuilder: (context, index) => Text('Line $index'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // With the terminal at 40 cols, the shifted scrollbar lives at
+      // column 39 (20 pane + 1 divider + 18 chat + 1 scrollbar, folded
+      // into Expanded). Locate the marker wherever it rendered.
+      int? markerRow, markerCol;
+      for (var y = 0; y < 10; y++) {
+        for (var x = 30; x < 40; x++) {
+          if (tester.terminalState.getCellAt(x, y)?.char == '◆') {
+            markerRow = y;
+            markerCol = x;
+            break;
+          }
+        }
+        if (markerRow != null) break;
+      }
+      expect(markerRow, isNotNull,
+          reason: 'expected the marker on the shifted track');
+
+      await tester.sendMouseEvent(
+        MouseEvent(
+          button: MouseButton.left,
+          x: markerCol!,
+          y: markerRow!,
+          pressed: false,
+        ),
+      );
+      await tester.pump();
+
+      expect(HintController.instance.activeHint, 'User prompt');
+
+      // The tooltip's top-left corner must sit immediately to the left
+      // of the scrollbar — inside the CHAT pane (column > 20, the plan
+      // pane's width), not overlapping the plan pane. Before the fix
+      // the corner landed at markerCol − tooltipWidth − 1 − 21 ≈ the
+      // plan pane area.
+      final (int, int)? corner = _findCell(tester, 40, 10, '╭');
+      expect(corner, isNotNull, reason: 'expected the tooltip to be painted');
+      final (cornerCol, cornerRow) = corner!;
+      expect(
+        cornerCol,
+        greaterThan(20),
+        reason:
+            'tooltip must stay inside the chat pane (right of the plan pane '
+            'at column ≤ 20), but its corner is at column $cornerCol',
+      );
+      expect(
+        cornerCol,
+        lessThan(markerCol),
+        reason: 'tooltip should be to the left of the scrollbar',
+      );
+      expect(
+        cornerRow,
+        inInclusiveRange(markerRow - 6, markerRow + 6),
+        reason: 'tooltip should be vertically near the marker row',
+      );
+    }, size: const Size(40, 10));
+  });
+
   test('long labels word-wrap to fit the available space', () async {
     // Regression for the original scroll-bar tooltip behavior: a
     // multi-word label longer than the available space to the left

@@ -152,9 +152,9 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar>
     return markers[idx].color;
   }
 
-  /// The bounds of the marker's cell, in the [HintOverlay]'s local
-  /// coordinate system. The resolver uses this to anchor the
-  /// tooltip *next to* the marker (via the [hintPlacement] of
+  /// The bounds of the marker's cell, in **global terminal
+  /// coordinates**. The resolver uses this to anchor the tooltip
+  /// *next to* the marker (via the [hintPlacement] of
   /// [HintPlacement.left] above) rather than directly on top of it
   /// or below it.
   ///
@@ -172,12 +172,13 @@ class _AnnotatedScrollbarState extends State<AnnotatedScrollbar>
       // type honest.
       return Rect.fromLTWH(event.x.toDouble(), event.y.toDouble(), 1, 1);
     }
-    // The marker is rendered at column `scrollbarX` (= size.width −
-    // thickness) in the render object's local frame. Per the
-    // invariant documented on [HintStateMixin.hintPosition], the
-    // render object's local frame *is* the overlay's local frame
-    // when the state passes a hint from inside the overlay's
-    // subtree (which is the only case where this state is mounted).
+    // [markerSourceBounds] returns the marker's cell in the same
+    // global frame the mouse events use (it translates local
+    // coordinates by the render object's last paint offset — the
+    // same translation [markerAtGlobalPosition] applies in
+    // reverse for hit-testing). At the app root the [HintOverlay]'s
+    // Stack is anchored at the terminal origin, so its local frame
+    // IS the global frame and no further conversion is needed.
     return renderObj.markerSourceBounds(idx) ??
         Rect.fromLTWH(event.x.toDouble(), event.y.toDouble(), 1, 1);
   }
@@ -525,7 +526,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     // The hover tooltip is no longer painted here — it now flows
     // through the app-wide [HintOverlay] (see
     // [_AnnotatedScrollbarState.onHintHover] and
-    // [getMarkerTooltipGlobalPosition] below).
+    // [markerSourceBounds] below).
   }
 
   int? markerAtGlobalPosition(int globalX, int globalY) {
@@ -560,44 +561,30 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     return maxTooltipWidth < 3 ? 0 : maxTooltipWidth;
   }
 
-  /// Returns the position at which a tooltip for [markerIndex] should
-  /// be drawn, in the **HintOverlay's local coordinate system** (i.e.
-  /// relative to the top-left of the [HintOverlay]'s `Stack`).
+  /// Returns the bounds of the cell that paints [markerIndex], in
+  /// **global terminal coordinates**: the marker's local position
+  /// translated by this render object's most recent paint offset
+  /// (`_myPaintOffset` — the same frame [markerAtGlobalPosition]
+  /// converts *from* when hit-testing, so hover-anchoring and
+  /// tooltip-anchoring always agree, wherever the scrollbar sits).
   ///
-  /// The tooltip is placed to the left of the scrollbar (in the area
-  /// typically occupied by chat content), one row above the marker
-  /// itself, so the top of the bordered tooltip sits flush with the
-  /// marker row. The tooltip's outer width is
-  /// [getMarkerMaxTooltipWidth], which the [_AnnotatedScrollbarState]
-  /// passes to the [HintController] as the `maxWidth` so the
-  /// tooltip's content word-wraps to fit the same width.
+  /// Historically this returned *local* coordinates and relied on an
+  /// implicit invariant — "every ancestor between the render object
+  /// and the [HintOverlay]'s Stack has a zero paint offset" — to make
+  /// local equal global. That invariant held only while the chat
+  /// panel started at the terminal's left edge; opening the plan view
+  /// puts the chat pane (and this scrollbar) in the second `Row`
+  /// column, offset by the plan pane's width + divider, and the
+  /// tooltip drifted left by exactly that amount, drawing over the
+  /// plan doc pane. Translating to global coordinates removes the
+  /// invariant: the app-root [HintOverlay]'s Stack spans the whole
+  /// terminal, so its local frame *is* the global frame.
   ///
-  /// The position is returned in the overlay's local space, not in
-  /// absolute terminal coordinates, because the [HintOverlay] uses
-  /// the value as the `Positioned` widget's `left`/`top` — which
-  /// are interpreted in the Stack's local frame. The Stack's paint
-  /// offset is added by the framework during paint, so we must not
-  /// add [_myPaintOffset] here (doing so would shift the tooltip by
-  /// the render object's terminal position *twice* — once by us,
-  /// once by the Stack's paint pass).
-  ///
-  /// In practice, the render object that owns [_myPaintOffset] and
-  /// the HintOverlay's Stack sit at the same terminal position
-  /// (the AnnotatedScrollbar's render object is a descendant of the
-  /// Stack's child, and every component in the chain — the
-  /// `HintOverlay`, the `ChatPanel`'s `LayoutBuilder`, the chat
-  /// history's `Stack`, the `SelectionArea`, and the scroll bar's
-  /// own `MouseRegion` — has zero paint offset relative to its
-  /// parent). That equality is what makes "return the local
-  /// coordinates" equivalent to "return the offset the user
-  /// expects" for the actual app.
-  ///
-  /// Returns the bounds (in the render object's local coordinate
-  /// system) of the cell that paints [markerIndex], or `null` if
-  /// the marker isn't currently visible (e.g. it's hidden by the
-  /// thumb). The state passes this to [HintController.show] as the
-  /// hint's [HintController.activeSourceBounds], which the
-  /// [HintOverlay] uses to anchor the tooltip on the marker.
+  /// Returns null if the marker isn't currently visible (e.g. it's
+  /// hidden by the thumb). The state passes this to
+  /// [HintController.show] as the hint's
+  /// [HintController.activeSourceBounds], which the [HintOverlay]
+  /// uses to anchor the tooltip on the marker.
   ///
   /// The marker is always a single cell wide (`thickness` is the
   /// scrollbar's rightmost column) and 1 cell tall. The vertical
@@ -614,7 +601,12 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
     }
     if (markerY == null) return null;
     final scrollbarX = size.width - thickness;
-    return Rect.fromLTWH(scrollbarX.toDouble(), markerY, 1, 1);
+    return Rect.fromLTWH(
+      _myPaintOffset.dx + scrollbarX,
+      _myPaintOffset.dy + markerY,
+      1,
+      1,
+    );
   }
 
   static Color _dimColor(Color color, double factor) {
@@ -695,7 +687,7 @@ class RenderAnnotatedScrollbar extends RenderScrollbar {
 
   // The hover tooltip used to be drawn by [_paintTooltip] here, but
   // it now flows through the app-wide [HintOverlay]. All this code
-  // needs is [getMarkerTooltipGlobalPosition] above, which the
+  // needs is [markerSourceBounds] above, which the
   // [_AnnotatedScrollbarState] uses to position the hint next to the
   // marker.
 }
