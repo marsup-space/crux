@@ -8,6 +8,35 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-31
+
+fe27817e
+
+### Features
+
+- **Diagram: drag-to-pan viewport for mermaid/d2 fences**
+  (`fe27817e`) — diagram fences no longer shrink+truncate to fit the
+  chat width. A parseable fence in the sync markdown path lifts out
+  of the TextSpan tree (no WidgetSpan in nocterm) into its own
+  render object. `RenderDiagramViewport` is a drag-to-pan canvas:
+  press captures the mouse (annotation.capturing), the pointer delta
+  from the DOWN position pans horizontally, release ends the drag
+  and drops capture; the wheel pans until the edge, then chains to
+  the enclosing vertical scroll. Height always fits the whole graph
+  — only horizontal overflow pans — and a footer `◀──●──▶` strip
+  shows the pan position; the fence keeps its ╭─ &lt;lang&gt; frame.
+
+### Fixes
+
+- **Diagram: chain-edge collapse dropped middle nodes**
+  (`fe27817e`) — the labelled-arrow regex `--([^|]*?)--+>` backtracked
+  across arbitrary node text, so `A --> B --> C --> D` parsed as
+  `A -> C` and silently dropped B and D. Plain `-->` is now matched
+  before the labelled form, the label character class excludes
+  `>`/leading `-`, and `_parseEdgeChain` is a strict
+  node→edge→node loop (the old loop could truncate a chain when a
+  node token preceded an operator).
+
 ## [0.51.0] - 2026-08-31
 
 69decf83
