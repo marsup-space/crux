@@ -7,6 +7,7 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import 'display_catalog_items.dart' show registerDisplayCatalogItems;
 import 'interactive_catalog_items.dart';
@@ -68,6 +69,7 @@ class TextCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final text = resolveString(component.properties['text'], dataModel);
     return Text(text);
@@ -112,6 +114,7 @@ class ColumnCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     // unwrapListProperty: some providers wrap arrays as {"item": [...]}
     // or JSON-encode them as strings — normalize before the is List check.
@@ -222,6 +225,7 @@ class RowCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     // unwrapListProperty: tolerate provider-mangled array wrappers.
     final childrenRaw = unwrapListProperty(component.properties['children']);
@@ -285,6 +289,7 @@ class CardCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final childId = component.properties['child'];
     final title = resolveString(component.properties['title'], dataModel);
@@ -338,10 +343,15 @@ class _SurfaceCardState extends State<_SurfaceCard> {
   @override
   Component build(BuildContext context) {
     final theme = component.theme;
+    // Submitted cards fade to the same muted grey-blue the vibe tool
+    // boxes use (theme.toolPrefix). borderSubtle — the previous choice —
+    // is near-black in most themes, which reads as "the card turned
+    // off" rather than "archived"; textMuted stays visible while still
+    // receding next to the accent border of live cards.
     final borderColor = _hovered && component.isInteractive
         ? theme.accent
         : component.isSubmitted
-        ? theme.borderSubtle
+        ? theme.toolPrefix
         : theme.borderActive;
     final titleColor =
         component.isSubmitted ? theme.textMuted : theme.secondary;
@@ -404,6 +414,7 @@ class DividerCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     return const Divider();
   }

@@ -714,6 +714,10 @@ const Map<String, String> _en = {
   'clipboard.png': 'clipboard (PNG)',
   'clipboard.jpeg': 'clipboard (JPEG)',
   'clipboard.tiff': 'clipboard (TIFF)',
+
+  // ── A2UI surfaces (Table row folding) ──
+  'surface.table.more': '… {n} more rows — click or press Enter to show',
+  'surface.table.less': '… show fewer rows',
 };
 
 const Map<String, String> _zh = {
@@ -1349,4 +1353,8 @@ const Map<String, String> _zh = {
   'clipboard.png': '剪贴板 (PNG)',
   'clipboard.jpeg': '剪贴板 (JPEG)',
   'clipboard.tiff': '剪贴板 (TIFF)',
+
+  // ── A2UI surface（Table 行折叠） ──
+  'surface.table.more': '… 还有 {n} 行 — 点击或回车展开',
+  'surface.table.less': '… 收起',
 };

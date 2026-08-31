@@ -152,6 +152,84 @@ void main() {
     });
   });
 
+  group('SurfaceInstance.updateComponents', () {
+    CreateSurface tree() => CreateSurface(
+          surfaceId: 'dyn',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            const A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {
+                'children': ['title'],
+              },
+            ),
+            const A2uiComponent(
+              id: 'title',
+              component: 'Text',
+              properties: {'text': 'Title'},
+            ),
+          ],
+        );
+
+    test('appends new components and extends a container', () {
+      final instance = SurfaceInstance(declaration: tree());
+      final ok = instance.updateComponents(
+        components: [
+          const A2uiComponent(
+            id: 'row1',
+            component: 'Text',
+            properties: {'text': 'Row 1'},
+          ),
+        ],
+        extendContainerId: 'root',
+      );
+      expect(ok, isTrue);
+      // New component is registered and wired into root.children.
+      expect(instance.declaration.componentById('row1'), isNotNull);
+      expect(
+        instance.declaration.componentById('root')!.properties['children'],
+        contains('row1'),
+      );
+    });
+
+    test('replaces an existing component in place (no double append)', () {
+      final instance = SurfaceInstance(declaration: tree());
+      final ok = instance.updateComponents(
+        components: [
+          const A2uiComponent(
+            id: 'title',
+            component: 'Text',
+            properties: {'text': 'Replaced'},
+          ),
+        ],
+        extendContainerId: 'root',
+      );
+      expect(ok, isTrue);
+      // children must NOT gain a duplicate 'title'.
+      final children =
+          instance.declaration.componentById('root')!.properties['children']
+              as List;
+      expect(children.where((c) => c == 'title').length, 1);
+      expect(
+        instance.declaration.componentById('title')!.properties['text'],
+        'Replaced',
+      );
+    });
+
+    test('rejects structural updates on a submitted surface', () {
+      final instance = SurfaceInstance(declaration: tree());
+      instance.markSubmitted();
+      final ok = instance.updateComponents(
+        components: [
+          const A2uiComponent(id: 'x', component: 'Text'),
+        ],
+      );
+      expect(ok, isFalse);
+      expect(instance.declaration.componentById('x'), isNull);
+    });
+  });
+
   group('SurfaceCatalog validation', () {
     test('accepts a valid surface', () {
       final surface = CreateSurface(

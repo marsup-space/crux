@@ -12,6 +12,7 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../i18n/strings.dart';
 import 'models.dart';
 
 /// A registered component type in the catalog.
@@ -51,6 +52,9 @@ abstract class CatalogItem {
   /// (e.g. `'Card'`). Hosts inject this so layout containers can make
   /// type-aware decisions (e.g. Column auto-flowing sibling Cards into
   /// a row when the terminal is wide). Null disables type-aware layout.
+  /// [strings] is the host's message catalog for host-added chrome
+  /// (e.g. the Table fold toggle). Hosts thread the active locale
+  /// through; defaults to English.
   Component build({
     required BuildContext context,
     required A2uiComponent component,
@@ -60,6 +64,7 @@ abstract class CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   });
 }
 
@@ -335,8 +340,9 @@ class SurfaceCatalog {
     buf.writeln();
     buf.writeln(
       'You declare WHAT is on the surface; the host decides HOW it is laid '
-      'out for the actual terminal width. Do NOT hand-place siblings into '
-      'rows to fill width — the host does that responsively:',
+      'out for the actual terminal width AND height. Do NOT hand-place '
+      'siblings into rows to fill width, and do NOT worry about long '
+      'content — the host handles both responsively:',
     );
     buf.writeln();
     buf.writeln(
@@ -346,6 +352,12 @@ class SurfaceCatalog {
       'Cards in a Row yourself.',
     );
     buf.writeln(
+      '- **Long tables fold automatically.** A Table with more than ~12 '
+      'rows folds behind a "… N more rows" toggle the HOST renders — you '
+      'declare all rows; the user expands them if they want. Do not '
+      'pre-truncate or paginate your own tables.',
+    );
+    buf.writeln(
       '- **Row** is still right for intrinsically horizontal groups that '
       'must stay together at any width: a label + its input, action '
       'buttons, the ChoicePicker + submit button of a form.',
@@ -353,6 +365,14 @@ class SurfaceCatalog {
     buf.writeln(
       '- **ChoicePicker** with `"displayStyle": "inline"` for ≤4 short options — '
       'renders all options on one line as compact tags.',
+    );
+    buf.writeln(
+      '- **Keyboard is first-class.** Tab cycles interactive components '
+      '(Button, ChoicePicker, TextField, fold toggles); Enter/Space '
+      'activates a focused Button or toggles the fold; arrow keys move '
+      'within a ChoicePicker; Escape returns focus to the chat input. '
+      'Don\'t add "press X to…" instructions for this — the host renders '
+      'the chrome.',
     );
     buf.writeln();
     buf.writeln('Compact example — a confirmation form using horizontal layout:');
@@ -418,6 +438,16 @@ class SurfaceCatalog {
       '— data-bound components re-render immediately. Declare the '
       'dynamic parts as {"path": "/field"} bindings in createSurface '
       'so updates can flow in.',
+    );
+    buf.writeln(
+      '- To CHANGE THE STRUCTURE of a live surface (append rows/blocks, '
+      'swap a component), pass `components` (and optionally '
+      '`extend_container_id`) to the same `surface_update` tool: '
+      '{"surface_id": "...", "components": [{"id": "row_new", '
+      '"component": "Text", "text": "..."}], "extend_container_id": '
+      '"root"}. Existing ids are replaced in place; new ids are appended '
+      'to the container\'s children — you never need to re-declare a '
+      'whole surface just to add a row.',
     );
     buf.writeln(
       '- Components form an adjacency list: containers reference children '

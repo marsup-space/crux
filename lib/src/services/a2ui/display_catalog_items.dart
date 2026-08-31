@@ -22,6 +22,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../theme/crux_theme.dart';
 import '../../utils/text_width.dart';
+import '../../i18n/strings.dart';
 // For TerminalCanvas — the custom ProgressBar render object paints
 // per-cell backgrounds directly, mirroring ContextBar.
 // ignore_for_file: implementation_imports
@@ -91,6 +92,7 @@ class TableCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
 
@@ -198,12 +200,27 @@ class TableCatalogItem extends CatalogItem {
               ],
             );
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            headerRow(),
-            for (final row in rows) dataRow(row),
-          ],
+        // Height autonomy: the host caps how many rows a table may
+        // contribute to the chat flow, regardless of how many the agent
+        // declared. A long table folds behind a toggle row instead of
+        // pushing the conversation off screen — the agent declares
+        // content, the host owns layout (vertically too).
+        const foldBudget = 12;
+        if (rows.length <= foldBudget) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              headerRow(),
+              for (final row in rows) dataRow(row),
+            ],
+          );
+        }
+
+        return _FoldableTable(
+          header: headerRow(),
+          rows: [for (final row in rows) dataRow(row)],
+          hiddenCount: rows.length - foldBudget,
+          strings: strings,
         );
       },
     );
@@ -232,6 +249,87 @@ String _truncateToWidth(String text, int width) {
     acc += cw;
   }
   return '$buf…';
+}
+
+/// A Table whose row count exceeds the host's fold budget. Shows the
+/// first [budget] rows plus a toggle row; clicking it (or pressing
+/// Enter when focused) expands to the full table, and the toggle row
+/// becomes "show fewer".
+///
+/// The toggle row is a real focusable so keyboard users can reach it
+/// via Tab — the surface keyboard story must cover host-added chrome
+/// too, not just agent-declared components.
+class _FoldableTable extends StatefulComponent {
+  final Component header;
+  final List<Component> rows;
+  final int hiddenCount;
+  final Strings strings;
+
+  const _FoldableTable({
+    required this.header,
+    required this.rows,
+    required this.hiddenCount,
+    this.strings = kEnglishStrings,
+  });
+
+  @override
+  State<_FoldableTable> createState() => _FoldableTableState();
+}
+
+class _FoldableTableState extends State<_FoldableTable> {
+  bool _expanded = false;
+  bool _hovered = false;
+
+  @override
+  Component build(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    final c = component;
+    final focused = Focus.of(context);
+
+    final visibleRows = _expanded ? c.rows : c.rows.take(12).toList();
+    final toggleLabel = _expanded
+        ? c.strings.t('surface.table.less')
+        : c.strings.t('surface.table.more', {'n': '${c.hiddenCount}'});
+
+    final toggle = Focusable(
+      autofocus: false,
+      onKeyEvent: (event) {
+        if (event.logicalKey == LogicalKey.enter ||
+            event.logicalKey == LogicalKey.space) {
+          setState(() => _expanded = !_expanded);
+          return true;
+        }
+        return false;
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          opaque: false,
+          child: Container(
+            color: _hovered ? theme.surfaceVariant : null,
+            child: Text(
+              toggleLabel,
+              style: TextStyle(
+                color: _hovered || focused ? theme.accent : theme.textMuted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        c.header,
+        ...visibleRows,
+        toggle,
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +393,7 @@ class ProgressBarCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
     final valueRaw = resolveValue(component.properties['value'], dataModel);
@@ -796,6 +895,7 @@ class ListCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final childrenRaw = unwrapListProperty(component.properties['children']);
     final maxHeight = coerceIntProperty(

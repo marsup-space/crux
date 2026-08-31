@@ -13,6 +13,7 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import 'models.dart';
 import 'surface_catalog.dart';
@@ -42,12 +43,18 @@ class SurfaceController extends StatefulComponent {
   /// Null when data model updates don't need external notification.
   final void Function(String path, dynamic value)? onDataModelUpdate;
 
+  /// The host's message catalog — threaded down to catalog items so
+  /// host-added chrome (e.g. the Table fold toggle) renders in the
+  /// active UI language. Defaults to English.
+  final Strings strings;
+
   const SurfaceController({
     super.key,
     required this.surface,
     required this.catalog,
     this.onAction,
     this.onDataModelUpdate,
+    this.strings = kEnglishStrings,
   });
 
   @override
@@ -185,6 +192,8 @@ class _SurfaceControllerState extends State<SurfaceController> {
       // auto-flowing sibling Cards into a row on wide terminals).
       childType: (childId) =>
           component.surface.declaration.componentById(childId)?.component,
+      // Host-added chrome (fold toggles) renders in the active locale.
+      strings: component.strings,
     );
   }
 }

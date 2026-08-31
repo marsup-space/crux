@@ -217,6 +217,146 @@ void main() {
     });
   });
 
+  group('Button keyboard activation', () {
+    test('Tab focuses the button; Enter fires its action', () async {
+      await testNocterm('button keyboard', (tester) async {
+        final surface = CreateSurface(
+          surfaceId: 'kb_1',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Column',
+              properties: {'children': ['label', 'btn']},
+            ),
+            A2uiComponent(
+              id: 'label',
+              component: 'Text',
+              properties: {'text': 'Ready?'},
+            ),
+            A2uiComponent(
+              id: 'btn',
+              component: 'Button',
+              properties: {
+                'child': 'btn_label',
+                'variant': 'primary',
+                'action': {
+                  'event': {'name': 'confirm', 'context': {}},
+                },
+              },
+            ),
+            A2uiComponent(
+              id: 'btn_label',
+              component: 'Text',
+              properties: {'text': 'Go'},
+            ),
+          ],
+        );
+        final catalog = createBasicCatalog();
+        final instance = catalog.instanceFor('kb', surface);
+
+        A2uiAction? received;
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: instance,
+              catalog: catalog,
+              onAction: (a) => received = a,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(received, isNull, reason: 'nothing pressed yet');
+
+        // Tab into the button, Enter fires.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.tab),
+        );
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.enter),
+        );
+
+        expect(received, isNotNull,
+            reason: 'Enter on a focused Button must fire the action');
+        expect(received!.name, 'confirm');
+      }, size: const Size(80, 24));
+    });
+  });
+
+  group('Table height autonomy (fold)', () {
+    test('long table folds behind a toggle; Enter expands and collapses',
+        () async {
+      await testNocterm('table fold', (tester) async {
+        // 20 rows — above the host's 12-row fold budget.
+        final surface = CreateSurface(
+          surfaceId: 'fold_1',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Table',
+              properties: {
+                'columns': [
+                  {'header': 'N', 'key': 'n'},
+                  {'header': 'V', 'key': 'v'},
+                ],
+                'rows': [
+                  for (var i = 1; i <= 20; i++)
+                    {'n': '$i', 'v': 'row-$i'},
+                ],
+              },
+            ),
+          ],
+        );
+        final catalog = createBasicCatalog();
+        final instance = catalog.instanceFor('fold', surface);
+
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceController(
+              surface: instance,
+              catalog: catalog,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Rendered text contains every visible content cell; while
+        // folded, row 13 must NOT be rendered.
+        expect(tester.terminalState.findText('row-12').isNotEmpty, isTrue,
+            reason: 'budget rows stay visible when folded');
+        expect(tester.terminalState.findText('row-13'), isEmpty,
+            reason: 'rows beyond the budget must fold away');
+        expect(tester.terminalState.findText('8 more rows').isNotEmpty,
+            isTrue,
+            reason: 'toggle row announces the hidden count');
+
+        // Expand via keyboard: focus the toggle (it is the only
+        // focusable here, so Tab lands on it) and press Enter.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.tab),
+        );
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.enter),
+        );
+
+        expect(tester.terminalState.findText('row-13').isNotEmpty, isTrue,
+            reason: 'Enter expands the full table');
+        expect(tester.terminalState.findText('row-20').isNotEmpty, isTrue);
+
+        // Collapse again.
+        await tester.sendKeyEvent(
+          KeyboardEvent(logicalKey: LogicalKey.enter),
+        );
+        expect(tester.terminalState.findText('row-13'), isEmpty,
+            reason: 'second Enter collapses back to the budget');
+      }, size: const Size(80, 24));
+    });
+  });
+
   group('Table rendering', () {
     test('renders header and rows with column alignment', () async {
       await testNocterm('table basic', (tester) async {

@@ -102,6 +102,14 @@ class A2uiComponent {
 
   /// Parse from a JSON map. Expects at minimum `{"id": ..., "component": ...}`.
   /// All other keys become [properties].
+  ///
+  /// Tolerates a nested `properties` wrapper (some models emit
+  /// `{"id": "t", "component": "Text", "properties": {"text": "..."}}`
+  /// instead of the flat form): the wrapper's entries are unfolded into
+  /// the property map. Top-level keys win over wrapped ones only when
+  /// the wrapper lacks them — in practice a stray top-level `text`
+  /// beside a `properties` map is model noise, and the wrapped value is
+  /// the intended one, so wrapper entries take precedence per key.
   static A2uiComponent? fromJson(Map<String, dynamic> json) {
     final id = json['id'];
     final component = json['component'];
@@ -110,7 +118,14 @@ class A2uiComponent {
 
     final props = Map<String, dynamic>.from(json)
       ..remove('id')
-      ..remove('component');
+      ..remove('component')
+      ..remove('properties');
+    final wrapper = json['properties'];
+    if (wrapper is Map<String, dynamic>) {
+      // Unfold: declared-schema keys live inside; the wrapper is the
+      // author's intent, so its entries override same-named strays.
+      props.addAll(wrapper);
+    }
 
     return A2uiComponent(id: id, component: component, properties: props);
   }
@@ -489,6 +504,89 @@ class SurfaceInstance extends ChangeNotifier {
   /// Read a value from the data model by path.
   dynamic readDataModel(String path) {
     return DataBinding(path).resolve(dataModel);
+  }
+
+  /// Add or replace components in the surface's component tree
+  /// (A2UI `updateComponents`). A component whose id already exists is
+  /// replaced in place (same position); a new id is appended — so the
+  /// agent can add rows to a Column, attach a new Card, etc. without
+  /// re-declaring the whole surface.
+  ///
+  /// If [extendContainerId] is given and exists, each new (not
+  /// already-present) component id is ALSO appended to that container's
+  /// `children` list — the "append rows to a list" flow in one call.
+  /// Existing ids are replaced but NOT re-appended (a component still
+  /// has exactly one parent).
+  ///
+  /// Notifies listeners so mounted controllers re-render. Rejected
+  /// (returns false) when the surface is submitted — frozen surfaces
+  /// are structurally read-only too.
+  bool updateComponents({
+    required List<A2uiComponent> components,
+    String? extendContainerId,
+  }) {
+    if (submitted) return false;
+    if (components.isEmpty && extendContainerId == null) return false;
+
+    final tree = declaration.components;
+
+    // Upsert: replace same-id in place, collect new ones to append.
+    final newOnes = <A2uiComponent>[];
+    for (final incoming in components) {
+      final idx = tree.indexWhere((c) => c.id == incoming.id);
+      if (idx >= 0) {
+        tree[idx] = incoming;
+      } else {
+        newOnes.add(incoming);
+        tree.add(incoming);
+      }
+    }
+
+    // Optionally wire the new ids into a container's children.
+    if (extendContainerId != null && newOnes.isNotEmpty) {
+      final container = declaration.componentById(extendContainerId);
+      if (container != null) {
+        final existing = <String>{
+          ...?_childrenIdsOf(container),
+        };
+        final toAppend = [
+          for (final c in newOnes)
+            if (!existing.contains(c.id)) c.id,
+        ];
+        if (toAppend.isNotEmpty) {
+          _appendToChildren(container, toAppend);
+        }
+      }
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Child ids of a container component (the `children` property),
+  /// tolerating the provider array wrapper.
+  List<String>? _childrenIdsOf(A2uiComponent container) {
+    final raw = unwrapListProperty(container.properties['children']);
+    if (raw is! List) return null;
+    return [for (final id in raw) if (id is String) id];
+  }
+
+  /// Append [ids] to a container's `children`, rewriting the property.
+  /// The components list itself is mutable (see [updateComponents]);
+  /// the container object is replaced in the tree so the change is
+  /// reflected.
+  void _appendToChildren(A2uiComponent container, List<String> ids) {
+    final current = _childrenIdsOf(container) ?? <String>[];
+    final updated = A2uiComponent(
+      id: container.id,
+      component: container.component,
+      properties: {
+        ...container.properties,
+        'children': [...current, ...ids],
+      },
+    );
+    final idx = declaration.components.indexWhere((c) => c.id == container.id);
+    if (idx >= 0) declaration.components[idx] = updated;
   }
 
   @override

@@ -7,6 +7,7 @@ library;
 
 import 'package:nocterm/nocterm.dart';
 
+import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import 'basic_catalog_items.dart' show resolveString;
 import 'models.dart';
@@ -63,6 +64,7 @@ class ButtonCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
     final childId = component.properties['child'];
@@ -137,6 +139,7 @@ class _SurfaceButton extends StatefulComponent {
 
 class _SurfaceButtonState extends State<_SurfaceButton> {
   bool _hovered = false;
+  bool _keyboardFocused = false;
 
   void _handleTap() {
     if (component.isDisabled || component.onAction == null) return;
@@ -150,17 +153,24 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
     );
   }
 
+  /// Keyboard activation is inlined in build's Focusable.onKeyEvent —
+  /// Enter/Space fire the action (mirroring the mouse tap), Escape
+  /// releases focus back to the chat input.
   @override
   Component build(BuildContext context) {
     final theme = component.theme;
     final isActive = !component.isDisabled && component.onAction != null;
+    final highlighted = _hovered || _keyboardFocused;
 
     // Borderless chip style — matches the ChoicePicker inline tags so
     // buttons and option tags sit side-by-side at the same size.
     // Differentiation is by background color, not by border:
     //   primary  → solid accent fill (the main action pops)
     //   others   → surfaceVariant fill (same base as option tags)
-    //   hover    → accent foreground text (no border to highlight)
+    //   hover/focus → same inversion language: primary flips to a
+    //     bright fill with accent text; others get accent text.
+    // Keyboard focus and mouse hover look identical — a flat TUI has
+    // no separate affordance budget for both.
     final Color bg;
     final Color fg;
     final FontWeight? weight;
@@ -169,14 +179,14 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
       fg = theme.onSurfaceDim;
       weight = null;
     } else if (component.isPrimary) {
-      // Hover INVERTS the primary button: accent fill with on-accent
-      // text normally; bright surface fill with accent text on hover.
-      // A full light/dark flip reads far more clearly in a terminal
-      // palette than a 20% lighten of the same hue.
-      bg = _hovered ? theme.buttonBackgroundHover : theme.accent;
-      fg = _hovered ? theme.accent : theme.onColor(theme.accent);
+      // Hover/focus INVERTS the primary button: accent fill with
+      // on-accent text normally; bright surface fill with accent text
+      // when engaged. A full light/dark flip reads far more clearly in
+      // a terminal palette than a 20% lighten of the same hue.
+      bg = highlighted ? theme.buttonBackgroundHover : theme.accent;
+      fg = highlighted ? theme.accent : theme.onColor(theme.accent);
       weight = FontWeight.bold;
-    } else if (_hovered) {
+    } else if (highlighted) {
       bg = theme.buttonBackgroundHover;
       fg = theme.accent;
       weight = null;
@@ -202,17 +212,37 @@ class _SurfaceButtonState extends State<_SurfaceButton> {
           )
         : child;
 
-    return MouseRegion(
-      onEnter: isActive ? (_) => setState(() => _hovered = true) : null,
-      onExit: isActive ? (_) => setState(() => _hovered = false) : null,
-      opaque: false,
-      child: GestureDetector(
-        onTap: isActive ? _handleTap : null,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          decoration: BoxDecoration(color: bg),
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: styledChild,
+    return Focusable(
+      autofocus: false,
+      disabled: !isActive,
+      onKeyEvent: isActive
+          ? (event) {
+              final key = event.logicalKey;
+              if (key == LogicalKey.enter || key == LogicalKey.space) {
+                setState(() => _keyboardFocused = true);
+                _handleTap();
+                return true;
+              }
+              if (key == LogicalKey.escape) {
+                NoctermBinding.instance.focusManager.unfocus();
+                setState(() => _keyboardFocused = false);
+                return true;
+              }
+              return false;
+            }
+          : (event) => false,
+      child: MouseRegion(
+        onEnter: isActive ? (_) => setState(() => _hovered = true) : null,
+        onExit: isActive ? (_) => setState(() => _hovered = false) : null,
+        opaque: false,
+        child: GestureDetector(
+          onTap: isActive ? _handleTap : null,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            decoration: BoxDecoration(color: bg),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: styledChild,
+          ),
         ),
       ),
     );
@@ -263,6 +293,7 @@ class CheckBoxCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
@@ -411,6 +442,7 @@ class TextFieldCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
@@ -703,6 +735,7 @@ class ChoicePickerCatalogItem extends CatalogItem {
     void Function(String path, dynamic value)? onDataModelUpdate,
     bool submitted = false,
     String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
     final label = resolveString(component.properties['label'], dataModel);
