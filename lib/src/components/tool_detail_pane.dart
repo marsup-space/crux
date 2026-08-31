@@ -377,8 +377,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return Scrollbar(
       controller: _prettyScrollController,
       thumbVisibility: true,
-      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      thumbColor: theme.onSurfaceDim,
       child: SingleChildScrollView(
         controller: _prettyScrollController,
         child: Container(
@@ -715,8 +714,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
           child: Scrollbar(
             controller: _prettyScrollController,
             thumbVisibility: true,
-            thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-            trackColor: theme.surfaceVariant.withOpacity(0.3),
+            thumbColor: theme.onSurfaceDim,
             child: SingleChildScrollView(
               controller: _prettyScrollController,
               child: Container(
@@ -826,8 +824,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return Scrollbar(
       controller: _prettyScrollController,
       thumbVisibility: true,
-      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      thumbColor: theme.onSurfaceDim,
       child: ListView(controller: _prettyScrollController, children: children),
     );
   }
@@ -929,8 +926,7 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
     return Scrollbar(
       controller: _rawScrollController,
       thumbVisibility: true,
-      thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-      trackColor: theme.surfaceVariant.withOpacity(0.3),
+      thumbColor: theme.onSurfaceDim,
       child: ListView(controller: _rawScrollController, children: children),
     );
   }

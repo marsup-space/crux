@@ -1374,8 +1374,7 @@ class _BoxScrollAreaState extends State<_BoxScrollArea> {
         }
         return Scrollbar(
           controller: _controller,
-          thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-          trackColor: theme.surfaceVariant.withOpacity(0.3),
+          thumbColor: theme.onSurfaceDim,
           child: SingleChildScrollView(
             controller: _controller,
             child: component.child,

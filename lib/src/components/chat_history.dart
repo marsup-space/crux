@@ -1037,6 +1037,7 @@ class _ChatHistoryState extends State<ChatHistory> {
       child: ChatScrollbar(
         controller: component.scrollController,
         thumbVisibility: true,
+        thumbColor: CruxTheme.of(context).onSurfaceDim,
         markers: markers,
         child: ListView.builder(
           controller: component.scrollController,

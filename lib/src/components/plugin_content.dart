@@ -540,8 +540,7 @@ class _TodoScrollAreaState extends State<_TodoScrollArea> {
       child: Scrollbar(
         controller: _controller,
         thumbVisibility: true,
-        thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-        trackColor: theme.surfaceVariant.withOpacity(0.3),
+        thumbColor: theme.onSurfaceDim,
         child: SingleChildScrollView(
           controller: _controller,
           child: ClickableTodoList(

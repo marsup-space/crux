@@ -250,6 +250,7 @@ class _PlanDocPaneState extends State<PlanDocPane>
                 child: PlanScrollbar(
                   controller: c.scrollController,
                   thumbVisibility: true,
+                  thumbColor: theme.onSurfaceDim,
                   // Narrow panes drop the heading markers (plain thumb
                   // only) so their tooltips don't crowd the text.
                   markers: width < kPlanScrollbarMarkerMinWidth

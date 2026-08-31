@@ -2184,8 +2184,7 @@ class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
           child: Scrollbar(
             controller: _scrollController,
             thumbVisibility: true,
-            thumbColor: theme.onSurfaceDim.withOpacity(0.4),
-            trackColor: theme.surfaceVariant.withOpacity(0.3),
+            thumbColor: theme.onSurfaceDim,
             child: SingleChildScrollView(
               controller: _scrollController,
               child: Padding(
