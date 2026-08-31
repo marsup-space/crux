@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 /// terminal width (and nocterm's SizedBox/Container width does NOT
 /// tighten child constraints — upstream behavior). So these tests run
 /// against a 60-column canvas: the viewport fills the width and the
-/// drag/wheel assertions work with a diagram whose natural width
+/// drag assertions work with a diagram whose natural width
 /// exceeds 60-4.
 void main() {
   group('DiagramViewportData', () {
@@ -127,6 +127,43 @@ void main() {
       ctrl.jumpToV(10);
       expect(ctrl.vOffset, 0);
       expect(ctrl.canPanV, isFalse);
+    });
+
+    test('wheel over the viewport never pans horizontally (scroll chains)',
+        () async {
+      await testNocterm('wheel chains to vertical scroll', (tester) async {
+        const src =
+            '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
+        await tester.pumpComponent(HighlightedMarkdownText(src));
+        final viewport = tester.findComponent<DiagramViewport>();
+        expect(viewport, isNotNull);
+        expect(viewport!.data.naturalWidth, greaterThan(56));
+
+        // Leftmost node label's painted column, before any wheel.
+        final before = tester.terminalState.findText('AAAAAAAAAA').first;
+
+        // Wheel down + up on the canvas: the render object consumes
+        // neither (no ScrollableRenderObjectMixin) — the pan offset
+        // stays 0 and the events chain to the enclosing vertical
+        // scroll. If the wheel hijack came back, even one wheelDown
+        // (+3 cols) would visibly shift this label left.
+        await tester.sendMouseEvent(const MouseEvent(
+          button: MouseButton.wheelDown,
+          x: 30,
+          y: 2,
+          pressed: false,
+        ));
+        await tester.sendMouseEvent(const MouseEvent(
+          button: MouseButton.wheelUp,
+          x: 30,
+          y: 2,
+          pressed: false,
+        ));
+
+        final after = tester.terminalState.findText('AAAAAAAAAA').first;
+        expect(after.x, before.x);
+        expect(after.y, before.y);
+      });
     });
 
     test('drag over the viewport pans the canvas', () async {

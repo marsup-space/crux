@@ -26,12 +26,12 @@
 //   (MouseTrackerAnnotation.capturing — the same mechanism the
 //   scrollbar thumb uses, so the drag survives leaving the bounds),
 //   pointer-move shifts the offset by the cell delta, pointer-up
-//   releases.
-// * Wheel: consumed for horizontal panning while horizontal overflow
-//   remains in the direction the wheel pushes; once that edge is
-//   reached the event is reported unhandled so the enclosing chat
-//   ListView scrolls vertically (scroll chaining, mirroring
-//   RenderSingleChildViewport.handleMouseWheel).
+//   releases. Drag is the ONLY pan gesture by design: the wheel is
+//   never consumed horizontally (its scroll intent is vertical, and a
+//   horizontal wheel hijack at the pan edge felt broken in practice),
+//   so this render object does NOT implement
+//   ScrollableRenderObjectMixin — wheel events fall through to the
+//   enclosing chat ListView and scroll vertically (scroll chaining).
 // * Painting: clip to the viewport rect, blit the pre-split line
 //   segments at `-offset`. Per-cell writes (canvas.drawText) so CJK
 //   double-width glyphs clip cleanly at the seam.
@@ -51,7 +51,6 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/rendering/mouse_hit_test.dart';
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
-import 'package:nocterm/src/rendering/scrollable_render_object.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 import '../../diagram/diagram.dart';
@@ -452,10 +451,12 @@ class _DiagramViewportRenderWidget extends SingleChildRenderObjectComponent {
   }
 }
 
-/// Render object: drag-to-pan canvas with wheel chaining and a thin
-/// bottom-edge pan indicator while scrollable. Leaf (no children).
+/// Render object: drag-to-pan canvas with a thin bottom-edge pan
+/// indicator while scrollable. Leaf (no children). Deliberately does
+/// NOT mix in ScrollableRenderObjectMixin: the wheel is never consumed
+/// here (drag is the only pan gesture), so wheel events chain to the
+/// enclosing chat scroll and move vertically.
 class RenderDiagramViewport extends RenderObject
-    with ScrollableRenderObjectMixin
     implements MouseTrackerAnnotationProvider {
   RenderDiagramViewport({
     required DiagramPanController controller,
@@ -639,23 +640,6 @@ class RenderDiagramViewport extends RenderObject
     markNeedsPaint();
   }
 
-  // ── wheel chaining (mirrors RenderSingleChildViewport) ──
-
-  @override
-  bool handleMouseWheel(MouseEvent event) {
-    if (!_controller.canPan) return false;
-    final before = _controller.offset;
-    if (event.button == MouseButton.wheelDown) {
-      _controller.jumpTo(before + 3);
-    } else if (event.button == MouseButton.wheelUp) {
-      _controller.jumpTo(before - 3);
-    }
-    return _controller.offset != before; // unhandled → chat scrolls vertically
-  }
-
-  /// Content rows visible before vertical panning kicks in. Tall
-  /// diagrams (state machines with many layers) cap here so the chat
-  /// isn't dominated by one fence; drag up/down reveals the rest.
   // ── layout ──
 
   @override

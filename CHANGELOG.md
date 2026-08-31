@@ -8,6 +8,18 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Fixes
+
+- **Diagram: wheel over a diagram scroll the chat, not the canvas**
+  — the drag-to-pan viewport (0.52.0) also consumed wheel events for
+  horizontal panning, chaining to the vertical scroll only at the pan
+  edge. In practice that wheel hijack felt broken: the wheel's intent
+  is vertical, and diagrams sit inside the chat flow. The render
+  object no longer implements ScrollableRenderObjectMixin — the wheel
+  always chains to the enclosing chat scroll, and **drag is the only
+  pan gesture**. A regression test pins that wheel up/down over the
+  canvas leaves the drawn diagram unmoved.
+
 ## [0.52.0] - 2026-08-31
 
 fe27817e
