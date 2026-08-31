@@ -10,6 +10,7 @@ import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'highlight_service.dart';
+import 'diagram_viewport.dart';
 import 'markdown_isolate.dart';
 import '../../diagram/diagram.dart';
 import '../../diagram/diagram_model.dart';
@@ -215,6 +216,17 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// hover one clickable region at a time.
   MarkdownLink? _hoveredMarkdownLink;
 
+  /// Diagram fences split out of the span tree so they can render as
+  /// interactive pan viewports (`DiagramViewport`). Populated on the
+  /// sync parse path only — the isolate path returns flat spans with
+  /// no block structure, so streaming bubbles keep the truncated
+  /// inline rendering (see [_diagramBlocks]).
+  ///
+  /// Each entry is (fenceStartSpanIndex, spanCount, viewportData,
+  /// language): the span range the fence occupied in `_spans`, the
+  /// parsed diagram, and the fence language for the header title.
+  List<DiagramBlockSlice> _diagramSlices = const [];
+
   /// Key on the inner [RichText] used to locate the [RenderParagraph]
   /// for hit-testing — see [_linkAtEvent].
   final GlobalKey _richTextKey = GlobalKey();
@@ -276,15 +288,20 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             // (which would be brittle — see the
             // _HighlightMarkdownVisitor notes).
             final collectedLinks = <MarkdownLink>[];
+            final collectedDiagrams = <DiagramFenceInfo>[];
             _spans = parseMarkdownToInlineSpans(
               data,
               theme,
               maxWidth: maxWidth,
               styleSheet: styleSheet,
               collectedLinks: collectedLinks,
+              collectedDiagrams: collectedDiagrams,
               strings: component.strings,
             );
             _markdownLinks = collectedLinks;
+            // _spans is already sentinel-hoisted (parse pass did it);
+            // resolve fences to viewport data + top-level indices.
+            _diagramSlices = sliceDiagramBlocks(_spans, collectedDiagrams);
           }
           // Re-parse session refs and quick replies alongside the
           // markdown parse so they stay in lockstep. Each is a
@@ -311,6 +328,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           // (see the wantMarkdownLinks gate).
           if (component.useIsolate) {
             _markdownLinks = const [];
+            _diagramSlices = const [];
           }
           _hoveredMarkdownLink = null;
         }
@@ -455,19 +473,70 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           renderedSpans = applyQuickReplyTokens(renderedSpans, _quickReplies);
         }
 
-        final richText = RichText(
-          key: _richTextKey,
-          text: TextSpan(children: renderedSpans),
-          textAlign: component.textAlign,
-          softWrap: component.softWrap,
-          overflow: component.overflow,
-          maxLines: component.maxLines,
-          selectionTextTransformer: _stripCodeBlockSelectionChrome,
-          selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
-        );
+        // Split the span list around diagram sentinels FIRST, then
+        // apply the search-highlight overlay per text segment (the
+        // overlay flattens span trees, which would destroy sentinels —
+        // segmenting keeps them intact). _spans is sentinel-hoisted by
+        // the parse pass, so slices reference top-level indices.
+        final segments = <_Segment>[];
+        {
+          var cursor = 0;
+          for (final slice in _diagramSlices) {
+            if (slice.spanIndex > cursor) {
+              segments.add(_SpanSegment(
+                renderedSpans.sublist(cursor, slice.spanIndex),
+              ));
+            }
+            segments.add(_DiagramSegment(slice));
+            cursor = slice.spanIndex + 1;
+          }
+          if (cursor < renderedSpans.length) {
+            segments.add(_SpanSegment(renderedSpans.sublist(cursor)));
+          }
+        }
+
+        final wantsInterleave = segments.any((s) => s is _DiagramSegment);
+        Component content;
+        if (!wantsInterleave ||
+            component.textAlign != TextAlign.left ||
+            component.maxLines != null) {
+          // No diagrams (or constraints the interleaved layout can't
+          // honor): plain RichText exactly as before. When diagrams ARE
+          // present but the constraints forbid interleaving, drop the
+          // viewports for this frame (sentinels render as nothing).
+          content = _buildRichText(renderedSpans);
+        } else {
+          final children = <Component>[];
+          for (final segment in segments) {
+            switch (segment) {
+              case _SpanSegment(:final spans):
+                var segmentSpans = spans;
+                if (highlight != null && highlight.isNotEmpty) {
+                  // Highlight within this segment only — a match can't
+                  // span a diagram boundary.
+                  segmentSpans = _applyHighlight(
+                    segmentSpans,
+                    highlight,
+                    theme,
+                    selectionColor: theme.selection,
+                    onSelection: (c) => theme.onColor(c),
+                  );
+                }
+                if (segmentSpans.isEmpty) continue;
+                children.add(_buildRichText(segmentSpans, keyIndex: children.length));
+              case _DiagramSegment(:final slice):
+                children.add(
+                  DiagramViewport(data: slice.data, language: slice.language),
+                );
+            }
+          }
+          content = children.length == 1
+              ? children.first
+              : Column(children: children, crossAxisAlignment: CrossAxisAlignment.stretch);
+        }
 
         if (!haveSessionLinks && !haveAnyReplies && !haveMarkdownLinks) {
-          return richText;
+          return content;
         }
 
         return GestureDetector(
@@ -487,11 +556,32 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
                 });
               }
             },
-            child: richText,
+            child: content,
           ),
         );
       },
     );
+  }
+
+  Component _buildRichText(List<InlineSpan> spans, {int keyIndex = 0}) {
+    return RichText(
+      key: _diagramSegmentKey(keyIndex),
+      text: TextSpan(children: spans),
+      textAlign: component.textAlign,
+      softWrap: component.softWrap,
+      overflow: component.overflow,
+      maxLines: component.maxLines,
+      selectionTextTransformer: _stripCodeBlockSelectionChrome,
+      selectionHighlightPredicate: _shouldHighlightMarkdownSelection,
+    );
+  }
+
+  /// Keys for the split-segment RichTexts (the first segment keeps the
+  /// original [_richTextKey] so hit-testing finds a paragraph even when
+  /// no diagram is present).
+  GlobalKey _diagramSegmentKey(int index) {
+    if (index == 0) return _richTextKey;
+    return GlobalKey();
   }
 
   RenderParagraph? get _renderParagraph {
@@ -932,12 +1022,19 @@ TextStyle? _mergedWithHighlight(
 /// clickable regions: tracking happens during the same walk that
 /// builds the spans, so there's no post-hoc flat-scan cost. When
 /// omitted, the visitor skips the bookkeeping entirely.
+///
+/// When [collectedDiagrams] is supplied, parseable diagram fences
+/// (mermaid / d2 / stateDiagram-v2) are emitted as a single
+/// [DiagramSentinelSpan] each, with the fence recorded into the list;
+/// the widget resolves them into interactive [DiagramViewport]s via
+/// [sliceDiagramBlocks].
 List<InlineSpan> parseMarkdownToInlineSpans(
   String text,
   MarkdownThemeFields theme, {
   int? maxWidth,
   HighlightMarkdownStyleSheet? styleSheet,
   List<MarkdownLink>? collectedLinks,
+  List<DiagramFenceInfo>? collectedDiagrams,
   Strings strings = kEnglishStrings,
 }) {
   // Build the per-call style sheet from the theme when none
@@ -958,12 +1055,36 @@ List<InlineSpan> parseMarkdownToInlineSpans(
     theme: theme,
     maxWidth: maxWidth,
     collectedLinks: collectedLinks,
+    collectedDiagrams: collectedDiagrams,
     strings: strings,
   );
-  return visitor.visitNodes(nodes);
+  final spans = visitor.visitNodes(nodes);
+  if (collectedDiagrams == null || collectedDiagrams.isEmpty) {
+    return spans;
+  }
+  // Hoist sentinels nested inside paragraph wrappers to the top level
+  // (siblings preserved) so the widget can slice the list. This is
+  // pure list surgery — no diagram parsing happens here.
+  return hoistDiagramSentinels(spans);
 }
 
 typedef _FlatSpan = (String, TextStyle?);
+
+/// One piece of the interleaved content stream: a run of styled text
+/// spans (→ one RichText) or a diagram fence (→ one DiagramViewport).
+sealed class _Segment {
+  const _Segment();
+}
+
+class _SpanSegment extends _Segment {
+  const _SpanSegment(this.spans);
+  final List<InlineSpan> spans;
+}
+
+class _DiagramSegment extends _Segment {
+  const _DiagramSegment(this.slice);
+  final DiagramBlockSlice slice;
+}
 
 List<_FlatSpan> _flattenSpans(List<InlineSpan> spans) {
   final result = <_FlatSpan>[];
@@ -1102,6 +1223,7 @@ class _HighlightMarkdownVisitor {
     required this.theme,
     this.maxWidth,
     this.collectedLinks,
+    this.collectedDiagrams,
     this.strings = kEnglishStrings,
   });
 
@@ -1119,6 +1241,23 @@ class _HighlightMarkdownVisitor {
   /// hot path stays allocation-free for callers that don't care
   /// about clickable links (e.g. the worker isolate).
   final List<MarkdownLink>? collectedLinks;
+
+  /// Per-parse counter for diagram fences: pairs each sentinel span
+  /// with its [DiagramFenceInfo] entry (see diagram_viewport.dart).
+  int _diagramFenceCount = 0;
+
+  /// Set by [_renderCodeBlock] when a diagram fence was replaced by a
+  /// sentinel span; the `pre` case in [visitElement] reads and clears
+  /// it to hoist the sentinel to the top-level span list.
+  DiagramSentinelSpan? _pendingDiagramSentinel;
+
+  /// Optional sink for diagram fences that parsed successfully. When
+  /// non-null AND the caller wants interactive viewports, the visitor
+  /// replaces a parseable diagram fence's rows with one empty
+  /// [DiagramSentinelSpan] (filled later by the viewport) and records
+  /// the fence here. Null on the isolate path — flat spans carry no
+  /// block structure.
+  final List<DiagramFenceInfo>? collectedDiagrams;
 
   /// Running offset (in characters) of the next span we emit, in
   /// the same coordinate space [RenderParagraph.getCharacterIndexAtLocalPosition]
@@ -1263,7 +1402,18 @@ class _HighlightMarkdownVisitor {
       case 'code':
         return TextSpan(text: element.textContent, style: styleSheet.codeStyle);
       case 'pre':
-        return _renderCodeBlock(element);
+        final codeBlockSpan = _renderCodeBlock(element);
+        // A parseable diagram fence (viewport mode) leaves a pending
+        // sentinel — emit it BARE so it occupies one slot in the
+        // top-level span list, exactly where the slice pass will find
+        // it. Any surrounding newline spans stay as-is so the fences'
+        // vertical spacing survives.
+        final sentinel = _pendingDiagramSentinel;
+        if (sentinel != null) {
+          _pendingDiagramSentinel = null;
+          return TextSpan(children: [sentinel, const TextSpan(text: '\n\n')]);
+        }
+        return codeBlockSpan;
       case 'blockquote':
         final children = visitChildren(element);
         return TextSpan(
@@ -1385,6 +1535,26 @@ class _HighlightMarkdownVisitor {
     // right gutters), same as any other code block. Parse failures fall
     // through to the plain code path below — essential while the LLM is
     // still streaming an unfinished diagram source.
+    //
+    // Interactive upgrade: when the caller passed [collectedDiagrams]
+    // (sync path with viewport support), a fence that PARSES is
+    // replaced by ONE sentinel span; the widget swaps it for a
+    // drag-to-pan DiagramViewport rendering at NATURAL width (no
+    // truncation). The fence is parsed HERE (once) so unparseable
+    // source — the streaming case — still falls through to the raw
+    // code path below unchanged.
+    if (isDiagramLanguage(language) && collectedDiagrams != null) {
+      final data = tryBuildDiagramViewportData(code, language);
+      if (data != null) {
+        final fenceIdx = _diagramFenceCount++;
+        collectedDiagrams?.add(
+          DiagramFenceInfo(code: code, language: language, data: data),
+        );
+        _pendingDiagramSentinel = DiagramSentinelSpan(fenceIdx);
+        return const TextSpan(text: '');
+      }
+      // else: fall through to the classic diagram/code rendering.
+    }
     final diagramText = isDiagramLanguage(language)
         ? _tryRenderDiagramText(code, language, codeLineWidth)
         : null;

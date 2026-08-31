@@ -321,54 +321,54 @@ void _parseEdgeChain(
 ) {
   final subgraphId = subgraphStack.isNotEmpty ? subgraphStack.last : null;
   var pos = 0;
-  String? prevId;
 
-  while (pos < statement.length) {
-    final node = _parseNodeToken(statement, pos);
-    if (node == null) break;
-    graph.ensureNode(node.id,
-        label: node.label, shape: node.shape, subgraphId: subgraphId);
+  // First node anchors the chain.
+  final first = _parseNodeToken(statement, pos);
+  if (first == null) return;
+  graph.ensureNode(first.id,
+      label: first.label, shape: first.shape, subgraphId: subgraphId);
+  var prevId = first.id;
+  pos = _scanPastNode(statement, pos);
 
-    if (prevId != null) {
-      // (chain bookkeeping happens below when the edge token completes)
-    }
-    prevId = node.id;
-    pos = _scanPastNode(statement, pos);
+  while (true) {
     while (pos < statement.length && statement[pos] == ' ') {
       pos++;
     }
+    if (pos >= statement.length) break;
 
-    // Parse the edge operator following this node, if any.
+    // One edge operator...
     final edge = _parseEdgeOperator(statement, pos);
     if (edge == null) break;
     pos = edge.nextPos;
 
-    // Optional pipe label directly after the operator.
+    // Optional pipe label directly after the operator (`|text|`).
     String? label = edge.label;
-    final pipe = RegExp(r'\s*\|([^|]*)\|').firstMatch(statement.substring(pos));
+    final pipe =
+        RegExp(r'\s*\|([^|]*)\|').firstMatch(statement.substring(pos));
     if (pipe != null && pipe.start == 0) {
       label ??= pipe.group(1)?.trim();
       pos += pipe.end;
     }
+    while (pos < statement.length && statement[pos] == ' ') {
+      pos++;
+    }
 
-    // The next node token completes the edge; peek without consuming so
-    // the outer loop registers it normally.
+    // ...then exactly one node token closes it.
     final next = _parseNodeToken(statement, pos);
     if (next == null) break;
     graph.ensureNode(next.id,
         label: next.label, shape: next.shape, subgraphId: subgraphId);
 
     final (from, to) = edge.reverse ? (next.id, prevId) : (prevId, next.id);
-    graph.edges.add(DiagramEdge(from: from, to: to, label: label,
-        style: edge.style));
+    graph.edges.add(DiagramEdge(
+        from: from, to: to, label: label, style: edge.style));
     if (edge.bidirectional) {
       graph.edges.add(DiagramEdge(
           from: next.id, to: prevId, label: label, style: edge.style));
     }
 
-    // Advance past the second node of this edge.
-    pos = _scanPastNode(statement, pos);
     prevId = next.id;
+    pos = _scanPastNode(statement, pos);
   }
 }
 
@@ -382,6 +382,7 @@ int _scanPastNode(String s, int pos) {
     final close = s.indexOf('"', i + 1);
     return close == -1 ? s.length : close + 1;
   }
+  // Consume the identifier run.
   while (i < s.length) {
     final c = s[i];
     if (c == ' ' ||
@@ -397,6 +398,13 @@ int _scanPastNode(String s, int pos) {
         s.startsWith('-.', i)) {
       break;
     }
+    i++;
+  }
+  // Skip whitespace between identifier and a following shape wrapper —
+  // `A [label]` is legal mermaid, and without this the wrapper was
+  // left unconsumed, making the NEXT _parseNodeToken read the wrapper
+  // text as a node id (e.g. the chain `A[B] --> C` mis-parsed).
+  while (i < s.length && s[i] == ' ') {
     i++;
   }
   if (i < s.length && _openToClose.containsKey(s[i])) {
@@ -485,19 +493,25 @@ _EdgeToken? _parseEdgeOperator(String s, int pos) {
     return _EdgeToken(EdgeStyle.thickLine, null, false, false, pos + 3);
   }
 
-  // Solid family (labelled arrow `--text-->` before plain forms).
+  // Solid family. Plain `-->` MUST be tested before the labelled form
+  // `--text-->`: the labelled regex `--([^|]*?)--+>` backtracks across
+  // arbitrary text and, on a chain like `A --> B[...] --> C`, once
+  // swallows `-> B[...] --` as a "label", collapsing the chain to
+  // `A -> C` and DROPPING node B (this really happened). Mermaid label
+  // text may not contain `>` or start with `-`, which the restricted
+  // character class now enforces.
+  if (rest.startsWith('-->')) {
+    return _EdgeToken(EdgeStyle.solidArrow, null, false, false, pos + 3);
+  }
   m = RegExp(r'^--\s*"([^"]*)"\s*--+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
         EdgeStyle.solidArrow, m.group(1)!, false, false, pos + m.end);
   }
-  m = RegExp(r'^--([^|]*?)--+>').firstMatch(rest);
+  m = RegExp(r'^--([^|>\-][^|>]*?)--+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
         EdgeStyle.solidArrow, m.group(1)!.trim(), false, false, pos + m.end);
-  }
-  if (rest.startsWith('-->')) {
-    return _EdgeToken(EdgeStyle.solidArrow, null, false, false, pos + 3);
   }
   if (rest.startsWith('---')) {
     return _EdgeToken(EdgeStyle.solidLine, null, false, false, pos + 3);
