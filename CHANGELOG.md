@@ -8,6 +8,51 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-08-31
+
+69decf83
+
+### Features
+
+- **Input: Tab session cycle reworked as a rotating ring**
+  (`a9cb4b48`) — the first cut recomputed a priority target on every
+  press (always the newest active session while one existed), so Tab
+  never reached the done/interrupted stops and could not walk between
+  several streaming sessions. The sessions now form a fixed ring:
+  `buildTabCycleRing` lays out active (newest-first, incl. chats) →
+  done → interrupted with every session appearing once, and
+  `TabCycleRing.step` advances or retreats exactly one stop from the
+  current session's own position, wrapping at both ends. Tab = next
+  stop, Shift+Tab = previous stop (replacing the pinned "previous"
+  stop and the last-visited bookkeeping); Ctrl/Alt+Tab and open
+  overlays still fall through, home quick-chat keeps grid-navigation
+  Tab.
+
+- **Scrollbar: theme-colored thumb, track line dropped**
+  (`edc00433`) — all Scrollbar/ChatScrollbar/PlanScrollbar call sites
+  now pass opaque theme tokens (thumb = `onSurfaceDim`), no track
+  color: the `withOpacity` pre-dilution was stacking with nocterm's
+  internal state factors and collapsing every theme to a uniform
+  grey. Chat/Plan scrollbars previously fell back to near-white
+  `onSurface`; they now get the chosen theme color explicitly. Bumps
+  nocterm to `c04cb0b` (raised thumb state alphas, track removed).
+
+### Fixes
+
+- **Scrollbar: marker tooltips anchored in global coords**
+  (`69decf83`) — `markerSourceBounds` now returns the marker cell in
+  global terminal coordinates (local position + the render object's
+  last paint offset) — the same frame mouse events and hit-testing
+  use — so the hover anchor and tooltip anchor can never disagree
+  when the scrollbar is nested away from the app root.
+
+- **Highlighting: missing grammars no longer fail initialization**
+  (`ae59ba20`) — bumps textmate_highlight `24abf0d` → `5566303`:
+  `initialize` skips unavailable grammars instead of failing the
+  whole registry, and grammar inclusion regexes are scoped to the
+  current line so cross-line subject text can't hijack pattern
+  matching.
+
 ## [0.50.0] - 2026-08-27
 
 42194e11
