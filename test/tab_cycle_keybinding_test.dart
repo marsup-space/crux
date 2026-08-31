@@ -122,7 +122,42 @@ void main() {
     expect(cycles, 1);
   });
 
-  test('Shift+Tab does not cycle', () {
+  test('Shift+Tab invokes onCycleSessionsPrevious and is consumed', () {
+    var cycles = 0;
+    var previous = 0;
+    final controller = TextEditingController();
+    final overlayController = OverlayController(
+      maxVisibleItems: 6,
+      textController: controller,
+      executeCommandCallback: (_) async {},
+    );
+    final handler = InputKeyHandler(
+      sessionController: sessionController,
+      turnOrchestrator: orchestrator,
+      onQuitRequest: () {},
+      onCycleSessions: () => cycles++,
+      onCycleSessionsPrevious: () => previous++,
+      refresh: () {},
+      onStateChanged: () {},
+      textController: controller,
+      overlayController: overlayController,
+      getCommandStash: () => null,
+      setCommandStash: (_) {},
+    );
+
+    final handled = handler.handleKeyEvent(
+      KeyboardEvent(
+        logicalKey: LogicalKey.tab,
+        modifiers: const ModifierKeys(shift: true),
+      ),
+    );
+
+    expect(handled, isTrue);
+    expect(cycles, 0, reason: 'forward callback must not fire');
+    expect(previous, 1, reason: 'backward callback fires');
+  });
+
+  test('Shift+Tab with a null previous callback falls through', () {
     var cycles = 0;
     final handler = buildHandler(
       onCycle: () => cycles++,

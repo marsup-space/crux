@@ -54,9 +54,13 @@ class ChatInput extends StatefulComponent {
   final VoidCallback? onOpenHome;
 
   /// Cycle to the next session on plain Tab (active → done →
-  /// interrupted → previous). Wired by the chat panel; null keeps Tab
+  /// interrupted, wrapping). Wired by the chat panel; null keeps Tab
   /// falling through to the TextField.
   final VoidCallback? onCycleSessions;
+
+  /// Cycle to the previous session on Shift+Tab (step backward around
+  /// the same ring). Null keeps Shift+Tab falling through.
+  final VoidCallback? onCycleSessionsPrevious;
   final String projectPath;
   final RecentProjectsStore? recentProjectsStore;
   final Strings strings;
@@ -88,6 +92,7 @@ class ChatInput extends StatefulComponent {
     this.onQuitRequest,
     this.onOpenHome,
     this.onCycleSessions,
+    this.onCycleSessionsPrevious,
     this.projectPath = '.',
     this.recentProjectsStore,
     this.activePlanName,
@@ -149,6 +154,7 @@ class ChatInputState extends State<ChatInput> {
       onQuitRequest: component.onQuitRequest,
       onOpenHome: component.onOpenHome,
       onCycleSessions: component.onCycleSessions,
+      onCycleSessionsPrevious: component.onCycleSessionsPrevious,
       refresh: component.refresh,
       onStateChanged: _onControllerStateChanged,
       textController: component.textController,

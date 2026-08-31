@@ -81,10 +81,15 @@ class InputKeyHandler {
   /// panel; when null (tests), a plain ESC press is consumed as a no-op.
   final VoidCallback? onOpenHome;
 
-  /// Cycle to the next session (Tab) — active → done → interrupted →
-  /// previous. Wired by the chat panel; when null, plain Tab falls
+  /// Cycle to the next session (Tab) — active → done → interrupted,
+  /// wrapping. Wired by the chat panel; when null, plain Tab falls
   /// through to the TextField (indent / focus behaviour).
   final VoidCallback? onCycleSessions;
+
+  /// Cycle to the previous session (Shift+Tab) — step backward around
+  /// the same ring. Null in contexts where Shift+Tab has another
+  /// meaning (falls through).
+  final VoidCallback? onCycleSessionsPrevious;
   final VoidCallback refresh;
   final void Function() onStateChanged;
   final TextEditingController textController;
@@ -110,6 +115,7 @@ class InputKeyHandler {
     required this.onQuitRequest,
     this.onOpenHome,
     this.onCycleSessions,
+    this.onCycleSessionsPrevious,
     required this.refresh,
     required this.onStateChanged,
     required this.textController,
@@ -458,15 +464,21 @@ class InputKeyHandler {
         return true;
       }
 
-      // Plain Tab (no modifiers, overlay off): cycle to the next
-      // session — active → done → interrupted → previous. Wired by the
-      // chat panel; home's quick-chat leaves it null so Tab keeps its
+      // Tab / Shift+Tab (overlay off): step around the session ring.
+      // Tab = next stop, Shift+Tab = previous stop. Wired by the chat
+      // panel; home's quick-chat leaves them null so Tab keeps its
       // grid-navigation meaning there.
       if (event.logicalKey == LogicalKey.tab &&
-          !event.isShiftPressed &&
           !event.isControlPressed &&
           !event.isAltPressed &&
           !event.isMetaPressed) {
+        if (event.isShiftPressed) {
+          if (onCycleSessionsPrevious != null) {
+            onCycleSessionsPrevious!();
+            return true;
+          }
+          return false;
+        }
         if (onCycleSessions != null) {
           onCycleSessions!();
           return true;

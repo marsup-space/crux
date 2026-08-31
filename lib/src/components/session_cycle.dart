@@ -1,82 +1,81 @@
 import '../models/session.dart';
 
 /// Tab-cycle target kinds for the chat screen's Tab shortcut.
-enum SessionCycleKind { active, done, interrupted, previous }
+enum SessionCycleKind { active, done, interrupted }
 
-/// One step of the Tab cycle: which session to jump to.
-class SessionCycleTarget {
+/// One stop of the session cycle ring: which session to jump to.
+class SessionCycleStop {
   final Session session;
   final SessionCycleKind kind;
 
-  const SessionCycleTarget(this.session, this.kind);
+  const SessionCycleStop(this.session, this.kind);
 }
 
-/// Compute the next Tab-cycle destination.
+/// Build the ordered ring of session stops the Tab shortcut walks.
 ///
-/// The cycle visits, in order:
+/// Sections in order, each newest-first by `updatedAt`:
 ///
-///   1. the most recently updated **active** session (idle / running /
-///      needUserAction) — skipping [currentId] itself;
-///   2. otherwise the most recently updated **done** session;
-///   3. otherwise the most recently updated **interrupted** session;
-///   4. otherwise the **previous** session — the most recently updated
-///      session that is none of the above (i.e. done/interrupted when
-///      steps 2–3 already consumed their picks) — falling back to "any
-///      other session" so the key always does something useful.
+///   1. every **active** session (idle / running / needUserAction) —
+///      streaming conversations appear here while they run, so
+///      repeated Tabs walk *between* live sessions;
+///   2. every **done** session;
+///   3. every **interrupted** session.
 ///
 /// Candidates come from [sessions] + [chats] (workspace sessions and
-/// global chats), newest-first by `updatedAt`. Archived sessions are
-/// excluded because they are not in the sidebar list to begin with.
-///
-/// Returns null when there is nothing to jump to (no other session).
-SessionCycleTarget? nextTabCycleTarget({
+/// global chats). Archived sessions are excluded: they are not in the
+/// sidebar list to begin with. Every session appears at most once —
+/// duplicate stops would break the wrap-around (it would land on the
+/// copy instead of the first stop) or oscillate between two stops.
+TabCycleRing buildTabCycleRing({
   required List<Session> sessions,
   List<Session> chats = const [],
-  int? currentId,
-  int? lastVisitedId,
 }) {
   final candidates =
-      [
-            ...sessions,
-            ...chats,
-          ]
-          .where((s) => s.archivedAt == null && s.id != currentId)
-          .toList()
+      [...sessions, ...chats].where((s) => s.archivedAt == null).toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  if (candidates.isEmpty) return null;
 
-  bool isActive(Session s) =>
-      s.status == SessionStatus.idle ||
-      s.status == SessionStatus.running ||
-      s.status == SessionStatus.needUserAction;
+  final stops = <SessionCycleStop>[
+    ...candidates
+        .where(
+          (s) =>
+              s.status == SessionStatus.idle ||
+              s.status == SessionStatus.running ||
+              s.status == SessionStatus.needUserAction,
+        )
+        .map((s) => SessionCycleStop(s, SessionCycleKind.active)),
+    ...candidates
+        .where((s) => s.status == SessionStatus.done)
+        .map((s) => SessionCycleStop(s, SessionCycleKind.done)),
+    ...candidates
+        .where((s) => s.status == SessionStatus.interrupted)
+        .map((s) => SessionCycleStop(s, SessionCycleKind.interrupted)),
+  ];
+  return TabCycleRing(stops);
+}
 
-  // 1. Active first — a running or awaiting-input session is what the
-  //    user most likely wants to reach with one keystroke.
-  final active = candidates.where(isActive).toList();
-  if (active.isNotEmpty) {
-    return SessionCycleTarget(active.first, SessionCycleKind.active);
+/// The ordered, de-duplicated stop ring plus the stepping math.
+class TabCycleRing {
+  final List<SessionCycleStop> stops;
+
+  const TabCycleRing(this.stops);
+
+  /// Step one stop [forward] (Tab) or backward (Shift+Tab = the
+  /// previous session), wrapping at both ends of the ring.
+  ///
+  /// Stepping starts from the current session's own stop, so the ring
+  /// must include it (buildTabCycleRing does not filter [currentId]).
+  /// Returns null when there is nothing to move to — fewer than two
+  /// distinct stops, or the current session has no stop and the ring
+  /// devolves to a no-op.
+  SessionCycleStop? step({required int currentId, bool forward = true}) {
+    if (stops.length < 2) return null;
+    final from = stops.indexWhere((s) => s.session.id == currentId);
+    final len = stops.length;
+    // from == -1 (current not in ring — e.g. archived mid-cycle):
+    // forward enters at the first stop, backward at the last.
+    final idx = forward ? (from + 1) % len : (from <= 0 ? len - 1 : from - 1);
+    final next = stops[idx];
+    if (next.session.id == currentId) return null;
+    return next;
   }
-
-  // 2–3. Then done, then interrupted.
-  for (final entry in const [
-    (SessionStatus.done, SessionCycleKind.done),
-    (SessionStatus.interrupted, SessionCycleKind.interrupted),
-  ]) {
-    final match = candidates.where((s) => s.status == entry.$1).toList();
-    if (match.isNotEmpty) {
-      return SessionCycleTarget(match.first, entry.$2);
-    }
-  }
-
-  // 4. Previous: prefer the remembered last-visited id when it still
-  //    exists among candidates; otherwise fall back to the newest
-  //    remaining candidate ("any other session").
-  if (lastVisitedId != null) {
-    for (final s in candidates) {
-      if (s.id == lastVisitedId) {
-        return SessionCycleTarget(s, SessionCycleKind.previous);
-      }
-    }
-  }
-  return SessionCycleTarget(candidates.first, SessionCycleKind.previous);
 }

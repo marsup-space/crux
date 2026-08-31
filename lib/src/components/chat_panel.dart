@@ -298,10 +298,8 @@ class _ChatPanelState extends State<ChatPanel> {
   final Map<int, _CachedCompactEstimate> _compactEstimates = {};
   int? _estimateJobSessionId;
 
-  /// Tab-cycle state: the session visited before the current one
-  /// (the "previous" stop of the cycle) and a debounce timestamp so
-  /// holding Tab doesn't machine-gun through sessions.
-  int? _lastVisitedSessionId;
+  /// Tab-cycle debounce timestamp so holding Tab doesn't machine-gun
+  /// through sessions.
   DateTime? _lastTabCycleAt;
 
   late final RecentProjectsStore _recentProjectsStore;
@@ -741,17 +739,16 @@ class _ChatPanelState extends State<ChatPanel> {
     _streamingController.stopContextAnimation();
     scrollController.scrollToBottom();
     setState(() {});
-    if (oldId != null && oldId != id) {
-      _lastVisitedSessionId = oldId;
-    }
   }
 
-  /// Plain-Tab handler: jump to the next stop of the session cycle —
-  /// active → done → interrupted → previous. The target computation
-  /// lives in [nextTabCycleTarget] (pure, unit-tested); this wraps it
-  /// with the panel's live lists and a debounce against key-repeat.
-  /// No toast — the session switch itself is the visible feedback.
-  Future<void> _cycleToNextSession() async {
+  /// Tab / Shift+Tab handler: step one stop around the session ring —
+  /// active → done → interrupted, wrapping at both ends. Tab steps
+  /// forward, Shift+Tab steps backward (the previous session). The
+  /// ring + stepping math live in [buildTabCycleRing] / [TabCycleRing]
+  /// (pure, unit-tested); this wraps them with the panel's live lists
+  /// and a debounce against key-repeat. No toast — the session switch
+  /// itself is the visible feedback.
+  Future<void> _cycleToNextSession({bool forward = true}) async {
     // Debounce key-repeat: ignore repeats within 150 ms of the last
     // accepted cycle.
     final now = DateTime.now();
@@ -761,12 +758,13 @@ class _ChatPanelState extends State<ChatPanel> {
     }
 
     final controller = _sessionController;
-    final target = nextTabCycleTarget(
+    final currentId = controller.currentSessionId;
+    if (currentId == null) return;
+    final ring = buildTabCycleRing(
       sessions: controller.sessions,
       chats: controller.chats,
-      currentId: controller.currentSessionId,
-      lastVisitedId: _lastVisitedSessionId,
     );
+    final target = ring.step(currentId: currentId, forward: forward);
     if (target == null) return;
 
     await _switchSession(target.session.id);
@@ -1900,9 +1898,12 @@ class _ChatPanelState extends State<ChatPanel> {
                         // screen. (Interrupting a stream is the model
                         // button's job now, not ESC's.)
                         onOpenHome: _openHome,
-                        // Plain Tab cycles sessions:
-                        // active → done → interrupted → previous.
-                        onCycleSessions: _cycleToNextSession,
+                        // Tab / Shift+Tab step around the session ring:
+                        // active → done → interrupted, wrapping.
+                        onCycleSessions: () =>
+                            _cycleToNextSession(forward: true),
+                        onCycleSessionsPrevious: () =>
+                            _cycleToNextSession(forward: false),
                         onAttachClipboardImage: (image) {
                           final sid = _sessionController.currentSessionId;
                           if (sid != null) {
