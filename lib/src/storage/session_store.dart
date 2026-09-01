@@ -187,6 +187,24 @@ class SessionStore implements SessionStoreAccessor {
     return rows.map(_rowToSession).toList();
   }
 
+  /// Every session row — workspace sessions AND chats, active AND
+  /// archived — newest-first by [Session.updatedAt]. Powers the
+  /// session management panel's search box, which must see archived
+  /// rows (the sidebar lists and the `#` mention candidates cannot:
+  /// those are split/bounded — see [list] / [listChats] /
+  /// [loadSessionMentionCandidates callers for the living-set variants]).
+  ///
+  /// [limit] caps the row materialization so a years-old database
+  /// cannot freeze the panel; it is deliberately generous (500)
+  /// because scanning happens in memory over titles + ids.
+  Future<List<Session>> listAny({int limit = 500}) async {
+    final query = _db.select(_db.sessions)
+      ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+      ..limit(limit);
+    final rows = await query.get();
+    return rows.map(_rowToSession).toList();
+  }
+
   Future<void> archiveSession(int id) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(

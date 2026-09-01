@@ -771,21 +771,26 @@ class _ChatPanelState extends State<ChatPanel> {
     _lastTabCycleAt = DateTime.now();
   }
 
-  Future<void> _handleSessionLinkTap(int sessionId) async {
+  /// Returns null on success, or the human-readable error string (a
+  /// toast with the same text is shown either way, so link-tap
+  /// callers can stay fire-and-forget while the session-manager
+  /// caller can keep its pane open on failure).
+  Future<String?> _handleSessionLinkTap(int sessionId) async {
     final current = _sessionController.currentSessionId;
-    if (current == sessionId) return;
+    if (current == sessionId) return null;
     // Link-aware switch: if the target was archived (easy to hit —
     // sessions auto-archive after 3 idle days), it is unarchived and
     // pulled back into the sidebar before switching, so old links
     // keep working instead of erroring.
-    final error = await _sessionController.openSessionFromLink(sessionId);
-    if (!mounted) return;
+    final error = await _sessionController.openSession(sessionId);
+    if (!mounted) return error;
     if (error != null) {
       _showToast(error, mode: ToastMode.error);
-      return;
+      return error;
     }
     scrollController.scrollToBottom();
     setState(() {});
+    return null;
   }
 
   /// A `prompt`-kind plugin action (quick action) submits its
@@ -1624,6 +1629,11 @@ class _ChatPanelState extends State<ChatPanel> {
       chats: _sessionController.chats,
       currentSessionId: _sessionController.currentSessionId ?? 0,
       strings: _strings,
+      // Full candidate set for the search/archive sections: the same
+      // loader the `#` mention picker uses (live lists + archived
+      // rows, deduped, live winning).
+      onLoadCandidates: () =>
+          _sessionController.loadSessionMentionCandidates(),
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -1631,6 +1641,25 @@ class _ChatPanelState extends State<ChatPanel> {
       onRenameSession: (id, title) async {
         await _sessionController.renameSession(id, title);
         setState(() {});
+      },
+      // Archived-aware open: reuses the ses:// link-tap path
+      // (unarchive → sidebar refresh → switch, error toast on
+      // failure) and closes the manager on success only.
+            onOpenSession: (id) async {
+        final current = _sessionController.currentSessionId;
+        if (current == id) {
+          setState(() {
+            _overlayController.showSessionManager = false;
+          });
+          return null;
+        }
+        final error = await _handleSessionLinkTap(id);
+        if (error == null && mounted) {
+          setState(() {
+            _overlayController.showSessionManager = false;
+          });
+        }
+        return error;
       },
       onSwitchSession: (id) {
         _switchSession(id);

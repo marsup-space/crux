@@ -929,29 +929,40 @@ class SessionController {
     return null;
   }
 
-  /// Open the session a `ses://<id>` link points at. Falls back to
-  /// [switchSession] when the target is already in the sidebar;
-  /// when it is ARCHIVED, unarchives it first, pulls it back into
-  /// the in-memory sidebar list, then switches — so following an old
-  /// link in a months-old reply works instead of erroring with
-  /// "Session #N not found". A deleted session still errors (there
-  /// is nothing to open).
-  Future<String?> openSessionFromLink(int id) async {
+  /// Open the session a `ses://<id>` link or an archived panel row
+  /// points at. Falls back to [switchSession] when the target is
+  /// already in the sidebar; when it is ARCHIVED, unarchives it
+  /// first, pulls it back into the in-memory sidebar list, then
+  /// switches — so following an old link in a months-old reply (or
+  /// pressing Enter on an archived row in the session manager) works
+  /// instead of erroring with "Session #N not found". A deleted
+  /// session still errors (there is nothing to open).
+  Future<String?> openSession(int id) async {
     if (findSession(id) != null || currentSessionId == id) {
       return switchSession(id);
     }
+    // Not an in-memory row. Unarchive-if-archived then reload the
+    // sidebar lists before [switchSession] — that call re-reads
+    // [findSession] and would report "Session #N not found" if the
+    // lists still lacked the row.
     final stored = await _store.getById(id);
     if (stored == null) {
       return 'Session #$id not found';
     }
     if (stored.archivedAt != null) {
       await _store.unarchiveSession(id);
+      await reloadSidebar();
     }
-    // Which sidebar section the unarchived row belongs to depends on
-    // its kind; reload both lists (cheap) rather than hand-placing.
-    await reloadSidebar();
-    return switchSession(id);
+    final error = beginSwitchSession(id);
+    if (error != null) return error;
+    await completeSwitchSession(id);
+    return null;
   }
+
+  /// Legacy name kept for the existing `ses://` link caller
+  /// (`chat_panel.dart`). One-line delegate — new callers (the
+  /// session manager's archived rows) go through [openSession].
+  Future<String?> openSessionFromLink(int id) => openSession(id);
 
   /// Synchronous half of [switchSession]: validate the target,
   /// flip [currentSessionId], set the context-bar target to a

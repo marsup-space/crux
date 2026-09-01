@@ -5,23 +5,48 @@ import '../i18n/strings.dart';
 import '../utils/terminal_symbols.dart';
 import 'ui/fullpane.dart';
 
+/// Async loader for the panel's candidate set: every session the panel
+/// can show — in-memory active rows plus archived rows from the store.
+/// Returns newest-first; the panel filters in memory.
+typedef SessionCandidatesLoader = Future<List<Session>> Function();
+
+/// Opens a session by id, unarchiving it first when needed — the same
+/// archived-aware switch path a `ses://<id>` link uses, so Enter on an
+/// archived row restores it to the sidebar before switching to it.
+typedef SessionOpener = Future<String?> Function(int sessionId);
+
 class SessionManagementPanel extends StatefulComponent {
+  /// In-memory non-archived workspace sessions (the sidebar list).
   final List<Session> sessions;
 
   /// Chat-mode sessions (global). Rendered in a separate "Chats"
-  /// section below the project "Sessions".
+  /// section below the project "Sessions"/"Archived" sections.
   final List<Session> chats;
+
+  /// Fired once per open (initState): returns every session including
+  /// archived ones (in-memory + store rows). The panel owns the loaded
+  /// snapshot; the live [sessions]/[chats] lists always win on merge,
+  /// so a title renamed after the load still renders fresh. When null
+  /// the panel shows only the in-memory lists (legacy hosts, tests).
+  final SessionCandidatesLoader? onLoadCandidates;
+
   final int currentSessionId;
   final Future<void> Function(int sessionId) onDeleteSession;
   final Future<void> Function(int sessionId, String newTitle) onRenameSession;
   final void Function(int sessionId) onSwitchSession;
+
+  /// Archived-aware open. When null the plain [onSwitchSession] is
+  /// used (hosts that didn't opt into archived support — tests).
+  final SessionOpener? onOpenSession;
   final VoidCallback onDismiss;
   final Strings strings;
 
   const SessionManagementPanel({
     required this.sessions,
     this.chats = const [],
+    this.onLoadCandidates,
     required this.currentSessionId,
+    this.onOpenSession,
     required this.onDeleteSession,
     required this.onRenameSession,
     required this.onSwitchSession,
@@ -30,13 +55,14 @@ class SessionManagementPanel extends StatefulComponent {
   });
 
   @override
-  State<SessionManagementPanel> createState() => _SessionManagementPanelState();
+  State<SessionManagementPanel> createState() =>
+      _SessionManagementPanelState();
 }
 
 enum _PanelMode { browse, confirmDelete, rename }
 
-/// One row in the flat list the panel renders: either a section
-/// header or an actual session/chat row.
+/// One row in the flat list the panel renders: a section header or an
+/// actual session/chat row.
 sealed class _Row {
   const _Row();
 }
@@ -51,28 +77,133 @@ class _SessionRow extends _Row {
   const _SessionRow(this.session);
 }
 
+class _Section {
+  final String header;
+  final List<Session> sessions;
+  const _Section(this.header, this.sessions);
+}
+
 class _SessionManagementPanelState extends State<SessionManagementPanel> {
   int _selectedIndex = 0;
   _PanelMode _mode = _PanelMode.browse;
   final _renameController = TextEditingController();
   final _scrollController = ScrollController();
 
-  /// Flat row list: "Sessions" header + session rows, then "Chats"
-  /// header + chat rows. Selection moves over session rows only;
-  /// headers are skipped by the nav helpers.
-  List<_Row> get _rows {
-    final sessions = List<Session>.from(component.sessions)
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final chats = List<Session>.from(component.chats)
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final rows = <_Row>[];
-    if (sessions.isNotEmpty) {
-      rows.add(_HeaderRow(component.strings.t('chat.sessions.sessions')));
-      rows.addAll(sessions.map(_SessionRow.new));
+  /// Search query over titles + `#id`. Typing any printable character
+  /// outside a text field enters search mode; Esc first clears the
+  /// query, then closes the panel.
+  String _query = '';
+  bool _searchMode = false;
+  final _searchController = TextEditingController();
+
+  /// True while the post-open candidate load is in flight (host wired
+  /// [SessionManagementPanel.onLoadCandidates]).
+  bool _loadingCandidates = false;
+
+  /// Full-candidate snapshot from the post-open load (active +
+  /// archived). Null until it lands; live in-memory lists always win
+  /// during merge (see [_pool]).
+  List<Session>? _all;
+
+  @override
+  void initState() {
+    super.initState();
+    if (component.onLoadCandidates != null) {
+      _loadingCandidates = true;
+      _loadCandidates();
     }
-    if (chats.isNotEmpty) {
-      rows.add(_HeaderRow(component.strings.t('chat.sessions.chats')));
-      rows.addAll(chats.map(_SessionRow.new));
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _ensureSelectedVisible();
+    });
+  }
+
+  Future<void> _loadCandidates() async {
+    List<Session>? loaded;
+    try {
+      loaded = await component.onLoadCandidates!();
+    } catch (_) {
+      loaded = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _all = loaded;
+      _loadingCandidates = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _renameController.dispose();
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// The candidate pool this panel can show: the loaded snapshot
+  /// (active + archived) merged with the live in-memory lists —
+  /// in-memory entries win, so a just-renamed title or a status flip
+  /// renders fresh even though the snapshot is older. Without a
+  /// snapshot this is exactly the old panel's data.
+  List<Session> get _pool {
+    final live = [...component.sessions, ...component.chats];
+    final snapshot = _all;
+    if (snapshot == null) return live;
+    final byId = {for (final s in snapshot) s.id: s};
+    for (final s in live) {
+      byId[s.id] = s;
+    }
+    return byId.values.toList();
+  }
+
+  /// Sessions matching [_query]: case-insensitive title substring, or
+  /// a `#id` prefix match when the query starts with `#` (purely
+  /// numeric queries also match the id as a substring). Empty query
+  /// matches everything.
+  bool _matches(Session s) {
+    final q = _query.trim();
+    if (q.isEmpty) return true;
+    if (q.startsWith('#')) {
+      final digits = q.substring(1).trim();
+      return digits.isEmpty || '${s.id}'.startsWith(digits);
+    }
+    final title = s.title.isEmpty
+        ? (s.isChat
+              ? component.strings.t('chat.newPlaceholder')
+              : component.strings.t('session.newPlaceholder'))
+        : s.title;
+    if (title.toLowerCase().contains(q.toLowerCase())) return true;
+    return '${s.id}'.contains(q);
+  }
+
+  /// Flat row list: section header + session rows per [_Section].
+  /// Selection moves over session rows only; headers are skipped by
+  /// the nav helpers.
+  List<_Row> get _rows {
+    final pool = _pool.where(_matches).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final sessions = pool.where((s) => !s.isChat).toList();
+    final chats = pool.where((s) => s.isChat).toList();
+    final active = sessions.where((s) => s.archivedAt == null).toList();
+    final archived = sessions.where((s) => s.archivedAt != null).toList();
+    final activeChats = chats.where((s) => s.archivedAt == null).toList();
+    final archivedChats = chats.where((s) => s.archivedAt != null).toList();
+
+    final sectionDefs = <_Section>[
+      if (active.isNotEmpty)
+        _Section(component.strings.t('chat.sessions.sessions'), active),
+      if (archived.isNotEmpty)
+        _Section(component.strings.t('chat.sessions.archived'), archived),
+      if (activeChats.isNotEmpty)
+        _Section(component.strings.t('chat.sessions.chats'), activeChats),
+      if (archivedChats.isNotEmpty)
+        _Section(component.strings.t('chat.sessions.chatsArchived'),
+            archivedChats),
+    ];
+
+    final rows = <_Row>[];
+    for (final section in sectionDefs) {
+      rows.add(_HeaderRow(section.header));
+      rows.addAll(section.sessions.map(_SessionRow.new));
     }
     return rows;
   }
@@ -84,26 +215,6 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       for (final row in _rows)
         if (row is _SessionRow) row.session,
     ];
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    final sorted = _sorted;
-    final currentIdx = sorted.indexWhere(
-      (s) => s.id == component.currentSessionId,
-    );
-    _selectedIndex = currentIdx >= 0 ? currentIdx : 0;
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _ensureSelectedVisible();
-    });
-  }
-
-  @override
-  void dispose() {
-    _renameController.dispose();
-    _scrollController.dispose();
-    super.dispose();
   }
 
   void _selectPrev() {
@@ -138,7 +249,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
       if (row is _HeaderRow) {
-        renderedOffset += 2; // divider + label (see _buildRows render)
+        renderedOffset += 2; // divider + label (see build render)
         continue;
       }
       sessionOrdinal++;
@@ -160,7 +271,12 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   void _confirmDelete() async {
     if (_sorted.isEmpty) return;
     final session = _sorted[_selectedIndex];
-    await component.onDeleteSession(session.id);
+    final deletedId = session.id;
+    await component.onDeleteSession(deletedId);
+    // Drop the deleted row from the panel's snapshot too — the live
+    // lists refresh via the host's callback, but [_pool] merges the
+    // snapshot back in and would resurrect the row here.
+    _all = _all?.where((s) => s.id != deletedId).toList();
     final newLen = _sorted.length;
     if (newLen == 0) {
       component.onDismiss();
@@ -177,6 +293,13 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   void _initiateRename() {
     if (_sorted.isEmpty) return;
     final session = _sorted[_selectedIndex];
+    if (session.archivedAt != null) {
+      // Renaming an archived row would bump `updatedAt` (the rename
+      // store path writes it), silently reordering the recency list.
+      // Keep archived rows immutable; unarchive first (Enter), then
+      // rename.
+      return;
+    }
     _renameController.text = session.title;
     setState(() {
       _mode = _PanelMode.rename;
@@ -199,6 +322,18 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
     setState(() {
       _mode = _PanelMode.browse;
     });
+  }
+
+  void _openSelected() {
+    final sorted = _sorted;
+    if (sorted.isEmpty) return;
+    final session = sorted[_selectedIndex];
+    final onOpen = component.onOpenSession;
+    if (onOpen != null) {
+      onOpen(session.id);
+    } else {
+      component.onSwitchSession(session.id);
+    }
   }
 
   String _statusIcon(SessionStatus status) {
@@ -232,13 +367,23 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {
-    if (_mode == _PanelMode.confirmDelete) {
-      if (event.isControlPressed && event.logicalKey == LogicalKey.keyD) {
-        _confirmDelete();
-        return true;
-      }
+    // Search mode: the Fullpane's Focusable holds keyboard focus while
+    // the panel is open (a second focused TextField would fight it for
+    // dispatch and lose), so the panel itself appends/deletes in the
+    // search controller. The TextField is display-only.
+    if (_searchMode) {
       if (event.logicalKey == LogicalKey.escape) {
-        _cancelAction();
+        if (_searchController.text.isNotEmpty) {
+          setState(() {
+            _searchController.clear();
+            _query = '';
+            _selectedIndex = 0;
+          });
+          _ensureSelectedVisible();
+        } else {
+          setState(() => _searchMode = false);
+          component.onDismiss();
+        }
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowUp) {
@@ -247,6 +392,44 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       }
       if (event.logicalKey == LogicalKey.arrowDown) {
         _selectNext();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.enter) {
+        _openSelected();
+        return true;
+      }
+      if (event.logicalKey == LogicalKey.backspace &&
+          !event.isControlPressed &&
+          !event.isAltPressed &&
+          !event.isMetaPressed) {
+        final runes = _searchController.text.runes.toList();
+        if (runes.isNotEmpty) {
+          runes.removeLast(); // rune-wise so CJK/emoji delete whole glyphs
+          final text = String.fromCharCodes(runes);
+          setState(() {
+            _searchController.text = text;
+            _query = text;
+            _selectedIndex = 0;
+          });
+        }
+        return true;
+      }
+      final ch = event.character;
+      final printable =
+          ch != null &&
+          ch.isNotEmpty &&
+          ch.runes.every((r) => r >= 0x20) &&
+          ch != '\x7f';
+      if (!event.isControlPressed &&
+          !event.isAltPressed &&
+          !event.isMetaPressed &&
+          printable) {
+        final text = _searchController.text + ch;
+        setState(() {
+          _searchController.text = text;
+          _query = text;
+          _selectedIndex = 0;
+        });
         return true;
       }
       return true;
@@ -268,14 +451,33 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       return true;
     }
     if (event.logicalKey == LogicalKey.enter) {
-      final sorted = _sorted;
-      if (sorted.isNotEmpty) {
-        component.onSwitchSession(sorted[_selectedIndex].id);
-      }
+      _openSelected();
       return true;
     }
     if (event.logicalKey == LogicalKey.escape) {
       component.onDismiss();
+      return true;
+    }
+    // Any other printable character: enter search mode, seed the
+    // field with that character (this frame's keystroke would never
+    // reach the field — it doesn't exist yet — so the panel owns the
+    // first insertion), and consume. Subsequent keystrokes dispatch
+    // to the now-focused field first.
+    final ch = event.character;
+    final printable =
+        ch != null &&
+        ch.isNotEmpty &&
+        ch.runes.every((r) => r >= 0x20) &&
+        ch != '\x7f';
+    if (!event.isControlPressed &&
+        !event.isAltPressed &&
+        !event.isMetaPressed &&
+        printable) {
+      setState(() {
+        _searchMode = true;
+        _searchController.text = ch;
+        _query = ch;
+      });
       return true;
     }
     return true;
@@ -317,12 +519,51 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       shortcuts: shortcuts,
       onKeyEvent: _handleKeyEvent,
       contentBuilder: (context) {
-        if (sorted.isEmpty) {
+        if (_loadingCandidates) {
           return Center(
             child: Text(
-              component.strings.t('chat.sessions.noSessions'),
+              component.strings.t('chat.history.loadingUnknown'),
               style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
             ),
+          );
+        }
+        if (sorted.isEmpty) {
+          // Even with no matches the search row stays visible (with
+          // the query in it) so the user can see what they typed and
+          // keep editing / Esc-clear it.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_searchMode)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: TextField(
+                    controller: _searchController,
+                    focused: false,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: CruxTheme.of(context).foreground,
+                    ),
+                    placeholder: component.strings.t(
+                      'chat.sessions.searchHint',
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _query.isNotEmpty
+                        ? component.strings.t('chat.sessions.searchNoMatch', {
+                            'query': _query,
+                          })
+                        : component.strings.t('chat.sessions.noSessions'),
+                    style: TextStyle(
+                      color: CruxTheme.of(context).onSurfaceDim,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           );
         }
 
@@ -349,6 +590,24 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           );
           children.add(
             Divider(color: CruxTheme.of(context).outline, height: 1),
+          );
+        }
+
+        if (_searchMode) {
+          children.add(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              // Display-only: the panel's key handler edits the
+              // controller (the Fullpane Focusable owns focus, so a
+              // focused field would never receive events anyway).
+              child: TextField(
+                controller: _searchController,
+                focused: false,
+                maxLines: 1,
+                style: TextStyle(color: CruxTheme.of(context).foreground),
+                placeholder: component.strings.t('chat.sessions.searchHint'),
+              ),
+            ),
           );
         }
 
@@ -445,6 +704,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           final i = selectableOrdinal;
           final isSelected = i == _selectedIndex;
           final isCurrent = s.id == component.currentSessionId;
+          final isArchived = s.archivedAt != null;
 
           final bgColor = isSelected
               ? CruxTheme.of(context).wizardRowBgSelected
@@ -461,9 +721,17 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
           final status = s.status;
           final icon = _statusIcon(status);
           final iconColor = _statusColor(status);
-          final titleDisplay = s.title.length > 30
-              ? '${s.title.substring(0, 29)}~'
+          final titleBase = s.title.isEmpty
+              ? (s.isChat
+                    ? component.strings.t('chat.newPlaceholder')
+                    : component.strings.t('session.newPlaceholder'))
               : s.title;
+          final titleText = isArchived
+              ? '${component.strings.t('chat.sessions.archivedTag')}$titleBase'
+              : titleBase;
+          final titleDisplay = titleText.length > 30
+              ? '${titleText.substring(0, 29)}~'
+              : titleText;
           final modelShort = s.model.contains('/')
               ? s.model.split('/').last
               : s.model;
@@ -478,7 +746,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
               child: GestureDetector(
                 onTap: () {
                   setState(() => _selectedIndex = i);
-                  component.onSwitchSession(s.id);
+                  _openSelected();
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Container(
