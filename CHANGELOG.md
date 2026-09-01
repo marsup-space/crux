@@ -8,6 +8,42 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-08-31
+
+cd462647
+
+### Features
+
+- **Sessions: session manager search + archived sections**
+  (`cd462647`) — the session management fullpane could only list
+  in-memory non-archived sessions: archived rows (auto-archive after
+  3 idle days) were invisible, and there was no way to find an old
+  session besides paging the sidebar. The panel now loads the full
+  candidate set on open (`SessionStore.listAny()`: active + archived
+  rows, sessions + chats, newest-first, capped at 500 so old
+  databases can't stall the pane) and renders four sections —
+  Sessions / **Archived** / Chats / Chats Archived — with an
+  ` archived ` tag on archived rows. A type-to-search box filters by
+  title substring (case-insensitive) or `#id` prefix; any printable
+  keystroke enters search, Esc clears the query then closes, and
+  ↑↓ walk the filtered list while the panel's key handler owns the
+  input (rune-wise backspace, CJK/emoji safe — the Fullpane
+  Focusable owns focus, so the TextField is display-only).
+
+  Behaviour rules: Enter on an archived row **unarchives** it via
+  the same path a `ses://<id>` link uses
+  (`SessionController.openSession(id)`, generalized from
+  `openSessionFromLink` which remains as a delegate) before
+  switching; delete also drops the row from the panel's snapshot so
+  the live-list merge can't resurrect it; rename stays blocked on
+  archived rows (the rename store path writes `updatedAt` and would
+  silently reorder the recency list). Panel keeps rendering (old
+  two-section behaviour) for hosts that don't wire the new loader —
+  existing tests and preview call sites unchanged. Backed by
+  `test/session_management_panel_test.dart`: archived-section
+  rendering, search filtering to an archived row, `#id` lookup, and
+  archived-row Enter routing through `onOpenSession`.
+
 ## [0.52.1] - 2026-08-31
 
 3de2946b
