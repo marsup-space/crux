@@ -8,6 +8,8 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [Unreleased]
+
 ## [0.53.0] - 2026-08-31
 
 cd462647
