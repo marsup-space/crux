@@ -335,6 +335,59 @@ Future<String?> installKotlinLs() async {
 }
 
 // ---------------------------------------------------------------------------
+// v-analyzer (V language server)
+// ---------------------------------------------------------------------------
+
+Future<String?> installVAnalyzer() async {
+  final bin = p.join(lspBinDir(), exeName('v-analyzer'));
+  if (File(bin).existsSync()) return bin;
+
+  final release = await fetchJson(
+    'https://api.github.com/repos/vlang/v-analyzer/releases/latest',
+  );
+  if (release is! Map) return null;
+  final assets = release['assets'];
+  if (assets is! List) return null;
+
+  final arch = currentArch() == 'arm64' ? 'arm64' : 'x86_64';
+  // v-analyzer release assets use Apple's `darwin`, not `macos`.
+  final platform = switch (currentPlatformToken()) {
+    'macos' => 'darwin',
+    'windows' => 'windows',
+    _ => 'linux',
+  };
+  final assetName = 'v-analyzer-$platform-$arch.zip';
+
+  const supported = {
+    'v-analyzer-darwin-arm64.zip',
+    'v-analyzer-darwin-x86_64.zip',
+    'v-analyzer-linux-x86_64.zip',
+    'v-analyzer-windows-x86_64.zip',
+  };
+  if (!supported.contains(assetName)) return null;
+
+  final url = _assetUrl(assets, assetName);
+  if (url == null) return null;
+
+  // The zip nests the binary inside the extract dir — promote it
+  // next to the bin dir. The bin dir may not exist yet (fresh
+  // install with no npm shims), so create it before the move.
+  final extractDir = _installDir('v-analyzer');
+  if (!await downloadAndExtract(ArchiveAsset(url, assetName), extractDir)) {
+    return null;
+  }
+  final nested = await _findFile(extractDir, exeName('v-analyzer'));
+  if (nested == null) return null;
+  await Directory(lspBinDir()).create(recursive: true);
+  await File(nested).rename(bin).catchError((_) async {
+    await File(nested).copy(bin);
+    return File(bin);
+  });
+  await chmodExecutable(bin);
+  return File(bin).existsSync() ? bin : null;
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

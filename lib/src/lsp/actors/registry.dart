@@ -378,6 +378,16 @@ Map<String, LspActorFactory> defaultLspActorFactories() => {
     ],
     // OpenCode builds from source — too fragile; skip.
   ),
+
+  'v-analyzer': () => WhichServerActor(
+    id: 'v-analyzer',
+    extensions: const ['.v', '.vsh', '.vh'],
+    rootMarkers: const ['v.mod', 'v.mod.txt', 'v.analyzer.toml'],
+    commandCandidates: const [
+      ['v-analyzer'],
+    ],
+    install: installVAnalyzer,
+  ),
 };
 
 /// Install a .NET global tool into Crux's bin dir (OpenCode's

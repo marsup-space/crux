@@ -302,6 +302,9 @@ const _extToLanguage = <String, String>{
   'erl': 'erlang',
   'hs': 'haskell',
   'clj': 'clojure',
+  'v': 'v',
+  'vsh': 'v',
+  'vh': 'v',
   'vue': 'html',
   'svelte': 'html',
 };

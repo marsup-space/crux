@@ -43,6 +43,7 @@ void main() {
         'texlab',
         'fsharp',
         'elixir-ls',
+        'v-analyzer',
       };
       expect(factories.keys.toSet(), expected);
     });

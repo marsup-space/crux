@@ -8,6 +8,23 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **V language (vlang) support: LSP + syntax highlighting**
+  (`9fe6d99e`) — `.v` / `.vsh` / `.vh` files now get language-server
+  feedback end to end: a declarative `v-analyzer` actor in the LSP
+  registry (PATH lookup, `v.mod` / `v.mod.txt` / `v.analyzer.toml`
+  root markers) plus a GitHub-release installer that downloads the
+  official `vlang/v-analyzer` binary per platform into the Crux tool
+  dir (respects `CRUX_DISABLE_LSP_DOWNLOAD`), so edit/write report
+  V diagnostics through the usual `⎇` glyph and `<crux-lsp>` payload.
+  Syntax highlighting ships the official `vscode-vlang` TextMate
+  grammar (vendored into textmate_highlight, `$1` scope interpolation
+  and oniguruma `{,2}` quantifier ported to plain-regex equivalents)
+  wired into the chat markdown renderer, the highlight service (with
+  `vsh`/`vh`/`vlang` fence-tag aliases), and the tool-detail extension
+  map, so ` ```v ` code fences and `.v` diffs render in color.
+
 ## [0.54.0] - 2026-09-01
 
 447a30cd

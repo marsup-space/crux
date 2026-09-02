@@ -34,6 +34,8 @@ class HighlightService {
       'csharp',
       'cpp',
       'bash',
+      // Vendored from vlang/vscode-vlang
+      'v',
     ];
 
     await tm.Highlighter.initialize(languages);
@@ -120,6 +122,11 @@ class HighlightService {
         return 'clojure';
       case 'htm':
         return 'html';
+      case 'v':
+      case 'vsh':
+      case 'vh':
+      case 'vlang':
+        return 'v';
       case 'svg':
       case 'xsl':
       case 'xslt':

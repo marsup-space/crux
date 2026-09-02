@@ -133,6 +133,9 @@ const Map<String, String> kLspLanguageIds = {
   '.typ': 'typst',
   '.typc': 'typst',
   '.prisma': 'prisma',
+  '.v': 'v',
+  '.vsh': 'v',
+  '.vh': 'v',
 };
 
 /// Look up the LSP languageId for a file extension. Returns
