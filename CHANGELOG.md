@@ -8,7 +8,33 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
-## [Unreleased]
+## [0.54.0] - 2026-09-01
+
+447a30cd
+
+### Features
+
+- **Monitor: human-in-the-loop shell toasts + zero-progress escalation**
+  (`447a30cd`) — the aux shell progress monitor was invisible: a
+  long-running command was judged silently and the user could not
+  see what was running, what the aux model decided, or when it
+  would look again. Every monitor evaluation now surfaces as a
+  standing killable toast — the intent phrase as headline, the
+  verdict on its own colored row (PROGRESS green / STUCK red /
+  UNCERTAIN amber), the model's reason and the process's last
+  output line as dim evidence, and a `[ click to kill ]` button
+  that terminates the process group the same way a user interrupt
+  does, freezes the toast as a "✓ killed" incident record, and
+  notifies the main session so the agent continues from partial
+  output instead of retrying. All wording is localized (en + zh).
+  Additionally, a fully-silent process (0B new output,
+  byte-identical tail) can no longer run for tens of minutes while
+  the model keeps answering PROGRESS: after 3 stalled checks the
+  monitor conversation carries an explicit WARNING and re-checks
+  are forced to 20s; after 8 the loop overrides the verdict to
+  STUCK and kills, logged with the escalation reason. Fail-open
+  semantics are untouched for any process that keeps producing
+  output.
 
 ## [0.53.0] - 2026-08-31
 
