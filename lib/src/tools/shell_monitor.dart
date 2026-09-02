@@ -103,6 +103,81 @@ const int kMonitorFirstCheckSeconds = 20;
 /// without letting a chatty process grow the DB row unboundedly.
 const int kMonitorLogTailMaxChars = 2048;
 
+// ── Zero-progress escalation ("option B") ─────────────────────────
+// The monitor is fail-open by design, which lets a fully-silent
+// process run for tens of minutes: each check sees 0B new output and
+// a byte-identical tail, yet the model keeps answering PROGRESS /
+// UNCERTAIN (never guess STUCK). These constants bound that failure
+// mode from the LOOP side: after enough consecutive fully-stalled
+// checks the user turn carries an explicit WARNING, the check
+// interval is forced short (the model's long "steady phase" pricing
+// is exactly what we no longer trust during a stall), and after
+// [kMonitorStallKillChecks] stalled checks the loop escalates to
+// STUCK itself, overriding the model's verdict.
+//
+// "Fully stalled" = 0B new output since the previous check AND a
+// byte-identical output tail — silence, not slow progress. A healthy
+// compile that prints per-crate lines resets the counter on every
+// check.
+
+/// Consecutive fully-stalled checks before the user turn carries the
+/// stall WARNING (telling the model a STUCK answer is appropriate).
+///
+/// Mutable (not `const`) so tests can tighten the thresholds and run
+/// the escalation in seconds; production code must treat these as
+/// effectively-final. Same test-tunability precedent as
+/// `ChatTurnExecutor.debugRetryBudgetOverride`.
+int kMonitorStallWarnChecks = 3;
+
+/// Consecutive fully-stalled checks after which the loop escalates
+/// to STUCK itself, overriding a PROGRESS/UNCERTAIN verdict. With
+/// the forced stall interval below this tolerates roughly
+/// `(kMonitorStallKillChecks - 1) × kMonitorStallCheckIntervalSeconds`
+/// (~2m20s at the defaults) of continuous silence before killing.
+///
+/// Mutable for tests — see [kMonitorStallWarnChecks].
+int kMonitorStallKillChecks = 8;
+
+/// Interval forced between checks while the process is fully
+/// stalled, overriding the model's chosen interval.
+///
+/// Mutable for tests — see [kMonitorStallWarnChecks].
+int kMonitorStallCheckIntervalSeconds = 20;
+
+/// The zero-progress escalation decision for a check whose stall run
+/// is [stallRun] consecutive fully-stalled checks (0 when the check
+/// saw progress). Pure so tests can exercise thresholds without
+/// waiting out real timers; the loop in `shell_base.dart` maps the
+/// verdict onto warning injection, forced intervals, and the
+/// override-to-STUCK escalation.
+enum StallEscalation {
+  /// Normal check — no stall handling.
+  none,
+
+  /// Stalled long enough to warn the model in the next user turn and
+  /// force a short check interval.
+  warn,
+
+  /// Override the model's verdict with STUCK and kill.
+  escalate,
+}
+
+StallEscalation stallEscalationFor(int stallRun) {
+  if (stallRun >= kMonitorStallKillChecks) return StallEscalation.escalate;
+  if (stallRun >= kMonitorStallWarnChecks) return StallEscalation.warn;
+  return StallEscalation.none;
+}
+
+/// The English WARNING injected into the monitor conversation's user
+/// turn once the stall reaches the warn threshold. Wire-format text
+/// (the aux model's input), not UI chrome — deliberately direct so a
+/// cheap model cannot miss it.
+String stallNoticeFor(int stallRun) =>
+    'WARNING: $stallRun consecutive checks show 0B new output and an '
+    'unchanged output tail. If this quiet phase is not plausible for '
+    'the command given its elapsed time and platform, answer STUCK — '
+    'continuing checks add no information.';
+
 /// One monitor event, emitted by the monitor loop and consumed by
 /// the [ShellMonitorLogSink] wired into the shell tools. Pure data —
 /// the sink owns persistence and batching.
@@ -151,6 +226,105 @@ class ShellMonitorEvent {
     this.reason,
     this.outputTail,
   });
+}
+
+/// Human-readable announcement / per-check report published to the
+/// toast channel (see `shell_monitor_notifier.dart`). Pure data: the
+/// tool layer fills it from evidence it already holds; the chat panel
+/// formats the user-visible copy via `Strings`. No display strings
+/// live here — the toast must localize, so all wording happens at the
+/// wiring site (the panel).
+class ShellMonitorNotice {
+  /// True when the run is supervised by the auxiliary-model monitor.
+  /// False means no aux model is configured and the run competes with
+  /// the classic static timeout instead.
+  final bool configured;
+
+  /// The command in display form (bundled-executable prefix paths
+  /// already trimmed by the loop). Secondary subject on the toast —
+  /// shown only when [intent] is empty.
+  final String command;
+
+  /// What the LLM said this command is for (the shell tool's `intent`
+  /// argument). PRIMARY subject on the toast: a human phrase like
+  /// "install dependencies" beats `/usr/bin/dart pub get`.
+  final String intent;
+
+  /// Machine-readable event kind:
+  ///
+  ///   * `CONFIGURED` — run-start announcement
+  ///   * `PROGRESS` / `STUCK` / `UNCERTAIN` — the aux model's verdict
+  ///   * `EVAL_ERROR` — the evaluator threw; fail-open (keeps running)
+  ///   * `FALLBACK` — the monitor died; static timeout armed
+  final String kind;
+
+  /// Free-text detail: the model's reason on a verdict, the exception
+  /// text on `EVAL_ERROR`, the fallback note on `FALLBACK`. Raw
+  /// evidence — the panel appends it to the detail row as-is.
+  final String? reason;
+
+  /// Wall-clock seconds since the process spawned. 0 on the
+  /// run-start announcement.
+  final int elapsedSeconds;
+
+  /// Seconds until the next check (the model's own choice, clamped;
+  /// `kMonitorFirstCheckSeconds` on the arm announcement). Null when
+  /// not applicable (STUCK, FALLBACK).
+  final int? nextCheckSeconds;
+
+  /// Bytes of stdout+stderr produced since the previous check. Null
+  /// on the run-start announcement.
+  final int? newOutputBytes;
+
+  /// Total bytes of stdout+stderr so far. Null on the run-start
+  /// announcement.
+  final int? totalOutputBytes;
+
+  /// The last meaningful line of the output tail — evidence backing
+  /// the verdict. Null when the process has printed nothing (yet).
+  final String? tail;
+
+  const ShellMonitorNotice({
+    required this.configured,
+    required this.command,
+    this.intent = '',
+    required this.kind,
+    this.reason,
+    this.elapsedSeconds = 0,
+    this.nextCheckSeconds,
+    this.newOutputBytes,
+    this.totalOutputBytes,
+    this.tail,
+  });
+
+  /// The toast meaningfulness gate: the run-start announcement for an
+  /// unconfigured run carries zero novelty (the bubble progress box
+  /// already shows a plain long-running command) — skip it to avoid
+  /// toast spam. Everything else — armed, per-check verdicts, errors,
+  /// fallbacks — is exactly the transparency the toast channel
+  /// exists for.
+  bool get isMeaningful => configured || kind != 'CONFIGURED';
+}
+
+/// Cap for the toast's evidence line: one trimmed output line, so
+/// long meters collapse to their tail.
+const int kMonitorNoticeTailMaxChars = 80;
+
+/// Pick the last non-blank line of a monitor output tail and clamp it
+/// to [kMonitorNoticeTailMaxChars] (leading with an ellipsis when
+/// clamped). Used by the chat panel to build the toast's evidence row.
+String mkMonitorTail(String tail) {
+  final lines = tail
+      .split('\n')
+      .map((l) => l.trim())
+      .where((l) => l.isNotEmpty)
+      .toList();
+  if (lines.isEmpty) return '';
+  var line = lines.last;
+  if (line.length > kMonitorNoticeTailMaxChars) {
+    line = '…${line.substring(line.length - kMonitorNoticeTailMaxChars)}';
+  }
+  return line;
 }
 
 /// Receives monitor events for one shell run. Wired from the chat
@@ -235,12 +409,17 @@ class ShellMonitorSnapshot {
 /// intervals, which is error-prone (timers and check latency make
 /// requested ≠ actual). Explicit ground truth keeps the quiet-
 /// duration reasoning unambiguous.
+///
+/// [stallNotice] carries the zero-progress WARNING once the process
+/// has been fully silent for [kMonitorStallWarnChecks] consecutive
+/// checks — see "Zero-progress escalation" above.
 String buildShellMonitorUserMessage({
   required ShellMonitorSnapshot snapshot,
   String? command,
   String? intent,
   String? platform,
   String? shell,
+  String? stallNotice,
 }) {
   final buf = StringBuffer();
   final isFirst = snapshot.checkNumber == 1;
@@ -253,6 +432,9 @@ String buildShellMonitorUserMessage({
     buf.writeln();
   }
   buf.writeln('[check #${snapshot.checkNumber}]');
+  if (stallNotice != null) {
+    buf.writeln(stallNotice);
+  }
   buf.writeln('elapsed: ${_formatDuration(snapshot.elapsed)}');
   buf.writeln(
     'since_previous_check: '

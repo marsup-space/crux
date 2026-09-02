@@ -616,6 +616,19 @@ const Map<String, String> _en = {
   'toast.droppedFileMissing': '⚠️ File(s) not found: {names}',
   'toast.droppedSummary': '📎 Dropped: {summary}',
 
+  // ── Shell monitor toast (human-in-the-loop) ──
+  // The verdict is the toast's loudest row: a localized verb sentence
+  // plus the raw decision word, e.g.
+  //   aux: making progress, next check in 30s (PROGRESS)
+  'toast.monitorVerdictLine': 'aux: {verb}',
+  'toast.monitorVerb.progress': 'making progress — next check in {secs}s',
+  'toast.monitorVerb.stuck': 'stuck after {elapsed} — killing the process',
+  'toast.monitorVerb.uncertain': 'uncertain — next check in {secs}s',
+  'toast.monitorVerb.evalError': 'aux check failed — process kept running',
+  'toast.monitorVerb.fallback': 'aux unavailable — timeout armed',
+  'toast.monitorVerb.armed': 'monitoring — first check in {secs}s',
+  'toast.monitorKilled': 'Shell killed by user',
+
   // ── Ctrl+C quit hint ──
   'toast.ctrlCQuit': 'A session is running. Press Ctrl+C again to quit.',
 
@@ -1224,6 +1237,18 @@ const Map<String, String> _zh = {
   'toast.imageAttachFailed': '附加图片失败：{error}',
   'toast.droppedFileMissing': '⚠️ 找不到以下文件：{names}',
   'toast.droppedSummary': '📎 已拖入：{summary}',
+
+  // ── shell 监控 toast（人在回路） ──
+  // verdict 是 toast 上最醒目的一行：本地化动词句 + 原始判定词，如
+  //   aux: 运行正常 —— 30s 后再次检查 (PROGRESS)
+  'toast.monitorVerdictLine': 'aux：{verb}',
+  'toast.monitorVerb.progress': '运行正常 —— {secs}s 后再次检查',
+  'toast.monitorVerb.stuck': '疑似卡死（已运行 {elapsed}）—— 正在结束该进程',
+  'toast.monitorVerb.uncertain': '无法判断 —— {secs}s 后再次检查',
+  'toast.monitorVerb.evalError': '辅助检查失败 —— 进程继续运行',
+  'toast.monitorVerb.fallback': '辅助模型不可用 —— 已启用超时兜底',
+  'toast.monitorVerb.armed': '开始监控 —— {secs}s 后首次检查',
+  'toast.monitorKilled': '用户已杀死 shell 命令',
 
   // ── Ctrl+C 退出提示 ──
   'toast.ctrlCQuit': '有会话正在运行。再按一次 Ctrl+C 退出。',

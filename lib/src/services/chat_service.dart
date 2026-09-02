@@ -10,6 +10,7 @@ import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
 import '../storage/shell_monitor_log_store.dart';
 import '../tools/registry.dart';
+import '../tools/shell_monitor.dart' show ShellMonitorNotice;
 import '../tools/tool_def.dart';
 import 'auxiliary_prompts.dart';
 import 'auxiliary_service.dart';
@@ -96,8 +97,19 @@ class ChatService {
       get onPlanDocMutated => _turnExecutor.onPlanDocMutated;
   set onPlanDocMutated(
       void Function(String oldContent, String newContent, int sessionId)?
-          value) =>
-      _turnExecutor.onPlanDocMutated = value;
+          value) => _turnExecutor.onPlanDocMutated = value;
+
+  /// Toast channel for the shell progress monitor. Forwarded to the
+  /// turn executor; wired by the chat panel to `showMonitorToast` so
+  /// every aux-model evaluation of a long-running shell command
+  /// surfaces as a killable toast. Carries the owning sessionId so a
+  /// background session's monitor targets the right session. See
+  /// `ShellMonitorNotice` and `ToastHubState.showMonitorToast`.
+  void Function(int sessionId, ShellMonitorNotice notice)?
+      get onShellMonitorNotice => _turnExecutor.onShellMonitorNotice;
+  set onShellMonitorNotice(
+          void Function(int sessionId, ShellMonitorNotice notice)? value) =>
+      _turnExecutor.onShellMonitorNotice = value;
 
   // ── Session lease ─────────────────────────────────────────────────
 

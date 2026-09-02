@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../services/auxiliary_prompts.dart';
+import '../services/shell_monitor_notifier.dart' show ShellMonitorRegistry;
 import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'shell_guard.dart';
@@ -178,6 +179,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     AbortSignal? abort,
     ShellMonitorEvaluator? monitor,
     ShellMonitorLogSink? monitorLogSink,
+    void Function(ShellMonitorNotice notice)? noticeSink,
     ShellProgressSink? progressSink,
     String intent = '',
     String platform = '',
@@ -208,9 +210,26 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
 
       // Register the process so it can be killed by the global
       // interrupt handler even if the abort signal check hasn't
-      // fired yet.
+      // fired yet. The monitor registry mirrors it so the monitor
+      // toast's kill button can query liveness and kill on demand.
       if (sessionId != null) {
         ShellProcessRegistry.instance.register(sessionId, process);
+        ShellMonitorRegistry.instance.add(sessionId, process);
+      }
+
+      // Arm-time announcement for the no-aux regime (static timeout
+      // applies). The monitor regime announces inside its own block
+      // below. Purely informational for the toast channel.
+      if (monitor == null) {
+        noticeSink?.call(
+          ShellMonitorNotice(
+            configured: false,
+            command: _trimmedDisplayCommand(command),
+            intent: intent,
+            kind: 'CONFIGURED',
+            nextCheckSeconds: timeout.inSeconds,
+          ),
+        );
       }
 
       // Set up abort watcher: when the abort signal fires, kill the
@@ -327,6 +346,18 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               : buf.substring(buf.length - kMonitorLogTailMaxChars);
         }
 
+        // Keep the monitor registry's stderr snapshot fresh so a
+        // user kill from the toast can quote what the process was
+        // last printing to stderr in the post-kill session note.
+        void refreshStderrSnapshot() {
+          ShellMonitorRegistry.instance.noteStderr(
+            process!,
+            cappedTail(stderrBuf.toString()),
+          );
+        }
+
+        refreshStderrSnapshot();
+
         // Run-start event: lets /d-monitor show "this command was
         // monitored from T+0" even when the run never reaches the
         // first check (short commands finish before
@@ -334,9 +365,27 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         monitorLogSink?.log(
           ShellMonitorEvent(checkNumber: 0, elapsedSeconds: 0),
         );
+        // Arm-time toast announcement: "this shell is now monitored;
+        // first check at Ns" in display form. Skipped for an
+        // unconfigured run's arm announcement only (handled above).
+        noticeSink?.call(
+          ShellMonitorNotice(
+            configured: true,
+            command: _trimmedDisplayCommand(command),
+            intent: intent,
+            kind: 'CONFIGURED',
+            nextCheckSeconds: kMonitorFirstCheckSeconds,
+          ),
+        );
 
         Future<void> monitorLoop() async {
           var nextDelay = const Duration(seconds: kMonitorFirstCheckSeconds);
+          // Zero-progress escalation state: consecutive checks with 0B
+          // new output AND a byte-identical tail (0 = the last check
+          // saw progress). See "Zero-progress escalation" in
+          // shell_monitor.dart.
+          var stallRun = 0;
+          var lastStalledTail = '';
           while (true) {
             await Future<void>.delayed(nextDelay);
             if (monitorKillCompleter!.isCompleted) return;
@@ -355,6 +404,25 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 ? stdoutSoFar
                 : stdoutSoFar.substring(stdoutSoFar.length - 1024);
 
+            // ── Zero-progress detection ─────────────────────────
+            // Fully stalled = nothing printed since the previous
+            // check AND the visible tail unchanged byte-for-byte.
+            // Any progress resets the run. (First check has no
+            // baseline to compare against.)
+            final fullyStalled = newBytes == 0 &&
+                checkNumber > 1 &&
+                tail == lastStalledTail;
+            stallRun = fullyStalled ? stallRun + 1 : 0;
+            lastStalledTail = tail;
+            final escalation = stallEscalationFor(stallRun);
+            // Warn the model once the stall is old enough — injected
+            // verbatim into the user turn so a cheap model cannot
+            // miss it.
+            final stallNotice =
+                stallRun >= kMonitorStallWarnChecks
+                    ? stallNoticeFor(stallRun)
+                    : null;
+
             monitorMessages.add({
               'role': 'user',
               'content': buildShellMonitorUserMessage(
@@ -370,6 +438,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 intent: checkNumber == 1 ? intent : null,
                 platform: checkNumber == 1 ? platform : null,
                 shell: checkNumber == 1 ? shellExecutable : null,
+                stallNotice: stallNotice,
               ),
             });
 
@@ -399,6 +468,20 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                   verdict: 'EVAL_ERROR',
                   reason: '$e',
                   outputTail: cappedTail(stdoutBuf.toString()),
+                ),
+              );
+              refreshStderrSnapshot();
+              noticeSink?.call(
+                ShellMonitorNotice(
+                  configured: true,
+                  command: _trimmedDisplayCommand(command),
+                  intent: intent,
+                  kind: 'EVAL_ERROR',
+                  reason: '$e',
+                  elapsedSeconds: elapsedSecs(),
+                  newOutputBytes: newBytes,
+                  totalOutputBytes: totalOutputBytes,
+                  tail: cappedTail(stdoutBuf.toString()),
                 ),
               );
               monitorFallbackTimer ??= Timer(timeout, () {
@@ -452,9 +535,83 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 outputTail: cappedTail(stdoutBuf.toString()),
               ),
             );
+            refreshStderrSnapshot();
+            noticeSink?.call(
+              ShellMonitorNotice(
+                configured: true,
+                command: _trimmedDisplayCommand(command),
+                intent: intent,
+                kind: switch (verdict.kind) {
+                  ShellMonitorVerdictKind.progress => 'PROGRESS',
+                  ShellMonitorVerdictKind.stuck => 'STUCK',
+                  ShellMonitorVerdictKind.uncertain => 'UNCERTAIN',
+                },
+                reason: verdict.reason,
+                elapsedSeconds: elapsedSecs(),
+                nextCheckSeconds:
+                    verdict.kind == ShellMonitorVerdictKind.stuck
+                        ? null
+                        : verdict.intervalSeconds,
+                newOutputBytes: newBytes,
+                totalOutputBytes: totalOutputBytes,
+                tail: cappedTail(stdoutBuf.toString()),
+              ),
+            );
 
             previousCheckTime = now;
             previousTotalBytes = totalOutputBytes;
+
+            // ── Zero-progress escalation ────────────────────────
+            // After kMonitorStallKillChecks consecutive fully-stalled
+            // checks, override whatever the model answered (it has
+            // already seen stallRun WARNINGs) and kill. The override
+            // is logged + toasted as STUCK with the escalation
+            // reason, so /d-monitor and the user both see exactly
+            // why.
+            if (escalation == StallEscalation.escalate &&
+                verdict.kind != ShellMonitorVerdictKind.stuck) {
+              final reason =
+                  'zero-progress escalation: '
+                  '$kMonitorStallKillChecks consecutive checks with 0B '
+                  'new output and an unchanged tail (last model verdict: '
+                  'PROGRESS/UNCERTAIN) — killing the process group';
+              // Append the override as an assistant turn so the
+              // conversation stays consistent if further checks were
+              // to happen (they won't — we return below).
+              monitorMessages.add({
+                'role': 'assistant',
+                'content': 'STUCK — $reason',
+              });
+              monitorLogSink?.log(
+                ShellMonitorEvent(
+                  checkNumber: checkNumber,
+                  elapsedSeconds: elapsedSecs(),
+                  newOutputBytes: newBytes,
+                  totalOutputBytes: totalOutputBytes,
+                  verdict: 'STUCK',
+                  reason: reason,
+                  outputTail: cappedTail(stdoutBuf.toString()),
+                ),
+              );
+              refreshStderrSnapshot();
+              noticeSink?.call(
+                ShellMonitorNotice(
+                  configured: true,
+                  command: _trimmedDisplayCommand(command),
+                  intent: intent,
+                  kind: 'STUCK',
+                  reason: reason,
+                  elapsedSeconds: elapsedSecs(),
+                  newOutputBytes: newBytes,
+                  totalOutputBytes: totalOutputBytes,
+                  tail: cappedTail(stdoutBuf.toString()),
+                ),
+              );
+              if (!monitorKillCompleter.isCompleted) {
+                monitorKillCompleter.complete(reason);
+              }
+              return;
+            }
 
             if (verdict.kind == ShellMonitorVerdictKind.stuck) {
               if (!monitorKillCompleter.isCompleted) {
@@ -464,7 +621,16 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
               }
               return;
             }
-            nextDelay = Duration(seconds: verdict.intervalSeconds);
+            // While the process is fully stalled, don't trust the
+            // model's interval pricing (a long "steady phase" quote is
+            // exactly the failure mode) — force short re-checks. The
+            // stall counter resets on any progress, restoring the
+            // model's cadence.
+            nextDelay = Duration(
+              seconds: fullyStalled
+                  ? kMonitorStallCheckIntervalSeconds
+                  : verdict.intervalSeconds,
+            );
           }
         }
 
@@ -548,7 +714,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             '[interrupted by user]${stderrBuf.toString().isNotEmpty ? '\n${stderrBuf.toString()}' : ''}',
           );
         }
-      } finally {
+            } finally {
         abortCheckTimer?.cancel();
         monitorFallbackTimer?.cancel();
         // Unblock the monitor loop if it is still sleeping so it can
@@ -603,9 +769,13 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
       rethrow;
     } finally {
-      // Unregister from the registry on any exit (normal, error, or abort).
+      // Unregister from the registry on any exit (normal, error, or
+      // abort). The monitor-toast mirror forgets it too, so the
+      // standing toast's kill button can no longer fire on a dead
+      // process.
       if (process != null && sessionId != null) {
         ShellProcessRegistry.instance.unregister(sessionId, process);
+        ShellMonitorRegistry.instance.remove(sessionId, process);
       }
       for (final path in invocation.cleanupPaths) {
         try {
@@ -857,6 +1027,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         abort: ctx.abort,
         monitor: ctx.shellMonitorEvaluator,
         monitorLogSink: ctx.shellMonitorLogSink,
+        noticeSink: ctx.shellMonitorNoticeSink,
         progressSink: ctx.shellProgressSink,
         intent: intent,
         platform: Platform.operatingSystem,
@@ -900,6 +1071,20 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
 
       var finalOutput = output + tail.toString();
+
+      // Human-in-the-loop: the user may have killed this process via
+      // the monitor toast's kill button. If so, annotate the result
+      // so the AGENT knows the shell didn't finish normally and can
+      // continue from the partial output instead of retrying the
+      // whole command. Take-and-clear: the note is consumed exactly
+      // once. The registry keys by the spawned Process's OS pid,
+      // which `ProcessResult.pid` carries — no object identity needed
+      // across the `_run` boundary.
+      final killNote = ShellMonitorRegistry.instance
+          .takeKillNote(result.pid);
+      if (killNote != null) {
+        finalOutput = '$finalOutput\n[$killNote]';
+      }
 
       // Shell-tool guard (mild / firm tier): append the embedded
       // reminder so the LLM sees it on the next round. Increment
@@ -1010,6 +1195,24 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     final base = '$word ${verdict.intervalSeconds}';
     final reason = verdict.reason;
     return (reason == null || reason.isEmpty) ? base : '$base — $reason';
+  }
+
+  /// Friendly display form of a command for the toast channel: trim
+  /// absolute bundled-executable prefix paths (they leak noise into
+  /// a one-row toast) and cap to one line. Mirrors the formatter in
+  /// `/d-monitor`'s renderer.
+  static String _trimmedDisplayCommand(String command) {
+    var c = command.trim();
+    final i = c.indexOf(' Crux_');
+    if (i != -1) c = c.substring(i + 1);
+    final j = c.indexOf(' crux_');
+    if (j != -1) c = c.substring(j + 1);
+    final k = c.indexOf('/crux/');
+    if (k != -1) c = c.substring(k + '/crux/'.length);
+    final lines = c.split('\n');
+    if (lines.length > 1) c = '${lines.first.trim()} …';
+    if (c.length > 80) c = '${c.substring(0, 80)}…';
+    return c;
   }
 
   /// Check the env for the shell-guard opt-out. Exposed as a

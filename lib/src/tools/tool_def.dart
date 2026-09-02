@@ -3,7 +3,8 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
-import 'shell_monitor.dart';
+import 'shell_monitor.dart'
+    show ShellMonitorEvaluator, ShellMonitorLogSink, ShellMonitorNotice;
 import 'shell_progress_parser.dart';
 import 'shell_risk.dart';
 
@@ -97,6 +98,16 @@ class ToolContext {
   /// with or without an aux model configured.
   final ShellProgressSink? shellProgressSink;
 
+  /// Optional toast channel for the shell progress monitor. Fired
+  /// after every auxiliary-model evaluation (and once at arm time) so
+  /// the user sees what the shell is doing, what the aux model
+  /// decided, and when it will look again — plus a kill button on the
+  /// toast (human-in-the-loop). A null sink (tests, headless setups,
+  /// no-aux runs are unaffected structurally) simply disables the
+  /// toasts; the monitor loop is fail-open around it, exactly like
+  /// the log sink and the progress sink.
+  final void Function(ShellMonitorNotice notice)? shellMonitorNoticeSink;
+
   ToolContext({
     required this.sessionId,
     required this.messageId,
@@ -108,6 +119,7 @@ class ToolContext {
     this.shellMonitorEvaluator,
     this.shellMonitorLogSink,
     this.shellProgressSink,
+    this.shellMonitorNoticeSink,
   });
 }
 

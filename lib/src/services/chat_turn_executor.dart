@@ -17,6 +17,7 @@ import '../models/session_runtime_state.dart';
 import '../storage/session_store.dart';
 import '../storage/shell_monitor_log_sink.dart';
 import '../tools/shell_guard.dart';
+import '../tools/shell_monitor.dart' show ShellMonitorNotice;
 import '../tools/shell_risk.dart';
 import '../tools/tool_def.dart';
 import '../utils/frame_profiler.dart';
@@ -160,6 +161,19 @@ class ChatTurnExecutor {
   /// `PlanModeController.onAgentEdit`.
   void Function(String oldContent, String newContent, int sessionId)?
       onPlanDocMutated;
+
+  /// Toast channel for the shell progress monitor (human-in-the-loop).
+  /// Fired after every auxiliary-model evaluation of a long-running
+  /// shell command so the chat panel can surface what the shell is
+  /// doing, the aux verdict, and the next check time — plus a kill
+  /// button wired to `ShellMonitorRegistry`. Carries the owning
+  /// [sessionId] FIRST so a background session's monitor kills /
+  /// notifies the right session (several sessions can turn in
+  /// parallel through this one executor). Null in tests / headless
+  /// harnesses; the sink in `ToolContext` short-circuits on null and
+  /// the whole chain is fail-open (never affects the command itself).
+  void Function(int sessionId, ShellMonitorNotice notice)?
+      onShellMonitorNotice;
 
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
@@ -1505,6 +1519,17 @@ class ChatTurnExecutor {
                     sessionId: sessionId,
                     callId: call.callId,
                   ),
+                  // Human-in-the-loop toast channel: forward every
+                  // monitor evaluation to the chat panel, stamped
+                  // with the owning session. Fail-open — a null
+                  // callback (tests) just means no toasts.
+                  shellMonitorNoticeSink: onShellMonitorNotice == null
+                      ? null
+                      : (ShellMonitorNotice notice) {
+                          try {
+                            onShellMonitorNotice!(sessionId, notice);
+                          } catch (_) {}
+                        },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {

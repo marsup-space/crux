@@ -19,6 +19,7 @@ import '../services/git_status_service.dart';
 import '../services/notes_service.dart';
 import '../services/plugin.dart';
 import '../services/plugin_registry.dart';
+import '../services/shell_monitor_notifier.dart' show ShellMonitorRegistry;
 import '../components/plugin_content.dart';
 import '../services/llm_client.dart';
 import '../services/openrouter_stealth_sync.dart';
@@ -40,6 +41,8 @@ import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
 import '../tools/ask_tool.dart';
+import '../tools/shell_monitor.dart'
+    show ShellMonitorNotice, mkMonitorTail;
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
 import '../utils/frame_profiler.dart';
@@ -479,6 +482,12 @@ class _ChatPanelState extends State<ChatPanel> {
         sessionId: sessionId,
       );
     };
+    // Human-in-the-loop shell-monitor toasts: every aux evaluation of
+    // a long-running shell command surfaces as a standing killable
+    // toast, and a manual kill notifies the main session.
+    _chatService.onShellMonitorNotice = (sessionId, notice) {
+      _onShellMonitorNotice(sessionId, notice);
+    };
 
     // Plan view is session-bound: watch the cubit's session switches
     // (every switch path — sidebar, home, /new, /chat, ses:// links —
@@ -599,6 +608,115 @@ class _ChatPanelState extends State<ChatPanel> {
 
   void _showToast(String message, {ToastMode? mode}) {
     _toastKey.currentState?.show(message, mode: mode);
+  }
+
+  /// Translate a `ShellMonitorNotice` into the standing monitor toast:
+  /// what the shell is doing, the aux model's verdict, when it checks
+  /// again, plus a kill button (wired to `ShellMonitorRegistry`) and a
+  /// post-kill notification to the main session.
+  ///
+  /// Lifecycle note: the toast hub freezes the standing toast once the
+  /// user killed the process from it (an incident record), so later
+  /// notices for the same run are ignored there; `mkMonitorTakeaway`
+  /// already blends reason + output line, and the kill flow waits for
+  /// the real exit code before notifying the session.
+  void _onShellMonitorNotice(int sessionId, ShellMonitorNotice notice) {
+    // Noise gate: the arm-time announcement is useful only when the
+    // run is actually aux-supervised; the no-aux variant (static
+    // timeout applies) carries zero novelty — the progress box
+    // already shows the long-running command.
+    if (!notice.isMeaningful) return;
+
+    // Primary subject: the agent's own phrase for why this shell is
+    // running. Fall back to the command only when the intent is
+    // missing (tests, direct calls).
+    final title = notice.intent.trim().isNotEmpty
+        ? notice.intent.trim()
+        : notice.command;
+
+    // The verdict is the star: localized human sentence + the raw
+    // decision word, e.g.
+    //   "aux: 正常运行中 — 30s 后再次检查 (PROGRESS)"
+    final verbKey = switch (notice.kind) {
+      'PROGRESS' => 'toast.monitorVerb.progress',
+      'STUCK' => 'toast.monitorVerb.stuck',
+      'UNCERTAIN' => 'toast.monitorVerb.uncertain',
+      'EVAL_ERROR' => 'toast.monitorVerb.evalError',
+      'FALLBACK' => 'toast.monitorVerb.fallback',
+      _ => 'toast.monitorVerb.armed',
+    };
+    final elapsed = _fmtMonitorDuration(notice.elapsedSeconds);
+    final next = notice.nextCheckSeconds;
+    final String verdictText;
+    switch (notice.kind) {
+      case 'STUCK':
+        verdictText = _strings.t('toast.monitorVerdictLine', {
+          'verb': _strings.t(verbKey, {'elapsed': elapsed}),
+        });
+      case 'EVAL_ERROR' || 'FALLBACK':
+        verdictText = _strings.t('toast.monitorVerdictLine', {
+          'verb': _strings.t(verbKey),
+        });
+      default:
+        verdictText = _strings.t('toast.monitorVerdictLine', {
+          'verb': _strings.t(verbKey, {'secs': '$next'}),
+        });
+    }
+
+    // Evidence row: the model's reason and the last output line.
+    final parts = <String>[
+      if (notice.reason != null && notice.reason!.trim().isNotEmpty)
+        notice.reason!.trim(),
+      if (notice.tail != null) mkMonitorTail(notice.tail!),
+    ];
+
+    _toastKey.currentState?.showMonitorToast(
+      MonitorToastData(
+        title: title,
+        subtitle: notice.intent.trim().isNotEmpty ? notice.command : null,
+        verdict: notice.kind,
+        verdictText: verdictText,
+        takeaway: parts.join(' · '),
+        onKill: () async => ShellMonitorRegistry.instance.killAll(
+          sessionId,
+          reason: 'killed by user from the monitor toast',
+        ),
+        onKilled: () => _notifySessionOfMonitorKill(sessionId),
+      ),
+    );
+  }
+
+  /// Compact duration for the verdict line (`45s` / `2m 10s`).
+  String _fmtMonitorDuration(int totalSeconds) {
+    if (totalSeconds < 60) return '$totalSeconds s';
+    return '${totalSeconds ~/ 60}m ${totalSeconds % 60}s';
+  }
+
+  /// After the user killed the monitored shell from the toast, post a
+  /// system note into the main session so the agent and the history
+  /// both know the kill was a human decision. We poll the registry
+  /// liveness for a short window so the note lands AFTER the command
+  /// actually died and reflects the exit code the model will see.
+  Future<void> _notifySessionOfMonitorKill(int sessionId) async {
+    // Wait (bounded) for the process group to die so the note's exit
+    // code matches what the tool result reports.
+    for (var i = 0; i < 20; i++) {
+      if (!ShellMonitorRegistry.instance.isRunning(sessionId)) break;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    final ok = _strings.t('toast.monitorKilled');
+    await _store.messageStore.addMessage(
+      sessionId,
+      role: 'system',
+      content:
+          '$ok The user killed the running shell command from the '
+          'monitor toast. Treat the partial output it produced as the '
+          'final result of that command — do not re-run the same '
+          'command unless the user explicitly asks, and adapt your '
+          'next step to whatever the partial output shows.',
+    );
+    _showToast(ok, mode: ToastMode.status);
+    _refresh();
   }
 
   void _maybeRecomputeCompactEstimate() {
@@ -892,13 +1010,13 @@ class _ChatPanelState extends State<ChatPanel> {
         return;
       case UrlLaunchResult.rejected:
         _showToast(
-          _strings.t('toast.urlRefused', {'url': '${link.url}'}),
+          _strings.t('toast.urlRefused', {'url': link.url}),
           mode: ToastMode.error,
         );
         return;
       case UrlLaunchResult.failed:
         _showToast(
-          _strings.t('toast.urlFailed', {'url': '${link.url}'}),
+          _strings.t('toast.urlFailed', {'url': link.url}),
           mode: ToastMode.error,
         );
         return;
