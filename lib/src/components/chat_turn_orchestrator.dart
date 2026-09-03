@@ -175,7 +175,11 @@ class ChatTurnOrchestrator {
 
     textController.clear();
 
-    await sendTurn(text: trimmed, images: images);
+    await sendTurn(
+      text: trimmed,
+      images: images,
+      textController: textController,
+    );
   }
 
   /// Build the `<plan-context>` block appended to the LLM-bound user
@@ -244,6 +248,7 @@ class ChatTurnOrchestrator {
     String? text,
     List<ImageAttachment> images = const [],
     bool allowAutoCompact = true,
+    TextEditingController? textController,
   }) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
@@ -372,16 +377,49 @@ class ChatTurnOrchestrator {
     }
 
     if (_chatService.isStreaming(sessionId)) {
+      // A just-interrupted session can still hold its lease for a
+      // moment (the executor unwinds asynchronously). Give it a short
+      // window to release, then bail — WITHOUT discarding the user's
+      // text: the caller (sendMessage) has already cleared the input
+      // box by the time we get here, so silently returning here used
+      // to make the message vanish with zero feedback. Re-stash the
+      // text into the input box and tell the user to retry.
       for (var i = 0; i < 10; i++) {
         await Future.delayed(const Duration(milliseconds: 50));
         if (!_chatService.isStreaming(sessionId)) break;
       }
-      if (_chatService.isStreaming(sessionId)) return;
+      if (_chatService.isStreaming(sessionId)) {
+        if (text != null && text.trim().isNotEmpty) {
+          final controller = textController;
+          if (controller != null) {
+            controller.text = controller.text.isEmpty
+                ? text
+                : '$text\n${controller.text}';
+            controller.selection = TextSelection.collapsed(
+              offset: controller.text.length,
+            );
+          }
+          _showToast(
+            _strings.t('toast.previousTurnStillFinishing'),
+            mode: ToastMode.error,
+          );
+        }
+        return;
+      }
     }
 
     try {
       _streamingController.clearStreamingFor(sessionId);
       _interruptedSessions.remove(sessionId);
+
+      // An interrupt that lands after the executor's last cancel
+      // checkpoint (turn about to complete normally) leaves the
+      // cancel-request flag set — the executor never re-checks it.
+      // Without this clear, the NEXT turn would be silently cancelled
+      // at its first checkpoint: the user types a message, nothing
+      // happens, no error. The flag is only meaningful while a turn
+      // is actually running, so clearing it at turn start is safe.
+      _chatService.clearCancelRequest(sessionId);
 
       final session = _sessionController.findSession(sessionId);
       if (session != null && session.status != SessionStatus.running) {

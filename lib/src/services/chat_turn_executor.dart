@@ -731,6 +731,14 @@ class ChatTurnExecutor {
         final streamCancelToken = LlmStreamCancelToken();
         final streamingGuard = _StreamingGuardAccumulator();
 
+        // Register the token with the lease manager so a user
+        // interrupt can force-close this round's HTTP response (see
+        // SessionLeaseManager.cancelStream). Without this, an
+        // interrupt only sets the flag checked between chunks — a
+        // stalled provider stream would hold the lease indefinitely
+        // and the next user message would be silently dropped.
+        leaseManager.attachRoundCancelToken(sessionId, streamCancelToken);
+
         final stream = llmClient.streamChat(
           endpointUrl: provider.endpointUrl,
           config: provider,
@@ -1103,6 +1111,10 @@ class ChatTurnExecutor {
           // thrownError == null) break;` below exits the loop only on
           // a clean completion of the attempt.
           lerpStreamDone = true;
+          // This round's stream is done — detach the token so a later
+          // interrupt can't cancel a dead response (and so a token
+          // cancelled mid-round doesn't linger into the next round).
+          leaseManager.attachRoundCancelToken(sessionId, null);
         } catch (e) {
           lerpTimer?.cancel();
           final error = classifyThrownError(e, providerName: providerName);
@@ -1173,6 +1185,18 @@ class ChatTurnExecutor {
               roundTextBuffer.isEmpty &&
               roundReasoningBuffer.isEmpty &&
               !chunks.any((c) => c.toolUse != null);
+          if (producedNothing &&
+              leaseManager.isCancelRequested(sessionId)) {
+            // The round produced nothing BECAUSE the user interrupted
+            // (likely between rounds or before the first chunk — the
+            // forced socket close surfaces as a bare stream end). Not
+            // an upstream failure: skip the empty-stream auto-retry so
+            // the cancel path unwinds immediately instead of burning a
+            // backoff delay and flashing a misleading "retrying"
+            // status.
+            leaseManager.attachRoundCancelToken(sessionId, null);
+            break;
+          }
           if (producedNothing) {
             streamError = LlmError(
               kind: LlmErrorKind.overloaded,

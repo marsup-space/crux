@@ -586,6 +586,8 @@ const Map<String, String> _en = {
 
   // ── Orchestrator-level error / status toasts ──
   'toast.responseInterrupted': 'Response interrupted',
+  'toast.previousTurnStillFinishing':
+      'Previous response is still finishing — text restored, press Enter again to send.',
   'toast.failedStartResponse': 'Failed to start response: {error}',
   'toast.unhandledError': 'Unhandled error: {error}',
 
@@ -1222,6 +1224,8 @@ const Map<String, String> _zh = {
 
   // ── 编排层错误 / 状态 toast ──
   'toast.responseInterrupted': '回复已中断',
+  'toast.previousTurnStillFinishing':
+      '上一条回复还在收尾——文本已还原，请再按一次回车发送。',
   'toast.failedStartResponse': '启动回复失败：{error}',
   'toast.unhandledError': '未处理错误：{error}',
 

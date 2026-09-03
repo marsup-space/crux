@@ -123,6 +123,20 @@ class ChatService {
   bool isStreaming(int sessionId) =>
       _turnExecutor.leaseManager.isStreaming(sessionId);
 
+  /// True when a cancel has been requested for [sessionId] but the
+  /// turn hasn't yet noticed and cleaned up.
+  bool isCancelRequested(int sessionId) =>
+      _turnExecutor.leaseManager.isCancelRequested(sessionId);
+
+  /// Clear a stale cancel-request flag for [sessionId]. The
+  /// orchestrator calls this before starting a new turn: an interrupt
+  /// that lands after the executor's last cancel checkpoint (turn
+  /// about to complete normally) leaves the flag set, and the next
+  /// turn would otherwise be silently cancelled at its first
+  /// checkpoint — the user's message would vanish with no feedback.
+  void clearCancelRequest(int sessionId) =>
+      _turnExecutor.leaseManager.clearCancelRequest(sessionId);
+
   /// Request that the stream for [sessionId] be cancelled.
   void cancelStream(int sessionId) =>
       _turnExecutor.leaseManager.cancelStream(sessionId);
