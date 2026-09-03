@@ -35,6 +35,22 @@ import 'shell_monitor_notifier.dart' show ShellMonitorRegistry;
 /// not a 1KB verdict sliver.
 const int kShellLiveTailMaxChars = 64 * 1024;
 
+/// Strips ANSI escape sequences (CSI color/style sequences, OSC
+/// sequences, C1 controls) from a decoded output chunk. The live
+/// fullpane renders the tail as PLAIN single-color text — no syntax
+/// highlighting, no markdown — so raw escape bytes would only show
+/// up as garbage glyphs. Stripping happens here, in the display-side
+/// registry, never in the buffer the LLM sees.
+final RegExp _ansiEscapePattern = RegExp(
+  r'\x1B(?:'
+  r'\[[0-?]*[ -/]*[@-~]' // CSI (colors, cursor, erase, …)
+  r'|\][^\x07\x1B]*(?:\x07|\x1B\\)' // OSC (title, hyperlinks, …)
+  r'|[@-Z\\-_]' // other 2-byte escapes
+  r')',
+);
+
+String _stripAnsi(String s) => s.replaceAll(_ansiEscapePattern, '');
+
 /// One live (or recently finished) shell run, keyed by tool-call id.
 class ShellLiveEntry {
   final String callId;
@@ -119,11 +135,14 @@ class ShellLiveRegistry {
 
   /// Append a decoded stdout/stderr chunk to the entry's rolling
   /// tail. Called from the same stream tap the progress parser uses;
-  /// never touches the buffered output the LLM sees.
+  /// never touches the buffered output the LLM sees. ANSI escapes
+  /// are stripped here so the fullpane's plain-text view never shows
+  /// raw escape bytes.
   void appendOutput(int sessionId, String callId, String chunk) {
     final entry = _bySession[sessionId]?[callId];
-    if (entry == null || chunk.isEmpty) return;
-    var tail = entry.outputTail + chunk;
+    if (chunk.isEmpty) return;
+    if (entry == null) return;
+    var tail = entry.outputTail + _stripAnsi(chunk);
     if (tail.length > kShellLiveTailMaxChars) {
       tail = tail.substring(tail.length - kShellLiveTailMaxChars);
     }

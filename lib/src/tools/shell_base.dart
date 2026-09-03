@@ -9,7 +9,6 @@ import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
 import 'shell_guard.dart';
 import 'shell_monitor.dart';
-import 'shell_progress_parser.dart';
 import 'shell_risk.dart';
 import 'tool_def.dart';
 
@@ -172,13 +171,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
   /// `/d-monitor`. The sink is fail-open: logging never kills the
   /// process.
   ///
-  /// When [progressSink] is non-null, the raw output streams are
-  /// tapped (read-only — the buffered output returned to the LLM is
-  /// untouched) and parsed for progress signals, which are forwarded
-  /// as normalized [ShellProgress] snapshots to the vibe progress
-  /// box. Unlike the aux-model monitor, this works with or without an
-  /// auxiliary model configured. Also fail-open: parsing or sink
-  /// errors never affect the command's result.
   Future<ProcessResult> _run(
     String command,
     Duration timeout, {
@@ -187,7 +179,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     ShellMonitorEvaluator? monitor,
     ShellMonitorLogSink? monitorLogSink,
     void Function(ShellMonitorNotice notice)? noticeSink,
-    ShellProgressSink? progressSink,
     String intent = '',
     String platform = '',
     String shellExecutable = '',
@@ -294,54 +285,12 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       final stderrBuf = StringBuffer();
       var totalOutputBytes = 0;
 
-      // ── Live progress extraction ──────────────────────────────
-      // Read-only tap on the raw output streams: one parser per
-      // stream (so a `\r` meter on stderr never corrupts a partial
-      // stdout line), merged before each emit. The buffered output
-      // the LLM sees is untouched — this is a pure side channel.
-      final runStart = DateTime.now();
-      final stdoutProgress =
-          progressSink != null ? ShellProgressParser() : null;
-      final stderrProgress =
-          progressSink != null ? ShellProgressParser() : null;
-      String lastProgressSig = '';
-      DateTime? lastProgressEmitAt;
-      void maybeEmitProgress() {
-        if (progressSink == null) return;
-        final merged = mergeShellProgress(
-          stdoutProgress?.progress,
-          stderrProgress?.progress,
-        );
-        if (merged == null) return;
-        // Debounce: only forward when a displayed field changed AND
-        // the previous emit is ≥250ms old. The lastLine is part of
-        // the signature so a phase-only stream still refreshes the
-        // "what is it doing" row live, at a bounded rate.
-        final sig =
-            '${merged.percent}|${merged.phase}|${merged.ratePerSec}'
-            '|${merged.eta}|${merged.current}/${merged.total}|${merged.lastLine}';
-        final now = DateTime.now();
-        if (sig == lastProgressSig) return;
-        if (lastProgressEmitAt != null &&
-            now.difference(lastProgressEmitAt!) <
-                const Duration(milliseconds: 250)) {
-          return;
-        }
-        lastProgressSig = sig;
-        lastProgressEmitAt = now;
-        progressSink.update(merged, command: command);
-      }
-
       final stdoutFuture = process.stdout.transform(utf8.decoder).forEach((
         chunk,
       ) {
         totalOutputBytes += chunk.length;
         stdoutBuf.write(chunk);
         tapLiveOutput(chunk);
-        if (stdoutProgress != null) {
-          stdoutProgress.addChunk(chunk);
-          maybeEmitProgress();
-        }
       });
       final stderrFuture = process.stderr.transform(utf8.decoder).forEach((
         chunk,
@@ -349,10 +298,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         totalOutputBytes += chunk.length;
         stderrBuf.write(chunk);
         tapLiveOutput(chunk);
-        if (stderrProgress != null) {
-          stderrProgress.addChunk(chunk);
-          maybeEmitProgress();
-        }
       });
 
       // Wait for the process to finish, with timeout and abort.
@@ -778,25 +723,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             ),
           );
           await monitorLogSink.finish(exitCode: code);
-        }
-        // Live progress finish: flush the trailing partial line (a
-        // `\r` meter's last frame often has no terminator), mark the
-        // registry entry done, and hand the caller the compact
-        // summary for metadata stamping. Fail-open like the monitor
-        // sink — never affects the tool result.
-        if (progressSink != null && stdoutProgress != null) {
-          stdoutProgress.finish();
-          stderrProgress!.finish();
-          final summary = _buildProgressSummary(
-            stdoutProgress,
-            stderrProgress,
-            DateTime.now().difference(runStart).inSeconds,
-            totalOutputBytes,
-            finishExitCode,
-          );
-          progressSink.finish(exitCode: finishExitCode, summary: summary);
-        }
-      }
+        }      }
 
       return ProcessResult(
         process.pid,
@@ -1082,7 +1009,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         monitor: ctx.shellMonitorEvaluator,
         monitorLogSink: ctx.shellMonitorLogSink,
         noticeSink: ctx.shellMonitorNoticeSink,
-        progressSink: ctx.shellProgressSink,
         intent: intent,
         platform: Platform.operatingSystem,
         shellExecutable: invocation.executable,
@@ -1170,13 +1096,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         extraMetadata = {...?extraMetadata, ...shellRiskMeta};
       }
 
-      // Progress summary for the persisted vibe progress box: present
-      // only when the run actually produced detectable progress
-      // signals. The sink's summary was set by _run's finish path.
-      final progressSummary = ctx.shellProgressSink?.summary;
-      if (progressSummary != null) {
-        extraMetadata = {...?extraMetadata, 'shellProgress': progressSummary};
-      }
 
       return ToolResult(
         title: 'Ran: $command (intent: \'$intent\')',
@@ -1195,42 +1114,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         metadata: {...?shellRiskMeta},
       );
     }
-  }
-
-  /// Build the compact summary stamped into `ToolResult.metadata`
-  /// under `'shellProgress'` for the persisted vibe progress box.
-  /// Null when neither parser detected a corroborated signal — no
-  /// box, no metadata noise.
-  static Map<String, dynamic>? _buildProgressSummary(
-    ShellProgressParser stdoutParser,
-    ShellProgressParser stderrParser,
-    int durationSec,
-    int bytes,
-    int? exitCode,
-  ) {
-    final out = stdoutParser.progress;
-    final err = stderrParser.progress;
-    if (out == null && err == null) return null;
-    final phase = err?.phase ?? out?.phase;
-    final peak = _maxNullable(
-      stdoutParser.peakPercent,
-      stderrParser.peakPercent,
-    );
-    return {
-      'phase': ?phase,
-      'peakPercent': ?peak,
-      'durationSec': durationSec,
-      'bytes': bytes,
-      // Null exit (killed before an exit code) maps to non-zero so
-      // the persisted box renders it as a failure, not a success.
-      'exitCode': exitCode ?? -1,
-    };
-  }
-
-  static double? _maxNullable(double? a, double? b) {
-    if (a == null) return b;
-    if (b == null) return a;
-    return a > b ? a : b;
   }
 
   /// Render the compact assistant turn appended to the monitor

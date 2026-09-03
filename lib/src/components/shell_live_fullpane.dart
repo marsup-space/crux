@@ -328,7 +328,12 @@ class _TerminalTailViewState extends State<_TerminalTailView> {
             component.emptyText,
             style: TextStyle(color: theme.onSurfaceDim),
           )
-        : Text(tail);
+        // Plain text in the default color — deliberately NO syntax
+        // highlighting, NO markdown parsing. The tail is the process's
+        // raw output; any color it appears in is the host's, not an
+        // interpretation of the bytes. (ANSI escapes are stripped in
+        // the registry's append path, not here.)
+        : Text(tail, style: TextStyle(color: theme.text));
 
     return SingleChildScrollView(
       controller: _controller,

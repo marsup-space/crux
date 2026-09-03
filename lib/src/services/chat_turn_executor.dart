@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -35,7 +34,6 @@ import 'prompts/system_prompt.dart';
 import 'prompts/environment_meta.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
-import 'shell_progress_registry.dart';
 import 'tool_executor.dart';
 import 'wire_format.dart';
 
@@ -1535,15 +1533,6 @@ class ChatTurnExecutor {
                     command: (call.input['command'] as String?) ?? '',
                     intent: (call.input['intent'] as String?) ?? '',
                   ),
-                  // Live progress sink: the shell base parses the
-                  // command's own output for progress signals and
-                  // streams snapshots here for the vibe progress box.
-                  // Independent of the aux-model monitor — works with
-                  // or without one.
-                  shellProgressSink: ShellProgressSinkImpl(
-                    sessionId: sessionId,
-                    callId: call.callId,
-                  ),
                   // Human-in-the-loop toast channel: forward every
                   // monitor evaluation to the chat panel, stamped
                   // with the owning session. Fail-open — a null
@@ -2103,14 +2092,6 @@ class ChatTurnExecutor {
         lspStatus.isNotEmpty &&
         lspStatus != 'disabled') {
       metaFields.add('"lsp":${_jsonString(lspStatus)}');
-    }
-    // Compact progress summary for the persisted vibe progress box,
-    // written by the shell base when a bash run produced detectable
-    // progress signals. A nested JSON object (phase / peakPercent /
-    // durationSec / bytes / exitCode).
-    final shellProgress = result.metadata['shellProgress'];
-    if (shellProgress is Map) {
-      metaFields.add('"shellProgress":${jsonEncode(shellProgress)}');
     }
     final meta = metaFields.isEmpty ? '' : '{${metaFields.join(',')}}';
 

@@ -5,7 +5,6 @@ import '../models/session_runtime_state.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'shell_monitor.dart'
     show ShellMonitorEvaluator, ShellMonitorLogSink, ShellMonitorNotice;
-import 'shell_progress_parser.dart';
 import 'shell_risk.dart';
 
 class AbortSignal {
@@ -85,19 +84,6 @@ class ToolContext {
   /// non-null — logging without a live monitor would be empty.
   final ShellMonitorLogSink? shellMonitorLogSink;
 
-  /// Optional sink for live bash-progress snapshots (see
-  /// `lib/src/services/shell_progress_registry.dart`). Injected by
-  /// the chat executor for every shell call; a null sink disables
-  /// the vibe progress box entirely (the shell base's default, so
-  /// tests and non-shell callers need no changes).
-  ///
-  /// Unlike [shellMonitorEvaluator], this is INDEPENDENT of the
-  /// auxiliary model: the shell base parses the command's own output
-  /// stream for progress signals (percent / bars / phase words) and
-  /// forwards normalized snapshots here, so the progress box works
-  /// with or without an aux model configured.
-  final ShellProgressSink? shellProgressSink;
-
   /// Optional toast channel for the shell progress monitor. Fired
   /// after every auxiliary-model evaluation (and once at arm time) so
   /// the user sees what the shell is doing, what the aux model
@@ -105,7 +91,7 @@ class ToolContext {
   /// toast (human-in-the-loop). A null sink (tests, headless setups,
   /// no-aux runs are unaffected structurally) simply disables the
   /// toasts; the monitor loop is fail-open around it, exactly like
-  /// the log sink and the progress sink.
+  /// the log sink.
   final void Function(ShellMonitorNotice notice)? shellMonitorNoticeSink;
 
   ToolContext({
@@ -118,7 +104,6 @@ class ToolContext {
     this.shellRiskEvaluator,
     this.shellMonitorEvaluator,
     this.shellMonitorLogSink,
-    this.shellProgressSink,
     this.shellMonitorNoticeSink,
   });
 }
