@@ -547,7 +547,9 @@ class RenderDiagramViewport extends RenderObject
   bool _isDragging = false;
   bool _isHovered = false;
   int? _dragStartX;
+  int? _dragStartY;
   double _dragStartOffset = 0;
+  double _dragStartVOffset = 0;
 
   MouseTrackerAnnotation? _annotation;
   bool _annotationCapturing = false;
@@ -611,21 +613,33 @@ class RenderDiagramViewport extends RenderObject
   void _handlePointerDown(MouseEvent event) {
     _isDragging = true;
     _dragStartX = event.x;
+    _dragStartY = event.y;
     _dragStartOffset = _controller.offset;
+    _dragStartVOffset = _controller.vOffset;
     _setCapturing(true);
     markNeedsPaint();
   }
 
   void _handleDragMove(MouseEvent event) {
-    if (!_isDragging || _dragStartX == null) return;
-    // Pan relative to WHERE the pointer went down, 1 cell = 1 column.
+    if (!_isDragging || _dragStartX == null || _dragStartY == null) {
+      return;
+    }
+    // Pan relative to WHERE the pointer went down, 1 cell = 1 column/row.
+    // Horizontal: always. Vertical: fallback only — active when a
+    // bounded ancestor clipped the canvas (maxVOffset > 0). Wheel never
+    // drives vertical panning; the chat list keeps it.
     final dx = (event.x - _dragStartX!).toDouble();
     _controller.jumpTo(_dragStartOffset - dx); // drag left → pan right
+    if (_controller.canPanV) {
+      final dy = (event.y - _dragStartY!).toDouble();
+      _controller.jumpToV(_dragStartVOffset - dy); // drag up → pan down
+    }
   }
 
   void _endDrag() {
     _isDragging = false;
     _dragStartX = null;
+    _dragStartY = null;
     _setCapturing(false);
     markNeedsPaint();
   }
@@ -653,23 +667,28 @@ class RenderDiagramViewport extends RenderObject
         ? maxW.floor().clamp(4, 500)
         : _fallbackWidth;
 
-    // Height ALWAYS fits the whole graph — no vertical panning. (The
-    // chat list scrolls vertically; nested vertical panning would fight
-    // it.) Only horizontal overflow pans.
+    // Preferred height: content rows + header + footer — the canvas
+    // ALWAYS wants to fit the whole graph. Vertical panning exists only
+    // as a FALLBACK: when a bounded ancestor (small window, cramped
+    // pane) clamps the height below the graph, drag (never wheel)
+    // reveals the clipped rows. maxVOffset stays 0 in the normal case.
     final contentRows = _data.lines.length;
-    final height = contentRows + 2; // header + footer
+    final wantedHeight = contentRows + 2;
+    final height = constraints.constrain(Size(
+      _effectiveViewportWidth.toDouble(),
+      wantedHeight.toDouble(),
+    )).height;
+    final visibleRows = math.max(1, height.toInt() - 2);
+    final maxV = math.max(0, contentRows - visibleRows);
     _controller.applyMetrics(
       maxOffset: math.max(
         0,
         _data.naturalWidth -
             math.max(4, _effectiveViewportWidth - 4),
       ).toDouble(),
-      maxVOffset: 0,
+      maxVOffset: maxV.toDouble(),
     );
-    size = constraints.constrain(Size(
-      _effectiveViewportWidth.toDouble(),
-      height.toDouble(),
-    ));
+    size = Size(_effectiveViewportWidth.toDouble(), height);
   }
 
   // ── paint ──
@@ -694,8 +713,10 @@ class RenderDiagramViewport extends RenderObject
 
     // ── content rows: gutters first, then clipped panned art ──
     final contentRows = _data.lines.length;
+    final visibleRows = math.min(contentRows, size.height.toInt() - 2);
     final innerWidth = width - 4; // '│ ' + ' │'
-    for (var i = 0; i < contentRows; i++) {
+    final firstRow = _controller.vOffset.floor();
+    for (var i = 0; i < visibleRows; i++) {
       final rowY = (1 + i).toDouble();
       canvas.drawText(
         offset + Offset(0, rowY),
@@ -713,12 +734,14 @@ class RenderDiagramViewport extends RenderObject
         offset.dx + 2,
         offset.dy + 1,
         innerWidth.toDouble(),
-        contentRows.toDouble(),
+        visibleRows.toDouble(),
       ),
     );
     final pan = -_controller.offset;
-    for (var i = 0; i < contentRows; i++) {
-      _drawPannedLine(clipped, _data.lines[i], i, pan);
+    for (var i = 0; i < visibleRows; i++) {
+      final lineIdx = firstRow + i;
+      if (lineIdx < 0 || lineIdx >= contentRows) continue;
+      _drawPannedLine(clipped, _data.lines[lineIdx], i, pan);
     }
 
     _drawFooter(canvas, offset, width, height);
@@ -740,10 +763,33 @@ class RenderDiagramViewport extends RenderObject
       style: borderStyle,
     );
 
+    final active = _isHovered || _isDragging;
+    final indicatorColor = active ? _contentColor : _borderColor;
+
+    // Vertical clipped indicator (drag-only pan, fallback when the
+    // canvas doesn't fit the height): ▲ more above / ▼ more below.
+    if (_controller.canPanV) {
+      final vf = _controller.maxVOffset > 0
+          ? (_controller.vOffset / _controller.maxVOffset).clamp(0.0, 1.0)
+          : 0.0;
+      final String glyph;
+      if (vf <= 0.01) {
+        glyph = '▼'; // at top — more rows below
+      } else if (vf >= 0.99) {
+        glyph = '▲'; // at bottom — more rows above
+      } else {
+        glyph = '↕';
+      }
+      canvas.drawText(
+        offset + Offset(1, footerY),
+        glyph,
+        style: TextStyle(color: indicatorColor),
+      );
+    }
+
     if (!_controller.canPan) return;
 
     // Horizontal position strip on the footer: ◀ ───●─── ▶
-    final active = _isHovered || _isDragging;
     final fraction = _controller.maxOffset > 0
         ? (_controller.offset / _controller.maxOffset).clamp(0.0, 1.0)
         : 0.0;
@@ -757,7 +803,7 @@ class RenderDiagramViewport extends RenderObject
     canvas.drawText(
       offset + Offset(stripX.toDouble(), footerY),
       buf.join(),
-      style: TextStyle(color: active ? _contentColor : _borderColor),
+      style: TextStyle(color: indicatorColor),
     );
   }
 
