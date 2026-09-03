@@ -8,6 +8,55 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-09-03
+
+22125675
+
+### Features
+
+- **Diagrams: drag-only vertical pan when the canvas is clipped**
+  (`bf012767`) — the diagram viewport still fits the whole graph by
+  default, but cramped ancestors (small window, split pane) that
+  clamp the height below the graph now get vertical panning as a
+  pure fallback: drag pans both axes from the pointer-down position,
+  vertical following only while rows are clipped; the footer shows
+  down/both/up glyphs for the clipped direction. The wheel is never
+  consumed by the canvas — it always chains to the enclosing chat
+  scroll, which removes the wheel-hijack-at-edge awkwardness.
+
+- **Shell: live per-run view — executing row + detail fullpane**
+  (`07b1d309`) — executing shell calls in the vibe tools box break
+  out of the aggregated "bash xN" row into one interactive row per
+  call, showing the agent's intent phrase plus a live elapsed timer;
+  hovering morphs the row into a `detail` action. The detail opens a
+  terminal-style fullpane with a rolling output tail (64KB,
+  follow-tail), the aux monitor's full check timeline (verdict,
+  elapsed, new bytes, interval, reason), and a kill button scoped to
+  this run's process group — stamped with the same agent-visible
+  kill note as a toast kill. Toast noise drops accordingly: only
+  STUCK and FALLBACK still toast; the other verdicts live on the
+  fullpane timeline. The parsed-progress pipeline (progress box in
+  both vibe bubbles) is retired end to end (`22125675`) — the live
+  row + fullpane carry information the parsed meter never had.
+
+### Fixes
+
+- **Interrupt no longer swallows the next user message**
+  (`6200cac0`) — interrupt only set a cancel flag checked between
+  stream chunks and never closed the in-flight HTTP response, so a
+  stalled provider stream held the lease indefinitely and the next
+  message was silently dropped after the input box cleared. The
+  cancel token is now force-closed per streaming round (lease
+  releases in milliseconds even on a dead stream), a stale cancel
+  flag is cleared at the next turn start, and if the lease still
+  isn't released the text is restored to the input box with a toast
+  instead of vanishing. An interrupt-produced empty round no longer
+  trips the empty-stream auto-retry.
+
+## [0.55.0] - 2026-09-02
+
+9fe6d99e
+
 ### Features
 
 - **V language (vlang) support: LSP + syntax highlighting**
