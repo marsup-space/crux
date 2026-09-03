@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../services/auxiliary_prompts.dart';
+import '../services/shell_live_registry.dart';
 import '../services/shell_monitor_notifier.dart' show ShellMonitorRegistry;
 import '../utils/bundled_executable.dart';
 import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
@@ -61,6 +62,12 @@ class ShellProcessRegistry {
       _killProcessGroup(t.process);
     }
   }
+
+  /// Kill ONE process and its process group. Public entry for the
+  /// live shell view's per-run kill button (via
+  /// `ShellMonitorRegistry.killOne`); the group-kill semantics are
+  /// identical to [killAll] — children die with the run.
+  static void killProcess(Process process) => _killProcessGroup(process);
 
   /// Kill a process and its entire process group.
   static void _killProcessGroup(Process process) {
@@ -184,12 +191,19 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     String intent = '',
     String platform = '',
     String shellExecutable = '',
+    String callId = '',
   }) async {
     final invocation = _prepareInvocation(
       resolveInvocation(command, encoding: encoding),
     );
     final sessionId = abort?.sessionId;
     Process? process;
+    // Live-view plumbing declared at function scope so the outer
+    // finally can finish the entry on every exit path (the registry
+    // singleton and the exit code are both visible there; variables
+    // declared inside the try body would not be).
+    final liveRegistry = ShellLiveRegistry.instance;
+    int? liveFinishExitCode;
     try {
       final environment = Map<String, String>.from(Platform.environment);
       final bundledBin = await resolveBundledBinDirectory();
@@ -215,6 +229,30 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       if (sessionId != null) {
         ShellProcessRegistry.instance.register(sessionId, process);
         ShellMonitorRegistry.instance.add(sessionId, process);
+      }
+
+      // ── Live shell view registration ─────────────────────────
+      // Per-callId entry so the vibe tools box can show a live
+      // "intent + elapsed" row and the live fullpane can stream this
+      // run's raw output + monitor timeline + a per-run kill button.
+      // Pure display side channel: every touch is fail-open and the
+      // entry is finished in the finally block below.
+      if (sessionId != null && callId.isNotEmpty) {
+        try {
+          liveRegistry.register(
+            sessionId: sessionId,
+            callId: callId,
+            command: command,
+            intent: intent,
+            process: process,
+          );
+        } catch (_) {}
+      }
+      void tapLiveOutput(String chunk) {
+        if (sessionId == null || callId.isEmpty) return;
+        try {
+          liveRegistry.appendOutput(sessionId, callId, chunk);
+        } catch (_) {}
       }
 
       // Arm-time announcement for the no-aux regime (static timeout
@@ -299,6 +337,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       ) {
         totalOutputBytes += chunk.length;
         stdoutBuf.write(chunk);
+        tapLiveOutput(chunk);
         if (stdoutProgress != null) {
           stdoutProgress.addChunk(chunk);
           maybeEmitProgress();
@@ -309,6 +348,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       ) {
         totalOutputBytes += chunk.length;
         stderrBuf.write(chunk);
+        tapLiveOutput(chunk);
         if (stderrProgress != null) {
           stderrProgress.addChunk(chunk);
           maybeEmitProgress();
@@ -677,6 +717,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
           }
         }
         finishExitCode = exitCode;
+        liveFinishExitCode = exitCode;
         // Always wait for output streams to finish, with a timeout.
         try {
           await Future.wait([
@@ -776,6 +817,19 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       if (process != null && sessionId != null) {
         ShellProcessRegistry.instance.unregister(sessionId, process);
         ShellMonitorRegistry.instance.remove(sessionId, process);
+      }
+      // Live view teardown: mark the per-call entry finished so the
+      // tools-box row and an open fullpane flip to their final state.
+      // Null exit = killed before an exit code could be read. The
+      // entry lingers for the registry's TTL, then prunes.
+      if (sessionId != null && callId.isNotEmpty) {
+        try {
+          liveRegistry.finish(
+            sessionId,
+            callId,
+            exitCode: liveFinishExitCode,
+          );
+        } catch (_) {}
       }
       for (final path in invocation.cleanupPaths) {
         try {
@@ -1032,6 +1086,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         intent: intent,
         platform: Platform.operatingSystem,
         shellExecutable: invocation.executable,
+        callId: ctx.callId ?? '',
       );
 
       final combined = StringBuffer();

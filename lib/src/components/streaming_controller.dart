@@ -73,10 +73,17 @@ class ExecutingToolCall {
   final String name;
   final String inputPreview;
 
+  /// The tool call's `intent` argument (shell tools). Empty for
+  /// tools without an intent concept. Carried so the vibe tools box
+  /// can render "what is running" on the executing row without
+  /// re-parsing the raw input.
+  final String intent;
+
   const ExecutingToolCall({
     required this.callId,
     required this.name,
     required this.inputPreview,
+    this.intent = '',
   });
 }
 
@@ -218,6 +225,7 @@ class StreamingController {
           callId: c.callId,
           name: c.name,
           inputPreview: c.inputPreview,
+          intent: c.intent,
         ),
     ]);
     _refresh();

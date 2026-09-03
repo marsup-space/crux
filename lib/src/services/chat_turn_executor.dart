@@ -20,6 +20,7 @@ import '../tools/shell_guard.dart';
 import '../tools/shell_monitor.dart' show ShellMonitorNotice;
 import '../tools/shell_risk.dart';
 import '../tools/tool_def.dart';
+import 'shell_live_registry.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/partial_json_field_extractor.dart';
 import '../utils/sampling.dart';
@@ -1522,14 +1523,24 @@ class ChatTurnExecutor {
                   // Human-in-the-loop toast channel: forward every
                   // monitor evaluation to the chat panel, stamped
                   // with the owning session. Fail-open — a null
-                  // callback (tests) just means no toasts.
-                  shellMonitorNoticeSink: onShellMonitorNotice == null
-                      ? null
-                      : (ShellMonitorNotice notice) {
-                          try {
-                            onShellMonitorNotice!(sessionId, notice);
-                          } catch (_) {}
-                        },
+                  // callback (tests) just means no toasts. The live
+                  // shell registry archives the same notices (keyed
+                  // by session + call id) so the live fullpane's
+                  // check timeline stays complete even when the
+                  // toast channel is gated.
+                  shellMonitorNoticeSink: (ShellMonitorNotice notice) {
+                    try {
+                      ShellLiveRegistry.instance.addNotice(
+                        sessionId,
+                        call.callId,
+                        notice,
+                      );
+                    } catch (_) {}
+                    if (onShellMonitorNotice == null) return;
+                    try {
+                      onShellMonitorNotice!(sessionId, notice);
+                    } catch (_) {}
+                  },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
                 if (_shouldAbortParallelToolSiblings(result)) {

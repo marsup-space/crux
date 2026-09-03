@@ -629,6 +629,19 @@ const Map<String, String> _en = {
   'toast.monitorVerb.armed': 'monitoring — first check in {secs}s',
   'toast.monitorKilled': 'Shell killed by user',
 
+  // ── Shell live view (executing row + fullpane) ──
+  'shell.live.detail': 'detail',
+  'shell.live.title': 'Shell',
+  'shell.live.kill': '✕ kill',
+  'shell.live.close': 'close',
+  'shell.live.running': '● running',
+  'shell.live.killed': 'killed',
+  'shell.live.exit': 'exit {code}',
+  'shell.live.gone': '(run details no longer available)',
+  'shell.live.noOutput': '(no output yet)',
+  'shell.live.noChecks': '(no aux monitor checks)',
+  'shell.live.nextCheck': 'next check {secs}s',
+
   // ── Ctrl+C quit hint ──
   'toast.ctrlCQuit': 'A session is running. Press Ctrl+C again to quit.',
 
@@ -1249,6 +1262,19 @@ const Map<String, String> _zh = {
   'toast.monitorVerb.fallback': '辅助模型不可用 —— 已启用超时兜底',
   'toast.monitorVerb.armed': '开始监控 —— {secs}s 后首次检查',
   'toast.monitorKilled': '用户已杀死 shell 命令',
+
+  // ── shell 实时视图（执行中行 + fullpane） ──
+  'shell.live.detail': '详情',
+  'shell.live.title': 'Shell',
+  'shell.live.kill': '✕ 终止',
+  'shell.live.close': '关闭',
+  'shell.live.running': '● 运行中',
+  'shell.live.killed': '已终止',
+  'shell.live.exit': '退出码 {code}',
+  'shell.live.gone': '（运行详情已不可用）',
+  'shell.live.noOutput': '（暂无输出）',
+  'shell.live.noChecks': '（暂无辅助监控检查）',
+  'shell.live.nextCheck': '{secs}s 后再次检查',
 
   // ── Ctrl+C 退出提示 ──
   'toast.ctrlCQuit': '有会话正在运行。再按一次 Ctrl+C 退出。',

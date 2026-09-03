@@ -79,10 +79,16 @@ class ExecutingToolCall {
   final String name;
   final String inputPreview;
 
+  /// The tool call's `intent` argument (shell tools). Mirror of the
+  /// controller-side field; part of ==/hashCode so a re-emit with a
+  /// different intent still notifies listeners.
+  final String intent;
+
   const ExecutingToolCall({
     required this.callId,
     required this.name,
     required this.inputPreview,
+    this.intent = '',
   });
 
   @override
@@ -90,11 +96,12 @@ class ExecutingToolCall {
     return other is ExecutingToolCall &&
         other.callId == callId &&
         other.name == name &&
-        other.inputPreview == inputPreview;
+        other.inputPreview == inputPreview &&
+        other.intent == intent;
   }
 
   @override
-  int get hashCode => Object.hash(callId, name, inputPreview);
+  int get hashCode => Object.hash(callId, name, inputPreview, intent);
 }
 
 class StreamingCubitState {

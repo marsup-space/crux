@@ -71,6 +71,7 @@ import 'quit_handler.dart';
 import 'session_controller.dart';
 import 'session_cycle.dart';
 import 'session_management_panel.dart';
+import 'shell_live_fullpane.dart';
 import 'streaming_controller.dart';
 import 'tool_detail_pane.dart';
 import 'vibe_box_data.dart';
@@ -309,6 +310,12 @@ class _ChatPanelState extends State<ChatPanel> {
   late final GitStatusService _gitStatusService;
 
   ToolDetailData? _toolDetailData;
+
+  /// The executing shell run whose live fullpane is open (call id +
+  /// owning session). Null when the fullpane shows something else.
+  /// Session id is captured at open time so a background session's
+  /// run stays viewable.
+  ({int sessionId, String callId})? _shellLiveFullpane;
   /// The skill whose SKILL.md the fullpane is showing (home `skills`
   /// box). Null when the fullpane is showing something else.
   SkillInfo? _skillFullpane;
@@ -621,11 +628,21 @@ class _ChatPanelState extends State<ChatPanel> {
   /// already blends reason + output line, and the kill flow waits for
   /// the real exit code before notifying the session.
   void _onShellMonitorNotice(int sessionId, ShellMonitorNotice notice) {
-    // Noise gate: the arm-time announcement is useful only when the
-    // run is actually aux-supervised; the no-aux variant (static
-    // timeout applies) carries zero novelty — the progress box
-    // already shows the long-running command.
-    if (!notice.isMeaningful) return;
+    // Noise gate (post-live-view): the process's ongoing state is now
+    // visible on the vibe tools box's live shell row and in the shell
+    // live fullpane's check timeline — toasts are reserved for
+    // verdicts that demand immediate attention: STUCK (the process
+    // is about to be killed) and FALLBACK (the reviewer died and a
+    // static timeout was armed). CONFIGURED / PROGRESS / UNCERTAIN /
+    // EVAL_ERROR stay on the fullpane timeline only. (The
+    // `isMeaningful` gate for the unconfigured no-aux arm toast is
+    // subsumed by this rule.)
+    switch (notice.kind) {
+      case 'STUCK' || 'FALLBACK':
+        break;
+      default:
+        return;
+    }
 
     // Primary subject: the agent's own phrase for why this shell is
     // running. Fall back to the command only when the intent is
@@ -1386,6 +1403,15 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
     }
+    final shellLive = _shellLiveFullpane;
+    if (shellLive != null) {
+      return ShellLiveFullpane(
+        sessionId: shellLive.sessionId,
+        callId: shellLive.callId,
+        onClose: _closeFullpane,
+        strings: _strings,
+      );
+    }
     final data = _toolDetailData;
     if (data != null) {
       final tc = data.toolCall;
@@ -1610,6 +1636,18 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  /// Open the shell live fullpane for an executing shell run
+  /// (from the vibe tools box's `detail` row action).
+  void _openShellLiveFullpane(String callId) {
+    setState(() {
+      _shellLiveFullpane = (
+        sessionId: _sessionController.currentSessionId ?? 0,
+        callId: callId,
+      );
+      _overlayController.showFullpane = true;
+    });
+  }
+
   void _openToolDetail(ToolCallData toolCall, Message? pairedResult) {
     setState(() {
       _toolDetailData = ToolDetailData(
@@ -1627,6 +1665,7 @@ class _ChatPanelState extends State<ChatPanel> {
       _toolDetailData = null;
       _compactionFullpaneMessage = null;
       _vibeDiffRequest = null;
+      _shellLiveFullpane = null;
       _skillFullpane = null;
       _notesFullpaneOpen = false;
     });
@@ -1914,6 +1953,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         onRetryContinue: _retryContinue,
                         onVibeOpenFile: _openVibeFile,
                         onVibeDiffFiles: _openVibeDiff,
+                        onShellLiveTap: _openShellLiveFullpane,
                         onCompactionTap: CommandRegistry.instance.debugEnabled
                             ? _openCompactionFullpane
                             : null,

@@ -114,4 +114,25 @@ class ShellMonitorRegistry {
     ShellProcessRegistry.instance.killAll(sessionId);
     return true;
   }
+
+  /// Kill ONE process group — the live shell fullpane's per-run kill
+  /// button (targeting a specific tool call, not the whole session).
+  /// Same semantics as [killAll]: stamp the kill note so the tool
+  /// result carries the agent-visible annotation, then hand off to
+  /// [ShellProcessRegistry] for the actual SIGTERM-to-the-group.
+  /// Returns true when the process was still registered (something
+  /// was killed), false when it had already exited and been
+  /// unregistered.
+  bool killOne(
+    int sessionId,
+    Process process, {
+    String reason = 'killed by user from the shell live view',
+  }) {
+    final victims = _processes[sessionId];
+    if (victims == null || !victims.contains(process)) return false;
+    _killNotes[process] = reason;
+    ShellProcessRegistry.instance.unregister(sessionId, process);
+    ShellProcessRegistry.killProcess(process);
+    return true;
+  }
 }

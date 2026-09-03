@@ -601,6 +601,7 @@ class ChatTurnOrchestrator {
                   callId: call.callId,
                   name: call.name,
                   inputPreview: _toolExecutionPreview(call, projectPath),
+                  intent: (call.input['intent'] as String?)?.trim() ?? '',
                 ),
             ]);
           },
@@ -1223,6 +1224,14 @@ class ChatTurnOrchestrator {
   }
 
   String _toolExecutionPreview(ToolCallData call, String projectPath) {
+    // Shell tools surface the agent's own `intent` phrase first —
+    // "install dependencies" beats `/usr/bin/dart pub get` as the
+    // executing row's label. Falls back to the arg-key preview
+    // below when the intent is missing (older models, tests).
+    final rawIntent = call.input['intent'];
+    if (rawIntent is String && rawIntent.trim().isNotEmpty) {
+      return rawIntent.trim();
+    }
     const priorityKeys = [
       'filePath',
       'path',

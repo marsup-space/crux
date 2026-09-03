@@ -125,6 +125,12 @@ class ChatHistory extends StatefulComponent {
   final void Function(int fileIndex, ModBoxData mods, List<ToolCallData> calls)?
   onVibeDiffFiles;
 
+  /// Fired when the user activates `detail` on an executing shell row
+  /// in the vibe streaming bubble. Receives the shell tool call's id;
+  /// the chat panel opens the shell live fullpane for that run. When
+  /// null, the row's `detail` segment renders dim.
+  final void Function(String callId)? onShellLiveTap;
+
   /// Callback fired when the user clicks the `▶ retry (/continue)`
   /// affordance on a `stream_error` bubble. The chat panel wires
   /// this to the command executor's `/continue` flow so the
@@ -151,6 +157,7 @@ class ChatHistory extends StatefulComponent {
     this.onCompactionTap,
     this.onVibeOpenFile,
     this.onVibeDiffFiles,
+    this.onShellLiveTap,
     this.onRetryContinue,
     this.strings = kEnglishStrings,
   });
@@ -973,6 +980,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             onQuickReplyTap: component.onQuickReplyTap,
             onSessionLinkTap: component.onSessionLinkTap,
             onLinkTap: component.onLinkTap,
+            onOpenShellLive: component.onShellLiveTap,
             reasoningPresets: reasoningPresets,
             strings: component.strings,
           );

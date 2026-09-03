@@ -17,6 +17,7 @@ import 'streaming_controller.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
+import 'vibe_shell_row.dart';
 
 /// Live streaming bubble for vibe mode. Replaces the verbose
 /// [StreamingBubble] when `chatDisplayMode == vibe`.
@@ -66,6 +67,12 @@ class VibeStreamingBubble extends StatefulComponent {
   /// from the in-flight reply.
   final void Function(MarkdownLink link)? onLinkTap;
 
+  /// Fired when the user activates `detail` on an executing shell
+  /// row. Receives the call id; the chat panel opens the shell live
+  /// fullpane for that run. When null, the row's `detail` segment
+  /// renders dim and ignores taps.
+  final void Function(String callId)? onOpenShellLive;
+
   /// Reasoning presets from the session's provider, used to map
   /// internal effort values to display labels (e.g. `normal` →
   /// `adaptive` for MiniMax). If null, the raw internal value is
@@ -81,6 +88,7 @@ class VibeStreamingBubble extends StatefulComponent {
     this.onQuickReplyTap,
     this.onSessionLinkTap,
     this.onLinkTap,
+    this.onOpenShellLive,
     this.reasoningPresets = const [],
     this.strings = kEnglishStrings,
     super.key,
@@ -288,15 +296,28 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     for (final tc in _executingToolCalls) {
       allToolNames[tc.name] = (allToolNames[tc.name] ?? 0) + 1;
     }
+    // Executing shell calls break out of the aggregated `bash xN`
+    // row into their own interactive rows (intent + live elapsed +
+    // hover `detail`). The aggregate row excludes them so the counts
+    // stay accurate; non-shell executing calls keep the old row.
+    final executingShells = _executingToolCalls
+        .where((tc) => tc.name == 'bash' || tc.name == 'cmd' || tc.name == 'powershell')
+        .toList();
     if (allToolNames.isNotEmpty) {
       // Render as rich-text spans so the LSP outcome glyph (`⎇`) can be
       // color-coded while the label keeps the box body color — same as
       // the persisted tools box in vibe_segment_bubble.dart.
-      final rowSpans = allToolNames.entries.map((e) {
+      final rowSpans = <TextSpan>[];
+      for (final e in allToolNames.entries) {
+        // Skip aggregated rows whose every call has broken out into a
+        // live shell row below.
+        final breakoutCount = executingShells.where((tc) => tc.name == e.key).length;
+        final remaining = e.value - breakoutCount;
+        if (remaining <= 0) continue;
         final completedTokens = completedToolTokens[e.key];
         final label = completedTokens == null
-            ? '${e.key} x${e.value}'
-            : '${e.key} x${e.value}: ${formatTokens(completedTokens)}';
+            ? '${e.key} x$remaining'
+            : '${e.key} x$remaining: ${formatTokens(completedTokens)}';
         // Name-aware fallback: only write/edit consult a language
         // server, so any other tool is disabled (no glyph) even when
         // it has no persisted entry yet. An in-flight write/edit with
@@ -308,24 +329,51 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
             toolLspState[e.key] ??
             (isLspTool ? LspState.none : LspState.disabled);
         final glyph = lspStateGlyphSpan(state, theme);
-        if (glyph == null) return TextSpan(text: label);
-        return TextSpan(
-          children: [
-            TextSpan(text: label),
-            glyph,
-          ],
+        rowSpans.add(
+          glyph == null
+              ? TextSpan(text: label)
+              : TextSpan(children: [TextSpan(text: label), glyph]),
         );
-      }).toList();
-      boxes.add(
-        VibeBox(
-          title: component.strings.t('chat.vibe.tools'),
-          bodyRowSpans: rowSpans,
-          active:
-              _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
-          mutedColor: theme.toolPrefix,
-          activeColor: theme.accent,
-        ),
-      );
+      }
+      // Live shell rows: one per executing shell call, in call order.
+      final shellRows = <Component>[
+        for (final tc in executingShells)
+          VibeShellRow(
+            key: ValueKey('vibe-shell-row-${tc.callId}'),
+            sessionId: component.sessionId,
+            callId: tc.callId,
+            intent: tc.intent,
+            onDetail: component.onOpenShellLive == null
+                ? null
+                : () => component.onOpenShellLive!(tc.callId),
+            strings: component.strings,
+          ),
+      ];
+      // Only render the box when something survives the breakout
+      // (an all-bash turn shows just the shell rows).
+      if (rowSpans.isNotEmpty || shellRows.isNotEmpty) {
+        boxes.add(
+          VibeBox(
+            title: component.strings.t('chat.vibe.tools'),
+            // Interactive rows must go through bodyRowComponents;
+            // bodyRowSpans renders each span as its own RichText row.
+            bodyRowComponents: [
+              for (final span in rowSpans)
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(color: theme.text),
+                    children: [span],
+                  ),
+                ),
+              ...shellRows,
+            ],
+            active:
+                _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
+            mutedColor: theme.toolPrefix,
+            activeColor: theme.accent,
+          ),
+        );
+      }
     }
 
     // Files follow the same ownership rule as think/tools: completed edits
