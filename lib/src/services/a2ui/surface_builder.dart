@@ -70,6 +70,7 @@ class SurfaceBuilder {
     String? detail,
     String? badge,
     bool selected = false,
+    bool inline = false,
     String? action,
     Map<String, dynamic> actionContext = const {},
   }) => _add(id, 'ListItem', {
@@ -78,6 +79,7 @@ class SurfaceBuilder {
     'detail': ?detail,
     'badge': ?badge,
     'selected': selected,
+    'inline': inline,
     'action': action == null
         ? null
         : {

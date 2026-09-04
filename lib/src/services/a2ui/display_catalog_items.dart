@@ -268,6 +268,11 @@ class ListItemCatalogItem extends CatalogItem {
           'Optional compact leading marker, such as an icon or state.',
     },
     'detail': {'type': 'string', 'description': 'Optional secondary text.'},
+    'inline': {
+      'type': 'boolean',
+      'description':
+          'Keep title and detail on one row. Useful for compact action lists.',
+    },
     'badge': {'type': 'string', 'description': 'Optional trailing status.'},
     'selected': {
       'type': 'boolean',
@@ -292,6 +297,7 @@ class ListItemCatalogItem extends CatalogItem {
     final detail = resolveString(component.properties['detail'], dataModel);
     final badge = resolveString(component.properties['badge'], dataModel);
     final selected = component.properties['selected'] == true;
+    final inline = component.properties['inline'] == true;
     final titleColor = selected ? theme.selectedText : theme.onSurface;
     final secondaryColor = selected ? theme.selectedText : theme.onSurfaceDim;
     return Container(
@@ -304,17 +310,34 @@ class ListItemCatalogItem extends CatalogItem {
             const SizedBox(width: 1),
           ],
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  resolveString(component.properties['title'], dataModel),
-                  style: TextStyle(color: titleColor),
-                ),
-                if (detail.isNotEmpty)
-                  Text(detail, style: TextStyle(color: secondaryColor)),
-              ],
-            ),
+            child: inline
+                ? Row(
+                    children: [
+                      Text(
+                        resolveString(component.properties['title'], dataModel),
+                        style: TextStyle(color: titleColor),
+                      ),
+                      if (detail.isNotEmpty)
+                        Expanded(
+                          child: Text(
+                            '  $detail',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: secondaryColor),
+                          ),
+                        ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        resolveString(component.properties['title'], dataModel),
+                        style: TextStyle(color: titleColor),
+                      ),
+                      if (detail.isNotEmpty)
+                        Text(detail, style: TextStyle(color: secondaryColor)),
+                    ],
+                  ),
           ),
           if (badge.isNotEmpty) ...[
             const SizedBox(width: 1),

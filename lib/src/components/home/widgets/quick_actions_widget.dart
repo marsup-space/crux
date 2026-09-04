@@ -139,6 +139,7 @@ class QuickActionsHomeWidget extends HomeWidget {
         title: action.label,
         detail: ctx.strings.t(action.hint),
         selected: focused && i == _selectedIndex,
+        inline: true,
         action: 'quick_action',
         actionContext: {'index': i},
       );

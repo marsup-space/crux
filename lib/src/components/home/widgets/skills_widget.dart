@@ -136,6 +136,7 @@ class SkillsHomeWidget extends HomeWidget {
         title: skill.name,
         detail: skill.description.replaceAll('\n', ' '),
         selected: focused && i == selected,
+        inline: true,
         action: 'open_skill',
         actionContext: {'index': i},
       );
