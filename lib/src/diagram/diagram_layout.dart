@@ -155,7 +155,9 @@ void _sizeOneNode(DiagramNode node, {bool tightPadding = false}) {
   node.height = lines.length > 1 ? lines.length + 2 : _nodeHeight;
   if (node.shape == NodeShape.diamond) {
     node.width += 2;
-    node.height = math.max(node.height, 3);
+    // Decision nodes reserve two sloped shoulder rows in addition to the
+    // label interior and horizontal top/bottom connector rows.
+    node.height = math.max(node.height + 2, 5);
   }
   if (node.shape == NodeShape.cylinder) {
     node.height = math.max(node.height, 5);
@@ -291,8 +293,9 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
   final warnedEdges = graph.edges.where((e) => !e.semanticCycle).toList();
 
   final queue = <String>[];
-  final zeroIn = inDegree.entries.where((e) => e.value == 0).map((e) => e.key).toList()
-    ..sort();
+  final zeroIn =
+      inDegree.entries.where((e) => e.value == 0).map((e) => e.key).toList()
+        ..sort();
   queue.addAll(zeroIn);
 
   final cycleNodes = <String>{};
@@ -305,8 +308,7 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
       final neighbors = <String>{
         for (final e in graph.edges)
           if (e.from == u && !processed.contains(e.to)) e.to,
-      }.toList()
-        ..sort();
+      }.toList()..sort();
       for (final v in neighbors) {
         final uLayer = nodeLayers[u] ?? 0;
         nodeLayers[v] = math.max(nodeLayers[v] ?? 0, uLayer + 1);
@@ -318,14 +320,13 @@ Map<String, int> _assignLayers(DiagramGraph graph) {
     if (processed.length >= graph.nodes.length) break;
 
     // Cycle: collect stuck nodes that have outgoing edges to stuck nodes.
-    final stuck = inDegree.keys
-        .where((id) => !processed.contains(id))
-        .toList()
+    final stuck = inDegree.keys.where((id) => !processed.contains(id)).toList()
       ..sort();
     final stuckSet = stuck.toSet();
     for (final n in stuck) {
-      final hasOutgoingToStuck = warnedEdges
-          .any((e) => e.from == n && stuckSet.contains(e.to));
+      final hasOutgoingToStuck = warnedEdges.any(
+        (e) => e.from == n && stuckSet.contains(e.to),
+      );
       if (hasOutgoingToStuck) cycleNodes.add(n);
     }
     stuck.sort((a, b) {
@@ -464,8 +465,9 @@ void _assignCoordinates(
   if (direction.isHorizontal) {
     var currentX = 0;
     for (var l = 0; l <= maxLayer; l++) {
-      final layerIdx =
-          direction == DiagramDirection.rightToLeft ? maxLayer - l : l;
+      final layerIdx = direction == DiagramDirection.rightToLeft
+          ? maxLayer - l
+          : l;
       final ids = byLayer[layerIdx] ?? const [];
       final layerH = layerHeights[layerIdx] ?? 0;
       var startY = math.max(0, (maxTotalHeight - layerH)) ~/ 2;
@@ -480,8 +482,9 @@ void _assignCoordinates(
   } else {
     var currentY = 0;
     for (var l = 0; l <= maxLayer; l++) {
-      final layerIdx =
-          direction == DiagramDirection.bottomToTop ? maxLayer - l : l;
+      final layerIdx = direction == DiagramDirection.bottomToTop
+          ? maxLayer - l
+          : l;
       final ids = byLayer[layerIdx] ?? const [];
       final layerW = layerWidths[layerIdx] ?? 0;
       var startX = math.max(0, (maxTotalWidth - layerW)) ~/ 2;

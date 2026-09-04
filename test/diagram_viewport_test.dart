@@ -16,6 +16,34 @@ void main() {
       // '│ 中文 │' = 1 + 1 + 4 + 1 + 1 = 8 columns.
       expect(data.naturalWidth, 8);
     });
+
+    test('infers node outlines without styling standalone edge lines', () {
+      final data = DiagramViewportData.inferBorders([
+        '┌───┐',
+        '│ box │',
+        '└───┘',
+        '  │',
+      ]);
+      expect(data.isBorderGlyph(0, 0), isTrue);
+      expect(data.isBorderGlyph(1, 0), isTrue);
+      expect(data.isBorderGlyph(1, 6), isTrue);
+      expect(data.isBorderGlyph(3, 2), isFalse);
+    });
+
+    test('styles every wall of adjacent boxes as a border', () {
+      final data = DiagramViewportData.inferBorders(['│ one │  │ two │']);
+      expect(data.isBorderGlyph(0, 0), isTrue);
+      expect(data.isBorderGlyph(0, 6), isTrue);
+      expect(data.isBorderGlyph(0, 9), isTrue);
+      expect(data.isBorderGlyph(0, 15), isTrue);
+    });
+
+    test('keeps rounded edge elbows out of the border color', () {
+      final edge = DiagramViewportData.inferBorders(['╭─────╮', '   │']);
+      final decision = DiagramViewportData.inferBorders(['╭─────╮', ' ╱    ╲']);
+      expect(edge.isBorderGlyph(0, 0), isFalse);
+      expect(decision.isBorderGlyph(0, 0), isTrue);
+    });
   });
 
   group('sliceDiagramBlocks', () {
@@ -53,6 +81,36 @@ void main() {
   });
 
   group('markdown integration', () {
+    test('node outlines and edge strokes use different colors', () async {
+      await testNocterm('diagram semantic colors', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 40,
+            height: 12,
+            child: DiagramViewport(
+              data: DiagramViewportData.inferBorders([
+                '┌─────┐',
+                '│ box │',
+                '└─────┘',
+                '   ▼',
+              ]),
+            ),
+          ),
+        );
+
+        final border = tester.terminalState.findText('┌').first;
+        final arrow = tester.terminalState.findText('▼').first;
+        expect(
+          tester.terminalState.getCellAt(border.x, border.y)!.style.color,
+          isNot(
+            equals(
+              tester.terminalState.getCellAt(arrow.x, arrow.y)!.style.color,
+            ),
+          ),
+        );
+      }, size: const Size(40, 12));
+    });
+
     test('diagram fence becomes a viewport component (sync path)', () async {
       await testNocterm('fence lifts to viewport', (tester) async {
         await tester.pumpComponent(

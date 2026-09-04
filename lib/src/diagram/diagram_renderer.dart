@@ -27,13 +27,13 @@ class _Grid {
   final Set<int> _touched;
 
   _Grid(this.width, this.height)
-      : cells = List.filled(width * height, ' '),
-        _lineFlags = List.filled(width * height, 0),
-        _armPlain = List.filled(width * height, 0),
-        _armHeavy = List.filled(width * height, 0),
-        _armDotted = List.filled(width * height, 0),
-        _protected = {},
-        _touched = {};
+    : cells = List.filled(width * height, ' '),
+      _lineFlags = List.filled(width * height, 0),
+      _armPlain = List.filled(width * height, 0),
+      _armHeavy = List.filled(width * height, 0),
+      _armDotted = List.filled(width * height, 0),
+      _protected = {},
+      _touched = {};
 
   bool inBounds(int x, int y) => x >= 0 && x < width && y >= 0 && y < height;
 
@@ -89,8 +89,7 @@ class _Grid {
   }
 
   bool isTouched(int x, int y) =>
-      inBounds(x, y) &&
-      (_touched.contains(y * width + x) || arms(x, y) != 0);
+      inBounds(x, y) && (_touched.contains(y * width + x) || arms(x, y) != 0);
 
   /// Draw a line character, merging into junction glyphs when a crossing
   /// line already occupies the cell.
@@ -176,30 +175,48 @@ class _Glyphs {
   /// crosses use the square box-drawing merges (Unicode has no rounded
   /// T forms — the usual CLI convention, e.g. git graph renderers).
   static const _junctionGlyphs = <int, String>{
-    3: '─', 12: '│',
-    5: '┘', 6: '└', 9: '┐', 10: '┌',
-    7: '┴', 11: '┬', 13: '┤', 14: '├',
+    3: '─',
+    12: '│',
+    5: '┘',
+    6: '└',
+    9: '┐',
+    10: '┌',
+    7: '┴',
+    11: '┬',
+    13: '┤',
+    14: '├',
     15: '┼',
   };
   static const _junctionHeavy = <int, String>{
-    3: '═', 12: '║',
-    5: '┛', 6: '┗', 9: '┓', 10: '┏',
-    7: '┻', 11: '┳', 13: '┫', 14: '┣',
+    3: '═',
+    12: '║',
+    5: '┛',
+    6: '┗',
+    9: '┓',
+    10: '┏',
+    7: '┻',
+    11: '┳',
+    13: '┫',
+    14: '┣',
     15: '╋',
   };
   static const _junctionDotted = <int, String>{
-    3: '┄', 12: '┆',
-    5: '╯', 6: '╰', 9: '╮', 10: '╭',
-    7: '┄', 11: '┄', 13: '┆', 14: '┆',
+    3: '┄',
+    12: '┆',
+    5: '╯',
+    6: '╰',
+    9: '╮',
+    10: '╭',
+    7: '┄',
+    11: '┄',
+    13: '┆',
+    14: '┆',
     15: '┼',
   };
 
-  late final junctionGlyphs =
-      ascii ? const <int, String>{} : _junctionGlyphs;
-  late final junctionHeavy =
-      ascii ? const <int, String>{} : _junctionHeavy;
-  late final junctionDotted =
-      ascii ? const <int, String>{} : _junctionDotted;
+  late final junctionGlyphs = ascii ? const <int, String>{} : _junctionGlyphs;
+  late final junctionHeavy = ascii ? const <int, String>{} : _junctionHeavy;
+  late final junctionDotted = ascii ? const <int, String>{} : _junctionDotted;
 
   late final dot = ascii ? '*' : '●';
   late final endDot = ascii ? '@' : '◉';
@@ -439,20 +456,45 @@ class DiagramRenderer {
   }
 
   void _drawDiamond(_Grid grid, DiagramNode n) {
-    // Three-row mermaid-style diamond (apexes inset 1 from < >):
-    //   /  \
-    //  <Ab>
-    //   \  /
-    final cy = n.y + n.height ~/ 2;
-    grid.set(n.x + 1, n.y, '/');
-    grid.set(n.x + n.width - 2, n.y, '\\');
-    grid.set(n.x, cy, '<');
-    final w = displayWidthOf(n.label);
-    _writeText(grid, n.x + 1 + math.max(0, (n.width - 2 - w) ~/ 2), cy,
-        n.label);
-    grid.set(n.x + n.width - 1, cy, '>');
-    grid.set(n.x + 1, n.y + n.height - 1, '\\');
-    grid.set(n.x + n.width - 2, n.y + n.height - 1, '/');
+    // Chamfered decision box. The horizontal top/bottom stay continuous with
+    // incoming/outgoing flow while the sloped shoulder rows distinguish it
+    // from an ordinary process box:
+    //       │
+    //     ╭─────╮
+    //    ╱        ╲
+    //   │  ask?    │
+    //    ╲        ╱
+    //     ╰─────╯
+    //       │
+    final x2 = n.x + n.width - 1;
+    final shoulderLeft = n.x + 2;
+    final shoulderRight = x2 - 2;
+    for (var x = shoulderLeft + 1; x < shoulderRight; x++) {
+      grid.set(x, n.y, g.hLine);
+      grid.set(x, n.y + n.height - 1, g.hLine);
+    }
+    grid.set(shoulderLeft, n.y, '╭');
+    grid.set(shoulderRight, n.y, '╮');
+    grid.set(n.x + 1, n.y + 1, '╱');
+    grid.set(x2 - 1, n.y + 1, '╲');
+    grid.set(n.x + 1, n.y + n.height - 2, '╲');
+    grid.set(x2 - 1, n.y + n.height - 2, '╱');
+    grid.set(shoulderLeft, n.y + n.height - 1, '╰');
+    grid.set(shoulderRight, n.y + n.height - 1, '╯');
+
+    final lines = n.label.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      final rowY = n.y + 2 + i;
+      final w = displayWidthOf(lines[i]);
+      _writeText(
+        grid,
+        n.x + 1 + math.max(0, (n.width - 2 - w) ~/ 2),
+        rowY,
+        lines[i],
+      );
+      grid.set(n.x, rowY, g.vLine);
+      grid.set(x2, rowY, g.vLine);
+    }
   }
 
   void _drawCylinder(_Grid grid, DiagramNode n) {
@@ -509,16 +551,21 @@ class DiagramRenderer {
     final horizontal = graph.direction.isHorizontal;
     final out = _RouteOut()..isPortOwner = isPortOwner;
     var path = _routeEdge(
-        grid, from, to, horizontal, blocked, edge.style,
-        out: out);
+      grid,
+      from,
+      to,
+      horizontal,
+      blocked,
+      edge.style,
+      out: out,
+    );
     if (path == null) return;
 
     // Termination baked by the router: an off-midline Z arrival wants to
     // stop on the trunk (no port leg). Only override that when this edge
     // WON port ownership — it draws the leg and the arrowhead regardless
     // of row alignment, otherwise no one would and the line would break.
-    var suppressArrowhead =
-        out.terminatesOnTrunkWithoutArrow && !isPortOwner;
+    var suppressArrowhead = out.terminatesOnTrunkWithoutArrow && !isPortOwner;
     // No subnet trimming: the path already ends ON the trunk at the mid
     // row — dropping the tip cell would break the shaft one cell short
     // of the owner's port row (a visible gap). Suppressing the
@@ -548,11 +595,11 @@ class DiagramRenderer {
     // pills stack in one column — route through their top/bottom ports
     // instead, otherwise every edge U-turns around the pill.
     if (from.shape == NodeShape.circle || to.shape == NodeShape.circle) {
-      final stacked = !horizontal &&
+      final stacked =
+          !horizontal &&
           !(from.x + from.width <= to.x || to.x + to.width <= from.x);
       if (!stacked) {
-        final start =
-            _anchorFor(from, to, true, isSourceEnd: true);
+        final start = _anchorFor(from, to, true, isSourceEnd: true);
         final goal = _anchorFor(to, from, true, isSourceEnd: false);
         return _findPath(start, goal, blocked, grid);
       }
@@ -561,8 +608,7 @@ class DiagramRenderer {
     if (!horizontal) {
       // Vertical flow: leave source bottom centre, enter target top
       // centre. Fixed-receptor entry keeps every arrowhead pointing down.
-      final start = _Point(
-          from.x + from.width ~/ 2, from.y + from.height);
+      final start = _Point(from.x + from.width ~/ 2, from.y + from.height);
       var goal = _Point(to.x + to.width ~/ 2, to.y - 1);
       final direct = _tryStraightDown(grid, start, goal, blocked);
       if (direct != null) return direct;
@@ -609,7 +655,8 @@ class DiagramRenderer {
           // Final approach terminates ON the target's border column —
           // judge that leg open when every cell BEFORE the port is free
           // (_segmentOpen ignores the endpoint by design).
-          final ok = _segmentClear(grid, wps[0], wps[1], blocked) &&
+          final ok =
+              _segmentClear(grid, wps[0], wps[1], blocked) &&
               _segmentClear(grid, wps[1], wps[2], blocked) &&
               _segmentClear(grid, wps[2], wps[3], blocked) &&
               _segmentOpen(grid, wps[3], wps[4], blocked);
@@ -617,10 +664,11 @@ class DiagramRenderer {
           if (ok) return _expand(wps);
         }
         return _findPath(
-            _Point(sx, sy),
-            _Point(to.x + to.width ~/ 2, to.y - 1),
-            blocked,
-            grid);
+          _Point(sx, sy),
+          _Point(to.x + to.width ~/ 2, to.y - 1),
+          blocked,
+          grid,
+        );
       }
       final bendY = math.min(start.y + 1, goal.y - 1);
       for (final by in [bendY, start.y, goal.y - 1]) {
@@ -700,15 +748,11 @@ class DiagramRenderer {
   List<_Point>? _segment(_Point a, _Point b) {
     if (a.y == b.y) {
       final step = b.x > a.x ? 1 : -1;
-      return [
-        for (var x = a.x; x != b.x + step; x += step) _Point(x, a.y),
-      ];
+      return [for (var x = a.x; x != b.x + step; x += step) _Point(x, a.y)];
     }
     if (a.x == b.x) {
       final step = b.y > a.y ? 1 : -1;
-      return [
-        for (var y = a.y; y != b.y + step; y += step) _Point(a.x, y),
-      ];
+      return [for (var y = a.y; y != b.y + step; y += step) _Point(a.x, y)];
     }
     return null;
   }
@@ -726,12 +770,7 @@ class DiagramRenderer {
     return [waypoints.first, ...out];
   }
 
-  bool _segmentClear(
-    _Grid grid,
-    _Point a,
-    _Point b,
-    Set<int> blocked,
-  ) {
+  bool _segmentClear(_Grid grid, _Point a, _Point b, Set<int> blocked) {
     final cells = _segment(a, b);
     if (cells == null) return false;
     for (final p in cells) {
@@ -742,12 +781,7 @@ class DiagramRenderer {
 
   /// Like [_segmentClear] but tolerates a blocked endpoint — used for
   /// final approaches that terminate ON the target's border port cell.
-  bool _segmentOpen(
-    _Grid grid,
-    _Point a,
-    _Point b,
-    Set<int> blocked,
-  ) {
+  bool _segmentOpen(_Grid grid, _Point a, _Point b, Set<int> blocked) {
     final cells = _segment(a, b);
     if (cells == null || cells.length < 2) return false;
     for (final p in cells.sublist(0, cells.length - 1)) {
@@ -855,8 +889,7 @@ class DiagramRenderer {
       // with phantom cross arms.)
       grid.touch(p.x, p.y);
       grid.addArms(p.x, p.y, selfArms, style);
-      void mate(_Point q) =>
-          grid.addArms(q.x, q.y, _armToward(q, p), style);
+      void mate(_Point q) => grid.addArms(q.x, q.y, _armToward(q, p), style);
       mate(refPrev);
       mate(next);
 
@@ -866,11 +899,14 @@ class DiagramRenderer {
       if (style.isDotted) {
         grid.set(p.x, p.y, inHoriz ? g.dottedH : g.dottedV);
       } else {
-        final straightGlyph = inHoriz ?
-            (style.isThick ? g.thickH : g.hLine) :
-            (style.isThick ? g.thickV : g.vLine);
+        final straightGlyph = inHoriz
+            ? (style.isThick ? g.thickH : g.hLine)
+            : (style.isThick ? g.thickV : g.vLine);
         grid.set(
-            p.x, p.y, isTurn ? _elbow(style, enter | exit) : straightGlyph);
+          p.x,
+          p.y,
+          isTurn ? _elbow(style, enter | exit) : straightGlyph,
+        );
       }
     }
 
@@ -926,10 +962,35 @@ class DiagramRenderer {
   ///   adjacent edges grow bars that MEET each other.
   void _composeJunctions(_Grid grid) {
     const keepUnwritten = {
-      '─', '│', '┄', '┆', '═', '║', '+',
-      '╭', '╮', '╰', '╯', '┏', '┓', '┗', '┛',
-      '┌', '┐', '└', '┘', '┬', '┴', '├', '┤', '┼',
-      '┳', '┻', '┣', '┫', '╋',
+      '─',
+      '│',
+      '┄',
+      '┆',
+      '═',
+      '║',
+      '+',
+      '╭',
+      '╮',
+      '╰',
+      '╯',
+      '┏',
+      '┓',
+      '┗',
+      '┛',
+      '┌',
+      '┐',
+      '└',
+      '┘',
+      '┬',
+      '┴',
+      '├',
+      '┤',
+      '┼',
+      '┳',
+      '┻',
+      '┣',
+      '┫',
+      '╋',
     };
     for (var y = 0; y < grid.height; y++) {
       for (var x = 0; x < grid.width; x++) {
@@ -953,8 +1014,8 @@ class DiagramRenderer {
         final table = grid.armsAllDotted(x, y)
             ? g.junctionDotted
             : grid.armsAnyHeavy(x, y)
-                ? g.junctionHeavy
-                : g.junctionGlyphs;
+            ? g.junctionHeavy
+            : g.junctionGlyphs;
         final glyph = table[f];
         if (glyph != null) grid.set(x, y, glyph);
       }
@@ -967,8 +1028,7 @@ class DiagramRenderer {
   void _paintLabel(_Grid grid, List<_Point> path, String label) {
     if (path.length < 3) return;
     final rows = label.split('\n');
-    final w =
-        rows.map(displayWidthOf).fold(0, math.max);
+    final w = rows.map(displayWidthOf).fold(0, math.max);
     final midIdx = path.length ~/ 2;
     final mid = path[midIdx];
     final prev = path[midIdx - 1];
@@ -1042,9 +1102,8 @@ class DiagramRenderer {
     // Nowhere free: drop the label rather than corrupt the drawing.
   }
 
-  bool _isPlainLineGlyph(String ch) => const {
-        '─', '│', '┄', '┆', '═', '║',
-      }.contains(ch);
+  bool _isPlainLineGlyph(String ch) =>
+      const {'─', '│', '┄', '┆', '═', '║'}.contains(ch);
 
   bool _areaFree(_Grid grid, int x, int y, int width) {
     for (var dx = -1; dx <= width; dx++) {
@@ -1093,8 +1152,7 @@ class DiagramRenderer {
         if (!_free(grid, np, blocked)) continue;
         // Occupied ink costs extra so detours around earlier strokes
         // beat ploughing through their corridors.
-        final cost =
-            grid.isTouched(nx, ny) || grid.get(nx, ny) != ' ' ? 4 : 1;
+        final cost = grid.isTouched(nx, ny) || grid.get(nx, ny) != ' ' ? 4 : 1;
         final tentative = gScore[current]! + cost;
         if (tentative < (gScore[np] ?? 1 << 30)) {
           cameFrom[np] = current;
@@ -1131,7 +1189,8 @@ class _Point {
   const _Point(this.x, this.y);
 
   @override
-  bool operator ==(Object other) => other is _Point && other.x == x && other.y == y;
+  bool operator ==(Object other) =>
+      other is _Point && other.x == x && other.y == y;
 
   @override
   int get hashCode => Object.hash(x, y);

@@ -64,7 +64,81 @@ class DiagramViewportData {
   /// them as extra lines so they pan together with the drawing).
   final List<String> lines;
 
-  const DiagramViewportData(this.lines);
+  /// Grapheme indexes that belong to a node outline. Edge strokes are left
+  /// unmarked and therefore use the brighter content/line color.
+  final List<Set<int>>? borderGlyphs;
+
+  const DiagramViewportData(this.lines, {this.borderGlyphs});
+
+  factory DiagramViewportData.inferBorders(List<String> lines) {
+    final borders = <Set<int>>[];
+    for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      final line = lines[lineIndex];
+      final glyphs = line.characters.toList();
+      final marked = <int>{};
+      // Horizontal box caps. An edge elbow can also be `╭…╮`, so a
+      // chamfered decision cap additionally needs its sloped shoulder row.
+      final squareLeft = glyphs.indexWhere((g) => g == '┌' || g == '└');
+      final squareRight = glyphs.lastIndexWhere((g) => g == '┐' || g == '┘');
+      final decisionTop = glyphs.indexOf('╭');
+      final decisionBottom = glyphs.indexOf('╰');
+      final nextIsShoulder =
+          lineIndex + 1 < lines.length &&
+          lines[lineIndex + 1].contains('╱') &&
+          lines[lineIndex + 1].contains('╲');
+      final previousIsShoulder =
+          lineIndex > 0 &&
+          lines[lineIndex - 1].contains('╱') &&
+          lines[lineIndex - 1].contains('╲');
+      final isDecisionTop =
+          decisionTop >= 0 &&
+          glyphs.lastIndexOf('╮') > decisionTop &&
+          nextIsShoulder;
+      final isDecisionBottom =
+          decisionBottom >= 0 &&
+          glyphs.lastIndexOf('╯') > decisionBottom &&
+          previousIsShoulder;
+      final left = squareLeft >= 0
+          ? squareLeft
+          : isDecisionTop
+          ? decisionTop
+          : isDecisionBottom
+          ? decisionBottom
+          : -1;
+      final right = squareRight >= 0
+          ? squareRight
+          : isDecisionTop
+          ? glyphs.lastIndexOf('╮')
+          : isDecisionBottom
+          ? glyphs.lastIndexOf('╯')
+          : -1;
+      if (left >= 0 && right > left) {
+        for (var i = left; i <= right; i++) {
+          if (glyphs[i] != ' ') marked.add(i);
+        }
+      }
+      // Vertical walls are a paired │ on one rendered node row. This avoids
+      // styling standalone edge trunks as borders.
+      final walls = <int>[];
+      for (var i = 0; i < glyphs.length; i++) {
+        if (glyphs[i] == '│') walls.add(i);
+        if (glyphs[i] == '╱' || glyphs[i] == '╲') marked.add(i);
+      }
+      if (walls.length >= 2) {
+        // A row can contain several adjacent boxes. Every paired wall is a
+        // box outline; marking only the outermost pair leaves the two inner
+        // borders in line color.
+        marked.addAll(walls);
+      }
+      borders.add(marked);
+    }
+    return DiagramViewportData(lines, borderGlyphs: borders);
+  }
+
+  bool isBorderGlyph(int line, int glyph) =>
+      borderGlyphs != null &&
+      line < borderGlyphs!.length &&
+      borderGlyphs![line].contains(glyph);
 
   int get naturalWidth {
     var w = 0;
@@ -289,7 +363,7 @@ DiagramViewportData? tryBuildDiagramViewportData(
       '⚠ ${warning.message(cycleDetected: (nodes) => effectiveStrings.t('diagram.cycleWarning', {'nodes': nodes}))}',
     );
   }
-  return DiagramViewportData(lines);
+  return DiagramViewportData.inferBorders(lines);
 }
 
 class DiagramViewport extends StatefulComponent {
@@ -747,7 +821,14 @@ class RenderDiagramViewport extends RenderObject
     for (var i = 0; i < visibleRows; i++) {
       final lineIdx = firstRow + i;
       if (lineIdx < 0 || lineIdx >= contentRows) continue;
-      _drawPannedLine(clipped, _data.lines[lineIdx], i, pan, contentOrigin);
+      _drawPannedLine(
+        clipped,
+        _data.lines[lineIdx],
+        lineIdx,
+        i,
+        pan,
+        contentOrigin,
+      );
     }
 
     _drawFooter(canvas, offset, width, height);
@@ -818,12 +899,15 @@ class RenderDiagramViewport extends RenderObject
   void _drawPannedLine(
     TerminalCanvas clipCanvas,
     String line,
+    int lineIndex,
     int row,
     double pan,
     Offset contentOrigin,
   ) {
     var x = pan; // may be negative (content shifted left)
+    var glyphIndex = 0;
     for (final grapheme in line.characters) {
+      final currentGlyphIndex = glyphIndex++;
       final gw = UnicodeWidth.graphemeWidth(grapheme).toDouble();
       if (gw <= 0) continue;
       final start = x;
@@ -837,7 +921,11 @@ class RenderDiagramViewport extends RenderObject
       clipCanvas.drawText(
         contentOrigin + Offset(start, row.toDouble()),
         grapheme,
-        style: TextStyle(color: _contentColor),
+        style: TextStyle(
+          color: _data.isBorderGlyph(lineIndex, currentGlyphIndex)
+              ? _borderColor
+              : _contentColor,
+        ),
       );
       if (x >= _effectiveViewportWidth) break;
     }
