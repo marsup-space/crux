@@ -84,9 +84,9 @@ void main() {
     expect(toasts.last.$1, contains('Available:'));
     expect(toasts.last.$2, ToastMode.error);
 
-    await executor.execute('/theme github', context);
-    expect(controller.activeId, 'github');
-    expect(await configStore.readThemeId(), 'github');
+    await executor.execute('/theme cobalt-bloom', context);
+    expect(controller.activeId, 'cobalt-bloom');
+    expect(await configStore.readThemeId(), 'cobalt-bloom');
     expect(toasts.last.$2, ToastMode.status);
   });
 }

@@ -157,7 +157,7 @@ void main() {
       );
     });
 
-    test('light terminal defaults to github', () {
+    test('light terminal defaults to cobalt bloom', () {
       expect(
         defaultThemeIdForEnvironment({'COLORFGBG': '0;15'}),
         kDefaultLightThemeId,
@@ -174,7 +174,7 @@ void main() {
 
     test('bundled default ids are the expected theme ids', () {
       expect(kDefaultDarkThemeId, 'dracula');
-      expect(kDefaultLightThemeId, 'github');
+      expect(kDefaultLightThemeId, 'cobalt-bloom');
     });
   });
 }

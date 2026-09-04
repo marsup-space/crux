@@ -16,7 +16,7 @@ enum TerminalBrightness { dark, light, unknown }
 /// the user's config — the default adapts each launch as the user
 /// switches their terminal between light and dark profiles.
 const kDefaultDarkThemeId = 'dracula';
-const kDefaultLightThemeId = 'github';
+const kDefaultLightThemeId = 'cobalt-bloom';
 
 /// Detects the terminal background brightness from [environment]
 /// (defaults to the real process environment at the call site).

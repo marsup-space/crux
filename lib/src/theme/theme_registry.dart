@@ -5,11 +5,12 @@ const curatedThemeIds = <String>[
   'onedarkpro',
   'catppuccin',
   'synthwave84',
-  'cobalt2',
   'flexoki',
   'rosepine',
   'rosepine-main',
-  'github',
+  'electric-orchid',
+  'cobalt-bloom',
+  'ember-clay',
 ];
 
 class ThemeRegistry {
