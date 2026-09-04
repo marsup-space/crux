@@ -47,12 +47,20 @@ Future<void> main(List<String> args) async {
           instanceKey: 'standalone.$name',
           retainState: false,
           submitOnAction: false,
+          maxWidth: _sampleMaxWidth(name),
           onAction: (_) {},
         ),
       ),
     ),
   );
 }
+
+int _sampleMaxWidth(String name) => switch (name) {
+  'form' => 92,
+  'progress' => 132,
+  'data' => 100,
+  _ => 120,
+};
 
 final _releaseForm = CreateSurface(
   surfaceId: 'standalone.form',
@@ -86,6 +94,7 @@ final _releaseForm = CreateSurface(
       component: 'Column',
       properties: {
         'children': ['title', 'environment', 'announce', 'preview', 'submit'],
+        'align': 'start',
       },
     ),
     A2uiComponent(

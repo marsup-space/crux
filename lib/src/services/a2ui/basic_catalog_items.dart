@@ -102,6 +102,12 @@ class ColumnCatalogItem extends CatalogItem {
       'items': {'type': 'string'},
       'description': 'List of child component ids, in order.',
     },
+    'align': {
+      'type': 'string',
+      'enum': ['stretch', 'start'],
+      'description':
+          'Cross-axis alignment. Default stretch; use start for compact forms.',
+    },
   };
 
   @override
@@ -178,7 +184,9 @@ class ColumnCatalogItem extends CatalogItem {
         }
 
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: component.properties['align'] == 'start'
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.stretch,
           children: children,
         );
       },

@@ -23,6 +23,35 @@ void main() {
   });
 
   group('SurfaceHost', () {
+    test('centers a bounded standalone surface', () async {
+      await testNocterm('surface host max width', (tester) async {
+        final declaration =
+            (SurfaceBuilder(surfaceId: 'sample.bounded')
+                  ..column('root', ['fact'])
+                  ..keyValue('fact', label: 'project', value: 'crux'))
+                .build();
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 8,
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SurfaceHost(
+                declaration: declaration,
+                catalog: createBasicCatalog(),
+                instanceKey: 'sample.bounded',
+                retainState: false,
+                maxWidth: 40,
+              ),
+            ),
+          ),
+        );
+        final project = tester.terminalState.findText('project');
+        expect(project, isNotEmpty);
+        expect(project.first.x, greaterThanOrEqualTo(20));
+      }, size: const Size(80, 8));
+    });
+
     test('renders an app-owned KeyValue surface', () async {
       await testNocterm('surface host facts', (tester) async {
         final declaration =
