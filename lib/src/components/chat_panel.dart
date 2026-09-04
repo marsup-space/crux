@@ -1938,6 +1938,16 @@ class _ChatPanelState extends State<ChatPanel> {
 
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
 
+            // The input keeps three visible text rows at minimum.  Its outer
+            // padding consumes two more rows, so reserve that before capping
+            // the entire input region at half the terminal height.
+            final maxInputVisibleLines = constraints.maxHeight.isFinite
+                ? ((constraints.maxHeight / 2).floor() -
+                          (kInputPadding * 2).round())
+                      .clamp(kChatInputMinVisibleLines, 10000)
+                      .toInt()
+                : kChatInputMinVisibleLines;
+
             // Plan-mode horizontal split (§9.6 collapse order): with the
             // plan pane up, the info sidebar drops first when the three
             // panes would starve chat (< kPlanChatPaneMinWidth), and the
@@ -2086,6 +2096,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         refresh: _refresh,
                         projectPath: Directory.current.path,
                         strings: _strings,
+                        maxVisibleLines: maxInputVisibleLines,
                         recentProjectsStore: _recentProjectsStore,
                         activePlanName: () {
                           final path = _planModeController.planDocPath;

@@ -66,6 +66,11 @@ const kContentHorizontalPadding = 1.0;
 /// controls (`> ` prompt, paste button).
 const kInputPadding = 1.0;
 
+/// Minimum number of text rows visible in the chat input.  The input may use
+/// more rows on taller terminals, but never fewer than this even on a compact
+/// terminal.
+const kChatInputMinVisibleLines = 3;
+
 /// Right-edge clearance (columns) reserved for the chat scrollbar's
 /// thumb + marker column so floating controls (e.g. the vibe/verbose
 /// toggle) don't overlap the scrollbar or block its hit testing.
