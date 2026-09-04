@@ -43,6 +43,10 @@ class SurfaceController extends StatefulComponent {
   /// Null when data model updates don't need external notification.
   final void Function(String path, dynamic value)? onDataModelUpdate;
 
+  /// Whether firing an action archives the surface. Chat forms submit once;
+  /// dashboard controls can dispatch repeatedly without freezing their host.
+  final bool submitOnAction;
+
   /// The host's message catalog — threaded down to catalog items so
   /// host-added chrome (e.g. the Table fold toggle) renders in the
   /// active UI language. Defaults to English.
@@ -54,6 +58,7 @@ class SurfaceController extends StatefulComponent {
     required this.catalog,
     this.onAction,
     this.onDataModelUpdate,
+    this.submitOnAction = true,
     this.strings = kEnglishStrings,
   });
 
@@ -108,8 +113,9 @@ class _SurfaceControllerState extends State<SurfaceController> {
     for (final entry in action.context.entries) {
       final binding = DataBinding.tryParse(entry.value);
       if (binding != null) {
-        resolvedContext[entry.key] =
-            binding.resolve(component.surface.dataModel);
+        resolvedContext[entry.key] = binding.resolve(
+          component.surface.dataModel,
+        );
       } else {
         resolvedContext[entry.key] = entry.value;
       }
@@ -131,7 +137,7 @@ class _SurfaceControllerState extends State<SurfaceController> {
 
     // Mark the surface as submitted — disables further interaction and
     // freezes the data model so the surface shows exactly what was sent.
-    component.surface.markSubmitted();
+    if (component.submitOnAction) component.surface.markSubmitted();
 
     component.onAction?.call(resolved);
 

@@ -1,8 +1,12 @@
 import 'package:nocterm/nocterm.dart';
 
-import '../../../theme/crux_theme.dart';
+import '../../../components/surface_host.dart';
+import '../../../services/a2ui/basic_catalog_items.dart';
+import '../../../services/a2ui/surface_builder.dart';
 import '../../../utils/text_width.dart';
 import '../home_widgets.dart';
+
+final _settingsSurfaceCatalog = createBasicCatalog();
 
 /// One row in the settings box.
 class _Setting {
@@ -51,16 +55,28 @@ class SettingsHomeWidget extends HomeWidget {
 
   List<_Setting> _items(HomeContext ctx) {
     return [
-      _Setting(ctx.strings.t('home.settings.theme'), ctx.themeId() ?? '—', '/theme '),
+      _Setting(
+        ctx.strings.t('home.settings.theme'),
+        ctx.themeId() ?? '—',
+        '/theme ',
+      ),
       _Setting(
         ctx.strings.t('home.settings.auxiliary'),
         ctx.auxModelName() ?? 'none',
         '/auxiliary ',
       ),
-      _Setting(ctx.strings.t('home.settings.view'), ctx.viewMode() ?? '—', '/view '),
+      _Setting(
+        ctx.strings.t('home.settings.view'),
+        ctx.viewMode() ?? '—',
+        '/view ',
+      ),
       // Language switching is wired via `/language`; the row shows the
       // active locale and stays read-only (seed via `/language ` instead).
-      _Setting(ctx.strings.t('home.settings.language'), ctx.localeId() ?? 'en', null),
+      _Setting(
+        ctx.strings.t('home.settings.language'),
+        ctx.localeId() ?? 'en',
+        null,
+      ),
       // Reply-language switching is wired via `/reply-language`; the row
       // shows the localized mode label and seeds the command on activate.
       _Setting(
@@ -132,7 +148,6 @@ class SettingsHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
     final items = _items(ctx);
 
     // Pad the label column (in terminal *columns*, not code units) so the
@@ -143,69 +158,26 @@ class SettingsHomeWidget extends HomeWidget {
       if (w > maxLabel) maxLabel = w;
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < items.length; i++)
-          _SettingsRow(
-            item: items[i],
-            labelWidth: maxLabel,
-            selected: focused && i == _selectedIndex,
-            theme: theme,
-            onTap: () {
-              _selectedIndex = i;
-              activateItem(ctx, i)?.call();
-            },
-          ),
-      ],
-    );
-  }
-}
-
-/// One settings row: a dim label (padded to [labelWidth]) and the
-/// current value. Highlighted when it's the box's selected item and the
-/// box is focused — same pattern as quick-actions / setup.
-class _SettingsRow extends StatelessComponent {
-  final _Setting item;
-  final int labelWidth;
-  final bool selected;
-  final CruxThemeData theme;
-  final VoidCallback onTap;
-
-  const _SettingsRow({
-    required this.item,
-    required this.labelWidth,
-    required this.selected,
-    required this.theme,
-    required this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final labelColor = selected ? theme.selectedText : theme.onSurfaceDim;
-    final valueColor = selected
-        ? theme.selectedText
-        : (item.seedText == null ? theme.onSurfaceDim : theme.onSurfaceVariant);
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.selection : null,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              padToWidth(item.label, labelWidth),
-              style: TextStyle(color: labelColor),
-            ),
-            Text(
-              '  ${item.value}',
-              style: TextStyle(color: valueColor),
-            ),
-          ],
-        ),
-      ),
+    final surface = SurfaceBuilder(surfaceId: 'home.settings')
+      ..column('root', [for (var i = 0; i < items.length; i++) 'row$i']);
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      surface.keyValue(
+        'row$i',
+        label: item.label,
+        value: item.value,
+        labelWidth: maxLabel,
+        selected: focused && i == _selectedIndex,
+        muted: item.seedText == null,
+      );
+    }
+    return SurfaceHost(
+      declaration: surface.build(),
+      catalog: _settingsSurfaceCatalog,
+      instanceKey: 'home.settings',
+      retainState: false,
+      submitOnAction: false,
+      strings: ctx.strings,
     );
   }
 }

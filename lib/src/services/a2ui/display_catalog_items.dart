@@ -32,6 +32,93 @@ import 'models.dart';
 import 'surface_catalog.dart';
 
 // ---------------------------------------------------------------------------
+// KeyValue
+// ---------------------------------------------------------------------------
+
+/// A compact aligned label/value row for dashboards and inspectors.
+///
+/// This is deliberately a presentation primitive, not a form control. Hosts
+/// own keyboard focus and action routing; `selected` merely mirrors their
+/// current selection into the shared surface syntax.
+class KeyValueCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'KeyValue';
+
+  @override
+  String get description =>
+      'A compact label/value row for facts and settings. `selected` renders '
+      'the host selection state; it does not create an action by itself.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'label': {'type': 'string', 'description': 'Left-hand label.'},
+    'value': {
+      'type': 'string',
+      'description': 'Right-hand value. Supports {"path": "/field"}.',
+    },
+    'labelWidth': {
+      'type': 'number',
+      'description': 'Optional terminal-column width for aligned labels.',
+    },
+    'selected': {
+      'type': 'boolean',
+      'description': 'Whether the host currently selects this row.',
+    },
+    'muted': {
+      'type': 'boolean',
+      'description': 'Render the value as read-only/muted.',
+    },
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final theme = CruxTheme.of(context);
+    final label =
+        resolveValue(component.properties['label'], dataModel)?.toString() ??
+        '';
+    final value =
+        resolveValue(component.properties['value'], dataModel)?.toString() ??
+        '';
+    final selected = component.properties['selected'] == true;
+    final muted = component.properties['muted'] == true;
+    final labelWidth = coerceIntProperty(
+      component.properties['labelWidth'],
+      stringWidth(label),
+    );
+    final labelColor = selected ? theme.selectedText : theme.onSurfaceDim;
+    final valueColor = selected
+        ? theme.selectedText
+        : muted
+        ? theme.onSurfaceDim
+        : theme.onSurfaceVariant;
+
+    return Container(
+      color: selected ? theme.selection : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            padToWidth(label, labelWidth),
+            style: TextStyle(color: labelColor),
+          ),
+          Text('  $value', style: TextStyle(color: valueColor)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
@@ -56,31 +143,31 @@ class TableCatalogItem extends CatalogItem {
 
   @override
   Map<String, dynamic> get propertiesSchema => {
-        'columns': {
-          'type': 'array',
-          'description':
-              'Column definitions: [{"header": "File", "key": "file", '
-              '"width": 20}]. `width` is optional (natural width by '
-              'default).',
-          'items': {
-            'type': 'object',
-            'properties': {
-              'header': {'type': 'string'},
-              'key': {'type': 'string'},
-              'width': {'type': 'number'},
-            },
-            'required': ['header', 'key'],
-          },
+    'columns': {
+      'type': 'array',
+      'description':
+          'Column definitions: [{"header": "File", "key": "file", '
+          '"width": 20}]. `width` is optional (natural width by '
+          'default).',
+      'items': {
+        'type': 'object',
+        'properties': {
+          'header': {'type': 'string'},
+          'key': {'type': 'string'},
+          'width': {'type': 'number'},
         },
-        'rows': {
-          'type': 'array',
-          'description':
-              'Row objects keyed by column `key`. Can be a literal list '
-              'or {"path": "/field"} — the latter lets surface_update '
-              'push live rows.',
-          'items': {'type': 'object'},
-        },
-      };
+        'required': ['header', 'key'],
+      },
+    },
+    'rows': {
+      'type': 'array',
+      'description':
+          'Row objects keyed by column `key`. Can be a literal list '
+          'or {"path": "/field"} — the latter lets surface_update '
+          'push live rows.',
+      'items': {'type': 'object'},
+    },
+  };
 
   @override
   Component build({
@@ -128,10 +215,7 @@ class TableCatalogItem extends CatalogItem {
     }
 
     if (columns.isEmpty) {
-      return Text(
-        '[Table: no columns]',
-        style: TextStyle(color: theme.error),
-      );
+      return Text('[Table: no columns]', style: TextStyle(color: theme.error));
     }
 
     // Compute natural column widths: max(header, longest cell) with a
@@ -161,7 +245,13 @@ class TableCatalogItem extends CatalogItem {
         final widths = List<int>.from(natural);
         if (constraints.maxWidth.isFinite) {
           final avail = constraints.maxWidth.floor();
-          var total = widths.fold(0, (a, b) => a + b);
+          // Keep a visible gutter between data columns. Without it, a cell
+          // that exactly fills its natural width runs into the next value
+          // (`Pluginsnext`), which is especially confusing in compact cards.
+          const columnGap = 2;
+          var total =
+              widths.fold(0, (a, b) => a + b) +
+              (columns.length - 1) * columnGap;
           if (total > avail && avail >= columns.length * 3) {
             // Shrink round-robin from the widest columns until we fit,
             // never below 3 cols (2 content + ellipsis stays readable).
@@ -178,27 +268,31 @@ class TableCatalogItem extends CatalogItem {
         }
 
         Component headerRow() => Row(
-              children: [
-                for (var i = 0; i < columns.length; i++)
-                  Text(
-                    _padCell(columns[i].header, widths[i]),
-                    style: TextStyle(
-                      color: theme.secondary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-              ],
-            );
+          children: [
+            for (var i = 0; i < columns.length; i++) ...[
+              if (i > 0) const SizedBox(width: 2),
+              Text(
+                _padCell(columns[i].header, widths[i]),
+                style: TextStyle(
+                  color: theme.secondary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ],
+        );
 
         Component dataRow(Map<String, dynamic> row) => Row(
-              children: [
-                for (var i = 0; i < columns.length; i++)
-                  Text(
-                    _padCell(row[columns[i].key]?.toString() ?? '', widths[i]),
-                    style: TextStyle(color: theme.foreground),
-                  ),
-              ],
-            );
+          children: [
+            for (var i = 0; i < columns.length; i++) ...[
+              if (i > 0) const SizedBox(width: 2),
+              Text(
+                _padCell(row[columns[i].key]?.toString() ?? '', widths[i]),
+                style: TextStyle(color: theme.foreground),
+              ),
+            ],
+          ],
+        );
 
         // Height autonomy: the host caps how many rows a table may
         // contribute to the chat flow, regardless of how many the agent
@@ -209,10 +303,7 @@ class TableCatalogItem extends CatalogItem {
         if (rows.length <= foldBudget) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              headerRow(),
-              for (final row in rows) dataRow(row),
-            ],
+            children: [headerRow(), for (final row in rows) dataRow(row)],
           );
         }
 
@@ -323,11 +414,7 @@ class _FoldableTableState extends State<_FoldableTable> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        c.header,
-        ...visibleRows,
-        toggle,
-      ],
+      children: [c.header, ...visibleRows, toggle],
     );
   }
 }
@@ -361,27 +448,27 @@ class ProgressBarCatalogItem extends CatalogItem {
 
   @override
   Map<String, dynamic> get propertiesSchema => {
-        'value': {
-          'type': 'number',
-          'description':
-              'Progress fraction 0..1. Can be {"path": "/field"}. '
-              'Omit for an indeterminate bar.',
-        },
-        'label': {
-          'type': 'string',
-          'description':
-              'Optional text drawn inside the bar '
-              '(overrides the percentage readout).',
-        },
-        'indeterminate': {
-          'type': 'boolean',
-          'description': 'Animated "work in progress" pulse.',
-        },
-        'showPercentage': {
-          'type': 'boolean',
-          'description': 'Show "42%" centered in the bar. Default false.',
-        },
-      };
+    'value': {
+      'type': 'number',
+      'description':
+          'Progress fraction 0..1. Can be {"path": "/field"}. '
+          'Omit for an indeterminate bar.',
+    },
+    'label': {
+      'type': 'string',
+      'description':
+          'Optional text drawn inside the bar '
+          '(overrides the percentage readout).',
+    },
+    'indeterminate': {
+      'type': 'boolean',
+      'description': 'Animated "work in progress" pulse.',
+    },
+    'showPercentage': {
+      'type': 'boolean',
+      'description': 'Show "42%" centered in the bar. Default false.',
+    },
+  };
 
   @override
   Component build({
@@ -529,7 +616,8 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
       return;
     }
     final now = DateTime.now();
-    final dt = (now.difference(_lastTick).inMicroseconds) /
+    final dt =
+        (now.difference(_lastTick).inMicroseconds) /
         Duration.microsecondsPerSecond;
     _lastTick = now;
     final diff = _targetValue - _displayValue;
@@ -549,9 +637,8 @@ class _SurfaceProgressBarState extends State<_SurfaceProgressBar> {
 
   /// The value the bar should visually present — the lerped display
   /// value while animating, the target value when at rest.
-  double? get _renderedValue => component.value != null
-      ? _displayValue.clamp(0.0, 1.0)
-      : component.value;
+  double? get _renderedValue =>
+      component.value != null ? _displayValue.clamp(0.0, 1.0) : component.value;
 
   @override
   Component build(BuildContext context) {
@@ -654,28 +741,28 @@ class RenderSurfaceProgressBar extends RenderObject {
     required Color emptyColor,
     required Color labelFillFg,
     required Color labelEmptyFg,
-  })  :         // Width/value/frame are transformed (frame is nullable in the
-        // param, non-null usage inside), so explicit assignment reads
-        // clearest; the lint is informational.
-        // ignore: prefer_initializing_formals
-        _width = width,
-        // ignore: prefer_initializing_formals
-        _value = value,
-        // ignore: prefer_initializing_formals
-        _indeterminateFrame = indeterminateFrame,
-        _label = label ?? '',
-        // Style infos trigger `prefer_initializing_formals` noise when
-        // assigned in the initializer list; ContextBar's render object
-        // lays these out the same way, and the lint is informational —
-        // keep explicit assignment for readability.
-        // ignore: prefer_initializing_formals
-        _fillColor = fillColor,
-        // ignore: prefer_initializing_formals
-        _emptyColor = emptyColor,
-        // ignore: prefer_initializing_formals
-        _labelFillFg = labelFillFg,
-        // ignore: prefer_initializing_formals
-        _labelEmptyFg = labelEmptyFg;
+  }) : // Width/value/frame are transformed (frame is nullable in the
+       // param, non-null usage inside), so explicit assignment reads
+       // clearest; the lint is informational.
+       // ignore: prefer_initializing_formals
+       _width = width,
+       // ignore: prefer_initializing_formals
+       _value = value,
+       // ignore: prefer_initializing_formals
+       _indeterminateFrame = indeterminateFrame,
+       _label = label ?? '',
+       // Style infos trigger `prefer_initializing_formals` noise when
+       // assigned in the initializer list; ContextBar's render object
+       // lays these out the same way, and the lint is informational —
+       // keep explicit assignment for readability.
+       // ignore: prefer_initializing_formals
+       _fillColor = fillColor,
+       // ignore: prefer_initializing_formals
+       _emptyColor = emptyColor,
+       // ignore: prefer_initializing_formals
+       _labelFillFg = labelFillFg,
+       // ignore: prefer_initializing_formals
+       _labelEmptyFg = labelEmptyFg;
 
   /// Width change re-lays-out (size depends on it); visual-only changes
   /// just repaint.
@@ -814,10 +901,7 @@ class RenderSurfaceProgressBar extends RenderObject {
 
       final ch = labelChars[i];
       final fg = labelFgs[i];
-      final style = TextStyle(
-        color: fg,
-        backgroundColor: bg,
-      );
+      final style = TextStyle(color: fg, backgroundColor: bg);
       // Always draw exactly one column per iteration: bg fill for
       // every cell, label char where mapped, space elsewhere.
       canvas.drawText(
@@ -873,17 +957,16 @@ class ListCatalogItem extends CatalogItem {
 
   @override
   Map<String, dynamic> get propertiesSchema => {
-        'children': {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'description': 'Row component ids, in order.',
-        },
-        'maxHeight': {
-          'type': 'number',
-          'description':
-              'Maximum visible rows before scrolling. Default 8.',
-        },
-      };
+    'children': {
+      'type': 'array',
+      'items': {'type': 'string'},
+      'description': 'Row component ids, in order.',
+    },
+    'maxHeight': {
+      'type': 'number',
+      'description': 'Maximum visible rows before scrolling. Default 8.',
+    },
+  };
 
   @override
   Component build({
@@ -920,10 +1003,7 @@ class ListCatalogItem extends CatalogItem {
     // A ScrollController is shared between the ListView and the Scrollbar
     // so the scrollbar can read maxScrollExtent and paint its thumb —
     // without it, Scrollbar renders nothing.
-    return _SurfaceList(
-      maxHeight: maxHeight,
-      children: children,
-    );
+    return _SurfaceList(maxHeight: maxHeight, children: children);
   }
 }
 
@@ -934,10 +1014,7 @@ class _SurfaceList extends StatefulComponent {
   final int maxHeight;
   final List<Component> children;
 
-  const _SurfaceList({
-    required this.maxHeight,
-    required this.children,
-  });
+  const _SurfaceList({required this.maxHeight, required this.children});
 
   @override
   State<_SurfaceList> createState() => _SurfaceListState();
@@ -983,6 +1060,7 @@ class _SurfaceListState extends State<_SurfaceList> {
 /// Register the Crux display-extension catalog items into a
 /// [SurfaceCatalog]: Table, ProgressBar, List.
 void registerDisplayCatalogItems(SurfaceCatalog catalog) {
+  catalog.register(KeyValueCatalogItem());
   catalog.register(TableCatalogItem());
   catalog.register(ProgressBarCatalogItem());
   catalog.register(ListCatalogItem());

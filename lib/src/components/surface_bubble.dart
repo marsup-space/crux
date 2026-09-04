@@ -11,9 +11,9 @@ import 'package:nocterm/nocterm.dart';
 import '../models/message.dart';
 import '../services/a2ui/models.dart';
 import '../services/a2ui/surface_catalog.dart';
-import '../services/a2ui/surface_controller.dart';
 import '../theme/crux_theme.dart';
 import '../tools/surface_tool.dart';
+import 'surface_host.dart';
 
 /// Renders an A2UI surface inline in the chat flow.
 ///
@@ -69,10 +69,7 @@ class SurfaceBubble extends StatelessComponent {
               style: TextStyle(color: theme.error),
             ),
             for (final e in errors)
-              Text(
-                '  $e',
-                style: TextStyle(color: theme.textMuted),
-              ),
+              Text('  $e', style: TextStyle(color: theme.textMuted)),
           ],
         ),
       );
@@ -82,8 +79,6 @@ class SurfaceBubble extends StatelessComponent {
     // edits, submitted flag) survives chat-list rebuilds. The tool call's
     // callId is a stable key — the same logical surface always maps to the
     // same instance.
-    final instance = catalog.instanceFor(toolCall.callId, surface);
-
     // Wrap in a subtle background tint so surfaces visually lift from the
     // plain message flow — a surface is an interactive artifact, not prose.
     // Horizontal padding keeps the Card border inset from the tint edge;
@@ -99,9 +94,10 @@ class SurfaceBubble extends StatelessComponent {
           padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
           child: Padding(
             padding: const EdgeInsets.only(left: 1, top: 0),
-            child: SurfaceController(
-              surface: instance,
+            child: SurfaceHost(
+              declaration: surface,
               catalog: catalog,
+              instanceKey: toolCall.callId,
               onAction: onAction,
               onDataModelUpdate: onDataModelUpdate,
             ),

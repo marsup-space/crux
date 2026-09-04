@@ -2,8 +2,12 @@ import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../i18n/strings.dart';
-import '../../../theme/crux_theme.dart';
+import '../../../components/surface_host.dart';
+import '../../../services/a2ui/basic_catalog_items.dart';
+import '../../../services/a2ui/surface_builder.dart';
 import '../home_widgets.dart';
+
+final _workspaceSurfaceCatalog = createBasicCatalog();
 
 /// The `workspace` box — basic facts about where Crux is open: the
 /// project directory, the git branch, the active model, and how many
@@ -42,9 +46,6 @@ class WorkspaceHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
-    final labelStyle = TextStyle(color: theme.onSurfaceDim);
-    final valueStyle = TextStyle(color: theme.onSurfaceVariant);
     final s = ctx.strings;
 
     // Directory: show the basename (what the user calls the project),
@@ -62,39 +63,28 @@ class WorkspaceHomeWidget extends HomeWidget {
 
     // Sessions: the workspace sessions only (chats are global), so the
     // count means "how much work lives in this directory".
-    final sessionCount =
-        ctx.sessions().where((s) => s.projectPath.isNotEmpty).length;
+    final sessionCount = ctx
+        .sessions()
+        .where((s) => s.projectPath.isNotEmpty)
+        .length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _row(labelStyle, valueStyle, s.t('home.ws.dir'), dir),
-        _row(labelStyle, valueStyle, s.t('home.ws.branch'), branch),
-        _row(labelStyle, valueStyle, s.t('home.ws.model'), model),
-        _row(
-          labelStyle,
-          valueStyle,
-          s.t('home.ws.sessions'),
-          s.t('home.ws.sessionsCount', {'n': '$sessionCount'}),
-        ),
-      ],
-    );
-  }
-
-  Component _row(
-    TextStyle labelStyle,
-    TextStyle valueStyle,
-    String label,
-    String value,
-  ) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('$label  ', style: labelStyle),
-        Expanded(
-          child: Text(value, style: valueStyle, overflow: TextOverflow.ellipsis),
-        ),
-      ],
+    final surface = SurfaceBuilder(surfaceId: 'home.workspace')
+      ..column('root', ['dir', 'branch', 'model', 'sessions'])
+      ..keyValue('dir', label: s.t('home.ws.dir'), value: dir)
+      ..keyValue('branch', label: s.t('home.ws.branch'), value: branch)
+      ..keyValue('model', label: s.t('home.ws.model'), value: model)
+      ..keyValue(
+        'sessions',
+        label: s.t('home.ws.sessions'),
+        value: s.t('home.ws.sessionsCount', {'n': '$sessionCount'}),
+      );
+    return SurfaceHost(
+      declaration: surface.build(),
+      catalog: _workspaceSurfaceCatalog,
+      instanceKey: 'home.workspace',
+      retainState: false,
+      submitOnAction: false,
+      strings: s,
     );
   }
 
