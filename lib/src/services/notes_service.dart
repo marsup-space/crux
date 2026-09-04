@@ -10,8 +10,8 @@ import '../utils/todo_parser.dart';
 /// (persisted in the crux DB via [NotesStore]) plus the small status
 /// JSON file the spec-widget reads.
 ///
-/// This mirrors the dev-harness architecture ("same architecture as
-/// crux dev"): a process-side feature keeps its source of truth
+/// This follows the plugin status-projection architecture: a process-side
+/// feature keeps its source of truth
 /// somewhere durable and writes a tiny *projection* to a well-known
 /// file that the generic, TOML-driven sidebar widget polls. Here the
 /// source of truth is the `project_notes` table and the projection is
@@ -138,8 +138,10 @@ class NotesService {
   Future<TodoSummary> markTodoOpen(int lineIndex) =>
       _setTodoChecked(lineIndex, done: false);
 
-  Future<TodoSummary> _setTodoChecked(int lineIndex,
-      {required bool done}) async {
+  Future<TodoSummary> _setTodoChecked(
+    int lineIndex, {
+    required bool done,
+  }) async {
     final content = await _store.loadContent(projectPath);
     final lines = content.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) {
@@ -184,8 +186,7 @@ class NotesService {
         // Full list (was capped at 3 with a "+N more" overflow line in
         // `display`; the rendering surfaces now show a scrollbar and
         // scroll instead of collapsing).
-        for (final item in open)
-          {'text': item.text, 'line': item.lineIndex},
+        for (final item in open) {'text': item.text, 'line': item.lineIndex},
       ],
       'display': NotesService.renderDisplay(todos),
     };

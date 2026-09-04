@@ -23,12 +23,12 @@
 //   2. ACTIONS — turn something the user does repeatedly into one click
 //      (start/stop/reload a service, run tests, submit a prompt).
 //
-// Schema (see .crux/plugins/dev-harness.toml for a live example):
+// Schema (see .crux/plugins/my-notes.toml for a live project example):
 //
-//   id = "dev-harness"                  # must match the file name
+//   id = "my-plugin"                    # must match the file name
 //   placement = "sidebar"               # sidebar | home | both
-//   title = "crux dev"                  # box title, defaults to id
-//   label = "⟳ crux dev · {state}"      # label template (see below)
+//   title = "my plugin"                 # box title, defaults to id
+//   label = "status · {state}"          # label template (see below)
 //   refresh_ms = 2000                   # status poll interval
 //
 //   [status]
@@ -260,20 +260,16 @@ class Plugin {
   }) : title = title ?? id;
 
   bool get showsOnSidebar =>
-      placement == PluginPlacement.sidebar ||
-      placement == PluginPlacement.both;
+      placement == PluginPlacement.sidebar || placement == PluginPlacement.both;
 
   bool get showsOnHome =>
-      placement == PluginPlacement.home ||
-      placement == PluginPlacement.both;
+      placement == PluginPlacement.home || placement == PluginPlacement.both;
 
   /// Non-empty display lines in [labelTemplate] — statically known at
   /// parse time, so the home grid can size its box to the spec
   /// (label lines + headroom for todo/action rows).
-  static int labelLineCount(String template) => template
-      .split('\n')
-      .where((l) => l.trim().isNotEmpty)
-      .length;
+  static int labelLineCount(String template) =>
+      template.split('\n').where((l) => l.trim().isNotEmpty).length;
 
   /// Parse a spec file. Returns null when the file is unreadable or
   /// malformed, or the `id` doesn't match the file name — the caller
@@ -411,10 +407,7 @@ class Plugin {
     if (raw is! Map) return null;
     final command = raw['command'] as String?;
     if (command == null || command.trim().isEmpty) return null;
-    return PluginProducer(
-      command: command,
-      cwd: raw['cwd'] as String?,
-    );
+    return PluginProducer(command: command, cwd: raw['cwd'] as String?);
   }
 
   static PluginStateColor _parseColor(String? raw) {
@@ -547,8 +540,7 @@ PluginStatus evaluatePluginStatus(
             data: data,
             stateText: stateText,
             label: renderTemplate(plugin.labelTemplate, data, stateText),
-            spanLines:
-                _aliveSpanLines(plugin.labelTemplate, data, stateText),
+            spanLines: _aliveSpanLines(plugin.labelTemplate, data, stateText),
             color: rule.color,
           );
         }
@@ -558,8 +550,11 @@ PluginStatus evaluatePluginStatus(
         data: data,
         stateText: plugin.aliveText,
         label: renderTemplate(plugin.labelTemplate, data, plugin.aliveText),
-        spanLines:
-            _aliveSpanLines(plugin.labelTemplate, data, plugin.aliveText),
+        spanLines: _aliveSpanLines(
+          plugin.labelTemplate,
+          data,
+          plugin.aliveText,
+        ),
         color: PluginStateColor.normal,
       );
   }
@@ -590,9 +585,11 @@ List<List<PluginLabelSpan>> _aliveSpanLines(
     var last = 0;
     for (final m in _placeholderPattern.allMatches(line)) {
       if (m.start > last) {
-        spans.add(
-          (text: line.substring(last, m.start), isValue: false, emphasize: false),
-        );
+        spans.add((
+          text: line.substring(last, m.start),
+          isValue: false,
+          emphasize: false,
+        ));
       }
       final name = m.group(1)!;
       String? value;
@@ -665,8 +662,9 @@ Future<bool> sendPluginAction(
       final request = await client
           .postUrl(parsed)
           .timeout(const Duration(seconds: 5));
-      final response =
-          await request.close().timeout(const Duration(seconds: 5));
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
       await response.drain<void>();
       return response.statusCode == 200;
     } finally {
@@ -684,10 +682,7 @@ Future<bool> sendPluginAction(
 /// Platform support: macOS + Ghostty only — other platforms return
 /// false and the UI renders the start segment disabled / the tool
 /// reports failure.
-Future<bool> launchPluginAction(
-  PluginAction action,
-  String projectPath,
-) async {
+Future<bool> launchPluginAction(PluginAction action, String projectPath) async {
   if (action.kind != PluginActionKind.launch) return false;
   final command = action.command;
   if (command == null || command.trim().isEmpty) return false;
@@ -807,8 +802,9 @@ PluginAlive _computeAlive(
 /// splitting: `{field}`, `{field@HH:MM}`, `{state}`, each optionally
 /// suffixed with `!` (`{price!}`) to mark the substituted value for
 /// emphasis coloring.
-final RegExp _placeholderPattern =
-    RegExp(r'\{([a-zA-Z0-9_.]+)(?:@(HH:MM))?(!)?\}');
+final RegExp _placeholderPattern = RegExp(
+  r'\{([a-zA-Z0-9_.]+)(?:@(HH:MM))?(!)?\}',
+);
 
 /// Substitute `{state}`, `{field}` and `{field@HH:MM}` placeholders.
 /// Unknown or missing fields render as the literal placeholder so spec
@@ -822,23 +818,20 @@ String renderTemplate(
   Map<String, dynamic> data,
   String stateText,
 ) {
-  return template.replaceAllMapped(
-    _placeholderPattern,
-    (match) {
-      final name = match.group(1)!;
-      if (name == 'state') return stateText;
-      final value = _dig(data, name);
-      if (value == null) return match.group(0)!;
-      if (match.group(2) == 'HH:MM') {
-        final t = DateTime.tryParse(value.toString());
-        if (t == null) return '';
-        final local = t.toLocal();
-        return '${local.hour.toString().padLeft(2, '0')}:'
-            '${local.minute.toString().padLeft(2, '0')}';
-      }
-      return value.toString();
-    },
-  );
+  return template.replaceAllMapped(_placeholderPattern, (match) {
+    final name = match.group(1)!;
+    if (name == 'state') return stateText;
+    final value = _dig(data, name);
+    if (value == null) return match.group(0)!;
+    if (match.group(2) == 'HH:MM') {
+      final t = DateTime.tryParse(value.toString());
+      if (t == null) return '';
+      final local = t.toLocal();
+      return '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+    }
+    return value.toString();
+  });
 }
 
 dynamic _dig(Map<String, dynamic> data, String dottedPath) {

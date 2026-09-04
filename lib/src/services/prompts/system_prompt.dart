@@ -279,7 +279,9 @@ correct but useless plugin (generic `●` labels, decorative buttons):
 before writing, restate the need in one sentence the user can
 correct ("You want X at a glance + a restart button — building
 that"); make the label ANSWER their question, not decorate it;
-only add buttons they will click more than once; ask a clarifying
+only add buttons they will click more than once. A `[producer]` is
+kept alive by cruxd, so do not add a redundant start/restart action;
+ask a clarifying
 question when the request is ambiguous; when the user didn't ask
 for a plugin, propose first instead of surprising them. Placement
 follows purpose: glance-while-working → sidebar, check-on-landing

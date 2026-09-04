@@ -96,6 +96,8 @@ question nobody asked. Guard against it:
   runs (`test`, `reload`, `deploy`), and only include the ones the
   user repeatedly uses. No "refresh" button when the box already
   auto-refreshes; no "open" button for a directory they never open.
+  A `[producer]` is kept alive by cruxd while its plugin is rendered,
+  so do not add a redundant `start` or `restart` action for it.
 - **Ask when the request is ambiguous.** "Monitor my server" —
   which server, what signal matters (port? errors? requests/min?),
   and what does the user want to DO about it (restart? tail logs)?
@@ -235,32 +237,34 @@ TOML `"""` string or `\n`:
 
     id = "gold"
     title = "gold"
-    placement = "sidebar"
+    placement = "both"
     label = """
-    $XAU {price}
-    {arrow} {delta} today
-    {updatedAt@HH:MM}"""
-    refresh_ms = 60000
+    ${usdOz!}/oz {usdArrow}{usdDelta!}
+    ¥{cnyG!}/g {cnyArrow}{cnyDelta!}"""
+    refresh_ms = 10000
 
     [status]
     path = "~/.crux/gold.json"           # absolute for a shared cache
-    touch_on_poll = "~/.crux/gold.watch" # consumer-driven (see below)
+    heartbeat_field = "heartbeatAt"
+    stale_after_seconds = 35
 
     # Red-up/green-down (or your locale's convention): the `!` marks
     # mark which VALUES take the rule color (the price, the delta) —
     # everything else (arrow, units) stays neutral. The label above
     # would read `{price!}` / `{delta!}` in this scheme.
     [[status.state_rules]]
-    when = { field = "trend", equals = "up" }
+    when = { field = "usdTrend", equals = "up" }
     text = "▲ up"
     color = "error"        # red
 
     [[status.state_rules]]
-    when = { field = "trend", equals = "down" }
+    when = { field = "usdTrend", equals = "down" }
     text = "▼ down"
     color = "success"      # green
 
     fallback_alive_text = "live"
+    fallback_stale_text = "no update"
+    fallback_absent_text = "tracker not running"
 
 **Background fetchers (`[producer]`)**: when a plugin's data comes
 from a FETCH (an API, an expensive probe), do NOT park a resident
@@ -277,6 +281,8 @@ group-killed when the last instance exits, and the daemon itself
 lights off with it. The script stays dumb: a `while/sleep` loop.
 `{field}` placeholders resolve against the plugin's own status JSON
 at spawn time. `cwd` is optional (default: the declaring project).
+Because cruxd owns this lifecycle, a producer-backed monitor normally
+has no manual `start` / `restart` action.
 For daemon-less environments there's also `touch_on_poll =
 "<watch file>"` (consumers bump its mtime each poll tick; pair with
 a launchd WatchPaths oneshot agent) — a fallback, not the default.
@@ -411,7 +417,7 @@ state changed; if a test run failed, offer to fix it.
   `.crux/widgets/*.toml`: `git mv` it to `.crux/plugins/` (the
   schema is unchanged; `placement` is the only new key).
 
-Canonical live example: `.crux/plugins/dev-harness.toml` in the
-Crux repo (a service plugin: heartbeat + start/reload/close).
+Canonical project-local example: `.crux/plugins/my-notes.toml` in the
+Crux repo (a status projection with a fullpane action).
 Parser source of truth: `lib/src/services/plugin.dart`.
 ''';

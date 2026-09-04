@@ -1,6 +1,6 @@
 # "my notes" plugin — per-project scratch notes with a todo summary.
 #
-# Same architecture as the dev-harness plugin: a process-side feature
+# A process-side feature
 # (the notes fullpane) keeps its source of truth in the crux DB and
 # writes a tiny status projection to .dart_tool/my_notes.json; this
 # spec just reads that projection. The projection carries a pre-rendered
