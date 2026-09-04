@@ -50,6 +50,7 @@ import '../utils/url_launcher.dart';
 import 'ask_form.dart';
 import 'btw_cubit.dart';
 import 'chat_history.dart';
+import 'codex_login_fullpane.dart';
 import 'chat_turn_cubit.dart';
 import 'compaction_fullpane.dart';
 import 'chat_input.dart';
@@ -321,6 +322,8 @@ class _ChatPanelState extends State<ChatPanel> {
   SkillInfo? _skillFullpane;
   Message? _compactionFullpaneMessage;
   VibeDiffRequest? _vibeDiffRequest;
+  ({int id, String userCode, String verificationUrl})? _codexLoginPane;
+  int _nextCodexLoginPaneId = 0;
 
   /// Whether the notes fullpane (the "my notes" editor) is showing.
   /// Unlike the other fullpane payloads this carries no data — the
@@ -1201,6 +1204,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       quitApp: _quitHandler.quitAndPrintSummary,
       showFullpane: _openFullpane,
+      showCodexLoginPane: _showCodexLoginPane,
       showHome: _openHome,
       recentProjectsStore: _recentProjectsStore,
       shellMonitorLogStore: _chatService.shellMonitorLogStore,
@@ -1371,6 +1375,15 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Component _buildFullpane() {
+    final codexLogin = _codexLoginPane;
+    if (codexLogin != null) {
+      return CodexLoginFullpane(
+        userCode: codexLogin.userCode,
+        verificationUrl: codexLogin.verificationUrl,
+        onOpenBrowser: () => openUrl(codexLogin.verificationUrl),
+        onClose: _closeFullpane,
+      );
+    }
     if (_notesFullpaneOpen) {
       return NotesFullpane(
         service: _notesService,
@@ -1453,6 +1466,22 @@ class _ChatPanelState extends State<ChatPanel> {
     setState(() {
       _overlayController.showFullpane = true;
     });
+  }
+
+  VoidCallback _showCodexLoginPane(String userCode, String verificationUrl) {
+    final id = ++_nextCodexLoginPaneId;
+    setState(() {
+      _codexLoginPane = (
+        id: id,
+        userCode: userCode,
+        verificationUrl: verificationUrl,
+      );
+      _overlayController.showFullpane = true;
+    });
+    return () {
+      if (!mounted || _codexLoginPane?.id != id) return;
+      _closeFullpane();
+    };
   }
 
   /// Open the home screen. Home replaces the whole chat interface
@@ -1665,6 +1694,7 @@ class _ChatPanelState extends State<ChatPanel> {
       _toolDetailData = null;
       _compactionFullpaneMessage = null;
       _vibeDiffRequest = null;
+      _codexLoginPane = null;
       _shellLiveFullpane = null;
       _skillFullpane = null;
       _notesFullpaneOpen = false;

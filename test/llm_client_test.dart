@@ -38,6 +38,8 @@ class _CapturingServer {
 
   String? get lastPath => _log.isEmpty ? null : _log.last.uri.path;
   String? get lastMethod => _log.isEmpty ? null : _log.last.method;
+  String? lastHeader(String name) =>
+      _log.isEmpty ? null : _log.last.headers.value(name);
 
   Future<void> stop() async {
     final server = _server;
@@ -483,6 +485,42 @@ void main() {
         ],
       });
     });
+  });
+
+  group('LlmClient — ChatGPT Codex', () {
+    test(
+      'routes to the Responses endpoint with Codex metadata headers',
+      () async {
+        final server = _CapturingServer(
+          200,
+          'event: response.completed\n'
+          'data: {"type":"response.completed","response":{"usage":null,"status":"completed"}}\n\n',
+        );
+        final base = await server.start();
+        addTearDown(server.stop);
+
+        final client = LlmClient();
+        addTearDown(client.dispose);
+        final config = _provider(type: 'codex', endpointUrl: base);
+
+        await for (final _ in client.streamChat(
+          endpointUrl: config.endpointUrl,
+          config: config,
+          apiKey: 'oauth-access-token',
+          modelId: 'gpt-5.5-codex',
+          userId: 'install-42',
+          messages: const [
+            {'role': 'user', 'content': 'hi'},
+          ],
+        )) {}
+
+        expect(server.lastPath, '/responses');
+        expect(server.lastHeader('authorization'), 'Bearer oauth-access-token');
+        expect(server.lastHeader('originator'), 'crux');
+        expect(server.lastHeader('user-agent'), 'crux');
+        expect(server.lastHeader('session-id'), 'install-42');
+      },
+    );
   });
 
   group('LlmClient — sanitizeMessages before sending '

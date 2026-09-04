@@ -1,5 +1,7 @@
 import '../components/ui/toast.dart';
+import '../services/codex_oauth.dart';
 import '../services/openrouter_stealth_sync.dart';
+import '../utils/url_launcher.dart';
 import '../utils/terminal_symbols.dart';
 import 'command_executor.dart';
 
@@ -63,11 +65,7 @@ Future<void> executeProviderSync(
       ctx.refresh();
       ctx.showToast(
         '${terminalSymbol('✓', '+')} '
-        '${ctx.strings.t('toast.providerSyncApplied', {
-          'added': '${plan.added.length}',
-          'removed': '${plan.removed.length}',
-          'path': file.path,
-        })}',
+        '${ctx.strings.t('toast.providerSyncApplied', {'added': '${plan.added.length}', 'removed': '${plan.removed.length}', 'path': file.path})}',
         mode: ToastMode.status,
       );
     } catch (e) {
@@ -119,11 +117,7 @@ Future<void> executeProviderSync(
     ctx.refresh();
     ctx.showToast(
       '${terminalSymbol('✓', '+')} '
-      '${ctx.strings.t('toast.providerSyncApplied', {
-        'added': '${pending.plan.added.length}',
-        'removed': '${pending.plan.removed.length}',
-        'path': file.path,
-      })}',
+      '${ctx.strings.t('toast.providerSyncApplied', {'added': '${pending.plan.added.length}', 'removed': '${pending.plan.removed.length}', 'path': file.path})}',
       mode: ToastMode.status,
     );
   } catch (e) {
@@ -133,7 +127,6 @@ Future<void> executeProviderSync(
     );
   }
 }
-
 
 Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
   final name = parts.length > 1 ? parts[1].trim() : '';
@@ -183,6 +176,49 @@ Future<void> executeProvider(List<String> parts, CommandContext ctx) async {
       mode = arg; // 'confirm' | 'now'
     }
     await executeProviderSync(name, mode, ctx: ctx);
+    return;
+  }
+  if (name == 'codex' && arg == 'login') {
+    void Function()? closeLoginPane;
+    try {
+      final login = await CodexOAuth.beginDeviceLogin();
+      closeLoginPane = ctx.showCodexLoginPane?.call(
+        login.userCode,
+        login.verificationUrl,
+      );
+      final instructions =
+          '''
+## Connect ChatGPT Codex
+
+1. In the browser, sign in to the ChatGPT account you want to use.
+2. Enter this temporary device code:
+
+## `${login.userCode}`
+
+This code expires shortly. If it expires, run `/provider codex login` again.
+''';
+      final post = ctx.appendLocalMessage;
+      if (post != null) await post(instructions);
+      ctx.showToast(
+        'ChatGPT Codex code: ${login.userCode}. Login instructions were added to this chat.',
+        mode: ToastMode.status,
+      );
+      openUrl(login.verificationUrl);
+      final credential = await CodexOAuth.waitForDeviceLogin(
+        deviceId: login.deviceId,
+        userCode: login.userCode,
+        interval: login.interval,
+      ).timeout(const Duration(minutes: 5));
+      await ctx.providerService.setApiKey('codex', credential);
+      closeLoginPane?.call();
+      ctx.showToast(
+        '${terminalSymbol('✓', '+')} ChatGPT Codex connected',
+        mode: ToastMode.status,
+      );
+    } catch (e) {
+      closeLoginPane?.call();
+      ctx.showToast('ChatGPT Codex sign-in failed: $e', mode: ToastMode.error);
+    }
     return;
   }
   if (arg == 'remove' || arg == '--remove' || arg == 'rm') {

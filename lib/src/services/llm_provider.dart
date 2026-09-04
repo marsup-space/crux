@@ -1,5 +1,6 @@
 import '../models/provider_config.dart';
 import 'providers/anthropic_compatible_provider.dart';
+import 'providers/codex_provider.dart';
 import 'providers/deepseek_provider.dart';
 import 'providers/kimi_provider.dart';
 import 'providers/minimax_provider.dart';
@@ -38,6 +39,11 @@ abstract class LlmProvider {
   WireFamily get wire;
 
   AuthStyle get authStyle;
+
+  /// Canonicalize a persisted model id before a turn begins. Providers use
+  /// this only for narrow, known-retired aliases; the default preserves every
+  /// caller-selected id unchanged.
+  String canonicalModelId(String modelId) => modelId;
 
   /// Whether this provider exposes a coding-plan (subscription
   /// usage) endpoint. The toolbar uses this to decide whether
@@ -321,6 +327,18 @@ abstract class LlmProvider {
   List<Map<String, dynamic>> sanitizeMessages(
     List<Map<String, dynamic>> messages,
   ) => messages;
+
+  /// Extra HTTP headers required by a provider's chat endpoint.
+  ///
+  /// Most providers authenticate solely through [authStyle], so the default
+  /// is empty. The ChatGPT Codex backend also requires caller and session
+  /// metadata; keeping that requirement on the provider prevents it from
+  /// leaking into ordinary OpenAI-compatible requests.
+  Map<String, String> requestHeaders({String? userId}) => const {};
+
+  /// Resolve a persisted credential immediately before a request. Providers
+  /// with short-lived OAuth access tokens may refresh them here.
+  Future<String> resolveApiKey(String apiKey) async => apiKey;
 }
 
 class ResolvedProvider {
@@ -364,6 +382,16 @@ ResolvedProvider resolveProvider(String type) {
         wire: WireFamily.responsesApi,
         authStyle: AuthStyle.bearer,
       );
+    case 'codex':
+      // ChatGPT Codex uses the OpenAI Responses wire, but its endpoint is
+      // the ChatGPT backend rather than api.openai.com. CodexProvider adds
+      // the required originator/session headers and omits unsupported
+      // sampling/output-cap parameters.
+      return ResolvedProvider(
+        provider: CodexProvider(),
+        wire: WireFamily.responsesApi,
+        authStyle: AuthStyle.bearer,
+      );
     case 'minimax':
       return ResolvedProvider(
         provider: MiniMaxProvider(),
@@ -401,6 +429,7 @@ List<String> knownProviderTypes() => [
   'openai_compatible',
   'anthropic_compatible',
   'deepseek',
+  'codex',
   'minimax',
   'kimi',
   'mimo',
@@ -415,6 +444,8 @@ String typeDisplayName(String type) {
       return 'Anthropic Compatible';
     case 'deepseek':
       return 'DeepSeek';
+    case 'codex':
+      return 'Codex';
     case 'minimax':
       return 'MiniMax';
     case 'kimi':

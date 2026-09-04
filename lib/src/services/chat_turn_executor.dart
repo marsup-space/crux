@@ -159,7 +159,7 @@ class ChatTurnExecutor {
   /// viewed session). Null in tests; wired by the chat panel to
   /// `PlanModeController.onAgentEdit`.
   void Function(String oldContent, String newContent, int sessionId)?
-      onPlanDocMutated;
+  onPlanDocMutated;
 
   /// Toast channel for the shell progress monitor (human-in-the-loop).
   /// Fired after every auxiliary-model evaluation of a long-running
@@ -171,8 +171,7 @@ class ChatTurnExecutor {
   /// parallel through this one executor). Null in tests / headless
   /// harnesses; the sink in `ToolContext` short-circuits on null and
   /// the whole chain is fail-open (never affects the command itself).
-  void Function(int sessionId, ShellMonitorNotice notice)?
-      onShellMonitorNotice;
+  void Function(int sessionId, ShellMonitorNotice notice)? onShellMonitorNotice;
 
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
@@ -190,12 +189,12 @@ class ChatTurnExecutor {
     this.toolExecutor,
     this.leaseManager, {
     ReplyLanguageProvider? replyLanguage,
-  })  : auxiliaryService = AuxiliaryService(
-            providerService,
-            store.messageStore,
-            replyLanguage: replyLanguage,
-          ),
-        replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback);
+  }) : auxiliaryService = AuxiliaryService(
+         providerService,
+         store.messageStore,
+         replyLanguage: replyLanguage,
+       ),
+       replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback);
 
   /// Run a single chat turn for [sessionId].
   Future<void> sendMessage({
@@ -321,6 +320,31 @@ class ChatTurnExecutor {
   }) async {
     await store.messageStore.clearStreamErrorsFor(sessionId);
 
+    // ChatGPT OAuth no longer accepts the initial Codex aliases Crux
+    // shipped. Let the provider migrate only those known aliases before any
+    // prompt/config resolution, then persist the replacement so future turns
+    // and the model picker agree.
+    final initialModel = session.model;
+    final initialSlash = initialModel.indexOf('/');
+    final initialProviderName = initialSlash > 0
+        ? initialModel.substring(0, initialSlash)
+        : '';
+    final initialModelId = initialSlash > 0
+        ? initialModel.substring(initialSlash + 1)
+        : initialModel;
+    final canonicalModelId = providerService
+        .llmProviderByName(initialProviderName)
+        ?.canonicalModelId(initialModelId);
+    if (canonicalModelId != null && canonicalModelId != initialModelId) {
+      final updated = await store.update(
+        sessionId,
+        model: '$initialProviderName/$canonicalModelId',
+        systemPrompt: null,
+      );
+      session.model = updated.model;
+      session.systemPrompt = null;
+    }
+
     final updatedSession = await store.update(
       sessionId,
       status: SessionStatus.running,
@@ -424,7 +448,10 @@ class ChatTurnExecutor {
     // with whichever model is current at send time.
     final cachedModelId = extractModelIdFromPrompt(systemPrompt);
     final modelChanged = cachedModelId != null && cachedModelId != modelId;
-    if (systemPrompt == null || systemPrompt.isEmpty || staleChat || modelChanged) {
+    if (systemPrompt == null ||
+        systemPrompt.isEmpty ||
+        staleChat ||
+        modelChanged) {
       if (modelConfig == null) {
         systemPrompt = null;
       } else {
@@ -469,7 +496,8 @@ class ChatTurnExecutor {
           'snippets; code belongs in the codebase once the plan is '
           'approved.';
       if (runtime.planApproved) {
-        systemPrompt = '${systemPrompt ?? ''}\n\n'
+        systemPrompt =
+            '${systemPrompt ?? ''}\n\n'
             '# Plan mode (approved)\n\n'
             'Plan mode is active and the plan doc at `$planDocPath` is the '
             'agreed plan; it stays visible in the left pane. The user has '
@@ -479,7 +507,8 @@ class ChatTurnExecutor {
             'plan-only editing), after which only the plan doc is editable '
             'again. $noCodeInPlan';
       } else {
-        systemPrompt = '${systemPrompt ?? ''}\n\n'
+        systemPrompt =
+            '${systemPrompt ?? ''}\n\n'
             '# Plan mode\n\n'
             'You are in plan mode. You may only edit `$planDocPath`; all '
             'other files are read-only. Use `read`/`grep`/`semantic_search` '
@@ -659,11 +688,7 @@ class ChatTurnExecutor {
       Completer<void>? lerpDrainCompleter;
       final useLerp = modelConfig.streamLerp;
 
-      for (
-        var attempt = 0;
-        attempt <= retryBudget.maxRetries;
-        attempt++
-      ) {
+      for (var attempt = 0; attempt <= retryBudget.maxRetries; attempt++) {
         if (attempt > 0) {
           // Production backoff: base * 2^(N-1), capped at 30s. With
           // the default 1000ms base that's 1s, 2s, 4s, 8s, 16s;
@@ -673,8 +698,7 @@ class ChatTurnExecutor {
           final backoff =
               ChatTurnExecutor.debugBackoffOverride?.call(attempt) ??
               Duration(
-                milliseconds: (retryBudget.baseDelayMs *
-                        (1 << (attempt - 1)))
+                milliseconds: (retryBudget.baseDelayMs * (1 << (attempt - 1)))
                     .clamp(retryBudget.baseDelayMs, 30000),
               );
           onStatus?.call(
@@ -885,7 +909,8 @@ class ChatTurnExecutor {
               //     whose dedicated repair path below must run instead
               //     (retrying verbatim would loop the same 400).
               final errKind = chunk.error!.kind;
-              final zeroOutputNoRetry = errKind == LlmErrorKind.auth ||
+              final zeroOutputNoRetry =
+                  errKind == LlmErrorKind.auth ||
                   errKind == LlmErrorKind.permission ||
                   errKind == LlmErrorKind.billing ||
                   errKind == LlmErrorKind.quota ||
@@ -1183,8 +1208,7 @@ class ChatTurnExecutor {
               roundTextBuffer.isEmpty &&
               roundReasoningBuffer.isEmpty &&
               !chunks.any((c) => c.toolUse != null);
-          if (producedNothing &&
-              leaseManager.isCancelRequested(sessionId)) {
+          if (producedNothing && leaseManager.isCancelRequested(sessionId)) {
             // The round produced nothing BECAUSE the user interrupted
             // (likely between rounds or before the first chunk — the
             // forced socket close surfaces as a bare stream end). Not
@@ -1459,8 +1483,9 @@ class ChatTurnExecutor {
             final raw = call.input['filePath'] as String? ?? '';
             if (resolvePath(raw, session.projectPath) == planPathForFlash) {
               final f = File(planPathForFlash);
-              planOldContentByCallId[call.callId] =
-                  f.existsSync() ? f.readAsStringSync() : '';
+              planOldContentByCallId[call.callId] = f.existsSync()
+                  ? f.readAsStringSync()
+                  : '';
             }
           }
         }

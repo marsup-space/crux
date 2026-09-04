@@ -5,6 +5,7 @@ import 'package:crux/src/services/provider_config_loader.dart';
 import 'package:crux/src/services/llm_provider.dart';
 import 'package:crux/src/services/providers/anthropic_compatible_provider.dart';
 import 'package:crux/src/services/providers/deepseek_provider.dart';
+import 'package:crux/src/services/providers/codex_provider.dart';
 import 'package:crux/src/services/providers/kimi_provider.dart';
 import 'package:crux/src/services/providers/openai_compatible_provider.dart';
 
@@ -248,6 +249,13 @@ void main() {
       expect(r.wire, WireFamily.responsesApi);
     });
 
+    test('codex → CodexProvider + responsesApi wire', () {
+      final r = resolveProvider('codex');
+      expect(r.provider, isA<CodexProvider>());
+      expect(r.wire, WireFamily.responsesApi);
+      expect(r.authStyle, AuthStyle.bearer);
+    });
+
     test('unknown type throws ArgumentError listing known types', () {
       expect(
         () => resolveProvider('definitely_not_a_real_provider'),
@@ -269,6 +277,7 @@ void main() {
       expect(types, contains('openai_compatible'));
       expect(types, contains('anthropic_compatible'));
       expect(types, contains('deepseek'));
+      expect(types, contains('codex'));
     });
   });
 
@@ -277,6 +286,7 @@ void main() {
       expect(typeDisplayName('openai_compatible'), 'OpenAI Compatible');
       expect(typeDisplayName('anthropic_compatible'), 'Anthropic Compatible');
       expect(typeDisplayName('deepseek'), 'DeepSeek');
+      expect(typeDisplayName('codex'), 'Codex');
     });
 
     test('typeDisplayName falls back to raw string for unknown types', () {
@@ -628,10 +638,7 @@ context_size = 8192
       await loader.loadAll();
       expect(loader.providerByName('badretry'), isNull);
       expect(loader.loadErrors(), isNotEmpty);
-      expect(
-        loader.loadErrors().values.first,
-        contains('max_retries'),
-      );
+      expect(loader.loadErrors().values.first, contains('max_retries'));
     });
 
     test('loadAll parses multiple models', () async {
@@ -880,10 +887,12 @@ image_support = true
       expect(loader.modelByCompositeKey('nonexistent/gpt-4o'), isNull);
     });
 
-    test('modelByCompositeKey resolves model IDs that contain a slash', () async {
-      // OpenRouter-style: provider = "openrouter", model id =
-      // "anthropic/claude-sonnet-4" (contains a slash).
-      await File('${tempDir.path}/openrouter.toml').writeAsString('''
+    test(
+      'modelByCompositeKey resolves model IDs that contain a slash',
+      () async {
+        // OpenRouter-style: provider = "openrouter", model id =
+        // "anthropic/claude-sonnet-4" (contains a slash).
+        await File('${tempDir.path}/openrouter.toml').writeAsString('''
 type = "openai_compatible"
 endpoint_url = "https://openrouter.ai/api/v1"
 
@@ -892,19 +901,20 @@ id = "anthropic/claude-sonnet-4"
 name = "Claude Sonnet 4"
 context_size = 200000
 ''');
-      await loader.loadAll();
+        await loader.loadAll();
 
-      final model = loader.modelByCompositeKey(
-        'openrouter/anthropic/claude-sonnet-4',
-      );
-      expect(model, isNotNull);
-      expect(model!.name, 'Claude Sonnet 4');
+        final model = loader.modelByCompositeKey(
+          'openrouter/anthropic/claude-sonnet-4',
+        );
+        expect(model, isNotNull);
+        expect(model!.name, 'Claude Sonnet 4');
 
-      expect(
-        loader.modelByCompositeKey('openrouter/nonexistent/model'),
-        isNull,
-      );
-    });
+        expect(
+          loader.modelByCompositeKey('openrouter/nonexistent/model'),
+          isNull,
+        );
+      },
+    );
 
     test('allModelKeys returns composite keys from all providers', () async {
       await File('${tempDir.path}/openai.toml').writeAsString('''
@@ -1117,6 +1127,33 @@ context_size = 8192
         expect(providerFor(deepseek), isA<DeepSeekProvider>());
       },
     );
+
+    test('codex.toml exposes the current ChatGPT Codex model set', () async {
+      await loader.loadAll();
+      if (loader.providerNames().isEmpty) return;
+      final codex = loader.providerByName('codex');
+      if (codex == null) return;
+      expect(codex.type, 'codex');
+      expect(
+        codex.models.map((model) => model.id),
+        containsAll([
+          'gpt-5.6-sol',
+          'gpt-5.6-terra',
+          'gpt-5.6-luna',
+          'gpt-5.5',
+          'gpt-5.3-codex-spark',
+        ]),
+      );
+      for (final model in codex.models) {
+        expect(
+          model.streamLerp,
+          isTrue,
+          reason:
+              '${model.id} must opt into stream_lerp for smooth '
+              'stream rendering',
+        );
+      }
+    });
 
     test(
       'kimi.toml uses type = "kimi" and dispatches to KimiProvider',

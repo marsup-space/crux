@@ -154,6 +154,7 @@ dart run bin/crux.dart /path/to/your/project
 | Provider | 命令 | 模型 |
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
+| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
@@ -167,6 +168,8 @@ dart run bin/crux.dart /path/to/your/project
 
 - `CRUX_API_KEY` — 全局默认 key
 - `CRUX_API_KEY_<PROVIDER>` — 按 Provider 覆盖（Provider 名大写），如 `CRUX_API_KEY_DEEPSEEK`、`CRUX_API_KEY_MINIMAX`
+
+ChatGPT Codex 使用 ChatGPT OAuth（不是 OpenAI API key）。运行 `/provider codex login` 后在浏览器输入设备码即可，额度会显示在 Coding Plan widget；也可通过 `CRUX_API_KEY_CODEX` 提供外部 token。
 
 ### 命令列表
 
@@ -405,6 +408,7 @@ Connect LLM providers with the `/provider` command:
 | Provider | Command | Models |
 |----------|---------|--------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
+| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
@@ -418,6 +422,8 @@ API keys can also be supplied via environment variables (no interaction needed; 
 
 - `CRUX_API_KEY` — global default key
 - `CRUX_API_KEY_<PROVIDER>` — per-provider override (provider name uppercased), e.g. `CRUX_API_KEY_DEEPSEEK`, `CRUX_API_KEY_MINIMAX`
+
+ChatGPT Codex uses ChatGPT OAuth rather than an OpenAI API key. Run `/provider codex login`, open the verification page, and enter the device code; its remaining usage appears in the Coding Plan widget. You can also set `CRUX_API_KEY_CODEX` for an externally managed token.
 
 ### Commands
 

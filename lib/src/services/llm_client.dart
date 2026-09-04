@@ -367,7 +367,15 @@ class LlmClient {
               'Content-Type',
               'application/json; charset=utf-8',
             );
-            _setAuthHeaders(request, authStyle, apiKey);
+            _setAuthHeaders(
+              request,
+              authStyle,
+              await provider.resolveApiKey(apiKey),
+            );
+            for (final header
+                in provider.requestHeaders(userId: userId).entries) {
+              request.headers.set(header.key, header.value);
+            }
 
             // Provider-specific wire-format sanitization (default no-op).
             // DeepSeek uses this to backfill `reasoning_content: ''` on

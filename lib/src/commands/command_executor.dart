@@ -47,6 +47,15 @@ import 'cmd_home.dart';
 
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
 
+/// Opens the ChatGPT Codex device-login pane and returns a callback that
+/// dismisses this specific instance. Keeping the dismiss callback scoped to
+/// the instance prevents a completed login from closing a different pane the
+/// user opened while the OAuth request was in flight.
+typedef ShowCodexLoginPaneCallback = VoidCallback Function(
+  String userCode,
+  String verificationUrl,
+);
+
 class CommandContext {
   final SessionStore store;
   final ProviderService providerService;
@@ -59,6 +68,7 @@ class CommandContext {
   final String projectPath;
   final void Function() refresh;
   final ShowToastCallback showToast;
+  final ShowCodexLoginPaneCallback? showCodexLoginPane;
   final Future<void> Function(int) switchSession;
   final Future<void> Function() initSessions;
   final Future<void> Function() createNewSession;
@@ -132,6 +142,7 @@ class CommandContext {
     required this.projectPath,
     required this.refresh,
     required this.showToast,
+    this.showCodexLoginPane,
     required this.switchSession,
     required this.initSessions,
     required this.createNewSession,
