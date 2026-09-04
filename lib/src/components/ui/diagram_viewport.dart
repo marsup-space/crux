@@ -122,13 +122,14 @@ class DiagramFenceInfo {
 /// list and the parsed viewport data.
 class DiagramBlockSlice {
   const DiagramBlockSlice({
-    required this.spanIndex,
+    required this.fenceIndex,
     required this.data,
     required this.language,
   });
 
-  /// Index of the [DiagramSentinelSpan] in the widget's `_spans` list.
-  final int spanIndex;
+  /// Stable identity of the [DiagramSentinelSpan] emitted for this fence.
+  /// Unlike a list position, this survives text-only span transforms.
+  final int fenceIndex;
 
   final DiagramViewportData data;
   final String? language;
@@ -192,11 +193,13 @@ List<DiagramBlockSlice> sliceDiagramBlocks(
     for (var i = 0; i < spans.length; i++) {
       final span = spans[i];
       if (span is DiagramSentinelSpan && span.fenceIndex == fenceIdx) {
-        slices.add(DiagramBlockSlice(
-          spanIndex: i,
-          data: data,
-          language: fence.language,
-        ));
+        slices.add(
+          DiagramBlockSlice(
+            fenceIndex: fenceIdx,
+            data: data,
+            language: fence.language,
+          ),
+        );
         break;
       }
     }
@@ -255,9 +258,7 @@ List<InlineSpan>? _splitAroundSentinel(InlineSpan span, int fenceIdx) {
     if (_sentinelIn(child, 0) != fenceIdx) continue;
     final inner = _splitAroundSentinel(child, fenceIdx);
     if (inner == null) return null;
-    return [
-      TextSpan(children: inner, style: span.style),
-    ];
+    return [TextSpan(children: inner, style: span.style)];
   }
   return null;
 }
@@ -273,7 +274,11 @@ DiagramViewportData? tryBuildDiagramViewportData(
   final DiagramRenderResult result;
   try {
     // No maxWidth: the whole point is the natural, untruncated drawing.
-    result = renderDiagram(code, const DiagramRenderOptions(), language: language);
+    result = renderDiagram(
+      code,
+      const DiagramRenderOptions(),
+      language: language,
+    );
   } on DiagramParseException {
     return null;
   }
@@ -281,10 +286,7 @@ DiagramViewportData? tryBuildDiagramViewportData(
   final lines = result.text.split('\n');
   for (final warning in result.warnings) {
     lines.add(
-      '⚠ ${warning.message(
-        cycleDetected: (nodes) =>
-            effectiveStrings.t('diagram.cycleWarning', {'nodes': nodes}),
-      )}',
+      '⚠ ${warning.message(cycleDetected: (nodes) => effectiveStrings.t('diagram.cycleWarning', {'nodes': nodes}))}',
     );
   }
   return DiagramViewportData(lines);
@@ -366,10 +368,7 @@ class DiagramPanController extends ChangeNotifier {
   /// change. Keeps the right/bottom edge pinned when content grows (the
   /// streaming case) if the user was already at that edge, otherwise
   /// preserves the offset.
-  void applyMetrics({
-    required double maxOffset,
-    required double maxVOffset,
-  }) {
+  void applyMetrics({required double maxOffset, required double maxVOffset}) {
     final wasAtEnd = _maxOffset > 0 && _offset >= _maxOffset - 0.5;
     final wasAtVEnd = _maxVOffset > 0 && _vOffset >= _maxVOffset - 0.5;
     _maxOffset = maxOffset;
@@ -439,7 +438,9 @@ class _DiagramViewportRenderWidget extends SingleChildRenderObjectComponent {
 
   @override
   void updateRenderObject(
-      BuildContext context, covariant RenderDiagramViewport renderObject) {
+    BuildContext context,
+    covariant RenderDiagramViewport renderObject,
+  ) {
     renderObject
       ..controller = controller
       ..data = data
@@ -466,13 +467,13 @@ class RenderDiagramViewport extends RenderObject
     required Color gutterColor,
     required Color borderColor,
     required Color contentColor,
-  })  : _controller = controller,
-        _data = data,
-        _language = language,
-        _fallbackWidth = fallbackWidth,
-        _gutterColor = gutterColor,
-        _borderColor = borderColor,
-        _contentColor = contentColor {
+  }) : _controller = controller,
+       _data = data,
+       _language = language,
+       _fallbackWidth = fallbackWidth,
+       _gutterColor = gutterColor,
+       _borderColor = borderColor,
+       _contentColor = contentColor {
     _controller.addListener(_handleControllerChanged);
     _updateAnnotation();
   }
@@ -674,18 +675,17 @@ class RenderDiagramViewport extends RenderObject
     // reveals the clipped rows. maxVOffset stays 0 in the normal case.
     final contentRows = _data.lines.length;
     final wantedHeight = contentRows + 2;
-    final height = constraints.constrain(Size(
-      _effectiveViewportWidth.toDouble(),
-      wantedHeight.toDouble(),
-    )).height;
+    final height = constraints
+        .constrain(
+          Size(_effectiveViewportWidth.toDouble(), wantedHeight.toDouble()),
+        )
+        .height;
     final visibleRows = math.max(1, height.toInt() - 2);
     final maxV = math.max(0, contentRows - visibleRows);
     _controller.applyMetrics(
-      maxOffset: math.max(
-        0,
-        _data.naturalWidth -
-            math.max(4, _effectiveViewportWidth - 4),
-      ).toDouble(),
+      maxOffset: math
+          .max(0, _data.naturalWidth - math.max(4, _effectiveViewportWidth - 4))
+          .toDouble(),
       maxVOffset: maxV.toDouble(),
     );
     size = Size(_effectiveViewportWidth.toDouble(), height);
@@ -718,11 +718,7 @@ class RenderDiagramViewport extends RenderObject
     final firstRow = _controller.vOffset.floor();
     for (var i = 0; i < visibleRows; i++) {
       final rowY = (1 + i).toDouble();
-      canvas.drawText(
-        offset + Offset(0, rowY),
-        '│ ',
-        style: borderStyle,
-      );
+      canvas.drawText(offset + Offset(0, rowY), '│ ', style: borderStyle);
       canvas.drawText(
         offset + Offset((width - 2).toDouble(), rowY),
         ' │',
@@ -810,7 +806,11 @@ class RenderDiagramViewport extends RenderObject
   /// Paint one content row, split into visible segments by the pan
   /// offset. Per-cell drawText so CJK wide glyphs clip at the seam.
   void _drawPannedLine(
-      TerminalCanvas clipCanvas, String line, int row, double pan) {
+    TerminalCanvas clipCanvas,
+    String line,
+    int row,
+    double pan,
+  ) {
     var x = pan; // may be negative (content shifted left)
     for (final grapheme in line.characters) {
       final gw = UnicodeWidth.graphemeWidth(grapheme).toDouble();
@@ -839,8 +839,12 @@ class RenderDiagramViewport extends RenderObject
 
   @override
   bool hitTest(HitTestResult result, {required Offset position}) {
-    final inside = Rect.fromLTWH(0, 0, size.width, size.height)
-        .contains(position);
+    final inside = Rect.fromLTWH(
+      0,
+      0,
+      size.width,
+      size.height,
+    ).contains(position);
     if (!inside) return false;
     // During a drag we own the pointer regardless of position (capture
     // handles delivery, but the hit test still needs our entry).

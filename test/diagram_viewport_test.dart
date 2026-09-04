@@ -12,11 +12,7 @@ import 'package:test/test.dart';
 void main() {
   group('DiagramViewportData', () {
     test('naturalWidth measures the widest line (CJK-aware)', () {
-      final data = DiagramViewportData([
-        '┌──┐',
-        '│ 中文 │',
-        '└──┘',
-      ]);
+      final data = DiagramViewportData(['┌──┐', '│ 中文 │', '└──┘']);
       // '│ 中文 │' = 1 + 1 + 4 + 1 + 1 = 8 columns.
       expect(data.naturalWidth, 8);
     });
@@ -43,17 +39,13 @@ void main() {
       ];
       final slices = sliceDiagramBlocks(spans, [fenceA, fenceB]);
       expect(slices.length, 2);
-      expect(slices[0].spanIndex, 1);
-      expect(slices[1].spanIndex, 3);
+      expect(slices[0].fenceIndex, 0);
+      expect(slices[1].fenceIndex, 1);
       expect(slices[0].language, 'mermaid');
     });
 
     test('drops fences with null data', () {
-      const bad = DiagramFenceInfo(
-        code: '',
-        language: 'mermaid',
-        data: null,
-      );
+      const bad = DiagramFenceInfo(code: '', language: 'mermaid', data: null);
       final spans = <InlineSpan>[const DiagramSentinelSpan(0)];
       final slices = sliceDiagramBlocks(spans, [bad]);
       expect(slices, isEmpty);
@@ -74,8 +66,7 @@ void main() {
       });
     });
 
-    test('unparseable fence stays a plain code block (no viewport)',
-        () async {
+    test('unparseable fence stays a plain code block (no viewport)', () async {
       await testNocterm('partial falls back', (tester) async {
         await tester.pumpComponent(
           const HighlightedMarkdownText(
@@ -86,8 +77,79 @@ void main() {
       });
     });
 
-    test('wide diagram lifts with full natural width (no truncation)',
-        () async {
+    test('text after a highlighted diagram stays below the viewport', () async {
+      await testNocterm('diagram and following text do not overlap', (
+        tester,
+      ) async {
+        const source = '''before diagram
+
+```mermaid
+flowchart TD
+A[Start] --> B[End]
+```
+
+after diagram marker''';
+        await tester.pumpComponent(
+          const Container(
+            width: 80,
+            height: 40,
+            child: HighlightedMarkdownText(
+              source,
+              highlightText: 'after diagram marker',
+            ),
+          ),
+        );
+
+        final viewport = tester.findComponent<DiagramViewport>();
+        expect(viewport, isNotNull);
+        final viewportStart = tester.terminalState
+            .findText('╭─ mermaid ')
+            .first;
+        final viewportEnd = tester.terminalState.findText('╰').last;
+        final after = tester.terminalState
+            .findText('after diagram marker')
+            .first;
+
+        expect(after.y, greaterThan(viewportStart.y));
+        expect(
+          after.y,
+          greaterThan(viewportEnd.y),
+          reason: 'the text block after a diagram must receive its own rows',
+        );
+      }, size: const Size(80, 40));
+    });
+
+    test(
+      'quick replies after a diagram use the following text segment',
+      () async {
+        await testNocterm('quick reply offset is projected after diagram', (
+          tester,
+        ) async {
+          const source = '''```mermaid
+flowchart TD
+A[Start] --> B[End]
+```
+
+ask://Continue{continue}''';
+          String? submitted;
+          await tester.pumpComponent(
+            HighlightedMarkdownText(
+              source,
+              onQuickReplyTap: (reply) => submitted = reply.answer,
+            ),
+          );
+
+          expect(tester.findComponent<DiagramViewport>(), isNotNull);
+          expect(tester.terminalState, containsText('Continue'));
+          expect(tester.terminalState, isNot(containsText('ask://')));
+          final reply = tester.terminalState.findText('Continue').first;
+          await tester.tap(reply.x, reply.y);
+          expect(submitted, 'continue');
+        });
+      },
+    );
+
+    test('wide diagram lifts with full natural width (no truncation)', () async {
       await testNocterm('no truncation on lift', (tester) async {
         const src =
             '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
@@ -97,7 +159,12 @@ void main() {
         // All four node labels present in the parsed data — nothing was
         // shrunk away by a width budget.
         final all = viewport!.data.lines.join('\n');
-        for (final label in ['AAAAAAAAAA', 'BBBBBBBBBB', 'CCCCCCCCCC', 'DDDDDDDDDD']) {
+        for (final label in [
+          'AAAAAAAAAA',
+          'BBBBBBBBBB',
+          'CCCCCCCCCC',
+          'DDDDDDDDDD',
+        ]) {
           expect(all, contains(label));
         }
       });
@@ -129,42 +196,48 @@ void main() {
       expect(ctrl.canPanV, isFalse);
     });
 
-    test('wheel over the viewport never pans horizontally (scroll chains)',
-        () async {
-      await testNocterm('wheel chains to vertical scroll', (tester) async {
-        const src =
-            '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
-        await tester.pumpComponent(HighlightedMarkdownText(src));
-        final viewport = tester.findComponent<DiagramViewport>();
-        expect(viewport, isNotNull);
-        expect(viewport!.data.naturalWidth, greaterThan(56));
+    test(
+      'wheel over the viewport never pans horizontally (scroll chains)',
+      () async {
+        await testNocterm('wheel chains to vertical scroll', (tester) async {
+          const src =
+              '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
+          await tester.pumpComponent(HighlightedMarkdownText(src));
+          final viewport = tester.findComponent<DiagramViewport>();
+          expect(viewport, isNotNull);
+          expect(viewport!.data.naturalWidth, greaterThan(56));
 
-        // Leftmost node label's painted column, before any wheel.
-        final before = tester.terminalState.findText('AAAAAAAAAA').first;
+          // Leftmost node label's painted column, before any wheel.
+          final before = tester.terminalState.findText('AAAAAAAAAA').first;
 
-        // Wheel down + up on the canvas: the render object consumes
-        // neither (no ScrollableRenderObjectMixin) — the pan offset
-        // stays 0 and the events chain to the enclosing vertical
-        // scroll. If the wheel hijack came back, even one wheelDown
-        // (+3 cols) would visibly shift this label left.
-        await tester.sendMouseEvent(const MouseEvent(
-          button: MouseButton.wheelDown,
-          x: 30,
-          y: 2,
-          pressed: false,
-        ));
-        await tester.sendMouseEvent(const MouseEvent(
-          button: MouseButton.wheelUp,
-          x: 30,
-          y: 2,
-          pressed: false,
-        ));
+          // Wheel down + up on the canvas: the render object consumes
+          // neither (no ScrollableRenderObjectMixin) — the pan offset
+          // stays 0 and the events chain to the enclosing vertical
+          // scroll. If the wheel hijack came back, even one wheelDown
+          // (+3 cols) would visibly shift this label left.
+          await tester.sendMouseEvent(
+            const MouseEvent(
+              button: MouseButton.wheelDown,
+              x: 30,
+              y: 2,
+              pressed: false,
+            ),
+          );
+          await tester.sendMouseEvent(
+            const MouseEvent(
+              button: MouseButton.wheelUp,
+              x: 30,
+              y: 2,
+              pressed: false,
+            ),
+          );
 
-        final after = tester.terminalState.findText('AAAAAAAAAA').first;
-        expect(after.x, before.x);
-        expect(after.y, before.y);
-      });
-    });
+          final after = tester.terminalState.findText('AAAAAAAAAA').first;
+          expect(after.x, before.x);
+          expect(after.y, before.y);
+        });
+      },
+    );
 
     test('drag over the viewport pans the canvas', () async {
       await testNocterm('drag pans', (tester) async {
@@ -179,13 +252,15 @@ void main() {
         // (isMotion=false), drag motion (isMotion=true + pressed),
         // release. Drag start at x=30 → x=14 = 16 columns of panning.
         await tester.press(30, 2);
-        await tester.sendMouseEvent(const MouseEvent(
-          button: MouseButton.left,
-          x: 14,
-          y: 2,
-          pressed: true,
-          isMotion: true,
-        ));
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.left,
+            x: 14,
+            y: 2,
+            pressed: true,
+            isMotion: true,
+          ),
+        );
         await tester.release(14, 2);
 
         // Direct offset assertion through the render object.

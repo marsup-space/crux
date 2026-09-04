@@ -11,6 +11,7 @@ import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'highlight_service.dart';
 import 'diagram_viewport.dart';
+import 'markdown_diagram_interleaver.dart';
 import 'markdown_isolate.dart';
 import '../../diagram/diagram.dart';
 import '../../diagram/diagram_model.dart';
@@ -146,6 +147,20 @@ class HighlightedMarkdownText extends StatefulComponent {
       _HighlightedMarkdownTextState();
 }
 
+class _InteractiveTextSegment {
+  const _InteractiveTextSegment({
+    required this.key,
+    required this.sessionRefs,
+    required this.markdownLinks,
+    required this.quickReplies,
+  });
+
+  final GlobalKey key;
+  final List<SessionRef> sessionRefs;
+  final List<MarkdownLink> markdownLinks;
+  final List<QuickReply> quickReplies;
+}
+
 class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// Latest parse result from the worker isolate (or
   /// the synchronous path). The widget renders whatever
@@ -228,8 +243,13 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   List<DiagramBlockSlice> _diagramSlices = const [];
 
   /// Key on the inner [RichText] used to locate the [RenderParagraph]
-  /// for hit-testing — see [_linkAtEvent].
+  /// for hit-testing in ordinary, single-paragraph markdown.
   final GlobalKey _richTextKey = GlobalKey();
+
+  /// Per-build hit-test targets for RichText runs surrounding diagrams.
+  /// Each run has local offsets after the diagram boundary is removed, so it
+  /// cannot share the legacy global paragraph offset space.
+  List<_InteractiveTextSegment> _interactiveTextSegments = const [];
 
   @override
   Component build(BuildContext context) {
@@ -333,21 +353,20 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           _hoveredMarkdownLink = null;
         }
 
-        // Apply search highlight as a sync overlay. Cheap
-        // (no parse, just a flat scan + style merge). The
-        // highlight is independent of the parse so we don't
-        // need to invalidate the parsed cache when it
-        // changes.
+        // Diagram sentinels are structural markers, not ordinary text. Split
+        // them out before any text-only overlay (links, quick replies,
+        // highlights) has a chance to flatten and erase their type.
+        final baseSegments = splitMarkdownDiagramSegments(
+          _spans,
+          _diagramSlices,
+        );
+        final hasDiagrams = baseSegments.any(
+          (segment) => segment is MarkdownViewportSegment,
+        );
+        // Legacy single-RichText overlays remain intact for ordinary markdown.
+        // Diagram messages apply text-only transforms only after structural
+        // splitting below, so a sentinel can never be flattened away.
         var renderedSpans = _spans;
-        if (highlight != null && highlight.isNotEmpty) {
-          renderedSpans = _applyHighlight(
-            _spans,
-            highlight,
-            theme,
-            selectionColor: theme.selection,
-            onSelection: (c) => theme.onColor(c),
-          );
-        }
 
         // Decide whether any clickable region exists. Each feature
         // can independently contribute — neither requires the other.
@@ -372,11 +391,17 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         final haveStaleReplies = !wantQuickReplies && _quickReplies.isNotEmpty;
         final haveAnyReplies = haveButtonReplies || haveStaleReplies;
 
-        // Overlay session-link styles on top of the highlight pass
-        // so links inherit the search-highlight background. The
-        // hover style wins over the link style for the specific
-        // ref under the cursor.
-        if (haveSessionLinks) {
+        // Ordinary markdown retains its existing all-text overlay pipeline.
+        // Diagram markdown applies the same transforms per text segment below.
+        if (!hasDiagrams && highlight != null && highlight.isNotEmpty) {
+          renderedSpans = applyMarkdownTextHighlight(
+            renderedSpans,
+            highlight,
+            selectionColor: theme.selection,
+            onSelection: theme.onColor,
+          );
+        }
+        if (!hasDiagrams && haveSessionLinks) {
           final linkStyle =
               component.sessionLinkStyle ??
               TextStyle(
@@ -413,7 +438,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         // `mdLink` is preserved uniformly across callers. The
         // visitor already styles link spans with the same color, so
         // the no-op merge is cheap.
-        if (haveMarkdownLinks) {
+        if (!hasDiagrams && haveMarkdownLinks) {
           final linkStyle =
               component.linkStyle ??
               TextStyle(
@@ -446,7 +471,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         // also records each reply's `renderedStart` / `renderedLength`
         // so hit-testing (in button mode only) can locate the
         // substituted label.
-        if (haveButtonReplies) {
+        if (!hasDiagrams && haveButtonReplies) {
           final buttonStyle =
               component.quickReplyStyle ??
               TextStyle(
@@ -469,62 +494,118 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             hoverStyle: hoverStyle,
             hoveredReply: _hoveredQuickReply,
           );
-        } else if (haveStaleReplies) {
+        } else if (!hasDiagrams && haveStaleReplies) {
           renderedSpans = applyQuickReplyTokens(renderedSpans, _quickReplies);
         }
 
-        // Split the span list around diagram sentinels FIRST, then
-        // apply the search-highlight overlay per text segment (the
-        // overlay flattens span trees, which would destroy sentinels —
-        // segmenting keeps them intact). _spans is sentinel-hoisted by
-        // the parse pass, so slices reference top-level indices.
-        final segments = <_Segment>[];
-        {
-          var cursor = 0;
-          for (final slice in _diagramSlices) {
-            if (slice.spanIndex > cursor) {
-              segments.add(_SpanSegment(
-                renderedSpans.sublist(cursor, slice.spanIndex),
-              ));
-            }
-            segments.add(_DiagramSegment(slice));
-            cursor = slice.spanIndex + 1;
-          }
-          if (cursor < renderedSpans.length) {
-            segments.add(_SpanSegment(renderedSpans.sublist(cursor)));
-          }
-        }
-
-        final wantsInterleave = segments.any((s) => s is _DiagramSegment);
+        _interactiveTextSegments = const [];
         Component content;
-        if (!wantsInterleave ||
+        if (!hasDiagrams ||
             component.textAlign != TextAlign.left ||
             component.maxLines != null) {
-          // No diagrams (or constraints the interleaved layout can't
-          // honor): plain RichText exactly as before. When diagrams ARE
-          // present but the constraints forbid interleaving, drop the
-          // viewports for this frame (sentinels render as nothing).
+          // Ordinary markdown keeps the original single-RichText behavior.
+          // A diagram cannot be interleaved under incompatible constraints,
+          // so its sentinel remains intentionally empty for this frame.
           content = _buildRichText(renderedSpans);
         } else {
           final children = <Component>[];
-          for (final segment in segments) {
+          for (final segment in baseSegments) {
             switch (segment) {
-              case _SpanSegment(:final spans):
+              case MarkdownTextSegment(:final spans, :final textOffset):
                 var segmentSpans = spans;
-                if (highlight != null && highlight.isNotEmpty) {
-                  // Highlight within this segment only — a match can't
-                  // span a diagram boundary.
-                  segmentSpans = _applyHighlight(
+                final metadata = projectMarkdownTextSegmentMetadata(
+                  MarkdownTextSegment(spans: spans, textOffset: textOffset),
+                  sessionRefs: _sessionRefs,
+                  markdownLinks: _markdownLinks,
+                  quickReplies: _quickReplies,
+                );
+                // All style/substitution helpers flatten their input. They are
+                // safe here because [spans] is guaranteed diagram-free.
+                if (haveSessionLinks) {
+                  segmentSpans = applySessionLinkStyles(
                     segmentSpans,
-                    highlight,
-                    theme,
-                    selectionColor: theme.selection,
-                    onSelection: (c) => theme.onColor(c),
+                    metadata.sessionRefs,
+                    component.sessionLinkStyle ??
+                        TextStyle(
+                          color: theme.tldrLink,
+                          decoration: TextDecoration.underline,
+                        ),
+                    component.sessionLinkHoverStyle ??
+                        TextStyle(
+                          color: theme.onColor(theme.tldrLink),
+                          backgroundColor: theme.tldrLink,
+                          fontWeight: FontWeight.bold,
+                        ),
+                    _hoveredSessionRef,
                   );
                 }
-                if (segmentSpans.isEmpty) continue;
-                children.add(_buildRichText(segmentSpans, keyIndex: children.length));
-              case _DiagramSegment(:final slice):
+                if (haveMarkdownLinks) {
+                  segmentSpans = applyMarkdownLinkStyles(
+                    segmentSpans,
+                    metadata.markdownLinks,
+                    component.linkStyle ??
+                        TextStyle(
+                          color: theme.mdLink,
+                          decoration: TextDecoration.underline,
+                        ),
+                    component.linkHoverStyle ??
+                        TextStyle(
+                          color: theme.onColor(theme.mdLink),
+                          backgroundColor: theme.mdLink,
+                          fontWeight: FontWeight.bold,
+                        ),
+                    _hoveredMarkdownLink,
+                  );
+                }
+                if (haveButtonReplies) {
+                  segmentSpans = applyQuickReplyTokens(
+                    segmentSpans,
+                    metadata.quickReplies,
+                    buttonStyle:
+                        component.quickReplyStyle ??
+                        TextStyle(
+                          color: theme.buttonTextDisabled,
+                          backgroundColor: theme.buttonBackground,
+                          fontWeight: FontWeight.bold,
+                        ),
+                    hoverStyle:
+                        component.quickReplyHoverStyle ??
+                        TextStyle(
+                          color: theme.buttonTextHover,
+                          backgroundColor: theme.buttonBackgroundHover,
+                          fontWeight: FontWeight.bold,
+                          decoration: TextDecoration.underline,
+                        ),
+                    hoveredReply: _hoveredQuickReply,
+                  );
+                } else if (haveStaleReplies) {
+                  segmentSpans = applyQuickReplyTokens(
+                    segmentSpans,
+                    metadata.quickReplies,
+                  );
+                }
+                if (highlight != null && highlight.isNotEmpty) {
+                  segmentSpans = applyMarkdownTextHighlight(
+                    segmentSpans,
+                    highlight,
+                    selectionColor: theme.selection,
+                    onSelection: theme.onColor,
+                  );
+                }
+                if (segmentSpans.isNotEmpty) {
+                  final key = GlobalKey();
+                  _interactiveTextSegments = [
+                    ..._interactiveTextSegments,
+                    _InteractiveTextSegment(
+                      key: key,
+                      sessionRefs: metadata.sessionRefs,
+                      markdownLinks: metadata.markdownLinks,
+                      quickReplies: metadata.quickReplies,
+                    ),
+                  ];
+                  children.add(_buildRichText(segmentSpans, key: key));
+                }
+              case MarkdownViewportSegment(:final slice):
                 children.add(
                   DiagramViewport(data: slice.data, language: slice.language),
                 );
@@ -532,7 +613,10 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           }
           content = children.length == 1
               ? children.first
-              : Column(children: children, crossAxisAlignment: CrossAxisAlignment.stretch);
+              : Column(
+                  children: children,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                );
         }
 
         if (!haveSessionLinks && !haveAnyReplies && !haveMarkdownLinks) {
@@ -563,9 +647,9 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     );
   }
 
-  Component _buildRichText(List<InlineSpan> spans, {int keyIndex = 0}) {
+  Component _buildRichText(List<InlineSpan> spans, {GlobalKey? key}) {
     return RichText(
-      key: _diagramSegmentKey(keyIndex),
+      key: key ?? _richTextKey,
       text: TextSpan(children: spans),
       textAlign: component.textAlign,
       softWrap: component.softWrap,
@@ -576,16 +660,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     );
   }
 
-  /// Keys for the split-segment RichTexts (the first segment keeps the
-  /// original [_richTextKey] so hit-testing finds a paragraph even when
-  /// no diagram is present).
-  GlobalKey _diagramSegmentKey(int index) {
-    if (index == 0) return _richTextKey;
-    return GlobalKey();
-  }
-
-  RenderParagraph? get _renderParagraph {
-    final ctx = _richTextKey.currentContext;
+  RenderParagraph? _renderParagraphFor(GlobalKey key) {
+    final ctx = key.currentContext;
     if (ctx == null) return null;
     final el = ctx as Element;
     if (el is RenderObjectElement) {
@@ -638,40 +714,53 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         _markdownLinks.isEmpty) {
       return null;
     }
-    final rp = _renderParagraph;
-    if (rp == null) return null;
 
-    final localX = event.x.toDouble() - rp.globalPaintOffset.dx;
-    final localY = event.y.toDouble() - rp.globalPaintOffset.dy;
+    // In diagram mode, every RichText run has independent local offsets.
+    // Test the event against each run before falling back to the ordinary
+    // single-paragraph markdown path.
+    for (final segment in _interactiveTextSegments) {
+      final paragraph = _renderParagraphFor(segment.key);
+      final hit = _interactiveTargetAtEvent(
+        event,
+        paragraph,
+        sessionRefs: segment.sessionRefs,
+        markdownLinks: segment.markdownLinks,
+        quickReplies: segment.quickReplies,
+      );
+      if (hit != null) return hit;
+    }
+
+    return _interactiveTargetAtEvent(
+      event,
+      _renderParagraphFor(_richTextKey),
+      sessionRefs: _sessionRefs,
+      markdownLinks: _markdownLinks,
+      quickReplies: _quickReplies,
+    );
+  }
+
+  Object? _interactiveTargetAtEvent(
+    MouseEvent event,
+    RenderParagraph? paragraph, {
+    required List<SessionRef> sessionRefs,
+    required List<MarkdownLink> markdownLinks,
+    required List<QuickReply> quickReplies,
+  }) {
+    if (paragraph == null) return null;
+    final localX = event.x.toDouble() - paragraph.globalPaintOffset.dx;
+    final localY = event.y.toDouble() - paragraph.globalPaintOffset.dy;
     if (localX < 0 || localY < 0) return null;
-
-    final charIndex = rp.getCharacterIndexAtLocalPosition(
+    final charIndex = paragraph.getCharacterIndexAtLocalPosition(
       Offset(localX, localY),
     );
 
-    // Session refs take precedence — they're the more established
-    // feature. If both happen to land on the same char (extremely
-    // unlikely in practice), the session ref wins.
-    for (final ref in _sessionRefs) {
+    for (final ref in sessionRefs) {
       if (ref.containsIndex(charIndex)) return ref;
     }
-    // Markdown links come next. They're more specific to the
-    // current text than quick replies (which are wire-format
-    // tokens the user shouldn't normally see), so a click on
-    // `[Open](https://example.com)` opens the URL even if the
-    // surrounding text contains an `ask://` token. The two
-    // regions overlap only by extreme coincidence.
-    for (final link in _markdownLinks) {
+    for (final link in markdownLinks) {
       if (link.containsIndex(charIndex)) return link;
     }
-    // Quick-reply hit-testing reads [renderedStart] (NOT
-    // [sourceStart]) because the renderer has substituted the
-    // source `ask://…` text with the (typically shorter) label.
-    // The `charIndex` from the layout engine is in the rendered
-    // text's coordinate space, so it would not align with the
-    // source offsets after substitution. See
-    // [QuickReply.containsRenderedIndex].
-    for (final reply in _quickReplies) {
+    for (final reply in quickReplies) {
       if (reply.containsRenderedIndex(charIndex)) return reply;
     }
     return null;
@@ -848,160 +937,6 @@ String _stripCodeBlockRowChrome(String line) {
   return result;
 }
 
-List<InlineSpan> _applyHighlight(
-  List<InlineSpan> spans,
-  String search,
-  MarkdownThemeFields theme, {
-  required Color selectionColor,
-  required Color Function(Color) onSelection,
-}) {
-  final flat = _flattenSpans(spans);
-  final plainText = flat.map((e) => e.$1).join();
-
-  final matchRange = _findHighlightRange(plainText, search);
-  if (matchRange == null) return spans;
-
-  final (index, end) = matchRange;
-  final result = <_FlatSpan>[];
-  int pos = 0;
-  for (final span in flat) {
-    final spanStart = pos;
-    final spanEnd = pos + span.$1.length;
-    if (spanEnd <= index || spanStart >= end) {
-      result.add(span);
-    } else {
-      final before = index > spanStart
-          ? span.$1.substring(0, index - spanStart)
-          : '';
-      final match = span.$1.substring(
-        index.clamp(spanStart, spanEnd) - spanStart,
-        end.clamp(spanStart, spanEnd) - spanStart,
-      );
-      final after = end < spanEnd ? span.$1.substring(end - spanStart) : '';
-      if (before.isNotEmpty) result.add((before, span.$2));
-      result.add((
-        match,
-        _mergedWithHighlight(span.$2, selectionColor, onSelection),
-      ));
-      if (after.isNotEmpty) result.add((after, span.$2));
-    }
-    pos = spanEnd;
-  }
-  return _unflattenSpans(result);
-}
-
-(int, int)? _findHighlightRange(String plainText, String search) {
-  if (search.isEmpty) return null;
-
-  final exact = plainText.indexOf(search);
-  if (exact >= 0) return (exact, exact + search.length);
-
-  final normText = _norm(plainText);
-  final normSearch = _norm(search);
-  final normIdx = normText.indexOf(normSearch);
-  if (normIdx >= 0) {
-    return _recoverRange(plainText, normText, normIdx, normSearch.length);
-  }
-
-  return _wordOverlapRange(plainText, search);
-}
-
-String _norm(String s) =>
-    s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
-
-(int, int)? _recoverRange(
-  String text,
-  String normText,
-  int normStart,
-  int normLen,
-) {
-  int charPos = 0;
-  int normPos = 0;
-  int start = -1;
-
-  while (charPos < text.length && normPos < normStart) {
-    final ch = text[charPos];
-    charPos++;
-    if (ch == ' ' || ch == '\n' || ch == '\t') {
-      while (charPos < text.length &&
-          (text[charPos] == ' ' ||
-              text[charPos] == '\n' ||
-              text[charPos] == '\t')) {
-        charPos++;
-      }
-    }
-    normPos++;
-  }
-
-  start = charPos;
-  int normEnd = normStart + normLen;
-  while (charPos < text.length && normPos < normEnd) {
-    final ch = text[charPos];
-    charPos++;
-    if (ch == ' ' || ch == '\n' || ch == '\t') {
-      while (charPos < text.length &&
-          (text[charPos] == ' ' ||
-              text[charPos] == '\n' ||
-              text[charPos] == '\t')) {
-        charPos++;
-      }
-    }
-    normPos++;
-  }
-
-  return (start, charPos);
-}
-
-(int, int)? _wordOverlapRange(String plainText, String search) {
-  final excerptWords = _norm(
-    search,
-  ).split(' ').where((w) => w.length > 2).toList();
-  if (excerptWords.isEmpty) return null;
-
-  final windowSize = search.length * 2;
-  final step = (windowSize / 2).floor();
-
-  int bestStart = 0;
-  double bestScore = 0;
-
-  for (int start = 0; start < plainText.length; start += step) {
-    final end = (start + windowSize).clamp(0, plainText.length);
-    final window = plainText.substring(start, end);
-    final windowNorm = _norm(window);
-
-    int matched = 0;
-    for (final word in excerptWords) {
-      if (windowNorm.contains(word)) matched++;
-    }
-
-    final score = matched / excerptWords.length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestStart = start;
-    }
-  }
-
-  if (bestScore >= 0.6) {
-    final end = (bestStart + windowSize).clamp(0, plainText.length);
-    return (bestStart, end);
-  }
-  return null;
-}
-
-TextStyle? _mergedWithHighlight(
-  TextStyle? base,
-  Color selectionColor,
-  Color Function(Color) onSelection,
-) {
-  return TextStyle(
-    color: onSelection(selectionColor),
-    backgroundColor: selectionColor,
-    fontWeight: FontWeight.bold,
-    fontStyle: base?.fontStyle,
-    decoration: base?.decoration,
-  );
-}
-
 /// Parses [text] as GitHub-Flavored Markdown and returns a flat list of
 /// [InlineSpan]s suitable for terminal rendering.
 ///
@@ -1069,41 +1004,6 @@ List<InlineSpan> parseMarkdownToInlineSpans(
 }
 
 typedef _FlatSpan = (String, TextStyle?);
-
-/// One piece of the interleaved content stream: a run of styled text
-/// spans (→ one RichText) or a diagram fence (→ one DiagramViewport).
-sealed class _Segment {
-  const _Segment();
-}
-
-class _SpanSegment extends _Segment {
-  const _SpanSegment(this.spans);
-  final List<InlineSpan> spans;
-}
-
-class _DiagramSegment extends _Segment {
-  const _DiagramSegment(this.slice);
-  final DiagramBlockSlice slice;
-}
-
-List<_FlatSpan> _flattenSpans(List<InlineSpan> spans) {
-  final result = <_FlatSpan>[];
-  for (final span in spans) {
-    if (span is TextSpan) {
-      if (span.text != null && span.text!.isNotEmpty) {
-        result.add((span.text!, span.style));
-      }
-      if (span.children != null) {
-        result.addAll(_flattenSpans(span.children!));
-      }
-    }
-  }
-  return result;
-}
-
-List<InlineSpan> _unflattenSpans(List<_FlatSpan> flat) {
-  return flat.map((e) => TextSpan(text: e.$1, style: e.$2)).toList();
-}
 
 class HighlightMarkdownStyleSheet {
   const HighlightMarkdownStyleSheet({
@@ -1411,7 +1311,12 @@ class _HighlightMarkdownVisitor {
         final sentinel = _pendingDiagramSentinel;
         if (sentinel != null) {
           _pendingDiagramSentinel = null;
-          return TextSpan(children: [sentinel, const TextSpan(text: '\n\n')]);
+          return TextSpan(
+            children: [
+              sentinel,
+              const TextSpan(text: '\n\n'),
+            ],
+          );
         }
         return codeBlockSpan;
       case 'blockquote':
@@ -1798,10 +1703,9 @@ class _HighlightMarkdownVisitor {
     final buffer = StringBuffer(result.text);
     // Warnings (e.g. cycles) surface below the drawing, inside the box.
     for (final warning in result.warnings) {
-      buffer.write('\n⚠ ${warning.message(
-        cycleDetected: (nodes) =>
-            strings.t('diagram.cycleWarning', {'nodes': nodes}),
-      )}');
+      buffer.write(
+        '\n⚠ ${warning.message(cycleDetected: (nodes) => strings.t('diagram.cycleWarning', {'nodes': nodes}))}',
+      );
     }
     return buffer.toString();
   }
