@@ -2,7 +2,7 @@
 ///
 /// Run one sample in Ghostty, for example:
 ///   dart run tool/genui_surface_samples.dart form
-/// Available names: dashboard, form, progress, data, usage.
+/// Available names: dashboard, form, progress, data, usage, gold.
 library;
 
 import 'dart:io';
@@ -15,7 +15,7 @@ import 'package:nocterm/nocterm.dart';
 
 import 'genui_surface_sample.dart' show sampleSurface;
 
-const sampleNames = ['dashboard', 'form', 'progress', 'data', 'usage'];
+const sampleNames = ['dashboard', 'form', 'progress', 'data', 'usage', 'gold'];
 
 CreateSurface sampleFor(String name) => switch (name) {
   'dashboard' => sampleSurface,
@@ -23,6 +23,7 @@ CreateSurface sampleFor(String name) => switch (name) {
   'progress' => _taskProgress,
   'data' => _reviewData,
   'usage' => _usageOverview,
+  'gold' => _goldTracker,
   _ => throw ArgumentError.value(name, 'name', 'unknown GenUI sample'),
 };
 
@@ -61,8 +62,48 @@ int _sampleMaxWidth(String name) => switch (name) {
   'progress' => 132,
   'data' => 100,
   'usage' => 88,
+  'gold' => 36,
   _ => 120,
 };
+
+/// The two-currency tracker projection used by the `gold` plugin. This stays
+/// deliberately narrow so the side panel remains a glanceable two-row card.
+final _goldTracker = CreateSurface(
+  surfaceId: 'standalone.gold',
+  catalogId: 'crux/1.0/chat',
+  components: const [
+    A2uiComponent(
+      id: 'root',
+      component: 'Card',
+      properties: {'title': 'gold', 'child': 'prices'},
+    ),
+    A2uiComponent(
+      id: 'prices',
+      component: 'Column',
+      properties: {
+        'children': ['usd', 'cny'],
+      },
+    ),
+    A2uiComponent(
+      id: 'usd',
+      component: 'KeyValue',
+      properties: {
+        'label': 'XAU / oz',
+        'value': '4470.30 ▲+1.60',
+        'tone': 'error',
+      },
+    ),
+    A2uiComponent(
+      id: 'cny',
+      component: 'KeyValue',
+      properties: {
+        'label': 'CNY / g',
+        'value': '¥968.05 ▼-0.35',
+        'tone': 'success',
+      },
+    ),
+  ],
+);
 
 final _releaseForm = CreateSurface(
   surfaceId: 'standalone.form',

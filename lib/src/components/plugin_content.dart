@@ -26,8 +26,12 @@ import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
 import '../services/plugin.dart';
+import '../services/a2ui/basic_catalog_items.dart';
+import '../services/a2ui/surface_catalog.dart';
+import '../services/a2ui/surface_builder.dart';
 import '../theme/crux_theme.dart';
 import '../i18n/strings.dart';
+import 'surface_host.dart';
 import 'ui/button.dart';
 import 'ui/clickable_todo_list.dart';
 import 'ui/multi_button.dart';
@@ -38,13 +42,13 @@ class PluginHost {
   /// Submit a `prompt`-kind action's rendered template as a user
   /// message to the current session. Null → prompt segments hidden.
   final void Function(PluginAction action, String renderedPrompt)?
-      onPromptAction;
+  onPromptAction;
 
   /// Run a `shell`-kind action's command in the project root, toast
   /// the outcome, and record it into the session context. Null → the
   /// renderer runs the command itself with no session record.
   final Future<void> Function(PluginAction action, String renderedCommand)?
-      onShellAction;
+  onShellAction;
 
   /// Open the in-process fullpane a `screen`-kind action names. Null →
   /// screen segments hidden.
@@ -103,6 +107,8 @@ class _PluginContentState extends State<PluginContent> {
   /// touch when several surfaces poll in quick succession (e.g. the
   /// sidebar and home boxes of one instance ticking together).
   DateTime? _lastTouch;
+
+  static final _goldSurfaceCatalog = createBasicCatalog();
 
   @override
   void initState() {
@@ -196,7 +202,7 @@ class _PluginContentState extends State<PluginContent> {
       await component.host.onAction?.call(
         'clicked `${action.label}` on plugin `${component.plugin.id}` '
         '(POST $url → ${ok ? 'succeeded' : 'FAILED — target unreachable '
-        'or non-200'})',
+                  'or non-200'})',
       );
     }
   }
@@ -302,11 +308,24 @@ class _PluginContentState extends State<PluginContent> {
       };
     }
 
-    MultiButtonSegment segmentFor(PluginAction action) =>
-        MultiButtonSegment(
-          label: component.strings.t(action.label),
-          onPressed: () => _fire(action),
-        );
+    // Gold is the first plugin migrated to an app-owned A2UI surface.
+    // Its status file is a stable small schema (two currency facts), so the
+    // declarative version keeps the display behavior while
+    // providing a reference implementation for future tracker plugins.
+    if (component.plugin.id == 'gold' &&
+        (status?.data.containsKey('usdOz') == true ||
+            component.plugin.labelTemplate.contains('usdOz'))) {
+      return _GoldPluginSurface(
+        status: status,
+        label: label,
+        catalog: _goldSurfaceCatalog,
+      );
+    }
+
+    MultiButtonSegment segmentFor(PluginAction action) => MultiButtonSegment(
+      label: component.strings.t(action.label),
+      onPressed: () => _fire(action),
+    );
 
     // Actions available in the CURRENT liveness state (launch is
     // dead-only, http alive-only), split by the spec's chosen button
@@ -315,27 +334,29 @@ class _PluginContentState extends State<PluginContent> {
     // Prompt/screen actions additionally need their host handler
     // wired (the affordance is pointless without it).
     bool available(PluginAction a) => switch (a.kind) {
-          PluginActionKind.launch => !alive,
-          PluginActionKind.http => alive,
-          PluginActionKind.prompt => component.host.onPromptAction != null,
-          PluginActionKind.screen => component.host.onScreenAction != null,
-          _ => true,
-        };
-    final liveActions = component.plugin.actions
-        .where(available)
-        .toList();
+      PluginActionKind.launch => !alive,
+      PluginActionKind.http => alive,
+      PluginActionKind.prompt => component.host.onPromptAction != null,
+      PluginActionKind.screen => component.host.onScreenAction != null,
+      _ => true,
+    };
+    final liveActions = component.plugin.actions.where(available).toList();
     final segmentActions = liveActions
-        .where((a) =>
-            a.style == PluginActionStyle.segment &&
-            // Screen actions always render as standalone buttons (the
-            // historical behaviour): a hover-morph would hide the
-            // label's content lines and make the button undiscoverable.
-            a.kind != PluginActionKind.screen)
+        .where(
+          (a) =>
+              a.style == PluginActionStyle.segment &&
+              // Screen actions always render as standalone buttons (the
+              // historical behaviour): a hover-morph would hide the
+              // label's content lines and make the button undiscoverable.
+              a.kind != PluginActionKind.screen,
+        )
         .toList();
     final buttonActions = liveActions
-        .where((a) =>
-            a.style == PluginActionStyle.button ||
-            a.kind == PluginActionKind.screen)
+        .where(
+          (a) =>
+              a.style == PluginActionStyle.button ||
+              a.kind == PluginActionKind.screen,
+        )
         .toList();
 
     final morphSegments = <MultiButtonSegment>[
@@ -344,10 +365,9 @@ class _PluginContentState extends State<PluginContent> {
     final hasMorphActions = morphSegments.isNotEmpty;
 
     final spanLines = status?.spanLines ?? const <List<PluginLabelSpan>>[];
-    final hasEmphasis = spanLines.any(
-      (line) => line.any((s) => s.emphasize),
-    );
-    final emphasized = !_busy &&
+    final hasEmphasis = spanLines.any((line) => line.any((s) => s.emphasize));
+    final emphasized =
+        !_busy &&
         hasEmphasis &&
         (status?.color == PluginStateColor.success ||
             status?.color == PluginStateColor.error);
@@ -457,13 +477,7 @@ class _PluginContentState extends State<PluginContent> {
     if (_busy || hasMorphActions) {
       firstRow = inner;
     } else if (standaloneButtons.isNotEmpty) {
-      firstRow = Row(
-        children: [
-          inner,
-          const Spacer(),
-          ...standaloneButtons,
-        ],
-      );
+      firstRow = Row(children: [inner, const Spacer(), ...standaloneButtons]);
     } else {
       firstRow = inner;
     }
@@ -481,6 +495,70 @@ class _PluginContentState extends State<PluginContent> {
         if (hasMorphActions && standaloneButtons.isNotEmpty)
           Row(children: standaloneButtons),
       ],
+    );
+  }
+}
+
+/// A2UI projection of the global gold tracker. The plugin host retains action
+/// execution; this component owns only the serializable status declaration.
+class _GoldPluginSurface extends StatelessComponent {
+  final PluginStatus? status;
+  final String label;
+  final SurfaceCatalog catalog;
+
+  const _GoldPluginSurface({
+    required this.status,
+    required this.label,
+    required this.catalog,
+  });
+
+  @override
+  Component build(BuildContext context) {
+    final data = status?.data ?? const <String, dynamic>{};
+    final usd = data['usdOz']?.toString() ?? '—';
+    final usdDelta = data['usdDelta']?.toString() ?? '';
+    final usdArrow = data['usdArrow']?.toString() ?? '';
+    final cny = data['cnyG']?.toString() ?? '—';
+    final cnyDelta = data['cnyDelta']?.toString() ?? '';
+    final cnyArrow = data['cnyArrow']?.toString() ?? '';
+    String toneFor(String trend) => trend == 'up'
+        ? 'error'
+        : trend == 'down'
+        ? 'success'
+        : 'neutral';
+    final alive = status?.alive == PluginAlive.alive;
+    final children = <String>['usd', 'cny'];
+    final surface = SurfaceBuilder(surfaceId: 'plugin.gold');
+    surface.keyValue(
+      'usd',
+      label: 'XAU / oz',
+      value: '$usd $usdArrow$usdDelta'.trimRight(),
+      tone: toneFor(data['usdTrend']?.toString() ?? ''),
+    );
+    surface.keyValue(
+      'cny',
+      label: 'CNY / g',
+      value: '¥$cny $cnyArrow$cnyDelta'.trimRight(),
+      tone: toneFor(data['cnyTrend']?.toString() ?? ''),
+    );
+    // Keep the live tracker at the original compact two-row footprint. The
+    // status chip appears only when it explains why those facts are absent or
+    // stale; action discovery then remains explicit rather than hover-only.
+    if (!alive) {
+      children.add('state');
+      surface.badge(
+        'state',
+        text: label,
+        tone: status?.alive == PluginAlive.stale ? 'warning' : 'neutral',
+      );
+    }
+    surface.column('root', children);
+    return SurfaceHost(
+      declaration: surface.build(),
+      catalog: catalog,
+      instanceKey: 'plugin.gold',
+      retainState: false,
+      submitOnAction: false,
     );
   }
 }
@@ -536,7 +614,9 @@ class _TodoScrollAreaState extends State<_TodoScrollArea> {
       );
     }
     return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: _TodoScrollArea._maxRows.toDouble()),
+      constraints: BoxConstraints(
+        maxHeight: _TodoScrollArea._maxRows.toDouble(),
+      ),
       child: Scrollbar(
         controller: _controller,
         thumbVisibility: true,

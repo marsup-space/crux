@@ -75,6 +75,11 @@ class KeyValueCatalogItem extends CatalogItem {
       'type': 'boolean',
       'description': 'Render the value as read-only/muted.',
     },
+    'tone': {
+      'type': 'string',
+      'enum': ['neutral', 'info', 'success', 'warning', 'error'],
+      'description': 'Optional semantic color for the value.',
+    },
   };
 
   @override
@@ -99,6 +104,7 @@ class KeyValueCatalogItem extends CatalogItem {
     final selected = component.properties['selected'] == true;
     final action = _listItemAction(component.properties['action']);
     final muted = component.properties['muted'] == true;
+    final tone = component.properties['tone'];
     final labelWidth = coerceIntProperty(
       component.properties['labelWidth'],
       stringWidth(label),
@@ -108,7 +114,13 @@ class KeyValueCatalogItem extends CatalogItem {
         ? theme.selectedText
         : muted
         ? theme.onSurfaceDim
-        : theme.onSurfaceVariant;
+        : switch (tone) {
+            'success' => theme.successColor,
+            'warning' => theme.warningColor,
+            'error' => theme.errorColor,
+            'info' => theme.info,
+            _ => theme.onSurfaceVariant,
+          };
 
     final row = Container(
       color: selected ? theme.selection : null,

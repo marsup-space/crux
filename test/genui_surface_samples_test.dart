@@ -14,6 +14,7 @@ void main() {
     'progress': 'Agent work queue',
     'data': 'Component coverage',
     'usage': 'Home usage surface',
+    'gold': 'XAU / oz',
   };
 
   for (final name in sampleNames) {

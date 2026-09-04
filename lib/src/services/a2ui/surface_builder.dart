@@ -32,12 +32,14 @@ class SurfaceBuilder {
     int? labelWidth,
     bool selected = false,
     bool muted = false,
+    String? tone,
   }) => _add(id, 'KeyValue', {
     'label': label,
     'value': value,
     'labelWidth': ?labelWidth,
     'selected': selected,
     'muted': muted,
+    'tone': ?tone,
   });
 
   SurfaceBuilder divider(String id) => _add(id, 'Divider', const {});
@@ -89,6 +91,24 @@ class SurfaceBuilder {
 
   SurfaceBuilder barList(String id, List<Map<String, dynamic>> rows) =>
       _add(id, 'BarList', {'rows': rows});
+
+  SurfaceBuilder button(
+    String id, {
+    required String label,
+    required String action,
+    Map<String, dynamic> actionContext = const {},
+    String variant = 'borderless',
+  }) {
+    final labelId = '${id}Label';
+    _add(labelId, 'Text', {'text': label});
+    return _add(id, 'Button', {
+      'child': labelId,
+      'variant': variant,
+      'action': {
+        'event': {'name': action, 'context': actionContext},
+      },
+    });
+  }
 
   SurfaceBuilder _add(String id, String component, Map<String, dynamic> props) {
     _components.add(
