@@ -1704,6 +1704,15 @@ void main() {
           tester.terminalState.findText('release a version'),
           nocterm.isNotEmpty,
         );
+        final name = tester.terminalState.findText('crux-release').first;
+        final description = tester.terminalState
+            .findText('release a version')
+            .first;
+        expect(
+          description.y,
+          name.y,
+          reason: 'a long plugin/skill description stays on its row',
+        );
       });
     });
 

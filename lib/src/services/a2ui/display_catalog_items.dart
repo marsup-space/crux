@@ -312,6 +312,7 @@ class ListItemCatalogItem extends CatalogItem {
           Expanded(
             child: inline
                 ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         resolveString(component.properties['title'], dataModel),
@@ -321,6 +322,7 @@ class ListItemCatalogItem extends CatalogItem {
                         Expanded(
                           child: Text(
                             '  $detail',
+                            softWrap: false,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(color: secondaryColor),
                           ),
