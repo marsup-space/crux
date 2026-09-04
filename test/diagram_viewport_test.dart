@@ -172,6 +172,48 @@ ask://Continue{continue}''';
   });
 
   group('pan interaction', () {
+    test(
+      'content keeps its scroll offset when its canvas is clipped',
+      () async {
+        await testNocterm('diagram follows parent scroll', (tester) async {
+          final scroll = ScrollController();
+          await tester.pumpComponent(
+            Container(
+              width: 40,
+              height: 5,
+              child: SingleChildScrollView(
+                controller: scroll,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 3),
+                    DiagramViewport(
+                      language: 'mermaid',
+                      data: const DiagramViewportData([
+                        'LINE 0',
+                        'LINE 1',
+                        'LINE 2',
+                        'LINE 3',
+                        'LINE 4',
+                      ]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+          // Diagram header is now two rows above the terminal. Its first art
+          // row is also clipped, so LINE 1 must be the first visible row.
+          scroll.jumpTo(5);
+          await tester.pump();
+
+          expect(tester.terminalState, containsText('LINE 1'));
+          expect(tester.terminalState, isNot(containsText('LINE 0')));
+          expect(tester.terminalState.findText('LINE 1').first.y, 0);
+        }, size: const Size(40, 5));
+      },
+    );
+
     test('DiagramPanController clamps and tracks edges', () {
       final ctrl = DiagramPanController();
       expect(ctrl.canPan, isFalse);

@@ -733,11 +733,21 @@ class RenderDiagramViewport extends RenderObject
         visibleRows.toDouble(),
       ),
     );
+    // TerminalCanvas.clip() changes the coordinate origin to its clipped
+    // area. If this viewport has scrolled partly above its parent, that area
+    // is intersected with the terminal and its origin is no longer the
+    // diagram's inner top-left. Keep the art in the render object's original
+    // coordinate system, expressed relative to the resulting clipped canvas.
+    final clippedOrigin = Offset(
+      clipped.area.left - canvas.area.left,
+      clipped.area.top - canvas.area.top,
+    );
+    final contentOrigin = offset + const Offset(2, 1) - clippedOrigin;
     final pan = -_controller.offset;
     for (var i = 0; i < visibleRows; i++) {
       final lineIdx = firstRow + i;
       if (lineIdx < 0 || lineIdx >= contentRows) continue;
-      _drawPannedLine(clipped, _data.lines[lineIdx], i, pan);
+      _drawPannedLine(clipped, _data.lines[lineIdx], i, pan, contentOrigin);
     }
 
     _drawFooter(canvas, offset, width, height);
@@ -810,6 +820,7 @@ class RenderDiagramViewport extends RenderObject
     String line,
     int row,
     double pan,
+    Offset contentOrigin,
   ) {
     var x = pan; // may be negative (content shifted left)
     for (final grapheme in line.characters) {
@@ -824,7 +835,7 @@ class RenderDiagramViewport extends RenderObject
       // when ANY column is visible.
       if (start >= _effectiveViewportWidth) break; // right of viewport
       clipCanvas.drawText(
-        Offset(start, row.toDouble()),
+        contentOrigin + Offset(start, row.toDouble()),
         grapheme,
         style: TextStyle(color: _contentColor),
       );
