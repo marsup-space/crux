@@ -618,7 +618,12 @@ class _ChatHistoryState extends State<ChatHistory> {
           if (clusterFirstUserMessageIds.contains(seg.userMessage.id)) {
             final gap = userMessageGaps[seg.userMessage.id];
             if (gap != null) {
-              items.add((ctx) => VibeTurnDivider(sinceLastTurn: gap, strings: component.strings));
+              items.add(
+                (ctx) => VibeTurnDivider(
+                  sinceLastTurn: gap,
+                  strings: component.strings,
+                ),
+              );
             }
           }
           userItemIndices.add(items.length);
@@ -647,7 +652,10 @@ class _ChatHistoryState extends State<ChatHistory> {
           // sibling segment (same user anchor, user line suppressed)
           // and render through the normal path below — nothing to
           // re-emit here.
-          items.add((ctx) => AskAnswerBubble(answer: askView, strings: component.strings));
+          items.add(
+            (ctx) =>
+                AskAnswerBubble(answer: askView, strings: component.strings),
+          );
           if (!isLiveOpenSegment) {
             items.add((ctx) => const SizedBox(height: 1));
           }
@@ -660,7 +668,12 @@ class _ChatHistoryState extends State<ChatHistory> {
               userMessage: seg.userMessage,
               showUserMessage: true,
             );
-            items.add((ctx) => VibeSegmentBubble(segment: userOnly, strings: component.strings));
+            items.add(
+              (ctx) => VibeSegmentBubble(
+                segment: userOnly,
+                strings: component.strings,
+              ),
+            );
           }
         } else {
           // Capture the segment's item index + prose reference before
@@ -691,8 +704,8 @@ class _ChatHistoryState extends State<ChatHistory> {
               // the mapped label, and the same effort renders two
               // different ways in the same view.
               reasoningPresets: reasoningPresets,
-                             surfaceCatalog: component.toolRegistry.surfaceCatalog,
-               onSurfaceAction: component.onSurfaceAction,
+              surfaceCatalog: component.toolRegistry.surfaceCatalog,
+              onSurfaceAction: component.onSurfaceAction,
             ),
           );
           items.add((ctx) => const SizedBox(height: 1));
@@ -711,16 +724,13 @@ class _ChatHistoryState extends State<ChatHistory> {
           // "generating..." on every older AI segment without a TLDR
           // would be noisy. Only the segment actually being summarized
           // animates.
-          if (aiMessage != null &&
-              aiMessage.role == 'ai' &&
-              aiMessage.id > 0) {
+          if (aiMessage != null && aiMessage.role == 'ai' && aiMessage.id > 0) {
             final hasTldr = aiMessage.tldr.isNotEmpty;
             final showGenerating =
                 isGeneratingTldr && isLatestClosedAi && !hasTldr;
             if (hasTldr || showGenerating) {
               items.add(
-                (ctx) =>
-                    Divider(color: CruxTheme.of(ctx).divider, height: 1),
+                (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
               );
               items.add((ctx) {
                 return TldrBubble(
@@ -740,8 +750,7 @@ class _ChatHistoryState extends State<ChatHistory> {
                 );
               });
               items.add(
-                (ctx) =>
-                    Divider(color: CruxTheme.of(ctx).divider, height: 1),
+                (ctx) => Divider(color: CruxTheme.of(ctx).divider, height: 1),
               );
             }
           }
@@ -821,10 +830,9 @@ class _ChatHistoryState extends State<ChatHistory> {
           userItemIndices.add(items.length);
           // Strip skill bodies + the LLM-only plan-context block so the
           // jump-bar label shows only what the user typed.
-          final text = stripPlanContext(stripSkillBodies(msg.content))
-              .text
-              .replaceAll('\n', ' ')
-              .trim();
+          final text = stripPlanContext(
+            stripSkillBodies(msg.content),
+          ).text.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
 
@@ -909,11 +917,11 @@ class _ChatHistoryState extends State<ChatHistory> {
             // in the middle of an active turn — they only get
             // persisted when the turn has fully errored out — so
             // there's no stale-retry concern here.
-             onRetryContinue: component.onRetryContinue,
-             onSurfaceAction: component.onSurfaceAction,
-             strings: component.strings,
-           );
-         });      // Turn separator: a single subtle divider between the end of
+            onRetryContinue: component.onRetryContinue,
+            onSurfaceAction: component.onSurfaceAction,
+            strings: component.strings,
+          );
+        }); // Turn separator: a single subtle divider between the end of
         // a completed Crux turn and the next user message. The 'ai'
         // branch covers normal completions (with or without a TLDR
         // block — the TLDR keeps its own flanking dividers); the
@@ -1226,12 +1234,21 @@ class _ChatHistoryState extends State<ChatHistory> {
       mainAxisSize: MainAxisSize.min,
       children: hasApiKey
           ? [
-              Text(component.strings.t('chat.history.emptyWithKey'), style: style),
+              Text(
+                component.strings.t('chat.history.emptyWithKey'),
+                style: style,
+              ),
               Text(component.strings.t('chat.history.emptyHint'), style: style),
             ]
           : [
-              Text(component.strings.t('chat.history.emptyNoKey'), style: style),
-              Text(component.strings.t('chat.history.emptyNoKeyHint'), style: style),
+              Text(
+                component.strings.t('chat.history.emptyNoKey'),
+                style: style,
+              ),
+              Text(
+                component.strings.t('chat.history.emptyNoKeyHint'),
+                style: style,
+              ),
             ],
     );
   }
@@ -1303,13 +1320,31 @@ class _ChatHistoryState extends State<ChatHistory> {
         } else if (tc.name == kSurfaceUpdateToolName) {
           final surfaceId = tc.input['surface_id']?.toString();
           final updates = tc.input['updates'];
-          if (surfaceId == null || updates is! Map<String, dynamic>) {
-            continue;
-          }
+          final componentsRaw = tc.input['components'];
+          if (surfaceId == null) continue;
           final instance = catalog.instanceById(surfaceId);
           if (instance != null && !instance.submitted) {
-            for (final entry in updates.entries) {
-              instance.updateDataModel(entry.key, entry.value);
+            if (updates is Map<String, dynamic>) {
+              for (final entry in updates.entries) {
+                instance.updateDataModel(entry.key, entry.value);
+              }
+            }
+            if (componentsRaw is List) {
+              final components = <A2uiComponent>[];
+              for (final raw in componentsRaw) {
+                if (raw is! Map<String, dynamic>) continue;
+                final parsed = A2uiComponent.fromJson(raw);
+                if (parsed != null) components.add(parsed);
+              }
+              if (components.length == componentsRaw.length) {
+                final extendId = tc.input['extend_container_id']?.toString();
+                instance.updateComponents(
+                  components: components,
+                  extendContainerId: extendId == null || extendId.isEmpty
+                      ? null
+                      : extendId,
+                );
+              }
             }
           }
         }

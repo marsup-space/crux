@@ -10,6 +10,7 @@ import 'package:crux/src/services/a2ui/surface_catalog.dart';
 import 'package:crux/src/services/a2ui/surface_controller.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/tools/surface_update_tool.dart';
+import 'package:crux/src/tools/surface_tool.dart';
 import 'package:crux/src/tools/tool_def.dart';
 
 void main() {
@@ -32,38 +33,38 @@ void main() {
 
   group('Column responsive Card layout', () {
     CreateSurface twoCardSurface() => CreateSurface(
-          surfaceId: 'cards',
-          catalogId: 'crux/1.0/chat',
-          components: [
-            A2uiComponent(
-              id: 'root',
-              component: 'Column',
-              properties: {
-                'children': ['cardA', 'cardB'],
-              },
-            ),
-            A2uiComponent(
-              id: 'cardA',
-              component: 'Card',
-              properties: {'title': 'Alpha', 'child': 'textA'},
-            ),
-            A2uiComponent(
-              id: 'textA',
-              component: 'Text',
-              properties: {'text': 'first card body'},
-            ),
-            A2uiComponent(
-              id: 'cardB',
-              component: 'Card',
-              properties: {'title': 'Beta', 'child': 'textB'},
-            ),
-            A2uiComponent(
-              id: 'textB',
-              component: 'Text',
-              properties: {'text': 'second card body'},
-            ),
-          ],
-        );
+      surfaceId: 'cards',
+      catalogId: 'crux/1.0/chat',
+      components: [
+        A2uiComponent(
+          id: 'root',
+          component: 'Column',
+          properties: {
+            'children': ['cardA', 'cardB'],
+          },
+        ),
+        A2uiComponent(
+          id: 'cardA',
+          component: 'Card',
+          properties: {'title': 'Alpha', 'child': 'textA'},
+        ),
+        A2uiComponent(
+          id: 'textA',
+          component: 'Text',
+          properties: {'text': 'first card body'},
+        ),
+        A2uiComponent(
+          id: 'cardB',
+          component: 'Card',
+          properties: {'title': 'Beta', 'child': 'textB'},
+        ),
+        A2uiComponent(
+          id: 'textB',
+          component: 'Text',
+          properties: {'text': 'second card body'},
+        ),
+      ],
+    );
 
     test('two Cards flow side-by-side on a wide terminal', () async {
       await testNocterm('cards wide', (tester) async {
@@ -192,7 +193,10 @@ void main() {
         final rowSignatures = <String>{};
         for (var y = 0; y < 8; y++) {
           final row = gridRow(y);
-          final cols = [for (var x = 0; x < 80; x++) if (row[x] == '║') x];
+          final cols = [
+            for (var x = 0; x < 80; x++)
+              if (row[x] == '║') x,
+          ];
           if (cols.isEmpty) continue;
           allBorderCols.addAll(cols);
           rowSignatures.add(cols.join(','));
@@ -201,14 +205,16 @@ void main() {
         expect(
           allBorderCols,
           equals({0, 38, 41, 79}),
-          reason: 'border columns must be exactly the two cards edges; '
+          reason:
+              'border columns must be exactly the two cards edges; '
               'an extra column means a row drifted (overflow), got '
               '$allBorderCols',
         );
         expect(
           rowSignatures.contains('0,38,41,79'),
           isTrue,
-          reason: 'at least one row must show both cards complete right '
+          reason:
+              'at least one row must show both cards complete right '
               'borders; signatures seen: $rowSignatures',
         );
         // The sibling card must still be on screen (its title visible).
@@ -227,7 +233,9 @@ void main() {
             A2uiComponent(
               id: 'root',
               component: 'Column',
-              properties: {'children': ['label', 'btn']},
+              properties: {
+                'children': ['label', 'btn'],
+              },
             ),
             A2uiComponent(
               id: 'label',
@@ -271,90 +279,99 @@ void main() {
         expect(received, isNull, reason: 'nothing pressed yet');
 
         // Tab into the button, Enter fires.
-        await tester.sendKeyEvent(
-          KeyboardEvent(logicalKey: LogicalKey.tab),
-        );
-        await tester.sendKeyEvent(
-          KeyboardEvent(logicalKey: LogicalKey.enter),
-        );
+        await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
+        await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.enter));
 
-        expect(received, isNotNull,
-            reason: 'Enter on a focused Button must fire the action');
+        expect(
+          received,
+          isNotNull,
+          reason: 'Enter on a focused Button must fire the action',
+        );
         expect(received!.name, 'confirm');
       }, size: const Size(80, 24));
     });
   });
 
   group('Table height autonomy (fold)', () {
-    test('long table folds behind a toggle; Enter expands and collapses',
-        () async {
-      await testNocterm('table fold', (tester) async {
-        // 20 rows — above the host's 12-row fold budget.
-        final surface = CreateSurface(
-          surfaceId: 'fold_1',
-          catalogId: 'crux/1.0/chat',
-          components: [
-            A2uiComponent(
-              id: 'root',
-              component: 'Table',
-              properties: {
-                'columns': [
-                  {'header': 'N', 'key': 'n'},
-                  {'header': 'V', 'key': 'v'},
-                ],
-                'rows': [
-                  for (var i = 1; i <= 20; i++)
-                    {'n': '$i', 'v': 'row-$i'},
-                ],
-              },
-            ),
-          ],
-        );
-        final catalog = createBasicCatalog();
-        final instance = catalog.instanceFor('fold', surface);
+    test(
+      'long table folds behind a toggle; Enter expands and collapses',
+      () async {
+        await testNocterm('table fold', (tester) async {
+          // 20 rows — above the host's 12-row fold budget.
+          final surface = CreateSurface(
+            surfaceId: 'fold_1',
+            catalogId: 'crux/1.0/chat',
+            components: [
+              A2uiComponent(
+                id: 'root',
+                component: 'Table',
+                properties: {
+                  'columns': [
+                    {'header': 'N', 'key': 'n'},
+                    {'header': 'V', 'key': 'v'},
+                  ],
+                  'rows': [
+                    for (var i = 1; i <= 20; i++) {'n': '$i', 'v': 'row-$i'},
+                  ],
+                },
+              ),
+            ],
+          );
+          final catalog = createBasicCatalog();
+          final instance = catalog.instanceFor('fold', surface);
 
-        await tester.pumpComponent(
-          CruxTheme(
-            data: CruxThemeData.draculaFallback,
-            child: SurfaceController(
-              surface: instance,
-              catalog: catalog,
+          await tester.pumpComponent(
+            CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: SurfaceController(surface: instance, catalog: catalog),
             ),
-          ),
-        );
-        await tester.pump();
+          );
+          await tester.pump();
 
-        // Rendered text contains every visible content cell; while
-        // folded, row 13 must NOT be rendered.
-        expect(tester.terminalState.findText('row-12').isNotEmpty, isTrue,
-            reason: 'budget rows stay visible when folded');
-        expect(tester.terminalState.findText('row-13'), isEmpty,
-            reason: 'rows beyond the budget must fold away');
-        expect(tester.terminalState.findText('8 more rows').isNotEmpty,
+          // Rendered text contains every visible content cell; while
+          // folded, row 13 must NOT be rendered.
+          expect(
+            tester.terminalState.findText('row-12').isNotEmpty,
             isTrue,
-            reason: 'toggle row announces the hidden count');
+            reason: 'budget rows stay visible when folded',
+          );
+          expect(
+            tester.terminalState.findText('row-13'),
+            isEmpty,
+            reason: 'rows beyond the budget must fold away',
+          );
+          expect(
+            tester.terminalState.findText('8 more rows').isNotEmpty,
+            isTrue,
+            reason: 'toggle row announces the hidden count',
+          );
 
-        // Expand via keyboard: focus the toggle (it is the only
-        // focusable here, so Tab lands on it) and press Enter.
-        await tester.sendKeyEvent(
-          KeyboardEvent(logicalKey: LogicalKey.tab),
-        );
-        await tester.sendKeyEvent(
-          KeyboardEvent(logicalKey: LogicalKey.enter),
-        );
+          // Expand via keyboard: focus the toggle (it is the only
+          // focusable here, so Tab lands on it) and press Enter.
+          await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
+          await tester.sendKeyEvent(
+            KeyboardEvent(logicalKey: LogicalKey.enter),
+          );
 
-        expect(tester.terminalState.findText('row-13').isNotEmpty, isTrue,
-            reason: 'Enter expands the full table');
-        expect(tester.terminalState.findText('row-20').isNotEmpty, isTrue);
+          expect(
+            tester.terminalState.findText('row-13').isNotEmpty,
+            isTrue,
+            reason: 'Enter expands the full table',
+          );
+          expect(tester.terminalState.findText('row-20').isNotEmpty, isTrue);
 
-        // Collapse again.
-        await tester.sendKeyEvent(
-          KeyboardEvent(logicalKey: LogicalKey.enter),
-        );
-        expect(tester.terminalState.findText('row-13'), isEmpty,
-            reason: 'second Enter collapses back to the budget');
-      }, size: const Size(80, 24));
-    });
+          // Collapse again.
+          await tester.sendKeyEvent(
+            KeyboardEvent(logicalKey: LogicalKey.enter),
+          );
+          expect(
+            tester.terminalState.findText('row-13'),
+            isEmpty,
+            reason: 'second Enter collapses back to the budget',
+          );
+        }, size: const Size(80, 24));
+      },
+    );
   });
 
   group('Table rendering', () {
@@ -549,9 +566,7 @@ void main() {
               id: 'root',
               component: 'List',
               properties: {
-                'children': [
-                  for (var i = 1; i <= 12; i++) 'row$i',
-                ],
+                'children': [for (var i = 1; i <= 12; i++) 'row$i'],
                 'maxHeight': 5,
               },
             ),
@@ -653,6 +668,38 @@ void main() {
       expect(instance.readDataModel('/status'), 'running');
     });
 
+    test(
+      'can update a surface immediately after its create tool call',
+      () async {
+        final create = SurfaceTool(catalog: catalog);
+        final ctx = _FakeToolContext();
+        final createResult = await create.execute({
+          'surface': {
+            'surfaceId': 'same_turn',
+            'catalogId': 'crux/1.0/chat',
+            'components': [
+              {
+                'id': 'root',
+                'component': 'Text',
+                'text': {'path': '/status'},
+              },
+            ],
+          },
+        }, ctx);
+        expect(createResult.title, isNot('Error'));
+
+        final updateResult = await tool.execute({
+          'surface_id': 'same_turn',
+          'updates': {'status': 'running'},
+        }, ctx);
+        expect(updateResult.title, isNot('Error'));
+        expect(
+          catalog.instanceById('same_turn')!.readDataModel('/status'),
+          'running',
+        );
+      },
+    );
+
     test('errors on unknown surfaceId', () async {
       final ctx = _FakeToolContext();
       final result = await tool.execute({
@@ -665,13 +712,12 @@ void main() {
     test('errors on missing args', () async {
       final ctx = _FakeToolContext();
       expect(
-        (await tool.execute({'updates': {'a': 1}}, ctx)).title,
+        (await tool.execute({
+          'updates': {'a': 1},
+        }, ctx)).title,
         'Error',
       );
-      expect(
-        (await tool.execute({'surface_id': 'x'}, ctx)).title,
-        'Error',
-      );
+      expect((await tool.execute({'surface_id': 'x'}, ctx)).title, 'Error');
     });
 
     test('does not mutate a submitted surface', () async {
@@ -725,7 +771,9 @@ void main() {
               component: 'Button',
               properties: {
                 'child': 'go_lbl',
-                'action': {'event': {'name': 'go', 'context': {}}},
+                'action': {
+                  'event': {'name': 'go', 'context': {}},
+                },
               },
             ),
             A2uiComponent(
@@ -751,8 +799,11 @@ void main() {
         // terminalState.findText returns a list of positions; assert
         // exactly one match.
         final positions = tester.terminalState.findText('提交验收');
-        expect(positions.length, 1,
-            reason: 'Button label must render exactly once, not twice');
+        expect(
+          positions.length,
+          1,
+          reason: 'Button label must render exactly once, not twice',
+        );
       }, size: const Size(80, 24));
     });
   });
@@ -812,8 +863,11 @@ void main() {
         expect(yesPos.isNotEmpty, isTrue);
         expect(noPos.isNotEmpty, isTrue);
         // Same row → same y.
-        expect(yesPos.first.y, noPos.first.y,
-            reason: 'inline options should be on the same row');
+        expect(
+          yesPos.first.y,
+          noPos.first.y,
+          reason: 'inline options should be on the same row',
+        );
       }, size: const Size(80, 24));
     });
 
@@ -863,10 +917,16 @@ void main() {
         // depends on nocterm's Row spacing internals — assert a
         // reasonable gap (at least 5 = LEFT width, at most 12).
         final dx = rightPos.first.x - leftPos.first.x;
-        expect(dx, greaterThanOrEqualTo(6),
-            reason: 'RIGHT should be at least 1 col after LEFT ends');
-        expect(dx, lessThanOrEqualTo(12),
-            reason: 'gap=4 should not push RIGHT too far');
+        expect(
+          dx,
+          greaterThanOrEqualTo(6),
+          reason: 'RIGHT should be at least 1 col after LEFT ends',
+        );
+        expect(
+          dx,
+          lessThanOrEqualTo(12),
+          reason: 'gap=4 should not push RIGHT too far',
+        );
       }, size: const Size(80, 24));
     });
   });
@@ -906,8 +966,11 @@ Done.''';
         final textSegs = segments.where((s) => s.$2 == null).length;
         final surfSegs = segments.where((s) => s.$2 != null).length;
         expect(surfSegs, 1, reason: 'should find one a2ui tag');
-        expect(textSegs, greaterThan(0),
-            reason: 'should have text segments too');
+        expect(
+          textSegs,
+          greaterThan(0),
+          reason: 'should have text segments too',
+        );
       }, size: const Size(80, 24));
     });
 

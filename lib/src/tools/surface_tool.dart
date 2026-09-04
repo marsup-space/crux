@@ -68,8 +68,7 @@ class SurfaceTool extends ToolDef {
           },
           'dataModel': {
             'type': 'object',
-            'description':
-                'Initial data model values, keyed by field name.',
+            'description': 'Initial data model values, keyed by field name.',
           },
         },
       },
@@ -77,10 +76,7 @@ class SurfaceTool extends ToolDef {
   };
 
   @override
-  Future<ToolResult> execute(
-    Map<String, dynamic> args,
-    ToolContext ctx,
-  ) async {
+  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
     var surfaceArg = args['surface'];
     if (surfaceArg is! Map<String, dynamic>) {
       return ToolResult.error(
@@ -115,6 +111,11 @@ class SurfaceTool extends ToolDef {
         'Available component types: ${catalog.typeNames.join(', ')}',
       );
     }
+
+    // Register before returning so a following `surface_update` in the same
+    // assistant turn can find the live instance even before its bubble mounts.
+    // The bubble later re-keys this instance to its persisted tool-call id.
+    catalog.instanceFor('surface:${surface.surfaceId}', surface);
 
     return ToolResult(
       title: 'Surface',

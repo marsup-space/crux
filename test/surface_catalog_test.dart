@@ -65,18 +65,12 @@ void main() {
     });
 
     test('returns null for missing surfaceId', () {
-      final json = {
-        'catalogId': 'crux/1.0/chat',
-        'components': [],
-      };
+      final json = {'catalogId': 'crux/1.0/chat', 'components': []};
       expect(CreateSurface.fromJson(json), isNull);
     });
 
     test('returns null for missing catalogId', () {
-      final json = {
-        'surfaceId': 'test',
-        'components': [],
-      };
+      final json = {'surfaceId': 'test', 'components': []};
       expect(CreateSurface.fromJson(json), isNull);
     });
   });
@@ -154,23 +148,23 @@ void main() {
 
   group('SurfaceInstance.updateComponents', () {
     CreateSurface tree() => CreateSurface(
-          surfaceId: 'dyn',
-          catalogId: 'crux/1.0/chat',
-          components: [
-            const A2uiComponent(
-              id: 'root',
-              component: 'Column',
-              properties: {
-                'children': ['title'],
-              },
-            ),
-            const A2uiComponent(
-              id: 'title',
-              component: 'Text',
-              properties: {'text': 'Title'},
-            ),
-          ],
-        );
+      surfaceId: 'dyn',
+      catalogId: 'crux/1.0/chat',
+      components: [
+        const A2uiComponent(
+          id: 'root',
+          component: 'Column',
+          properties: {
+            'children': ['title'],
+          },
+        ),
+        const A2uiComponent(
+          id: 'title',
+          component: 'Text',
+          properties: {'text': 'Title'},
+        ),
+      ],
+    );
 
     test('appends new components and extends a container', () {
       final instance = SurfaceInstance(declaration: tree());
@@ -221,9 +215,7 @@ void main() {
       final instance = SurfaceInstance(declaration: tree());
       instance.markSubmitted();
       final ok = instance.updateComponents(
-        components: [
-          const A2uiComponent(id: 'x', component: 'Text'),
-        ],
+        components: [const A2uiComponent(id: 'x', component: 'Text')],
       );
       expect(ok, isFalse);
       expect(instance.declaration.componentById('x'), isNull);
@@ -259,10 +251,7 @@ void main() {
         surfaceId: 'test',
         catalogId: 'crux/1.0/chat',
         components: [
-          const A2uiComponent(
-            id: 'root',
-            component: 'UnknownWidget',
-          ),
+          const A2uiComponent(id: 'root', component: 'UnknownWidget'),
         ],
       );
       final errors = catalog.validate(surface);
@@ -274,9 +263,7 @@ void main() {
       final surface = CreateSurface(
         surfaceId: 'test',
         catalogId: 'wrong/1.0',
-        components: [
-          const A2uiComponent(id: 'root', component: 'Text'),
-        ],
+        components: [const A2uiComponent(id: 'root', component: 'Text')],
       );
       final errors = catalog.validate(surface);
       expect(errors.any((e) => e.contains('catalogId mismatch')), isTrue);
@@ -310,10 +297,7 @@ void main() {
         ],
       );
       final errors = catalog.validate(surface);
-      expect(
-        errors.any((e) => e.contains('unknown child')),
-        isTrue,
-      );
+      expect(errors.any((e) => e.contains('unknown child')), isTrue);
     });
 
     test('rejects empty components list', () {
@@ -324,6 +308,42 @@ void main() {
       );
       final errors = catalog.validate(surface);
       expect(errors.any((e) => e.contains('empty')), isTrue);
+    });
+
+    test('rejects a declaration without an explicit root id', () {
+      final surface = CreateSurface(
+        surfaceId: 'missing_root',
+        catalogId: 'crux/1.0/chat',
+        components: [const A2uiComponent(id: 'first', component: 'Text')],
+      );
+      expect(
+        catalog.validate(surface).any((e) => e.contains('no root component')),
+        isTrue,
+      );
+    });
+
+    test('rejects cyclic component references', () {
+      final surface = CreateSurface(
+        surfaceId: 'cycle',
+        catalogId: 'crux/1.0/chat',
+        components: [
+          const A2uiComponent(
+            id: 'root',
+            component: 'Column',
+            properties: {
+              'children': ['a'],
+            },
+          ),
+          const A2uiComponent(
+            id: 'a',
+            component: 'Column',
+            properties: {
+              'children': ['root'],
+            },
+          ),
+        ],
+      );
+      expect(catalog.validate(surface).any((e) => e.contains('cycle')), isTrue);
     });
   });
 
@@ -486,10 +506,7 @@ void main() {
           surfaceId: 'error_test',
           catalogId: 'crux/1.0/chat',
           components: [
-            const A2uiComponent(
-              id: 'root',
-              component: 'NonExistent',
-            ),
+            const A2uiComponent(id: 'root', component: 'NonExistent'),
           ],
         );
 

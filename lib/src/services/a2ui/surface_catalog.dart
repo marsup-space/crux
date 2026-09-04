@@ -171,14 +171,19 @@ class SurfaceCatalog {
       }
     }
 
-    // Check that root exists.
-    if (surface.root == null) {
+    // The protocol and prompt require an explicit root. `CreateSurface.root`
+    // deliberately has a renderer fallback for defensive display, so don't
+    // use it for protocol validation here.
+    if (!ids.contains('root')) {
       errors.add('no root component found (need a component with id "root")');
     }
 
     // Check that all child references resolve. unwrapListProperty
     // tolerates the {"item": [...]} wrapper some providers emit.
+    final edges = <String, List<String>>{};
+    final parents = <String, List<String>>{};
     for (final c in surface.components) {
+      final childIds = <String>[];
       final children = unwrapListProperty(c.properties['children']);
       if (children is List) {
         for (final childId in children) {
@@ -186,6 +191,8 @@ class SurfaceCatalog {
             errors.add(
               'component "${c.id}" references unknown child "$childId"',
             );
+          } else if (childId is String) {
+            childIds.add(childId);
           }
         }
       }
@@ -193,6 +200,46 @@ class SurfaceCatalog {
       final child = c.properties['child'];
       if (child is String && !ids.contains(child)) {
         errors.add('component "${c.id}" references unknown child "$child"');
+      } else if (child is String) {
+        childIds.add(child);
+      }
+      edges[c.id] = childIds;
+      for (final childId in childIds) {
+        (parents[childId] ??= []).add(c.id);
+      }
+    }
+
+    for (final entry in parents.entries) {
+      if (entry.value.length > 1) {
+        errors.add(
+          'component "${entry.key}" has multiple parents: '
+          '${entry.value.join(', ')}',
+        );
+      }
+    }
+    if (parents.containsKey('root')) {
+      errors.add('root component must not be a child of another component');
+    }
+
+    // A cyclic adjacency list would recurse indefinitely in SurfaceController.
+    final visiting = <String>{};
+    final visited = <String>{};
+    bool visit(String id) {
+      if (visited.contains(id)) return false;
+      if (!visiting.add(id)) return true;
+      for (final childId in edges[id] ?? const <String>[]) {
+        if (visit(childId)) return true;
+      }
+      visiting.remove(id);
+      visited.add(id);
+      return false;
+    }
+
+    for (final id in ids) {
+      visiting.clear();
+      if (visit(id)) {
+        errors.add('component tree contains a cycle involving "$id"');
+        break;
       }
     }
 
@@ -281,9 +328,7 @@ class SurfaceCatalog {
       '      {"id": "root", "component": "Column", "children": ["title", "body"]},',
     );
     buf.writeln('      {"id": "title", "component": "Text", "text": "Hello"},');
-    buf.writeln(
-      '      {"id": "body", "component": "Text", "text": "World"}',
-    );
+    buf.writeln('      {"id": "body", "component": "Text", "text": "World"}');
     buf.writeln('    ],');
     buf.writeln('    "dataModel": {}');
     buf.writeln('  }');
@@ -375,7 +420,9 @@ class SurfaceCatalog {
       'the chrome.',
     );
     buf.writeln();
-    buf.writeln('Compact example — a confirmation form using horizontal layout:');
+    buf.writeln(
+      'Compact example — a confirmation form using horizontal layout:',
+    );
     buf.writeln();
     buf.writeln('```json');
     buf.writeln('{');

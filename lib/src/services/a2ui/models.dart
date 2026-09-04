@@ -528,6 +528,11 @@ class SurfaceInstance extends ChangeNotifier {
     if (submitted) return false;
     if (components.isEmpty && extendContainerId == null) return false;
 
+    if (extendContainerId != null &&
+        declaration.componentById(extendContainerId) == null) {
+      return false;
+    }
+
     final tree = declaration.components;
 
     // Upsert: replace same-id in place, collect new ones to append.
@@ -546,9 +551,7 @@ class SurfaceInstance extends ChangeNotifier {
     if (extendContainerId != null && newOnes.isNotEmpty) {
       final container = declaration.componentById(extendContainerId);
       if (container != null) {
-        final existing = <String>{
-          ...?_childrenIdsOf(container),
-        };
+        final existing = <String>{...?_childrenIdsOf(container)};
         final toAppend = [
           for (final c in newOnes)
             if (!existing.contains(c.id)) c.id,
@@ -568,7 +571,10 @@ class SurfaceInstance extends ChangeNotifier {
   List<String>? _childrenIdsOf(A2uiComponent container) {
     final raw = unwrapListProperty(container.properties['children']);
     if (raw is! List) return null;
-    return [for (final id in raw) if (id is String) id];
+    return [
+      for (final id in raw)
+        if (id is String) id,
+    ];
   }
 
   /// Append [ids] to a container's `children`, rewriting the property.
