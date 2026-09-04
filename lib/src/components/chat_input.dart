@@ -519,7 +519,7 @@ class ChatInputState extends State<ChatInput> {
             ),
           Expanded(
             child: ConstrainedBox(
-              // The scroll view gets a stable three-row viewport while empty,
+              // The scroll view keeps the original one-row height while empty,
               // grows with the text up to the panel-provided limit, then clips
               // and exposes a vertical scrollbar instead of pushing history
               // out of the terminal.

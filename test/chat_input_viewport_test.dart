@@ -5,7 +5,7 @@ import 'package:crux/src/components/ui/layout_metrics.dart';
 
 void main() {
   test(
-    'chat-sized input viewport keeps three rows and scrolls overflow',
+    'chat-sized input viewport keeps one row and scrolls overflow',
     () async {
       await testNocterm('chat input viewport scrolls', (tester) async {
         final controller = TextEditingController(

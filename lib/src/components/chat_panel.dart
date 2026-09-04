@@ -1938,9 +1938,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
 
-            // The input keeps three visible text rows at minimum.  Its outer
-            // padding consumes two more rows, so reserve that before capping
-            // the entire input region at half the terminal height.
+            // The input keeps its original one visible text row at minimum.
+            // Its outer padding consumes two more rows, so reserve that before
+            // capping the entire input region at half the terminal height.
             final maxInputVisibleLines = constraints.maxHeight.isFinite
                 ? ((constraints.maxHeight / 2).floor() -
                           (kInputPadding * 2).round())
