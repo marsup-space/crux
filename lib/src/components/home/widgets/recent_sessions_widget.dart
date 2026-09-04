@@ -2,7 +2,9 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../../i18n/strings.dart';
 import '../../../models/session.dart';
+import '../../../services/a2ui/surface_builder.dart';
 import '../../../theme/crux_theme.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// The `recent-sessions` box — the most recently active sessions, tap to
@@ -115,32 +117,46 @@ class RecentSessionsHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
     final shown = _shown;
     if (shown.isEmpty) {
-      return Text(
-        ctx.strings.t('home.recent.empty'),
-        style: TextStyle(color: theme.onSurfaceDim),
+      return homeSurface(
+        declaration: SurfaceBuilder(
+          surfaceId: 'home.recent.empty',
+        ).text('root', ctx.strings.t('home.recent.empty')).build(),
+        strings: ctx.strings,
       );
     }
 
     final currentId = currentSessionId();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < shown.length; i++)
-          _SessionLine(
-            session: shown[i],
-            isCurrent: shown[i].id == currentId,
-            selected: focused && i == _selectedIndex,
-            theme: theme,
-            strings: ctx.strings,
-            onTap: () {
-              _selectedIndex = i;
-              if (onSwitch(shown[i].id)) ctx.close();
-            },
-          ),
-      ],
+    final surface = SurfaceBuilder(surfaceId: 'home.recent')
+      ..column('root', [for (var i = 0; i < shown.length; i++) 'item$i']);
+    for (var i = 0; i < shown.length; i++) {
+      final session = shown[i];
+      final title = session.isUntitled
+          ? ctx.strings.t(
+              session.isChat ? 'chat.newPlaceholder' : 'session.newPlaceholder',
+            )
+          : session.title;
+      surface.listItem(
+        'item$i',
+        leading: session.id == currentId ? '▸' : null,
+        title: title,
+        badge: _SessionLine._relative(session.updatedAt, ctx.strings),
+        selected: focused && i == _selectedIndex,
+        action: 'open_session',
+        actionContext: {'index': i},
+      );
+    }
+    return homeSurface(
+      declaration: surface.build(),
+      strings: ctx.strings,
+      onAction: (event) {
+        if (event.name != 'open_session') return;
+        final index = event.context['index'];
+        if (index is! int || index < 0 || index >= shown.length) return;
+        _selectedIndex = index;
+        if (onSwitch(shown[index].id)) ctx.close();
+      },
     );
   }
 }
@@ -192,7 +208,9 @@ class _SessionLine extends StatelessComponent {
           children: [
             Text(
               isCurrent ? '▸ ' : '  ',
-              style: TextStyle(color: selected ? theme.selectedText : theme.accent),
+              style: TextStyle(
+                color: selected ? theme.selectedText : theme.accent,
+              ),
             ),
             Expanded(
               child: Text(
@@ -203,14 +221,14 @@ class _SessionLine extends StatelessComponent {
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
               ),
-              ),
-              Text(
-                _relative(session.updatedAt, strings),
-                style: TextStyle(color: metaColor),
-              ),
-            ],
-          ),
+            ),
+            Text(
+              _relative(session.updatedAt, strings),
+              style: TextStyle(color: metaColor),
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -226,6 +244,8 @@ class _SessionLine extends StatelessComponent {
     if (diff.inDays < 30) {
       return strings.t('home.time.days', {'n': '${diff.inDays}'});
     }
-    return strings.t('home.time.months', {'n': '${(diff.inDays / 30).floor()}'});
+    return strings.t('home.time.months', {
+      'n': '${(diff.inDays / 30).floor()}',
+    });
   }
 }

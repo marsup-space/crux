@@ -70,12 +70,19 @@ class SurfaceBuilder {
     String? detail,
     String? badge,
     bool selected = false,
+    String? action,
+    Map<String, dynamic> actionContext = const {},
   }) => _add(id, 'ListItem', {
     'title': title,
     'leading': ?leading,
     'detail': ?detail,
     'badge': ?badge,
     'selected': selected,
+    'action': action == null
+        ? null
+        : {
+            'event': {'name': action, 'context': actionContext},
+          },
   });
 
   SurfaceBuilder barList(String id, List<Map<String, dynamic>> rows) =>

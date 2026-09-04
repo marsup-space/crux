@@ -1,7 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
-import '../../../i18n/strings.dart';
-import '../../../theme/crux_theme.dart';
+import '../../../services/a2ui/surface_builder.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// One quick action the box offers.
@@ -21,12 +21,7 @@ class QuickAction {
   /// mid-stream because they don't execute anything session-mutating.
   final bool seed;
 
-  const QuickAction(
-    this.label,
-    this.hint,
-    this.command, {
-    this.seed = false,
-  });
+  const QuickAction(this.label, this.hint, this.command, {this.seed = false});
 }
 
 /// The `quick-actions` box — the primary things to do next.
@@ -45,10 +40,8 @@ class QuickActionsHomeWidget extends HomeWidget {
   /// The actions, in display order.
   final List<QuickAction> actions;
 
-  QuickActionsHomeWidget({
-    required this.seedInput,
-    List<QuickAction>? actions,
-  }) : actions = actions ?? _defaultActions;
+  QuickActionsHomeWidget({required this.seedInput, List<QuickAction>? actions})
+    : actions = actions ?? _defaultActions;
 
   // Hints are catalog keys (`home.qa.*`), resolved at render via the
   // active locale's `Strings`. A raw English hint injected by tests (or a
@@ -88,8 +81,7 @@ class QuickActionsHomeWidget extends HomeWidget {
 
   @override
   void moveSelection(int delta) {
-    _selectedIndex =
-        (_selectedIndex + delta) % actions.length;
+    _selectedIndex = (_selectedIndex + delta) % actions.length;
     if (_selectedIndex < 0) _selectedIndex += actions.length;
   }
 
@@ -137,75 +129,30 @@ class QuickActionsHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < actions.length; i++)
-          _ActionRow(
-            action: actions[i],
-            selected: focused && i == _selectedIndex,
-            theme: theme,
-            strings: ctx.strings,
-            onTap: () {
-              _selectedIndex = i;
-              _run(ctx, actions[i]);
-            },
-          ),
-      ],
-    );
-  }
-}
-
-/// One quick-action row: the command label and a dim hint. Highlighted
-/// (selection background) when it's the box's selected item and the box
-/// is focused. The row's own GestureDetector fires the action on click
-/// (per-item, not whole-box). Mouse-hover selection is handled at the
-/// box level (home's box MouseRegion computes the row from the cursor
-/// y), because a per-row MouseRegion nested under the box region never
-/// receives hover in nocterm.
-class _ActionRow extends StatelessComponent {
-  final QuickAction action;
-  final bool selected;
-  final CruxThemeData theme;
-  final Strings strings;
-  final VoidCallback onTap;
-
-  const _ActionRow({
-    required this.action,
-    required this.selected,
-    required this.theme,
-    required this.strings,
-    required this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final labelColor = selected ? theme.selectedText : theme.accent;
-    final hintColor = selected ? theme.selectedText : theme.onSurfaceDim;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.selection : null,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                action.label,
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                '  ${strings.t(action.hint)}',
-                style: TextStyle(color: hintColor),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
+    final surface = SurfaceBuilder(surfaceId: 'home.quick-actions')
+      ..column('root', [for (var i = 0; i < actions.length; i++) 'item$i']);
+    for (var i = 0; i < actions.length; i++) {
+      final action = actions[i];
+      surface.listItem(
+        'item$i',
+        leading: '›',
+        title: action.label,
+        detail: ctx.strings.t(action.hint),
+        selected: focused && i == _selectedIndex,
+        action: 'quick_action',
+        actionContext: {'index': i},
+      );
+    }
+    return homeSurface(
+      declaration: surface.build(),
+      strings: ctx.strings,
+      onAction: (event) {
+        if (event.name != 'quick_action') return;
+        final index = event.context['index'];
+        if (index is! int || index < 0 || index >= actions.length) return;
+        _selectedIndex = index;
+        _run(ctx, actions[index]);
+      },
     );
   }
 }

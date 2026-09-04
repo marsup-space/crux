@@ -1,8 +1,9 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../../../i18n/strings.dart';
+import '../../../services/a2ui/surface_builder.dart';
 import '../../../services/git_status_service.dart';
-import '../../../theme/crux_theme.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// The `git-status` box — branch, ahead/behind, and working-tree churn.
@@ -107,105 +108,50 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
 
   @override
   Component build(BuildContext context) {
-    final theme = CruxTheme.of(context);
     final status = component.service.current;
 
     if (!status.isRepo) {
-      return Text(
-        component.strings.t('home.notGitRepo'),
-        style: TextStyle(color: theme.onSurfaceDim),
+      return homeSurface(
+        declaration: SurfaceBuilder(
+          surfaceId: 'home.git.empty',
+        ).text('root', component.strings.t('home.notGitRepo')).build(),
+        strings: component.strings,
       );
     }
-
-    final rows = <Component>[
-      // Branch line: ⎇ main ↑3 ↓2 (only non-zero sync markers shown).
-      _buildBranchRow(theme, status),
-    ];
-
-    if (status.addedLines > 0 || status.deletedLines > 0) {
-      rows.add(
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '+${status.addedLines}',
-              style: TextStyle(
-                color: theme.successColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text('  ', style: TextStyle(color: theme.onSurfaceDim)),
-            Text(
-              '−${status.deletedLines}',
-              style: TextStyle(
-                color: theme.errorColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final counts = _buildCountsRow(theme, status);
-    if (counts != null) {
-      rows.add(counts);
-    } else if (status.addedLines == 0 && status.deletedLines == 0) {
-      // Clean tree: a single muted ✓ so the box isn't blank.
-      rows.add(Text('✓ ${component.strings.t('home.git.clean')}', style: TextStyle(color: theme.onSurfaceDim)));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: rows,
+    final branch = StringBuffer(
+      status.branch.isEmpty
+          ? component.strings.t('home.noBranch')
+          : status.branch,
     );
-  }
-
-  Component _buildBranchRow(CruxThemeData theme, GitStatus status) {
-    final children = <Component>[
-      Text('⎇ ', style: TextStyle(color: theme.accent)),
-      Text(
-        status.branch.isEmpty ? component.strings.t('home.noBranch') : status.branch,
-        style: TextStyle(
-          color: theme.onSurfaceVariant,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ];
-    if (status.ahead > 0) {
-      children.add(
-        Text(' ↑${status.ahead}', style: TextStyle(color: theme.successColor)),
-      );
+    if (status.ahead > 0) branch.write(' ↑${status.ahead}');
+    if (status.behind > 0) branch.write(' ↓${status.behind}');
+    final ids = <String>['branch'];
+    final surface = SurfaceBuilder(surfaceId: 'home.git')
+      ..column('root', ids)
+      ..keyValue('branch', label: '⎇', value: branch.toString());
+    if (status.addedLines > 0 || status.deletedLines > 0) {
+      ids.add('changes');
+      surface.text('changes', '+${status.addedLines}  −${status.deletedLines}');
     }
-    if (status.behind > 0) {
-      children.add(
-        Text(' ↓${status.behind}', style: TextStyle(color: theme.warningColor)),
-      );
-    }
-    return Row(mainAxisSize: MainAxisSize.min, children: children);
-  }
-
-  /// `● 2 staged · ~1 modified · ? 3 untracked · ! 1 conflict` — only the
-  /// non-zero buckets, each with an explicit label. Returns null when the
-  /// tree is clean so the caller can fall back to the `✓ clean` row.
-  Component? _buildCountsRow(CruxThemeData theme, GitStatus status) {
-    final parts = <Component>[];
-    void bucket(String glyph, int count, String label, Color color) {
-      if (count <= 0) return;
-      if (parts.isNotEmpty) {
-        parts.add(Text(' · ', style: TextStyle(color: theme.onSurfaceDim)));
-      }
-      parts.add(
-        Text('$glyph $count $label', style: TextStyle(color: color)),
-      );
+    final buckets = <String>[];
+    void add(String glyph, int count, String label) {
+      if (count > 0) buckets.add('$glyph $count $label');
     }
 
-    bucket('●', status.stagedFiles, component.strings.t('home.git.staged'), theme.accent);
-    bucket('~', status.modifiedFiles, component.strings.t('home.git.modified'), theme.warningColor);
-    bucket('?', status.untrackedFiles, component.strings.t('home.git.untracked'), theme.onSurfaceDim);
-    bucket('!', status.conflictedFiles, component.strings.t('home.git.conflict'), theme.errorColor);
-
-    if (parts.isEmpty) return null;
-    return Row(mainAxisSize: MainAxisSize.min, children: parts);
+    add('●', status.stagedFiles, component.strings.t('home.git.staged'));
+    add('~', status.modifiedFiles, component.strings.t('home.git.modified'));
+    add('?', status.untrackedFiles, component.strings.t('home.git.untracked'));
+    add('!', status.conflictedFiles, component.strings.t('home.git.conflict'));
+    if (buckets.isNotEmpty) {
+      ids.add('files');
+      surface.text('files', buckets.join(' · '));
+    } else if (status.addedLines == 0 && status.deletedLines == 0) {
+      ids.add('clean');
+      surface.text('clean', '✓ ${component.strings.t('home.git.clean')}');
+    }
+    return homeSurface(
+      declaration: surface.build(),
+      strings: component.strings,
+    );
   }
 }

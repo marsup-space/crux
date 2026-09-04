@@ -66,6 +66,11 @@ class KeyValueCatalogItem extends CatalogItem {
       'type': 'boolean',
       'description': 'Whether the host currently selects this row.',
     },
+    'action': {
+      'type': 'object',
+      'description':
+          'Optional click action: {"event":{"name":"open","context":{}}}.',
+    },
     'muted': {
       'type': 'boolean',
       'description': 'Render the value as read-only/muted.',
@@ -92,6 +97,7 @@ class KeyValueCatalogItem extends CatalogItem {
         resolveValue(component.properties['value'], dataModel)?.toString() ??
         '';
     final selected = component.properties['selected'] == true;
+    final action = _listItemAction(component.properties['action']);
     final muted = component.properties['muted'] == true;
     final labelWidth = coerceIntProperty(
       component.properties['labelWidth'],
@@ -104,7 +110,7 @@ class KeyValueCatalogItem extends CatalogItem {
         ? theme.onSurfaceDim
         : theme.onSurfaceVariant;
 
-    return Container(
+    final row = Container(
       color: selected ? theme.selection : null,
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -117,7 +123,33 @@ class KeyValueCatalogItem extends CatalogItem {
         ],
       ),
     );
+    if (action == null || onAction == null || submitted) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onAction(
+        A2uiAction(
+          name: action.name,
+          surfaceId: component.id,
+          sourceComponentId: component.id,
+          context: action.context,
+        ),
+      ),
+      child: row,
+    );
   }
+}
+
+({String name, Map<String, dynamic> context})? _listItemAction(dynamic raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  final event = raw['event'];
+  if (event is! Map<String, dynamic>) return null;
+  final name = event['name'];
+  if (name is! String || name.isEmpty) return null;
+  final context = event['context'];
+  return (
+    name: name,
+    context: context is Map<String, dynamic> ? context : const {},
+  );
 }
 
 /// A compact status chip. `tone` is semantic, so the same declaration adapts

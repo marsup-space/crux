@@ -1,7 +1,8 @@
 import 'package:nocterm/nocterm.dart';
 
+import '../../../services/a2ui/surface_builder.dart';
 import '../../../services/skills/skill.dart';
-import '../../../theme/crux_theme.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// The `skills` box — every skill the agent can see, tap one to read
@@ -116,83 +117,39 @@ class SkillsHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
     final all = skills();
     if (all.isEmpty) {
-      return Text(
-        ctx.strings.t('home.skills.empty'),
-        style: TextStyle(color: theme.onSurfaceDim),
+      return homeSurface(
+        declaration: SurfaceBuilder(
+          surfaceId: 'home.skills.empty',
+        ).text('root', ctx.strings.t('home.skills.empty')).build(),
+        strings: ctx.strings,
       );
     }
     final selected = selectedIndex;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < all.length; i++)
-          _SkillRow(
-            skill: all[i],
-            selected: focused && i == selected,
-            theme: theme,
-            onTap: () {
-              _selectedIndex = i;
-              final action = activateItem(ctx, i);
-              if (action != null) action();
-            },
-          ),
-      ],
-    );
-  }
-}
-
-/// One skill row: the name and its one-line description. Highlighted
-/// when it's the box's selected item and the box is focused; its own
-/// GestureDetector opens the skill's fullpane on click (per-row, not
-/// whole-box). Mouse-hover selection is handled at the box level
-/// (home's box MouseRegion computes the row from the cursor y, plus the
-/// box's scroll offset), because a per-row MouseRegion nested under the
-/// box region never receives hover in nocterm.
-class _SkillRow extends StatelessComponent {
-  final SkillInfo skill;
-  final bool selected;
-  final CruxThemeData theme;
-  final VoidCallback onTap;
-
-  const _SkillRow({
-    required this.skill,
-    required this.selected,
-    required this.theme,
-    required this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final nameColor = selected ? theme.selectedText : theme.accent;
-    final descColor = selected ? theme.selectedText : theme.onSurfaceDim;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.selection : null,
-        child: Row(
-          children: [
-            Text(
-              skill.name,
-              style: TextStyle(
-                color: nameColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Expanded(
-              child: Text(
-                '  ${skill.description.replaceAll('\n', ' ')}',
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: descColor),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final surface = SurfaceBuilder(surfaceId: 'home.skills')
+      ..column('root', [for (var i = 0; i < all.length; i++) 'item$i']);
+    for (var i = 0; i < all.length; i++) {
+      final skill = all[i];
+      surface.listItem(
+        'item$i',
+        title: skill.name,
+        detail: skill.description.replaceAll('\n', ' '),
+        selected: focused && i == selected,
+        action: 'open_skill',
+        actionContext: {'index': i},
+      );
+    }
+    return homeSurface(
+      declaration: surface.build(),
+      strings: ctx.strings,
+      onAction: (event) {
+        if (event.name != 'open_skill') return;
+        final index = event.context['index'];
+        if (index is! int || index < 0 || index >= all.length) return;
+        _selectedIndex = index;
+        activateItem(ctx, index)?.call();
+      },
     );
   }
 }

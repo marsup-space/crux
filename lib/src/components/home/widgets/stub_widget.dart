@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
-import '../../../theme/crux_theme.dart';
+import '../../../services/a2ui/surface_builder.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// A placeholder [HomeWidget] that fills the grid until the Phase 3
@@ -48,10 +49,11 @@ class StubHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
-    return Text(
-      '$id · span $span',
-      style: TextStyle(color: theme.onSurfaceDim),
+    return homeSurface(
+      declaration: SurfaceBuilder(
+        surfaceId: 'home.stub.$id',
+      ).text('root', '$id · span $span').build(),
+      strings: ctx.strings,
     );
   }
 }

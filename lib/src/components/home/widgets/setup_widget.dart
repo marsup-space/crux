@@ -1,7 +1,8 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
 
-import '../../../theme/crux_theme.dart';
+import '../../../services/a2ui/surface_builder.dart';
+import '../home_surface.dart';
 import '../home_widgets.dart';
 
 /// One row in the setup checklist.
@@ -175,83 +176,31 @@ class SetupHomeWidget extends HomeWidget {
     int span, {
     bool focused = false,
   }) {
-    final theme = CruxTheme.of(context);
     final items = itemsFor(ctx);
-
-    // Note: the all-done state never reaches here on the real home
-    // screen — visibleWhen() hides the box first. (The debug screen in
-    // tool/ renders every state directly, so it builds the checklist
-    // rows even when they're all done.)
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < items.length; i++)
-          _SetupRow(
-            item: items[i],
-            selected: focused && i == _selectedIndex,
-            theme: theme,
-            onTap: () {
-              _selectedIndex = i;
-              activateItem(ctx, i)?.call();
-            },
-          ),
-      ],
-    );
-  }
-}
-
-/// One checklist row: a status marker, the label, and a trailing detail
-/// (done) or command hint (pending). Highlighted when it's the box's
-/// selected item and the box is focused — same pattern as quick-actions.
-class _SetupRow extends StatelessComponent {
-  final SetupItem item;
-  final bool selected;
-  final CruxThemeData theme;
-  final VoidCallback onTap;
-
-  const _SetupRow({
-    required this.item,
-    required this.selected,
-    required this.theme,
-    required this.onTap,
-  });
-
-  @override
-  Component build(BuildContext context) {
-    final markerColor = item.done
-        ? (selected ? theme.selectedText : theme.onSurfaceDim)
-        : (selected ? theme.selectedText : theme.warning);
-    final labelColor = item.done
-        ? (selected ? theme.selectedText : theme.onSurfaceDim)
-        : (selected ? theme.selectedText : theme.accent);
-    final hintColor = selected ? theme.selectedText : theme.onSurfaceDim;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.selection : null,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(item.done ? '✓ ' : '› ', style: TextStyle(color: markerColor)),
-            Text(
-              item.label,
-              style: TextStyle(
-                color: labelColor,
-                fontWeight: item.done ? FontWeight.normal : FontWeight.bold,
-              ),
-            ),
-            Expanded(
-              child: Text(
-                '  ${item.done ? item.detail : item.seedText.trim()}',
-                style: TextStyle(color: hintColor),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
+    final surface = SurfaceBuilder(surfaceId: 'home.setup')
+      ..column('root', [for (var i = 0; i < items.length; i++) 'item$i']);
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      surface.listItem(
+        'item$i',
+        leading: item.done ? '✓' : '›',
+        title: item.label,
+        detail: item.done ? item.detail : item.seedText.trim(),
+        selected: focused && i == _selectedIndex,
+        action: item.done || item.seedText.isEmpty ? null : 'setup_item',
+        actionContext: {'index': i},
+      );
+    }
+    return homeSurface(
+      declaration: surface.build(),
+      strings: ctx.strings,
+      onAction: (event) {
+        if (event.name != 'setup_item') return;
+        final index = event.context['index'];
+        if (index is! int || index < 0 || index >= items.length) return;
+        _selectedIndex = index;
+        activateItem(ctx, index)?.call();
+      },
     );
   }
 }
