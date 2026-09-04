@@ -1,0 +1,104 @@
+import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
+import 'package:test/test.dart';
+
+import 'package:crux/src/components/surface_host.dart';
+import 'package:crux/src/services/a2ui/basic_catalog_items.dart';
+import 'package:crux/src/services/a2ui/models.dart';
+import 'package:crux/src/theme/crux_theme.dart';
+
+void main() {
+  final declaration = CreateSurface(
+    surfaceId: 'primitives',
+    catalogId: 'crux/1.0/chat',
+    dataModel: const {'enabled': false},
+    components: const [
+      A2uiComponent(
+        id: 'root',
+        component: 'Column',
+        properties: {
+          'children': ['section', 'item', 'toggle'],
+        },
+      ),
+      A2uiComponent(
+        id: 'section',
+        component: 'Section',
+        properties: {'title': 'Summary', 'child': 'row'},
+      ),
+      A2uiComponent(
+        id: 'row',
+        component: 'Row',
+        properties: {
+          'gap': 2,
+          'children': ['stat', 'badge'],
+        },
+      ),
+      A2uiComponent(
+        id: 'stat',
+        component: 'Stat',
+        properties: {'value': '2871', 'label': 'tests'},
+      ),
+      A2uiComponent(
+        id: 'badge',
+        component: 'Badge',
+        properties: {'text': 'passing', 'tone': 'success'},
+      ),
+      A2uiComponent(
+        id: 'item',
+        component: 'ListItem',
+        properties: {
+          'title': 'Plugin adapter',
+          'detail': 'next slice',
+          'badge': 'next',
+        },
+      ),
+      A2uiComponent(
+        id: 'toggle',
+        component: 'Toggle',
+        properties: {
+          'label': 'Enable previews',
+          'value': {'path': '/enabled'},
+        },
+      ),
+    ],
+  );
+
+  test('new primitives are registered and validate together', () {
+    final catalog = createBasicCatalog();
+    for (final type in ['Section', 'Badge', 'Stat', 'ListItem', 'Toggle']) {
+      expect(catalog.lookup(type), isNotNull);
+    }
+    expect(catalog.validate(declaration), isEmpty);
+  });
+
+  test('Toggle updates the data model through keyboard activation', () async {
+    await testNocterm('surface primitive toggle', (tester) async {
+      final catalog = createBasicCatalog();
+      await tester.pumpComponent(
+        Container(
+          width: 80,
+          height: 16,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceHost(
+              declaration: declaration,
+              catalog: catalog,
+              instanceKey: 'primitives',
+              submitOnAction: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.terminalState, containsText('passing'));
+      expect(tester.terminalState, containsText('Plugin adapter'));
+
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.enter));
+      expect(
+        catalog.instanceById('primitives')!.readDataModel('/enabled'),
+        isTrue,
+      );
+      expect(tester.terminalState, containsText(' ON '));
+    }, size: const Size(80, 16));
+  });
+}

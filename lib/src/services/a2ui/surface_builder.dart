@@ -45,6 +45,35 @@ class SurfaceBuilder {
   SurfaceBuilder card(String id, {required String child, String? title}) =>
       _add(id, 'Card', {'child': child, 'title': ?title});
 
+  SurfaceBuilder section(
+    String id, {
+    required String title,
+    required String child,
+  }) => _add(id, 'Section', {'title': title, 'child': child});
+
+  SurfaceBuilder badge(
+    String id, {
+    required String text,
+    String tone = 'neutral',
+  }) => _add(id, 'Badge', {'text': text, 'tone': tone});
+
+  SurfaceBuilder stat(
+    String id, {
+    required String label,
+    required String value,
+  }) => _add(id, 'Stat', {'label': label, 'value': value});
+
+  SurfaceBuilder listItem(
+    String id, {
+    required String title,
+    String? detail,
+    String? badge,
+  }) => _add(id, 'ListItem', {
+    'title': title,
+    'detail': ?detail,
+    'badge': ?badge,
+  });
+
   SurfaceBuilder _add(String id, String component, Map<String, dynamic> props) {
     _components.add(
       A2uiComponent(id: id, component: component, properties: props),

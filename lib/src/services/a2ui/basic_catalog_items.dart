@@ -152,9 +152,8 @@ class ColumnCatalogItem extends CatalogItem {
             // Each card needs ~36 columns to stay readable (border +
             // padding + a couple of table columns). Only flow when the
             // run fits and there are at least two cards to place.
-            final fits = runLength >= 2 &&
-                maxWidth > 0 &&
-                maxWidth / runLength >= 36;
+            final fits =
+                runLength >= 2 && maxWidth > 0 && maxWidth / runLength >= 36;
             if (fits) {
               children.add(
                 Row(
@@ -229,8 +228,7 @@ class RowCatalogItem extends CatalogItem {
   }) {
     // unwrapListProperty: tolerate provider-mangled array wrappers.
     final childrenRaw = unwrapListProperty(component.properties['children']);
-    final gap = coerceIntProperty(component.properties['gap'], 1)
-        .clamp(0, 20);
+    final gap = coerceIntProperty(component.properties['gap'], 1).clamp(0, 20);
 
     final children = <Component>[];
 
@@ -267,10 +265,7 @@ class CardCatalogItem extends CatalogItem {
 
   @override
   Map<String, dynamic> get propertiesSchema => {
-    'child': {
-      'type': 'string',
-      'description': 'The child component id.',
-    },
+    'child': {'type': 'string', 'description': 'The child component id.'},
     'title': {
       'type': 'string',
       'description':
@@ -308,6 +303,60 @@ class CardCatalogItem extends CatalogItem {
       isSubmitted: submitted,
       theme: theme,
       child: child,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section
+// ---------------------------------------------------------------------------
+
+/// A titled grouping without Card chrome. Useful inside cards and compact
+/// dashboard boxes where a second border would be visual noise.
+class SectionCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'Section';
+
+  @override
+  String get description =>
+      'A lightweight titled group with one child and no border. Use inside a '
+      'Card to divide related controls or facts.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'title': {'type': 'string', 'description': 'Section heading.'},
+    'child': {'type': 'string', 'description': 'The single child id.'},
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final title = resolveString(component.properties['title'], dataModel);
+    final childId = component.properties['child'];
+    final theme = CruxTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title.isNotEmpty)
+          Text(
+            title,
+            style: TextStyle(
+              color: theme.secondary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        if (title.isNotEmpty) const SizedBox(height: 1),
+        if (childId is String && childId.isNotEmpty) buildChild(childId),
+      ],
     );
   }
 }
@@ -353,8 +402,9 @@ class _SurfaceCardState extends State<_SurfaceCard> {
         : component.isSubmitted
         ? theme.toolPrefix
         : theme.borderActive;
-    final titleColor =
-        component.isSubmitted ? theme.textMuted : theme.secondary;
+    final titleColor = component.isSubmitted
+        ? theme.textMuted
+        : theme.secondary;
 
     return MouseRegion(
       onEnter: component.isInteractive
@@ -434,6 +484,7 @@ SurfaceCatalog createBasicCatalog() {
   catalog.register(ColumnCatalogItem());
   catalog.register(RowCatalogItem());
   catalog.register(CardCatalogItem());
+  catalog.register(SectionCatalogItem());
   catalog.register(DividerCatalogItem());
   registerInteractiveCatalogItems(catalog);
   registerDisplayCatalogItems(catalog);

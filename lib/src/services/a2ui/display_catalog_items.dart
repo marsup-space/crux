@@ -27,7 +27,7 @@ import '../../i18n/strings.dart';
 // per-cell backgrounds directly, mirroring ContextBar.
 // ignore_for_file: implementation_imports
 import 'package:nocterm/src/framework/terminal_canvas.dart';
-import 'basic_catalog_items.dart' show resolveValue;
+import 'basic_catalog_items.dart' show resolveString, resolveValue;
 import 'models.dart';
 import 'surface_catalog.dart';
 
@@ -114,6 +114,156 @@ class KeyValueCatalogItem extends CatalogItem {
           Text('  $value', style: TextStyle(color: valueColor)),
         ],
       ),
+    );
+  }
+}
+
+/// A compact status chip. `tone` is semantic, so the same declaration adapts
+/// to every host theme rather than hard-coding terminal colors.
+class BadgeCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'Badge';
+
+  @override
+  String get description => 'A compact semantic status chip.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'text': {'type': 'string', 'description': 'Badge text.'},
+    'tone': {
+      'type': 'string',
+      'enum': ['neutral', 'info', 'success', 'warning', 'error'],
+      'description': 'Semantic color. Default neutral.',
+    },
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final theme = CruxTheme.of(context);
+    final tone = component.properties['tone'];
+    final color = switch (tone) {
+      'success' => theme.success,
+      'warning' => theme.warning,
+      'error' => theme.error,
+      'info' => theme.info,
+      _ => theme.surfaceVariant,
+    };
+    final foreground = tone == 'neutral' || tone == null
+        ? theme.onSurfaceVariant
+        : theme.onColor(color);
+    return Container(
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: Text(
+        resolveString(component.properties['text'], dataModel),
+        style: TextStyle(color: foreground, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+/// A prominent value with a small label, for token, count and quota metrics.
+class StatCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'Stat';
+
+  @override
+  String get description => 'A prominent metric value with a small label.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'label': {'type': 'string', 'description': 'Metric label.'},
+    'value': {'type': 'string', 'description': 'Metric value.'},
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final theme = CruxTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          resolveString(component.properties['value'], dataModel),
+          style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          resolveString(component.properties['label'], dataModel),
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+      ],
+    );
+  }
+}
+
+/// A standard two-line row for lists. Actions deliberately remain a host or
+/// Button concern, so this display primitive stays safe for every catalog.
+class ListItemCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'ListItem';
+
+  @override
+  String get description => 'A list row with title, optional detail and badge.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'title': {'type': 'string', 'description': 'Primary row text.'},
+    'detail': {'type': 'string', 'description': 'Optional secondary text.'},
+    'badge': {'type': 'string', 'description': 'Optional trailing status.'},
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final theme = CruxTheme.of(context);
+    final detail = resolveString(component.properties['detail'], dataModel);
+    final badge = resolveString(component.properties['badge'], dataModel);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(resolveString(component.properties['title'], dataModel)),
+              if (detail.isNotEmpty)
+                Text(detail, style: TextStyle(color: theme.onSurfaceDim)),
+            ],
+          ),
+        ),
+        if (badge.isNotEmpty) ...[
+          const SizedBox(width: 1),
+          Text(badge, style: TextStyle(color: theme.secondary)),
+        ],
+      ],
     );
   }
 }
@@ -1061,6 +1211,9 @@ class _SurfaceListState extends State<_SurfaceList> {
 /// [SurfaceCatalog]: Table, ProgressBar, List.
 void registerDisplayCatalogItems(SurfaceCatalog catalog) {
   catalog.register(KeyValueCatalogItem());
+  catalog.register(BadgeCatalogItem());
+  catalog.register(StatCatalogItem());
+  catalog.register(ListItemCatalogItem());
   catalog.register(TableCatalogItem());
   catalog.register(ProgressBarCatalogItem());
   catalog.register(ListCatalogItem());

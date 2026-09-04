@@ -375,12 +375,132 @@ class _SurfaceCheckBoxState extends State<_SurfaceCheckBox> {
               ),
             ),
             Expanded(
-              child: Text(
-                component.label,
-                style: TextStyle(color: labelColor),
-              ),
+              child: Text(component.label, style: TextStyle(color: labelColor)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Toggle
+// ---------------------------------------------------------------------------
+
+/// A compact boolean switch. It shares CheckBox's data-binding semantics but
+/// communicates an immediate on/off setting rather than a checklist item.
+class ToggleCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'Toggle';
+
+  @override
+  String get description =>
+      'An on/off switch with two-way boolean data binding. Use for settings, '
+      'not multi-step checklist items.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'label': {'type': 'string', 'description': 'Setting label.'},
+    'value': {
+      'type': 'object',
+      'description': 'Boolean binding: {"path": "/field"}.',
+    },
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final valueRef = component.properties['value'];
+    final path = valueRef is Map<String, dynamic> && valueRef['path'] is String
+        ? valueRef['path'] as String
+        : '${component.id}.value';
+    return _SurfaceToggle(
+      label: resolveString(component.properties['label'], dataModel),
+      isOn: DataBinding(path).resolve(dataModel) == true,
+      path: path,
+      onDataModelUpdate: submitted ? null : onDataModelUpdate,
+      theme: CruxTheme.of(context),
+    );
+  }
+}
+
+class _SurfaceToggle extends StatefulComponent {
+  final String label;
+  final bool isOn;
+  final String path;
+  final void Function(String path, dynamic value)? onDataModelUpdate;
+  final CruxThemeData theme;
+
+  const _SurfaceToggle({
+    required this.label,
+    required this.isOn,
+    required this.path,
+    required this.onDataModelUpdate,
+    required this.theme,
+  });
+
+  @override
+  State<_SurfaceToggle> createState() => _SurfaceToggleState();
+}
+
+class _SurfaceToggleState extends State<_SurfaceToggle> {
+  bool _hovered = false;
+
+  void _toggle() =>
+      component.onDataModelUpdate?.call(component.path, !component.isOn);
+
+  @override
+  Component build(BuildContext context) {
+    final active = component.onDataModelUpdate != null;
+    final theme = component.theme;
+    final marker = component.isOn ? ' ON ' : ' OFF ';
+    final color = component.isOn ? theme.success : theme.surfaceVariant;
+    final foreground = component.isOn
+        ? theme.onColor(color)
+        : theme.onSurfaceVariant;
+    return Focusable(
+      onKeyEvent: (event) {
+        if (active &&
+            (event.logicalKey == LogicalKey.enter ||
+                event.logicalKey == LogicalKey.space)) {
+          _toggle();
+          return true;
+        }
+        return false;
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: active ? _toggle : null,
+        child: MouseRegion(
+          onEnter: active ? (_) => setState(() => _hovered = true) : null,
+          onExit: active ? (_) => setState(() => _hovered = false) : null,
+          opaque: false,
+          child: Row(
+            children: [
+              Container(
+                color: _hovered ? theme.buttonBackgroundHover : color,
+                child: Text(
+                  marker,
+                  style: TextStyle(
+                    color: _hovered ? theme.accent : foreground,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 1),
+              Expanded(child: Text(component.label)),
+            ],
+          ),
         ),
       ),
     );
@@ -458,8 +578,8 @@ class TextFieldCatalogItem extends CatalogItem {
 
     // Read current value from DataModel.
     final currentValue = DataBinding(path).resolve(dataModel);
-    final initialText = currentValue?.toString() ??
-        (valueRef is String ? valueRef : '');
+    final initialText =
+        currentValue?.toString() ?? (valueRef is String ? valueRef : '');
 
     // Parse onSubmitted action.
     String? submitActionName;
@@ -588,8 +708,8 @@ class _SurfaceTextFieldState extends State<_SurfaceTextField> {
     final borderColor = _focused
         ? theme.borderActive
         : _hovered
-            ? theme.accent
-            : theme.borderActive.withOpacity(0.5);
+        ? theme.accent
+        : theme.borderActive.withOpacity(0.5);
 
     final field = GestureDetector(
       onTap: isActive
@@ -940,11 +1060,7 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
   /// Inline option — renders as a compact tag-like button, all on one
   /// line separated by 2-column gaps. Selected state shown by
   /// background highlight instead of a checkbox marker.
-  Component _buildInlineOption(
-    CruxThemeData theme,
-    int index,
-    bool isActive,
-  ) {
+  Component _buildInlineOption(CruxThemeData theme, int index, bool isActive) {
     final option = component.options[index];
     final isSelected = component.selections.contains(option.value);
     final isFocused = _focusedIndex >= 0 && index == _focusedIndex;
@@ -1033,10 +1149,7 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
             ),
           ),
           Expanded(
-            child: Text(
-              option.label,
-              style: TextStyle(color: textColor),
-            ),
+            child: Text(option.label, style: TextStyle(color: textColor)),
           ),
         ],
       ),
@@ -1052,6 +1165,7 @@ class _SurfaceChoicePickerState extends State<_SurfaceChoicePicker> {
 void registerInteractiveCatalogItems(SurfaceCatalog catalog) {
   catalog.register(ButtonCatalogItem());
   catalog.register(CheckBoxCatalogItem());
+  catalog.register(ToggleCatalogItem());
   catalog.register(TextFieldCatalogItem());
   catalog.register(ChoicePickerCatalogItem());
 }

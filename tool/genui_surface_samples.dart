@@ -61,6 +61,7 @@ final _releaseForm = CreateSurface(
     'title': 'Surface migration',
     'environment': ['staging'],
     'announce': true,
+    'preview': false,
   },
   components: const [
     A2uiComponent(
@@ -84,7 +85,7 @@ final _releaseForm = CreateSurface(
       id: 'fields',
       component: 'Column',
       properties: {
-        'children': ['title', 'environment', 'announce', 'submit'],
+        'children': ['title', 'environment', 'announce', 'preview', 'submit'],
       },
     ),
     A2uiComponent(
@@ -119,6 +120,14 @@ final _releaseForm = CreateSurface(
       },
     ),
     A2uiComponent(
+      id: 'preview',
+      component: 'Toggle',
+      properties: {
+        'label': 'Preview only',
+        'value': {'path': '/preview'},
+      },
+    ),
+    A2uiComponent(
       id: 'submit',
       component: 'Button',
       properties: {
@@ -145,13 +154,41 @@ final _taskProgress = CreateSurface(
       id: 'root',
       component: 'Column',
       properties: {
-        'children': ['heading', 'active', 'queue'],
+        'children': ['heading', 'summary', 'active', 'queue'],
       },
     ),
     A2uiComponent(
       id: 'heading',
       component: 'Text',
       properties: {'text': 'Agent work queue'},
+    ),
+    A2uiComponent(
+      id: 'summary',
+      component: 'Card',
+      properties: {'title': 'Today', 'child': 'metrics'},
+    ),
+    A2uiComponent(
+      id: 'metrics',
+      component: 'Row',
+      properties: {
+        'gap': 3,
+        'children': ['runs', 'tests', 'ready'],
+      },
+    ),
+    A2uiComponent(
+      id: 'runs',
+      component: 'Stat',
+      properties: {'value': '4', 'label': 'runs'},
+    ),
+    A2uiComponent(
+      id: 'tests',
+      component: 'Stat',
+      properties: {'value': '2871', 'label': 'tests'},
+    ),
+    A2uiComponent(
+      id: 'ready',
+      component: 'Badge',
+      properties: {'text': 'green', 'tone': 'success'},
     ),
     A2uiComponent(
       id: 'active',
@@ -162,13 +199,25 @@ final _taskProgress = CreateSurface(
       id: 'activeBody',
       component: 'Column',
       properties: {
-        'children': ['activeName', 'activeBar', 'activeState'],
+        'children': ['activeName', 'runtime'],
       },
     ),
     A2uiComponent(
       id: 'activeName',
       component: 'Text',
       properties: {'text': 'Migrate home boxes'},
+    ),
+    A2uiComponent(
+      id: 'runtime',
+      component: 'Section',
+      properties: {'title': 'Runtime', 'child': 'runtimeRows'},
+    ),
+    A2uiComponent(
+      id: 'runtimeRows',
+      component: 'Column',
+      properties: {
+        'children': ['activeBar', 'activeState'],
+      },
     ),
     A2uiComponent(
       id: 'activeBar',
@@ -195,18 +244,18 @@ final _taskProgress = CreateSurface(
     ),
     A2uiComponent(
       id: 'q1',
-      component: 'Text',
-      properties: {'text': 'Plugin adapter'},
+      component: 'ListItem',
+      properties: {'title': 'Plugin adapter', 'badge': 'next'},
     ),
     A2uiComponent(
       id: 'q2',
-      component: 'Text',
-      properties: {'text': 'Prompt trim'},
+      component: 'ListItem',
+      properties: {'title': 'Prompt trim', 'detail': 'shorten catalog rules'},
     ),
     A2uiComponent(
       id: 'q3',
-      component: 'Text',
-      properties: {'text': 'Restore coverage'},
+      component: 'ListItem',
+      properties: {'title': 'Restore coverage', 'badge': 'test'},
     ),
   ],
 );
