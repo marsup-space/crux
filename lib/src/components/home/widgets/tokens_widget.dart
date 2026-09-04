@@ -1,13 +1,16 @@
-import 'dart:math' as math;
-
 import 'package:nocterm/nocterm.dart';
 
+import '../../surface_host.dart';
 import '../../../i18n/strings.dart';
 import '../../../models/daily_usage_stats.dart';
+import '../../../services/a2ui/basic_catalog_items.dart';
+import '../../../services/a2ui/models.dart';
+import '../../../services/a2ui/surface_builder.dart';
 import '../../../theme/crux_theme.dart';
-import '../../../utils/text_width.dart';
 import '../../../utils/token_format.dart';
 import '../home_widgets.dart';
+
+final _tokensSurfaceCatalog = createBasicCatalog();
 
 /// The `today` box — a day's **per-model token usage** as horizontal
 /// bars, with `‹ ›` title navigation to walk the calendar.
@@ -51,13 +54,13 @@ class TokensHomeWidget extends HomeWidget {
   /// Injectable data source. Defaults to reading through the context;
   /// tests inject a fixed map.
   final Future<Map<String, DailyUsageStats>> Function(HomeContext ctx)?
-      _loaderOverride;
+  _loaderOverride;
 
   TokensHomeWidget({
     DateTime Function()? now,
     Future<Map<String, DailyUsageStats>> Function(HomeContext ctx)? loader,
-  })  : _now = now ?? DateTime.now,
-        _loaderOverride = loader;
+  }) : _now = now ?? DateTime.now,
+       _loaderOverride = loader;
 
   @override
   String get id => 'tokens';
@@ -112,9 +115,9 @@ class TokensHomeWidget extends HomeWidget {
   /// keys drive the same moves while the box is focused.
   @override
   List<HomeTitleButton>? get titleButtons => [
-        HomeTitleButton(label: '‹', onPressed: _canGoBack ? goBack : null),
-        HomeTitleButton(label: '›', onPressed: _canGoForward ? goForward : null),
-      ];
+    HomeTitleButton(label: '‹', onPressed: _canGoBack ? goBack : null),
+    HomeTitleButton(label: '›', onPressed: _canGoForward ? goForward : null),
+  ];
 
   /// Step to the previous (older) day.
   void goBack() {
@@ -146,8 +149,9 @@ class TokensHomeWidget extends HomeWidget {
     DateTime? latestActive;
     stats.forEach((key, s) {
       if (s.isEmpty) return;
-      final day =
-          DateTime.tryParse(key)?.toLocal(); // bucket keys are local days
+      final day = DateTime.tryParse(
+        key,
+      )?.toLocal(); // bucket keys are local days
       if (day == null || day.isAfter(today)) return;
       if (latestActive == null || day.isAfter(latestActive!)) {
         latestActive = day;
@@ -265,8 +269,11 @@ class _TokensViewState extends State<_TokensView> {
   /// `date(created_at/1000, 'unixepoch', 'localtime')` grouping.
   String get _dayKey {
     final n = component.now();
-    final d = DateTime(n.year, n.month, n.day)
-        .subtract(Duration(days: component.daysAgo));
+    final d = DateTime(
+      n.year,
+      n.month,
+      n.day,
+    ).subtract(Duration(days: component.daysAgo));
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}-$m-$day';
@@ -274,12 +281,10 @@ class _TokensViewState extends State<_TokensView> {
 
   @override
   Component build(BuildContext context) {
-    final theme = CruxTheme.of(context);
-
     if (!_settled) {
       return Text(
         component.strings.t('home.tokens.loading'),
-        style: TextStyle(color: theme.onSurfaceDim),
+        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
       );
     }
 
@@ -287,192 +292,72 @@ class _TokensViewState extends State<_TokensView> {
     if (stats == null || stats.isEmpty) {
       return Text(
         component.strings.t('home.tokens.noActivity'),
-        style: TextStyle(color: theme.onSurfaceDim),
+        style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
       );
     }
 
     // No per-model breakdown (legacy rows / bare test fixtures):
     // plain totals beat a fake single bar.
     if (stats.byModel.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _row(theme, component.strings.t('home.tokens.tokens'),
-              _fmt(stats.tokens)),
-          _row(theme, component.strings.t('home.tokens.turns'),
-              '${stats.turns}'),
-          _row(theme, component.strings.t('home.tokens.sessions'),
-              '${stats.sessions}'),
-        ],
-      );
+      final surface = SurfaceBuilder(surfaceId: 'home.tokens.totals')
+        ..column('root', ['tokens', 'turns', 'sessions'])
+        ..keyValue(
+          'tokens',
+          label: component.strings.t('home.tokens.tokens'),
+          value: _fmt(stats.tokens),
+        )
+        ..keyValue(
+          'turns',
+          label: component.strings.t('home.tokens.turns'),
+          value: '${stats.turns}',
+        )
+        ..keyValue(
+          'sessions',
+          label: component.strings.t('home.tokens.sessions'),
+          value: '${stats.sessions}',
+        );
+      return _surface(surface.build());
     }
 
-    return _ModelBars(
-      stats: stats,
-      theme: theme,
-      strings: component.strings,
-    );
+    final models = stats.byModel.entries.toList()
+      ..sort((a, b) {
+        final byTokens = b.value.compareTo(a.value);
+        return byTokens != 0 ? byTokens : a.key.compareTo(b.key);
+      });
+    final ceiling = models.first.value;
+    final rows = models
+        .map(
+          (model) => <String, dynamic>{
+            'label': model.key,
+            'value': model.value / ceiling,
+            'detail': formatTokensCompact(model.value),
+          },
+        )
+        .toList(growable: false);
+    final surface = SurfaceBuilder(surfaceId: 'home.tokens.models')
+      ..column('root', ['bars', 'summary'])
+      ..barList('bars', rows)
+      ..text(
+        'summary',
+        '${component.strings.t('home.tokens.turns')} ${stats.turns}'
+            ' · '
+            '${component.strings.t('home.tokens.sessions')} ${stats.sessions}',
+      );
+    return _surface(surface.build());
   }
 
-  Component _row(CruxThemeData theme, String label, String value) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('$label  ', style: TextStyle(color: theme.onSurfaceDim)),
-        Text(value, style: TextStyle(color: theme.onSurfaceVariant)),
-      ],
-    );
-  }
+  Component _surface(CreateSurface declaration) => SurfaceHost(
+    declaration: declaration,
+    catalog: _tokensSurfaceCatalog,
+    instanceKey: declaration.surfaceId,
+    retainState: false,
+    submitOnAction: false,
+    strings: component.strings,
+  );
 
   /// Comma-group a token count for readability (e.g. `12,800`).
   static String _fmt(int n) => n.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-        (m) => '${m[1]},',
-      );
-}
-
-/// The pure rendering half — takes a settled [DailyUsageStats] and
-/// paints one horizontal bar per model. Split out so tests can pump it
-/// without the async hop.
-class _ModelBars extends StatelessComponent {
-  final DailyUsageStats stats;
-  final CruxThemeData theme;
-  final Strings strings;
-
-  const _ModelBars({
-    required this.stats,
-    required this.theme,
-    required this.strings,
-  });
-
-  /// Label column bounds (terminal columns). The column sizes to the
-  /// longest display name actually shown, clamped to this range —
-  /// narrow boxes truncate long names, wide boxes don't stretch the
-  /// gutter past what a glance needs.
-  static const _minLabelWidth = 14;
-  static const _maxLabelWidth = 20;
-
-  /// Bar track width when the box gives the chart unbounded width
-  /// (tests / previews without a LayoutBuilder constraint).
-  static const _fallbackBarWidth = 10;
-
-  /// Gap between the bar track and the right-aligned count.
-  static const _countGap = 1;
-
-  /// Models, busiest first (ties broken by id for a stable order).
-  List<MapEntry<String, int>> get _sorted {
-    final entries = stats.byModel.entries.toList()
-      ..sort((a, b) {
-        final byTokens = b.value.compareTo(a.value);
-        if (byTokens != 0) return byTokens;
-        return a.key.compareTo(b.key);
-      });
-    return entries;
-  }
-
-  @override
-  Component build(BuildContext context) {
-    final models = _sorted;
-    // The ceiling every bar scales against: the busiest model. All
-    // values are > 0 (the query drops zero rows), so no divide-by-zero.
-    final ceiling = models.first.value;
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final maxWidth = constraints.maxWidth;
-      // Unbounded width (tests / previews): fixed track, no count
-      // column — the compact count trails the bar instead.
-      final bounded = maxWidth.isFinite;
-
-      // Label column: the longest name actually shown, clamped.
-      final longestName =
-          models.map((m) => stringWidth(m.key)).fold(0, math.max);
-      final labelWidth = bounded
-          ? longestName.clamp(_minLabelWidth, _maxLabelWidth).toInt()
-          : _minLabelWidth;
-
-      // Count column: the widest compact count, right-aligned against
-      // the box edge so the numbers read as one column.
-      final countWidth = bounded
-          ? models.map((m) => stringWidth(formatTokensCompact(m.value)))
-              .fold(0, math.max)
-          : 0;
-
-      // Bar track: whatever the row has left. At least 1 col so a
-      // pathologically narrow box still shows a bar.
-      final barWidth = bounded
-          ? math.max(
-              1,
-              maxWidth -
-                  labelWidth -
-                  1 -
-                  countWidth -
-                  _countGap,
-            ).toInt()
-          : _fallbackBarWidth;
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final m in models)
-            _bar(m.key, m.value, ceiling, labelWidth, barWidth, countWidth),
-          _summary(),
-        ],
-      );
-    });
-  }
-
-  Component _bar(
-    String model,
-    int tokens,
-    int ceiling,
-    int labelWidth,
-    int barWidth,
-    int countWidth,
-  ) {
-    final filled =
-        ((tokens / ceiling) * barWidth).round().clamp(0, barWidth);
-    final bar = '█' * filled + '░' * (barWidth - filled);
-    final count = formatTokensCompact(tokens);
-    return Row(
-      children: [
-        Text(
-          _fit(model, labelWidth),
-          style: TextStyle(color: theme.onSurfaceDim),
-        ),
-        const Text(' '),
-        Text(bar, style: TextStyle(color: theme.success)),
-        if (countWidth > 0) ...[
-          // Right-align the count against the box edge.
-          Text(' ' * math.max(1, countWidth - stringWidth(count) + _countGap)),
-          Text(count, style: TextStyle(color: theme.onSurfaceVariant)),
-        ] else
-          Text(' $count', style: TextStyle(color: theme.onSurfaceVariant)),
-      ],
-    );
-  }
-
-  /// Trailing one-liner keeping the box's non-token metrics visible
-  /// (they'd otherwise vanish with the old three-row layout).
-  Component _summary() {
-    return Text(
-      '${strings.t('home.tokens.turns')} ${stats.turns}'
-      ' · '
-      '${strings.t('home.tokens.sessions')} ${stats.sessions}',
-      style: TextStyle(color: theme.onSurfaceDim),
-    );
-  }
-
-  /// Fit [text] into [maxWidth] terminal columns, appending `…` and
-  /// truncating by display width (not code units) when it doesn't fit.
-  /// Measured with [stringWidth] so CJK model labels truncate honestly.
-  static String _fit(String text, int maxWidth) {
-    if (stringWidth(text) <= maxWidth) return padToWidth(text, maxWidth);
-    var out = '';
-    for (final rune in text.runes) {
-      final candidate = out + String.fromCharCode(rune);
-      if (stringWidth(candidate) > maxWidth - 1) break; // 1 col for `…`
-      out = candidate;
-    }
-    return padToWidth('$out…', maxWidth);
-  }
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]},',
+  );
 }

@@ -18,6 +18,8 @@
 /// mounted surface.
 library;
 
+import 'dart:math' as math;
+
 import 'package:nocterm/nocterm.dart';
 
 import '../../theme/crux_theme.dart';
@@ -222,13 +224,23 @@ class ListItemCatalogItem extends CatalogItem {
   String get typeName => 'ListItem';
 
   @override
-  String get description => 'A list row with title, optional detail and badge.';
+  String get description =>
+      'A selectable list row with optional leading marker, detail and badge.';
 
   @override
   Map<String, dynamic> get propertiesSchema => {
     'title': {'type': 'string', 'description': 'Primary row text.'},
+    'leading': {
+      'type': 'string',
+      'description':
+          'Optional compact leading marker, such as an icon or state.',
+    },
     'detail': {'type': 'string', 'description': 'Optional secondary text.'},
     'badge': {'type': 'string', 'description': 'Optional trailing status.'},
+    'selected': {
+      'type': 'boolean',
+      'description': 'Whether the host currently selects this row.',
+    },
   };
 
   @override
@@ -244,24 +256,194 @@ class ListItemCatalogItem extends CatalogItem {
     Strings strings = kEnglishStrings,
   }) {
     final theme = CruxTheme.of(context);
+    final leading = resolveString(component.properties['leading'], dataModel);
     final detail = resolveString(component.properties['detail'], dataModel);
     final badge = resolveString(component.properties['badge'], dataModel);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(resolveString(component.properties['title'], dataModel)),
-              if (detail.isNotEmpty)
-                Text(detail, style: TextStyle(color: theme.onSurfaceDim)),
-            ],
+    final selected = component.properties['selected'] == true;
+    final titleColor = selected ? theme.selectedText : theme.onSurface;
+    final secondaryColor = selected ? theme.selectedText : theme.onSurfaceDim;
+    return Container(
+      color: selected ? theme.selection : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (leading.isNotEmpty) ...[
+            Text(leading, style: TextStyle(color: secondaryColor)),
+            const SizedBox(width: 1),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  resolveString(component.properties['title'], dataModel),
+                  style: TextStyle(color: titleColor),
+                ),
+                if (detail.isNotEmpty)
+                  Text(detail, style: TextStyle(color: secondaryColor)),
+              ],
+            ),
           ),
+          if (badge.isNotEmpty) ...[
+            const SizedBox(width: 1),
+            Text(
+              badge,
+              style: TextStyle(
+                color: selected ? theme.selectedText : theme.secondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BarList
+// ---------------------------------------------------------------------------
+
+/// A compact ranked list of labeled progress bars. Covers usage breakdowns,
+/// provider quotas, and per-model token distributions without introducing a
+/// charting dependency into terminal hosts.
+class BarListCatalogItem extends CatalogItem {
+  @override
+  String get typeName => 'BarList';
+
+  @override
+  String get description =>
+      'A responsive list of labeled 0..1 progress bars. Use for model token '
+      'breakdowns, usage windows, or ranked work queues.';
+
+  @override
+  Map<String, dynamic> get propertiesSchema => {
+    'rows': {
+      'type': 'array',
+      'description':
+          'Rows: [{"label":"Claude","value":0.72,"detail":"72k",'
+          '"tone":"success"}]. `value` is a 0..1 fraction.',
+    },
+  };
+
+  @override
+  Component build({
+    required BuildContext context,
+    required A2uiComponent component,
+    required Map<String, dynamic> dataModel,
+    required Component Function(String childId) buildChild,
+    void Function(A2uiAction action)? onAction,
+    void Function(String path, dynamic value)? onDataModelUpdate,
+    bool submitted = false,
+    String? Function(String childId)? childType,
+    Strings strings = kEnglishStrings,
+  }) {
+    final raw = unwrapListProperty(
+      resolveValue(component.properties['rows'], dataModel),
+    );
+    final rows = <({String label, double value, String detail, String tone})>[];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is! Map<String, dynamic>) continue;
+        final value = item['value'];
+        final fraction = value is num
+            ? value.toDouble()
+            : double.tryParse(value?.toString() ?? '') ?? 0;
+        rows.add((
+          label: item['label']?.toString() ?? '',
+          value: fraction.clamp(0.0, 1.0),
+          detail: item['detail']?.toString() ?? '',
+          tone: item['tone']?.toString() ?? 'success',
+        ));
+      }
+    }
+    if (rows.isEmpty) return const Text('—');
+    return _SurfaceBarList(rows: rows, theme: CruxTheme.of(context));
+  }
+}
+
+class _SurfaceBarList extends StatelessComponent {
+  final List<({String label, double value, String detail, String tone})> rows;
+  final CruxThemeData theme;
+
+  const _SurfaceBarList({required this.rows, required this.theme});
+
+  @override
+  Component build(BuildContext context) {
+    final labelWidth = rows
+        .fold<int>(0, (width, row) => math.max(width, stringWidth(row.label)))
+        .clamp(1, 16);
+    final detailWidth = rows
+        .fold<int>(0, (width, row) => math.max(width, stringWidth(row.detail)))
+        .clamp(0, 12);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.floor()
+            : 40;
+        final trackWidth = math.max(
+          6,
+          available - labelWidth - detailWidth - 3,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final row in rows)
+              _BarListRow(
+                row: row,
+                labelWidth: labelWidth,
+                detailWidth: detailWidth,
+                trackWidth: trackWidth,
+                theme: theme,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _BarListRow extends StatelessComponent {
+  final ({String label, double value, String detail, String tone}) row;
+  final int labelWidth;
+  final int detailWidth;
+  final int trackWidth;
+  final CruxThemeData theme;
+
+  const _BarListRow({
+    required this.row,
+    required this.labelWidth,
+    required this.detailWidth,
+    required this.trackWidth,
+    required this.theme,
+  });
+
+  @override
+  Component build(BuildContext context) {
+    final filled = (trackWidth * row.value).round().clamp(0, trackWidth);
+    final color = switch (row.tone) {
+      'warning' => theme.warning,
+      'error' => theme.error,
+      'info' => theme.info,
+      _ => theme.success,
+    };
+    return Row(
+      children: [
+        Text(
+          padToWidth(_truncateToWidth(row.label, labelWidth), labelWidth),
+          style: TextStyle(color: theme.onSurfaceDim),
         ),
-        if (badge.isNotEmpty) ...[
-          const SizedBox(width: 1),
-          Text(badge, style: TextStyle(color: theme.secondary)),
+        const Text(' '),
+        Text('█' * filled, style: TextStyle(color: color)),
+        Text(
+          '░' * (trackWidth - filled),
+          style: TextStyle(color: theme.borderSubtle),
+        ),
+        if (detailWidth > 0) ...[
+          const Text(' '),
+          Text(
+            padToWidth(_truncateToWidth(row.detail, detailWidth), detailWidth),
+            style: TextStyle(color: theme.onSurfaceVariant),
+          ),
         ],
       ],
     );
@@ -1214,6 +1396,7 @@ void registerDisplayCatalogItems(SurfaceCatalog catalog) {
   catalog.register(BadgeCatalogItem());
   catalog.register(StatCatalogItem());
   catalog.register(ListItemCatalogItem());
+  catalog.register(BarListCatalogItem());
   catalog.register(TableCatalogItem());
   catalog.register(ProgressBarCatalogItem());
   catalog.register(ListCatalogItem());

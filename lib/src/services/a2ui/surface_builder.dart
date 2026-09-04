@@ -66,13 +66,20 @@ class SurfaceBuilder {
   SurfaceBuilder listItem(
     String id, {
     required String title,
+    String? leading,
     String? detail,
     String? badge,
+    bool selected = false,
   }) => _add(id, 'ListItem', {
     'title': title,
+    'leading': ?leading,
     'detail': ?detail,
     'badge': ?badge,
+    'selected': selected,
   });
+
+  SurfaceBuilder barList(String id, List<Map<String, dynamic>> rows) =>
+      _add(id, 'BarList', {'rows': rows});
 
   SurfaceBuilder _add(String id, String component, Map<String, dynamic> props) {
     _components.add(

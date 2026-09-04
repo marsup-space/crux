@@ -2,7 +2,7 @@
 ///
 /// Run one sample in Ghostty, for example:
 ///   dart run tool/genui_surface_samples.dart form
-/// Available names: dashboard, form, progress, data.
+/// Available names: dashboard, form, progress, data, usage.
 library;
 
 import 'dart:io';
@@ -15,13 +15,14 @@ import 'package:nocterm/nocterm.dart';
 
 import 'genui_surface_sample.dart' show sampleSurface;
 
-const sampleNames = ['dashboard', 'form', 'progress', 'data'];
+const sampleNames = ['dashboard', 'form', 'progress', 'data', 'usage'];
 
 CreateSurface sampleFor(String name) => switch (name) {
   'dashboard' => sampleSurface,
   'form' => _releaseForm,
   'progress' => _taskProgress,
   'data' => _reviewData,
+  'usage' => _usageOverview,
   _ => throw ArgumentError.value(name, 'name', 'unknown GenUI sample'),
 };
 
@@ -59,6 +60,7 @@ int _sampleMaxWidth(String name) => switch (name) {
   'form' => 92,
   'progress' => 132,
   'data' => 100,
+  'usage' => 88,
   _ => 120,
 };
 
@@ -306,6 +308,84 @@ final _reviewData = CreateSurface(
           {'area': 'Chat forms', 'surface': 'interactive', 'owner': 'done'},
           {'area': 'Progress', 'surface': 'ProgressBar', 'owner': 'done'},
         ],
+      },
+    ),
+  ],
+);
+
+/// Mirrors the Tokens and Coding plan boxes with ranked, terminal-safe bars.
+final _usageOverview = CreateSurface(
+  surfaceId: 'standalone.usage',
+  catalogId: 'crux/1.0/chat',
+  components: const [
+    A2uiComponent(
+      id: 'root',
+      component: 'Column',
+      properties: {
+        'children': ['heading', 'usage', 'plan'],
+      },
+    ),
+    A2uiComponent(
+      id: 'heading',
+      component: 'Text',
+      properties: {'text': 'Home usage surface'},
+    ),
+    A2uiComponent(
+      id: 'usage',
+      component: 'Card',
+      properties: {'title': 'Tokens', 'child': 'usageRows'},
+    ),
+    A2uiComponent(
+      id: 'usageRows',
+      component: 'BarList',
+      properties: {
+        'rows': [
+          {'label': 'gpt-5.6', 'value': 0.72, 'detail': '72k', 'tone': 'info'},
+          {'label': 'gpt-5.6-luna', 'value': 0.34, 'detail': '34k'},
+          {
+            'label': 'cached',
+            'value': 0.18,
+            'detail': '18k',
+            'tone': 'warning',
+          },
+        ],
+      },
+    ),
+    A2uiComponent(
+      id: 'plan',
+      component: 'Card',
+      properties: {'title': 'Coding plan', 'child': 'planRows'},
+    ),
+    A2uiComponent(
+      id: 'planRows',
+      component: 'Column',
+      properties: {
+        'children': ['planBars', 'renewal'],
+      },
+    ),
+    A2uiComponent(
+      id: 'planBars',
+      component: 'BarList',
+      properties: {
+        'rows': [
+          {'label': '5-hour', 'value': 0.48, 'detail': '2h 24m'},
+          {
+            'label': 'weekly',
+            'value': 0.83,
+            'detail': '5d 2h',
+            'tone': 'warning',
+          },
+        ],
+      },
+    ),
+    A2uiComponent(
+      id: 'renewal',
+      component: 'ListItem',
+      properties: {
+        'leading': '◷',
+        'title': 'Plan refreshes automatically',
+        'detail': 'Live values update through surface_update.',
+        'badge': 'live',
       },
     ),
   ],

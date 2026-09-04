@@ -16,7 +16,7 @@ void main() {
         id: 'root',
         component: 'Column',
         properties: {
-          'children': ['section', 'item', 'toggle'],
+          'children': ['section', 'item', 'bars', 'toggle'],
         },
       ),
       A2uiComponent(
@@ -47,8 +47,20 @@ void main() {
         component: 'ListItem',
         properties: {
           'title': 'Plugin adapter',
+          'leading': '›',
           'detail': 'next slice',
           'badge': 'next',
+          'selected': true,
+        },
+      ),
+      A2uiComponent(
+        id: 'bars',
+        component: 'BarList',
+        properties: {
+          'rows': [
+            {'label': 'gpt-5.6', 'value': 0.72, 'detail': '72k'},
+            {'label': 'luna', 'value': 0.34, 'detail': '34k'},
+          ],
         },
       ),
       A2uiComponent(
@@ -64,7 +76,14 @@ void main() {
 
   test('new primitives are registered and validate together', () {
     final catalog = createBasicCatalog();
-    for (final type in ['Section', 'Badge', 'Stat', 'ListItem', 'Toggle']) {
+    for (final type in [
+      'Section',
+      'Badge',
+      'Stat',
+      'ListItem',
+      'BarList',
+      'Toggle',
+    ]) {
       expect(catalog.lookup(type), isNotNull);
     }
     expect(catalog.validate(declaration), isEmpty);
@@ -76,7 +95,7 @@ void main() {
       await tester.pumpComponent(
         Container(
           width: 80,
-          height: 16,
+          height: 24,
           child: CruxTheme(
             data: CruxThemeData.draculaFallback,
             child: SurfaceHost(
@@ -91,6 +110,8 @@ void main() {
       await tester.pump();
       expect(tester.terminalState, containsText('passing'));
       expect(tester.terminalState, containsText('Plugin adapter'));
+      expect(tester.terminalState, containsText('›'));
+      expect(tester.terminalState, containsText('gpt-5.6'));
 
       await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
       await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.enter));
@@ -99,6 +120,6 @@ void main() {
         isTrue,
       );
       expect(tester.terminalState, containsText(' ON '));
-    }, size: const Size(80, 16));
+    }, size: const Size(80, 24));
   });
 }

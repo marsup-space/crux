@@ -13,6 +13,7 @@ void main() {
     'form': 'Release request',
     'progress': 'Agent work queue',
     'data': 'Component coverage',
+    'usage': 'Home usage surface',
   };
 
   for (final name in sampleNames) {
