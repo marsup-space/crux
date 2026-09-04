@@ -34,6 +34,7 @@ class BtwTurnHandler {
   final Strings strings;
 
   final Map<int, bool> _btwCancelFlags = {};
+  final Map<int, LlmStreamCancelToken> _btwCancelTokens = {};
 
   BtwTurnHandler({
     required this.sessionController,
@@ -136,6 +137,8 @@ class BtwTurnHandler {
     refresh();
 
     final llmClient = LlmClient();
+    final cancelToken = LlmStreamCancelToken();
+    _btwCancelTokens[sessionId] = cancelToken;
     final buffer = StringBuffer();
     LlmError? streamError;
 
@@ -157,6 +160,7 @@ class BtwTurnHandler {
         thinkingBudget: modelConfig?.thinkingBudget,
         maxTokens: modelConfig?.maxTokens,
         userId: '${InstallSlug.slug}-$sessionId',
+        cancelToken: cancelToken,
       );
       var firstTokenEver = true;
       await for (final chunk in stream) {
@@ -213,6 +217,7 @@ class BtwTurnHandler {
     } catch (e) {
       streamError = classifyThrownError(e, providerName: provider.name);
     } finally {
+      _btwCancelTokens.remove(sessionId);
       llmClient.dispose();
     }
 
@@ -301,5 +306,9 @@ class BtwTurnHandler {
 
   void cancelBtwTurn(int sessionId) {
     _btwCancelFlags[sessionId] = true;
+    final cancelToken = _btwCancelTokens[sessionId];
+    if (cancelToken != null) {
+      unawaited(cancelToken.cancelActiveStream(reason: 'user_interrupt'));
+    }
   }
 }

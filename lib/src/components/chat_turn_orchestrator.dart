@@ -69,7 +69,6 @@ class ChatTurnOrchestrator {
   /// picked a mention via the chat input's overlay).
   final List<MentionChip> Function()? _mentionChipsProvider;
 
-  final Map<int, bool> _btwCancelFlags = {};
   final Set<int> _interruptedSessions = {};
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
   final Set<int> _streamingGuardAbortedSessions = {};
@@ -1077,7 +1076,7 @@ class ChatTurnOrchestrator {
     final isBtw = rt.btwMode;
 
     if (isBtw) {
-      _btwCancelFlags[sessionId] = true;
+      _btwHandler.cancelBtwTurn(sessionId);
     } else {
       _chatService.cancelStream(sessionId);
     }
