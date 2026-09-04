@@ -995,6 +995,35 @@ void main() {
     }
 
     test(
+      'hides an unavailable five-hour window instead of duplicating 1w',
+      () async {
+        await testNocterm('coding-plan weekly-only window', (tester) async {
+          final controller = StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controller.close);
+          await tester.pumpComponent(
+            CodingPlanUsageDisplay(
+              stream: controller.stream,
+              initialUsage: CodingPlanUsage(
+                providerName: 'codex',
+                modelName: 'codex',
+                intervalRemainingPct: 56,
+                weeklyRemainingPct: 56,
+                hasIntervalWindow: false,
+                hasWeeklyWindow: true,
+                fetchedAt: DateTime.now(),
+              ),
+            ),
+          );
+
+          final row = readRow0(tester);
+          expect(row, contains('1w 56.0%'));
+          expect(row, isNot(contains('5h')));
+          expect(row, isNot(contains('/')));
+        });
+      },
+    );
+
+    test(
       'ticks the displayed countdown when hovering with sub-minute remaining',
       () async {
         await testNocterm('coding-plan hover countdown ticks', (tester) async {

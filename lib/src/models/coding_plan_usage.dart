@@ -18,10 +18,21 @@ class CodingPlanUsage {
   final String modelName;
 
   /// Percentage of the 5-hour rolling window remaining (0–100).
+  ///
+  /// Read only when [hasIntervalWindow] is true. Some providers/plans expose
+  /// only a longer window, in which case this retained placeholder value lets
+  /// the common snapshot shape stay non-null without inventing a 5-hour limit.
   final int intervalRemainingPct;
+
+  /// Whether the provider actually returned a short (normally five-hour)
+  /// window. Defaults to true for existing providers that always return one.
+  final bool hasIntervalWindow;
 
   /// Percentage of the weekly window remaining (0–100).
   final int weeklyRemainingPct;
+
+  /// Whether the provider actually returned a long (normally weekly) window.
+  final bool hasWeeklyWindow;
 
   /// Time until the 5-hour window resets. Sourced from the
   /// `remains_time` field on the API row (milliseconds).
@@ -42,6 +53,8 @@ class CodingPlanUsage {
     required this.intervalRemainingPct,
     required this.weeklyRemainingPct,
     required this.fetchedAt,
+    this.hasIntervalWindow = true,
+    this.hasWeeklyWindow = true,
     this.intervalRemains,
     this.weeklyRemains,
   });

@@ -343,7 +343,9 @@ class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
     // animate "green" every poll. The previous value
     // is still in _usage, so the settled frame stays
     // painted.
-    if (from.intervalRemainingPct == to.intervalRemainingPct &&
+    if (from.hasIntervalWindow == to.hasIntervalWindow &&
+        from.hasWeeklyWindow == to.hasWeeklyWindow &&
+        from.intervalRemainingPct == to.intervalRemainingPct &&
         from.weeklyRemainingPct == to.weeklyRemainingPct) {
       return;
     }
@@ -436,8 +438,12 @@ class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
     final weeklyColor = Color.lerp(_flashWeekly, _targetWeeklyColor, colorT)!;
 
     ro.update(
-      intervalText: '5h ${intervalValue.toStringAsFixed(1)}%',
-      weeklyText: '1w ${weeklyValue.toStringAsFixed(1)}%',
+      intervalText: _usage?.hasIntervalWindow ?? true
+          ? '5h ${intervalValue.toStringAsFixed(1)}%'
+          : '',
+      weeklyText: _usage?.hasWeeklyWindow ?? true
+          ? '1w ${weeklyValue.toStringAsFixed(1)}%'
+          : '',
       intervalFg: intervalColor,
       weeklyFg: weeklyColor,
       hovered: _hovered,
@@ -521,8 +527,8 @@ class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
     );
 
     ro.update(
-      intervalText: '5h $intervalInner',
-      weeklyText: '1w $weeklyInner',
+      intervalText: usage.hasIntervalWindow ? '5h $intervalInner' : '',
+      weeklyText: usage.hasWeeklyWindow ? '1w $weeklyInner' : '',
       intervalFg: intervalColor,
       weeklyFg: weeklyColor,
       hovered: _hovered,
@@ -601,8 +607,8 @@ class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
     final color = Color.lerp(theme.cyan, settledInterval, t)!;
 
     ro.update(
-      intervalText: '5h  \u{27F3}',
-      weeklyText: '1w  \u{27F3}',
+      intervalText: _usage?.hasIntervalWindow ?? true ? '5h  \u{27F3}' : '',
+      weeklyText: _usage?.hasWeeklyWindow ?? true ? '1w  \u{27F3}' : '',
       intervalFg: color,
       weeklyFg: Color.lerp(theme.cyan, settledWeekly, t)!,
       hovered: _hovered,
@@ -810,8 +816,8 @@ class _CodingPlanUsageDisplayState extends State<CodingPlanUsageDisplay> {
     );
 
     ro.update(
-      intervalText: '5h $intervalInner',
-      weeklyText: '1w $weeklyInner',
+      intervalText: usage.hasIntervalWindow ? '5h $intervalInner' : '',
+      weeklyText: usage.hasWeeklyWindow ? '1w $weeklyInner' : '',
       intervalFg: intervalColor,
       weeklyFg: weeklyColor,
       hovered: _hovered,
@@ -1116,18 +1122,20 @@ class RenderCodingPlanUsage extends RenderObject {
       style: TextStyle(color: _intervalFg),
     );
     x += _intervalText.length;
-
-    canvas.drawText(
-      offset + Offset(x, 0),
-      ' / ',
-      style: TextStyle(color: Color.defaultColor),
-    );
-    x += 3;
-
-    canvas.drawText(
-      offset + Offset(x, 0),
-      _weeklyText,
-      style: TextStyle(color: _weeklyFg),
-    );
+    if (_intervalText.isNotEmpty && _weeklyText.isNotEmpty) {
+      canvas.drawText(
+        offset + Offset(x, 0),
+        ' / ',
+        style: TextStyle(color: Color.defaultColor),
+      );
+      x += 3;
+    }
+    if (_weeklyText.isNotEmpty) {
+      canvas.drawText(
+        offset + Offset(x, 0),
+        _weeklyText,
+        style: TextStyle(color: _weeklyFg),
+      );
+    }
   }
 }

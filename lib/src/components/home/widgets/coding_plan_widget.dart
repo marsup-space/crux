@@ -220,10 +220,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: rows,
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
   }
 
   /// Inline coding-plan line: `<Name>  5h 88%  7d 55%`, or on hover
@@ -240,20 +237,28 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     if (usage == null) {
       children.add(_waiting(theme));
     } else {
-      children.addAll(_window(
-        theme,
-        component.strings.t('home.cp.window5h'),
-        usage.intervalRemainingPct,
-        usage.formatIntervalRemains(),
-        hovered: hovered,
-      ));
-      children.addAll(_window(
-        theme,
-        component.strings.t('home.cp.window7d'),
-        usage.weeklyRemainingPct,
-        usage.formatWeeklyRemains(),
-        hovered: hovered,
-      ));
+      if (usage.hasIntervalWindow) {
+        children.addAll(
+          _window(
+            theme,
+            component.strings.t('home.cp.window5h'),
+            usage.intervalRemainingPct,
+            usage.formatIntervalRemains(),
+            hovered: hovered,
+          ),
+        );
+      }
+      if (usage.hasWeeklyWindow) {
+        children.addAll(
+          _window(
+            theme,
+            component.strings.t('home.cp.window7d'),
+            usage.weeklyRemainingPct,
+            usage.formatWeeklyRemains(),
+            hovered: hovered,
+          ),
+        );
+      }
     }
     return Row(mainAxisSize: MainAxisSize.min, children: children);
   }
@@ -272,15 +277,15 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
     } else {
       final color = balance.isAvailable ? theme.cyan : theme.warning;
       children.add(
-        Text('  ${component.strings.t('home.cp.credit')} ', style: TextStyle(color: theme.onSurfaceDim)),
+        Text(
+          '  ${component.strings.t('home.cp.credit')} ',
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
       );
       children.add(
         Text(
           balance.formatPrimary() ?? '—',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
         ),
       );
     }
@@ -292,10 +297,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
   Component _nameText(CruxThemeData theme, String name, int width) {
     return Text(
       padToWidth(typeDisplayName(name), width),
-      style: TextStyle(
-        color: theme.accent,
-        fontWeight: FontWeight.bold,
-      ),
+      style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
     );
   }
 
@@ -316,10 +318,7 @@ class _CodingPlanHomeViewState extends State<_CodingPlanHomeView> {
       Text('  $label ', style: TextStyle(color: theme.onSurfaceDim)),
       Text(
         text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.bold),
       ),
     ];
   }
