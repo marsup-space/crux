@@ -1502,6 +1502,76 @@ void main() {
       // No reasoning chunk was emitted — stays at default 0.
       expect(runtime.lastRoundReasoningTokens, 0);
     });
+
+    test(
+      'persists usage from tool rounds for the home daily aggregate',
+      () async {
+        // Agentic turns make a provider request for every tool round as well as
+        // for the final answer. The home dashboard reads `messages`, so both
+        // rows must carry their own provider-reported usage.
+        final fakeLlm = FakeLlmClient([
+          const [
+            LlmChunk(
+              toolUse: ToolUseChunk(
+                callId: 'read_1',
+                name: 'read',
+                inputDelta: '{"filePath":"missing.txt"}',
+              ),
+            ),
+            LlmChunk(promptTokens: 120, completionTokens: 30),
+            LlmChunk(finishReason: 'tool_calls'),
+          ],
+          const [
+            LlmChunk(textDelta: 'done'),
+            LlmChunk(promptTokens: 500, completionTokens: 50),
+            LlmChunk(finishReason: 'stop'),
+          ],
+        ]);
+        final executor = _buildExecutor(
+          store: store,
+          providerService: providerService,
+          llmClient: fakeLlm,
+        );
+        final session = await _createSession(store);
+
+        await _runTurn(executor, session, (cbs) async {
+          await executor.sendMessage(
+            sessionId: session.id,
+            session: session,
+            runtime: cbs.runtime,
+            onDelta: (_) {},
+            onReasoning: (_) {},
+            onChunk: () {},
+            onComplete: cbs.onComplete,
+            onError: cbs.onError,
+            onStatus: cbs.onStatus,
+            userContent: 'inspect a file',
+          );
+        });
+
+        expect(_lastError, isNull);
+        expect(fakeLlm.calls, 2);
+
+        final messages = await store.messageStore.getMessages(session.id);
+        final toolCall = messages.singleWhere((m) => m.role == 'tool_call');
+        expect(toolCall.model, '$_providerName/$_modelId');
+        expect(toolCall.tokensIn, 120);
+        expect(toolCall.tokensOut, 30);
+
+        final stats = await store.messageStore.dailyUsageStats(
+          sinceDaysAgo: 1,
+          projectPath: session.projectPath,
+        );
+        final today = DateTime.now();
+        final key =
+            '${today.year}-${today.month.toString().padLeft(2, '0')}-'
+            '${today.day.toString().padLeft(2, '0')}';
+        final todayStats = stats[key]!;
+        // Tool round (120 + 30) + final answer (500 + 50).
+        expect(todayStats.tokens, 700);
+        expect(todayStats.byModel['$_providerName/$_modelId'], 700);
+      },
+    );
   });
 }
 

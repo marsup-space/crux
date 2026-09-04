@@ -640,6 +640,13 @@ class ChatTurnExecutor {
         stepCount++;
         if (stepCount > maxRounds) {
           stepLimitReached = true;
+          // The final empty message below must not inherit the preceding
+          // tool round's usage when the round cap ends the loop.
+          promptTokens = 0;
+          completionTokens = 0;
+          promptCacheHitTokens = 0;
+          promptCacheMissTokens = 0;
+          reasoningTokens = 0;
           break;
         }
       }
@@ -654,6 +661,18 @@ class ChatTurnExecutor {
         leaseManager.clearCancelRequest(sessionId);
         return;
       }
+
+      // Provider usage belongs to one model request. A provider that omits a
+      // usage block on this round must not let the prior tool round's counts
+      // leak into its persisted message (or the final AI message).
+      promptTokens = 0;
+      completionTokens = 0;
+      promptCacheHitTokens = 0;
+      promptCacheMissTokens = 0;
+      reasoningTokens = 0;
+      runtime.lastRoundPromptTokens = 0;
+      runtime.lastRoundCompletionTokens = 0;
+      runtime.lastRoundReasoningTokens = 0;
 
       LlmError? streamError;
       Object? thrownError;
@@ -1824,6 +1843,12 @@ class ChatTurnExecutor {
           reasoningEffort: runtime.thinkingMode == 'disabled'
               ? null
               : runtime.reasoningEffort ?? 'normal',
+          model: compositeKey,
+          // Home's daily usage aggregate sums persisted message rows. Tool
+          // rounds are model requests too, so dropping these fields here made
+          // agentic turns report only their final non-tool response.
+          tokensIn: promptTokens,
+          tokensOut: completionTokens,
           toolCalls: toolCallData,
           results: [
             for (final call in toolCalls)

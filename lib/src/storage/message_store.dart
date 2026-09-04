@@ -117,6 +117,9 @@ class MessageStore {
     int reasoningTokens = 0,
     int thinkingDurationMs = 0,
     String? reasoningEffort,
+    String model = '',
+    int tokensIn = 0,
+    int tokensOut = 0,
     required List<ToolCallData> toolCalls,
     required List<({String callId, String output, String meta})> results,
   }) {
@@ -130,6 +133,9 @@ class MessageStore {
         reasoningTokens: reasoningTokens,
         thinkingDurationMs: thinkingDurationMs,
         reasoningEffort: reasoningEffort,
+        model: model,
+        tokensIn: tokensIn,
+        tokensOut: tokensOut,
         toolCalls: toolCalls,
       );
       for (final r in results) {
