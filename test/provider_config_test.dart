@@ -1137,6 +1137,7 @@ context_size = 8192
       expect(
         codex.models.map((model) => model.id),
         containsAll([
+          'gpt-6-astra',
           'gpt-5.6-sol',
           'gpt-5.6-terra',
           'gpt-5.6-luna',

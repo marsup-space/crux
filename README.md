@@ -154,7 +154,7 @@ dart run bin/crux.dart /path/to/your/project
 | Provider | 命令 | 模型 |
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
-| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
+| ChatGPT Codex | `/provider codex login` | GPT-6 Astra / GPT-5.6 系列 |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
@@ -408,7 +408,7 @@ Connect LLM providers with the `/provider` command:
 | Provider | Command | Models |
 |----------|---------|--------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
-| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
+| ChatGPT Codex | `/provider codex login` | GPT-6 Astra / GPT-5.6 系列 |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
