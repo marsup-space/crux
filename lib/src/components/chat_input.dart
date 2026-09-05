@@ -149,7 +149,10 @@ class ChatInputState extends State<ChatInput> {
       sessionController: component.sessionController,
       turnOrchestrator: component.turnOrchestrator,
       providerService: component.providerService,
-      providerServiceReady: component.providerServiceReady,
+      // Read this lazily: ChatInput commonly mounts before provider loading
+      // finishes. Capturing the initial false value permanently disabled
+      // clipboard-image paste even after the parent rebuilt as ready.
+      isProviderServiceReady: () => component.providerServiceReady,
       textController: component.textController,
       projectPath: component.projectPath,
       onAttachClipboardImage: component.onAttachClipboardImage,

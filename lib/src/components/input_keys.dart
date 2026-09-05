@@ -192,7 +192,7 @@ class InputKeyHandler {
 
     if (overlayController.showSessionManager) return true;
 
-    // --- Ctrl+V: try clipboard image if current model supports it ---
+    // --- Ctrl+V: try a clipboard image before the TextField pastes text ---
     if (event.logicalKey == LogicalKey.keyV &&
         event.isControlPressed &&
         !event.isShiftPressed &&

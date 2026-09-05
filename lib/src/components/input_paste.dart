@@ -22,7 +22,7 @@ class InputPaste {
   final SessionController sessionController;
   final ChatTurnOrchestrator turnOrchestrator;
   final ProviderService providerService;
-  final bool providerServiceReady;
+  final bool Function() isProviderServiceReady;
   final TextEditingController textController;
   final String projectPath;
   final void Function(ImageAttachment image)? onAttachClipboardImage;
@@ -37,7 +37,7 @@ class InputPaste {
     required this.sessionController,
     required this.turnOrchestrator,
     required this.providerService,
-    required this.providerServiceReady,
+    required this.isProviderServiceReady,
     required this.textController,
     required this.projectPath,
     required this.onAttachClipboardImage,
@@ -46,8 +46,8 @@ class InputPaste {
   });
 
   /// Attempt to read an image from the system clipboard and add it as
-  /// a pending attachment. Called on Ctrl+V when the current model
-  /// supports images.
+  /// a pending attachment. Called by Ctrl+V and the Paste button; model
+  /// capability is validated when the attachment is sent.
   Future<bool> tryClipboardImage(
     int sessionId, {
     bool showEmptyToast = false,
@@ -86,7 +86,11 @@ class InputPaste {
   }
 
   Future<void> pasteFromButton(int? sessionId) async {
-    if (sessionId != null && currentModelSupportsImages()) {
+    // Always probe the OS clipboard for an image when a session exists. This
+    // matches the Ctrl+V path and keeps the button useful when provider/model
+    // capability metadata is still loading (or temporarily unavailable).
+    // Sending remains responsible for validating the selected model.
+    if (sessionId != null) {
       final attached = await tryClipboardImage(sessionId);
       if (attached) return;
     }
@@ -144,7 +148,7 @@ class InputPaste {
 
   bool currentModelSupportsImages() {
     if (onAttachClipboardImage == null) return false;
-    if (!providerServiceReady) return false;
+    if (!isProviderServiceReady()) return false;
     final modelKey = sessionController.currentSession.model;
     return providerService.imageModelKeys().contains(modelKey);
   }
