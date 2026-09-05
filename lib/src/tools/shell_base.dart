@@ -314,7 +314,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       Completer<String>? monitorKillCompleter;
       Timer? monitorFallbackTimer;
       if (monitor != null) {
-        monitorKillCompleter = Completer<String>();
+        final monitorKill = Completer<String>();
+        monitorKillCompleter = monitorKill;
         final monitorMessages = <Map<String, dynamic>>[
           {'role': 'system', 'content': shellMonitorSystemPrompt},
         ];
@@ -373,7 +374,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
           var lastStalledTail = '';
           while (true) {
             await Future<void>.delayed(nextDelay);
-            if (monitorKillCompleter!.isCompleted) return;
+            if (monitorKill.isCompleted) return;
             if (abort?.isAborted ?? false) return;
 
             checkNumber++;
@@ -470,7 +471,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 ),
               );
               monitorFallbackTimer ??= Timer(timeout, () {
-                if (!monitorKillCompleter!.isCompleted) {
+                if (!monitorKill.isCompleted) {
                   monitorLogSink?.log(
                     ShellMonitorEvent(
                       checkNumber: checkNumber,
@@ -481,7 +482,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                           'to timeout after ${timeout.inMilliseconds}ms',
                     ),
                   );
-                  monitorKillCompleter.complete(
+                  monitorKill.complete(
                     'progress monitor unavailable; fell back to timeout '
                     'after ${timeout.inMilliseconds}ms',
                   );
@@ -592,15 +593,15 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                   tail: cappedTail(stdoutBuf.toString()),
                 ),
               );
-              if (!monitorKillCompleter.isCompleted) {
-                monitorKillCompleter.complete(reason);
+              if (!monitorKill.isCompleted) {
+                monitorKill.complete(reason);
               }
               return;
             }
 
             if (verdict.kind == ShellMonitorVerdictKind.stuck) {
-              if (!monitorKillCompleter.isCompleted) {
-                monitorKillCompleter.complete(
+              if (!monitorKill.isCompleted) {
+                monitorKill.complete(
                   verdict.reason ?? 'monitor judged the process stuck',
                 );
               }
@@ -1095,8 +1096,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       if (shellRiskMeta != null) {
         extraMetadata = {...?extraMetadata, ...shellRiskMeta};
       }
-
-
       return ToolResult(
         title: 'Ran: $command (intent: \'$intent\')',
         output: finalOutput,
