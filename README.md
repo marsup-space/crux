@@ -251,7 +251,7 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 
 ### 技术栈
 
-- **语言**: Dart 3.12+
+- **语言**: Dart 3.13+
 - **UI 框架**: [Nocterm](https://github.com/marsup-space/nocterm) — 自研纯 Dart TUI 框架（submodule）
 - **数据库**: SQLite (drift)
 - **语法高亮**: TextMate 语法
@@ -510,7 +510,7 @@ manual packaging is also available from the Actions page.
 
 ### Tech Stack
 
-- **Language**: Dart 3.12+
+- **Language**: Dart 3.13+
 - **UI**: [Nocterm](https://github.com/marsup-space/nocterm) — self-developed pure-Dart TUI framework (submodule)
 - **Database**: SQLite (drift)
 - **Syntax highlighting**: TextMate grammars

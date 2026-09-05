@@ -30,7 +30,7 @@ jobs:
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1.7.2
         with:
-          sdk: 3.12
+          sdk: 3.13
 
       - name: Cache pub packages
         uses: actions/cache@v5
