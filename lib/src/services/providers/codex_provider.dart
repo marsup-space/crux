@@ -155,6 +155,15 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
   @override
   AuthStyle get authStyle => AuthStyle.bearer;
 
+  /// Codex reuses DeepSeek's Responses API request implementation, but the
+  /// inherited provider also carries DeepSeek's `/user/balance` machinery.
+  /// ChatGPT Codex exposes subscription quota windows instead, which this
+  /// class surfaces through [CodingPlanProvider]. Keep the credit capability
+  /// disabled so the UI never renders a DeepSeek balance cell or polls that
+  /// endpoint with a Codex OAuth credential.
+  @override
+  bool get isCreditBalance => false;
+
   @override
   String canonicalModelId(String modelId) => switch (modelId) {
     'gpt-5.5-codex' || 'gpt-5.6-codex' => 'gpt-5.6-sol',

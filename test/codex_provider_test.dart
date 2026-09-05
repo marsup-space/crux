@@ -15,6 +15,11 @@ void main() {
       expect(provider.canonicalModelId('gpt-5.6-terra'), 'gpt-5.6-terra');
     });
 
+    test('exposes subscription usage but not a DeepSeek credit balance', () {
+      expect(provider.isCodingPlan, isTrue);
+      expect(provider.isCreditBalance, isFalse);
+    });
+
     test('keeps the five-hour and weekly buckets from multi-limit usage', () {
       final usage = parseCodexCodingPlanUsage({
         'rateLimitsByLimitId': {
